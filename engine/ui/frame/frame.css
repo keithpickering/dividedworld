@@ -89,7 +89,7 @@
  */
 @media (max-width: 40em) {
   .kb-banner > .kb-menu-button { order: 1; }
-  .kb-banner > .kb-address { order: 2; flex: 1 0 100%; }
+  .kb-banner > .kb-banner-side { order: 2; flex: 1 0 100%; align-items: flex-start; }
 }
 
 .kb-logo {
@@ -149,6 +149,67 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* The boards bar ends in Search, at the right as the board draws it, with a magnifier that takes the link's color. */
+.kb-nav li.kb-nav-search {
+  margin-left: auto;
+}
+
+/* The banner's right side: the host line with its meter, and under it the search box on a row of its own. */
+.kb-banner-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.kb-banner-host {
+  line-height: 1.2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 1.2em;
+  min-width: 0;
+}
+
+/*
+ * With the box's row the right column is taller than the name, so the banner's own padding gives that height back: the name keeps its
+ * place (centered) and the banner keeps the board's height.
+ */
+@media (min-width: 40.0625em) {
+  .kb-banner:has(.kb-banner-search) {
+    align-items: center;
+    padding-block: 8px;
+  }
+}
+
+/* A phone's banner has no room for the search box, and its Boards menu holds the Search link. */
+.kb-banner-search {
+  position: relative; /* the suggest list hangs from this, so its right edge is the button's */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.kb-banner-search .kb-search-combo {
+  position: static;
+}
+
+/* The row is a 24px target (WCAG 2.5.8) so the stacked column fits the height the name gives the banner. */
+.kb-banner-search .kb-search-input {
+  min-height: 1.5rem;
+  padding-block: 0.1em;
+}
+
+@media (max-width: 40em) {
+  .kb-banner-search {
+    display: none;
+  }
 }
 
 .kb-menu-button {
@@ -1665,6 +1726,10 @@ html[data-kb-float='sheet'] .kb-frame {
   .kb-nav ul {
     flex-direction: column;
     gap: 0.3em;
+  }
+
+  .kb-nav li.kb-nav-search {
+    margin-left: 0;
   }
 }
 

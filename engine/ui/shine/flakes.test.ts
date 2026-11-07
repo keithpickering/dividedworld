@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { ratio, MODES } from '../contrast.ts';
 import { bandOf, luminanceOf, POST_INK, shineIsReadable, toLinear } from './band.ts';
-import { burst, burstProbe, drawBurst, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
+import { burst, burstProbe, drawBurst, GLINT_FLOOR, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
    holographic flakes from index 7. They are the reference inks for these tests, copied as literals. */
@@ -186,7 +186,48 @@ describe('flakes', () => {
     assert.deepEqual(failures.slice(0, 5), []);
   });
 
-  test('drawing paints each settled flake once; a flare is white, so it is drawn only where the band reaches white', () => {
+  /* The dark board's glints leave the band (section 5, issue #340); this is what holds them to a few flakes at once. */
+  test('glints are few: at every light and moment, at most GLINT_SHARE of the flakes glint (GLINT_FLOOR on a short post), at every size', () => {
+    const nows = Array.from({ length: 80 }, (_, k) => k * 250);
+    /* A short post's few hundred flakes are where chance crowds a light most; a tall one's thousands where a share is tested. */
+    for (const box of [{ w: 120, h: 60 }, { w: 200, h: 100 }, { w: 300, h: 80 }, { w: 400, h: 120 }, BOX]) {
+      for (const seed of ['g1', 'g2', 'g3', 'g4']) {
+        const f = make(seed, box);
+        landEverything(f);
+        assert.deepEqual(glintsAreFew(f, nows).slice(0, 3), [], `${box.w}x${box.h} ${seed}`);
+      }
+    }
+    /* And the light the post's own flakes crowd toward does glint some, so the check is not passing on nothing. */
+    const f = make();
+    landEverything(f);
+    assert.ok(Math.max(...nows.map((now) => glintShare(f, { x: 0, y: 0 }, now))) > 0);
+  });
+
+  test('POISON: a post whose flakes all face one light is named at that light', () => {
+    const f = make();
+    landEverything(f);
+    for (const k of (f as unknown as { settled: Array<{ nx: number; ny: number }> }).settled) { k.nx = 0.375; k.ny = -0.75; }
+    const failures = glintsAreFew(f, [0]);
+    assert.ok(failures.length > 0);
+    assert.ok(failures.every((m) => m.includes('at light (0.375, -0.75)')), failures[0]);
+    assert.ok(glintShare(f, { x: 0.375, y: -0.75 }, 0) > GLINT_SHARE);
+  });
+
+  test('POISON: a short post with GLINT_FLOOR + 1 flakes facing one light is named; with GLINT_FLOOR, it passes', () => {
+    for (const [extra, named] of [[1, true], [0, false]] as const) {
+      const f = make('floor', { w: 200, h: 100 });
+      landEverything(f);
+      const list = (f as unknown as { settled: Array<{ nx: number; ny: number; tw: number }> }).settled;
+      /* Every flake far off the grid's lights and not winking, then GLINT_FLOOR (+ 1) of them aimed at one. */
+      for (const k of list) { k.nx = 9; k.ny = 9; k.tw = 0; }
+      for (const k of list.slice(0, GLINT_FLOOR + extra)) { k.nx = 0.375; k.ny = -0.75; }
+      assert.ok(GLINT_SHARE * list.length < GLINT_FLOOR, 'a post short enough that the floor is the cap');
+      const failures = glintsAreFew(f, [0]);
+      assert.equal(failures.length > 0, named, failures[0]);
+    }
+  });
+
+  test('drawing paints each settled flake once; a flare is drawn where the band reaches white, and on the dark board only with a canvas for its hue', () => {
     const f = makeFlakes({ seed: 'fl', box: { w: 200, h: 100 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
     const r = recorder();
@@ -619,8 +660,8 @@ const rgbaHex = (c: string): string => {
   return c.slice(0, 7);
 };
 
-/* The owner, 2026-11-07: the glitter is almost imperceptible on the dark board. The band holds (section 5 of the shine design), so
-   within it each ink is taken at the ceiling, saturated, and a flake facing the light flares in its own hue there. */
+/* The owner, 2026-11-07: the glitter is almost imperceptible on the dark board. The settled field holds the band (section 5 of the
+   shine design), so within it each ink is taken at the ceiling, saturated; a flake facing the light glints out of it (issue #340). */
 describe('the dark board', () => {
   const chroma = (hex: string) => { const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); return Math.max(r!, g!, b!) - Math.min(r!, g!, b!); };
   const L = (hex: string) => luminanceOf(toLinear(hex));
@@ -641,29 +682,7 @@ describe('the dark board', () => {
     }
   });
 
-  test('a flake facing the light flares in its own hue, drawn over it and not added, and the flare stays under the ceiling', () => {
-    const g = globalThis as unknown as { OffscreenCanvas?: unknown };
-    const stops: string[] = [];
-    g.OffscreenCanvas = class {
-      getContext() {
-        return new Proxy({}, { get: (_t, k: string) => (k === 'createRadialGradient' ? () => ({ addColorStop: (_o: number, c: string) => stops.push(c) }) : () => undefined), set: () => true });
-      }
-    };
-    try {
-      const f = make('tint', { w: 300, h: 150 });
-      landEverything(f);
-      /* A ceiling of its own, so no sprite an earlier test asked for without a canvas is cached here. */
-      const band = { lo: 0, hi: 0.061 };
-      const k = f.settled.find((x) => x.ink < HOLO)!;
-      const t = tracked(1);
-      f.draw(t.ctx, { x: k.nx, y: k.ny }, band, 0, false);
-      const flares = t.lines.filter((l) => l.startsWith('img '));
-      assert.ok(flares.length >= 1, 'a flare on the dark board');
-      assert.ok(flares.every((l) => l.startsWith('img source-over ')), `drawn over, never added: ${flares[0]}`);
-      assert.ok(stops.length > 0);
-      for (const c of stops) assert.ok(L(c.slice(0, 7)) <= band.hi + 0.004 && chroma(c.slice(0, 7)) > 0, `${c}: a hue under the ceiling`);
-    } finally { delete g.OffscreenCanvas; }
-  });
+  /* Its glint, out of the band since issue #340, is flakes.glint.test.ts's: a sprite needs a canvas that file stands in from the start. */
 });
 
 /** The rect a settled flake is drawn as, at density 1, as `tracked` writes its corners. */
