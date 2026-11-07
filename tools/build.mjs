@@ -84,6 +84,8 @@ export const STEPS = [
   'node tools/check-chamfer-borders.mjs',
   'node tools/test-glass-contrast.mjs',
   'node tools/check-glass-contrast.mjs',
+  'node tools/test-mail.mjs',
+  'node tools/check-mail.mjs',
   'node tools/test-card-art.mjs',
   'node tools/check-card-art.mjs',
   'node tools/test-theme.mjs',
