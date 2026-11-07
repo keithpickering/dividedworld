@@ -87,10 +87,13 @@ begin
   analyze paid_votes;
   select id into target from acts where thread = t limit 1;
 
+  -- The planner is not left to price the scan against the index (0035 does the same), so the result never drifts with cost.
+  set local enable_seqscan = off;
   select string_agg(l, E'\n') into plan from pg_temp.explain_lines(format($q$select p.account, p.act from paid_votes p join (select %L::uuid as act) r on r.act = p.act$q$, target)) l;
   if plan not like '%paid_votes_act%' then
     raise exception 'the paid read should use paid_votes_act, the plan is: %', plan;
   end if;
+  set local enable_seqscan = on;
   if pg_get_functiondef('settlement_input(timestamptz, timestamptz)'::regprocedure) not like '%from paid_votes p join reacted r on r.act = p.act%' then
     raise exception 'settlement_input''s paid should read paid_votes joined to reacted on the Act';
   end if;
