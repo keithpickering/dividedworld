@@ -433,6 +433,8 @@ export interface MoveNotice {
   readonly thread: Id;
   /** The Boss who made it, as a character (null if the Act somehow has none). */
   readonly character: Id | null;
+  /** The office its staff character held when it landed (`payload.office`, stamped by `write_staff_act`, 0125); absent on a move from before the stamp, which is read as the Boss's. */
+  readonly office?: 'boss' | 'mod';
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   /** Null for a move that asks nothing. */
@@ -1134,6 +1136,40 @@ export interface MyBan {
   readonly rule: string | null;
 }
 
+/** How a group move ended (`move_end`): its demand met, its expiry, an admin's reversal, a favor not met at its check, an appeal overturning it, or the handover. */
+export type GroupMoveEndWhy = 'met' | 'expired' | 'reversed' | 'unmet' | 'overturned' | 'superseded' | 'spent';
+
+/**
+ * A staff member moving one of the player's characters into a group (`my_group_moves`, 0122), with how it ended and the appeal's ruling on it. Every field is a public fact about
+ * the character's own move; none names another member of a group.
+ */
+export interface LogGroupMove {
+  readonly move: Id;
+  readonly character: Id;
+  readonly at: string;
+  /** The announcements thread the move was made in, and its place there: what the line links to. */
+  readonly thread: Id;
+  readonly seq: number | null;
+  /** The group's key (its name is the instance's content). */
+  readonly group: string;
+  readonly board: Id | null;
+  readonly boardName: string | null;
+  /** When it ends now (`move_expires_at`: an appeal's ruling read in place of the move's own end); null for a move with no end of its own. */
+  readonly expiresAt: string | null;
+  /** A favor's check: it stays if the demand is met by then. */
+  readonly checkAt: string | null;
+  readonly demand: string | null;
+  /** The office the move landed under (its stamp, 0125), for the role word ("The Boss", "A Mod"); the hearer of its appeal is the same staff member. */
+  readonly office: Office | null;
+  readonly endedWhy: GroupMoveEndWhy | null;
+  readonly endedBy: string | null;
+  readonly endedAt: string | null;
+  readonly ruling: AppealVerdict | null;
+  readonly ruledAt: string | null;
+  /** The end an appeal's ruling set. */
+  readonly ruledUntil: string | null;
+}
+
 /** A report one of the player's characters made. */
 export interface LogReport {
   readonly report: Id;
@@ -1176,6 +1212,8 @@ export interface Log {
   readonly infractions: readonly LogInfraction[];
   /** The bans laid on the player's characters, by when each began (`my_bans`). */
   readonly bans: readonly LogBan[];
+  /** The staff moves of the player's characters into groups, by when each landed (`my_group_moves`). */
+  readonly groupMoves: readonly LogGroupMove[];
   /** The reports the player's characters made, by when each was made (`my_reports`). */
   readonly reports: readonly LogReport[];
   /** The appeals the player's characters made, by when each was made (`my_appeals`). */

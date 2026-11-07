@@ -48,6 +48,27 @@ describe('a conferGroup move\'s post', () => {
   });
 });
 
+describe('the role a move names is the office it landed under', () => {
+  test('a Mod\'s move keeps saying a Mod after the persona became the Boss', async () => {
+    const w = world('mod');
+    w.fake.seed.setOffice('director', 'boss');
+    const thread = (await w.fake.act(w.move))!.thread;
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, settings: { groups: GROUPS } });
+    const post = (await screen.findByText('Sit in the corner, Pipewrench.')).closest('article')!;
+    expect(within(post).getByText('A Mod moved a member')).toBeInTheDocument();
+    expect(await within(post).findByText('A Mod put Pipewrench in Trial Members, barred from posting on General.')).toBeInTheDocument();
+  });
+
+  test('a move with no stamped office (made before the stamp) says the Boss', async () => {
+    const w = world('mod');
+    const bare = w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', body: 'Old move.', office: null });
+    const thread = (await w.fake.act(bare))!.thread;
+    renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, settings: { groups: GROUPS } });
+    const post = (await screen.findByText('Old move.')).closest('article')!;
+    expect(within(post).getByText('The Boss moved a member')).toBeInTheDocument();
+  });
+});
+
 describe('a ruling on an apology', () => {
   function ruled(verdict: 'accepted' | 'rejected') {
     const w = world();

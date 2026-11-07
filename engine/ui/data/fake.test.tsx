@@ -1440,7 +1440,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
-  const empty = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1460,6 +1460,20 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(await fake.log()).toEqual(empty);
     fake.signInAs(null);
     expect(await fake.log()).toEqual(empty);
+  });
+
+  test('the staff moves of the account\'s own characters into groups are its log\'s group rows, with their end and the appeal\'s ruling, and no one else\'s', async () => {
+    const { fake, anaFace, boFace } = logWorld();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const m = fake.seed.groupMove('boss', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: fake.clock.now() + 3 * 86_400_000 });
+    fake.seed.groupMove('boss', { character: boFace, group: 'trialMembers' });
+    expect((await fake.log()).groupMoves).toMatchObject([{ move: m, character: anaFace, group: 'trialMembers', boardName: 'General', office: 'boss', endedWhy: null, ruling: null }]);
+    const appeal = fake.seed.appeal(anaFace, m, 'I did nothing wrong.');
+    const until = fake.clock.now() + 86_400_000;
+    fake.seed.ruling(appeal, fake.seed.staff('boss2', 'The Second', 'boss'), 'reduced', { until });
+    fake.seed.endMove(m, { why: 'expired' });
+    const [row] = (await fake.log()).groupMoves;
+    expect(row).toMatchObject({ ruling: 'reduced', endedWhy: 'expired', ruledUntil: new Date(until).toISOString(), expiresAt: new Date(until).toISOString() });
   });
 
   test('a settlement\'s lines read with their shares, its window, and the wallet\'s credit with what the cap held back', async () => {

@@ -20,10 +20,14 @@ import { shortDate } from '../postbit/dates.ts';
 export const moveLabel = (kind: string, role: string): string => (moveKind(kind)?.label ?? '{role} made a move').replace('{role}', role);
 
 /**
- * Who made a move, in the instance's words, as a sentence begins ("The Boss", "A Mod"): the staff character's office now decides, since a Mod may make some of the
- * Boss's moves. `UiCopy.roleWord` is the Boss's; a Mod's is `UiCopy.modRole`, else the engine's "A Mod". A staff character with no office on the page is the Boss's.
+ * Who made a move, in the instance's words, as a sentence begins ("The Boss", "A Mod"). `office` is the one stamped on the move's Act when it landed (`payload.office`,
+ * `moveOffice`), never the persona's office now: a Mod may make some of the Boss's moves, and the persona may hold another office later. `UiCopy.roleWord` is the Boss's; a Mod's is
+ * `UiCopy.modRole`, else the engine's "A Mod". A move with no stamp (made before 0125, when only the Boss and the rule-setting Mods moved) is read as the Boss's.
  */
 export const officeRole = (copy: Pick<UiCopy, 'roleWord' | 'modRole'>, office: Office | undefined): string => (office === 'mod' ? modRole(copy) : copy.roleWord);
+
+/** The office stamped on a move's Act (`payload.office`), or undefined for a move from before the stamp. */
+export const moveOffice = (payload: Readonly<Record<string, unknown>>): 'boss' | 'mod' | undefined => (payload['office'] === 'boss' || payload['office'] === 'mod' ? payload['office'] : undefined);
 
 /**
  * The glass's short segment: "WAY OUT: 7 OF 12 POSTERS". A move that asks nothing ends only by its expiry or an admin; a demand

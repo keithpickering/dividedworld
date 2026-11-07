@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
+import { hudKey } from '../player.tsx';
 import type { World } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
@@ -54,6 +55,8 @@ const barred = (state: 'none' | 'waiting' | 'rejected'): World => (fake, instanc
   if (state === 'waiting') fake.seed.apology(mine, move, 'pending');
   if (state === 'rejected') fake.seed.apology(mine, move, 'rejected', { at: Date.now() - 3_600_000 });
   fake.signInAs(me);
+  /* The HUD starts on the first of the player's characters by name (Mrs. Hooligan); the story is about Pipewrench, so the HUD is set to it as a player's choice is kept. */
+  try { globalThis.localStorage?.setItem(hudKey(me), mine); } catch { /* the default holds */ }
 };
 
 export const BarredBox: Story = { parameters: { world: barred('none') } };

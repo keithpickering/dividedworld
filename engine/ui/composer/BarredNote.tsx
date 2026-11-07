@@ -4,7 +4,7 @@
  * `my_characters.bars`) and nothing private; the one private read is the character's own apology state (`my_apologies`), which the player's own mask alone gets.
  *
  * It is board copy: plain and true about the game's state, never in the staff member's voice (the fiction may lie; the log never does). It names who made the move by the office
- * the move's staff character holds (a Mod may make this move), the group by the instance's name for it, the date of the move and the end of the bar. The way out is the
+ * the move's staff character held when it landed (stamped on the move's Act; a Mod may make this move), the group by the instance's name for it, the date of the move and the end of the bar. The way out is the
  * apology: **Write an apology** opens the spin form on the move, sent through `apologize`; while one waits it says whom it is with, and after a rejection it says when the next may
  * be written. **See the move** links to the move's post. The Appeal button is the appeals task's (Task 14) and stands after See the move.
  *
@@ -12,10 +12,10 @@
  * no apology is offered while a ban holds.
  */
 import { useEffect, useId, useRef, useState } from 'react';
-import { officeRole } from '../board/move-words.ts';
+import { moveOffice, officeRole } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Apology, Bar, Character, Id, MyCharacter } from '../data/api.ts';
+import type { Act, Apology, Bar, Id, MyCharacter } from '../data/api.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { shortDate } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
@@ -48,7 +48,6 @@ export function useBar(character: Pick<MyCharacter, 'bars'> | null, board: Id | 
 
 interface Detail {
   readonly move: Act | null;
-  readonly staff: Character | null;
   readonly board: string | null;
   readonly apologies: readonly Apology[];
 }
@@ -66,8 +65,7 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
     setDetail(null);
     void (async () => {
       const [move, boards, apologies] = await Promise.all([api.act(bar.move), api.boardNames(), api.myApologies(character.id)]);
-      const staff = move?.character ? (await api.characters([move.character]))[0] ?? null : null;
-      if (live) setDetail({ move, staff, board: boards.find((b) => b.id === bar.board)?.name ?? null, apologies: apologies.filter((a) => a.move === bar.move) });
+      if (live) setDetail({ move, board: boards.find((b) => b.id === bar.board)?.name ?? null, apologies: apologies.filter((a) => a.move === bar.move) });
     })().catch(() => { if (live) setDetail('failed'); });
     return () => { live = false; };
   }, [api, bar.move, bar.board, character.id]);
@@ -84,7 +82,7 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
 
   if (detail === null) return <div className="kb-composer kb-barred kb-box" aria-busy="true" />;
   const group = settings.groups.find((g) => g.key === bar.group)?.name ?? bar.group;
-  const who = officeRole(ui.copy, detail === 'failed' ? undefined : detail.staff?.office);
+  const who = officeRole(ui.copy, detail === 'failed' || !detail.move ? undefined : moveOffice(detail.move.payload));
   const board = detail === 'failed' ? null : detail.board;
   const boardWords = board ?? 'this board';
   const heading = `${character.name} can't post on ${boardWords} right now.`;
@@ -99,6 +97,8 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
   const { move, apologies } = detail;
   const waiting = apologies.some((a) => a.state === 'pending');
   const accepted = apologies.some((a) => a.state === 'accepted');
+  /* The newest apology came back unjudged: it says so, and the next may be written at once. */
+  const returned = !waiting && !accepted && apologies[0]?.state === 'returned';
   const next = waitEnds !== null && waitEnds > Date.now() ? waitEnds : null;
   const seq = move?.seq ?? null;
   const href = move ? (seq !== null ? threadHref(move.thread, pageOf(seq, settings.postsPerPage), seq) : `/t/${move.thread}`) : null;
@@ -113,6 +113,7 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
       {waiting && <p role="status">Your apology is with {lowerFirst(who)}.</p>}
       {!waiting && accepted && <p role="status">Your apology was accepted. The bar lifts within a few minutes.</p>}
       {!waiting && !accepted && next !== null && <p role="status">Your last apology was turned down. The next can be written {dayAndTime(new Date(next).toISOString())}.</p>}
+      {returned && <p role="status">Your last apology couldn't be judged. You can write another.</p>}
       {writing && (
         <SpinForm
           origin={bar.move} label={null} apology={{ to: lowerFirst(who) }}

@@ -52,6 +52,15 @@ describe('the box of a barred mask', () => {
     expect(region).not.toHaveTextContent('Boss');
   });
 
+  test('keeps naming the office the move landed under when the persona\'s office changes', async () => {
+    const w = barred('mod');
+    w.fake.seed.setOffice('director', 'boss');
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    const box = await screen.findByRole('heading', { name: /can't post on General/u });
+    expect(box.closest('section')).toHaveTextContent(/A Mod put Pipewrench/u);
+    expect(box.closest('section')).not.toHaveTextContent('Boss');
+  });
+
   test('goes with the mask: the same player\'s other character posts freely, and swapping back brings it again', async () => {
     const w = barred();
     openThread(w, undefined, { settings: { groups: GROUPS } });
@@ -151,6 +160,16 @@ describe('the three states of an apology', () => {
     w.fake.seed.apology(w.pipe, w.move, 'returned', { at: Date.now() - 60_000 });
     openThread(w, undefined, { settings: { groups: GROUPS } });
     expect(await screen.findByRole('button', { name: 'Write an apology' })).toBeInTheDocument();
+  });
+});
+
+describe('a returned apology', () => {
+  test('says it could not be judged, and offers another at once', async () => {
+    const w = barred();
+    w.fake.seed.apology(w.pipe, w.move, 'returned', { at: Date.now() - 60_000 });
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    expect(await screen.findByText('Your last apology couldn\'t be judged. You can write another.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Write an apology' })).toBeInTheDocument();
   });
 });
 

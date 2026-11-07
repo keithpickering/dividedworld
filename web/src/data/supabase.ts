@@ -43,7 +43,7 @@ import type {
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -303,6 +303,8 @@ const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'ta
 const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed'];
 const VERDICTS: readonly ReportVerdict[] = ['visit', 'dismissed', 'backfire'];
 const RULINGS: readonly AppealVerdict[] = ['overturned', 'upheld', 'reduced', 'increased'];
+const OFFICES: readonly Office[] = ['boss', 'mod', 'member', 'benched', 'waiting', 'developer'];
+const MOVE_END_WHYS: readonly GroupMoveEndWhy[] = ['met', 'expired', 'reversed', 'unmet', 'overturned', 'superseded', 'spent'];
 
 /** A charge as a visit's Act carries it: a band it does not name is the lightest, a cause it does not name the rule's. */
 function toCharge(c: Row): VisitCharge {
@@ -1477,7 +1479,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, reportRows, appealRows] = await Promise.all([
+        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -1494,6 +1496,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
           rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
           rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
+          /* The staff moves of the player's characters into groups (0122): each with how it ended and the appeal's ruling on it. */
+          rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
           rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
           rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
         ]);
@@ -1541,6 +1545,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
           })),
           bans: banRows.map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
+          groupMoves: groupMoveRows.map((r): LogGroupMove => ({
+            move: r['move'], character: r['character'], at: r['at'], thread: r['thread'], seq: typeof r['seq'] === 'number' ? r['seq'] : null, group: String(r['group'] ?? ''),
+            board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), checkAt: str(r['check_at']), demand: str(r['demand']),
+            office: OFFICES.find((o) => o === r['office']) ?? null,
+            endedWhy: MOVE_END_WHYS.find((w) => w === r['ended_why']) ?? null, endedBy: str(r['ended_by']), endedAt: str(r['ended_at']),
+            ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']),
+          })),
           reports: reportRows.map((r): LogReport => ({
             report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
             verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,

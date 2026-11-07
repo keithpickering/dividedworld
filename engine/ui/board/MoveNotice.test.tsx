@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -216,6 +216,14 @@ describe('a group move on the notice', () => {
     expect(detail).toHaveTextContent('A Mod put Pipewrench in Trial Members, barred from posting on General.');
     expect(detail).not.toHaveTextContent('Boss');
     expect(detail).not.toHaveTextContent('trialMembers');
+  });
+
+  test('keeps the role it landed under when the persona\'s office changes', async () => {
+    const { fake, move } = groupMove('mod');
+    fake.seed.setOffice('director', 'boss');
+    cleanup();
+    renderIn(fake, <MoveNotice act={move} />, { path: '/', settings: { groups: GROUPS } });
+    expect(await screen.findByText('A Mod moved a member')).toBeInTheDocument();
   });
 
   test('the Boss\'s move says the Boss', async () => {

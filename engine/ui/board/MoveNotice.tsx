@@ -91,7 +91,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
       <div className="kb-move-notice">
         <MoveTag
           kind={notice.kind}
-          office={boss?.office}
+          office={notice.office}
           way={(
             <button ref={way} type="button" className="kb-move-way" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
               {wayOut(notice.demand, notice.progress, notice.expiresAt)}<span aria-hidden="true"> ›</span>
@@ -133,7 +133,7 @@ function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loade
   const { ui, settings } = useKayfa();
   const { notice, boards, boss, subject } = loaded;
   const kind = moveKind(notice.kind);
-  const role = officeRole(ui.copy, boss?.office);
+  const role = officeRole(ui.copy, notice.office);
   /* A group move names its character, group and board; the params hold ids and keys, and the instance's rows give the names. */
   const names = {
     ...(subject !== null ? { character: subject } : {}),
