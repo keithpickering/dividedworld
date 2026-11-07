@@ -116,7 +116,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
   const spinning = spinOrigin?.id === act.id;
   return (
     <>
-      <footer className="kb-act-foot">
+      <footer className="kb-act-foot" data-kb-cell="actions">
         <div className="kb-act-links kb-small">
           {quotable && <button type="button" className="kb-button" data-kb-size="small" onClick={() => quote(act)}>Quote</button>}
           <button
@@ -195,12 +195,12 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       {!plain && (person
         ? <Postbit person={person} layout={layout} marks={characterMarks} />
         : <div className="kb-postbit-system"><span className="kb-postbit-name">{name}</span></div>)}
-      <header className="kb-act-meta">
+      <header className="kb-act-meta" data-kb-cell="line">
         <time dateTime={act.createdAt} title={when(act.createdAt)}>{when(act.createdAt)}</time>
         {marks}
         <Link className="kb-act-number" to={threadHref(thread, pageOf(seq, perPage), seq)} aria-label={`Permalink to post #${seq}`}>#{seq}</Link>
       </header>
-      <div className="kb-act-main">
+      <div className="kb-act-main" data-kb-cell="words">
         <Body act={act} name={name} person={person} editing={editing} onDone={() => setEditing(false)} marks={marks} />
         <SpunInto act={act.id} />
       </div>

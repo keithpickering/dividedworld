@@ -264,6 +264,44 @@ describe('the thread\'s head, as the Main board draws it', () => {
   });
 });
 
+describe('the thread\'s crumb, post cells and bottom row (the board look, Task 6)', () => {
+  test('the crumb is Index, the thread\'s board as a link, then the thread', async () => {
+    const w = world(3);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    const crumb = document.querySelector('.kb-crumb')!;
+    expect(crumb).toHaveTextContent('Index › General › A long thread');
+    expect(within(crumb as HTMLElement).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(within(crumb as HTMLElement).getByRole('link', { name: 'Index' })).toHaveAttribute('href', '/');
+  });
+
+  test('a post is three cells beside its postbit: the post line holds the time and permalink and none of the words, the words hold the words, the actions the buttons', async () => {
+    const w = world(3);
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    const cells = [...second.children].filter((c) => c.hasAttribute('data-kb-cell'));
+    expect(cells.map((c) => c.getAttribute('data-kb-cell'))).toEqual(['line', 'words', 'actions']);
+    const [line, words, actions] = cells as HTMLElement[];
+    expect(line).toContainElement(within(second).getByRole('link', { name: 'Permalink to post #2' }));
+    expect(line!.querySelector('time')).not.toBeNull();
+    expect(line).not.toHaveTextContent('post 2');
+    expect(words).toHaveTextContent('post 2');
+    expect(within(actions!).getByRole('button', { name: 'Quote' })).toBeInTheDocument();
+    expect(second.querySelector('.kb-postbit')!.parentElement).toBe(second);
+  });
+
+  test('Unfollow shares the bottom pager\'s row, after it', async () => {
+    const w = world(45);
+    open(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 41 /u });
+    const pager = screen.getByRole('navigation', { name: 'Pages, bottom' });
+    const follow = screen.getByRole('button', { name: /^(Un)?[Ff]ollow this thread$/u });
+    expect(follow.closest('.kb-thread-controls')!.parentElement).toBe(pager.parentElement);
+    expect(pager.parentElement).toHaveClass('kb-thread-below');
+    expect(pager.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe('the postbit in a thread', () => {
   test('side by side by default, stacked by the reader\'s preference', async () => {
     const w = world(3);

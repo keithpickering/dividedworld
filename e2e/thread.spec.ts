@@ -101,3 +101,41 @@ for (const [label, viewport, moment] of [['a narrow post', { width: 390, height:
     });
   });
 }
+
+/* The post's three cells (the board look, Task 6): one color across the line, the words and the actions; posts alternate the two row grays; a 4px third-gray row splits them. */
+test('a post is three cells of one color, the posts alternate, and a 4px row splits one from the next', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator('#post-41')).toBeVisible();
+  const read = await page.evaluate(() => {
+    const css = (e: Element | null) => (e ? getComputedStyle(e) : null);
+    const posts = ['#post-41', '#post-42', '#post-43'].map((id) => document.querySelector<HTMLElement>(id)!);
+    const rowToken = (name: string) => { const probe = document.createElement('i'); probe.style.background = `var(${name})`; document.body.append(probe); const c = getComputedStyle(probe).backgroundColor; probe.remove(); return c; };
+    return {
+      row1: rowToken('--kb-row-1'), row2: rowToken('--kb-row-2'), row3: rowToken('--kb-row-3'),
+      posts: posts.map((p) => {
+        const line = p.querySelector<HTMLElement>('[data-kb-cell="line"]')!;
+        const words = p.querySelector<HTMLElement>('[data-kb-cell="words"]')!;
+        const actions = p.querySelector<HTMLElement>('[data-kb-cell="actions"]')!;
+        const [l, w, a] = [line, words, actions].map((e) => e.getBoundingClientRect());
+        return {
+          line: css(line)!.backgroundColor, words: css(words)!.backgroundColor, actions: css(actions)!.backgroundColor, bit: css(p.querySelector('.kb-postbit'))!.backgroundColor,
+          /* The line is a band of its own: as wide as the words, above them. */
+          bandWidth: l.width - w.width, bandAbove: w.top - l.bottom, actionsBelow: a.top - w.bottom,
+          spacer: css(p)!.borderBottomWidth, spacerColor: css(p)!.borderBottomColor,
+        };
+      }),
+    };
+  });
+  const [a, b, c] = read.posts;
+  for (const [post, row] of [[a!, read.row1], [b!, read.row2], [c!, read.row1]] as const) {
+    expect([post.line, post.words, post.actions, post.bit]).toEqual([row, row, row, row]);
+    expect(Math.abs(post.bandWidth)).toBeLessThanOrEqual(0.5);
+    expect(post.bandAbove).toBeGreaterThanOrEqual(0);
+    expect(post.bandAbove).toBeLessThanOrEqual(1.5);
+    expect(post.actionsBelow).toBeLessThanOrEqual(1.5);
+  }
+  expect(read.row1).not.toBe(read.row2);
+  expect(a!.spacer).toBe('4px');
+  expect(a!.spacerColor).toBe(read.row3);
+});

@@ -28,31 +28,42 @@
   margin: 0;
 }
 
+/*
+ * The posts are the period table's, as the board draws them (the board look's boards 04 and 05): a post is three cells of one color,
+ * the post line, the words and the actions, beside the postbit, which spans all three; the posts alternate the first two row colors,
+ * and a 4px row of the third splits one from the next. Each cell is ruled from the next by a 1px grid line, edge to edge, so the post
+ * line is a band of its own for the marks it holds. The article is the grid's own color, so a post's padding-bottom and the next
+ * post's top border are the grid lines on either side of the spacer.
+ */
 .kb-acts {
   --kb-postbit-column: minmax(8em, min(18%, 14em));
-  border: 1px solid var(--kb-rule);
+  background: var(--kb-grid);
+  border: 1px solid var(--kb-frame);
   margin: 0 0 0.6em;
 }
 
 .kb-acts-head {
   display: grid;
   grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
-  border-bottom: 1px solid var(--kb-rule);
+  background: var(--kb-grid);
+  border-bottom: 1px solid var(--kb-grid);
 }
 
 /* The type is on the cells, so the column's em is the posts' and the rules line up. */
 .kb-acts-head > span {
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
-  padding: 0.25em 6%;
-  border-right: 1px solid var(--kb-rule);
+  padding: 0.45em 0.75em;
+  background: var(--kb-head-bg);
+  color: var(--kb-head-fg);
+  text-shadow: var(--kb-head-shadow);
 }
 
 .kb-acts-head > span + span {
-  padding-inline: 1%;
-  border-right: 0;
+  margin-left: 1px;
 }
 
 .kb-act {
+  --kb-post-bg: var(--kb-row-1);
   display: grid;
   grid-template-columns: var(--kb-postbit-column) minmax(0, 1fr);
   grid-template-areas:
@@ -61,21 +72,36 @@
     "bit foot"
     "bit panels";
   grid-template-rows: auto 1fr auto auto;
-  /* Posts stay one table, ruled apart by a 4px double rule (the glass-polish design, section 8: separate boxes were "too non-2003"). */
-  border-bottom: 4px double var(--kb-rule);
+  column-gap: 1px;
+  background: var(--kb-grid);
   scroll-margin-top: 0.5em;
 }
 
-.kb-act:last-child {
-  border-bottom: 0;
+.kb-act:nth-of-type(even) {
+  --kb-post-bg: var(--kb-row-2);
+}
+
+.kb-act > * {
+  background: var(--kb-post-bg);
+}
+
+/* The spacer: 1px of grid above it (the article's padding), the 4px row, and 1px under it (the next post's top rule). */
+.kb-act:not(:last-child) {
+  padding-bottom: 1px;
+  border-bottom: 4px solid var(--kb-row-3);
+}
+
+.kb-act + .kb-act {
+  border-top: 1px solid var(--kb-grid);
 }
 
 /*
- * The post's two bars: the line above the words (when, and its permalink) and the footer below them (Quote, Spin thread, Edit,
- * History). Each is opaque, in the page's ground, with a rule against the body and the muted ink for its own words, so no 2003
- * text lies on the ink a splat lays over the body between them, and the ink a player picks never decides a bar's contrast
- * (the owner on the footer bar: "that ink color is totally variable too"). The splat is the body's alone, bar to bar
- * (cards/whoops Effect.tsx measures `.kb-act-main`), and both bars are on every post, so a splat moves nothing.
+ * The post's two bands around the words: the line above (when, the post's marks, its permalink) and the actions below (Quote, Spin
+ * thread, Edit, History). Each is a cell of the post's own color, as the words are, so no 2003 text lies on the ink a splat lays over
+ * the body between them, and the ink a player picks never decides a band's contrast (the owner on the footer bar: "that ink color is
+ * totally variable too"); the owner's first draw of the board look gave both "the same bg color as the post content itself", so the
+ * actions draw no attention from the words. The splat is the body's alone, band to band (cards/whoops Effect.tsx measures
+ * `.kb-act-main`), and both bands are on every post, so a splat moves nothing.
  */
 .kb-act-meta,
 .kb-act-foot {
@@ -83,7 +109,6 @@
   justify-content: space-between;
   gap: 1em;
   padding: 0.25em 1%;
-  background-color: var(--kb-bg);
   font-size: var(--kb-size-fine);
   color: var(--kb-muted);
 }
@@ -94,14 +119,15 @@
   box-sizing: border-box;
   min-height: calc(var(--kb-meta-tile) - 0.4rem);
   align-items: center;
-  border-bottom: 1px solid var(--kb-rule);
+  margin-bottom: 1px;
 }
 
 .kb-act-foot {
   grid-area: foot;
-  /* The action links are text a reader presses, so they keep the small size and not the line's fine one. */
+  /* The action buttons are Chrome's small ones; the row keeps room for their 24px target. */
   align-items: center;
-  border-top: 1px solid var(--kb-rule);
+  padding-block: 0.4em;
+  margin-top: 1px;
 }
 
 .kb-act-meta a,
@@ -109,21 +135,25 @@
   color: inherit;
 }
 
-/* What opens from the footer's links (the spin form, the history), under the bar, drawn only when it holds something. */
+/* What opens from the actions (the spin form, the history), under them, a cell when it holds something and no row when it does not. */
 .kb-act-panels {
   grid-area: panels;
   min-width: 0;
 }
 
+.kb-act-panels:not(:has(> :not(:empty))) {
+  display: none;
+}
+
 .kb-act-panels:has(> :not(:empty)) {
   padding: 0.5em 1%;
+  margin-top: 1px;
 }
 
 .kb-act > .kb-postbit,
 .kb-act > .kb-postbit-system {
   grid-area: bit;
   padding: 0.5em 6%;
-  border-right: 1px solid var(--kb-rule);
 }
 
 .kb-act-main {
@@ -181,8 +211,7 @@
 
 .kb-act[data-kb-postbit="stacked"] > .kb-postbit,
 .kb-act[data-kb-postbit="stacked"] > .kb-postbit-system {
-  border-right: 0;
-  border-bottom: 1px solid var(--kb-rule);
+  margin-bottom: 1px;
 }
 
 @media (max-width: 40em) {
@@ -205,8 +234,7 @@
   .kb-act > .kb-postbit,
   .kb-act > .kb-postbit-system {
     padding: 0.4em 3%;
-    border-right: 0;
-    border-bottom: 1px solid var(--kb-rule);
+    margin-bottom: 1px;
   }
 
   .kb-act[data-kb-kind="unmask"] {
@@ -223,7 +251,7 @@
 
   .kb-act-meta,
   .kb-act-foot {
-    padding: 0.25em 3%;
+    padding-inline: 3%;
   }
 
   .kb-act-panels:has(> :not(:empty)) {
@@ -327,6 +355,25 @@
     opacity: 1;
     transform: none;
   }
+}
+
+/* The row after the thread: the bottom pager at its left, Follow / Unfollow at its right. */
+.kb-thread-below {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4em 1em;
+  margin: 0.6em 0;
+}
+
+.kb-thread-below > .kb-pager,
+.kb-thread-below > .kb-thread-controls {
+  margin: 0;
+}
+
+.kb-thread-below > .kb-thread-controls {
+  margin-left: auto;
 }
 
 /* The control strip after the thread (Follow / Unfollow): the board's own button on the board's page, outside every post. */

@@ -167,10 +167,19 @@
 .kb-pager-here {
   display: inline-block;
   min-width: 1.4em;
-  padding: 0.1em 0.2em;
+  padding: 0.1em 0.4em;
+  font-variant-numeric: tabular-nums;
   text-align: center;
-  border: 1px solid var(--kb-rule);
   font-weight: bold;
+  /* The current page is a small band in the column head's gradient (the board look's Task 6), its words and focus ring the head's. */
+  background: var(--kb-head-bg);
+  color: var(--kb-head-fg);
+  text-shadow: var(--kb-head-shadow);
+  border: 1px solid var(--kb-frame);
+}
+
+.kb-pager-here:focus-visible {
+  outline-color: var(--kb-head-focus);
 }
 
 /*
