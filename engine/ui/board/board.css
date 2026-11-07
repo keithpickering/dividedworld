@@ -24,8 +24,7 @@
   margin: 0 0 12px;
 }
 
-.kb-new-thread .kb-input,
-.kb-new-thread .kb-textarea {
+.kb-new-thread .kb-input {
   box-sizing: border-box;
   width: 100%;
 }
@@ -195,11 +194,30 @@
   container-type: inline-size;
 }
 
+/* The fold's separators ("169 replies · 4 views · last: Pipewrench, Oct 5") are paint: out of the reading order and out of a table's width. */
+.kb-thread-sep {
+  display: none;
+}
+
 @container (max-width: calc(40rem * 0.96)) {
-  .kb-thread-list,
-  .kb-thread-list tbody,
-  .kb-thread-list tr,
-  .kb-thread-list td {
+  /*
+   * The phone's list (docs/research/2026-11-06-board-look/03-phone.html): still a ruled table of the board's grays, each row two cells wide,
+   * its folder in a 40px column of its own and its words beside it, where the counts fold into one line under the title. The table's
+   * elements are blocks here, so a row's cells flow as one text: the grid is the table's gap, and a row's ground is its own.
+   */
+  .kb-thread-list {
+    display: grid;
+    gap: 1px;
+    padding: 1px;
+    width: auto;
+  }
+
+  .kb-thread-list tbody {
+    display: grid;
+    gap: 1px;
+  }
+
+  .kb-thread-list tr {
     display: block;
     width: auto;
   }
@@ -227,24 +245,40 @@
     white-space: nowrap;
   }
 
-  .kb-thread-row {
-    border: 1px solid var(--kb-rule);
-    padding: 0.4em 3%;
+  .kb-thread-list tbody > .kb-thread-row {
+    position: relative;
+    min-height: 40px;
+    box-sizing: border-box;
+    padding: 8px 8px 8px 49px;
+    background: var(--kb-row-1);
   }
 
-  .kb-thread-row + .kb-thread-row {
-    border-top: 0;
+  .kb-thread-list tbody > .kb-thread-row:nth-child(even) {
+    background: var(--kb-row-2);
   }
 
-  .kb-thread-list td {
+  /* A cell is no box of its own here: it takes its row's ground. */
+  .kb-table.kb-thread-list .kb-thread-row > td {
+    display: block;
+    width: auto;
+    padding: 0;
+    background: none;
     border: 0;
-    padding: 0.1em 0;
   }
 
-  .kb-thread-list td.kb-thread-flags {
-    display: inline;
-    float: left;
-    padding-right: 0.4em;
+  /* The folder: the 40px column at the row's left, ruled from the words by the grid's own gap. */
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-flags {
+    position: absolute;
+    inset: 0 auto 0 0;
+    box-sizing: border-box;
+    width: 40px;
+    padding: 8px 4px;
+    border-right: 1px solid var(--kb-grid);
+    text-align: left;
+  }
+
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-main {
+    margin-bottom: 2px;
   }
 
   /* A narrow phone wraps the mark under the title, where its tile would straddle into the starter's 24px target below (WCAG 2.5.8): it takes its own room there. */
@@ -262,22 +296,39 @@
     display: none;
   }
 
-  .kb-thread-replies,
-  .kb-thread-views {
-    display: inline-block;
+  /* The counts: one line, in the third gray's type, the figures in the ink; a unit and a date keep their words whole. */
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-replies,
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-views,
+  .kb-table.kb-thread-list .kb-thread-row > td.kb-thread-last {
+    display: inline;
     text-align: left;
-    margin-right: 0.8em;
     color: var(--kb-muted);
     font-size: var(--kb-size-small);
+    line-height: 1.6;
+  }
+
+  .kb-thread-replies,
+  .kb-thread-views {
+    white-space: nowrap;
+  }
+
+  .kb-thread-replies > span.kb-num,
+  .kb-thread-views > span.kb-num {
+    color: var(--kb-fg);
   }
 
   .kb-thread-unit,
-  .kb-thread-last-label {
+  .kb-thread-last-label,
+  .kb-thread-sep {
     display: inline;
   }
 
-  .kb-thread-last {
-    display: inline-block;
+  .kb-thread-last br {
+    display: none;
+  }
+
+  .kb-thread-last .kb-thread-last-link {
+    white-space: nowrap;
   }
 }
 

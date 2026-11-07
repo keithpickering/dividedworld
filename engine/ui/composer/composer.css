@@ -82,8 +82,8 @@
   box-shadow: var(--kb-input-shadow);
 }
 
-.kb-new-thread .kb-field > label,
-.kb-new-thread-label {
+.kb-new-thread .kb-field > label {
+  margin-bottom: 0.2em;
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-body);
 }
 
@@ -106,8 +106,5 @@
 
 .kb-form .kb-editor-foot {
   padding-top: 8px;
-}
-
-.kb-form .kb-editor-foot {
   color: var(--kb-muted);
 }

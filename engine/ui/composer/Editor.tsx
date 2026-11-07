@@ -31,6 +31,8 @@ export interface EditorProps {
   /** A plain line beside the count, spoken when it appears; the region it lives in is always there. */
   readonly note?: ReactNode;
   readonly autoFocus?: boolean;
+  /** The box's id, for a visible `<label htmlFor>` outside the editor (which then names it in place of `label`). */
+  readonly id?: string;
   /** The buttons beside the count and the preview toggle. */
   readonly children?: ReactNode;
   readonly ref?: Ref<EditorHandle>;
@@ -38,7 +40,7 @@ export interface EditorProps {
 
 const count = (s: string) => [...s].length;
 
-export function Editor({ label, value, onChange, max, onQuote, onSubmit, describedBy, submitVerb = 'sends', note, autoFocus, children, ref }: EditorProps) {
+export function Editor({ label, value, onChange, max, onQuote, onSubmit, describedBy, submitVerb = 'sends', note, autoFocus, id, children, ref }: EditorProps) {
   const box = useRef<HTMLTextAreaElement>(null);
   const pending = useRef<{ start: number; end: number } | null>(null);
   const [, bump] = useState(0);
@@ -110,7 +112,8 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
       <textarea
         ref={box}
         className="kb-textarea kb-editor-box"
-        aria-label={label}
+        id={id}
+        aria-label={id ? undefined : label}
         aria-describedby={[describedBy, onSubmit ? hintId : undefined].filter(Boolean).join(' ') || undefined}
         rows={5}
         value={value}

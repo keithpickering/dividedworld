@@ -68,8 +68,8 @@ export function NewThread({ board }: { readonly board: string }) {
               <input ref={titleBox} id={`${id}-title`} className="kb-input kb-new-thread-title" value={title} maxLength={settings.titleMaxLength} autoComplete="off" onChange={(e) => setTitle(e.target.value)} />
             </div>
             <div className="kb-field">
-              <span className="kb-new-thread-label" aria-hidden="true">First post</span>
-              <Editor label="First post" value={body} onChange={setBody} max={settings.postMaxLength} onSubmit={() => void submit()} submitVerb="starts it">
+              <label htmlFor={`${id}-body`}>First post</label>
+              <Editor id={`${id}-body`} label="First post" value={body} onChange={setBody} max={settings.postMaxLength} onSubmit={() => void submit()} submitVerb="starts it">
                 <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || over}>Start thread</button>
               </Editor>
             </div>

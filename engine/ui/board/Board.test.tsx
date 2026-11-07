@@ -485,6 +485,58 @@ describe('the new-thread form', () => {
     expect(within(form).getByRole('textbox', { name: 'First post' })).toHaveValue('Body without a title');
   });
 
+  test('clicking the visible "First post" label puts the cursor in the box', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.click(within(form).getByText('First post', { selector: 'label' }));
+    expect(within(form).getByRole('textbox', { name: 'First post' })).toHaveFocus();
+  });
+
+  test('a body over the limit does not post on Ctrl+Enter', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const sent = vi.spyOn(fake, 'startThread');
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Too long');
+    await userEvent.click(within(form).getByRole('textbox', { name: 'First post' }));
+    await userEvent.paste('x'.repeat(201));
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(sent).not.toHaveBeenCalled();
+    expect(window.location.pathname).not.toMatch(/^\/t\//);
+  });
+
+  test('Ctrl+Enter with an empty title shows the server\'s refusal as an alert', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const sent = vi.spyOn(fake, 'startThread');
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Body without a title');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    const notice = await within(form).findByRole('alert');
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(notice.textContent).toBeTruthy();
+    expect(within(form).getByRole('textbox', { name: 'First post' })).toHaveValue('Body without a title');
+  });
+
+  test('Ctrl+Enter twice during a pending request posts once', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const real = fake.startThread.bind(fake);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const sent = vi.spyOn(fake, 'startThread').mockImplementation(async (...args) => { await gate; return real(...args); });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Once only');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Hello.');
+    await userEvent.keyboard('{Control>}{Enter}{Enter}{/Control}');
+    expect(sent).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/t\//));
+    const board = (await fake.boards()).find((b) => b.slug === 'general')!;
+    expect((await fake.threads(board.id, { offset: 0, limit: 10 })).threads).toHaveLength(1);
+  });
+
   test('with no character that can act, it says so and links to making one', async () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { characters: false }) });
     const form = await openForm();
