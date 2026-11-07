@@ -71,6 +71,24 @@ test('a record row\'s date stacks above its words, and the six kinds fit one row
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+/** The record's six kinds are small Chrome buttons: each a 24px target (WCAG 2.5.8) on one line of words, the six on one row at 390 (two rows at 320, where they cannot fit one) and the page does not scroll sideways. */
+for (const width of [320, 390]) {
+  test(`the record's six kinds are 24px targets on one row without sideways scroll at ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await open(page, 'boards-10-record--record', '.kb-record-kind');
+    const kinds = await page.evaluate(() => [...document.querySelectorAll('.kb-record-kind')].map((k) => { const b = k.getBoundingClientRect(); return { y: Math.round(b.y), width: b.width, height: b.height, right: b.right }; }));
+    expect(kinds).toHaveLength(6);
+    expect(new Set(kinds.map((k) => k.y)).size, width === 390 ? 'one row' : 'at most two rows').toBeLessThanOrEqual(width === 390 ? 1 : 2);
+    for (const k of kinds) {
+      expect(k.height, 'a target at least 24px tall').toBeGreaterThanOrEqual(24);
+      expect(k.height, `one line of words, not two (${Math.round(k.height)}px)`).toBeLessThan(32);
+      expect(k.width, 'a target at least 24px wide').toBeGreaterThanOrEqual(24);
+      expect(k.right, 'inside the window').toBeLessThanOrEqual(width);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  });
+}
+
 test('the record table carries its roles as attributes under the phone layout at 390', async ({ page }) => {
   await open(page, 'boards-10-record--record', '.kb-record-table td');
   /* Chromium keeps table semantics under display:grid, so the accessibility tree cannot tell; the role attributes are what the phone layout needs. */

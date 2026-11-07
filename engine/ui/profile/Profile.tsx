@@ -11,7 +11,7 @@
  *
  * Out of character and plain.
  */
-import { useMemo } from 'react';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, ClassReveal, Id, ProfilePage, StandingPlace, TurnAnnounced } from '../data/api.ts';
@@ -47,6 +47,8 @@ export function ProfileScreen({ id: _id, doc }: { readonly id: Id; readonly doc:
   return doc.character.staff ? <StaffProfile character={doc.character} /> : <Profile character={doc.character} doc={doc} />;
 }
 
+interface Fact { readonly key: string; readonly label: string; readonly lead?: boolean; readonly value: ReactNode }
+
 function Profile({ character: c, doc }: { readonly character: Character; readonly doc: ProfilePage }) {
   const { instance, ui, settings } = useKayfa();
   const data = useMemo<Loaded>(() => {
@@ -70,51 +72,59 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
   const stated = reveals(data.reveals, data.turns).get(c.id);
   const className = (k: string) => instance.classes.find((x) => x.key === k)?.name ?? k;
   const pips = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
+  const monthJoined = monthYear(c.joined);
+  const signed = c.signature.trim() !== '';
+  /* Each fact is a row: its label a row header, its words and links as they were a line of a paragraph. `lead` marks the two that stand beside the avatar on a phone. */
+  const facts: readonly Fact[] = [
+    ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),
+    ...(data.standing && instance.ranks.length > 0
+      ? [{ key: 'rank', label: 'Rank', lead: true, value: <span className="kb-about-rank"><b aria-hidden="true">{rank}</b> <Pips ranks={instance.ranks.length} index={index} name={rank} style={pips} /></span> }]
+      : []),
+    ...(data.standing && data.settledAt
+      ? [
+        { key: 'aura', label: 'Aura this season', value: <><b>{figure(data.standing.standing)}</b> <span className="kb-muted">(settled {dayAndTime(data.settledAt)})</span></> },
+        { key: 'place', label: 'Place', value: <>{data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link></> },
+      ]
+      : [{ key: 'aura', label: 'Aura this season', value: <span className="kb-muted">Nothing has settled for it yet. <Link to="/season?tab=rankings">Season standings</Link></span> }]),
+    { key: 'posts', label: 'Posts', value: data.counts.posts },
+    { key: 'spins', label: 'Threads spun', value: data.counts.spins },
+    { key: 'cards', label: 'Cards played', value: data.counts.cards },
+    ...(monthJoined ? [{ key: 'joined', label: 'Joined', value: monthJoined }] : []),
+    ...(stated?.revealed
+      ? [{ key: 'class', label: 'Class', value: <>Revealed: {className(stated.revealed.class)} ({shortDate(stated.revealed.at)}){stated.turnedAt && <> · Has Turned since ({shortDate(stated.turnedAt)})</>}</> }]
+      : []),
+  ];
+  const lead = facts.filter((f) => f.lead).length;
   return (
     <div className="kb-profile">
       <p className="kb-crumb"><Link to="/">Index</Link> › {c.name}</p>
       <h1 className="kb-heading kb-profile-name">{c.name}</h1>
-      <section className="kb-profile-card kb-box" aria-label={`About ${c.name}`}>
-        <Avatar character={c} />
-        <div className="kb-profile-facts">
-          {c.title && <p className="kb-profile-title kb-muted">{c.title}</p>}
-          {data && (
-            <>
-              {data.standing && instance.ranks.length > 0 && (
-                <p className="kb-profile-rank">
-                  <b aria-hidden="true">{rank}</b> <Pips ranks={instance.ranks.length} index={index} name={rank} style={pips} />
-                </p>
-              )}
-              {data.standing && data.settledAt
-                ? (
-                  <p className="kb-profile-standing">
-                    Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link>
-                  </p>
-                )
-                : <p className="kb-profile-standing kb-muted">Nothing has settled for it yet. <Link to="/season?tab=rankings">Season standings</Link></p>}
-              <p className="kb-profile-counts">
-                <span>Posts: {data.counts.posts}</span> · <span>Threads spun: {data.counts.spins}</span> · <span>Cards played: {data.counts.cards}</span>
-                {monthYear(c.joined) && <> · <span>Joined {monthYear(c.joined)}</span></>}
-              </p>
-              {stated?.revealed && (
-                <p className="kb-profile-class">
-                  Revealed: {className(stated.revealed.class)} ({shortDate(stated.revealed.at)})
-                  {stated.turnedAt && <> · Has Turned since ({shortDate(stated.turnedAt)})</>}
-                </p>
-              )}
-            </>
-          )}
-          {c.signature.trim() && <div className="kb-signature kb-small"><BbCode text={c.signature} /></div>}
-        </div>
+      <section className="kb-profile-card" aria-label={`About ${c.name}`}>
+        <table className="kb-table kb-about" role="table" data-kb-lead={lead} style={{ '--kb-about-lead': Math.max(1, lead) } as CSSProperties}>
+          <caption className="kb-visually-hidden">About {c.name}</caption>
+          <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col" colSpan={3}>About {c.name}</th></tr></thead>
+          <tbody role="rowgroup">
+            {facts.map((f, i) => (
+              <tr key={f.key} role="row" data-kb-fact={f.key} data-kb-lead-row={f.lead ? '' : undefined}>
+                {i === 0 && <td role="cell" className="kb-about-avatar" rowSpan={facts.length + (signed ? 1 : 0)}><Avatar character={c} /></td>}
+                <th role="rowheader" scope="row" className="kb-about-label">{f.label}</th>
+                <td role="cell" className="kb-about-value">{f.value}</td>
+              </tr>
+            ))}
+            {signed && <tr role="row"><td role="cell" colSpan={2} className="kb-about-sig"><div className="kb-signature kb-small"><BbCode text={c.signature} /></div></td></tr>}
+          </tbody>
+        </table>
       </section>
       <section className="kb-profile-record" aria-label="Public record">
-        <h2 className="kb-heading">Public record</h2>
-        {data && (data.rows.length === 0
-          ? <p>Nothing yet.</p>
+        {data.rows.length === 0
+          ? <><h2 className="kb-heading">Public record</h2><p>Nothing yet.</p></>
           : (
             <table className="kb-table kb-record-table" role="table">
               <caption className="kb-visually-hidden">Latest rows of the public record, newest first</caption>
-              <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What</th></tr></thead>
+              <thead role="rowgroup">
+                <tr role="row" className="kb-record-band"><td role="cell" className="kb-bar" colSpan={2}><h2>Public record</h2></td></tr>
+                <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What</th></tr>
+              </thead>
               <tbody role="rowgroup">
                 {data.rows.map((r) => (
                   <tr key={r.key} role="row">
@@ -124,8 +134,8 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
                 ))}
               </tbody>
             </table>
-          ))}
-        <p className="kb-small"><Link to={recordHref(c.id, 'all')}>See the full record</Link></p>
+          )}
+        <p className="kb-small kb-profile-all"><Link to={recordHref(c.id, 'all')}>See the full record</Link></p>
       </section>
     </div>
   );

@@ -62,10 +62,10 @@ function Record({ id, doc }: { readonly id: Id; readonly doc: RecordPage }) {
     <div className="kb-record">
       <p className="kb-crumb"><Link to="/">Index</Link> › <Link to={`/c/${id}`}>{name}</Link> › Public record</p>
       <h1 className="kb-heading">{name}’s public record</h1>
-      <nav className="kb-record-kinds kb-small" aria-label="Kind of row">
+      <nav className="kb-record-kinds" aria-label="Kind of row">
         {RECORD_KINDS.map((k) => (k === kind
-          ? <span key={k} className="kb-record-kind" aria-current="true">{RECORD_LABELS[k]}</span>
-          : <Link key={k} className="kb-record-kind" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>))}
+          ? <span key={k} className="kb-button kb-record-kind" data-kb-size="small" aria-current="true">{RECORD_LABELS[k]}</span>
+          : <Link key={k} className="kb-button kb-record-kind" data-kb-size="small" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>))}
       </nav>
       {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} seasons.</p>}
       {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and past seasons, newest first.</p>}

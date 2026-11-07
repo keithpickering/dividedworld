@@ -8,25 +8,7 @@ import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { LoadedRecord } from '../loaded.tsx';
-import type { World } from '../story.tsx';
-
-const OCT = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
-
-const world: World = (fake, instance) => {
-  const cls = instance.classes[0]!.key;
-  const me = fake.seed.account('story-player', { seasoned: true });
-  const spritey = fake.seed.character(fake.seed.account('story-other'), 'Spritey', cls, { at: OCT(1) });
-  fake.seed.character(me, 'Mrs. Hooligan', cls, { at: OCT(1) });
-  const general = instance.boards.find((b) => !b.system)!.slug;
-  const first = fake.seed.thread(general, spritey, 'The long one', 'Where to begin.', { at: OCT(18) });
-  fake.seed.post(first.thread, spritey, 'Post 168 of the long thread. Still going.', { at: OCT(19) });
-  fake.seed.reveal(spritey, first.thread, { class: cls, at: OCT(20) });
-  fake.seed.card(spritey, first.act, instance.cards[0]!.key, { at: OCT(22) });
-  fake.seed.thread(general, spritey, 'who keeps splatting my posts', 'Again.', { at: OCT(27) });
-  fake.seed.post(first.thread, spritey, 'Third time this week. I wrote four whole paragraphs about the new ink and it all went.', { at: OCT(29) });
-  fake.seed.settle({ at: OCT(28), standings: { [spritey]: 185 }, wallet: { [me]: 240 } });
-  fake.signInAs(me);
-};
+import { spriteyWorld as world } from './spritey-world.ts';
 
 /** The top of the standings, whatever id the story's world gave it. */
 function RecordStory() {

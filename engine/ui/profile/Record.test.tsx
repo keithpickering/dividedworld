@@ -122,6 +122,23 @@ describe('the full public record', () => {
     expect(screen.getByText('Cards', { selector: '[aria-current="true"]' })).toBeInTheDocument();
   });
 
+  test('the kinds are small Chrome buttons, and the current one alone is pressed (aria-current)', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(fake, w.spritey, '?kind=post');
+    const nav = await screen.findByRole('navigation', { name: 'Kind of row' });
+    const kinds = [...nav.children];
+    expect(kinds).toHaveLength(6);
+    for (const k of kinds) {
+      expect(k).toHaveClass('kb-button');
+      expect(k).toHaveAttribute('data-kb-size', 'small');
+    }
+    const current = kinds.filter((k) => k.hasAttribute('aria-current'));
+    expect(current.map((k) => k.textContent)).toEqual(['Posts']);
+    expect(current[0]!.tagName).not.toBe('A');
+    expect(kinds.filter((k) => k.tagName === 'A')).toHaveLength(5);
+  });
+
   test('the class filter lists the reveals and announced Turns', async () => {
     const fake = buildWorld();
     const w = world(fake);

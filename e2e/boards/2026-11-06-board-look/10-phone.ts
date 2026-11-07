@@ -4,16 +4,22 @@
  * The record is the board's third screen, 828px to the right of the window's left, and is what this manifest compares (Task 8's): the build is the story
  * `Boards/10 Record` (engine/ui/profile/Record.board.stories.tsx), held at that offset.
  *
- * The first two screens are Task 9's (the profile's facts as a table under its band, the trophy case and the belt's lineage, which the cosmetics plan
- * builds): the board's phone profile leads with the avatar beside the rank and title, then the facts as a two-column table and the signature, and the
- * case folds On posts under each row's line. They are named here as that task's departures and are compared by its manifests (08-profile and the case
- * boards), not by this one.
+ * The first screen is the profile (Task 9's), the `also` side below, the story `Boards/08 Profile` read at the window's left; the second, the trophy case and
+ * the belt's lineage, is the cosmetics plan's (docs/plans/2026-11-04-cosmetics-plan.md, its Task 10: the case folds On posts under each row's line), is
+ * named here as that plan's departure and is not compared.
  *
  * Departures, each a decision:
- *  - The record's kinds are bare links in the build until Task 9 draws them as small Chrome buttons (the current one pressed); here they are held by their
- *    words and their row (the current one, All, is no link, so Posts and Seasons stand for the row's ends), one row at 390, and not by their widths.
+ *  - The record's kinds are small Chrome buttons (Task 9, the current one pressed); here they are held by their words and their row (the current one, All, is
+ *    no link, so Posts and Seasons stand for the row's ends), one row at 390, and not by their widths.
  *  - The rows' words and dates are the story's, not the board's (a date reads "9 days ago" for a while and then a date, as in 02-board), so no row is
  *    compared here; a row's date stacking above its words is held by e2e/phone-board.spec.ts.
+ *  - The profile screen (the `also` side): the board draws two tables, the avatar beside the rank and the title, then the facts under them; the build is one
+ *    table, a grid whose label column (112px) the avatar cell shares, so the rank and title stand 15.8px and 7.8px to the right of where the board's own cell
+ *    puts them (the title's box is its whole cell, not the board's line), the rank 53.6px and the title 57.6px lower (the title stands 52.6px lower, as the
+ *    record's does). The facts stand 39.6px lower, their rows the board's height: the board's first table is 173px with a 15px gap under it where the
+ *    build's avatar cell is 168px with a 1px grid line. Wearing (the cosmetics plan's, 52.9px with its two lines) is not drawn, so the class and the signature stand
+ *    13.3px and 11.1px higher than the board's. The avatar is decoration and the portrait the cosmetics plan's, so neither is compared. The band is clipped on
+ *    the phone, as the board draws none.
  *  - The title stands 53px lower and the kinds 56px (the banner and the crumb stand lower than the board draws them, as in 03-phone and 07-phone, and the
  *    build's crumb is a line taller); the kinds' x is not compared, since the build's links are spaced by their gap and the board's buttons by their padding.
  */
@@ -30,6 +36,24 @@ const manifest: BoardManifest = {
     { id: 'kind-posts', role: 'link', name: 'posts', buildName: 'Posts', box: 'height', type: false, buildShift: { y: 55.6 } },
     { id: 'kind-seasons', role: 'link', name: 'seasons', buildName: 'Seasons', box: 'height', type: false, buildShift: { y: 55.6 } },
   ],
+  /* The first screen, the profile, stands at the window's left: the build is the story `Boards/08 Profile`. */
+  also: [{
+    name: 'profile',
+    build: { story: 'boards-08-profile--profile' },
+    landmarks: [
+      { id: 'title', role: 'heading', name: 'Spritey', buildShift: { y: 52.6 } },
+      { id: 'rank', role: 'text', name: 'Main Eventer', box: 'position', buildShift: { x: 15.8, y: 53.6 } },
+      { id: 'level', role: 'text', name: 'Level editor guy', box: 'position', buildShift: { x: 7.8, y: 57.6 } },
+      { id: 'fact-aura', role: 'rowheader', name: 'Aura this season', box: 'position', buildShift: { y: 39.6 } },
+      { id: 'fact-place', role: 'rowheader', name: 'Place', box: 'position', buildShift: { y: 39.6 } },
+      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { y: 39.6 } },
+      { id: 'fact-spun', role: 'rowheader', name: 'Threads spun', box: 'position', buildShift: { y: 39.6 } },
+      { id: 'fact-cards', role: 'rowheader', name: 'Cards played', box: 'position', buildShift: { y: 39.6 } },
+      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { y: 39.6 } },
+      { id: 'fact-class', role: 'rowheader', name: 'Class', box: 'position', buildShift: { y: -13.3 } },
+      { id: 'signature', role: 'text', name: 'posting in pencil since 2003', box: 'position', buildShift: { y: -11.1 } },
+    ],
+  }],
 };
 
 export default manifest;
