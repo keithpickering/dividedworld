@@ -22,6 +22,7 @@ const CODE = '482915';
 const LINK = 'https://dw.gripe/auth/sample-link';
 const MAIL = new URL('../instances/divided-world/ui/public/mail/', import.meta.url);
 
+const BUTTON: Record<string, string> = { 'sign-in': 'Sign in', 'sign-up': 'Finish signing up' };
 const TYPES: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', woff2: 'font/woff2' };
 
 async function serve(page: Page, images: boolean) {
@@ -63,8 +64,7 @@ for (const t of authTemplates()) {
         expect(selected!.text).toBe(CODE);
         expect(selected!.nodes, 'the code is split into more than one run').toBe(1);
 
-        const hrefs = await page.locator('a').evaluateAll((as) => as.map((a) => (a as HTMLAnchorElement).getAttribute('href')));
-        expect(hrefs.filter((h) => h !== 'https://dw.gripe')).toEqual([LINK]);
+        await expect(page.getByRole('link', { name: BUTTON[name]! })).toHaveAttribute('href', LINK);
 
         await page.evaluate(() => getSelection()!.removeAllRanges());
         /* Contrast: hide every text, photograph, then read each text node's color against the pixels under its box. */

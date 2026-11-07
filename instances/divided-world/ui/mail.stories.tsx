@@ -25,7 +25,7 @@ const hiddenPost: Mail = {
   preheader: 'Edit it and it comes back.',
   blocks: [
     { type: 'heading', text: 'An admin hid one of your posts' },
-    { type: 'paragraph', text: 'Edit it and it comes back. Until then only you and the admins can see it.' },
+    { type: 'paragraph', text: 'A person, not the game, read this post and hid it because it broke the code of conduct. Your words are kept. Edit the post and it comes back.' },
     { type: 'facts', rows: [
       ['Thread', 'Who keeps reacting Salty to my Promos?'],
       ['Rule', '1. The mask is fair game; the person isn’t.'],
@@ -33,7 +33,7 @@ const hiddenPost: Mail = {
     ] },
     { type: 'quote', label: 'Your post', words: 'Bold words from a mask who’s been Salty since the day the board opened. Maybe stick to your day job at the…' },
     { type: 'button', label: 'Edit the post', href: 'https://dw.gripe/b/general/sample-post' },
-    { type: 'note', text: 'This is a stand-in email for the look of a longer message.' },
+    { type: 'note', text: 'Think the admin got it wrong? Reply to this email and a person will read it.' },
   ],
 };
 
@@ -82,6 +82,8 @@ const meta: Meta<typeof MailFrames> = {
   title: 'Mail/Emails',
   component: MailFrames,
   args: { images: true },
+  /* The sweep reads this: jsdom cannot address a frame to axe, so the frame's contents are left to e2e/mail.spec.ts (its title is still checked). */
+  parameters: { a11y: { frames: false } },
   argTypes: { images: { control: 'boolean', description: 'Off swaps the four image URLs for ones that never resolve (the fonts stay)' }, mail: { table: { disable: true } } },
 };
 export default meta;
