@@ -60,8 +60,8 @@ const manifest: BoardManifest = {
   build: { moment: '01-main' },
   landmarks: [
     /* The crumb: Index, the thread's board, the thread. The nav above it holds the first link of each name, so the crumb's are the second. */
-    { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
-    { id: 'crumb-board', role: 'link', name: 'General', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
+    { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildSize: SMALL_SIZE, buildShift: { y: 8.1 } },
+    { id: 'crumb-board', role: 'link', name: 'General', nth: 1, buildNth: 1, buildSize: SMALL_SIZE, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'who keeps splatting my posts', buildSize: TITLE_SIZE, buildShift: { y: 16.9 } },
     { id: 'pager', role: 'navigation', name: 'Pages, top', type: false, buildShift: { x: -39.2, y: 15, width: 39.2 } },
     { id: 'pager-where', role: 'text', name: 'Page 3 of 3', within: 'pager', buildShift: { x: -39.2, y: 15.3 } },

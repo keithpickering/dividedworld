@@ -275,6 +275,18 @@ describe('the thread\'s crumb, post cells and bottom row (the board look, Task 6
     expect(within(crumb as HTMLElement).getByRole('link', { name: 'Index' })).toHaveAttribute('href', '/');
   });
 
+  test('with no board on the thread\'s document, the crumb\'s board comes from the frame\'s board list by the thread\'s board', async () => {
+    const w = world(3);
+    const boot = await w.fake.boot();
+    const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <ThreadScreen thread={w.thread} doc={{ ...doc, board: null }} />, { path: `/t/${w.thread}?page=1`, boot });
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    const crumb = document.querySelector<HTMLElement>('.kb-crumb')!;
+    const general = boot.boards.find((b) => b.id === doc.thread.board)!;
+    expect(crumb).toHaveTextContent(`Index › ${general.name} › A long thread`);
+    expect(within(crumb).getByRole('link', { name: general.name })).toHaveAttribute('href', `/b/${general.slug}`);
+  });
+
   test('a post is three cells beside its postbit: the post line holds the time and permalink and none of the words, the words hold the words, the actions the buttons', async () => {
     const w = world(3);
     open(w);

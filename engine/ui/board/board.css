@@ -171,14 +171,20 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
   font-weight: bold;
-  /* The current page is a small band in the column head's gradient (the board look's Task 6), its words and focus ring the head's. */
+}
+
+/*
+ * The current page is a small band in the column head's gradient (the board look's Task 6), its words and focus ring the head's. The band is the
+ * board world's (a board and a thread); the glass pagers (the Rankings and the Record) share the class and keep their own look.
+ */
+:where(.kb-board, .kb-thread) .kb-pager-here {
   background: var(--kb-head-bg);
   color: var(--kb-head-fg);
   text-shadow: var(--kb-head-shadow);
   border: 1px solid var(--kb-frame);
 }
 
-.kb-pager-here:focus-visible {
+:where(.kb-board, .kb-thread) .kb-pager-here:focus-visible {
   outline-color: var(--kb-head-focus);
 }
 
