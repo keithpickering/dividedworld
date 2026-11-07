@@ -140,9 +140,10 @@ function toAct(r: Row): Act {
   };
 }
 
-/** One row of `updates`, or post_update's answer, which is the same row. A change that is not a { label, text } of words is no line. */
 /** A staff member's set where a read hands it beside a name: null (a persona with no profile row) is the engine's it/its. */
 const pronounsOrDefault = (v: unknown): PronounSet => (isObject(v) ? (v as unknown as PronounSet) : ENGINE_DEFAULT_PRONOUNS);
+
+/** One row of `updates`, or post_update's answer, which is the same row. A change that is not a { label, text } of words is no line. */
 
 function toUpdate(r: Row): Update {
   const changes = Array.isArray(r['changes']) ? (r['changes'] as Row[]) : [];
@@ -928,7 +929,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     async staffNames() {
       const rowsOf = await list(() => client.from('characters_public').select('id,staff,name').not('staff', 'is', null));
       /* Their pronouns are their profiles': one more read of the same characters, public like the names. */
-      const sets = new Map((await byChunks(rowsOf.map((x) => x['id'] as string), (part) => list(() => client.from('character_profiles').select('character,pronouns').in('character', part)))).map((p) => [p['character'], p['pronouns']]));
+      /* A failed read of the sets costs the sets, not the names: each then reads as the engine's it/its. */
+      const sets = new Map((await byChunks(rowsOf.map((x) => x['id'] as string), (part) => list(() => client.from('character_profiles').select('character,pronouns').in('character', part))).catch(() => [] as Row[])).map((p) => [p['character'], p['pronouns']]));
       return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? ''), pronouns: pronounsOrDefault(sets.get(x['id'])) }] : []));
     },
     async reverseMove(act) {

@@ -113,11 +113,6 @@ const setArgs = (r: Fields, instance: Instance): Fields => {
 
 type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
 
-/**
- * A character's debut (supabase/migrations/0024_debuts.sql, 0028_loud_classes.sql): dropped `now`
- * or at the `tally`, `silent`, `announced`, or announced `with_class`; what a request leaves out is
- * the default given, where there is one.
- */
 /** A character's pronouns, if the request names any: lowered as every writer stores them, or refused in pronounProblems' words; none is null, which create_character reads as the instance's default. */
 const pronouns = (r: Fields): PronounSet | null => {
   const v = r.pronouns;
@@ -130,6 +125,11 @@ const pronouns = (r: Fields): PronounSet | null => {
   return normalizePronouns(lowered as unknown as PronounSet);
 };
 
+/**
+ * A character's debut (supabase/migrations/0024_debuts.sql, 0028_loud_classes.sql): dropped `now`
+ * or at the `tally`, `silent`, `announced`, or announced `with_class`; what a request leaves out is
+ * the default given, where there is one.
+ */
 const debut = (r: Fields, defaults?: { timing: string; loudness: string }): { timing: string; loudness: string } => {
   const timing = r.timing ?? defaults?.timing;
   if (timing !== 'now' && timing !== 'tally') throw new Refused('timing', 'a character drops now or debuts at the tally');
