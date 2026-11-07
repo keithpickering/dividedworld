@@ -343,7 +343,7 @@ describe('a visit\'s mark', () => {
     const w = visited();
     open(w);
     const mark = await visitMark();
-    expect(mark).toHaveAccessibleName('The Clerk is on a visit to this post, 2 hours 41 minutes left. Opens the visit.');
+    expect(mark).toHaveAccessibleName('The Clerk is on a visit to this post, 2:41 left, 2 hours 41 minutes. Opens the visit.');
     expect(mark).toHaveTextContent('2:41');
     expect(mark).toHaveAttribute('aria-haspopup', 'dialog');
     expect(mark).toHaveAttribute('aria-expanded', 'false');
@@ -388,7 +388,7 @@ describe('a visit\'s mark', () => {
       expect(mark).toHaveTextContent('2:41');
       await act(async () => { vi.advanceTimersByTime(MINUTE); });
       expect(mark).toHaveTextContent('2:40');
-      expect(mark).toHaveAccessibleName(/2 hours 40 minutes left/u);
+      expect(mark).toHaveAccessibleName(/2:40 left, 2 hours 40 minutes/u);
       await act(async () => { vi.advanceTimersByTime(160 * MINUTE); });
       expect(mark).toHaveTextContent('0:00');
     } finally { vi.useRealTimers(); }
@@ -437,7 +437,7 @@ describe('a visit\'s mark', () => {
   test.each([
     ['filed', 'Filed', 'The Clerk filed its visit to this post. Opens the visit.'],
     ['intercepted', 'Talked down', 'The Clerk\'s visit to this post was talked down. Opens the visit.'],
-    ['trapped', 'Trapped', 'The Clerk\'s visit to this post was ended by a trap. Opens the visit.'],
+    ['trapped', 'Trapped', 'The Clerk\'s visit to this post was trapped, ended by a trap. Opens the visit.'],
   ] as const)('a visit that ended %s says so in place of the time', async (outcome, text, label) => {
     const w = visited();
     w.fake.seed.visitEnd(w.visit, { outcome, line: 'Done.' });

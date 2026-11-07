@@ -61,13 +61,13 @@ export function tabName(state: VisitState): string {
   }
 }
 
-/** The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. */
+/** The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. The name holds the tile's visible words ("2:41", "Trapped"), so a voice command that says what it reads finds it (WCAG 2.5.3). */
 export function markLabel(mod: string, state: VisitState, endsAt: string, now: number): string {
   const how = {
-    open: `${mod} is on a visit to this post, ${timeLeftWords(endsAt, now)} left`,
+    open: `${mod} is on a visit to this post, ${timeLeft(endsAt, now)} left, ${timeLeftWords(endsAt, now)}`,
     filed: `${mod} filed its visit to this post`,
     intercepted: `${mod}'s visit to this post was talked down`,
-    trapped: `${mod}'s visit to this post was ended by a trap`,
+    trapped: `${mod}'s visit to this post was trapped, ended by a trap`,
     reversed: `${mod}'s visit to this post was ended by an admin`,
   }[state];
   return `${how}. Opens the visit.`;
