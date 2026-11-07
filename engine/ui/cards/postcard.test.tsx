@@ -220,6 +220,13 @@ describe('the back', () => {
     expect(emblem).toMatch(/box-shadow:[^;]*var\(--kb-back-glow\)/u);
   });
 
+  test('lends its cloud and glow to a post\'s face-down mark by the same rules, which draws no background of its own', () => {
+    expect(css).toMatch(/\.kb-card-back,\s*\.kb-postcard-back\s+\.kb-postcard-canvas\s*\{[^}]*background-image:\s*var\(--kb-back-tint\)/u);
+    expect(css).toMatch(/\.kb-card-back,\s*\.kb-postcard-back\s*\{[^}]*--kb-back-glow:/u);
+    const marks = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'marks.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(/\.kb-card-back\s*\{([^}]*)\}/u.exec(marks)?.[1]).not.toMatch(/background/u);
+  });
+
   test('glows in the machine\'s gold on a hit', () => {
     expect(rule('.kb-postcard-back[data-hit]')).toMatch(/--kb-back-glow:\s*var\(--kb-glass-ready\)/u);
   });

@@ -252,30 +252,34 @@
 
 /*
  * A card set face down (the card mechanic's design, section 3): the engine's own back, the same for every card, so a trap and a
- * Bluff look alike. Its pattern is two crossed bands in the glass's text color on the field, no card's color. On the setter's own
- * screen, their card's mark sits in the back's corner, small. A sprung back shows its card in the same place.
+ * Bluff look alike. It is the postcard's back drawn small (the card template design's amendment of 2026-11-07, "The mark's back"):
+ * a 2:3 card in the icon's height, its cloud the back's own rules in postcard.css (which load first), and the instance's mark at
+ * its center with the back's glow. The setter's own card is named in the Lens, never drawn on the mark. A sprung back shows its
+ * card in the same place.
  */
 .kb-mark[data-kb-back='down'] {
   --kb-mark-line: var(--kb-glass-text-hi);
 }
 .kb-card-back {
+  position: relative;
   flex: none;
-  width: 1.45rem;
+  width: 0.97rem;
   height: 1.45rem;
+  margin-inline: 0.24rem;
   box-sizing: border-box;
-  border: 2px solid var(--kb-glass-text-hi);
-  background:
-    linear-gradient(45deg, transparent 40%, var(--kb-glass-text-hi) 40% 60%, transparent 60%),
-    linear-gradient(-45deg, transparent 40%, var(--kb-glass-text-hi) 40% 60%, transparent 60%),
-    var(--kb-glass-field);
+  border-radius: 0.15rem;
+  box-shadow: 0 0 0 1px var(--kb-glass-text-hi);
 }
-.kb-mark-face {
-  flex: none;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-inline-start: -0.35rem;
-  align-self: flex-end;
+.kb-card-back-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 72%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
   object-fit: contain;
+  box-shadow: 0 0 0.12rem 0.04rem var(--kb-back-glow);
 }
 /* A caught play is spent and did nothing: its mark is drawn dim, with its name saying so. */
 .kb-mark[data-kb-caught='true'] {

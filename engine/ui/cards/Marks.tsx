@@ -37,6 +37,8 @@ import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf
 import { inPlayOrder, isBack, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import '../glass/meta-tile.css';
+/* The back's cloud is postcard.css's, which marks.css draws over, so it loads first. */
+import './postcard.css';
 import './marks.css';
 import { Layers } from '../glass/layer.tsx';
 
@@ -93,11 +95,6 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const cardUi = ui.cards.find((c) => c.key === shownKind);
   const view = useResolvedView(store, post, kind, nameOf);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
-  /* On the setter's own screen alone, the card under their own back (`my_face_down`): read as a string, so another kind's change wakes nothing here. */
-  const subscribeFaces = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
-  const face = useSyncExternalStore(subscribeFaces, () => (back ? plays.map((p) => store.get(post).faces[p.id]).find((f) => f !== undefined) ?? '' : ''));
-  const ownFace = back && !revealed && face !== '' ? face : undefined;
-  const ownArt = ownFace ? ui.cards.find((c) => c.key === ownFace)?.art : undefined;
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark;
@@ -123,8 +120,10 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
-        {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
-        {ownArt && ownArt.mark && <img className="kb-mark-face" src={ownArt.mark} alt="" draggable={false} data-kb-face={ownFace} />}
+        {/* A back is the same for every reader, its setter too, whose card the Lens names (the card template design's amendment of 2026-11-07). */}
+        {back && !revealed
+          ? <span className="kb-card-back">{ui.cardBack && <img className="kb-card-back-mark" src={ui.cardBack.mark} alt="" draggable={false} />}</span>
+          : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
         {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
       </span>
       {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}

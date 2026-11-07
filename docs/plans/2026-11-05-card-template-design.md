@@ -225,3 +225,18 @@ glass." So section 8's back changes, at every size:
 The back still says nothing about the card it is: the cloud, the mark and the colors are the same on every back. The
 mark's back (`.kb-card-back`, a post's face-down tile) is unchanged. The booster packs plan's Task 9 builds it; the
 booster packs boards (`docs/research/2026-11-07-booster-packs/`) draw it.
+
+## Amended 2026-11-07: the mark's back is the card's back, small
+
+The owner, on the face-down mark in a post's date row, which still drew the old crossed bands: "Can we change the 'card
+back' Mark to look more like one of our actual redesigned card backs (with the cloudy background + logo coin, or even
+just the cloudy background alone)?" And on the setter's own card in the mark's corner: "It may not be needed, the lens
+would already tell the owner which card back is which." So the amendment above's "the mark's back is unchanged" no
+longer holds, and section 3 of the card mechanic's design (`2026-11-01-card-mechanic-design.md`) changes where it says
+the setter's screen shows their card's face on the back:
+
+- **The mark's back** (`.kb-card-back`) is the card's back drawn small: a 2:3 card in the icon's height, its cloud and
+  glow the back's own rules in `postcard.css` (one selector list, never a copy), and the instance's mark
+  (`InstanceUi.cardBack`) at its center with the back's glow. An instance with no mark draws the cloud alone.
+- **No face on the mark.** The back is drawn the same to every reader, its setter too. The setter's Lens already names
+  their card on each of their backs ("Yours: …, which nobody else can see."), so nothing is lost.
