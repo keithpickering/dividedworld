@@ -244,16 +244,31 @@ describe('search_threads in the fake: the pool', () => {
     f.signInAs(a);
     return f;
   };
-  test('by relevance threads are found among the newest searchRankPool (5) matches and say so; newest and oldest have no pool and reach every thread', async () => {
+  /** Every page of a thread search by Next: the titles of each page in order, and the pages' cursors present. */
+  const pagesOf = async (f: ReturnType<typeof seedLime>, q: string, sort: 'newest' | 'oldest', perPage: number) => {
+    const pages: string[][] = [];
+    let after: Awaited<ReturnType<typeof f.searchThreads>>['next'] = null;
+    for (let guard = 0; guard < 20; guard++) {
+      const page = await f.searchThreads(ask({ q, sort, perPage }), after);
+      pages.push(page.results.map((r) => r.title));
+      after = page.next;
+      if (after === null) return pages;
+    }
+    throw new Error('the walk does not end');
+  };
+  test('by relevance threads are found among the newest searchRankPool (5) matches and say so; newest and oldest have no pool: each page reads at most 5 matches and Next reaches every thread', async () => {
     const f = seedLime(5, 8);
     const ranked = await f.searchThreads(ask({ q: 'lime', sort: 'relevance', perPage: 50 }));
-    expect(ranked).toMatchObject({ count: 8, pooled: true });
+    expect(ranked).toMatchObject({ count: 5, more: true, pooled: true });
     expect(ranked.results.map((r) => r.title).sort()).toEqual(['Th3', 'Th4', 'Th5', 'Th6', 'Th7']);
-    for (const sort of ['newest', 'oldest'] as const) expect(await f.searchThreads(ask({ q: 'lime', sort, perPage: 50 }))).toMatchObject({ count: 8, pooled: false });
-    expect((await f.searchThreads(ask({ q: 'lime', sort: 'newest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Th7', 'Th6', 'Th5', 'Th4', 'Th3', 'Th2', 'Th1', 'Th0']);
-    expect((await f.searchThreads(ask({ q: 'lime', sort: 'oldest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Th0', 'Th1', 'Th2', 'Th3', 'Th4', 'Th5', 'Th6', 'Th7']);
+    for (const sort of ['newest', 'oldest'] as const) expect(await f.searchThreads(ask({ q: 'lime', sort, perPage: 50 }))).toMatchObject({ count: 5, more: true, pooled: false });
+    expect(await pagesOf(f, 'lime', 'newest', 50)).toEqual([['Th7', 'Th6', 'Th5', 'Th4', 'Th3'], ['Th2', 'Th1', 'Th0']]);
+    expect(await pagesOf(f, 'lime', 'oldest', 50)).toEqual([['Th0', 'Th1', 'Th2', 'Th3', 'Th4'], ['Th5', 'Th6', 'Th7']]);
+    /* A walk the pool covers is not cut: no more, no next. */
+    const whole = await seedLime(50, 8).searchThreads(ask({ q: 'lime', sort: 'newest', perPage: 50 }));
+    expect(whole).toMatchObject({ count: 8, more: false, next: null });
   });
-  test('a thread whose matches are all older than a pool of newer ones in another is reached by newest and counted', async () => {
+  test('a thread whose matches are all older than a pool of newer ones in another is reached by Next, through pages with no thread, none twice; the count says it stopped', async () => {
     const f = createFake({ instance: { ...instance, settings: { ...settings, searchRankPool: 5 } } });
     const a = f.seed.account('a');
     const c = f.seed.character(a, 'Cee', 'face');
@@ -262,10 +277,13 @@ describe('search_threads in the fake: the pool', () => {
     for (let i = 2; i < 12; i++) f.seed.post(busy.thread, c, 'kiwi', { at: T0 + i * H });
     f.signInAs(a);
     const newest = await f.searchThreads(ask({ q: 'kiwi', sort: 'newest', perPage: 1 }));
-    expect(newest).toMatchObject({ count: 2, pooled: false });
+    expect(newest).toMatchObject({ count: 1, more: true, pooled: false });
     expect(newest.results.map((r) => r.title)).toEqual(['Busy']);
-    expect((await f.searchThreads(ask({ q: 'kiwi', sort: 'newest', perPage: 1 }), newest.next)).results.map((r) => r.title)).toEqual(['Old']);
-    expect((await f.searchThreads(ask({ q: 'kiwi', sort: 'oldest', perPage: 50 }))).results.map((r) => r.title)).toEqual(['Old', 'Busy']);
+    expect(newest.next).not.toBeNull();
+    /* 12 matches, 5 read a page: three pages, the middle one without a thread, and a cursor on each but the last. */
+    const pages = await pagesOf(f, 'kiwi', 'newest', 1);
+    expect(pages).toEqual([['Busy'], [], ['Old']]);
+    expect(await pagesOf(f, 'kiwi', 'oldest', 50)).toEqual([['Old', 'Busy'], [], []]);
   });
   test('pooled is true only when more than the pool match: exactly a pool of matches is not', async () => {
     expect((await seedLime(5, 5).searchThreads(ask({ q: 'lime', perPage: 50 }))).pooled).toBe(false);

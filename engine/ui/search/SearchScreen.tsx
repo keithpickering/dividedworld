@@ -80,9 +80,11 @@ function SearchView({ doc }: { readonly doc: SearchDoc }) {
         <>
           <p className="kb-search-count" data-testid="search-count">{countLine(ask, found, settings.searchRankPool)}</p>
           <Pager ask={ask} found={found} cursors={cursors} walked={walked} where="top" />
-          {ask.view === 'threads'
-            ? <Results kind="threads" rows={doc.threads!.results} />
-            : <Results kind="posts" rows={doc.posts!.results} />}
+          {found.results.length === 0
+            ? <p className="kb-search-none" data-testid="search-stretch">{found.next ? `No ${noun}s on this stretch of matches. Next keeps looking.` : `No more ${noun}s match past this page.`}</p>
+            : ask.view === 'threads'
+              ? <Results kind="threads" rows={doc.threads!.results} />
+              : <Results kind="posts" rows={doc.posts!.results} />}
           <Pager ask={ask} found={found} cursors={cursors} walked={walked} where="bottom" />
         </>
       )}
@@ -99,7 +101,9 @@ function countLine(ask: SearchAsk, found: { readonly count: number; readonly mor
   /* Only a relevance search is pooled, threads as well as posts: newest and oldest have no pool, so the way to see them all is to sort by newest. */
   if (found.pooled) return `More than ${count(pool)} posts match; ranked among the newest ${count(pool)}. Sort by newest to see them all.`;
   const order = ORDER[effectiveSort(ask)];
-  if (found.more) return <><b>More than {count(SEARCH_COUNT_CAP)} {noun}s</b> match, {order}.</>;
+  if (found.count > SEARCH_COUNT_CAP) return <><b>More than {count(SEARCH_COUNT_CAP)} {noun}s</b> match, {order}.</>;
+  /* A search of threads by time reads a bounded stretch of matches at a time: it counted what it passed, and says there may be more. */
+  if (found.more) return <><b>At least {count(found.count)} {found.count === 1 ? noun : `${noun}s`}</b> match, {order}; the search reads one stretch of matches at a time, so there may be more.</>;
   return found.count === 1 ? <><b>1 {noun}</b> matches, {order}.</> : <><b>{count(found.count)} {noun}s</b> match, {order}.</>;
 }
 
@@ -107,6 +111,7 @@ function countLine(ask: SearchAsk, found: { readonly count: number; readonly mor
 
 function Pager({ ask, found, cursors, walked, where }: { readonly walked: boolean; readonly ask: SearchAsk; readonly found: { readonly count: number; readonly more: boolean; readonly next: SearchCursor | null }; readonly cursors: ReadonlyMap<number, SearchCursor>; readonly where: 'top' | 'bottom' }) {
   const per = ask.query.perPage ?? SEARCH_PER_PAGE;
+  /* A short page with a Next is not the end: a walk that read its stretch of matches without a page's worth of threads hands on a cursor, and Next goes on from there. */
   const pages = found.more ? null : Math.max(1, Math.ceil(found.count / per));
   if (ask.page === 1 && found.next === null) return null;
   const to = (p: number): string | null => {

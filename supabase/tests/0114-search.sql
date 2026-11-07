@@ -508,18 +508,61 @@ begin
   select quincy, 'post', ax_b, jsonb_build_object('body', 'Axolotls swim ' || g), base + interval '15 days' + g * interval '1 second' from generate_series(1, 150) g;
   perform tests.become(ann);
   j := pg_temp.st(q => 'axolotl', sort => 'newest');
-  if pg_temp.threads_of(j) is distinct from array[ax_b, ax_a] then raise exception 'newest threads under a pool of 100: % (a thread older than the pool''s worth of newer matches is lost)', pg_temp.threads_of(j); end if;
-  if (j ->> 'count')::integer <> 2 or (j ->> 'pooled')::boolean then raise exception 'newest thread count or pooled: %', j - 'results'; end if;
-  if (j -> 'results' -> 0 ->> 'matches')::integer <> 100 or not (j -> 'results' -> 0 ->> 'matches_more')::boolean or (j -> 'results' -> 1 ->> 'matches')::integer <> 1 then raise exception 'matches under newest: %', j -> 'results'; end if;
+  -- A page reads at most the pool's worth (100) of matches: the first page holds the thread of the newest, and the older thread is reached by Next (BOUND-1 below walks more).
+  if pg_temp.threads_of(j) is distinct from array[ax_b] or j -> 'next' = 'null'::jsonb then raise exception 'newest threads under a pool of 100: % %', pg_temp.threads_of(j), j -> 'next'; end if;
+  if (j ->> 'count')::integer <> 1 or not (j ->> 'more')::boolean or (j ->> 'pooled')::boolean then raise exception 'newest thread count or pooled: %', j - 'results'; end if;
+  if (j -> 'results' -> 0 ->> 'matches')::integer <> 100 or not (j -> 'results' -> 0 ->> 'matches_more')::boolean then raise exception 'matches under newest: %', j -> 'results'; end if;
   j := pg_temp.st(q => 'axolotl', sort => 'oldest');
-  if pg_temp.threads_of(j) is distinct from array[ax_a, ax_b] or (j ->> 'count')::integer <> 2 or (j ->> 'pooled')::boolean then raise exception 'oldest threads: %', j - 'results'; end if;
+  -- The count is the same for both sorts: the threads among the newest 100 matches, and `more` says the walk was cut.
+  if pg_temp.threads_of(j) is distinct from array[ax_a, ax_b] or (j ->> 'count')::integer <> 1 or not (j ->> 'more')::boolean or (j ->> 'pooled')::boolean then raise exception 'oldest threads: %', j - 'results'; end if;
   if pg_temp.walk('threads', 'axolotl', null, null, 'newest', 1) is distinct from array[ax_b, ax_a] then raise exception 'newest thread walk by 1'; end if;
   if pg_temp.walk('threads', 'axolotl', null, null, 'oldest', 1) is distinct from array[ax_a, ax_b] then raise exception 'oldest thread walk by 1'; end if;
   j := pg_temp.st(q => 'axolotl');
-  if (j ->> 'count')::integer <> 2 or not (j ->> 'pooled')::boolean then raise exception 'relevance thread count (all threads) or pooled: %', j - 'results'; end if;
+  if (j ->> 'count')::integer <> 1 or not (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean then raise exception 'relevance thread count (the threads of the pool) or pooled: %', j - 'results'; end if;
   -- A range that holds only the old thread's match.
   if pg_temp.threads_of(pg_temp.st(q => 'axolotl', sort => 'newest', to_at => base + interval '14 days 1 hour')) is distinct from array[ax_a] then raise exception 'newest threads under a range'; end if;
   perform tests.unbecome();
+
+  -- BOUND-1: a walk by time reads at most the pool's worth of matches, whatever the matches are. Pool 100; one thread (wombat C) with 300 matches, the newest, and one (wombat D) with one match,
+  -- older. A page walks from the cursor, keeps the threads whose key it passes, and when it has read 100 matches without a page it returns what it found (here none, after the first) and a cursor at
+  -- the last match it read: every thread is reached by Next, in at most ceil(301 / 100) pages, none twice, and the count says it stopped.
+  declare
+    wm_c uuid; wm_d uuid;
+    pages integer; cur jsonb; seen uuid[]; got uuid[]; empties integer; srt text;
+  begin
+    insert into threads (board, title) values (board_a, 'Wombat C') returning id into wm_c;
+    insert into threads (board, title) values (board_a, 'Wombat D') returning id into wm_d;
+    insert into acts (character, kind, thread, payload, created_at) values (quincy, 'post', wm_d, '{"body": "Wombats smile."}', base + interval '16 days');
+    insert into acts (character, kind, thread, payload, created_at)
+    select quincy, 'post', wm_c, jsonb_build_object('body', 'Wombats hop ' || g), base + interval '17 days' + g * interval '1 second' from generate_series(1, 300) g;
+    perform tests.become(ann);
+    foreach srt in array array['newest', 'oldest'] loop
+      pages := 0; cur := null; seen := '{}'; empties := 0;
+      loop
+        j := pg_temp.st(q => 'wombat', sort => srt, after => cur, per_page => 20);
+        pages := pages + 1;
+        got := pg_temp.threads_of(j);
+        if exists (select 1 from unnest(got) g where g = any (seen)) then raise exception 'a thread repeated (%, page %)', srt, pages; end if;
+        seen := seen || got;
+        if cardinality(got) = 0 then empties := empties + 1; end if;
+        if (j ->> 'count')::integer > 2 or not (j ->> 'more')::boolean then raise exception 'the count of a walk cut at the pool (%): %', srt, j - 'results'; end if;
+        cur := j -> 'next';
+        exit when cur is null or cur = 'null'::jsonb;
+        if pages > 6 then raise exception 'the walk does not end (%)', srt; end if;
+      end loop;
+      if pages > 4 then raise exception 'the walk by % took % pages, more than ceil(301 / 100)', srt, pages; end if;
+      if not (seen @> array[wm_c, wm_d] and cardinality(seen) = 2) then raise exception 'the walk by % did not reach both threads: %', srt, seen; end if;
+      if empties = 0 then raise exception 'the walk by % found no page without a thread, so it did not cross a run of non-key matches', srt; end if;
+    end loop;
+    -- A pool that reaches the whole match set is not cut: no more, an exact count.
+    perform tests.unbecome();
+    update settings set value = '1000' where key = 'searchRankPool';
+    perform tests.become(ann);
+    j := pg_temp.st(q => 'wombat', sort => 'newest');
+    if (j ->> 'count')::integer <> 2 or (j ->> 'more')::boolean or pg_temp.threads_of(j) is distinct from array[wm_c, wm_d] or j -> 'next' <> 'null'::jsonb then raise exception 'a walk the pool covers: %', j - 'results'; end if;
+    perform tests.unbecome();
+    update settings set value = '100' where key = 'searchRankPool';
+  end;
   update settings set value = '5000' where key = 'searchRankPool';
 
   -- SPEC-4: ties. Posts of one instant (same created_at, told apart by Act id), in three threads, and an older one; walked by 1 to 4 under each sort. Identical words, so relevance ties too.
@@ -750,8 +793,8 @@ begin
   -- A visitor reads no thread, and so searches none.
   perform tests.become_anon();
   for bad in select unnest(array['search_posts(null, null, null, null, null, false, null, null, null)', 'search_threads(null, null, null, null, null, false, null, null, null)',
-                                 'search_suggest(''ab'', null, null, false, 5)', 'suggest_characters(''ab'', 5)', 'search_matches(null, null, null, null, null, false, true, null, null, 5)']) loop
-    got := pg_temp.hint_of('select * from ' || case when bad like 'suggest_characters%' or bad like 'search_matches%' then bad else '(select ' || bad || ') x' end);
+                                 'search_suggest(''ab'', null, null, false, 5)', 'suggest_characters(''ab'', 5)', 'search_matches(null, null, null, null, null, false, true, null, null, 5)', 'search_walk(null, null, null, null, null, false, true, null, null, 5, 5)']) loop
+    got := pg_temp.hint_of('select * from ' || case when bad like 'suggest_characters%' or bad like 'search_matches%' or bad like 'search_walk%' then bad else '(select ' || bad || ') x' end);
     if got is distinct from '42501/' then raise exception 'a visitor could run %: %', bad, got; end if;
   end loop;
   perform tests.unbecome();
@@ -762,12 +805,12 @@ begin
             and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_cursor_ok') and (p.prosecdef or p.prosqlbody is null or p.provolatile = 'v') loop
     raise exception '% is a definer, volatile, or not SQL-standard bodied', fn;
   end loop;
-  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches', 'search_matches_sql') and (p.prosecdef or p.provolatile <> 's') loop
+  for fn in select p.oid::regprocedure::text from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('search_matches', 'search_matches_sql', 'search_walk', 'search_walk_sql') and (p.prosecdef or p.provolatile <> 's') loop
     raise exception '% is a definer or not stable', fn;
   end loop;
   if (select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace
       and p.proname in ('search_posts', 'search_threads', 'search_suggest', 'search_matches', 'search_matches_sql', 'search_suggest_threads', 'search_cursor_ok', 'search_updates_thread', 'suggest_characters',
-                        'search_cursor_cast', 'search_match_conds', 'search_thread_matches', 'search_post_cards')) is distinct from 13 then
+                        'search_cursor_cast', 'search_match_conds', 'search_thread_matches', 'search_post_cards', 'search_walk', 'search_walk_sql')) is distinct from 15 then
     raise exception 'a search function is missing';
   end if;
   if not exists (select 1 from pg_proc p where p.proname = 'search_updates_thread' and p.prosecdef and p.provolatile = 's' and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then
@@ -782,10 +825,11 @@ begin
   if not exists (select 1 from pg_proc p where p.proname = 'suggest_characters' and p.prosecdef and p.provolatile = 's'
                  and exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp')) then raise exception 'suggest_characters is not a stable definer with a pinned search_path'; end if;
   for fn in select unnest(array['search_posts(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestamptz,timestamptz,boolean,text,jsonb,integer)',
-                                'search_suggest(text,text[],uuid,boolean,integer)', 'suggest_characters(text,integer)', 'search_matches(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,boolean)',
+                                'search_suggest(text,text[],uuid,boolean,integer)', 'suggest_characters(text,integer)', 'search_matches(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)',
+                                'search_walk(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,integer)', 'search_walk_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)',
                                 'search_suggest_threads(text,uuid,boolean,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_updates_thread()', 'search_cursor_cast(jsonb)',
                                 'search_match_conds(text,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestamptz,timestamptz,boolean)', 'search_post_cards(uuid)',
-                                'search_matches_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer,boolean)']) loop
+                                'search_matches_sql(text,uuid,uuid,timestamptz,timestamptz,boolean,boolean,timestamptz,uuid,integer)']) loop
     if not has_function_privilege('authenticated', fn::regprocedure, 'execute') or has_function_privilege('anon', fn::regprocedure, 'execute') then raise exception '% is not for signed-in players alone', fn; end if;
   end loop;
 end
@@ -810,6 +854,9 @@ create function pg_temp.index_scans(plan jsonb, rel text) returns bigint languag
   select count(*) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Relation Name' = rel and n ->> 'Node Type' in ('Index Scan', 'Index Only Scan', 'Bitmap Heap Scan') $$;
 create function pg_temp.max_limit(plan jsonb) returns numeric language sql as $$
   select max((n ->> 'Plan Rows')::numeric) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Node Type' = 'Limit' $$;
+
+create function pg_temp.max_limit_read(plan jsonb) returns numeric language sql as $$
+  select max((n ->> 'Actual Rows')::numeric) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Node Type' = 'Limit' $$;
 
 do $test$
 declare
@@ -875,24 +922,23 @@ begin
       search_matches_sql(w, a_char, a_board, base, now(), false, false, base + interval '1 day', gen_random_uuid(), 21),
       search_matches_sql(w, null, null, null, null, true, true, null, null, 21),
       search_matches_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), 21),
-      -- SPEC-1: the thread keys (a thread's newest or oldest match) that newest and oldest page by, and count, with no pool: the same shapes, keyed.
-      search_matches_sql(w, null, null, null, null, false, true, null, null, 21, true),
-      search_matches_sql(w, null, null, null, null, false, false, null, null, 21, true),
-      search_matches_sql(w, null, null, null, null, false, true, null, null, 1001, true),
-      search_matches_sql(w, null, null, null, null, false, false, null, null, 1001, true),
-      search_matches_sql(w, a_char, null, null, null, false, true, null, null, 21, true),
-      search_matches_sql(w, null, a_board, null, null, false, true, null, null, 21, true),
-      search_matches_sql(w, a_char, a_board, base, now(), false, false, base + interval '1 day', gen_random_uuid(), 21, true),
-      search_matches_sql(w, null, null, null, null, true, true, null, null, 21, true),
-      search_matches_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), 21, true),
-      search_matches_sql(w, null, null, null, null, false, false, base + interval '2 days', gen_random_uuid(), 21, true)
+      -- BOUND-1: the walk by time newest and oldest page and count by (the matches in order, the pool's worth at most, each tested for its thread's key): the same shapes.
+      search_walk_sql(w, null, null, null, null, false, true, null, null, pool),
+      search_walk_sql(w, null, null, null, null, false, false, null, null, pool),
+      search_walk_sql(w, a_char, null, null, null, false, true, null, null, pool),
+      search_walk_sql(w, null, a_board, null, null, false, true, null, null, pool),
+      search_walk_sql(w, a_char, a_board, base, now(), false, false, base + interval '1 day', gen_random_uuid(), pool),
+      search_walk_sql(w, null, null, null, null, true, true, null, null, pool),
+      search_walk_sql(w, null, null, null, null, false, true, base + interval '2 days', gen_random_uuid(), pool),
+      search_walk_sql(w, null, null, null, null, false, false, base + interval '2 days', gen_random_uuid(), pool)
     ] loop
       plan := pg_temp.plan_of(s);
       seqs := pg_temp.seq_scans(plan);
       if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
       if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index (the check would be vacuous): %', s; end if;
       if s like '%not exists%' and pg_temp.index_scans(plan, 'post_search') < 2 then raise exception 'the thread key''s probe does not read post_search through an index: %', s; end if;
-      if pg_temp.max_limit(plan) > greatest(pool, 1001) then raise exception 'a limit above the pool in: %', s; end if;
+      if pg_temp.max_limit(plan) > greatest(pool + 1, 1001) then raise exception 'a limit above the pool and one in: %', s; end if;
+      if s like '%not exists%' and pg_temp.max_limit(plan) > pool + 1 then raise exception 'a walk by time reads more than the pool and one in: %', s; end if;
       if s like '% limit ' || pool and pg_temp.max_limit(plan) > pool then raise exception 'relevance would rank more than the pool in: %', s; end if;
     end loop;
   end loop;
@@ -907,11 +953,11 @@ begin
     search_matches_sql(null, null, a_board, null, null, false, true, null, null, 21),
     search_matches_sql(null, null, null, base, now(), false, true, null, null, 21),
     search_matches_sql(null, null, null, null, null, true, true, null, null, 21),
-    search_matches_sql(null, null, null, null, null, false, true, null, null, 21, true),
-    search_matches_sql(null, null, null, null, null, false, false, null, null, 1001, true),
-    search_matches_sql(null, a_char, null, null, null, false, true, null, null, 21, true),
-    search_matches_sql(null, null, a_board, null, null, false, true, null, null, 21, true),
-    search_matches_sql(null, null, null, base, now(), false, true, null, null, 21, true)
+    search_walk_sql(null, null, null, null, null, false, true, null, null, pool),
+    search_walk_sql(null, null, null, null, null, false, false, null, null, pool),
+    search_walk_sql(null, a_char, null, null, null, false, true, null, null, pool),
+    search_walk_sql(null, null, a_board, null, null, false, true, null, null, pool),
+    search_walk_sql(null, null, null, base, now(), false, true, null, null, pool)
   ] loop
     plan := pg_temp.plan_of(s);
     seqs := pg_temp.seq_scans(plan);
@@ -971,24 +1017,35 @@ begin
   if (j ->> 'count')::integer <> 1001 or not (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean or jsonb_array_length(j -> 'results') <> 20 or (j -> 'next') is null then raise exception 'the common word: %', j - 'results'; end if;
   j := search_posts('common', null, null, null, null, false, 'newest', null, 50);
   if j -> 'results' -> 0 ->> 'seq' <> '100' then raise exception 'the newest common post is not the last one written: %', j -> 'results' -> 0; end if;
+  t0 := clock_timestamp();
   j := search_threads('common', null, null, null, null, false, null, null, 50);
-  -- The newest 5,000 posts are two and a half rounds of the threads, and the even posts that hold the word are in the odd threads alone.
-  if (j ->> 'count')::integer <> 1000 or (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean then raise exception 'threads for the common word: %', j - 'results'; end if;
-  -- SPEC-1: newest and oldest page threads by time with no pool: every thread that holds the word is reached (the 1,000 odd threads, though the newest 5,000 matches are in 100 of them... two and a half rounds),
-  -- 20 pages of 50, no repeat, the last with no next. Timed: the first page, a deep one (the last: the walk past the last thread's key reads the matches that are no thread's newest), the count.
+  raise notice 'scale: search_threads common relevance page 1 in %', clock_timestamp() - t0;
+  -- The count is of the first `pool` matches (5,000): the newest 1,000 are the keys of the 1,000 odd threads, and more matches than the pool remain, so it says so.
+  if (j ->> 'count')::integer <> 1000 or not (j ->> 'more')::boolean or not (j ->> 'pooled')::boolean then raise exception 'threads for the common word: %', j - 'results'; end if;
+  -- BOUND-1: no walk by time reads more than the pool's worth of matches, however many there are (100,000 here, the thread keys among the newest 1,000), read in the plan that runs.
+  execute 'explain (analyze, format json) ' || search_walk_sql('common', null, null, null, null, false, true, null, null, pool) into plan;
+  if pg_temp.max_limit_read(plan) > pool + 1 then raise exception 'a walk read more than the pool and one: %', plan; end if;
+  if (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where not w.stop) <> 1000 or (select count(*) from search_walk('common', null, null, null, null, false, true, null, null, 100000, pool) w where w.stop) <> 1 then
+    raise exception 'a walk of the common word did not find the 1,000 keys among the first % matches and stop', pool; end if;
+  -- Newest and oldest page threads by time: every thread that holds the word is reached by Next with no repeat, 20 pages of 50 and then the stretches of matches that are no thread's key, each a page of at most
+  -- `pool` matches read (here 100,000 matches in 20 stretches). Timed: the first page, a deep one (the last of the threads), the empty stretches' last page, and the count (a page of 1: the count is most of it).
   foreach s in array array['newest', 'oldest'] loop
-    cur := null; seen := '{}';
-    for n in 1..20 loop
+    cur := null; seen := '{}'; n := 0;
+    loop
+      n := n + 1;
       t0 := clock_timestamp();
       j := search_threads('common', null, null, null, null, false, s, cur, 50);
-      if n in (1, 20) then raise notice 'scale: search_threads common % page % in %', s, n, clock_timestamp() - t0; end if;
-      if (j ->> 'count')::integer <> 1000 or (j ->> 'more')::boolean or (j ->> 'pooled')::boolean then raise exception 'threads for the common word, %, page %: %', s, n, j - 'results'; end if;
-      if jsonb_array_length(j -> 'results') <> 50 then raise exception 'threads for the common word, %, page % holds % results', s, n, jsonb_array_length(j -> 'results'); end if;
+      if n in (1, 20) or (j -> 'next') = 'null'::jsonb then raise notice 'scale: search_threads common % page % in %', s, n, clock_timestamp() - t0; end if;
+      if (j ->> 'count')::integer <> 1000 or not (j ->> 'more')::boolean or (j ->> 'pooled')::boolean then raise exception 'threads for the common word, %, page %: %', s, n, j - 'results'; end if;
+      if n < 20 and jsonb_array_length(j -> 'results') <> 50 then raise exception 'threads for the common word, %, page % holds % results', s, n, jsonb_array_length(j -> 'results'); end if;
       if exists (select 1 from jsonb_array_elements(j -> 'results') r where (r ->> 'thread')::uuid = any (seen)) then raise exception 'a thread repeated on page % (%)', n, s; end if;
-      seen := seen || (select array_agg((r ->> 'thread')::uuid) from jsonb_array_elements(j -> 'results') r);
+      seen := seen || coalesce((select array_agg((r ->> 'thread')::uuid) from jsonb_array_elements(j -> 'results') r), '{}');
       cur := j -> 'next';
-      if (n < 20) = (cur is null or cur = 'null'::jsonb) then raise exception 'the cursor after page % (%): %', n, s, cur; end if;
+      exit when cur is null or cur = 'null'::jsonb;
+      if n > 60 then raise exception 'the walk by % does not end', s; end if;
     end loop;
+    if cardinality(seen) <> 1000 then raise exception 'the walk by % reached % threads of 1,000', s, cardinality(seen); end if;
+    if n > 20 + ceil(100000.0 / pool) + 1 then raise exception 'the walk by % took % pages: more than the threads'' pages and the matches over the pool', s, n; end if;
   end loop;
   t0 := clock_timestamp();
   j := search_threads('common', null, null, null, null, false, 'newest', null, 1);

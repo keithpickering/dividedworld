@@ -79,7 +79,7 @@ for (const t of ALLOWED_READS) check(`.from('${t}').select() is clean`, fires(`c
 for (const f of ALLOWED_RPCS) check(`.rpc('${f}') is clean`, fires(`client.rpc('${f}', {});`).length === 0);
 // The search screens' three reads are allowed; the functions behind them are not (the web never calls them, so a call to one is a fault).
 for (const f of ['search_posts', 'search_threads', 'search_suggest']) check(`.rpc('${f}') is allowed (a search read)`, ALLOWED_RPCS.includes(f));
-for (const f of ['search_matches', 'search_matches_sql', 'search_match_conds', 'search_suggest_threads', 'suggest_characters', 'search_cursor_ok', 'search_cursor_cast', 'search_updates_thread', 'search_lang', 'fold_text', 'bbcode_plain', 'search_thread_matches', 'search_post_cards'])
+for (const f of ['search_matches', 'search_matches_sql', 'search_walk', 'search_walk_sql', 'search_match_conds', 'search_suggest_threads', 'suggest_characters', 'search_cursor_ok', 'search_cursor_cast', 'search_updates_thread', 'search_lang', 'fold_text', 'bbcode_plain', 'search_thread_matches', 'search_post_cards'])
   check(`.rpc('${f}') fires (a helper of the search reads, never called by the web)`, fires(`client.rpc('${f}', {});`).length === 1);
 for (const f of SCREEN_HELPERS) check(`.rpc('${f}') fires: a screen function's helper is not a function the web calls`, fires(`client.rpc('${f}', {});`).length === 1);
 check('a REST path to an allowed view is clean', fires(`fetch(url + '/rest/v1/acts_public?select=*');`).length === 0);

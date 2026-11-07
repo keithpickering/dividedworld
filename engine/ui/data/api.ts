@@ -84,8 +84,10 @@ export interface SearchCursor {
 }
 
 /**
- * A page of results. `count` stops at one past `SEARCH_COUNT_CAP` and `more` says it did (so the line reads "More than 1,000"); `pooled` says a
- * relevance search ranked only the newest `searchRankPool` matches; `next` is the cursor of the following page, null on the last.
+ * A page of results. `count` stops at one past `SEARCH_COUNT_CAP` and `more` says it did (so the line reads "More than 1,000"); for threads `more` is
+ * also true when the count read only `searchRankPool` matches and left some, so `count` is "at least"; `pooled` says a
+ * relevance search ranked only the newest `searchRankPool` matches; `next` is the cursor of the following page, null on the last. Threads by time read at
+ * most `searchRankPool` matches a page, so a page may hold fewer than a page's worth, or none, and still have a `next`: Next goes on from the last match read.
  */
 export interface SearchPage<T> {
   readonly count: number;

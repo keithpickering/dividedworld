@@ -226,6 +226,36 @@ describe('the states', () => {
   });
 });
 
+describe('a short page is not the end', () => {
+  test('a page of threads with none on it and a cursor says so plainly and offers Next; the count line says at least, not more than 1,000', async () => {
+    open('/search?q=green&as=threads&sort=newest&page=2&after=%7C2026-10-05T00%3A00%3A00.000Z%7Cact-1', { threads: page<ThreadHit>([], { count: 2, more: true, next: cursor(5) }) });
+    const stretch = await screen.findByTestId('search-stretch');
+    expect(stretch).toHaveTextContent('No threads on this stretch of matches. Next keeps looking.');
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(await line()).toMatch(/^At least 2 threads match, newest first/);
+    expect(await line()).not.toMatch(/More than 1,000/);
+    for (const nav of screen.getAllByRole('navigation')) expect(within(nav).getByRole('link', { name: /Next/ })).toHaveAttribute('href', expect.stringContaining('act-5'));
+  });
+
+  test('a page with fewer than a page of threads and a cursor keeps its rows and its Next', async () => {
+    open('/search?q=green&as=threads', { threads: page([thit(1)], { count: 3, more: true, next: cursor(1) }) });
+    await screen.findByRole('link', { name: 'Thread 1' });
+    expect(screen.queryByTestId('search-stretch')).toBeNull();
+    expect(within(screen.getAllByRole('navigation')[0]!).getByRole('link', { name: /Next/ })).toBeInTheDocument();
+  });
+
+  test('a last page with no thread and no cursor says there are no more, with no Next', async () => {
+    open('/search?q=green&as=threads&page=3&after=%7C2026-10-05T00%3A00%3A00.000Z%7Cact-1', { threads: page<ThreadHit>([], { count: 2, more: true, next: null }) });
+    expect(await screen.findByTestId('search-stretch')).toHaveTextContent('No more threads match past this page.');
+    for (const nav of screen.getAllByRole('navigation')) expect(within(nav).queryByRole('link', { name: /Next/ })).toBeNull();
+  });
+
+  test('more than 1,000 threads still reads "More than 1,000"', async () => {
+    open('/search?q=green&as=threads', { threads: page([thit(1)], { count: 1001, more: true, next: cursor(1) }) });
+    expect(await line()).toMatch(/^More than 1,000 threads match/);
+  });
+});
+
 describe('review fixes', () => {
   test('Q-2: a search that could not reach the server says so, not that the words were wrong', async () => {
     open('/search?q=zzz', { posts: new TypeError('Failed to fetch') });

@@ -1695,19 +1695,52 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const order = searchCmp(sort);
     const per = new Map<Id, SearchRow[]>();
     for (const r of rows) per.set(r.thread.id, [...(per.get(r.thread.id) ?? []), r]);
+    const cursorRow = after ? ({ act: after.act, at: Date.parse(after.at), rank: after.rank ?? 0 } as SearchRow) : null;
+    if (group && !relevant) {
+      /* Threads by time, as the SQL's walk (search_walk) reads them: the matches in order from the cursor, at most `pool` of them, keeping each thread's key (its first match in this order);
+         at one past a page of keys it stops; at the pool with matches left it stops with the last match it read as the cursor, a page of however many keys it passed (maybe none). */
+      const inOrder = [...rows].sort(order);
+      const keyOf = new Set<Id>();
+      const keys = new Set<Id>();
+      for (const r of inOrder) if (!keys.has(r.thread.id)) { keys.add(r.thread.id); keyOf.add(r.act); }
+      const window = cursorRow ? inOrder.filter((r) => order(r, cursorRow) > 0) : inOrder;
+      const kept: SearchRow[] = [];
+      let lastRead: SearchRow | undefined;
+      let cut = false;
+      let read = 0;
+      for (const r of window) {
+        if (read >= pool) { cut = true; break; }
+        read += 1; lastRead = r;
+        if (keyOf.has(r.act)) { kept.push(r); if (kept.length > perPage) break; }
+      }
+      const shown = kept.slice(0, perPage);
+      const edge = kept.length > perPage ? shown[shown.length - 1] : cut ? lastRead : undefined;
+      const walked = countThreads(rows, pool);
+      return {
+        count: walked.count, more: walked.more, pooled: false,
+        results: shown.map((r) => make(r, per.get(r.thread.id)!.length, words)),
+        next: edge ? { rank: 0, at: iso(edge.at), act: edge.act } : null,
+      };
+    }
     const sorted = [...ranked].sort(order);
     const seenThreads = new Set<Id>();
     const candidates = group ? sorted.filter((r) => (seenThreads.has(r.thread.id) ? false : (seenThreads.add(r.thread.id), true))) : sorted;
-    /* The count is of every match, or of every thread that has one, whatever the sort (the SQL's walk to 1,001); a pooled relevance search still counts past its pool. */
-    const total = group ? per.size : rows.length;
-    const past = after ? candidates.filter((r) => order(r, { act: after.act, at: Date.parse(after.at), rank: after.rank ?? 0 } as SearchRow) > 0) : candidates;
+    /* The count is of every match, or (threads) of the threads among the first `pool` matches newest first, to 1,001 (the SQL's walk); a pooled relevance search still counts past its pool for posts. */
+    const walked = group ? countThreads(rows, pool) : { count: Math.min(rows.length, SEARCH_COUNT_CAP + 1), more: rows.length > SEARCH_COUNT_CAP };
+    const past = cursorRow ? candidates.filter((r) => order(r, cursorRow) > 0) : candidates;
     const shown = past.slice(0, perPage);
     const last = shown[shown.length - 1];
     return {
-      count: Math.min(total, SEARCH_COUNT_CAP + 1), more: total > SEARCH_COUNT_CAP, pooled,
+      count: walked.count, more: walked.more, pooled,
       results: shown.map((r) => make(r, per.get(r.thread.id)!.length, words)),
       next: last && past.length > shown.length ? { rank: sort === 'relevance' ? last.rank : 0, at: iso(last.at), act: last.act } : null,
     };
+  }
+  /** The threads' count, whatever the sort: the threads among the newest `pool` matches, to 1,001; `more` when past 1,000 or when matches were left unread. */
+  function countThreads(rows: readonly SearchRow[], pool: number): { readonly count: number; readonly more: boolean } {
+    const read = [...rows].sort(searchCmp('newest')).slice(0, pool);
+    const n = new Set(read.map((r) => r.thread.id)).size;
+    return { count: Math.min(n, SEARCH_COUNT_CAP + 1), more: n > SEARCH_COUNT_CAP || rows.length > pool };
   }
   function searchHit(row: SearchRow, words: readonly string[]): PostHit {
     const board = boards.find((b) => b.id === row.thread.board)!;
