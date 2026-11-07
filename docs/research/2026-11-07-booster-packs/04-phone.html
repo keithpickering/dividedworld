@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1660">
+<title>Booster packs on a phone: the booster packs board</title>
+<!-- A board of the booster packs design (docs/plans/2026-11-04-booster-packs-design.md), redrawn on 2026-11-07 after the card
+     template merged (docs/plans/2026-11-05-card-template-design.md), 1660 by 884. Four phone screens at 390 by 844: the machine scrolled to the selected Booster (its price, what is in it, Buy and its odds, which follow the slots on the phone); the reveal as a pile, three turned; all five turned, the hit on top; and the admin page, each slot a block of its own. Every card face and back is the
+     engine's own Postcard and PostcardBack, rendered by gen.mjs in this folder with the engine's stylesheet. A reference for
+     the look, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>/*
+ * The glass's token names, with plain defaults: black ground, white text, system fonts. An instance's
+ * glass.json sets them (engine/ui/glass/apply.ts puts its standard or high key on a glass root), and
+ * tools/check-glass-contrast.mjs holds each value to its ratio. With this file, engine/ui/tokens.css,
+ * the two files in engine/ui/ that may hold a color or a font family (tools/check-ui-tokens.mjs).
+ *
+ * The names are the glass plan's closed list (docs/plans/2026-10-30-glass-to-the-boards-plan.md,
+ * section 4). A screen reads these and no literal; the instance's own colors never reach the engine.
+ */
+:root {
+  /* Surfaces: the opaque ground the smoke is laid over, and the panels and fields on it. */
+  --kb-glass-ground: #000;
+  --kb-glass-panel-soft: rgb(0 0 0 / 0.72);
+  --kb-glass-panel: rgb(0 0 0 / 0.82);
+  --kb-glass-panel-strong: rgb(0 0 0 / 0.88);
+  --kb-glass-sheet: rgb(0 0 0 / 0.92);
+  --kb-glass-field: #111;
+  --kb-glass-field-2: #0a0a0a;
+  --kb-glass-card: #050505;
+
+  /* Text. */
+  --kb-glass-text: #eee;
+  --kb-glass-text-2: #ddd;
+  --kb-glass-text-hi: #fff;
+  --kb-glass-pale: #eee;
+  /* The edge of the persona's tour tip and its arrow (the spotlight, engine/ui/tips/tips.css): a non-text boundary, so it carries no contrast tag. */
+  --kb-glass-violet: #fff;
+  --kb-glass-neon-text: #fff;
+  --kb-glass-neon: #fff;
+  --kb-glass-sweet: #fff;
+  --kb-glass-ready: #fff;
+  --kb-glass-ready-text: #fff;
+  --kb-glass-salty: #fff;
+  --kb-glass-salty-text: #fff;
+  --kb-glass-estimate: #fff;
+  --kb-glass-loss: #fff;
+  --kb-glass-over: #fff;
+  --kb-glass-hurt: #fff;
+
+  /* The ink set on a bright fill. */
+  --kb-glass-ink-neon: #000;
+  --kb-glass-ink-salty: #000;
+  --kb-glass-ink-ready: #000;
+
+  --kb-glass-font-display: sans-serif;
+  --kb-glass-font-body: sans-serif;
+
+  /* The size steps, in px, as the boards set them. */
+  --kb-glass-size-label: 20px;
+  --kb-glass-size-body: 21px;
+  --kb-glass-size-lead: 24px;
+  --kb-glass-size-title: 34px;
+  --kb-glass-size-display-xs: 20px;
+  --kb-glass-size-display-s: 26px;
+  --kb-glass-size-display-m: 40px;
+  --kb-glass-size-display-l: 52px;
+  --kb-glass-size-display-xl: 96px;
+  --kb-glass-size-phone-small: 16px;
+  --kb-glass-size-phone-body: 17px;
+  --kb-glass-size-phone-display: 20px;
+
+  /* The calm: how much of the ground a region lays over the smoke, and the blur of its edge (the boards' Gaussian). */
+  --kb-glass-calm-opacity: 0.85;
+  --kb-glass-calm-feather: 60px;
+
+  /* The skewed controls (Button.tsx): m and s, the Main layout's measure and then the phone layout's (parts.css swaps them on the element). */
+  --kb-glass-control-m-height: 48px;
+  --kb-glass-control-m-pad: 22px;
+  --kb-glass-control-m-size: var(--kb-glass-size-body);
+  --kb-glass-control-s-height: 36px;
+  --kb-glass-control-s-pad: 16px;
+  --kb-glass-control-s-size: var(--kb-glass-size-label);
+  --kb-glass-control-m-height-phone: 40px;
+  --kb-glass-control-m-pad-phone: 16px;
+  --kb-glass-control-m-size-phone: var(--kb-glass-size-phone-body);
+  --kb-glass-control-s-height-phone: 32px;
+  --kb-glass-control-s-pad-phone: 12px;
+  --kb-glass-control-s-size-phone: var(--kb-glass-size-phone-small);
+  --kb-glass-control-spacing: 2px;
+  /* The gap between controls in a row. */
+  --kb-glass-control-gap: 10px;
+}
+
+:root{--kb-glass-skew-tag:-12deg;--kb-glass-ground:#07050d;--kb-glass-panel-soft:rgba(10, 6, 20, 0.72);--kb-glass-panel:rgba(10, 6, 20, 0.82);--kb-glass-panel-strong:rgba(10, 6, 20, 0.88);--kb-glass-sheet:rgba(9, 5, 18, 0.92);--kb-glass-field:#160d2a;--kb-glass-field-2:#120b22;--kb-glass-card:#0b0914;--kb-glass-text:#f1ecff;--kb-glass-text-2:#e4def7;--kb-glass-text-hi:#ffffff;--kb-glass-pale:#c9f8ff;--kb-glass-violet:#a78bfa;--kb-glass-neon-text:#9ef4ff;--kb-glass-neon:#19e3ff;--kb-glass-sweet:#2ee6ff;--kb-glass-ready:#ffd93d;--kb-glass-ready-text:#ffe27a;--kb-glass-salty:#ff3d7f;--kb-glass-salty-text:#ff9cc0;--kb-glass-estimate:#ffc48a;--kb-glass-loss:#ff8ab0;--kb-glass-over:#ff8a96;--kb-glass-hurt:#ff8fb1;--kb-glass-ink-neon:#03141a;--kb-glass-ink-salty:#14030a;--kb-glass-ink-ready:#1a1403;--kb-glass-font-display:"Anton", sans-serif;--kb-glass-font-body:"Barlow Condensed", sans-serif}
+/*
+ * A postcard's face (Postcard.tsx), drawn to the card template (docs/plans/2026-11-05-card-template-design.md, template.ts): one 2:3
+ * card at four sizes, the Vending Machine's slot (86 by 129), the Phone board's card (104 by 156), the HUD's fan (150 by 225) and the
+ * hand's sheet (276 by 414), layout A of docs/research/2026-11-05-card-template/01-layouts.html. The card's own lengths come from
+ * --kb-pc-w and the others template.ts writes (templateVars): never `cqw` on the card's own box, where a container unit measures the
+ * page and not the card. Every piece inside the card is placed in `cqw`, a share of the card's width, because the card is their
+ * container, so the same face is right at every size. A smaller size drops pieces and never reshapes the art.
+ *
+ * The card's own color and ink arrive as --kb-card-color and --kb-card-ink (the instance's art, `CardArt`); every other color is a
+ * glass token. The two plates' backgrounds are single tokens, never a gradient, so the contrast guard can read them (tools/check-
+ * glass-contrast.mjs): their opacity is held so their words meet contrast over pure white, the brightest art can be.
+ *
+ * The armed card pulses (the board's `armed`) and stops under reduced motion with its brightest ring shown, as every motion here does.
+ */
+.kb-postcard {
+  --kb-card-color: var(--kb-glass-neon);
+  --kb-card-ink: var(--kb-glass-ink-neon);
+  position: relative;
+  display: block;
+  box-sizing: border-box;
+  width: var(--kb-pc-w);
+  aspect-ratio: 2 / 3;
+  padding: 0;
+  border: 0;
+  border-radius: var(--kb-pc-radius);
+  color: var(--kb-glass-text-hi);
+  text-align: left;
+  font: inherit;
+  background: var(--kb-glass-card);
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 14px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+  /* A card is a drawing of one size: its words never outgrow it, whatever the text size (cqw is a share of the card's own width). */
+  container-type: inline-size;
+}
+
+button.kb-postcard {
+  cursor: pointer;
+}
+
+.kb-postcard[data-size='fan'] {
+  box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 22px color-mix(in srgb, var(--kb-card-color) 55%, transparent), 0 18px 30px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+}
+
+.kb-postcard[data-size='sheet'] {
+  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 30px color-mix(in srgb, var(--kb-card-color) 60%, transparent), 0 30px 50px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+}
+
+/*
+ * The canvas, inset by the border: the only clip. Under the art, the card's ground and a soft glow in its color, so art with a
+ * transparent ground shows both; over it, a 1px inner hairline in the card's color at 50%.
+ */
+.kb-postcard-canvas {
+  position: absolute;
+  inset: var(--kb-pc-border);
+  z-index: 0;
+  overflow: hidden;
+  border-radius: var(--kb-pc-canvas-radius);
+  background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--kb-card-color) 32%, transparent), transparent 62%), var(--kb-glass-card);
+}
+
+.kb-postcard-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--kb-card-color) 50%, transparent);
+  pointer-events: none;
+}
+
+.kb-postcard-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---- the pieces, each inside the keep-clear line (2cqw in from the edge) ---- */
+
+/* Alignment and play: parallelograms on the top border at the left, at the glass's tag skew. */
+.kb-postcard-badges {
+  position: absolute;
+  z-index: 3;
+  left: 6cqw;
+  top: 2.2cqw;
+  display: flex;
+  gap: 1.6cqw;
+}
+
+.kb-postcard-tag,
+.kb-postcard-play {
+  display: inline-block;
+  transform: skewX(var(--kb-glass-skew-tag));
+  padding: 0.12em 0.6em;
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(8px, 7.2cqw, 18px);
+  font-style: italic;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kb-postcard-tag {
+  background: var(--kb-card-color);
+  color: var(--kb-card-ink);
+  box-shadow: 0 0 0 1.5px var(--kb-glass-card), 0 0 10px color-mix(in srgb, var(--kb-card-color) 60%, transparent);
+}
+
+.kb-postcard-play {
+  background: var(--kb-glass-card);
+  color: var(--kb-card-color);
+  box-shadow: inset 0 0 0 1.5px var(--kb-card-color), 0 0 0 1.5px var(--kb-glass-card);
+}
+
+/* The gem on its point at the top right: its glyph says the rarity by shape. Its tips sit on the keep-clear line. */
+.kb-postcard-gem {
+  --kb-gem: max(12cqw, 13px);
+  position: absolute;
+  z-index: 3;
+  right: calc(2.2cqw + 0.2071 * var(--kb-gem));
+  top: calc(2.2cqw + 0.2071 * var(--kb-gem));
+  width: var(--kb-gem);
+  height: var(--kb-gem);
+  display: grid;
+  place-items: center;
+  transform: rotate(45deg);
+  background: var(--kb-glass-card);
+  box-shadow: inset 0 0 0 max(1.5px, 0.8cqw) var(--kb-card-color), 0 0 10px color-mix(in srgb, var(--kb-card-color) 60%, transparent);
+}
+
+.kb-postcard-gem::before {
+  content: attr(data-kb-gem);
+  transform: rotate(-45deg);
+  color: var(--kb-card-color);
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(7px, 6.5cqw, 16px);
+  line-height: 1;
+}
+
+/* The name plate, skewed, across the art's lower third, the card's color as a stripe at its left edge; the name counter-skewed inside. */
+.kb-postcard-plate {
+  position: absolute;
+  z-index: 2;
+  left: 4.5cqw;
+  top: 89cqw;
+  width: 80cqw;
+  height: 15cqw;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  transform: skewX(var(--kb-glass-skew-tag));
+  background: var(--kb-glass-panel);
+  box-shadow: inset 1.2cqw 0 0 var(--kb-card-color);
+  backdrop-filter: blur(3px);
+  /* The display face sits high in its box: a touch more at the top centers its capitals. */
+  padding: 0.8cqw 4cqw 0 6.5cqw;
+}
+
+.kb-postcard-name {
+  display: block;
+  min-width: 0;
+  transform: skewX(calc(-1 * var(--kb-glass-skew-tag)));
+  font-family: var(--kb-glass-font-display);
+  font-size: max(7px, min(11.5cqw, calc(145cqw / var(--kb-name-chars, 8))));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 0 3cqw color-mix(in srgb, var(--kb-card-color) 80%, transparent), 0 1px 0 var(--kb-glass-ground);
+}
+
+.kb-postcard[data-size='slot'] .kb-postcard-plate { top: auto; bottom: 7cqw; width: calc(100% - 9cqw); height: 20cqw; }
+/* instances/divided-world/ui/index.test.tsx reads this rule to hold the longest name legible at the slot. */
+.kb-postcard[data-size='slot'] .kb-postcard-name { font-size: max(7px, min(15cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+.kb-postcard[data-size='phone'] .kb-postcard-plate { top: auto; bottom: 8cqw; width: calc(100% - 9cqw); height: 18cqw; }
+.kb-postcard[data-size='phone'] .kb-postcard-name { font-size: max(7px, min(13.5cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+
+/* The text plate, chamfered at two corners by the glass's cut. */
+.kb-postcard-line {
+  position: absolute;
+  z-index: 2;
+  left: 9cqw;
+  right: 9cqw;
+  top: 108cqw;
+  bottom: 9cqw;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 3cqw 4cqw;
+  clip-path: polygon(0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw));
+  background: var(--kb-glass-panel-soft);
+  backdrop-filter: blur(4px);
+  color: var(--kb-glass-text-2);
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(9px, 7.4cqw, 17px);
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* The sheet's plate holds the longest summary in the game whole (four lines): it runs down to the foot band, and its words are 6cqw (16.6px on the sheet). */
+.kb-postcard[data-size='sheet'] .kb-postcard-line { top: 106cqw; bottom: 7cqw; padding: 2.5cqw 4cqw; font-size: 6cqw; line-height: 1.3; }
+
+/* The plate's 1px edge, all the way round, the chamfers included: a ring cut from the plate's own outline (even-odd), its inner line 1px in from every edge (on a 45° cut that is 0.414px further along each side). */
+.kb-postcard-line::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--kb-card-color) 55%, transparent);
+  clip-path: polygon(evenodd,
+    0 0, calc(100% - 4cqw) 0, 100% 4cqw, 100% 100%, 4cqw 100%, 0 calc(100% - 4cqw), 0 0,
+    1px 1px, 1px calc(100% - 4cqw - 0.414px), calc(4cqw + 0.414px) calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) calc(4cqw + 0.414px), calc(100% - 4cqw - 0.414px) 1px, 1px 1px);
+}
+
+/*
+ * The bottom border's one row: the foot line at the left and the price at the right, laid out side by side, so the foot ends where
+ * the price begins whatever the price's width ("0.20", "1.00+"), and the foot gives way, never the price.
+ */
+.kb-postcard-base {
+  position: absolute;
+  z-index: 3;
+  left: 7cqw;
+  right: 6cqw;
+  bottom: 2cqw;
+  display: flex;
+  align-items: flex-end;
+  gap: 3cqw;
+}
+
+/* The price on the bottom border at the right, in the machine's gold. */
+.kb-postcard-price {
+  flex: none;
+  margin-bottom: 0.2cqw;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  transform: skewX(var(--kb-glass-skew-tag));
+  padding: 0.12em 0.6em;
+  background: var(--kb-glass-card);
+  box-shadow: inset 0 0 0 1.5px var(--kb-glass-ready), 0 0 10px color-mix(in srgb, var(--kb-glass-ready) 45%, transparent);
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(9px, 7cqw, 18px);
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.kb-postcard-orb {
+  flex: none;
+  width: 0.95em;
+  height: 0.95em;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, var(--kb-glass-ready-text), var(--kb-glass-ready) 52%, var(--kb-glass-ground));
+}
+
+/* The foot line, taking what the price leaves. */
+.kb-postcard-foot {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 3cqw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5cqw;
+  font-family: var(--kb-glass-font-body);
+  font-size: clamp(9px, 3cqw, 10px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-postcard-foot > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.kb-postcard-foot > :first-child { flex: none; }
+.kb-postcard-credit { color: var(--kb-glass-text-2); font-style: italic; letter-spacing: 0.06em; }
+.kb-postcard[data-kb-alignment='salty'] .kb-postcard-foot { color: var(--kb-glass-salty-text); }
+
+/* ---- the back: the same frame, the glass's crossed bands on its field, in no card's color ---- */
+.kb-postcard-back {
+  --kb-card-color: var(--kb-glass-text-hi);
+}
+
+.kb-postcard-back .kb-postcard-canvas {
+  background:
+    linear-gradient(45deg, transparent 40%, var(--kb-card-color) 40% 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 40%, var(--kb-card-color) 40% 60%, transparent 60%),
+    var(--kb-glass-field);
+}
+
+/* The instance's mark on the back, as a TCG back's emblem: half the card's width, on a dark disc so it reads over the bands. */
+.kb-postcard-emblem {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 50cqw;
+  height: 50cqw;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  padding: 4cqw;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--kb-glass-field) 92%, transparent);
+  box-shadow: 0 0 0 1px var(--kb-card-color), 0 0 4cqw 1cqw var(--kb-glass-field);
+}
+
+.kb-postcard-emblem img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* The hit pull's back is the machine's gold. */
+.kb-postcard-back[data-hit] {
+  --kb-card-color: var(--kb-glass-ready);
+}
+
+/* ---- armed ---- */
+.kb-postcard[data-armed] {
+  box-shadow: 0 0 0 2px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 75%, transparent), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
+  animation: kb-postcard-armed 1.8s ease-in-out infinite;
+}
+
+@keyframes kb-postcard-armed {
+  50% { box-shadow: 0 0 0 2px var(--kb-glass-text-hi), 0 0 44px var(--kb-card-color), 0 22px 34px color-mix(in srgb, var(--kb-glass-ground) 90%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-postcard[data-armed] { animation: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-postcard[data-armed] { animation: none; }
+
+/* Forced colors drop the ring and its glow, which are shadows: the armed card is ringed in the system's Highlight instead. */
+@media (forced-colors: active) {
+  /* A card's shadows are dropped too, so its edge and its gem's are drawn in the system's text color. */
+  .kb-postcard,
+  .kb-postcard-back { outline: 1px solid CanvasText; }
+  .kb-postcard-gem { outline: 1px solid CanvasText; }
+  .kb-postcard[data-armed]::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid Highlight;
+    border-radius: inherit;
+    pointer-events: none;
+  }
+}
+
+/* A card that is a button answers a pointer by lighting (e2e/glass-hover.spec.ts). */
+button.kb-postcard:hover {
+  filter: brightness(1.15);
+}
+
+/* The back's cloud: two layers of the glass's noise, white with alpha, tinted by a gradient of the glass's own colors
+   multiplied over them, so the clouds take the colors and the field between them stays dark. */
+.kb-postcard-back {
+  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-violet) 0%, var(--kb-glass-neon) 45%, var(--kb-glass-violet) 72%, var(--kb-glass-salty) 100%);
+  --kb-back-glow: var(--kb-glass-neon);
+}
+
+.kb-postcard-back .kb-postcard-canvas {
+  background-image:
+    var(--kb-back-tint),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 840' preserveAspectRatio='none'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0045 0.006' numOctaves='4' seed='23'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.9 0 0 0 -0.62'/%3E%3CfeGaussianBlur stdDeviation='5'/%3E%3C/filter%3E%3Crect width='540' height='840' filter='url(%23n)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 840' preserveAspectRatio='none'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.009 0.012' numOctaves='3' seed='61'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.6 0 0 0 -0.75'/%3E%3CfeGaussianBlur stdDeviation='4'/%3E%3C/filter%3E%3Crect width='540' height='840' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-blend-mode: multiply, normal, normal;
+  background-color: var(--kb-glass-field);
+}
+
+/* The instance's mark, two thirds of the card's width, glowing; the mark draws its own rim, so no disc is laid under it. */
+.kb-postcard-back .kb-postcard-emblem {
+  width: 66cqw;
+  height: 66cqw;
+  padding: 0;
+  background: none;
+  box-shadow: 0 0 0 max(1px, 0.6cqw) var(--kb-back-glow), 0 0 6cqw 1.5cqw color-mix(in srgb, var(--kb-back-glow) 90%, transparent), 0 0 18cqw 5cqw color-mix(in srgb, var(--kb-back-glow) 45%, transparent);
+}
+
+/* The hit's back: its clouds and its glow in the machine's gold. */
+.kb-postcard-back[data-hit] {
+  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-ready) 0%, var(--kb-glass-salty) 55%, var(--kb-glass-ready) 100%);
+  --kb-back-glow: var(--kb-glass-ready);
+}
+
+body{margin:0}
+a{color:inherit}a:hover{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #ffffff;outline-offset:3px}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 20px;white-space:nowrap;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7}
+.many .tab{padding:0 13px;letter-spacing:1.5px}
+.most .tab{padding:0 10px;letter-spacing:1px}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:52px;padding:0 26px;transform:skewX(-10deg);text-decoration:none;border:1px solid rgba(241,236,255,.6);background:none;cursor:pointer;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#f1ecff}
+.btn b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.btn.primary{background:#19e3ff;border-color:#19e3ff;color:#03141a;box-shadow:0 0 18px rgba(25,227,255,.6)}
+.btn.gold{background:#ffd93d;border-color:#ffd93d;color:#1a1403;box-shadow:0 0 18px rgba(255,217,61,.55)}
+.btn.sm{min-height:44px;padding:0 16px;font-size:19px}
+.btns{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.lead{margin:0;max-width:680px;font:600 21px/1.5 'Barlow Condensed',sans-serif;color:#f1ecff}
+.note{margin:0;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.lnk{font:700 21px 'Barlow Condensed',sans-serif;color:#c9f8ff;text-decoration-thickness:2px;text-underline-offset:4px}
+.sec{margin:0;font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:3px}
+.piece{--cut:22px;--edge:rgba(201,248,255,.55);--ground:rgba(7,5,13,.94);position:relative;isolation:isolate;background:var(--edge);clip-path:polygon(0 0,calc(100% - var(--cut)) 0,100% var(--cut),100% 100%,var(--cut) 100%,0 calc(100% - var(--cut)))}
+.piece::before{content:'';position:absolute;z-index:-1;inset:1.5px;background:var(--ground);clip-path:polygon(0 0,calc(100% - var(--cut) + .62px) 0,100% calc(var(--cut) - .62px),100% 100%,calc(var(--cut) - .62px) 100%,0 calc(100% - var(--cut) + .62px))}
+.sel,.num{box-sizing:border-box;height:52px;padding:0 14px;background:rgba(18,12,36,.9);border:1px solid #19e3ff;color:#f1ecff;font:700 21px 'Barlow Condensed',sans-serif}
+.num{width:110px;text-align:right}
+.gem{display:inline-grid;place-items:center;flex:none;width:22px;height:22px;transform:rotate(45deg);background:#0b0914;box-shadow:inset 0 0 0 1.5px var(--g)}
+.gem::before{content:attr(data-gem);transform:rotate(-45deg);color:var(--g);font:16px/1 'Barlow Condensed',sans-serif}
+.odds{width:100%;border-collapse:collapse;font:600 21px 'Barlow Condensed',sans-serif;color:#f1ecff}
+.odds th{padding:16px 0 8px;text-align:left;font:800 19px 'Barlow Condensed',sans-serif;letter-spacing:2.5px;color:#9ef4ff;border-bottom:1px solid rgba(201,248,255,.4)}
+.odds td{padding:7px 0;border-bottom:1px solid rgba(241,236,255,.14)}
+.odds td:last-child{text-align:right;font-weight:800}
+.odds .who{display:flex;align-items:center;gap:12px}
+.tag{display:inline-block;transform:skewX(-12deg);padding:2px 10px;font:italic 800 17px/1.3 'Barlow Condensed',sans-serif;letter-spacing:1.5px;white-space:nowrap}
+.tag b{display:inline-block;transform:skewX(12deg);font-weight:800}
+.reveal-row{display:flex;gap:24px;align-items:flex-start}
+.turned{position:relative}
+.turned.now::after{content:'';position:absolute;left:10%;right:10%;bottom:-14px;height:4px;background:#19e3ff;box-shadow:0 0 12px rgba(25,227,255,.8)}
+.turned.hit.now::after{background:#ffd93d;box-shadow:0 0 12px rgba(255,217,61,.8)}
+.spark{position:absolute;width:16px;height:16px;background:#ffd93d;clip-path:polygon(50% 0,62% 38%,100% 50%,62% 62%,50% 100%,38% 62%,0 50%,38% 38%)}
+.raretag{position:absolute;left:50%;transform:translateX(-50%) skewX(-12deg);background:#ffd93d;color:#1a1403;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:3px;padding:6px 18px;white-space:nowrap;box-shadow:0 0 18px rgba(255,217,61,.6)}
+.raretag b{display:inline-block;transform:skewX(12deg)}
+.adm-head th{padding-bottom:12px}
+</style>
+</head>
+<body>
+<div style="width: 1660px; height: 884px; display: flex; gap: 20px; padding: 20px; box-sizing: border-box; background: #2a2833; font-family: 'Barlow Condensed', sans-serif">
+  <figure aria-label="The machine, a Booster selected" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAp1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBp1" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softp1" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmp1" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="70" width="390" height="774" fill="#000000" opacity="0.85" filter="url(#softp1)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmp1)">
+      <rect width="390" height="844" filter="url(#sAp1)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBp1)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    <main style="position: absolute; left: 16px; top: 86px; width: 358px">
+      <section aria-label="Selected" style="padding: 10px 14px; border: 1px solid rgba(46,230,143,.6); background: rgba(46,230,143,.06)">
+        <p class="sec" style="font-size: 16px; letter-spacing: 2px; color: #2ee68f">A1 &middot; BOOSTER</p>
+        <p style="margin: 2px 0 0; font: 40px/1 Anton, Impact, sans-serif; color: #2ee68f">3.00</p>
+      </section>
+      <section aria-label="In this pack" style="display: flex; gap: 14px; align-items: center; margin-top: 12px; padding: 12px 14px; border: 1px solid rgba(201,248,255,.35)">
+        <div style="flex: none"><div aria-hidden="true" style="display: flex; gap: 6px"><span style="zoom: 0.26; display: block"><span class="kb-postcard kb-postcard-back" style="--kb-pc-w:86px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02)" data-size="slot"><span class="kb-postcard-canvas" aria-hidden="true"><span class="kb-postcard-emblem"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" aria-hidden="true" draggable="false"/></span></span></span></span><span style="zoom: 0.26; display: block"><span class="kb-postcard kb-postcard-back" style="--kb-pc-w:86px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02)" data-size="slot"><span class="kb-postcard-canvas" aria-hidden="true"><span class="kb-postcard-emblem"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" aria-hidden="true" draggable="false"/></span></span></span></span><span style="zoom: 0.26; display: block"><span class="kb-postcard kb-postcard-back" style="--kb-pc-w:86px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02)" data-size="slot"><span class="kb-postcard-canvas" aria-hidden="true"><span class="kb-postcard-emblem"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" aria-hidden="true" draggable="false"/></span></span></span></span><span style="zoom: 0.26; display: block"><span class="kb-postcard kb-postcard-back" style="--kb-pc-w:86px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02)" data-size="slot"><span class="kb-postcard-canvas" aria-hidden="true"><span class="kb-postcard-emblem"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" aria-hidden="true" draggable="false"/></span></span></span></span><span style="zoom: 0.26; display: block"><span class="kb-postcard kb-postcard-back" style="--kb-pc-w:86px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02)" data-size="slot" data-hit=""><span class="kb-postcard-canvas" aria-hidden="true"><span class="kb-postcard-emblem"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" aria-hidden="true" draggable="false"/></span></span></span></span></div></div>
+        <p class="note" style="font-size: 17px; line-height: 1.35">Five cards, the last one at least uncommon. It opens as soon as you buy it.</p>
+      </section>
+      <button style="display: block; width: 100%; margin-top: 12px; padding: 8px 0 10px; border: 0; background: #ff3d7f; color: #14030a; clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%)"><b style="display: block; font: 34px/1 Anton, Impact, sans-serif">BUY</b><span style="display: block; margin-top: 2px; font: 800 17px 'Barlow Condensed', sans-serif; letter-spacing: 1.5px">BOOSTER &middot; 3.00</span></button>
+      <aside aria-label="About the Booster" style="margin-top: 22px">
+        <table class="odds" style="font-size: 17px">
+        <caption style="text-align: left; caption-side: top; padding: 0 0 2px; font: 34px/1 Anton, Impact, sans-serif; color: #ffffff">BOOSTER ODDS</caption>
+        <tr><th colspan="2">CARDS 1 TO 4, EACH</th></tr>
+        <tr><td><span class="who"><span class="gem" style="--g: #e4def7" data-gem="●" aria-hidden="true"></span>Common</span></td><td>85%</td></tr>
+        <tr><td><span class="who"><span class="gem" style="--g: #2ee6ff" data-gem="◆" aria-hidden="true"></span>Uncommon</span></td><td>15%</td></tr>
+        <tr><th colspan="2">CARD 5, THE HIT</th></tr>
+        <tr><td><span class="who"><span class="gem" style="--g: #2ee6ff" data-gem="◆" aria-hidden="true"></span>Trap Card</span></td><td>25%</td></tr>
+        <tr><td><span class="who"><span class="gem" style="--g: #2ee6ff" data-gem="◆" aria-hidden="true"></span>Force Field</span></td><td>25%</td></tr>
+        <tr><td><span class="who"><span class="gem" style="--g: #2ee6ff" data-gem="◆" aria-hidden="true"></span>Glitter Bomb</span></td><td>25%</td></tr>
+        <tr><td><span class="who"><span class="gem" style="--g: #ffd93d" data-gem="★" aria-hidden="true"></span>Main Event</span></td><td>25%</td></tr>
+      </table>
+        <p class="note" style="margin-top: 10px; font-size: 17px; line-height: 1.4">Main Event isn't sold on its own. Within a rarity, every card is equally likely.</p>
+      </aside>
+    </main>
+  </figure>
+  <figure aria-label="Opening a Booster" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAp2" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBp2" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softp2" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmp2" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="0" width="390" height="844" fill="#000000" opacity="0.9" filter="url(#softp2)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmp2)">
+      <rect width="390" height="844" filter="url(#sAp2)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBp2)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <section role="dialog" aria-modal="true" aria-label="Opening a Booster" style="position: absolute; inset: 0">
+      <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(40,16,80,.45), rgba(7,5,13,.9) 72%)"></div>
+      <div aria-hidden="true" style="position: absolute; left: 135px; top: -152px; filter: drop-shadow(0 6px 14px rgba(7,5,13,.8))"><span aria-hidden="true" data-kb-art style="position: relative; display: block; width: 120px; height: 180px; clip-path: polygon(0% 16.8px,8.333333333333334% 10.799999999999999px,16.666666666666668% 16.8px,25% 10.799999999999999px,33.333333333333336% 16.8px,41.666666666666664% 10.799999999999999px,50% 16.8px,58.333333333333336% 10.799999999999999px,66.66666666666667% 16.8px,75% 10.799999999999999px,83.33333333333333% 16.8px,91.66666666666667% 10.799999999999999px,100% 16.8px,100% calc(100% - 3.84px),90% calc(100% - 0px),80% calc(100% - 3.84px),70% calc(100% - 0px),60% calc(100% - 3.84px),50% calc(100% - 0px),40% calc(100% - 3.84px),30% calc(100% - 0px),20% calc(100% - 3.84px),10% calc(100% - 0px),0% calc(100% - 3.84px)); background: linear-gradient(155deg, #ffd93d 0%, #ff3d7f 34%, #7a2bff 66%, #19e3ff 100%)">
+      <span style="position: absolute; left: 0; right: 0; top: 10.799999999999999px; height: 1.5px; background: rgba(7,5,13,.45)"></span>
+      <span style="position: absolute; left: 0; right: 0; bottom: 10.799999999999999px; height: 1.5px; background: rgba(7,5,13,.45)"></span>
+      <span style="position: absolute; inset: 16.8px 9.6px 21.599999999999998px; background: linear-gradient(115deg, rgba(255,255,255,.0) 30%, rgba(255,255,255,.45) 48%, rgba(255,255,255,0) 62%)"></span>
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" style="position: absolute; left: 30px; top: 36px; width: 60px; height: 60px; filter: drop-shadow(0 0 3.5999999999999996px rgba(7,5,13,.7))">
+      <span style="position: absolute; left: 7.199999999999999px; right: 7.199999999999999px; top: 110.39999999999999px; padding: 2.4px 0; transform: skewX(-12deg); background: rgba(7,5,13,.88); text-align: center; font: 18px/1 Anton, Impact, sans-serif; letter-spacing: .02em; color: #ffffff">BOOSTER</span>
+      <span style="position: absolute; left: 0; right: 0; top: 139.2px; text-align: center; font: 800 10.2px/1 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: #07050d">5 CARDS</span>
+    </span></div>
+      <div style="position: absolute; left: 0; right: 0; top: 38px; text-align: center">
+        <h1 style="margin: 0; font: 44px/1 Anton, Impact, sans-serif; color: #ffffff">BOOSTER</h1>
+        <p role="status" style="margin: 4px 0 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #c9f8ff">3 OF 5 TURNED OVER</p>
+        <div aria-hidden="true" style="display: flex; justify-content: center; gap: 8px; margin-top: 10px"><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; border: 1.5px solid rgba(241,236,255,.6)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; border: 1.5px solid #ffd93d"></span></div>
+      </div>
+      <div style="position: absolute; left: 57px; top: 214px; width: 276px; height: 414px">
+        <span aria-hidden="true" style="position: absolute; left: 12px; top: 10px; transform: rotate(5deg)"><span class="kb-postcard kb-postcard-back" style="--kb-pc-w:276px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02)" data-size="sheet"><span class="kb-postcard-canvas" aria-hidden="true"><span class="kb-postcard-emblem"><img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" aria-hidden="true" draggable="false"/></span></span></span></span>
+        
+        <article aria-label="Feelin' Fab" style="position: relative"><span class="kb-postcard" style="--kb-pc-w:276px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02);--kb-card-color:#2ee6ff;--kb-card-ink:#03141a;--kb-name-chars:11" data-size="sheet" data-kb-card="feelin-fab" data-kb-alignment="sweet"><span class="kb-postcard-canvas" aria-hidden="true"><img class="kb-postcard-art" src="data:image/svg+xml,%3csvg%20xmlns=&#x27;http://www.w3.org/2000/svg&#x27;%20viewBox=&#x27;0%200%20540%20840&#x27;%20preserveAspectRatio=&#x27;xMidYMid%20slice&#x27;%20aria-hidden=&#x27;true&#x27;%3e%3cdefs%3e%3cradialGradient%20id=&#x27;soft&#x27;%20cx=&#x27;50%25&#x27;%20cy=&#x27;35%25&#x27;%20r=&#x27;70%25&#x27;%3e%3cstop%20offset=&#x27;0&#x27;%20stop-color=&#x27;%23fff&#x27;%20stop-opacity=&#x27;.55&#x27;/%3e%3cstop%20offset=&#x27;.4&#x27;%20stop-color=&#x27;%23fff&#x27;%20stop-opacity=&#x27;0&#x27;/%3e%3cstop%20offset=&#x27;1&#x27;%20stop-color=&#x27;%232a1646&#x27;%20stop-opacity=&#x27;.55&#x27;/%3e%3c/radialGradient%3e%3c/defs%3e%3crect%20width=&#x27;540&#x27;%20height=&#x27;840&#x27;%20fill=&#x27;%232a1646&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;620&#x27;%20fill=&#x27;%23d0b3ff&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;574&#x27;%20fill=&#x27;%239fd3ff&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;528&#x27;%20fill=&#x27;%23a8e6a1&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;482&#x27;%20fill=&#x27;%23fff2a0&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;436&#x27;%20fill=&#x27;%23ffc09f&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;390&#x27;%20fill=&#x27;%23ff9aa2&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;344&#x27;%20fill=&#x27;%23d0b3ff&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;298&#x27;%20fill=&#x27;%239fd3ff&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;252&#x27;%20fill=&#x27;%23a8e6a1&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;206&#x27;%20fill=&#x27;%23fff2a0&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;160&#x27;%20fill=&#x27;%23ffc09f&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;114&#x27;%20fill=&#x27;%23ff9aa2&#x27;/%3e%3crect%20width=&#x27;540&#x27;%20height=&#x27;840&#x27;%20fill=&#x27;url(%23soft)&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;60&#x27;%20fill=&#x27;%23fff&#x27;%20opacity=&#x27;.85&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;205&#x27;%20fill=&#x27;none&#x27;%20stroke=&#x27;%232ee6ff&#x27;%20stroke-width=&#x27;14&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;205&#x27;%20fill=&#x27;none&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;3&#x27;%20opacity=&#x27;.5&#x27;%20transform=&#x27;translate(0%200)&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;290&#x27;%20r=&#x27;226&#x27;%20fill=&#x27;none&#x27;%20stroke=&#x27;%23e6fdff&#x27;%20stroke-width=&#x27;3&#x27;%20opacity=&#x27;.8&#x27;/%3e%3cpath%20fill=&#x27;%23e6fdff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M70%2064%20L75.72%2084.28%20L96%2090%20L75.72%2095.72%20L70%20116%20L64.28%2095.72%20L44%2090%20L64.28%2084.28%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M470%2078%20L477.04%20102.96%20L502%20110%20L477.04%20117.04%20L470%20142%20L462.96%20117.04%20L438%20110%20L462.96%20102.96%20Z&#x27;/%3e%3cpath%20fill=&#x27;%232ee6ff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M120%20286%20L123.08%20296.92%20L134%20300%20L123.08%20303.08%20L120%20314%20L116.92%20303.08%20L106%20300%20L116.92%20296.92%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23e6fdff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M420%20310%20L424.4%20325.6%20L440%20330%20L424.4%20334.4%20L420%20350%20L415.6%20334.4%20L400%20330%20L415.6%20325.6%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M60%20452%20L63.96%20466.04%20L78%20470%20L63.96%20473.96%20L60%20488%20L56.04%20473.96%20L42%20470%20L56.04%20466.04%20Z&#x27;/%3e%3cpath%20fill=&#x27;%232ee6ff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M490%20476%20L495.28%20494.72%20L514%20500%20L495.28%20505.28%20L490%20524%20L484.72%20505.28%20L466%20500%20L484.72%20494.72%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23e6fdff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M240%2048%20L242.64%2057.36%20L252%2060%20L242.64%2062.64%20L240%2072%20L237.36%2062.64%20L228%2060%20L237.36%2057.36%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M330%20426%20L333.08%20436.92%20L344%20440%20L333.08%20443.08%20L330%20454%20L326.92%20443.08%20L316%20440%20L326.92%20436.92%20Z&#x27;/%3e%3cpath%20fill=&#x27;%232ee6ff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M190%20172%20L193.96%20186.04%20L208%20190%20L193.96%20193.96%20L190%20208%20L186.04%20193.96%20L172%20190%20L186.04%20186.04%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23e6fdff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M360%20188%20L362.64%20197.36%20L372%20200%20L362.64%20202.64%20L360%20212%20L357.36%20202.64%20L348%20200%20L357.36%20197.36%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M150%20548%20L152.64%20557.36%20L162%20560%20L152.64%20562.64%20L150%20572%20L147.36%20562.64%20L138%20560%20L147.36%20557.36%20Z&#x27;/%3e%3cpath%20fill=&#x27;%232ee6ff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2.5&#x27;%20d=&#x27;M420%20584%20L423.52%20596.48%20L436%20600%20L423.52%20603.52%20L420%20616%20L416.48%20603.52%20L404%20600%20L416.48%20596.48%20Z&#x27;/%3e%3cpath%20fill=&#x27;%232ee6ff&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;3&#x27;%20d=&#x27;M270%20246%20L279.68%20280.32%20L314%20290%20L279.68%20299.68%20L270%20334%20L260.32%20299.68%20L226%20290%20L260.32%20280.32%20Z&#x27;/%3e%3c/svg%3e" alt="" aria-hidden="true" draggable="false"/></span><span class="kb-postcard-plate" aria-hidden="true" data-kb-art="true"><span class="kb-postcard-name">Feelin&#x27; Fab</span></span> <span class="kb-postcard-badges" aria-hidden="true" data-kb-art="true"><span class="kb-postcard-tag">Sweet</span> <span class="kb-postcard-play">Cast</span></span> <span class="kb-postcard-gem" aria-hidden="true" data-kb-rarity="common" data-kb-gem="●" title="Common"></span> <span class="kb-postcard-line" aria-hidden="true" data-kb-art="true">Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.</span><span class="kb-postcard-base" aria-hidden="true" data-kb-art="true"><span class="kb-postcard-foot"><span>Postcard · Stacks 3 deep</span><span class="kb-postcard-credit">Art · Divided World</span></span> <span class="kb-postcard-price kb-num"><span class="kb-postcard-orb"></span>0.20</span></span></span></article>
+      </div>
+      <div style="position: absolute; left: 16px; right: 16px; top: 650px; display: flex; flex-direction: column; align-items: stretch; gap: 12px">
+        <button class="btn gold" style="min-height: 48px"><b>TAP FOR THE NEXT CARD</b></button><div style="display: flex; gap: 10px"><button class="btn" style="flex: 1; min-height: 44px; font-size: 19px"><b>TURN ALL</b></button><button class="btn" style="flex: 1; min-height: 44px; font-size: 19px"><b>CLOSE</b></button></div>
+        <p class="note" style="font-size: 17px; text-align: center">Tap the card, or swipe it away, to turn the next one.</p>
+      </div>
+    </section>
+  </figure>
+  <figure aria-label="A Booster, all turned" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAp3" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBp3" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softp3" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmp3" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="0" width="390" height="844" fill="#000000" opacity="0.9" filter="url(#softp3)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmp3)">
+      <rect width="390" height="844" filter="url(#sAp3)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBp3)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <section role="dialog" aria-modal="true" aria-label="Opening a Booster" style="position: absolute; inset: 0">
+      <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(40,16,80,.45), rgba(7,5,13,.9) 72%)"></div>
+      <div aria-hidden="true" style="position: absolute; left: 135px; top: -152px; filter: drop-shadow(0 6px 14px rgba(7,5,13,.8))"><span aria-hidden="true" data-kb-art style="position: relative; display: block; width: 120px; height: 180px; clip-path: polygon(0% 16.8px,8.333333333333334% 10.799999999999999px,16.666666666666668% 16.8px,25% 10.799999999999999px,33.333333333333336% 16.8px,41.666666666666664% 10.799999999999999px,50% 16.8px,58.333333333333336% 10.799999999999999px,66.66666666666667% 16.8px,75% 10.799999999999999px,83.33333333333333% 16.8px,91.66666666666667% 10.799999999999999px,100% 16.8px,100% calc(100% - 3.84px),90% calc(100% - 0px),80% calc(100% - 3.84px),70% calc(100% - 0px),60% calc(100% - 3.84px),50% calc(100% - 0px),40% calc(100% - 3.84px),30% calc(100% - 0px),20% calc(100% - 3.84px),10% calc(100% - 0px),0% calc(100% - 3.84px)); background: linear-gradient(155deg, #ffd93d 0%, #ff3d7f 34%, #7a2bff 66%, #19e3ff 100%)">
+      <span style="position: absolute; left: 0; right: 0; top: 10.799999999999999px; height: 1.5px; background: rgba(7,5,13,.45)"></span>
+      <span style="position: absolute; left: 0; right: 0; bottom: 10.799999999999999px; height: 1.5px; background: rgba(7,5,13,.45)"></span>
+      <span style="position: absolute; inset: 16.8px 9.6px 21.599999999999998px; background: linear-gradient(115deg, rgba(255,255,255,.0) 30%, rgba(255,255,255,.45) 48%, rgba(255,255,255,0) 62%)"></span>
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+CiAgPCEtLSBEaXZpZGVkIFdvcmxkJ3MgY29pbiAoQjEpOiB0aGUgYm9hcmQgYWJvdmUsIHRoZSBnbGFzcyBiZWxvdywgYW5kIHRoZSBzZWFtIGJldHdlZW4gdGhlbSBpcyB0aGUgYmFyIG9mIGEgZGl2aXNpb24gc2lnbi4KICAgICAgIFRoZSBzZWFtJ3Mgcm93cyBzaXQgb24gd2hvbGUgcGl4ZWxzIGF0IDMycHggKHkgMzAgdG8gMzQgb2YgNjQpLiBkb2NzL3BsYW5zLzIwMjYtMTEtMDItZmF2aWNvbi1kZXNpZ24ubWQgLS0+CiAgPGRlZnM+CiAgICA8Y2xpcFBhdGggaWQ9ImMiPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjMwIi8+PC9jbGlwUGF0aD4KICAgIDxyYWRpYWxHcmFkaWVudCBpZD0iZyIgY3g9IjAuNSIgY3k9IjEiIHI9IjAuOSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjOGMyNGZhIi8+PHN0b3Agb2Zmc2V0PSIwLjYiIHN0b3AtY29sb3I9IiM0YTE4OWEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiMyYTBmNTUiLz48L3JhZGlhbEdyYWRpZW50PgogICAgPGZpbHRlciBpZD0iZ2xvdyIgeD0iLTIwJSIgeT0iLTMwMCUiIHdpZHRoPSIxNDAlIiBoZWlnaHQ9IjcwMCUiPjxmZUdhdXNzaWFuQmx1ciBzdGREZXZpYXRpb249IjEuNCIvPjwvZmlsdGVyPgogIDwvZGVmcz4KICA8ZyBjbGlwLXBhdGg9InVybCgjYykiPgogICAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjMyIiBmaWxsPSJ1cmwoI2cpIi8+CiAgICA8cmVjdCB5PSIzMCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjQiIGZpbGw9IiMxOWUzZmYiIGZpbHRlcj0idXJsKCNnbG93KSIvPgogICAgPHJlY3QgeT0iMzAiIHdpZHRoPSI2NCIgaGVpZ2h0PSIyIiBmaWxsPSIjYzlmOGZmIi8+CiAgICA8cmVjdCB5PSIzMiIgd2lkdGg9IjY0IiBoZWlnaHQ9IjIiIGZpbGw9IiMxOWUzZmYiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIzMiIgcj0iMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzA3MDUwZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPGNpcmNsZSBjeD0iMzIiIGN5PSIxNiIgcj0iNiIgZmlsbD0iIzA3MDUwZCIvPgogIDxjaXJjbGUgY3g9IjMyIiBjeT0iNDgiIHI9IjYiIGZpbGw9IiNmMWVjZmYiLz4KPC9zdmc+Cg==" alt="" style="position: absolute; left: 30px; top: 36px; width: 60px; height: 60px; filter: drop-shadow(0 0 3.5999999999999996px rgba(7,5,13,.7))">
+      <span style="position: absolute; left: 7.199999999999999px; right: 7.199999999999999px; top: 110.39999999999999px; padding: 2.4px 0; transform: skewX(-12deg); background: rgba(7,5,13,.88); text-align: center; font: 18px/1 Anton, Impact, sans-serif; letter-spacing: .02em; color: #ffffff">BOOSTER</span>
+      <span style="position: absolute; left: 0; right: 0; top: 139.2px; text-align: center; font: 800 10.2px/1 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: #07050d">5 CARDS</span>
+    </span></div>
+      <div style="position: absolute; left: 0; right: 0; top: 38px; text-align: center">
+        <h1 style="margin: 0; font: 44px/1 Anton, Impact, sans-serif; color: #ffffff">BOOSTER</h1>
+        <p role="status" style="margin: 4px 0 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #c9f8ff">5 OF 5 &middot; ALL IN YOUR HAND</p>
+        <div aria-hidden="true" style="display: flex; justify-content: center; gap: 8px; margin-top: 10px"><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span><span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; background: rgba(241,236,255,.3)"></span></div>
+      </div>
+      <div style="position: absolute; left: 57px; top: 214px; width: 276px; height: 414px">
+        
+        <p class="raretag" style="top: -40px; margin: 0; z-index: 4; font-size: 18px"><b>RARE &middot; MAIN EVENT</b></p>
+        <article aria-label="Main Event" style="position: relative"><span class="kb-postcard" style="--kb-pc-w:276px;--kb-pc-border:calc(var(--kb-pc-w) * 0.05);--kb-pc-radius:calc(var(--kb-pc-w) * 0.075);--kb-pc-canvas-radius:calc(var(--kb-pc-w) * 0.025);--kb-pc-keep:calc(var(--kb-pc-w) * 0.02);--kb-card-color:#2ee6ff;--kb-card-ink:#03141a;--kb-name-chars:10;box-shadow:0 0 0 2px #ffd93d, 0 0 40px rgba(255,217,61,.75)" data-size="sheet" data-kb-card="main-event" data-kb-alignment="sweet"><span class="kb-postcard-canvas" aria-hidden="true"><img class="kb-postcard-art" src="data:image/svg+xml,%3csvg%20xmlns=&#x27;http://www.w3.org/2000/svg&#x27;%20viewBox=&#x27;0%200%20540%20840&#x27;%20preserveAspectRatio=&#x27;xMidYMid%20slice&#x27;%20aria-hidden=&#x27;true&#x27;%3e%3cdefs%3e%3cradialGradient%20id=&#x27;bg&#x27;%20cx=&#x27;50%25&#x27;%20cy=&#x27;38%25&#x27;%20r=&#x27;80%25&#x27;%3e%3cstop%20offset=&#x27;0&#x27;%20stop-color=&#x27;%230c5568&#x27;/%3e%3cstop%20offset=&#x27;.5&#x27;%20stop-color=&#x27;%2305242d&#x27;/%3e%3cstop%20offset=&#x27;1&#x27;%20stop-color=&#x27;%23010608&#x27;/%3e%3c/radialGradient%3e%3clinearGradient%20id=&#x27;cone&#x27;%20x1=&#x27;0&#x27;%20y1=&#x27;0&#x27;%20x2=&#x27;0&#x27;%20y2=&#x27;1&#x27;%3e%3cstop%20offset=&#x27;0&#x27;%20stop-color=&#x27;%23e6fdff&#x27;%20stop-opacity=&#x27;.75&#x27;/%3e%3cstop%20offset=&#x27;.7&#x27;%20stop-color=&#x27;%232ee6ff&#x27;%20stop-opacity=&#x27;.22&#x27;/%3e%3cstop%20offset=&#x27;1&#x27;%20stop-color=&#x27;%232ee6ff&#x27;%20stop-opacity=&#x27;0&#x27;/%3e%3c/linearGradient%3e%3clinearGradient%20id=&#x27;plate&#x27;%20x1=&#x27;0&#x27;%20y1=&#x27;0&#x27;%20x2=&#x27;1&#x27;%20y2=&#x27;1&#x27;%3e%3cstop%20offset=&#x27;0&#x27;%20stop-color=&#x27;%23e6fdff&#x27;/%3e%3cstop%20offset=&#x27;.5&#x27;%20stop-color=&#x27;%232ee6ff&#x27;/%3e%3cstop%20offset=&#x27;1&#x27;%20stop-color=&#x27;%230a7f93&#x27;/%3e%3c/linearGradient%3e%3cradialGradient%20id=&#x27;glow&#x27;%20cx=&#x27;50%25&#x27;%20cy=&#x27;50%25&#x27;%20r=&#x27;50%25&#x27;%3e%3cstop%20offset=&#x27;0&#x27;%20stop-color=&#x27;%23e6fdff&#x27;%20stop-opacity=&#x27;.8&#x27;/%3e%3cstop%20offset=&#x27;1&#x27;%20stop-color=&#x27;%232ee6ff&#x27;%20stop-opacity=&#x27;0&#x27;/%3e%3c/radialGradient%3e%3c/defs%3e%3crect%20width=&#x27;540&#x27;%20height=&#x27;840&#x27;%20fill=&#x27;url(%23bg)&#x27;/%3e%3crect%20x=&#x27;0&#x27;%20y=&#x27;0&#x27;%20width=&#x27;540&#x27;%20height=&#x27;184&#x27;%20fill=&#x27;%230a2f39&#x27;/%3e%3cg%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;2&#x27;%20opacity=&#x27;.6&#x27;%3e%3cpath%20d=&#x27;M0%2050%20H540%20M0%20100%20H540%20M0%20150%20H540%20M0%20182%20H540&#x27;/%3e%3c/g%3e%3crect%20x=&#x27;0&#x27;%20y=&#x27;180&#x27;%20width=&#x27;540&#x27;%20height=&#x27;10&#x27;%20fill=&#x27;%232ee6ff&#x27;%20opacity=&#x27;.55&#x27;/%3e%3cpolygon%20points=&#x27;200,0%20340,0%20520,520%2020,520&#x27;%20fill=&#x27;url(%23cone)&#x27;/%3e%3cpolygon%20points=&#x27;236,0%20304,0%20380,520%20160,520&#x27;%20fill=&#x27;%23e6fdff&#x27;%20opacity=&#x27;.12&#x27;/%3e%3cg%20transform=&#x27;translate(0%2030)%20rotate(-3%20270%2090)&#x27;%3e%3crect%20x=&#x27;150&#x27;%20y=&#x27;56&#x27;%20width=&#x27;240&#x27;%20height=&#x27;64&#x27;%20rx=&#x27;6&#x27;%20fill=&#x27;%23d9fbff&#x27;/%3e%3cpath%20d=&#x27;M168%2078%20H350%20M168%2098%20H300&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;7&#x27;%20stroke-linecap=&#x27;round&#x27;%20opacity=&#x27;.7&#x27;/%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;52&#x27;%20r=&#x27;11&#x27;%20fill=&#x27;%23ff3d7f&#x27;/%3e%3ccircle%20cx=&#x27;266&#x27;%20cy=&#x27;48&#x27;%20r=&#x27;3.5&#x27;%20fill=&#x27;%23fff&#x27;%20opacity=&#x27;.7&#x27;/%3e%3c/g%3e%3cpath%20d=&#x27;M270%20160%20C262%20190%20280%20205%20268%20245&#x27;%20stroke=&#x27;%23e6fdff&#x27;%20stroke-width=&#x27;4&#x27;%20fill=&#x27;none&#x27;%20opacity=&#x27;.7&#x27;/%3e%3cpath%20d=&#x27;M-20%20392%20Q270%20360%20560%20392%20L560%20452%20Q270%20420%20-20%20452%20Z&#x27;%20fill=&#x27;%2306303c&#x27;%20stroke=&#x27;%232ee6ff&#x27;%20stroke-width=&#x27;4&#x27;/%3e%3cg%20fill=&#x27;%232ee6ff&#x27;%20opacity=&#x27;.55&#x27;%3e%3ccircle%20cx=&#x27;60&#x27;%20cy=&#x27;408&#x27;%20r=&#x27;6&#x27;/%3e%3ccircle%20cx=&#x27;130&#x27;%20cy=&#x27;402&#x27;%20r=&#x27;6&#x27;/%3e%3ccircle%20cx=&#x27;410&#x27;%20cy=&#x27;402&#x27;%20r=&#x27;6&#x27;/%3e%3ccircle%20cx=&#x27;480&#x27;%20cy=&#x27;408&#x27;%20r=&#x27;6&#x27;/%3e%3c/g%3e%3ccircle%20cx=&#x27;270&#x27;%20cy=&#x27;414&#x27;%20r=&#x27;170&#x27;%20fill=&#x27;url(%23glow)&#x27;/%3e%3cellipse%20cx=&#x27;270&#x27;%20cy=&#x27;414&#x27;%20rx=&#x27;132&#x27;%20ry=&#x27;96&#x27;%20fill=&#x27;url(%23plate)&#x27;%20stroke=&#x27;%23e6fdff&#x27;%20stroke-width=&#x27;6&#x27;/%3e%3cellipse%20cx=&#x27;270&#x27;%20cy=&#x27;414&#x27;%20rx=&#x27;106&#x27;%20ry=&#x27;74&#x27;%20fill=&#x27;none&#x27;%20stroke=&#x27;%2303141a&#x27;%20stroke-width=&#x27;5&#x27;%20opacity=&#x27;.7&#x27;/%3e%3cpath%20fill=&#x27;%2303141a&#x27;%20d=&#x27;M270%20362%20L284%20398%20L322%20400%20L292%20424%20L302%20460%20L270%20440%20L238%20460%20L248%20424%20L218%20400%20L256%20398%20Z&#x27;/%3e%3cpath%20d=&#x27;M190%20380%20Q220%20350%20270%20346&#x27;%20stroke=&#x27;%23fff&#x27;%20stroke-width=&#x27;10&#x27;%20stroke-linecap=&#x27;round&#x27;%20fill=&#x27;none&#x27;%20opacity=&#x27;.7&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20d=&#x27;M150%20308%20L154.84%20325.16%20L172%20330%20L154.84%20334.84%20L150%20352%20L145.16%20334.84%20L128%20330%20L145.16%20325.16%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23e6fdff&#x27;%20d=&#x27;M410%20334%20L413.52%20346.48%20L426%20350%20L413.52%20353.52%20L410%20366%20L406.48%20353.52%20L394%20350%20L406.48%20346.48%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20d=&#x27;M360%20458%20L362.64%20467.36%20L372%20470%20L362.64%20472.64%20L360%20482%20L357.36%20472.64%20L348%20470%20L357.36%20467.36%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23e6fdff&#x27;%20d=&#x27;M90%20240%20L92.2%20247.8%20L100%20250%20L92.2%20252.2%20L90%20260%20L87.8%20252.2%20L80%20250%20L87.8%20247.8%20Z&#x27;/%3e%3cpath%20fill=&#x27;%23fff&#x27;%20d=&#x27;M470%20218%20L472.64%20227.36%20L482%20230%20L472.64%20232.64%20L470%20242%20L467.36%20232.64%20L458%20230%20L467.36%20227.36%20Z&#x27;/%3e%3cellipse%20cx=&#x27;270&#x27;%20cy=&#x27;560&#x27;%20rx=&#x27;150&#x27;%20ry=&#x27;22&#x27;%20fill=&#x27;%232ee6ff&#x27;%20opacity=&#x27;.18&#x27;/%3e%3cg%20stroke=&#x27;%232ee6ff&#x27;%20stroke-width=&#x27;3&#x27;%20opacity=&#x27;.12&#x27;%3e%3cpath%20d=&#x27;M0%20640%20H540%20M0%20700%20H540%20M0%20760%20H540&#x27;/%3e%3c/g%3e%3c/svg%3e" alt="" aria-hidden="true" draggable="false"/></span><span class="kb-postcard-plate" aria-hidden="true" data-kb-art="true"><span class="kb-postcard-name">Main Event</span></span> <span class="kb-postcard-badges" aria-hidden="true" data-kb-art="true"><span class="kb-postcard-tag">Sweet</span> <span class="kb-postcard-play">Cast</span></span> <span class="kb-postcard-gem" aria-hidden="true" data-kb-rarity="rare" data-kb-gem="★" title="Rare"></span> <span class="kb-postcard-line" aria-hidden="true" data-kb-art="true">Cast on a thread. Pins it to the top of its board for a day.</span><span class="kb-postcard-base" aria-hidden="true" data-kb-art="true"><span class="kb-postcard-foot"><span>Postcard · One per post</span><span class="kb-postcard-credit">Art · Divided World</span></span> <span class="kb-postcard-price kb-num"><span class="kb-postcard-orb"></span>3.00</span></span></span></article>
+      </div>
+      <div style="position: absolute; left: 16px; right: 16px; top: 650px; display: flex; flex-direction: column; align-items: stretch; gap: 12px">
+        <button class="btn gold" style="min-height: 48px"><b>DONE</b></button>
+        <p class="note" style="font-size: 17px; text-align: center">These five are already in your hand.</p>
+      </div>
+    </section>
+  </figure>
+  <figure aria-label="The machine, for an admin" style="margin: 0; width: 390px; height: 844px; position: relative; overflow: hidden; background: #07050d; color: #f1ecff; flex: none">
+    <svg aria-hidden="true" width="390" height="844" style="position: absolute; left: 0; top: 0">
+    <defs>
+      <filter id="sAp4" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="23"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.74"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="sBp4" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="61"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.08  0 0 0 0 0.85  0 0 0 0 1  0 2 0 0 -1.0"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="softp4" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="30"></feGaussianBlur></filter>
+      <mask id="calmp4" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#ffffff"></rect>
+        <rect x="0" y="70" width="390" height="774" fill="#000000" opacity="0.85" filter="url(#softp4)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#calmp4)">
+      <rect width="390" height="844" filter="url(#sAp4)" opacity="0.95"></rect>
+      <rect width="390" height="844" filter="url(#sBp4)" opacity="0.5"></rect>
+    </g>
+  </svg>
+    <nav aria-label="Menu" style="position: absolute; left: 0; right: 0; top: 0; height: 70px; z-index: 5; display: flex; align-items: center; padding: 0 12px; background: rgba(7,5,13,.9); border-bottom: 1px solid rgba(201,248,255,.5); box-shadow: 0 1px 16px rgba(25,227,255,.35)">
+      <a href="#" class="tab" style="border: 1px solid #ffffff; color: #ffffff; min-height: 46px; font-size: 20px"><b>&lsaquo; BACK TO THE BOARD</b></a>
+    </nav>
+    <main style="position: absolute; left: 16px; top: 86px; width: 358px">
+      <h1 style="margin: 0; font: 56px/1 Anton, Impact, sans-serif">THE MACHINE</h1>
+      <nav aria-label="Admin pages" style="display: flex; gap: 8px; margin-top: 12px"><a href="#" class="btn sm"><b>MOVES</b></a><a href="#" class="btn sm primary" aria-current="page"><b>THE MACHINE</b></a></nav>
+      <ol style="margin: 16px 0 0; padding: 0; list-style: none">
+        <li style="padding: 12px 0; border-top: 1px solid rgba(241,236,255,.22)">
+          <div style="display: flex; justify-content: space-between; align-items: center"><b style="font: 700 20px 'Barlow Condensed', sans-serif"><span style="color: #ffd93d">A1</span> &nbsp;Booster <span style="font-weight: 500; font-size: 17px; color: #e4def7">pack &middot; 5 cards</span></b><span style="display: flex; gap: 6px"><button class="btn sm" aria-label="Move up" disabled style="width: 44px; padding: 0; opacity: .35; cursor: default"><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></div>
+          <div style="display: flex; gap: 10px; margin-top: 10px"><select class="sel" style="flex: 1; height: 44px; font-size: 18px" aria-label="Booster: availability"><option>On sale</option></select><input class="num" style="height: 44px; width: 96px; font-size: 18px" aria-label="Booster: price" value="3.00"></div>
+          
+        </li><li style="padding: 12px 0; border-top: 1px solid rgba(241,236,255,.22)">
+          <div style="display: flex; justify-content: space-between; align-items: center"><b style="font: 700 20px 'Barlow Condensed', sans-serif"><span style="color: #ffd93d">A2</span> &nbsp;Whoops! <span style="font-weight: 500; font-size: 17px; color: #e4def7">common</span></b><span style="display: flex; gap: 6px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></div>
+          <div style="display: flex; gap: 10px; margin-top: 10px"><select class="sel" style="flex: 1; height: 44px; font-size: 18px" aria-label="Whoops!: availability"><option>On sale</option></select><input class="num" style="height: 44px; width: 96px; font-size: 18px" aria-label="Whoops!: price" value="1.00"></div>
+          <p style="margin: 10px 0 0"><span class="tag" style="font-size: 15px; border: 1px solid #ff3d7f; color: #ff9cc0"><b>PULLED BY THE BOSS &middot; TO NOV 9</b></span> <a href="#" class="lnk" style="font-size: 17px">In the queue</a></p>
+        </li><li style="padding: 12px 0; border-top: 1px solid rgba(241,236,255,.22)">
+          <div style="display: flex; justify-content: space-between; align-items: center"><b style="font: 700 20px 'Barlow Condensed', sans-serif"><span style="color: #ffd93d">B1</span> &nbsp;Stick Around <span style="font-weight: 500; font-size: 17px; color: #e4def7">common</span></b><span style="display: flex; gap: 6px"><button class="btn sm" aria-label="Move up" style="width: 44px; padding: 0; "><b>&uarr;</b></button><button class="btn sm" aria-label="Move down" style="width: 44px; padding: 0; "><b>&darr;</b></button></span></div>
+          <div style="display: flex; gap: 10px; margin-top: 10px"><select class="sel" style="flex: 1; height: 44px; font-size: 18px" aria-label="Stick Around: availability"><option>On sale</option></select><input class="num" style="height: 44px; width: 96px; font-size: 18px" aria-label="Stick Around: price" value="1.00"></div>
+          
+        </li>
+      </ol>
+      <p class="note" style="font-size: 17px; padding-top: 8px; border-top: 1px solid rgba(241,236,255,.22)">&hellip; seven more slots, then Save changes.</p>
+    </main>
+  </figure>
+</div>
+</body>
+</html>
