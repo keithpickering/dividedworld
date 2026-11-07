@@ -139,6 +139,17 @@ describe('the pile under a feel', () => {
     expect(counter()).toHaveTextContent('1 of 5 turned over');
   });
 
+  test('a keyboard or assistive click right after a tap still turns: only the tap\'s own click is swallowed', async () => {
+    open();
+    await ready();
+    tap((await top(0)).querySelector('button')!);
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
+    /* Within half a second of the tap, Enter (or a screen reader's click, which carries no pointer) on the card that is next. */
+    await waitFor(() => expect(document.querySelector('.kb-opening-turn')).not.toBeNull());
+    fireEvent.click(document.querySelector('.kb-opening-turn')!, { detail: 0 });
+    expect(counter()).toHaveTextContent('2 of 5 turned over');
+  });
+
   test('a swipe on whatever card is on top turns one card, after each of the first four turns', async () => {
     open();
     await ready();

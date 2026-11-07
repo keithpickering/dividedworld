@@ -439,7 +439,7 @@ describe('a second buy while a card is flying (booster packs plan, Task 10)', ()
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     await waitFor(() => expect(document.querySelectorAll('.kb-vending-drop')).toHaveLength(1));
     /* Partway through the first card's delivery, the second is bought. */
-    await new Promise((r) => setTimeout(r, 700));
+    await new Promise((r) => setTimeout(r, 300));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     await waitFor(() => expect(document.querySelectorAll('.kb-vending-drop')).toHaveLength(2));
     /* The hand holds four; neither has landed, so it reads the two it held. */

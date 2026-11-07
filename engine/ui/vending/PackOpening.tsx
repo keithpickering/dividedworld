@@ -38,7 +38,7 @@
  * The modal is the glass's layer (`useModalLayer`): focus moves inside when it opens and is held there, Esc closes it, and focus goes back to where
  * `returnFocusTo` says (the pack's slot).
  */
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useInstantTransition, usePresence } from 'motion/react';
 import { PostcardBack, Postcard } from '../cards/Postcard.tsx';
@@ -424,10 +424,13 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
   /* On a phone the pile is the control: a tap on it, or a swipe across it, turns the next card (a drag short of a third of the card's width springs back). */
   const drag = useRef<number | null>(null);
-  /* When a pointer gesture last turned a card: the click the browser sends after the same tap must not turn a second (a keyboard's click comes with no gesture and always turns). */
+  /* When a pointer gesture last turned a card: the one click the browser sends after that same tap must not turn a second. Only a click a pointer
+     sent (detail above 0) is swallowed, and only once, so Enter, Space or an assistive technology's click (detail 0) always turns, however soon. */
   const pointerTurnAt = useRef(-Infinity);
-  const onTurnClick = () => {
-    if (isPhone() && performance.now() - pointerTurnAt.current < 500) return;
+  const onTurnClick = (e: ReactMouseEvent) => {
+    const echo = e.detail > 0 && performance.now() - pointerTurnAt.current < 500;
+    pointerTurnAt.current = -Infinity;
+    if (isPhone() && echo) return;
     turnNext();
   };
   const onPileDown = (e: ReactPointerEvent) => { drag.current = e.clientX; };
