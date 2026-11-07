@@ -121,6 +121,12 @@ interface Outcome {
   readonly text: string;
 }
 
+/** A card the pack gave that this instance does not know (the log says "a card" too): shown plainly, on the plain face, and counted. */
+const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
+  key, name: 'A card this machine no longer has', alignment: 'sweet', tag: 'Sweet', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
+  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set',
+});
+
 /** The cards on their way to the hand: the last one's key (a new one restarts the drop) and how many have not landed. */
 interface Drop {
   readonly key: string;
@@ -407,6 +413,8 @@ export function Vending() {
       void look();
       return;
     }
+    /* A purchase that landed is read again too: another slot may have changed while this one was bought. */
+    void look();
     if (picked.pack && 'contents' in bought.value) {
       const { contents, balance: left } = bought.value;
       const text = `${picked.name} opened: its ${contents.length} cards are in your hand. ${orbs(left)} is left, solid.`;
@@ -556,7 +564,7 @@ export function Vending() {
       {opening && (
         <PackOpening
           name={opening.name} {...(opening.art ? { art: opening.art } : {})} note={opening.note}
-          cards={opening.cards.flatMap((k) => cardFaces.filter((f) => f.key === k))}
+          cards={opening.cards.map((k) => cardFaces.find((f) => f.key === k) ?? unknownFace(k, cardFaces[0]))}
           onClose={() => change(account, () => ({ opening: null }))}
           returnFocusTo={() => slotButtons.current.get(opening.slot) ?? null}
         />

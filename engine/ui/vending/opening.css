@@ -349,3 +349,6 @@
 :where(:root[data-kb-layout='phone']) .kb-opening-hint-touch {
   display: block;
 }
+
+/* The reveal's one live region (PackOpening.tsx): the count line and the card said as it turns, with no box of its own. */
+.kb-opening-live { display: contents; }

@@ -696,7 +696,7 @@ describe('buying a pack opens the reveal', () => {
     for (const c of contents) expected[c] = (expected[c] ?? 0) + 1;
     expect(hand).toEqual(expected);
     expect((await fake.wallet()).balance).toBe(262);
-    expect(within(screen.getByRole('dialog')).getByRole('status')).toHaveTextContent('0 of 5 turned over');
+    expect(screen.getByRole('dialog').querySelector('.kb-opening-count')!).toHaveTextContent('0 of 5 turned over');
     /* The reveal shows what was answered: turned one at a time, the names are the answer's, in its order. */
     for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: /^Turn the next card$/u }));
     const shown = within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem').map((li) => li.getAttribute('aria-label')!.split(':')[1]!.split(',')[0]!.trim());
@@ -728,6 +728,47 @@ describe('buying a pack opens the reveal', () => {
     await press();
     expect(document.querySelector('.kb-vending-outcome[role="status"]')).toHaveTextContent('Booster opened: its 5 cards are in your hand. 2.62 is left, solid.');
     expect(screen.getByRole('img', { name: /^Wallet: 2\.62 of 6\.00/u })).toBeInTheDocument();
+  });
+
+  test('after a pack is bought the machine is read again, so a slot that changed meanwhile shows what it is now', async () => {
+    const fake = stockedWorld(562);
+    const read = vi.spyOn(fake, 'machine');
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    const before = read.mock.calls.length;
+    fake.seed.slot({ card: 'trap' }, { availability: 'soldOut' });
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    await screen.findByRole('dialog', { name: 'Opening a Booster' });
+    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(before));
+    expect(await screen.findByRole('button', { name: 'Trap Card, sold out' })).toBeInTheDocument();
+  });
+
+  test('after a single card is bought the machine is read again', async () => {
+    const fake = stockedWorld(562);
+    const read = vi.spyOn(fake, 'machine');
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: /^Buy Whoops!/u }));
+    const before = read.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: /^Buy Whoops! · / }));
+    await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  test('a card the instance does not know is shown plainly in the reveal and counted, in step with the outcome line', async () => {
+    const fake = stockedWorld(562);
+    const real = fake.buyPack.bind(fake);
+    vi.spyOn(fake, 'buyPack').mockImplementation(async (slot) => {
+      const a = await real(slot);
+      return a.ok ? { ok: true, value: { ...a.value, contents: [...a.value.contents.slice(0, 4), 'ghost'] } } : a;
+    });
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    await screen.findByRole('dialog', { name: 'Opening a Booster' });
+    expect(document.querySelector('.kb-vending-outcome[role="status"]')).toHaveTextContent('its 5 cards are in your hand');
+    expect(screen.getByRole('dialog').querySelector('.kb-opening-count')!).toHaveTextContent('0 of 5 turned over');
+    for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: /^Turn the next card$/u }));
+    expect(within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem')[4]).toHaveAccessibleName(/A card this machine no longer has/u);
+    expect(screen.getByRole('dialog')).toHaveTextContent('All five are in your hand');
   });
 
   test('another account signing in while the reveal is open shows nothing of it', async () => {

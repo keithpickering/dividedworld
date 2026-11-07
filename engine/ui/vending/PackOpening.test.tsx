@@ -33,7 +33,7 @@ function open(o: { onClose?: () => void; note?: string | null; opener?: HTMLElem
   return { onClose, ...view };
 }
 
-const counter = () => screen.getByRole('status');
+const counter = () => screen.getByRole('dialog').querySelector('.kb-opening-count')!;
 const row = () => within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' }));
 const next = () => screen.getByRole('button', { name: /^Turn the next card$|^Done$/u });
 
@@ -209,10 +209,23 @@ describe('leaving', () => {
 });
 
 describe('what a screen reader hears', () => {
+  /** Every live region in the dialog: an explicit aria-live, or a role that is one implicitly. */
+  const regions = () => [...screen.getByRole('dialog').querySelectorAll('[aria-live]:not([aria-live="off"]), [role="status"], [role="alert"], [role="log"]')];
+
+  test('exactly one live region, carrying the count and the card, so a turn is announced once', () => {
+    open();
+    expect(regions()).toHaveLength(1);
+    const live = regions()[0]!;
+    expect(live).toHaveTextContent('0 of 5 turned over');
+    fireEvent.click(next());
+    expect(regions()).toHaveLength(1);
+    expect(live).toHaveTextContent('1 of 5 turned over');
+    expect(live).toHaveTextContent('Card 1 of 5: Whoops!, Salty Cast, common.');
+  });
+
   test('each card as it is turned, and the whole pack once all are', () => {
     open();
-    const live = () => document.querySelector('[aria-live="polite"]')!;
-    expect(live()).toHaveTextContent('');
+    const live = () => regions()[0]!;
     fireEvent.click(next());
     expect(live()).toHaveTextContent('Card 1 of 5: Whoops!, Salty Cast, common.');
     fireEvent.click(next());
@@ -225,6 +238,17 @@ describe('what a screen reader hears', () => {
     open();
     const names = row().getAllByRole('listitem').map((li) => li.getAttribute('aria-label') ?? '');
     for (const n of names) for (const f of pulled) expect(n).not.toContain(f.name);
+  });
+});
+
+describe('Space', () => {
+  test('a held Space turns one card, not one for every repeat', () => {
+    open();
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(dialog, { key: ' ' });
+    fireEvent.keyDown(dialog, { key: ' ', repeat: true });
+    fireEvent.keyDown(dialog, { key: ' ', repeat: true });
+    expect(counter()).toHaveTextContent('1 of 5 turned over');
   });
 });
 

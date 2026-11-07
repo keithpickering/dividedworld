@@ -12,8 +12,9 @@ import { dayAndTime } from '../characters/format.ts';
 import { rarityName, orbs } from '../cards/faces.ts';
 import { shortDate } from '../postbit/dates.ts';
 
-/** A chance as the odds table says it: "85%", "12.5%". Never rounded to a whole number that is not the chance. */
+/** A chance as the odds table says it: "85%", "12.5%". Never rounded to a whole number that is not the chance, and a chance above 0 never reads "0%": "<0.1%". */
 export function percent(chance: number): string {
+  if (chance > 0 && Math.round(chance * 1000) === 0) return '<0.1%';
   const p = Math.round(chance * 1000) / 10;
   return `${Number.isInteger(p) ? p : p.toFixed(1)}%`;
 }

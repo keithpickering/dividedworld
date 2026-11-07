@@ -10,7 +10,7 @@
  *  - A card is turned by a click or a tap on the next card, "Turn the next card", or Space. "Turn all" turns the rest. The hit (the last card) has a gold
  *    back and, once turned, a gold tag naming its rarity and card, with a glow and a few sparks.
  *  - On a phone the cards are a pile at the sheet's size: a tap on the pile or a swipe across it turns the next card, and a row of five outlines counts down.
- *  - A screen reader hears each card as it is turned, and the whole pack once all are. A face-down card is named with no word of what it is.
+ *  - A screen reader hears each card as it is turned, and the whole pack once all are, from one live region (the count line, which holds both). A face-down card is named with no word of what it is.
  *
  * Motion: the layer enters as the glass's modals do (`useLayer`), the head's words and buttons as a screen's head does (`staggerItem`), and the card
  * turns on its vertical axis in the spotlight, on the feel's `enter` token (a spring under Snappy). Under Off (reduced motion) there is no wrapper and no
@@ -94,7 +94,8 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo }: 
   }, [turned, box]);
 
   const onKeyDown = (e: ReactKeyboardEvent) => {
-    if (e.key !== ' ' || e.defaultPrevented) return;
+    /* A held Space repeats; only the first press turns a card. */
+    if (e.key !== ' ' || e.repeat || e.defaultPrevented) return;
     /* On a button the browser's own click follows a Space; anywhere else Space turns the next card. */
     if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return;
     e.preventDefault();
@@ -124,9 +125,13 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo }: 
         <PackArt className="kb-opening-parked" part="opened" width={180} name={name} count={count} {...(art ? { art } : {})} />
         <div className="kb-opening-head">
           <motion.h2 className="kb-opening-title" {...staggerItem(feel, delays, 0)}>{name}</motion.h2>
-          <motion.p role="status" className="kb-opening-count" {...staggerItem(feel, delays, 1)}>
-            {all ? `${count} of ${count} · all in your hand` : `${turned} of ${count} turned over`}
-          </motion.p>
+          {/* The one live region: the count and the card said as it turns, in one place, so a turn is heard once. It takes no box of its own. */}
+          <div className="kb-opening-live" aria-live="polite" aria-atomic="true">
+            <motion.p className="kb-opening-count" {...staggerItem(feel, delays, 1)}>
+              {all ? `${count} of ${count} · all in your hand` : `${turned} of ${count} turned over`}
+            </motion.p>
+            <span className="kb-visually-hidden">{said}</span>
+          </div>
           <ol className="kb-opening-outlines" aria-hidden="true">
             {cards.map((c, i) => <li key={`${c.key}-${i}`} data-kb-turned={i < turned ? '' : undefined} data-kb-hit={i === count - 1 ? '' : undefined} />)}
           </ol>
@@ -198,7 +203,6 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo }: 
             </>
           )}
         </motion.p>
-        <p className="kb-visually-hidden" aria-live="polite">{said}</p>
       </motion.div>
     </motion.div>,
     document.body,
