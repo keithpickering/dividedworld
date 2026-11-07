@@ -72,6 +72,8 @@ export const ALLOWED_READS = Object.freeze([
   'account_preferences', 'effect_releases',
   // The player's own cards set face down and plays a trap caught (0054_card_plays.sql), and the card plays an admin ended (0092_card_end.sql): each filtered to the caller's own characters on the server.
   'my_face_down', 'my_caught', 'my_cards_ended',
+  // The player's own punishments, reports and appeals for the log (0109_mod_screens.sql): each filtered to the caller's own characters on the server.
+  'my_infractions', 'my_bans', 'my_reports', 'my_appeals',
 ]);
 
 /**
@@ -83,8 +85,9 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
 // intercept (0106): one try to talk a visit down, through a character the caller plays; the server holds every rule (a refusal says why).
+// reports_left_today (0109): how many reports a character may still make today, the same public count for any id (the caller's own failed refunds are also left out of its own).
 // visit_quiz (0106): a thread_page helper that returns one visit's drawn question and its choices, never the answer.
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'replace_queued_description', 'describe_board', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'intercept', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'play_moment', 'updates', 'season_news', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact', 'visit_quiz']);
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'replace_queued_description', 'describe_board', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'intercept', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'play_moment', 'updates', 'season_news', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact', 'visit_quiz', 'reports_left_today']);
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);

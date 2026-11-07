@@ -23,17 +23,26 @@ import { ThreadCtx } from '../thread/context.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import {
-  VISIT_KIND, appealTerms, auraWords, chargeWords, markLabel, markText, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, topCharge, tryTerms, pointsPlain, visitState,
+  VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markLabel, markText, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, topCharge, tryTerms, pointsPlain, visitState,
 } from './visit.ts';
 import { useMinute } from './minute.ts';
 import './visit.css';
 
 /**
- * Opens the appeal form for an infraction (Task 13 builds the form): given the infraction's Act and the button that asked, which the form gives
- * focus back to. Where nothing provides one, Appeal does nothing yet.
+ * Opens the appeal form for an infraction (Forms.tsx's `AppealForm`, in the post's Lens): given the infraction's Act and the button that asked, which the Lens gives
+ * focus back to. A post provides it for its own strip (thread/Post.tsx); where nothing does, Appeal does nothing.
  */
 export type OpenAppeal = (infraction: Id, opener: HTMLElement) => void;
 export const AppealCtx = createContext<OpenAppeal | null>(null);
+
+/**
+ * The notice a filed visit leaves at the top of its post's body, in the board's world: a bordered italic line (thread.css). The post's words stay under it, never replaced
+ * ("The System acts; it never destroys what a player wrote"). Nothing for a visit that has not filed.
+ */
+export function ViolationNotice({ visit }: { readonly visit: Visit | undefined }) {
+  const words = visit?.end?.outcome === 'filed' ? noticeWords(visit.charges) : null;
+  return words === null ? null : <p className="kb-violation">{words}</p>;
+}
 
 /** The stopwatch, drawn in the mark's ink. */
 function Stopwatch() {
@@ -277,7 +286,7 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
       const had = root.current?.contains(document.activeElement) ?? false;
       await load();
       /* A try that worked ends the visit and takes the challenge from the tab with the control that was pressed: focus goes to the open tab, where the Lens's focus began. */
-      if (a.value.succeeded && had) root.current?.closest('[role="dialog"]')?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+      if (a.value.succeeded && had) root.current?.closest('[role=dialog]')?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
       if (visit.challenge.kind === 'bribe') void player.refresh();
     } catch {
       if (live.current) setResult('That could not be sent. Check your connection and open this visit again before you try again.');

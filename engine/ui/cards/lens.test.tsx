@@ -14,7 +14,6 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { LensProvider, useLensFor, useLensStore } from './Lens.tsx';
-import { AppealCtx } from './Visit.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
 
@@ -949,7 +948,6 @@ describe('End this card', () => {
 describe('a visit\'s tab', () => {
   const HOUR = 3_600_000;
   const QUIZ = { kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'], answer: 'Form 0' } as const;
-  const noAppeal = vi.fn();
 
   /** A visit on Spritey's post 2, and on Pipewrench's post 4 where `mine` is set: the reader plays Pipewrench. */
   function visited(o: { challenge?: Parameters<Fake['seed']['visit']>[2] extends infer T ? T extends { challenge?: infer C } ? C : never : never; mine?: boolean; endsInMs?: number } = {}) {
@@ -960,7 +958,7 @@ describe('a visit\'s tab', () => {
     return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
   }
   const openVisit = (w: ReturnType<typeof visited>) =>
-    renderIn(w.fake, <AppealCtx.Provider value={noAppeal}><LoadedThread thread={w.thread} /></AppealCtx.Provider>, { path: `/t/${w.thread}`, instance, cards, copy: { modRole: 'A Moderator' } });
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards, copy: { modRole: 'A Moderator' } });
   const visitMark = async (seq: number) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
   const visitLens = () => screen.getByRole('dialog', { name: /^Visit/u });
   /** Tab until the control has the focus, as a keyboard reader reaches it (the Lens's tab, its close cross, then its controls). */
@@ -1224,10 +1222,13 @@ describe('a visit\'s tab', () => {
       const l = await press(w);
       const appeal = await within(l).findByRole('button', { name: 'Appeal · 0.50 Aura' });
       expect(l).toHaveTextContent('The Clerk hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
-      noAppeal.mockClear();
       appeal.focus();
       await userEvent.keyboard('{Enter}');
-      expect(noAppeal).toHaveBeenCalledWith(inf, appeal);
+      /* The post provides AppealCtx (Task 13): the same panel moves to the Appeal form, whose tab takes the focus. */
+      const form = await screen.findByRole('dialog', { name: 'Appeal on this post' });
+      expect(within(form).getByRole('tab', { name: 'Appeal' })).toHaveFocus();
+      expect(within(form).getByRole('form', { name: 'Appeal' })).toBeInTheDocument();
+      void inf;
     });
 
     test('another player\'s reader sees the state and no Appeal', async () => {

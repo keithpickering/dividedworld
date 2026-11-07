@@ -21,7 +21,9 @@ import { endedWords } from '../board/move-words.ts';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { StaffBadge } from '../postbit/StaffBadge.tsx';
 import { Link } from '../router.tsx';
+import { pageOf, threadHref } from '../thread/pages.ts';
 import { Avatar } from './Avatar.tsx';
+import { didWords, endedModWords, isModAct, postOf } from './modlog.ts';
 import './profile.css';
 
 interface Said {
@@ -118,8 +120,24 @@ function CareerList({ staff }: { readonly staff: string }) {
 /** A staff key no public name resolves: a persona that has not debuted stays unnamed. */
 const UNINTRODUCED = 'a Boss who has not been introduced';
 
+/** A visit, a report judged or an appeal heard (`moves_log`, 0109): what it did, linked to the post, and how it ended. */
+function ModActCells({ row, perPage }: { readonly row: MoveLogRow; readonly perPage: number }) {
+  const seq = postOf(row);
+  const words = didWords(row);
+  return (
+    <>
+      <td>
+        {words.before}
+        {seq === null ? 'a post' : <Link to={threadHref(row.thread, pageOf(seq, perPage), seq)}>post #{seq}</Link>}
+        {words.after}
+      </td>
+      <td className="kb-small kb-muted">{endedModWords(row)}</td>
+    </>
+  );
+}
+
 function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: boolean }) {
-  const { api } = useKayfa();
+  const { api, settings } = useKayfa();
   const [rows, setRows] = useState<readonly MoveLogRow[] | null>(null);
   const [older, setOlder] = useState<MovesCursor | null>(null);
   const [boards, setBoards] = useState<readonly BoardName[]>([]);
@@ -156,7 +174,7 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
       {state === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The moderation log could not be loaded. Reload the page to try again.</p>}
       {rows === null && state !== 'failed' && <p className="kb-muted" aria-busy="true">Loading the log…</p>}
       {rows !== null && rows.length === 0 && (
-        <p>{bot ? 'Nothing here yet. A Mod Bot\'s moderation log stays empty until Mod Bots start their visits.' : 'Nothing here yet. It has not made a move.'}</p>
+        <p>{bot ? 'Nothing here yet. A Mod Bot\'s log lists its visits, the reports it judged and the appeals it heard, once it has any.' : 'Nothing here yet. It has not made a move.'}</p>
       )}
       {rows !== null && rows.length > 0 && (
         <table className="kb-table kb-modlog" aria-label="Moderation log, newest first">
@@ -165,8 +183,14 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
             {rows.map((r) => (
               <tr key={r.act}>
                 <td className="kb-small"><time dateTime={r.at} title={new Date(r.at).toLocaleString('en-US')}>{shortDate(r.at)}</time></td>
-                <td><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
-                <td className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? UNINTRODUCED : null)}</td>
+                {isModAct(r)
+                  ? <ModActCells row={r} perPage={settings.postsPerPage} />
+                  : (
+                    <>
+                      <td><MoveSentence kind={r.kind} params={r.params} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" /></td>
+                      <td className="kb-small kb-muted">{endedWords(r.end, r.demand, r.keptBy ? bosses.find((b) => b.staff === r.keptBy)?.name ?? UNINTRODUCED : null)}</td>
+                    </>
+                  )}
               </tr>
             ))}
           </tbody>

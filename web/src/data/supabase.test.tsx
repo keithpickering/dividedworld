@@ -1273,6 +1273,10 @@ describe('the log', () => {
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
       if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
+      if (name === 'my_infractions') return rows([{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, rule_number: 2, rule: 'Rule 2: No double posting', mod_name: 'The Clerk', post: A, post_seq: 41, thread: T, expires_at: '2026-11-12T20:30:00+00:00', relief: 0, emptied_at: null }]);
+      if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }]);
+      if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null }]);
+      if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null }]);
       return undefined;
     });
   }
@@ -1297,6 +1301,10 @@ describe('the log', () => {
       setPasses: [{ play: SET, card: 'hook', post: A, passedAt: '2026-10-29T18:00:00+00:00', endsAt: '2026-11-05T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
       ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
+      infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null }],
+      bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }],
+      reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null }],
+      appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null }],
       before: null,
     });
     const [ledger] = h.to('my_ledger');
@@ -1321,6 +1329,11 @@ describe('the log', () => {
     expect([caught?.url.searchParams.get('order'), caught?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     const [ended] = h.to('my_cards_ended');
     expect([ended?.url.searchParams.get('order'), ended?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
+    /* The Mod Bots' four views (0109): each newest first and a page long, and every one the caller's own on the server. */
+    for (const name of ['my_infractions', 'my_bans', 'my_reports', 'my_appeals']) {
+      const [req] = h.to(name);
+      expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit')]).toEqual([name, 'at.desc', '200']);
+    }
     expect(h.rest().every((r) => r.method === 'GET' && (r.headers.get('prefer') ?? '').indexOf('count') === -1)).toBe(true);
   });
 
@@ -1338,6 +1351,7 @@ describe('the log', () => {
     expect(h.to('my_face_down')[1]?.url.searchParams.getAll('passed_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    for (const name of ['my_infractions', 'my_bans', 'my_reports', 'my_appeals']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 
   /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */
@@ -2034,5 +2048,69 @@ describe('a visit\'s story', () => {
     const intercepts = h.to('acts_public').filter((r) => r.url.searchParams.get('kind') === 'eq.intercept');
     expect(intercepts).toHaveLength(1);
     expect(intercepts[0]!.url.searchParams.get('payload->>visit_act')).toBe(`eq.${VISIT}`);
+  });
+});
+
+/* The report and appeal doors, the quota read and what the pages say of a ban and a visit (the Mod Bots design, section 9; 0109). */
+describe('reports, appeals and what a page says of a ban', () => {
+  const POST = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const PUNISHMENT = 'aaaaaaaa-0000-4000-8000-000000000002';
+
+  it('reports through the staff function with the player\'s session, once, and maps the verdict and the visit', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', verdict: 'visit', line: 'Noted.', visit: 'v1' }) : undefined));
+    const a = await h.api.fileReport(B, POST, 'a repeat');
+    expect(a).toEqual({ ok: true, value: { report: 'r1', verdict: 'visit', line: 'Noted.', visit: 'v1' } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/staff').map((r) => r.body)).toEqual([{ through: B, post: POST, reason: 'a repeat' }]);
+  });
+
+  it('says the server\'s words for a refusal, and that a lost answer may have gone through, without sending it again', async () => {
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ error: 'this character has made its 3 reports for today' }, 400) : undefined));
+    expect(await refused.api.fileReport(B, POST, 'x')).toEqual({ ok: false, error: 'this character has made its 3 reports for today' });
+    const lost = harness((r) => (r.url.pathname === '/functions/v1/staff' ? new Error('offline') : undefined));
+    const answer = await lost.api.fileReport(B, POST, 'x');
+    expect(answer.ok).toBe(false);
+    expect(!answer.ok && answer.uncertain).toBe(true);
+    expect(lost.log.filter((r) => r.url.pathname === '/functions/v1/staff')).toHaveLength(1);
+  });
+
+  it('appeals through the appeal path of the same function', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/staff/appeal' ? json({ appeal: 'a1', verdict: 'reduced', line: 'Half.', points_delta: -1 }) : undefined));
+    const a = await h.api.fileAppeal(B, PUNISHMENT, 'please');
+    expect(a).toEqual({ ok: true, value: { appeal: 'a1', verdict: 'reduced', line: 'Half.', pointsDelta: -1, refunded: 0 } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/staff/appeal').map((r) => r.body)).toEqual([{ through: B, punishment: PUNISHMENT, plea: 'please' }]);
+  });
+
+  it('reads the reports a character has left today through reports_left_today, and null where it cannot', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/reports_left_today` ? json(2) : undefined));
+    expect(await h.api.reportsLeft(B)).toBe(2);
+    expect(h.log.find((r) => r.url.pathname.endsWith('/rpc/reports_left_today'))?.body).toEqual({ who: B });
+    expect(await harness(() => json({ message: 'no' }, 500)).api.reportsLeft(B)).toBeNull();
+  });
+
+  it('carries a character\'s ban only while it holds, a presence name\'s visit post, and a Mod\'s visits and judgments in its log', async () => {
+    const future = new Date(Date.now() + 3_600_000).toISOString();
+    const past = new Date(Date.now() - 3_600_000).toISOString();
+    const h = harness((r) => {
+      const name = r.url.pathname.replace(`${REST}/`, '');
+      if (name === 'rpc/presence_box') return json({ names: [{ id: B, name: 'The Clerk', staff: true, visit_post: 41 }, { id: C, name: 'Spritey', staff: false }], others: 0 });
+      if (name === 'my_characters') return rows([{ id: B, name: 'Pipewrench', class: 'heel', class_since: past, banned_until: future }, { id: C, name: 'Second', class: 'face', class_since: past, banned_until: past }]);
+      if (name === 'moves_log') return rows([
+        { id: A, kind: 'visit', params: { post: 41, rule: 'Rule 2: No double posting', band: 'minor', cause: 'rule' }, demand: null, expires_at: past, thread: T, at: past, ended_why: 'filed', ended_by: null, ended_at: past, kept_by: null },
+        { id: C, kind: 'renameBoard', params: {}, demand: null, expires_at: null, thread: T, at: past, ended_why: null, ended_by: null, ended_at: null, kept_by: null },
+      ]);
+      return undefined;
+    });
+    const presence = await h.api.presenceBox({ kind: 'thread', thread: T });
+    expect(presence.names).toEqual([{ id: B, name: 'The Clerk', staff: true, visitPost: 41 }, { id: C, name: 'Spritey', staff: false }]);
+    const mine = await h.api.myCharacters();
+    expect(mine[0]?.bannedUntil).toBe(future);
+    expect(mine[1]?.bannedUntil).toBeUndefined();
+    /* A page's character carries its warn points and its ban while it holds (characters_public, 0102); a ban that has run out is none. */
+    const page = (until: string) => harness((r) => (r.url.pathname === `${REST}/rpc/profile_page` ? json({ character: { id: B, name: 'Pipewrench', joined: '2026-10-01', warn_points: 6, banned_until: until }, profile: null }) : undefined));
+    expect((await page(future).api.profilePage(B))?.character).toMatchObject({ warnPoints: 6, bannedUntil: future });
+    expect((await page(past).api.profilePage(B))?.character.bannedUntil).toBeUndefined();
+    const log = await h.api.movesLog('clerk');
+    expect(log.rows[0]).toMatchObject({ kind: 'visit', outcome: 'filed', params: { post: 41 } });
+    expect(log.rows[1]?.outcome).toBeUndefined();
   });
 });

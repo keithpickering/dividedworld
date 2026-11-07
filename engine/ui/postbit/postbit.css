@@ -181,3 +181,28 @@
   background: var(--kb-fg);
   color: var(--kb-bg);
 }
+
+/* The warn meter (WarnMeter.tsx): its words over a small thermometer, in the board's own muted words. Side by side it follows the avatar, ahead of the counts. */
+.kb-postbit-warn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15em;
+  color: var(--kb-muted);
+}
+
+.kb-postbit-thermo {
+  display: block;
+  flex: none;
+  max-width: 100%;
+}
+
+.kb-postbit[data-kb-postbit="side"] .kb-postbit-warn {
+  order: 2;
+}
+
+/* BANNED on the title line: bold, in the board's own foreground, so it reads whatever the title's muted ink. */
+.kb-postbit-banned {
+  color: var(--kb-fg);
+  letter-spacing: 0.05em;
+}

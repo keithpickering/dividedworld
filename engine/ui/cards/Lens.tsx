@@ -48,6 +48,7 @@ import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase,
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel } from './Visit.tsx';
+import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, type LensForm } from './Forms.tsx';
 import { VISIT_KIND, tabName, visitState } from './visit.ts';
 import './lens.css';
 import './visit.css';
@@ -463,9 +464,11 @@ export interface LensProps {
     readonly visit: Visit; readonly thread: Id; readonly author: Id | null;
     readonly onSpinAct: ((act: Id, name: string, opener: HTMLElement) => void) | undefined; readonly onEnded: (end: VisitEnd) => void;
   } | undefined;
+  /** A form the panel is open on (Forms.tsx): a post's report or an appeal. It is the panel's one tab while it is open, and the cards' and the visit's are not offered with it. */
+  readonly form?: LensForm | undefined;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, form }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
@@ -474,10 +477,11 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const billed = markedPlays(shownPlays(here.billed, instance.settings.setLasts), now);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
-  /* A visit's tab is ahead of the cards'. */
-  const kinds = useMemo(() => (visit ? [VISIT_KIND, ...cardKinds] : cardKinds), [visit, cardKinds.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
+  const onForm = form !== undefined && open.card === form.kind;
+  const kinds = useMemo(() => (onForm ? [form.kind] : visit ? [VISIT_KIND, ...cardKinds] : cardKinds), [onForm, form?.kind, visit, cardKinds.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
   const card = kinds.includes(open.card) ? open.card : null;
-  const onVisit = card === VISIT_KIND && visit !== undefined;
+  const onVisit = !onForm && card === VISIT_KIND && visit !== undefined;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
   useEffect(() => { if (card === null) store.close(); }, [card, store]);
   const view = useResolvedView(plays, post, open.card, nameOf);
@@ -508,13 +512,15 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const [placed, setPlaced] = useState<FloatPlace>(narrow ? 'sheet' : 'side');
   /* On open, focus moves to the open tab. */
   useLayoutEffect(() => { tabs.current.get(open.card)?.focus({ preventScroll: true }); }, []);
+  /* A form opened over the tab that was open (Appeal, from the visit's tab) takes the control that was pressed with it: focus goes to the form's tab. */
+  useLayoutEffect(() => { if (onForm) tabs.current.get(open.card)?.focus({ preventScroll: true }); }, [onForm, open.card]);
   if (card === null) return null;
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
-  const name = onVisit ? tabName(visitState(visit.visit)) : kindName(instance, card, here.plays);
+  const name = onForm ? formTabName(form) : onVisit ? tabName(visitState(visit.visit)) : kindName(instance, card, here.plays);
   const ofKind = billed.filter((p) => p.card === card);
-  const ink = onVisit ? 'var(--kb-visit-ink)' : inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder)) ?? cardUi?.art.color;
+  const ink = onVisit || onForm ? 'var(--kb-visit-ink)' : inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder)) ?? cardUi?.art.color;
   /* A card whose rules stack lists its rows by layer, top first; any other in billing order. */
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
@@ -558,16 +564,16 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   return (
     <Float
-      label={visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
+      label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined }}
     >
       <DialogBar close={<CloseCross onClick={dismiss} />}>
-        <div className="kb-lens-tabs" role="tablist" aria-label={visit ? 'Visit and card kinds' : 'Card kinds'} onKeyDown={move}>
+        <div className="kb-lens-tabs" role="tablist" aria-label={onForm ? 'Form' : visit ? 'Visit and card kinds' : 'Card kinds'} onKeyDown={move}>
           {kinds.map((kind) => {
-            const label = kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
+            const label = onForm ? formTabName(form) : kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
             const selected = kind === card;
             return (
               <button
@@ -580,21 +586,23 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         </div>
       </DialogBar>
       <div className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
+        {onForm && form.kind === REPORT_KIND && <ReportForm post={form.post} seq={form.seq} />}
+        {onForm && form.kind === APPEAL_KIND && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} />}
         {onVisit && (
           <VisitPanel
             visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} tallies={tallies} mine={mine} onEnded={visit.onEnded}
             onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
           />
         )}
-        {!onVisit && <div className="kb-lens-section kb-lens-state">
+        {!onVisit && !onForm && <div className="kb-lens-section kb-lens-state">
           <p className="kb-lens-line">{view.state}</p>
           {view.ends && <p className="kb-lens-ends">{view.ends}</p>}
           {view.report && <p className="kb-lens-report">{view.report}</p>}
         </div>}
-        {!onVisit && view.controls.length > 0 && (
+        {!onVisit && !onForm && view.controls.length > 0 && (
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
-        {!onVisit && <Who
+        {!onVisit && !onForm && <Who
           plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}

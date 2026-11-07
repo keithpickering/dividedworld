@@ -33,7 +33,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
   | 'set' | 'sprung' | 'payout' | 'setEnded' | 'passed' | 'caught' | 'struck' | 'wardEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
-  | 'ended';
+  | 'ended'
+  /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
+  | 'infraction' | 'ban' | 'report' | 'appeal';
 
 /** One row of the log. */
 export interface LogRow {
@@ -313,10 +315,83 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   }
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The Mod Bots' lines (the design, section 9): the warn points filed against the player's characters, the bans laid on them, and the reports and appeals they made, each in
+ * plain and true words, never in character ("The fiction may lie; the log never does"): which Act did what, the points and when they drop off. The rows are the player's
+ * own (`my_infractions`, `my_bans`, `my_reports`, `my_appeals`); no line says who reacted or what anyone's class is, and no line is computed from a character that is not theirs.
+ * A post is named by its number in its thread, linked, and "your" where the row is the player's own.
+ */
+function modRows(data: LogData, words: Words): LogRow[] {
+  const { instance } = words;
+  const bots = instance.settings.modBots;
+  const now = Date.now();
+  const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
+  const rows: LogRow[] = [];
+
+  for (const i of data.log.infractions) {
+    const drops = Date.parse(i.expiresAt);
+    const left = i.points - i.relief;
+    const tail: string[] = [];
+    if (i.relief > 0) tail.push(` An appeal took ${plural(i.relief, 'point', 'points')} off.`);
+    if (i.emptiedAt !== null) tail.push(` A ban emptied the bar on ${utcDay(i.emptiedAt)}, so ${left === 1 ? 'this point' : 'these points'} stopped counting then.`);
+    rows.push({
+      key: `infraction:${i.infraction}`, kind: 'infraction', at: i.at, what: `Warn points: ${plural(i.points, 'point', 'points')}`,
+      details: [`${i.mod ?? 'A Mod'}'s visit to `, post(i.thread, i.postSeq, true), ` filed ${i.rule ?? 'a breach of the rules'}: ${plural(i.points, 'warn point', 'warn points')} for ${nameOf(i.character)}, ${drops > now ? 'dropping off' : 'dropped off'} ${utcDay(i.expiresAt)}.`, ...tail],
+      aura: 0, wallet: null, characters: [i.character],
+    });
+  }
+
+  for (const b of data.log.bans) {
+    const over = Date.parse(b.until) <= now;
+    rows.push({
+      key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
+      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so it was banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. It can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
+      aura: 0, wallet: null, characters: [b.character],
+    });
+  }
+
+  for (const r of data.log.reports) {
+    const price = bots.reportPrice;
+    const back = r.refund !== null;
+    const verdict = r.verdict === null
+      ? (back ? ` ${r.mod ?? 'The Mod'} could not hear it, so your ${plain(price)} Aura came back.` : ' It has not been answered yet. If it cannot be, your Aura comes back by itself.')
+      : r.verdict === 'visit' ? ` ${r.mod ?? 'The Mod'} judged it and sent a visit.`
+      : r.verdict === 'dismissed' ? ` ${r.mod ?? 'The Mod'} dismissed it. The ${plain(price)} Aura was spent.`
+      : ` ${r.mod ?? 'The Mod'} judged it a backfire: a visit went to ${nameOf(r.character)}'s latest post. The ${plain(price)} Aura was spent.`;
+    rows.push({
+      key: `report:${r.report}`, kind: 'report', at: r.at, what: 'You reported a post',
+      details: [`${nameOf(r.character)} reported `, post(r.thread, r.postSeq, false), `, for ${plain(price)} Aura. The report is public.${verdict}`],
+      aura: back ? 0 : -price, wallet: null, characters: [r.character],
+    });
+  }
+
+  for (const a of data.log.appeals) {
+    const price = bots.appealPrice;
+    const what = a.punishmentKind === 'ban' ? 'the ban' : 'the warn points';
+    const refunded = a.refund !== null || a.verdict === 'overturned';
+    const ruling = a.verdict === null
+      ? (a.refund !== null ? ` No one could hear it, so your ${plain(price)} Aura came back and you can appeal again.` : ' It has not been ruled on yet. If it cannot be, your Aura comes back by itself.')
+      : a.verdict === 'overturned' ? ` ${a.hearer ?? 'The hearer'} overturned it${a.pointsDelta ? `: ${plural(-a.pointsDelta, 'point', 'points')} came off` : ''}, and the ${plain(price)} Aura came back.`
+      : a.verdict === 'upheld' ? ` ${a.hearer ?? 'The hearer'} upheld it. Nothing changed.`
+      : a.verdict === 'reduced' ? ` ${a.hearer ?? 'The hearer'} reduced it${a.pointsDelta ? `: ${plural(-a.pointsDelta, 'point', 'points')} came off` : ''}.`
+      : ` ${a.hearer ?? 'The hearer'} increased it${a.pointsDelta ? `: ${plural(a.pointsDelta, 'more point', 'more points')} landed` : ''}.`;
+    rows.push({
+      key: `appeal:${a.appeal}`, kind: 'appeal', at: a.at, what: 'You made an appeal',
+      details: [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `, for ${plain(price)} Aura. The plea is public.${ruling}`],
+      aura: refunded ? 0 : -price, wallet: null, characters: [a.character],
+    });
+  }
+  return rows;
 }
 
 /**

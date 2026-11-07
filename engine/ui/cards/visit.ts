@@ -123,3 +123,18 @@ export const pointsPlain = (n: number): string => `${n} point${n === 1 ? '' : 's
 
 /** Whether the infraction's points are still on the bar. */
 export const stillCounts = (i: VisitInfraction, now: number): boolean => Date.parse(i.expiresAt) > now;
+
+
+/**
+ * The notice a filed visit leaves on its post, in the board's world: "This post was found in violation of Rule 2: No double posting." (the design, section 9). It names the heaviest
+ * charge's rule as the catalog says it ("Rule 2: No double posting"), the rule's number with the plain words where only the words came, the board's premise where the charge named
+ * no rule, and Obstruction for a tail's. A charge a report's backfire drew says what it was. Null where there is no charge to name.
+ */
+export function noticeWords(charges: readonly VisitCharge[]): string | null {
+  const top = topCharge(charges);
+  if (top === null) return null;
+  if (top.cause === 'backfire') return 'This post was found to be a waste of the staff\'s time.';
+  const words = top.rule ?? (top.cause === 'tail' ? 'Obstruction' : top.ruleNumber === null ? 'the board\'s premise' : `Rule ${top.ruleNumber}`);
+  const named = top.ruleNumber !== null && !/^Rule \d/iu.test(words) ? `Rule ${top.ruleNumber}: ${words}` : words;
+  return `This post was found in violation of ${named}.`;
+}

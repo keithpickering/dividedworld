@@ -29,7 +29,9 @@
 }
 
 /* The tab: the visit's ink under it and around the Lens, its yellow words in the glass's ready text. */
-.kb-glass-dialog.kb-lens[data-kb-card="visit"] {
+.kb-glass-dialog.kb-lens[data-kb-card="visit"],
+.kb-glass-dialog.kb-lens[data-kb-card="report"],
+.kb-glass-dialog.kb-lens[data-kb-card="appeal"] {
   --kb-lens-ink: var(--kb-visit-ink);
   --kb-lens-ink-text: var(--kb-glass-ready-text);
 }

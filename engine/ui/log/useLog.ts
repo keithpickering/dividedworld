@@ -30,6 +30,10 @@ export function mergeLogs(newer: Log, older: Log): Log {
     setPasses: [...newer.setPasses, ...older.setPasses],
     caught: [...newer.caught, ...older.caught],
     ended: [...newer.ended, ...older.ended],
+    infractions: [...newer.infractions, ...older.infractions],
+    bans: [...newer.bans, ...older.bans],
+    reports: [...newer.reports, ...older.reports],
+    appeals: [...newer.appeals, ...older.appeals],
     before: older.before,
   };
 }

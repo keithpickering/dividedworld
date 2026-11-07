@@ -531,3 +531,47 @@ describe('the breakdown', () => {
     expect(within(within(breakdown).getByRole('region', { name: 'Drew heat' })).queryByText('Scored over the whole window, not post by post.')).toBeNull();
   });
 });
+
+describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
+  /** The Clerk filed a visit on Pipewrench's post, a ban followed, and Pipewrench reported Gloomba's post; each is the player's own. */
+  function modded() {
+    const w = world();
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(clerk, w.p2, { at: at(30, 9), endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.', at: at(30, 12) });
+    const inf = w.fake.seed.infraction(visit, { points: 2, at: at(30, 12) });
+    const gp = w.fake.seed.post(w.thread, w.glo, 'Gloomba again.', { at: at(30, 13) });
+    const report = w.fake.seed.report(w.pipe, gp, 'rude', { at: at(30, 14) });
+    w.fake.seed.verdict(report, clerk, 'dismissed', { line: 'Hmph.', at: at(30, 14, 1) });
+    return { ...w, clerk, visit, inf };
+  }
+
+  test('says each in plain words in the character\'s tab, and nothing of the rival\'s', async () => {
+    const { fake, me, pipe, hoo } = modded();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
+    expect(text).toContain('Warn points: 2 points');
+    expect(text).toContain('The Clerk\'s visit to your post #2 filed Rule 2: No double posting: 2 warn points for Pipewrench, dropping off');
+    expect(text).toContain('You reported a post');
+    expect(text).toContain('Pipewrench reported post #4, for 0.25 Aura. The report is public. The Clerk dismissed it. The 0.25 Aura was spent.');
+    /* The other mask's tab has none of them. */
+    await userEvent.click(tab('Mrs. Hooligan'));
+    expect(bodyRows().map((r) => cells(r).join(' ')).join('\n')).not.toContain('Warn points');
+    void hoo;
+  });
+
+  test('an appeal and its ruling are a line of their own, and the player reads only their own characters\' lines', async () => {
+    const { fake, me, pipe, clerk, inf } = modded();
+    const appeal = fake.seed.appeal(pipe, inf, 'It was a mistake.', { at: at(30, 15) });
+    fake.seed.ruling(appeal, clerk, 'upheld', { line: 'No.', at: at(30, 15, 1) });
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(bodyRows().map((r) => cells(r).join(' | ')).join('\n')).toContain('Pipewrench appealed the warn points from your post #2, for 0.50 Aura. The plea is public. The Clerk upheld it. Nothing changed.');
+    /* The rival's view of the same world holds none of these lines. */
+    fake.signInAs(fake.seed.account('rival2'));
+    expect((await fake.log()).infractions).toEqual([]);
+    expect((await fake.log()).reports).toEqual([]);
+    expect((await fake.log()).appeals).toEqual([]);
+  });
+});

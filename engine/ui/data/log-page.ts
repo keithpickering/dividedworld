@@ -6,7 +6,8 @@
  * A backend reads each source of the log newest first, at or before the cursor, at most `LOG_ROWS`
  * rows: the ledger's lines by their settlement's end, the wallet's events, the card ledger and the
  * plays on the player's posts by when each happened, the effects' saves by when each was saved, the
- * player's face-down cards by when each sprang or ended, the player's caught plays by when each was played, and the card plays an admin ended by when each was ended.
+ * player's face-down cards by when each sprang or ended, the player's caught plays by when each was played, the card plays an admin ended by when each was ended, and
+ * the player's own infractions, bans, reports and appeals by when each was made.
  * The shares are read whole for the settlements read. A source that came back full may hold more at
  * its oldest row's time and before, so the page ends there: it keeps what is newer than the newest of
  * those times (`after`), and the next page reads from that time on, at or before it. A source that
@@ -27,7 +28,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, FaceDownPass, Log, LogLine, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, FaceDownPass, Log, LogAppeal, LogBan, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -64,6 +65,10 @@ export interface LogRead {
   readonly setPasses: readonly FaceDownPass[];
   readonly caught: readonly CaughtPlay[];
   readonly ended: readonly CardEnded[];
+  readonly infractions: readonly LogInfraction[];
+  readonly bans: readonly LogBan[];
+  readonly reports: readonly LogReport[];
+  readonly appeals: readonly LogAppeal[];
 }
 
 /**
@@ -89,6 +94,10 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.setPasses, () => read.setPasses[read.setPasses.length - 1]!.passedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
     ...reached(read.ended, () => read.ended[read.ended.length - 1]!.at),
+    ...reached(read.infractions, () => read.infractions[read.infractions.length - 1]!.at),
+    ...reached(read.bans, () => read.bans[read.bans.length - 1]!.at),
+    ...reached(read.reports, () => read.reports[read.reports.length - 1]!.at),
+    ...reached(read.appeals, () => read.appeals[read.appeals.length - 1]!.at),
   ];
   /* The newest of the times a full source reached, as that source wrote it, so the next read starts exactly there. */
   const after = edges.length === 0 ? null : edges.reduce((a, b) => (micros(b) > micros(a) ? b : a));
@@ -125,6 +134,10 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     setPasses: read.setPasses.filter((e) => keep(e.passedAt)),
     caught: read.caught.filter((e) => keep(e.at)),
     ended: read.ended.filter((e) => keep(e.at)),
+    infractions: read.infractions.filter((e) => keep(e.at)),
+    bans: read.bans.filter((e) => keep(e.at)),
+    reports: read.reports.filter((e) => keep(e.at)),
+    appeals: read.appeals.filter((e) => keep(e.at)),
     before: after,
   };
 }

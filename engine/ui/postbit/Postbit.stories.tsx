@@ -36,3 +36,9 @@ const staffPerson = (c: Partial<Character>): PostbitPerson => person({ standing:
 export const StaffBoss: Story = { args: { person: staffPerson({ name: 'The Clerk', title: 'Head of Board Operations', staff: 'the-clerk', office: 'boss' }), layout: 'side' } };
 export const StaffMod: Story = { args: { person: staffPerson({ name: 'Hall Monitor', title: 'Hall monitor', staff: 'hall-monitor', office: 'mod' }), layout: 'side' } };
 export const StaffMember: Story = { args: { person: staffPerson({ name: 'Retired Clerk', title: 'Emeritus', staff: 'retired-clerk', office: 'member' }), layout: 'stacked' } };
+
+/* The warn meter (6 of 10, the mock's) and BANNED on the title line while a ban holds. */
+export const WarnMeter: Story = { args: { person: person({}, { warnPoints: 6 }), layout: 'side' } };
+export const WarnMeterStacked: Story = { args: { person: person({}, { warnPoints: 6 }), layout: 'stacked' } };
+export const FullBar: Story = { args: { person: person({}, { warnPoints: 10 }), layout: 'side' } };
+export const Banned: Story = { args: { person: person({}, { bannedUntil: '2099-01-01T00:00:00Z' }), layout: 'side' } };

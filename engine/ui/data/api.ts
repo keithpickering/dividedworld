@@ -274,6 +274,31 @@ export interface InterceptResult {
   readonly tailUntil: string | null;
 }
 
+/** The three verdicts a report can draw (`report_verdict`): a visit, dismissed, or a backfire onto the reporter's latest post. */
+export type ReportVerdict = 'visit' | 'dismissed' | 'backfire';
+
+/** What a report answers (the staff function's player door): the report's Act, the Mod's verdict and its line (its own words, which may bluff), and the visit it started. */
+export interface ReportResult {
+  readonly report: Id;
+  /** Null where the report was heard and the answer was not carried back: the report is public, and its verdict is in the thread. */
+  readonly verdict: ReportVerdict | null;
+  readonly line: string;
+  readonly visit: Id | null;
+}
+
+/** An appeal's four rulings (`appeal_ruling`). */
+export type AppealVerdict = 'overturned' | 'upheld' | 'reduced' | 'increased';
+
+/** What an appeal answers: the appeal's Act, the ruling and its line (the hearer's own words), the points it moved, and what came back. */
+export interface AppealResult {
+  readonly appeal: Id;
+  readonly verdict: AppealVerdict | null;
+  readonly line: string;
+  readonly pointsDelta: number;
+  /** Hundredths that went back (an overturned appeal); 0 otherwise. */
+  readonly refunded: number;
+}
+
 /** The state a card's effect has saved on one play, and when: what every reader loads, the post author's version. */
 export interface EffectState {
   readonly state: unknown;
@@ -308,6 +333,8 @@ export interface Character {
   readonly office?: Office;
   /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
   readonly warnPoints?: number;
+  /** When its ban ends (characters_public, carried by a thread's page); absent when it is not banned. A ban holds only this character, and ends by itself at that time. */
+  readonly bannedUntil?: string;
 }
 
 /** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */
@@ -440,6 +467,11 @@ export interface MoveLogRow {
   readonly end: MoveEnd | null;
   /** The staff key of the Boss that keeps it after a handover (a review's keep), or null. */
   readonly keptBy: string | null;
+  /**
+   * For a Mod's visit, a report it judged or an appeal it heard (`kind` 'visit', 'report' or 'appeal', whose `params` say the post's number and the plain facts): how it
+   * ended (a visit's outcome, a report's verdict, an appeal's ruling), null while a visit is open. Absent on a move.
+   */
+  readonly outcome?: string | null;
 }
 
 /** Where the next page of a moderation log starts: the last row's time and Act, as the page was ordered by them. */
@@ -604,6 +636,8 @@ export interface MyCharacter {
   readonly pendingTurn: PendingTurn | null;
   /** Hidden from "Who is online" and "Users browsing": listed nowhere, its player's switch in My characters. */
   readonly presenceHidden: boolean;
+  /** When its ban ends (`my_characters.banned_until`, a public fact about it); absent while it is not banned. The composer says so; it ends by itself at that time. */
+  readonly bannedUntil?: string;
 }
 
 /** Where a presence box is: a thread, a board (its page and every thread on it) or the index ("Who is online"). */
@@ -615,8 +649,8 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  * account, and nothing that says which are the caller's.
  */
 export interface Presence {
-  /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there. */
-  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean }[];
+  /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there, or while it has an open visit in the thread, whose post's number is `visitPost` (a visit is a public Act). */
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; readonly visitPost?: number }[];
   readonly others: number;
 }
 
@@ -1004,12 +1038,87 @@ export interface CardEnded {
   readonly character: Id;
 }
 
+/** An infraction filed against one of the player's characters: the Act, what it was for, its points, when they drop off and what has taken some off. */
+export interface LogInfraction {
+  readonly infraction: Id;
+  readonly character: Id;
+  readonly at: string;
+  readonly band: VisitBand;
+  readonly points: number;
+  readonly ruleNumber: number | null;
+  /** The rule in the glass's words ("Rule 2: No double posting"). */
+  readonly rule: string | null;
+  /** The Mod that filed it. */
+  readonly mod: string | null;
+  readonly post: Id;
+  readonly postSeq: number | null;
+  readonly thread: Id;
+  readonly expiresAt: string;
+  /** The points an appeal took off. */
+  readonly relief: number;
+  /** When a ban emptied the bar, so these points stopped counting before their time; null where none did. */
+  readonly emptiedAt: string | null;
+}
+
+/** A ban on one of the player's characters. */
+export interface LogBan {
+  readonly ban: Id;
+  readonly character: Id;
+  readonly at: string;
+  readonly days: number;
+  /** When it ends now: an appeal's ruling read in place of its own end. */
+  readonly until: string;
+  readonly infraction: Id;
+  readonly rule: string | null;
+  readonly thread: Id;
+}
+
+/** A report one of the player's characters made. */
+export interface LogReport {
+  readonly report: Id;
+  readonly character: Id;
+  readonly at: string;
+  readonly post: Id;
+  readonly postSeq: number | null;
+  readonly thread: Id;
+  /** Null until it is heard. */
+  readonly verdict: ReportVerdict | null;
+  readonly verdictAt: string | null;
+  readonly mod: string | null;
+  /** Why its price went back, where it did. */
+  readonly refund: 'failed' | 'stale' | null;
+}
+
+/** An appeal one of the player's characters made. */
+export interface LogAppeal {
+  readonly appeal: Id;
+  readonly character: Id;
+  readonly at: string;
+  readonly punishment: Id;
+  readonly punishmentKind: 'infraction' | 'ban';
+  readonly postSeq: number | null;
+  readonly thread: Id;
+  readonly verdict: AppealVerdict | null;
+  readonly ruledAt: string | null;
+  readonly pointsDelta: number | null;
+  readonly hearer: string | null;
+  readonly refund: 'failed' | 'stale' | 'expired' | null;
+}
+
 /**
  * A page of the player's own log, newest first: everything at or before the page's cursor and after
  * `before`, which is where the next page starts (null at the log's start). Each source is read a page
  * at a time, so a long-played account reads a page and never its history.
  */
 export interface Log {
+  /** The warn points the player's characters were given, by when each landed (`my_infractions`). */
+  readonly infractions: readonly LogInfraction[];
+  /** The bans laid on the player's characters, by when each began (`my_bans`). */
+  readonly bans: readonly LogBan[];
+  /** The reports the player's characters made, by when each was made (`my_reports`). */
+  readonly reports: readonly LogReport[];
+  /** The appeals the player's characters made, by when each was made (`my_appeals`). */
+  readonly appeals: readonly LogAppeal[];
   readonly settlements: readonly LogSettlement[];
   readonly wallet: readonly WalletEvent[];
   readonly cards: readonly CardEvent[];
@@ -1480,6 +1589,15 @@ export interface KayfaApi {
    * Refused in the server's words (a character that has tried, a visit that is over, a short wallet).
    */
   intercept(through: Id, visit: Id, answer: string | null): Promise<Answer<InterceptResult>>;
+  /**
+   * Reports a post through this character (the staff function's player door): paid, public, and answered at once by the Mod on the board's beat. Refused in the server's words
+   * (a banned character, a day's quota spent, a short wallet); a judgment that failed refunds it and says so.
+   */
+  fileReport(through: Id, post: Id, reason: string): Promise<Answer<ReportResult>>;
+  /** Appeals one of this character's punishments (an infraction's Act, or a ban's): a plea, a price, one appeal per punishment. */
+  fileAppeal(through: Id, punishment: Id, plea: string): Promise<Answer<AppealResult>>;
+  /** How many reports this character may still make today (UTC). Shown only to the player of that character; null where it could not be read. */
+  reportsLeft(character: Id): Promise<number | null>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

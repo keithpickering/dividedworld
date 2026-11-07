@@ -30,6 +30,7 @@ import { inkOf, useNarrow, useUntil } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
 import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
+import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
 import { VISIT_KIND } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
@@ -165,6 +166,13 @@ function useKindPlays(billed: readonly CardPlay[]): ReadonlyMap<string, readonly
   }, [billed]);
 }
 
+/** A form a post's strip opens its Lens on: each ask has its own `n`, so pressing the same control again asks again, and the control that asked, which the Lens gives focus back to. */
+export interface FormAsk {
+  readonly n: number;
+  readonly form: LensForm;
+  readonly opener: HTMLElement;
+}
+
 export interface MarkStripProps {
   /** The post the marks are on (the id its plays are kept under). */
   readonly post: Id;
@@ -245,7 +253,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, author = null, thread, onSpinAct }: {
+export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, author = null, thread, onSpinAct, ask = null }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
   readonly moments?: boolean;
@@ -256,6 +264,8 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   readonly visit?: Visit | undefined; readonly author?: Id | null; readonly thread?: Id;
   /** Spin a thread from one of the visit's Acts: the Lens has closed. */
   readonly onSpinAct?: (act: Id, name: string, opener: HTMLElement) => void;
+  /** A form the post asked for (Report in its foot links, Appeal in its visit's tab): this strip's Lens opens on it, each new ask (`n`) once. */
+  readonly ask?: FormAsk | null;
 }) {
   const owner = useId();
   /* The end the Lens read for the visit, so the mark and the tab follow a visit that ended after the page was read (a try that worked). */
@@ -268,10 +278,19 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   useEffect(() => () => { if (store.get()?.owner === owner) store.close(); }, [store, owner]);
   const onOpen = useCallback<Open>((kind, opener) => store.toggle({ owner, card: kind, opener }), [store, owner]);
   const strip = useCallback(() => anchor.current, []);
+  /* A form asked for: only the strip on the post's date row opens it (a card that lifts the post out of its thread draws the same strip again, and its Lens is its own). */
+  const asked = useRef(0);
+  useEffect(() => {
+    if (ask === null || ask.n === asked.current) return;
+    asked.current = ask.n;
+    if (anchor.current?.closest('header.kb-act-meta') == null) return;
+    store.toggle({ owner, card: ask.form.kind, opener: ask.opener });
+  }, [ask, store, owner]);
+  const form = ask !== null && open?.card === ask.form.kind ? ask.form : undefined;
   return (
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod) } : undefined} />
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
     </span>
   );
 }

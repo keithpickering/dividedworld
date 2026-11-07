@@ -4,6 +4,8 @@
  * story seeds, as the tick would, and the Lens is opened from the visit's mark as a reader would: `Quiz` (the mock's: the Mod's question and its answers as
  * full-width block buttons), `Bribe`, `Distraction`, `Filed` (what landed, when it drops off, How it went unfolded), `FiledAuthor` (the same on a post of the
  * reader's own mask, which adds Appeal with its price and terms), `TalkedDown` and `Trapped`. Each has a phone shot, where the Lens takes the window's width.
+ * `Report` opens the report form from the post's "Report" link, `Appeal` the appeal form from a filed visit's Appeal, and `Presence` shows the Mod's tag in "Users browsing this
+ * thread"; a filed visit's story also shows the notice on the post and the warn meter in its postbit.
  *
  * The story names no instance: the Mod is a staff character the story makes, and the role word is whatever the instance's copy says.
  */
@@ -17,7 +19,7 @@ import { useLocation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
 const MINUTE = 60_000;
-type Which = 'quiz' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'trapped';
+type Which = 'quiz' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'trapped' | 'report' | 'appeal' | 'presence';
 
 const QUIZ: SeedChallenge = { kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'], answer: 'Form 0' };
 
@@ -39,7 +41,7 @@ function useSeeded(thread: string | null, which: Which): boolean {
       const mask = acting.find((c) => c.id === chosen) ?? acting[0];
       /* The author's own post is one the reader's mask wrote: the boards fixture's #41 is another character's. */
       let post = (await api.acts(thread, 41, 41))[0]?.id;
-      if (which === 'filedAuthor') {
+      if (which === 'filedAuthor' || which === 'appeal') {
         if (!mask) throw new Error('the story needs a reader with a mask to be the author');
         post = fake.seed.post(thread, mask.id, 'I wrote the changelog at 9:13, posted it here at 9:14, then realized I forgot the hats.');
       }
@@ -49,7 +51,7 @@ function useSeeded(thread: string | null, which: Which): boolean {
         at: Date.now(), endsInMs: 161 * MINUTE, line: 'Routine inspection.',
         challenge: which === 'bribe' ? { kind: 'bribe', price: 50 } : which === 'distraction' || which === 'trapped' ? { kind: 'distraction' } : QUIZ,
       });
-      if (which === 'filed' || which === 'filedAuthor') {
+      if (which === 'filed' || which === 'filedAuthor' || which === 'appeal') {
         fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + MINUTE });
         fake.seed.infraction(visit, { points: 2, at: Date.now() + MINUTE });
       }
@@ -62,17 +64,40 @@ function useSeeded(thread: string | null, which: Which): boolean {
   return ready;
 }
 
-/** Opens the visit's Lens from its mark, and for a filed visit unfolds How it went. */
-function Opened({ unfold }: { readonly unfold: boolean }) {
+/** Opens what the story shows: the visit's Lens from its mark (and for a filed visit unfolds How it went), the report form from a post's link, the appeal form from the visit's tab. */
+function Opened({ which }: { readonly which: Which }) {
   useEffect(() => {
+    if (which === 'presence') {
+      const timer = setInterval(() => {
+        const box = document.querySelector<HTMLElement>('.kb-presence-visit');
+        if (!box) return;
+        clearInterval(timer);
+        box.scrollIntoView?.({ block: 'center' });
+      }, 100);
+      return () => clearInterval(timer);
+    }
+    const unfold = which === 'filed' || which === 'filedAuthor';
     let step = 0;
     const timer = setInterval(() => {
+      if (which === 'report') {
+        const link = [...document.querySelectorAll<HTMLElement>('#post-41 .kb-act-links button')].find((b) => b.textContent === 'Report');
+        if (!link) return;
+        clearInterval(timer);
+        link.scrollIntoView?.({ block: 'center' });
+        link.click();
+        return;
+      }
       if (step === 0) {
         const mark = document.querySelector<HTMLElement>('.kb-visit-mark');
         if (!mark) return;
         mark.scrollIntoView?.({ block: 'center' });
         mark.click();
         step = 1;
+      } else if (which === 'appeal') {
+        const appeal = document.querySelector<HTMLElement>('.kb-visit-appeal');
+        if (!appeal) return;
+        clearInterval(timer);
+        appeal.click();
       } else {
         const fold = document.querySelector<HTMLElement>('.kb-visit .kb-lens-fold');
         if (!fold) return;
@@ -81,7 +106,7 @@ function Opened({ unfold }: { readonly unfold: boolean }) {
       }
     }, 100);
     return () => clearInterval(timer);
-  }, [unfold]);
+  }, [which]);
   return null;
 }
 
@@ -90,7 +115,7 @@ function Visited({ which }: { readonly which: Which }) {
   const ready = useSeeded(thread, which);
   return (
     <Frame>
-      {ready && <Opened unfold={which === 'filed' || which === 'filedAuthor'} />}
+      {ready && <Opened which={which} />}
       {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
     </Frame>
   );
@@ -125,3 +150,11 @@ export const FiledPhone: Story = { args: { which: 'filed' }, ...phone };
 export const FiledAuthorPhone: Story = { args: { which: 'filedAuthor' }, ...phone };
 export const TalkedDownPhone: Story = { args: { which: 'talkedDown' }, ...phone };
 export const TrappedPhone: Story = { args: { which: 'trapped' }, ...phone };
+
+/** The report form for post #41, opened from its Report link: who judges it, the verdicts, a reason, the price and the reports left today. */
+export const Report: Story = { args: { which: 'report' } };
+export const ReportPhone: Story = { args: { which: 'report' }, ...phone };
+/** The appeal form, opened from a filed visit's Appeal on a post of the reader's own mask. */
+export const Appeal: Story = { args: { which: 'appeal' } };
+/** "Users browsing this thread" with the Mod's glass tag, "On a visit · post #41". */
+export const Presence: Story = { args: { which: 'presence' } };
