@@ -3,6 +3,7 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
+import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
 import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
@@ -313,6 +314,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
   out.push(...developerProblems(instance.developer));
+  out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
     if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');

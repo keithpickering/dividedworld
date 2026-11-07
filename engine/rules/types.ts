@@ -9,6 +9,7 @@
  * Aura is an integer count of hundredths of an orb wherever it is stored or returned. Times
  * are epoch milliseconds.
  */
+import type { GroupsContent } from './groups.ts';
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
@@ -698,6 +699,8 @@ export interface Instance {
   readonly ranks: readonly Rank[];
   readonly pipStyles: readonly PipStyle[];
   readonly system: SystemContent;
+  /** Member groups: the ladder a character climbs and the groups moves confer. */
+  readonly groups: GroupsContent;
   /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
   readonly developer?: DeveloperPersona;
 }

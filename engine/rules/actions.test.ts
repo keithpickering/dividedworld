@@ -15,7 +15,7 @@ const instance: Instance = {
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
     postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
-  ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
+  ranks: [{ name: 'Rookie', from: 0 }], groups: { ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Staff', color: '#d4a017', when: { kind: 'staff' } }], conferred: [] }, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
 };
 const id = '11111111-1111-4111-8111-111111111111';

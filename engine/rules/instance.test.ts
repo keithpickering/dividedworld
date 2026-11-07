@@ -102,6 +102,7 @@ const good: Instance = {
   boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'announcements', name: 'The System', description: 'Its own.', system: true }],
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
+  groups: { ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Staff', color: '#d4a017', when: { kind: 'staff' } }], conferred: [] },
   copy: { announcementsThreadTitle: 'Season {season}: Promos' },
   system,
 };
@@ -168,6 +169,11 @@ test('ranks start at 0 and rise, each named', () => {
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 100 }, { name: 'C', from: 100 }] }).join('\n'), /rank "C" is from 100, not above the rank before it/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: ' ', from: 10 }] }).join('\n'), /a rank has no name/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 1.5 }] }).join('\n'), /rank "B" is from 1.5/);
+});
+
+test('groups with a problem make the instance have one, in words', () => {
+  const noDefault = { ...good.groups, ladder: good.groups.ladder.filter((r) => r.when.kind !== 'default') };
+  assert.match(instanceProblems({ ...good, groups: noDefault }).join('\n'), /0 default rungs/);
 });
 
 test('pip styles hold a default, each with a key, a name and a full and an empty', () => {

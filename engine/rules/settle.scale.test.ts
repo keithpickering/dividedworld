@@ -24,7 +24,7 @@ const counting: ClassRules = {
 };
 const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;
 const instance: Instance = {
-  key: 'busy', name: 'Busy', system: testSystem, classes: [counting], ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'b', name: 'B', description: '' }],
+  key: 'busy', name: 'Busy', system: testSystem, classes: [counting], ranks: [{ name: 'Rookie', from: 0 }], groups: { ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Staff', color: '#d4a017', when: { kind: 'staff' } }], conferred: [] }, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'b', name: 'B', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
   cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [

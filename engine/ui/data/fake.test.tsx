@@ -42,6 +42,7 @@ const instance: Instance = {
   ],
   ranks: [{ name: 'Jobber', from: 0 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
+  groups: { ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Staff', color: '#d4a017', when: { kind: 'staff' } }], conferred: [] },
 };
 
 const DAY = 86_400_000;
