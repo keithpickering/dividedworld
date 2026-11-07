@@ -178,7 +178,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: `Cast on a character. Every post by that character sparkles for ${spanWords(glitterBomb.lasts!)}.`,
     status: 'Sparkling every post by that character',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${glitterBomb.rarity}, cast on a character from any post by that character. For ${spanWords(glitterBomb.lasts!)}, every post of that character sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'main-event',

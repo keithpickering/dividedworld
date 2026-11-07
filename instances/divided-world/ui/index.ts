@@ -64,13 +64,13 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
     const k = num(n, 'lurker.spunThreadRepliers');
     return `Spun a thread: a thread the character spun from another's Act drew ${count(k)} other replier${k === 1 ? '' : 's'}`;
   },
-  'lurker.cardDrew': 'A card drew: reactions to a card the character played',
+  'lurker.cardDrew': 'Card drew: reactions to a card the character played',
   'lurker.postedTooMuch': (n) => {
     const k = num(n, 'lurker.postsAllowed');
     return k === 0 ? 'Posted too much: any post at all, since none are free' : `Posted too much: a post past ${count(k)} in one settlement window`;
   },
   'technician.respected': 'Respected: calm, positive reactions to the character\'s posts and cards',
-  'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post of the character\'s own',
+  'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post by that character',
   'technician.draggedIn': 'Dragged in: excited, negative reactions to the character\'s posts and cards',
 };
 
