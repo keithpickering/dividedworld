@@ -4,14 +4,15 @@
  * session (Authorization), as it calls the act function; nothing is done as the service before the database has taken the report AS THE PLAYER (`open_report` verifies the
  * session, that the caller plays the character, and that it is not banned), and a request with no session is answered 401 the same whoever its target is. A player's appeal is
  * the same door at `/staff/appeal` (`open_appeal`, which does not refuse a banned character: a ban is appealed by the banned). The work is
- * core.ts (the run), report.ts (the report) and appeal.ts (the appeal), through door.ts; this is the edge: the environment, the model adapters
+ * core.ts (the filing run), patrol.ts (the patrol run, on the same schedule: each patrol due is claimed once, judged, and its findings start visits), report.ts (the report) and appeal.ts (the appeal), through door.ts; this is the edge: the environment, the model adapters
  * (supabase/functions/_shared/models/) and an answer that says what happened. No secret is ever logged or returned: the model key is read by the adapter from `Deno.env`
  * and appears in no message.
  *
  * The database client does not repeat a write after a failure that may have followed its commit (`safeToRepeat`). Of this run's writes the ledger's row and the call's
- * record are not idempotent (`record_staff_call` numbers each call it is sent): `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
+ * record are not idempotent (`record_staff_call` and `record_patrol_call` number each call they are sent, and `claim_patrol` hands out the next patrol each time it is asked): `file_visit` finds a visit already ended and `apply_mod_move` finds the move of its cause, so a repeat of either writes nothing a second time and is sent again.
  */
 import { runFilings } from './core.ts';
+import { runPatrols } from './patrol.ts';
 import { appealDoor } from './appeal.ts';
 import { reportDoor } from './report.ts';
 import { chooseInstance } from '../_shared/instance.ts';
@@ -22,7 +23,7 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
 /** The calls that write and are not idempotent: not sent again after an answer that may have been lost on the way back. */
-const WRITES = new Set(['record_model_call', 'record_staff_call']);
+const WRITES = new Set(['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol']);
 
 Deno.serve(async (request) => {
   const env = environment((name) => Deno.env.get(name));
@@ -52,12 +53,22 @@ Deno.serve(async (request) => {
     const instance = chooseInstance(Deno.env.get('KAYFABB_PROFILE'));
     // The tiers are the instance's `modelTiers` setting as the database holds it now; the model adapter names no model of its own.
     const tiers = (await withDatabaseSettings(instance, db)).settings.modelTiers;
-    const outcome = await runFilings(db, models((name) => Deno.env.get(name), ledgerWriter(db), { tiers }), instance, slot);
+    const modelsNow = models((name) => Deno.env.get(name), ledgerWriter(db), { tiers });
+    const outcome = await runFilings(db, modelsNow, instance, slot);
+    // The patrols due, after the filings and on their own: a patrol's failure costs the filings nothing, and a filing run's failure is thrown before any patrol is claimed.
+    const patrols = await runPatrols(db, modelsNow, instance).catch((e) => {
+      console.error('patrols failed', slot, e instanceof Error ? e.message : 'unknown');
+      return { status: 'failed' as const };
+    });
+    if (patrols.status === 'ok') {
+      const odd = patrols.patrols.filter((p) => p.status !== 'judged' || p.trims.length > 0 || p.dropped.length > 0 || p.capped > 0);
+      if (odd.length) console.warn('patrols with a skip, a failure, a trim, a drop or a cap', slot, JSON.stringify(odd.map((p) => ({ patrol: p.patrol, staff: p.staff, status: p.status, why: p.why, trims: p.trims, dropped: p.dropped, capped: p.capped }))));
+    }
     if (outcome.status === 'ok') {
       const odd = outcome.filings.filter((f) => f.status === 'failed' || f.trims.length > 0 || f.dropped.length > 0 || f.why !== undefined);
       if (odd.length) console.warn('filings with a trim, a drop, a stock line or a failure', slot, JSON.stringify(odd.map((f) => ({ visit: f.visit, staff: f.staff, status: f.status, why: f.why, trims: f.trims, dropped: f.dropped }))));
     }
-    return json(200, outcome);
+    return json(200, { ...outcome, patrols });
   } catch (e) {
     // The details go to the function's log; the answer says only that it failed, and for which slot.
     console.error('staff failed', slot, e instanceof Error ? e.message : 'unknown');

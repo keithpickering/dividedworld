@@ -212,6 +212,11 @@ test('an instance exported and imported into a fresh database is the same instan
       -- The Mod Bots' settings (so the filing run's job exists, 0104) and one judged call's record.
       insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
         on conflict (key) do update set value = excluded.value;
+      -- A patrol the Mod made (0108): its meeting, the posts it was shown, a finding dropped at the cap and what came of it, and the record of its call (keyed by the patrol,
+      -- which has no Act), carried across with the rows that name them.
+      insert into patrols (meeting, n, staff, at, ran_at, sampled, dropped, outcome)
+      select max(id), 1, 'exp-bot', now() - interval '1 hour', now() - interval '59 minutes', array[p], jsonb_build_array(jsonb_build_object('post', p, 'why', 'cap', 'staff', 'exp-bot')), '{"findings": 1, "visits": 0, "capped": 1}' from meetings;
+      perform record_patrol_call((select max(id) from patrols), 'exp-bot', '{"findings": 1, "trims": [], "dropped": [], "calls": 1}');
       perform record_staff_call(p, 'filing', 'exp-bot', '{"trims": [{"path": "move.expires_in_hours", "predicate": "atMost(168)", "before": 900, "after": 168}], "dropped": [], "calls": 1}');
       -- Two reports of Ann's post by Bob's mask (0105): one answered by the Mod, one refunded, so a report, its verdict, the price paid and returned, and the refund's own
       -- table are carried across with the Acts that name them.
@@ -255,7 +260,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -441,7 +446,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
     const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
     assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');

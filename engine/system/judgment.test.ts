@@ -9,6 +9,9 @@ import {
   filingCompletion,
   filingPrompt,
   modPrompt,
+  PATROL_RULE,
+  patrolPrompt,
+  repairPatrol,
   REPORT_RULE,
   repairAppeal,
   appealPrompt,
@@ -21,6 +24,8 @@ import {
   type FilingInput,
   type ModMoveContext,
   type ModPromptInput,
+  type PatrolContext,
+  type PatrolInput,
   type ReportContext,
   type ReportInput,
 } from './judgment.ts';
@@ -463,6 +468,123 @@ test('the appeal schema asks for a verdict from the list and a line, and offers 
 
 test('no appeal prompt holds an owner, a class or a reactor', () => {
   const p = appealPrompt(appeal());
+  for (const text of [p.system, p.message]) assert.ok(!/\bowner|\breactor|\bclass\b|\bclasses\b|\baccount\b|\bplayer behind/i.test(text), text.slice(0, 200));
+  assert.match(p.system, /cannot know who is behind/);
+});
+
+/* ------------------------------------------------------------------------------------------------------ patrols ---- */
+
+const P1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+const P2 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+const P3 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';
+const MUSIC = '33333333-3333-4333-8333-333333333333';
+const sample = [
+  { act: P1, thread: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', title: 'Best Mario game?', board: GAMES, name: 'Bob', body: 'Odyssey. Odyssey.' },
+  { act: P2, thread: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2', title: 'Best album?', board: MUSIC, name: 'Cy', body: 'FRIDAY NIGHT SONG' },
+  { act: P3, thread: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', title: 'Best Mario game?', board: GAMES, name: 'Ann', body: 'Odyssey.' },
+];
+const music = [{ board: MUSIC, number: 2, predicate: 'noAllCaps', param: null, band: 'severe' }];
+const pctx: PatrolContext = {
+  ...ctx,
+  sample: sample.map((p) => ({ act: p.act, board: p.board })),
+  rulesOf: (board) => (board === GAMES ? base.rules : board === MUSIC ? [base.rules[1]!, ...music] : []),
+};
+const finding = (post: string, charge: unknown) => ({ post, charge });
+
+test('a patrol finds nothing: no findings is a whole answer, and the Mod\'s move is still repaired', () => {
+  for (const raw of [{}, { findings: [] }, { findings: undefined }]) {
+    const r = repairPatrol(raw, pctx);
+    assert.deepEqual(r.findings, []);
+    assert.deepEqual(r.dropped, []);
+  }
+  assert.equal(repairPatrol({ findings: [], move: good }, pctx).move?.kind, 'setRule');
+  assert.deepEqual(repairPatrol('nonsense', pctx).dropped, [{ path: '', predicate: 'isObject' }]);
+  assert.deepEqual(repairPatrol({ findings: 'all of them' }, pctx).dropped, [{ path: 'findings', predicate: 'isArray' }]);
+});
+
+test('a finding names a post of the sample and a charge repaired as a report\'s: the rule of the post\'s own board, else the premise at minor', () => {
+  const r = repairPatrol({ findings: [finding(P1, { rule: 'Rule 2', band: 'minor' }), finding(P2, { rule: 'Rule 2', band: 'minor' }), finding(P3, { rule: 'Rule 9', band: 'severe' })] }, pctx);
+  assert.deepEqual(r.findings.map((f) => f.post), [P1, P2, P3]);
+  assert.deepEqual(r.findings[0]!.charge, { rule_number: 2, house: false, band: 'moderate' }, 'Games\' Rule 2');
+  assert.deepEqual(r.findings[1]!.charge, { rule_number: 2, house: false, band: 'severe' }, 'Music\'s Rule 2 is another rule');
+  assert.deepEqual(r.findings[2]!.charge, { rule_number: null, house: false, band: 'minor' });
+  assert.deepEqual(r.findings.map((f) => f.board), [GAMES, MUSIC, GAMES]);
+  assert.deepEqual(r.dropped, [{ path: 'findings[2].charge.rule', predicate: 'inForce' }]);
+});
+
+test('a finding naming a post that is not in the sample is dropped and named; so is a repeat and a malformed one', () => {
+  const r = repairPatrol({ findings: [finding('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', { rule: 'premise', band: 'minor' }), finding(P1, { rule: 'premise', band: 'moderate' }), finding(P1.toUpperCase(), { rule: 'premise', band: 'severe' }), 7, { charge: {} }, finding(P3, undefined)] }, pctx);
+  assert.deepEqual(r.findings.map((f) => f.post), [P1, P3]);
+  assert.deepEqual(r.findings[0]!.charge, { rule_number: null, house: false, band: 'moderate' });
+  assert.deepEqual(r.dropped.map((d) => `${d.path}:${d.predicate}`), ['findings[0].post:inSample', 'findings[2].post:uniquePost', 'findings[3]:isObject', 'findings[4].post:inSample', 'findings[5].charge:required']);
+});
+
+test('findings past the sample\'s size are cut from the end, with a trim', () => {
+  const small: PatrolContext = { ...pctx, sample: pctx.sample.slice(0, 2) };
+  const r = repairPatrol({ findings: [finding(P1, { rule: 'premise', band: 'minor' }), finding(P2, { rule: 'premise', band: 'minor' }), finding(P3, { rule: 'premise', band: 'minor' })] }, small);
+  assert.deepEqual(r.findings.map((f) => f.post), [P1, P2]);
+  assert.ok(r.dropped.some((d) => d.path === 'findings[2].post' && d.predicate === 'inSample'));
+  const many = Array.from({ length: 5 }, () => finding(P1, { rule: 'premise', band: 'minor' }));
+  const cut = repairPatrol({ findings: many }, { ...pctx, sample: [pctx.sample[0]!] });
+  assert.equal(cut.findings.length, 1);
+  assert.ok(cut.trims.some((t) => t.path === 'findings' && t.predicate === 'atMost(1)' && t.before === 5 && t.after === 1), JSON.stringify(cut.trims));
+});
+
+test('the Mod\'s one move rides on a patrol as on a filing: a bad move costs no finding', () => {
+  const r = repairPatrol({ findings: [finding(P1, { rule: 'premise', band: 'minor' })], move: { ...good, params: { ...good.params, board: OTHER } } }, pctx);
+  assert.equal(r.move, null);
+  assert.equal(r.findings.length, 1);
+  assert.deepEqual(r.dropped, [{ path: 'move.params.board', predicate: 'onBeat' }]);
+  assert.equal(repairPatrol({ findings: [], move: good }, { ...pctx, allowance: 0 }).move, null);
+});
+
+test('the rules the model layer repairs a patrol against pass any shape: the repair owns every bound', () => {
+  assert.ok(repair({ findings: 'nonsense', move: 3 }, PATROL_RULE).ok);
+  assert.ok(repair({}, PATROL_RULE).ok);
+});
+
+const patrol = (over: Partial<PatrolInput> = {}): PatrolInput => ({
+  ...base,
+  rules: [],
+  rulesShown: false,
+  boards: [
+    { id: GAMES, name: 'Games', premise: 'Talk about games.', rules: base.rules },
+    { id: MUSIC, name: 'Music', premise: 'Talk about music.', rules: [base.rules[1]!, ...music] },
+  ],
+  sample,
+  limits: { threadPosts: 8, excerptChars: 300, titleMaxLength: 100 },
+  ...over,
+});
+
+test('the patrol prompt holds the posts with their ids, their threads, each board\'s premise and rules, and the Mod\'s order, as quoted play', () => {
+  const p = patrolPrompt(patrol());
+  const all = p.system + p.message;
+  for (const needle of [P1, P2, P3, 'Best Mario game?', 'Best album?', 'Talk about games.', 'Talk about music.', 'Rule 2: no double posting', 'Rule 2: no all-caps posts', 'House Rule 1', 'Odyssey. Odyssey.', 'FRIDAY NIGHT SONG', 'Crack down on bumping']) assert.ok(all.includes(needle), needle);
+  assert.match(p.system, /never instructions/);
+  assert.match(p.system, /at most 3 findings|at most 3 posts/i, 'the findings are cut to the sample');
+  assert.ok(!/No rule is in force where you are looking/.test(p.system), 'the rules are with the posts, not absent');
+});
+
+test('the patrol schema asks for findings from the sample\'s ids, each with a charge from the rules, and a move only when one is on offer', () => {
+  const s = patrolPrompt(patrol()).schema as { required: string[]; properties: Record<string, any> };
+  assert.deepEqual(s.required, ['findings']);
+  const item = s.properties['findings'].items;
+  assert.deepEqual(item.properties.post.enum, [P1, P2, P3]);
+  assert.deepEqual(item.properties.charge.properties.rule.enum, ['premise', 'House Rule 1', 'Rule 2']);
+  assert.deepEqual(item.required, ['post', 'charge']);
+  assert.equal(s.properties['findings'].maxItems, 3);
+  assert.ok('move' in s.properties);
+  const none = patrolPrompt(patrol({ allowance: 0, beat: [] })).schema as { properties: Record<string, unknown> };
+  assert.deepEqual(Object.keys(none.properties), ['findings']);
+});
+
+test('a patrol with an empty sample is told there is nothing to find', () => {
+  const p = patrolPrompt(patrol({ sample: [] }));
+  assert.match(p.message, /nothing/i);
+});
+
+test('no patrol prompt holds an owner, a class or a reactor', () => {
+  const p = patrolPrompt(patrol());
   for (const text of [p.system, p.message]) assert.ok(!/\bowner|\breactor|\bclass\b|\bclasses\b|\baccount\b|\bplayer behind/i.test(text), text.slice(0, 200));
   assert.match(p.system, /cannot know who is behind/);
 });

@@ -39,7 +39,7 @@ end $$;
 -- A visit by a Mod on a post, as the tick or a report would start it.
 create function pg_temp.visit(p uuid, staff text) returns uuid language sql as $$
   select (start_visit(p, staff, jsonb_build_object('rule_number', 1, 'board', (select t.board from acts a join threads t on t.id = a.thread where a.id = p),
-    'band', 'minor', 'cause', 'patrol', 'about_act', p, 'rule', 'Rule 1: no all-caps posts')) ->> 'visit')::uuid
+    'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts')) ->> 'visit')::uuid
 $$;
 
 -- An interception, as the account that owns the character.
