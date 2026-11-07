@@ -40,9 +40,7 @@ declare
   above_play uuid;
   reveal uuid;
 begin
-  update settings set value = value || '{"tp-bluff.price": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts)
-  values ('tp-bluff', 'Bluff', 'pepperoni', 'tp-bluff.price', 'common', 'set', null, false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values ('tp-bluff', 'Bluff', 'pepperoni', 'common', 'set', null, false, null);
   insert into card_ledger (account, card, kind, price) values (ann, 'tp-bluff', 'bought', 0);
 
   for i in 1..45 loop

@@ -51,7 +51,7 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   const setLasts = { unit: 'day' as const, count: 7 };
   const at = new Date().toISOString();
   const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, ...over });
-  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, priceKey: 'x', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
+  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
   const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', ward: undefined, lasts: undefined, trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ({ ok: true, value: undefined }) };
   const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, ward: undefined, lasts: undefined, canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
   const cards = [shield, snare, blot];
@@ -80,7 +80,7 @@ describe('where a card beyond a post is offered', () => {
   const setLasts = { unit: 'day' as const, count: 7 };
   const lasts = { unit: 'day' as const, count: 1 };
   const reaching = (key: string, reaches: CardRules['reaches']): CardRules => ({
-    key, name: key, alignment: 'pepperoni', rarity: 'legendary', reaches, lasts, priceKey: 'x', playPrice: () => 0,
+    key, name: key, alignment: 'pepperoni', rarity: 'legendary', reaches, lasts, playPrice: () => 0,
     validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key, reaches }, t, e, now),
   });
   const sparkle = reaching('sparkle', ['character']);

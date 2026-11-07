@@ -447,8 +447,7 @@ declare
   t uuid := tests.thread('Moment masks'); p uuid := tests.post(s, t, 'A back on me.');
   backed uuid; over uuid; as_setter text; as_stranger text;
 begin
-  update settings set value = value || '{"mmbluff.price": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play) values ('mmbluff', 'Moment Bluff', 'pepperoni', 'mmbluff.price', 'common', 'set');
+  insert into card_kinds (key, name, alignment, rarity, play) values ('mmbluff', 'Moment Bluff', 'pepperoni', 'common', 'set');
   insert into card_ledger (account, card, kind, price) values (setter, 'mmbluff', 'bought', 0), (caster, 'sweetie', 'bought', 0);
   backed := (set_card(setter, 'mmbluff', s, p, '{}', 0) ->> 'id')::uuid;
   over := (play_card(caster, 'sweetie', c, p, '{}', 0, '') ->> 'id')::uuid;

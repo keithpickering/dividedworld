@@ -13,7 +13,8 @@
  * the two never disagree on an emoji.
  */
 import type { Instance } from './types.ts';
-import { REACHES, basePrice, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
+import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
+import { cardPrice } from './packs.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -180,7 +181,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   },
   buyCard: (r, instance) => {
     const key = card(r, instance);
-    return { rpc: 'buy_card', args: { card: key, price: basePrice(instance.cards.find((c) => c.key === key)!, instance.settings) }, asService: true };
+    return { rpc: 'buy_card', args: { card: key, price: cardPrice(instance.machine, key) }, asService: true };
   },
   playCard: (r, instance) => ({
     rpc: 'play_card',

@@ -143,8 +143,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       expect(ui.describe(instance.settings).length, c.key).toBeGreaterThan(40);
     }
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
-    expect(whoops.describe(instance.settings)).toContain('1.00');
-    expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.price': 250 } })).toContain('2.50');
+    expect(whoops.describe(instance.settings)).toContain('0.25 more for every 500 characters');
+    expect(whoops.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'whoops.perLength': 250 } })).toContain('2.50 more');
   });
   test('Whoops! draws its effect and its ink form, and each play\'s tag takes its own ink', () => {
     const whoops = instanceUi.cards.find((c) => c.key === 'whoops')!;
@@ -178,7 +178,6 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.hint).toBe('Drag a strip off to read what is under it.');
     const said = ac.describe(instance.settings);
     expect(said).toContain('A Pepperoni card');
-    expect(said).toContain('1.00');
     expect(said).toContain('0.25 more for every 50 characters it covers');
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
     expect(ac.surcharge!(instance.settings)).toBe('Covers a lot, +0.25 per 50 characters covered');

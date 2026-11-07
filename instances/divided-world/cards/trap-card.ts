@@ -13,7 +13,6 @@ export const trapCard: CardRules<Record<string, never>> = {
   rarity: 'uncommon',
   play: 'set',
   trap: { trigger: { on: 'cast' }, outcome: { do: 'payout' } },
-  priceKey: 'trapCard.price',
   playPrice: () => 0,
   canApply: () => ok(undefined),
   // It carries nothing: what it pays is what the caught play cost.

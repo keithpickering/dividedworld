@@ -8,7 +8,7 @@
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
 import type { Quadrant, Span } from '../rules/types.ts';
-import type { CardUi } from './cards/types.ts';
+import type { CardArt, CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
 import type { TipKey } from './tips/keys.ts';
 
@@ -349,6 +349,8 @@ export interface InstanceUi {
   readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
+  /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
+  readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
   /**
    * The instance's mark for a card's back: a URL the bundler resolved, drawn at the center of the back's crossed bands
    * (`PostcardBack`). It is the instance's, never a card's, so a back still says nothing about the card it is. Without it the back

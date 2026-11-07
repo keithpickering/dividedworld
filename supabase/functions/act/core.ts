@@ -14,7 +14,8 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { basePrice, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { cardPrice } from '../../../engine/rules/packs.ts';
+import { casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -153,7 +154,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     let args: Record<string, unknown> = { ...decision.args, who };
     // A card's prices are settings: read as the rows hold them now, not as the code was deployed.
     const tuned = decision.rpc === 'buy_card' || decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
-    if (decision.rpc === 'buy_card') args = { ...args, price: basePrice(tuned.cards.find((c) => c.key === decision.args.card)!, tuned.settings) };
+    if (decision.rpc === 'buy_card') args = { ...args, price: cardPrice(tuned.machine, String(decision.args.card)) };
     if (decision.needsTarget) {
       // The target as its rules see it (card_target_reach, 0055): a post, a character, a thread or a board, with its own effects and
       // the live ones above it, which a card's canApply sees too (effectsOnTarget).

@@ -26,7 +26,7 @@ const settings: Settings = {
   postsPerPage: 20,
   hotReplies: 10,
   cardSettings: { 'splat.clean': 95 },
-  economy: { 'a.bonus': 5, 'splat.price': 100 },
+  economy: { 'a.bonus': 5 },
   settlementLength: { unit: 'day', count: 1 },
   presenceWindow: { unit: 'minute', count: 5 },
   presenceNames: 15,
@@ -104,6 +104,8 @@ const good: Instance = {
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
   copy: { announcementsThreadTitle: 'Season {season}: Promos' },
   system,
+  packs: [],
+  machine: [],
 };
 
 test('a whole instance has no problems', () => {
@@ -120,7 +122,7 @@ test('exactly one board is The System\'s, and at least one is not', () => {
 });
 
 test('a card\'s stack is a whole number, at least 1', () => {
-  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (stack: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, stack, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
   assert.deepEqual(instanceProblems(card(3)), []);
   assert.deepEqual(instanceProblems(card(undefined)), []);
   for (const bad of [0, 1.5, '3', -1]) assert.match(instanceProblems(card(bad)).join('\n'), /card "splat" stacks .*; a stack is a whole number, at least 1/, String(bad));
@@ -152,7 +154,7 @@ test('the numbers a card gives the screens are an object of named numbers, like 
 });
 
 test('a number a card reads for the screens is one the settings hold, within the card\'s bounds', () => {
-  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
+  const card = (screenReads: unknown) => ({ ...good, cards: [{ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, screenReads, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] }) as unknown as Instance;
   const reads = [{ key: 'splat.clean', whole: true, min: 1, max: 100 }];
   assert.deepEqual(instanceProblems(card(reads)), []);
   assert.match(instanceProblems(card([{ key: 'splat.other' }])).join('\n'), /card "splat" reads card setting "splat\.other", which the settings do not hold/);
@@ -277,15 +279,10 @@ test('an economy override that is not an object of numbers reaches the check, ne
   }
 });
 
-test('a number a class reads can carry its bounds, and a price is a whole number a wallet can hold', () => {
+test('a number a class reads can carry its bounds', () => {
   const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 6 }], earn: () => [] }] };
   assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at least 6/);
   assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
-  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
-  // A price above what a wallet holds is a card nobody can buy, the Vending Machine's to refuse at
-  // the purchase, never a reason to stop every settlement.
-  assert.deepEqual(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 700 } } }), []);
-  assert.match(instanceProblems({ ...good, cards: [card], settings: { ...settings, economy: { ...settings.economy, 'splat.price': 2 ** 31 } } }).join('\n'), /splat\.price/);
 });
 
 test('a settlement window\'s length is a span', () => {
@@ -297,16 +294,13 @@ test('a settlement window\'s length is a span', () => {
 
 test('an override of one economy number keeps the others', () => {
   const tuned = withOverrides(settings, { economy: { 'a.bonus': 9 } });
-  assert.deepEqual(tuned.economy, { 'a.bonus': 9, 'splat.price': 100 });
-  assert.deepEqual(settings.economy, { 'a.bonus': 5, 'splat.price': 100 });
+  assert.deepEqual(tuned.economy, { 'a.bonus': 9 });
+  assert.deepEqual(settings.economy, { 'a.bonus': 5 });
 });
 
 test('a class or card reading an economy number the settings lack is a problem', () => {
   const reads = { ...good, classes: [{ key: 'a', name: 'A', reads: ['a.bonus', 'a.missing'], earn: () => [] }] };
   assert.match(instanceProblems(reads).join('\n'), /class "a" reads economy "a\.missing"/);
-  const card = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.cost', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
-  assert.match(instanceProblems({ ...good, cards: [card] }).join('\n'), /card "splat" is priced by economy "splat\.cost"/);
-  assert.deepEqual(instanceProblems({ ...good, cards: [{ ...card, priceKey: 'splat.price' }] }), []);
 });
 
 test('an override left undefined keeps the default', () => {
@@ -617,7 +611,7 @@ test('toastDefaults: the kinds that toast until a player chooses, each a kind of
 });
 
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.
-const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
+const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
 const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: cards.map(testCard) }) as unknown as Instance;
 
 test('a card carries one of the four rarities', () => {
@@ -733,4 +727,50 @@ test('only a card that reaches a thread pins', () => {
   assert.match(instanceProblems(withCards({ pins: true })).join('\n'), /card "splat" pins true; only a card that reaches a thread pins/);
   assert.match(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts, pins: true })).join('\n'), /card "splat" pins true; only a card that reaches a thread pins/);
   assert.match(instanceProblems(withCards({ rarity: 'rare', reaches: ['thread'], lasts, pins: 'yes' })).join('\n'), /card "splat" pins "yes"/);
+});
+
+// Packs and the machine's slots (docs/plans/2026-11-04-booster-packs-plan.md, Task 1).
+const packCards = [
+  testCard({ key: 'a', rarity: 'common' }), testCard({ key: 'b', rarity: 'uncommon' }), testCard({ key: 'c', rarity: 'rare' }),
+] as unknown as Instance['cards'];
+const stocked = (over: Partial<Instance>): Instance => ({ ...good, cards: packCards, packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }, { weights: { uncommon: 3, rare: 1 } }] }], machine: [{ item: { card: 'a' }, availability: 'onSale', price: 100 }, { item: { pack: 'p' }, availability: 'onSale', price: 300 }], ...over });
+
+test('an instance with packs and slots that agree has no problems', () => {
+  assert.deepEqual(instanceProblems(stocked({})), []);
+});
+
+test('a pull weight is a positive whole number', () => {
+  for (const w of [0, -1, 1.5, Number.NaN]) {
+    assert.match(said(stocked({ packs: [{ key: 'p', pulls: [{ weights: { common: w } }] }], machine: [] })), /pack "p".*weight/, String(w));
+  }
+});
+
+test('a pull naming a rarity with no eligible card is a problem, and a legendary over today\'s cards is one', () => {
+  assert.match(said(stocked({ packs: [{ key: 'p', pulls: [{ weights: { legendary: 1 } }] }], machine: [] })), /pack "p".*legendary.*no (eligible )?card/);
+  assert.match(said(stocked({ packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }], leaves: ['a'] }], machine: [] })), /pack "p".*common.*no (eligible )?card/);
+});
+
+test('a pack has pulls, and leaves only cards that exist', () => {
+  assert.match(said(stocked({ packs: [{ key: 'p', pulls: [] }], machine: [] })), /pack "p" has no pulls/);
+  assert.match(said(stocked({ packs: [{ key: 'p', pulls: [{ weights: { common: 1 } }], leaves: ['ghost'] }], machine: [] })), /pack "p" leaves out "ghost".*no such card/);
+});
+
+test('a pack key is used once', () => {
+  const p = { key: 'p', pulls: [{ weights: { common: 1 } }] };
+  assert.match(said(stocked({ packs: [p, p], machine: [] })), /pack key "p" is used twice/);
+});
+
+test('a slot names a card or a pack the instance has, once', () => {
+  assert.match(said(stocked({ machine: [{ item: { card: 'ghost' }, availability: 'onSale', price: 100 }] })), /slot.*card "ghost".*no such card/);
+  assert.match(said(stocked({ machine: [{ item: { pack: 'ghost' }, availability: 'onSale', price: 100 }] })), /slot.*pack "ghost".*no such pack/);
+  const twice = [{ item: { card: 'a' }, availability: 'onSale' as const, price: 100 }, { item: { card: 'a' }, availability: 'hidden' as const, price: 50 }];
+  assert.match(said(stocked({ machine: twice })), /two slots.*card "a"/);
+});
+
+test('a slot\'s price is a positive whole number at most INT4_MAX', () => {
+  for (const price of [0, -5, 2.5, 2 ** 31, Number.NaN]) {
+    assert.match(said(stocked({ machine: [{ item: { card: 'a' }, availability: 'onSale', price }] })), /slot.*price/, String(price));
+  }
+  assert.deepEqual(instanceProblems(stocked({ machine: [{ item: { card: 'a' }, availability: 'onSale', price: 2 ** 31 - 1 }] })), []);
+  assert.match(said(stocked({ machine: [{ item: { card: 'a' }, availability: 'sometimes' as never, price: 1 }] })), /slot.*availability/);
 });

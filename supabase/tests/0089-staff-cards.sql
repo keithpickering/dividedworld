@@ -29,14 +29,16 @@ begin
   insert into staff_offices (staff, office, cause) values ('sc-bench', 'benched', 'admin');
   -- The pool plays up to uncommon.
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
-  update settings set value = value || '{"snare.price": 150, "catcher.price": 100, "bluffy.price": 25, "grandie.price": 100, "shield.price": 150, "hook.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'grandie.price', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'shield.price', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null);
+  -- What each is worth to a trap that catches a staff Cast of it is its slot's price (place_cast, 0115).
+  insert into machine_slots (position, card, availability, price) values
+    (21, 'snare', 'onSale', 150), (22, 'catcher', 'onSale', 100), (23, 'bluffy', 'onSale', 25), (24, 'grandie', 'onSale', 100), (25, 'shield', 'onSale', 150), (26, 'hook', 'onSale', 100);
 end $$;
 
 create function pg_temp.refused(stmt text) returns text language plpgsql as $$

@@ -28,6 +28,7 @@ const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test',
   copy: { announcementsThreadTitle: 'Promos {season}' },
+  packs: [], machine: [],
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
   cards: [],
   reactions: [
@@ -1118,13 +1119,13 @@ describe('what a list row shows', () => {
 describe('the Vending Machine and a card play, refused as the server refuses them', () => {
   /* One salty card at 1.00, and a long post costs 0.50 more: the rules the server prices a play by (engine/rules/cards.ts). */
   const splat = {
-    key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, stack: 2,
     playPrice: (_s: Settings, t: CardTarget) => (t.reach === 'post' && t.length > 20 ? 50 : 0),
     canApply: (t: CardTarget, on: readonly { card: string | null }[]) => (t.reach !== 'post' || t.kind !== 'post' ? refused2('a card lands on a post') : on.length >= 2 ? refused2('this post already carries 2 of that card, the most it takes') : { ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ([undefined, 'red'].includes((c as { color?: unknown } | undefined)?.color as string | undefined) ? { ok: true as const, value: c ?? {} } : refused2('the ink is red')),
   };
   const refused2 = (why: string) => ({ ok: false as const, why });
-  const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
+  const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
   function shopWorld(wallet: number, held = 0) {
     const fake = createFake({ instance: shop });
     const ana = fake.seed.account('ana');
@@ -1433,12 +1434,12 @@ describe('the season a screen names', () => {
 describe('the player\'s own log: the ledger with its shares, the wallet\'s events and the cards', () => {
   /* One salty card at 1.00 that costs 0.50 more on a long post, as the Vending Machine's tests above price it. */
   const splat = {
-    key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', stack: 2,
+    key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, stack: 2,
     playPrice: (_s: Settings, t: CardTarget) => (t.reach === 'post' && t.length > 20 ? 50 : 0),
     canApply: () => ({ ok: true as const, value: undefined }),
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
-  const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
+  const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
   const empty = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 
   function logWorld() {
@@ -1800,11 +1801,11 @@ describe('presence', () => {
 
 describe('a card set face down, a ward and a trap, as the server holds them', () => {
   const ok = <T,>(value: T) => ({ ok: true as const, value });
-  const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const cast = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
   const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
-  const world: Instance = { ...instance, cards: [cast, snare, shield], settings: { ...settings, economy: { 'x.price': 100 } } };
+  const world: Instance = { ...instance, cards: [cast, snare, shield], machine: [{ item: { card: cast.key }, availability: 'onSale' as const, price: 100 }, { item: { card: snare.key }, availability: 'onSale' as const, price: 100 }, { item: { card: shield.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
   function setup() {
     const fake = createFake({ instance: world });
     const ana = fake.seed.account('ana');
@@ -1867,13 +1868,13 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
    plays above a page's posts read in one batch. */
 describe('a card beyond a post, and the effects above a page', () => {
   const sparkle = {
-    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'sparkle.price', reaches: ['character' as const], lasts: { unit: 'day' as const, count: 3650 },
+    key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const], lasts: { unit: 'day' as const, count: 3650 },
     playPrice: () => 0, validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
     canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e, now),
   };
   /* Long reaches: a card's canApply reads the real clock for an effect's end, and the fake's starts on a fixed date. */
   const longReach = { unit: 'day' as const, count: 3650 };
-  const shop: Instance = { ...instance, cards: [sparkle], settings: { ...settings, economy: { 'sparkle.price': 100 }, reachLasts: { ...settings.reachLasts, character: longReach } } };
+  const shop: Instance = { ...instance, cards: [sparkle], machine: [{ item: { card: sparkle.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {}, reachLasts: { ...settings.reachLasts, character: longReach } } };
   function world() {
     const fake = createFake({ instance: shop });
     const ana = fake.seed.account('ana');
@@ -1917,7 +1918,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     const selfie = { ...sparkle, key: 'selfie', name: 'Selfie', play: 'use' as const, canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'selfie', reaches: ['character'] }, t, e, now) };
     const quake = { ...sparkle, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[], _config?: unknown, now?: Date) => landsOn({ key: 'quake', reaches: ['board'] }, t, e, now) };
     /* On the wall clock: a card's own rules (landsOn) read the time as the server does, so a live board card is live to them. */
-    const fake = createFake({ instance: { ...shop, cards: [selfie, quake], settings: { ...shop.settings, economy: { 'sparkle.price': 100 } } }, now: () => Date.now() });
+    const fake = createFake({ instance: { ...shop, cards: [selfie, quake], machine: [{ item: { card: selfie.key }, availability: 'onSale' as const, price: 100 }, { item: { card: quake.key }, availability: 'onSale' as const, price: 100 }], settings: { ...shop.settings, economy: {} } }, now: () => Date.now() });
     const ana = fake.seed.account('ana'); const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face'); const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: opener } = fake.seed.thread('general', boFace, 'Hello', 'First post');
@@ -1950,15 +1951,15 @@ describe('a card beyond a post, and the effects above a page', () => {
 /* An admin ends a card (supabase/migrations/0092_card_end.sql, Tasks 1 and 2): the fake refuses in the server's words and counts as it does. */
 describe('an admin ends a card play (reverse_card)', () => {
   const ok = <T,>(value: T) => ({ ok: true as const, value });
-  const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
   const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 400 }, canApply: () => ok(undefined) };
   const sparkle = {
-    ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'x.price', reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 400 },
+    ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 400 },
     canApply: (t: CardTarget, e: readonly CardEffect[]) => landsOn({ key: 'sparkle', reaches: ['character', 'thread'] }, t, e),
   };
-  const world: Instance = { ...instance, cards: [blot, snare, shield, sparkle], settings: { ...settings, economy: { 'x.price': 100 }, reachLasts: { character: { unit: 'day', count: 400 }, thread: { unit: 'day', count: 400 }, board: { unit: 'day', count: 400 } } } };
+  const world: Instance = { ...instance, cards: [blot, snare, shield, sparkle], machine: [{ item: { card: blot.key }, availability: 'onSale' as const, price: 100 }, { item: { card: snare.key }, availability: 'onSale' as const, price: 100 }, { item: { card: shield.key }, availability: 'onSale' as const, price: 100 }, { item: { card: sparkle.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {}, reachLasts: { character: { unit: 'day', count: 400 }, thread: { unit: 'day', count: 400 }, board: { unit: 'day', count: 400 } } } };
   /* The lasts are long: a card's rules read the real clock for a ward's end (decidePlay), and the fake's starts on a fixed date. */
   function setup() {
     const fake = createFake({ instance: world });

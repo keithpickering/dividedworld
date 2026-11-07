@@ -10,12 +10,12 @@ import { Vending } from './Vending.tsx';
 
 /* Two cards at 1.00; the salty one costs up to 2.00 more on a long post, never more than 3.00 in all. */
 const ok = { ok: true as const, value: undefined };
-const stick: CardRules = { key: 'stick', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
+const stick: CardRules = { key: 'stick', name: 'Stick Around', alignment: 'sweet', rarity: 'common', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const whoops: CardRules = {
-  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3,
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', stack: 3,
   playPrice: (_s, t) => Math.min(200, Math.floor((t.reach === 'post' ? t.length : 0) / 5)), canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }),
 };
-const shop: Instance = { ...testInstance, cards: [stick, whoops], settings: { ...testInstance.settings, economy: { 'stick.price': 100, 'whoops.price': 100 } } };
+const shop: Instance = { ...testInstance, cards: [stick, whoops], machine: [{ item: { card: 'stick' }, availability: 'onSale', price: 100 }, { item: { card: 'whoops' }, availability: 'onSale', price: 100 }] };
 const art = { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' };
 const faces: CardUi[] = [
   { key: 'stick', art, describe: () => 'A Sweet card. Holds each reader on a post.' },
@@ -56,23 +56,6 @@ describe('the machine\'s marquee', () => {
     renderIn(seeded(300), <Vending />, { instance: shop, cards: faces, path: '/vending', copy: { shopName: 'Plain Shop' } });
     await screen.findByRole('group', { name: 'Plain Shop' });
     expect(sign()).toHaveTextContent('Plain Shop');
-  });
-});
-
-/* #86: an admin tuned a price in the economy row; the machine sells at the server's price, not the compiled one. */
-describe('a price an admin has tuned', () => {
-  test('is the price on the face and the buy button, and the price the purchase is charged', async () => {
-    const tuned: Instance = { ...shop, settings: { ...shop.settings, economy: { ...shop.settings.economy, 'whoops.price': 250 } } };
-    const fake = buildWorld(undefined, tuned);
-    const account = fake.seed.account('ana');
-    fake.seed.character(account, 'Pipewrench', 'heel');
-    fake.seed.wallet(account, 500);
-    fake.signInAs(account);
-    /* The screens on the compiled instance, given the settings the backend reads, as the app gives them (web/src/App.tsx). */
-    renderIn(fake, <Vending />, { instance: shop, cards: faces, path: '/vending', settings: { cardEconomy: (await fake.settings()).cardEconomy } });
-    fireEvent.click(await screen.findByRole('button', { name: /^Buy Whoops!, 2\.50 orbs?, common Cast$/u }));
-    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 2.50' }));
-    await waitFor(async () => expect((await fake.wallet()).balance).toBe(250));
   });
 });
 

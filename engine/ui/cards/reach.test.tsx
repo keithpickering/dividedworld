@@ -23,7 +23,7 @@ import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
 
-const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches'], extra: Partial<CardRules> = {}): CardRules => ({
   ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, ...extra,
   canApply: (t, e, _config, now) => landsOn({ key, reaches }, t, e, now),

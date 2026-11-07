@@ -15,7 +15,7 @@ import type { CardUi } from '../cards/types.ts';
 import { ThreadScreen } from './Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
-const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches']): CardRules => ({
   ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, canApply: (t, e, _config, now) => landsOn({ key, reaches }, t, e, now),
 });

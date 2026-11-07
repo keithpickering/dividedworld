@@ -56,8 +56,8 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     instance: {
       /* Rules enough for the hand to price and draw each card (engine/ui/cards/faces.ts). */
       cards: [
-        { key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', playPrice: () => 0 },
-        { key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price', playPrice: () => 0 },
+        { key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', playPrice: () => 0 },
+        { key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', playPrice: () => 0 },
       ],
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],

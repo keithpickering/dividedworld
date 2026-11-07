@@ -13,17 +13,16 @@ end $$;
 -- The test cards, each priced in the economy (card_kinds_priced, 0006).
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"snare.price": 150, "catcher.price": 100, "bluffy.price": 25, "grandie.price": 100, "shield.price": 150, "hook.price": 100, "quoter.price": 100, "jumpy.price": 100, "lowtrap.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'grandie.price', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'shield.price', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null),
-    ('quoter', 'Quoter', 'salty', 'quoter.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}', false, null),
-    ('jumpy', 'Jumpy', 'salty', 'jumpy.price', 'common', 'set', '{"trigger": {"on": "reaction", "quadrant": "boredNegative"}, "outcome": {"do": "nullify"}}', false, null),
-    ('lowtrap', 'Low Trap', 'salty', 'lowtrap.price', 'common', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null)
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null),
+    ('quoter', 'Quoter', 'salty', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}', false, null),
+    ('jumpy', 'Jumpy', 'salty', 'common', 'set', '{"trigger": {"on": "reaction", "quadrant": "boredNegative"}, "outcome": {"do": "nullify"}}', false, null),
+    ('lowtrap', 'Low Trap', 'salty', 'common', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null)
   on conflict (key) do nothing;
 end $$;
 
@@ -51,8 +50,7 @@ begin
     insert into accounts (id) values (%1$L), (%2$L), (%3$L);
     insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Race Trapper', now(), now()), (%5$L, %2$L, 'Race Caster B', now(), now()), (%6$L, %3$L, 'Race Caster C', now(), now());
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
-    update settings set value = value || '{"racecatch.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('racecatch', 'Race Catcher', 'salty', 'racecatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values ('racecatch', 'Race Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
     insert into card_ledger (account, card, kind, price) values (%1$L, 'racecatch', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'sweetie', 'bought', 0);
   $sql$, ann, bob, cat, a, b, c));
   -- The post and the set, committed, then the two casts race.
@@ -88,11 +86,10 @@ begin
     insert into accounts (id) values (%1$L), (%2$L), (%3$L);
     insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Pair Setter', now(), now()), (%5$L, %2$L, 'Pair Poster', now(), now()), (%6$L, %3$L, 'Pair Bluffer', now(), now());
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
-    update settings set value = value || '{"pairhook.price": 100, "pairbluff.price": 100, "paircatch.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-      ('paircatch', 'Pair Catcher', 'salty', 'paircatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
-      ('pairhook', 'Pair Hook', 'salty', 'pairhook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
-      ('pairbluff', 'Pair Bluff', 'pepperoni', 'pairbluff.price', 'common', 'set', null);
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values
+      ('paircatch', 'Pair Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
+      ('pairhook', 'Pair Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
+      ('pairbluff', 'Pair Bluff', 'pepperoni', 'common', 'set', null);
     insert into card_ledger (account, card, kind, price) values (%1$L, 'paircatch', 'bought', 0), (%1$L, 'pairhook', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'pairbluff', 'bought', 0);
     insert into threads (id, board, title) select %7$L, b.id, 'Pair one' from boards b where b.slug = 'general';
     insert into threads (id, board, title) select %8$L, b.id, 'Pair two' from boards b where b.slug = 'general';
@@ -157,9 +154,8 @@ begin
     insert into accounts (id) values (%1$L), (%2$L);
     insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Late Setter', now(), now()), (%4$L, %2$L, 'Late Quoter', now(), now());
     insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
-    update settings set value = value || '{"latequote.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-      ('latequote', 'Late Quote', 'salty', 'latequote.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "blot"}}');
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values
+      ('latequote', 'Late Quote', 'salty', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "blot"}}');
     insert into card_ledger (account, card, kind, price) values (%1$L, 'latequote', 'bought', 0);
     insert into threads (id, board, title) select %5$L, b.id, 'Late set' from boards b where b.slug = 'general';
     insert into acts (id, character, kind, thread, payload) values (%6$L, %3$L, 'post', %5$L, '{"body": "Quoted while the trap goes on."}');
@@ -524,13 +520,13 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}, "rarity": "common"}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}, "rarity": "common"}]}')$s$);
   if why is distinct from 'card "seedling" has a trap, and only a Set card does' then raise exception 'a trap on a Cast seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price"}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet"}]}')$s$);
   if why is distinct from 'card "seedling" has no rarity; a rarity is common, uncommon, rare or legendary' then raise exception 'a card with no rarity seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "nothing"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "nothing"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes with "nothing", which the instance does not have' then raise exception 'a strike of no card seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
   if why is not null then raise exception 'a ward was refused: %', why; end if;
   if (select lasts from card_kinds where key = 'seedling') is distinct from interval '7 days' or not (select ward from card_kinds where key = 'seedling') then raise exception 'the seed wrote the ward and its time up'; end if;
   why := pg_temp.refusal($s$insert into settings (key, value) values ('setLasts', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
@@ -612,19 +608,19 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true}]}')$s$);
   if why is distinct from 'card "seedling" is a ward with no time up (lasts); a ward ends at its time' then raise exception 'a ward with no time up seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "payout"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "payout"}}}]}')$s$);
   if why is distinct from 'card "seedling" pays out on a reply; it pays out only on a cast, since only a cast is paid for' then raise exception 'a payout on a reply seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}, "outcome": {"do": "nullify"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}, "outcome": {"do": "nullify"}}}]}')$s$);
   if why is distinct from 'card "seedling" springs on "sneeze"; a trap springs on cast, reaction, reply, quote, visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "strike", "card": "sweetie"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "strike", "card": "sweetie"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes on a cast; a strike lays its card on a reply or a quote, until cards reach characters' then raise exception 'a strike on a cast seeded: %', why; end if;
   -- A struck card already in the table, rarer than the trap, is refused as one in the seed is.
   update card_kinds set rarity = 'legendary' where key = 'blot';
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
   if why is distinct from 'card "seedling" strikes with "blot", which is rarer than the trap (common)' then raise exception 'a strike of a rarer card in the table seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
   if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
   -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
   why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);

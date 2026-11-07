@@ -282,10 +282,6 @@ describe('the cards marker', () => {
     /* A block table, row group, row, header or cell is no table to a reader (browsers drop the role with the display). */
     expect(blocked.filter((x) => /^\.kb-guide-cards( tbody( tr| th| td)?)?$/u.test(x))).toEqual([]);
   });
-  test('the price is the economy\'s the server prices with now, as the Vending Machine shows it', () => {
-    page('## Cards\n\n<!-- kayfabb:cards -->', { cards: [whoops], settings: { cardEconomy: { 'whoops.price': 250 } } });
-    expect(within(screen.getByRole('row', { name: /Whoops!/u })).getByRole('cell', { name: '2.50' })).toBeInTheDocument();
-  });
   test('a card the instance gave no face is listed all the same, by its name and its rules', () => {
     page('## Cards\n\n<!-- kayfabb:cards -->');
     const row = screen.getByRole('row', { name: /Whoops!/u });
