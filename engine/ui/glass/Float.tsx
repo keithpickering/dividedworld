@@ -29,6 +29,7 @@ import { pageEscape } from './keys.ts';
 import { hudTopOf } from './place.ts';
 import { FRAME } from './Frame.tsx';
 import { FIELD_PLACED } from './field.ts';
+import { largeViewportHeight } from './viewport.ts';
 import { isLeaving } from './Held.tsx';
 import { focusFell, useLayer } from './layer.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
@@ -82,12 +83,13 @@ const SHEET_SHARE = 0.55;
 
 /**
  * Where a placement put the float, and for a sheet how far the page must scroll (`over`, in px; none or less is none) to bring the
- * anchor above it, and where the sheet's top edge is (`sheetTop`): the caller scrolls when the edge moves, not on every placement.
+ * anchor above it, and how tall the sheet stands (`sheetHeight`): the caller scrolls when that changes, not on every placement, and not
+ * when only the window's height did (a phone's address bar turning moves the sheet's top in the window and leaves its height alone).
  */
 export interface Placement {
   readonly at: FloatPlace;
   readonly over: number;
-  readonly sheetTop: number | null;
+  readonly sheetHeight: number | null;
   /** The room the float takes from the page, in px: from the window's right edge for a dock, up from its foot for a sheet. The page gives it up (`publishRoom`). */
   readonly room: { readonly right: number; readonly bottom: number };
 }
@@ -107,13 +109,20 @@ export function placeFloat(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElem
     /* The window's own width, not the glow's `max-width: 100vw - 8px`: a sheet runs edge to edge. */
     wrap.style.maxWidth = 'none';
     wrap.style.bottom = `${Math.max(0, viewport.height - hudTop)}px`;
-    const room = Math.max(0, Math.floor((hudTop - MARGIN) * SHEET_SHARE));
+    /*
+     * Its room is a share of the large viewport above the HUD (viewport.ts), not of the window: a phone's address bar turning changes
+     * the window's height on many scrolls, and a sheet sized from it grew and shrank under the reader and scrolled the page each time.
+     * The HUD stands as far above the window's foot either way, so the large viewport less that is where the HUD's top would be with
+     * the bar hidden. It is never more than the window shows above the HUD.
+     */
+    const foot = Math.max(0, viewport.height - hudTop);
+    const room = Math.max(0, Math.min(hudTop - MARGIN, Math.floor((largeViewportHeight() - foot - MARGIN) * SHEET_SHARE)));
     box.style.maxHeight = `${room}px`;
     const top = hudTop - Math.min(room, box.scrollHeight + (box.offsetHeight - box.clientHeight));
     /* The whole post is brought above the sheet where it fits there; a post taller than that keeps its mark above it. */
     const post = keep?.getBoundingClientRect();
     const whole = post !== undefined && post.height > 0 && post.height <= top - GAP - MARGIN;
-    return { at: 'sheet', over: (whole ? Math.max(post.bottom, a.bottom) : a.bottom) - (top - GAP), sheetTop: top, room: { right: 0, bottom: Math.max(0, viewport.height - top) } };
+    return { at: 'sheet', over: (whole ? Math.max(post.bottom, a.bottom) : a.bottom) - (top - GAP), sheetHeight: hudTop - top, room: { right: 0, bottom: Math.max(0, viewport.height - top) } };
   }
   /* The dock is as tall as its room, whatever it holds: what is more scrolls inside it. */
   const room = Math.max(0, hudTop - 2 * DOCK_INSET);
@@ -122,7 +131,7 @@ export function placeFloat(wrap: HTMLElement, box: HTMLElement, anchor: HTMLElem
   wrap.style.width = `${dockWidth(viewport.width)}px`;
   wrap.style.maxWidth = `${Math.max(0, viewport.width - 2 * DOCK_INSET)}px`;
   box.style.height = `${room}px`;
-  return { at: 'dock', over: 0, sheetTop: null, room: { right: dockWidth(viewport.width) + 2 * DOCK_INSET, bottom: 0 } };
+  return { at: 'dock', over: 0, sheetHeight: null, room: { right: dockWidth(viewport.width) + 2 * DOCK_INSET, bottom: 0 } };
 }
 
 /**
@@ -196,7 +205,7 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
     if (!w || !b || !present) return;
     let last: FloatPlace | null = null;
     let lastKey = '';
-    let lastSheetTop: number | null = null;
+    let lastSheetHeight: number | null = null;
     let lastRoom = '';
     let frame: number | null = null;
     const now = () => {
@@ -229,13 +238,13 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
       /* The float's smoke is a window onto the field and reads where the box stands (Smoke.tsx), which was only just decided. */
       window.dispatchEvent(new Event(FIELD_PLACED));
       /*
-       * A sheet scrolls the post so its marks sit just above it: on open and when the sheet's edge moves (its size changed), never
+       * A sheet scrolls the post so its marks sit just above it: on open and when the sheet's height changes, never
        * for a scroll, which would fight a reader scrolling the page.
        */
       if (placed.at === 'sheet') {
-        if (placed.sheetTop !== lastSheetTop && placed.over > 0 && typeof window.scrollBy === 'function') window.scrollBy(0, placed.over);
-        lastSheetTop = placed.sheetTop;
-      } else lastSheetTop = null;
+        if (placed.sheetHeight !== lastSheetHeight && placed.over > 0 && typeof window.scrollBy === 'function') window.scrollBy(0, placed.over);
+        lastSheetHeight = placed.sheetHeight;
+      } else lastSheetHeight = null;
       latest.current.onPlace?.(placed.at);
       /* A change of side lays what it holds out anew, so it is measured again once that has landed. */
       if (last !== null && placed.at !== last) { lastKey = ''; soon(); }

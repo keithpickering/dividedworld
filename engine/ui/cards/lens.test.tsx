@@ -20,6 +20,7 @@ import { fadeOf, Lens, LensProvider, moreBelow, useLensFor, useLensStore } from 
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
+import { glassInk } from './ink.ts';
 
 /* These tests close a Lens and open another in the same step and look at the one page that results, as under Off: at full motion the closed one stays, inert, until its exit ends (glass/layer.test.tsx). */
 beforeEach(() => {
@@ -386,6 +387,19 @@ describe('what the Lens says and offers', () => {
     expect(await within(row).findByText('1 thread spun from this play')).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: 'All about the ink' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
     expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+  });
+
+  test('an ink too dark for the glass is drawn lifted, on the open tab and the row, so their words and edges read', async () => {
+    width(false);
+    const w = world();
+    const first = w.play('k1', w.spritey, w.second, 1);
+    open(w, cards.map((c) => (c.key === 'k1' ? { ...c, tag: () => '#14030a' } : c)));
+    await userEvent.click(await markOf(2, 'Card 1'));
+    await userEvent.click(whoButton());
+    const lifted = glassInk('#14030a')!;
+    expect(lifted).not.toBe('#14030a');
+    expect(lens().style.getPropertyValue('--kb-lens-ink')).toBe(lifted);
+    expect(lens().querySelector<HTMLElement>(`[data-kb-play="${first}"]`)!.style.getPropertyValue('--kb-play-ink')).toBe(lifted);
   });
 
   test('a row carries its play\'s ink as a bar, and its note stands above its caster', async () => {
