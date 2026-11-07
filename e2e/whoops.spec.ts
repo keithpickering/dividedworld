@@ -311,7 +311,7 @@ test('with a held Stick Around around the ink, the marks, the reactions and the 
   }, sel);
   expect(await hit('.kb-mark')).toBe(true);
   expect(await hit('.kb-react-button')).toBe(true);
-  expect(await hit('.kb-act-links .kb-link-button')).toBe(true);
+  expect(await hit('.kb-act-links .kb-button')).toBe(true);
 });
 
 /*
