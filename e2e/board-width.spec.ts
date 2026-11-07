@@ -75,11 +75,11 @@ test.describe('at the column\'s own width and either side of it', () => {
 });
 
 /**
- * The vignette (the glass-polish design's section 8, as the owner changed it: it lies over the '03 board itself, drawn back so it does
- * not encroach on the posts) is violet laid toward the edges of the window, strongest at the corners and the foot, and held to a
- * fraction of that strength where it lies over the column. Measured in the browser, with the HUD hidden so the foot above it is read
+ * The vignette (the glass-polish design's section 8, as the owner changed it: it lies over the '03 board itself; the owner, 2026-11-07,
+ * took its mask away and brought the glow outward) is violet laid toward the edges of the window, strongest at the corners and the
+ * foot, with no mask: the corner glow is clear to the column's edge. Measured in the browser, with the HUD hidden so the foot above it is read
  * (the HUD is opaque, z-index 30, and would cover the foot's samples): a gutter strip is shifted by the vignette and a gutter corner
- * more than the gutter's vertical middle; the foot is drawn over the posts too, but less than in the gutter; under High contrast none
+ * more than the gutter's vertical middle; the foot is drawn over the posts too; under High contrast none
  * is drawn; and every piece of text under it keeps 4.5:1 against the ground the vignette leaves it, in both board modes at three widths.
  */
 const meanShift = (page: Page, a: Buffer, b: Buffer) => page.evaluate(async ([x, y]) => {
@@ -103,7 +103,7 @@ for (const scheme of ['light', 'dark'] as const) {
       const strip = (page: Page, x: number, y: number) => page.screenshot({ clip: { x, y, width: W, height: W }, animations: 'disabled' });
       const left = (width - Math.min(width * 0.96, MAX)) / 2;
 
-      test('lies in the gutters and never inside the column; High contrast draws none', async ({ page }) => {
+      test('lies in the gutters, has no mask; High contrast draws none', async ({ page }) => {
         await openThread(page);
         await page.addStyleTag({ content: '.kb-hud { visibility: hidden !important; }' });
         const vignette = page.locator('.kb-vignette');
@@ -111,6 +111,8 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(vignette).toHaveAttribute('aria-hidden', 'true');
         expect(await vignette.evaluate((e) => getComputedStyle(e).pointerEvents)).toBe('none');
         expect(await vignette.evaluate((e) => getComputedStyle(e).position)).toBe('fixed');
+        /* No mask: a mask's edge at the column was a hard step, so the glow itself is drawn outward and fades softly. */
+        expect(await vignette.evaluate((e) => { const c = getComputedStyle(e); return [c.maskImage, c.webkitMaskImage]; }), 'the vignette has no mask').toEqual(['none', 'none']);
         /* The column's own edges, and its middle, at the top, the middle, and the foot above the HUD (the foot's 220px is y 680 to 900). */
         const xs = [left, width / 2 - W / 2, width - left - W];
         const ys = [0, 450, 700, 800, height - W];
@@ -121,11 +123,9 @@ for (const scheme of ['light', 'dark'] as const) {
         await vignette.evaluate((e) => { (e as HTMLElement).style.display = 'none'; });
         const bare = await Promise.all(all.map(([x, y]) => strip(page, x, y)));
         const shift = await Promise.all(all.map((_, i) => meanShift(page, drawn[i]!, bare[i]!)));
-        /* The foot lies over the posts, at a fraction of its gutter strength. */
+        /* The foot lies over the posts too. */
         const footIn = inside.findIndex(([x, y]) => x === xs[1] && y === 800);
-        const footGutter = all.findIndex(([x, y]) => x === 0 && y === height - W);
         expect(shift[footIn], 'the foot over the posts').toBeGreaterThan(0);
-        expect(shift[footIn], 'the foot over the posts against the gutter\'s').toBeLessThan(shift[footGutter]!);
         gutter.forEach((at, i) => expect(shift[inside.length + i], `in the gutter at ${at}`).toBeGreaterThan(0));
         if (width === 1440) {
           const [top, middle, foot] = shift.slice(inside.length) as [number, number, number];

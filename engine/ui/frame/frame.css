@@ -216,34 +216,25 @@ html[data-kb-float='sheet'] .kb-frame {
 }
 
 /*
- * The vignette (the glass-polish design's section 8, changed by the owner on 2026-11-05: "lay the vignette over the '03 board itself,
- * perhaps by pulling it back a bit so it doesn't encroach on posts too much; the idea is to bridge the HUD/settings and the '03
- * board", and behind the board it "makes more of a sandwich"): the glass's violet laid toward the edges of the window, heaviest at
- * the corners and the foot above the HUD, so the HUD's glow seems to fall onto the page. One fixed element over the whole window,
- * posts included, under the HUD (z-index 30), that takes no click. The edge is an elliptical radial gradient to the window's
- * corners, where it reaches the full edge opacity, clear until 150px short of the column's edge (half of `--kb-board-max`, or the
- * 48% of the window the column takes where the window is narrower) so over the posts it reaches only the column's outer edge, the
- * postbit cells and the line ends; the foot is a linear gradient over 220px, on phones too. A mask holds both to
- * `--kb-vignette-column` of their strength inside the column and leaves the gutters whole, so text under it keeps its contrast
+ * The vignette (the glass-polish design's section 8; the owner took its mask away on 2026-11-07 and had the glow lie outward instead):
+ * the glass's violet laid toward the edges of the window, heaviest at the corners and the foot above the HUD, so the HUD's glow
+ * seems to fall onto the page. One fixed element over the whole window, under the HUD (z-index 30), that takes no click. The corner
+ * glow is an elliptical radial gradient to the window's corners, clear out to the column's edge (`--kb-column-half`: half of
+ * `--kb-board-max`, or the 48% of the window the column takes where the window is narrower) and fading up to the full edge opacity at
+ * the corners, so it lies in the gutters and reaches the posts only where the window is too narrow to have any. The foot is a linear
+ * gradient over 220px, on phones too. Nothing masks either, so there is no step anywhere; text under it keeps its contrast
  * (e2e/board-width.spec.ts measures 4.5:1 at the strongest points). High contrast draws none. Colors and opacities are the
- * instance's (engine/ui/tokens.css); the engine's defaults draw nothing.
- *
- * The mask reads alpha only, so its stops are `--kb-vignette-mask` (black: engine/ui/tokens.css) and never the page's ground, which a
- * transparent theme could empty. `48vw` includes the scrollbar's width, so the mask's edge sits slightly outside the column, which
- * is the safe side.
+ * instance's (engine/ui/tokens.css); the engine's defaults draw nothing. `48vw` includes the scrollbar's width, which is the safe side.
  */
 .kb-vignette {
   --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
-  --kb-column-mask: color-mix(in srgb, var(--kb-vignette-mask) calc(var(--kb-vignette-column) * 100%), transparent);
   position: fixed;
   inset: 0;
   z-index: 20;
   pointer-events: none;
   background:
     linear-gradient(to top, color-mix(in srgb, var(--kb-vignette-foot-color) calc(var(--kb-vignette-foot) * 100%), transparent), transparent 220px),
-    radial-gradient(ellipse farthest-corner at 50% 50%, transparent max(0px, calc(var(--kb-column-half) - 150px)), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
-  -webkit-mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
-  mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
+    radial-gradient(ellipse farthest-corner at 50% 50%, transparent var(--kb-column-half), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
 }
 
 :root[data-kb-contrast='high'] .kb-vignette {
