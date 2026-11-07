@@ -835,6 +835,55 @@ begin
 end
 $test$;
 
+-- 14b. The board and the first-post flag are copied onto the row ("the board is copied, kept in sync", migration header): written by the trigger and the backfill, and a thread moved to another
+--      board takes its posts with it, so a board-filtered search finds them in the new board and no longer in the old one.
+do $test$
+declare
+  ann uuid := tests.account('mover');
+  c uuid := tests.character(ann, 'Mover');
+  b1 uuid;
+  b2 uuid;
+  t uuid;
+  p1 uuid;
+  p2 uuid;
+  who uuid;
+begin
+  insert into boards (slug, name) values ('move-1', 'Move 1') returning id into b1;
+  insert into boards (slug, name) values ('move-2', 'Move 2') returning id into b2;
+  insert into threads (board, title) values (b1, 'Zebrafish census') returning id into t;
+  p1 := tests.post(c, t, 'Zebrafish swim in schools.');
+  p2 := tests.post(c, t, 'More zebrafish, later.');
+  if (select p.board from post_search p where p.act = p1) is distinct from b1 or (select p.board from post_search p where p.act = p2) is distinct from b1 then raise exception 'the trigger did not copy the board'; end if;
+  if (select p.first from post_search p where p.act = p1) is distinct from true or (select p.first from post_search p where p.act = p2) is distinct from false then raise exception 'the trigger did not flag the first post, and only it'; end if;
+  -- The backfill writes both too.
+  delete from post_search where act in (p1, p2);
+  if search_backfill() < 2 then raise exception 'the backfill did not rewrite the two rows'; end if;
+  if (select array_agg(p.board::text || p.first::text order by a.seq) from post_search p join acts a on a.id = p.act where p.thread = t) is distinct from array[b1::text || 'true', b1::text || 'false'] then
+    raise exception 'the backfill did not fill the board and the flag'; end if;
+  -- An edit and a language rebuild leave them.
+  perform tests.act(c, 'edit', t, '{"body": "Zebrafish swim in big schools."}', p1, now() + interval '1 second');
+  update settings set value = '"simple"' where key = 'searchLanguage';
+  loop exit when search_rebuild_step() = 0 and not exists (select 1 from search_rebuild); end loop;
+  update settings set value = '"english"' where key = 'searchLanguage';
+  loop exit when search_rebuild_step() = 0 and not exists (select 1 from search_rebuild); end loop;
+  if (select array_agg(p.board::text || p.first::text order by a.seq) from post_search p join acts a on a.id = p.act where p.thread = t) is distinct from array[b1::text || 'true', b1::text || 'false'] then
+    raise exception 'an edit or a rebuild changed the board or the flag'; end if;
+  who := tests.account('mover reader');
+  perform tests.become(who);
+  if jsonb_array_length(search_posts('zebrafish', null, b1, null, null, false, null, null, 20) -> 'results') is distinct from 2 or jsonb_array_length(search_posts('zebrafish', null, b2, null, null, false, null, null, 20) -> 'results') is distinct from 0 then
+    raise exception 'before the move the posts are in board 1'; end if;
+  perform tests.unbecome();
+  update threads set board = b2 where id = t;
+  perform tests.become(who);
+  if jsonb_array_length(search_posts('zebrafish', null, b2, null, null, false, null, null, 20) -> 'results') is distinct from 2 or jsonb_array_length(search_posts('zebrafish', null, b1, null, null, false, null, null, 20) -> 'results') is distinct from 0 then
+    raise exception 'a thread moved to another board did not take its posts in board-filtered search'; end if;
+  if jsonb_array_length(search_threads('zebrafish', null, b2, null, null, true, null, null, 20) -> 'results') is distinct from 1 or jsonb_array_length(search_posts('zebrafish', null, b2, null, null, true, null, null, 20) -> 'results') is distinct from 1
+     or (search_threads('zebrafish', null, b2, null, null, false, 'newest', null, 20) -> 'results' -> 0 ->> 'board')::uuid is distinct from b2 then
+    raise exception 'a moved thread is not found, titles only or by its newest match, in its new board'; end if;
+  perform tests.unbecome();
+end
+$test$;
+
 -- 15. The scale test. 200,000 posts over 2,000 threads, 2,000 characters; a common word in half of the posts and a rare one in ten. Written straight into acts, threads, characters and post_search
 -- (with the Act triggers off for the insert, since the writers' rules are tested elsewhere and a trigger a row is minutes), then analyzed, as a busy instance's tables are. The plans are read, not
 -- timed: with sequential scans turned off, a plan that still has one has no index to use, so a loaded machine cannot trip this. What is held: no sequential scan on post_search, acts, threads or
@@ -858,11 +907,33 @@ create function pg_temp.max_limit(plan jsonb) returns numeric language sql as $$
 create function pg_temp.max_limit_read(plan jsonb) returns numeric language sql as $$
   select max((n ->> 'Actual Rows')::numeric) from jsonb_path_query(plan, '$.**') n where jsonb_typeof(n) = 'object' and n ->> 'Node Type' = 'Limit' $$;
 
+-- The rows of post_search a plan read (BOUND-2): each scan node's Actual Rows times its Actual Loops, summed over every scan of post_search (the walk's probe by thread is one, run once for
+-- each match it tests). `explain (analyze)` runs the statement, so these are the rows that really came up. The Limit checks above read the rows a Limit passed up, which a filter under the
+-- Limit (a board, titles only) does not bound.
+create function pg_temp.rows_read(plan jsonb) returns numeric language sql as $$
+  select coalesce(sum((n ->> 'Actual Rows')::numeric * (n ->> 'Actual Loops')::numeric), 0) from jsonb_path_query(plan, '$.**') n
+  where jsonb_typeof(n) = 'object' and n ->> 'Relation Name' = 'post_search' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan') $$;
+create function pg_temp.explain_run(stmt text) returns jsonb language plpgsql as $$
+declare plan jsonb;
+begin
+  execute 'explain (analyze, format json) ' || stmt into plan;
+  return plan;
+end $$;
+
 do $test$
 declare
   base timestamptz := now() - interval '100 days';
   started timestamptz := clock_timestamp();
   scale_board uuid;
+  board10 uuid;
+  board1 uuid;
+  read_n numeric;
+  m_rows bigint;
+  allowed numeric;
+  fb uuid;
+  ft boolean;
+  worst numeric := 0;
+  bounded_shapes integer := 0;
   probe_words text[] := array['common', 'zyxwv'];
   w text;
   plan jsonb;
@@ -882,8 +953,12 @@ declare
   seen uuid[] := '{}';
 begin
   insert into boards (slug, name) values ('scale', 'Scale') returning id into scale_board;
+  -- Two more boards: one holds 10% of the threads (numbered 1 or 2 in twenty: half odd, so half hold the common word, which is 10% of its matches) and one 1% (3 in a hundred, all odd). Odd threads carry the common word in their title too.
+  insert into boards (slug, name) values ('scale-ten', 'Scale ten') returning id into board10;
+  insert into boards (slug, name) values ('scale-one', 'Scale one') returning id into board1;
   insert into threads (id, board, title, created_at, next_seq, last_at, replies)
-  select ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, scale_board, 'Scale thread ' || g || case when g % 100 = 0 then ' marmot' else '' end, base + g * interval '1 minute', 101, base + interval '100 days', 99
+  select ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, case when g % 20 in (1, 2) then board10 when g % 100 = 3 then board1 else scale_board end,
+         'Scale thread ' || g || case when g % 100 = 0 then ' marmot' else '' end || case when g % 2 = 1 then ' common' else '' end, base + g * interval '1 minute', 101, base + interval '100 days', 99
   from generate_series(1, 2000) g;
   create temp table scale_owners on commit drop as select g, tests.account('scale owner ' || g) as id from generate_series(0, 399) g;
   insert into characters (id, owner, name, created_at, debuted_at)
@@ -898,11 +973,15 @@ begin
          (g - 1) / 2000 + 1, base + g * interval '1 second'
   from generate_series(1, 200000) g;
   alter table acts enable trigger user;
-  insert into post_search (act, thread, character, created_at, words)
-  select a.id, a.thread, a.character, a.created_at, to_tsvector('english', a.payload ->> 'body') from acts a join threads t on t.id = a.thread and t.board = scale_board;
+  insert into post_search (act, thread, board, first, character, created_at, words)
+  select a.id, a.thread, t.board, a.seq = 1, a.character, a.created_at,
+         case when a.seq = 1 then setweight(to_tsvector('english', t.title), 'A') else ''::tsvector end || to_tsvector('english', a.payload ->> 'body')
+  from acts a join threads t on t.id = a.thread and t.board in (scale_board, board10, board1);
   analyze post_search; analyze acts; analyze threads; analyze characters;
-  raise notice 'scale: % posts in % threads written in %', (select count(*) from post_search p join threads t on t.id = p.thread where t.board = scale_board), 2000, clock_timestamp() - started;
-  if (select count(*) from post_search p join threads t on t.id = p.thread where t.board = scale_board) is distinct from 200000 then raise exception 'the scale fixture is not 200,000 posts'; end if;
+  raise notice 'scale: % posts in % threads written in %', (select count(*) from post_search p where p.board in (scale_board, board10, board1)), 2000, clock_timestamp() - started;
+  if (select count(*) from post_search p where p.board in (scale_board, board10, board1)) is distinct from 200000 then raise exception 'the scale fixture is not 200,000 posts'; end if;
+  if (select count(*) from post_search where board = board10) is distinct from 20000 or (select count(*) from post_search where board = board1) is distinct from 2000 or (select count(*) from post_search where first and board in (scale_board, board10, board1)) is distinct from 2000 then
+    raise exception 'the scale fixture''s boards are not 10%% and 1%% of the posts, or its first posts are not one for each thread'; end if;
   if (select count(*) from post_search where words @@ to_tsquery('english', 'zyxwv')) is distinct from 10 then raise exception 'the rare word is not in ten posts'; end if;
   if (select count(*) from post_search where words @@ to_tsquery('english', 'common')) < 100000 then raise exception 'the common word is not in half the posts'; end if;
   a_char := '00000000-0000-4000-9000-000000000007'::uuid;
@@ -964,6 +1043,34 @@ begin
     if seqs is not null then raise exception 'a sequential scan on % in the plan of: %', seqs, s; end if;
     if pg_temp.index_scans(plan, 'post_search') = 0 then raise exception 'the plan does not read post_search through an index: %', s; end if;
   end loop;
+
+  -- BOUND-2: a filtered search reads the filter's own matches, never the whole instance's. Each shape is run for real (`explain (analyze)`) and the rows of post_search it read are held to M, the
+  -- number of rows that meet the filter (the word, the board, titles only), plus, for a walk, one probe of the match's thread for each match it tests (`pool + 1` at most, a probe returns at most a row).
+  -- A plan may read fewer (a keyset walk stops at its limit); it may not read the rows the filter would have dropped. The boards are 10% and 1% of the threads, and the common word is in 100,000 posts
+  -- of 200,000: a plan that reads the word's matches across the filter reads 100,000, one that reads a board's posts and drops those without the word reads 20,000 where M is 10,000.
+  -- Titles only runs unfiltered too: 1,000 threads carry the word in their title, and a plan that reads the word's body matches across it reads 100,000.
+  foreach w in array array['common', 'zyxwv'] loop
+    for fb, ft in select * from (values (board10, false), (board10, true), (null::uuid, true), (board1, false), (board1, true)) as v(b, t) loop
+      m_rows := (select count(*) from post_search p
+                 where p.words @@ to_tsquery('english', w) and (fb is null or p.board = fb) and (not ft or (p.first and ts_filter(p.words, '{a}') @@ to_tsquery('english', w))));
+      foreach s in array array[
+        search_matches_sql(w, null, fb, null, null, ft, true, null, null, pool + 1),         -- relevance: the pool and one over
+        search_matches_sql(w, null, fb, null, null, ft, true, null, null, 21),               -- newest page
+        search_matches_sql(w, null, fb, null, null, ft, false, null, null, 21),              -- oldest page
+        search_matches_sql(w, null, fb, null, null, ft, true, null, null, 1001),             -- the count
+        search_walk_sql(w, null, fb, null, null, ft, true, null, null, pool),                -- the threads walk, newest
+        search_walk_sql(w, null, fb, null, null, ft, false, null, null, pool)                -- and oldest
+      ] loop
+        plan := pg_temp.explain_run(s);
+        read_n := pg_temp.rows_read(plan);
+        allowed := m_rows + case when s like '%not exists%' then pool + 1 else 0 end;
+        worst := greatest(worst, read_n);
+        bounded_shapes := bounded_shapes + 1;
+        if read_n > allowed then raise exception 'a filtered search read % rows of post_search, and the filter has % matches (% allowed): %', read_n, m_rows, allowed, s; end if;
+      end loop;
+    end loop;
+  end loop;
+  raise notice 'scale: % filtered shapes, the most rows of post_search read by one: %', bounded_shapes, worst;
 
   -- The suggestions: threads (a prefix, none, a board, the system board left out) and characters, whose body is the definer's own string.
   set local plan_cache_mode = force_generic_plan;   -- the suggestions run inside a SQL function, planned without the prefix
