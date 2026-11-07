@@ -43,7 +43,6 @@ export const testSystem: SystemContent = {
     { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', startingHobby: 'tomatoes', temperament: 'petty', ...botFields },
     { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', startingHobby: 'clipboards', temperament: 'earnest', ...botFields },
   ],
-  staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   announcementsTitle: 'Announcements',
   firstStaff: ['bot-a'],
@@ -56,6 +55,6 @@ export const testSystem: SystemContent = {
 
 /** A small valid `groups` for test fakes of an `Instance`: a default rung and a staff rung. */
 export const testGroups: GroupsContent = {
-  ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Staff', color: '#d4a017', when: { kind: 'staff' } }],
+  ladder: [{ key: 'members', name: 'Members', color: '#7a7a7a', when: { kind: 'default' } }, { key: 'staff', name: 'Test Cores', color: '#d4a017', when: { kind: 'staff' } }],
   conferred: [],
 };

@@ -515,8 +515,6 @@ function systemProblems(instance: Instance): string[] {
     if (!rosterKeys.has(k)) out.push(`firstStaff names "${k}", which is not in the roster`);
     else if (k === sys.firstBoss) out.push(`firstStaff names "${k}", who is firstBoss; the first season's Boss is not also on staff from the start`);
   }
-  const groupName = sys.staffGroup?.name;
-  if (typeof groupName !== 'string' || groupName.length < 1 || groupName.length > 40) out.push(`staffGroup.name must be 1 to 40 characters (it is ${typeof groupName === 'string' ? groupName.length : 'missing'})`);
   const duties = sys.duties ?? ({} as SystemContent['duties']);
   for (const d of DUTIES) {
     const who = duties[d];

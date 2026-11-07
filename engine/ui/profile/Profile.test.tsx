@@ -54,7 +54,7 @@ describe('the public profile', () => {
     expect(within(fact(facts, 'Place')).getByRole('link', { name: 'season standings' })).toHaveAttribute('href', '/season?tab=rankings');
   });
 
-  test('each fact is a row of a table under an "About" band, its label a row header (Title, Rank, Aura this season, Place, Posts, Threads spun, Cards played, Joined, in that order)', async () => {
+  test('each fact is a row of a table under an "About" band, its label a row header (Title, Rank, Group, Aura this season, Place, Posts, Threads spun, Cards played, Joined, in that order)', async () => {
     const fake = buildWorld();
     const w = world(fake);
     await fake.setProfile(w.pipe, 'Level editor guy', '[i]posting in pencil[/i]', 'default');
@@ -68,9 +68,10 @@ describe('the public profile', () => {
     expect(table.querySelector('caption')).toBeNull();
     expect(table.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
     const labels = within(table).getAllByRole('rowheader').map((h) => h.textContent);
-    expect(labels).toEqual(['Title', 'Rank', 'Aura this season', 'Place', 'Posts', 'Threads spun', 'Cards played', 'Joined']);
+    expect(labels).toEqual(['Title', 'Rank', 'Group', 'Aura this season', 'Place', 'Posts', 'Threads spun', 'Cards played', 'Joined']);
     for (const h of within(table).getAllByRole('rowheader')) expect(h.closest('tr')!.querySelector('td:not(.kb-about-avatar)')).not.toBeNull();
     expect(fact(facts, 'Title')).toHaveTextContent('Level editor guy');
+    expect(fact(facts, 'Group').querySelector('.kb-group-bar')).toHaveTextContent('Members');
     /* The signature closes the card, in a row of its own under the facts. */
     const rows = within(table).getAllByRole('row');
     expect(rows[rows.length - 1]).toHaveTextContent('posting in pencil');

@@ -277,7 +277,7 @@ function toBoardSummary(r: Row): BoardSummary {
 function toPresence(v: Row): Presence {
   const names = (Array.isArray(v['names']) ? v['names'] : []).flatMap((n: Row) =>
     typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string'
-      ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true, ...(typeof n['visit_post'] === 'number' ? { visitPost: n['visit_post'] } : {}) }] : []);
+      ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true, ...(typeof n['group'] === 'string' ? { group: n['group'] } : {}), ...(typeof n['visit_post'] === 'number' ? { visitPost: n['visit_post'] } : {}) }] : []);
   return { names, others: num(v['others']) };
 }
 
@@ -603,6 +603,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
     ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
+    ...(typeof c['group'] === 'string' ? { group: c['group'] } : {}),
   });
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
@@ -611,7 +612,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
-      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office').in('id', part))),
+      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
       byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', part))),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
@@ -626,11 +627,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function profileCharacter(p: Row): Promise<Character> {
     let found: Row | undefined;
     try {
-      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,office').eq('id', p['character']).limit(1)))[0];
+      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,office,group').eq('id', p['character']).limit(1)))[0];
     } catch {
       found = undefined;
     }
-    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], office: found?.['office'] }, p);
+    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], office: found?.['office'], group: found?.['group'] }, p);
   }
 
   /* -------------------------------------------------------------------- live ---- */

@@ -34,7 +34,6 @@ const FALLBACK: ScreenSettings = {
   cardEconomy: {},
   economy: {},
   toastDefaults: ['quote', 'update'],
-  staffGroup: { name: 'Test Cores' },
   groups: [],
 };
 
@@ -1707,10 +1706,11 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   });
 
   it('marks a character as staff from characters_public, and not otherwise', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', office: 'boss' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, office: null }]) : rows([])));
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, name: 'The Director', joined: '2026-10-01', staff: 'director', office: 'boss', group: 'personalityCores' }, { id: C, name: 'Al', joined: '2026-10-01', staff: null, office: null, group: 'members' }]) : rows([])));
     const [boss, al] = await h.api.characters([B, C]);
     expect([boss?.staff, boss?.office, al?.staff, al?.office]).toEqual(['director', 'boss', undefined, undefined]);
-    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,office');
+    expect([boss?.group, al?.group]).toEqual(['personalityCores', 'members']);
+    expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,office,group');
   });
 
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {

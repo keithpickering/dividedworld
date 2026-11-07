@@ -1,6 +1,6 @@
 /**
  * What a post shows about the character who wrote it: its avatar, name, title, a 2003 member rank
- * with a row of pips, its posts, the month it joined, and the class its player made public, if any.
+ * with a row of pips, its group's bar under the name (a staff character's with its office title beside it), its posts, the month it joined, and the class its player made public, if any.
  *
  * Everything here is public. The rank comes from the season standing (the exact number is on the
  * profile) and the instance's ranks; the pips from the character's pip style. "Joined" is the month
@@ -18,7 +18,8 @@ import { rankIndex } from '../../rules/ranks.ts';
 import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
 import type { Statement } from './reveals.ts';
-import { StaffBadge } from './StaffBadge.tsx';
+import { GroupBar } from './GroupBar.tsx';
+import { StaffBadge, showsStaffBadge } from './StaffBadge.tsx';
 import { WarnMeter } from './WarnMeter.tsx';
 import './postbit.css';
 
@@ -70,8 +71,10 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /** The character's own marks (its live plays beyond a post), drawn under its name: the thread hands them in. */
   readonly marks?: ReactNode;
 }) {
-  const { instance, ui } = useKayfa();
+  const { instance, ui, settings } = useKayfa();
   const { character: c } = person;
+  /* The look of the group it is in; a key the settings do not list (an answer older than groups) draws no bar rather than a wrong one. */
+  const group = c.group === undefined ? undefined : settings.groups.find((g) => g.key === c.group);
   /* A stacked postbit, chosen or forced on a phone, drops Posts and Joined: the profile carries them a tap away (the board look design, section 3). */
   const narrow = useNarrow();
   const counts = layout === 'side' && !narrow;
@@ -87,7 +90,8 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
       <Avatar character={c} layout={layout} />
       <div className="kb-postbit-text">
         <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
-        {c.staff && <StaffBadge character={c} />}
+        {/* The group's bar under the name; a staff character's has its office title beside it. */}
+        {(group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
         {(c.title || banned) && (
           <span className="kb-postbit-title kb-small kb-muted">

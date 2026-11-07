@@ -15,7 +15,6 @@ begin
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sc-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'sc-boss', 'name', 'Sc Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'sc-mod', 'name', 'Sc Mod', 'title', 'Mod', 'signature', 'b'),

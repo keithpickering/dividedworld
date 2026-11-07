@@ -78,7 +78,6 @@ const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signa
 
 const system: SystemContent = {
   roster: [boss, bot],
-  staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
   duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat' },
@@ -422,11 +421,8 @@ test('a persona with no weakness is reported (poison: today a Boss with none pas
   assert.match(said(withSystem({ roster: [rest as unknown as Persona, bot] })), /persona "boss-a" has no weakness/);
 });
 
-test('the staff group is named, one to 40 characters', () => {
-  assert.match(said(withSystem({ staffGroup: { name: '' } })), /staffGroup.name.*1 to 40/);
-  assert.match(said(withSystem({ staffGroup: { name: 'x'.repeat(41) } })), /staffGroup.name.*1 to 40/);
-  assert.match(said(withSystem({ staffGroup: undefined } as unknown as Partial<SystemContent>)), /staffGroup.name.*1 to 40/);
-  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: 'x'.repeat(40) } })), []);
+test('the staff group is the ladder\'s staff rung, so the system content names none (a leftover staffGroup is not read)', () => {
+  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: '' } } as unknown as Partial<SystemContent>)), []);
 });
 
 test('a quiz needs a question, and each question\'s answer must be one of its choices', () => {

@@ -22,6 +22,7 @@ import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import type { Career } from '../../system/career.ts';
@@ -364,7 +365,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
-    staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
     /* What screen_settings's groups holds (0116): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder, ...options.instance.groups.conferred].map((g) => ({ key: g.key, name: g.name, color: g.color, stripe: g.stripe === true })),
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
@@ -642,7 +642,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       ...(warnOf(c.id) > 0 ? { warnPoints: warnOf(c.id) } : {}),
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
+      group: groupOf(c),
     };
+  }
+  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
+  function groupOf(c: CharRec): string {
+    const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id).length;
+    return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
   }
 
   /* ---------------------------------------------------------------------- moves ---- */
@@ -1548,7 +1554,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return out;
       }, []).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
+      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, group: groupOf(characters.get(id)!), ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
   }
   /** The rule an infraction was filed under, in the glass's words (punishment_words). */
   function ruleOf(inf: ActRec): string | null {

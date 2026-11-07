@@ -22,7 +22,6 @@ import { wheelhouse } from './wheelhouse.ts';
 
 export const system: SystemContent = Object.freeze({
   roster: deepFreeze([theClerk, hypeMan, sighbot, placeholderMonitor]),
-  staffGroup: Object.freeze({ name: 'Personality Cores' }),
   firstBoss: hypeMan.key,
   announcementsTitle: 'Announcements From The System',
   firstStaff: Object.freeze([placeholderMonitor.key]),

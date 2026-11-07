@@ -666,8 +666,6 @@ export interface FeedSource {
 export interface SystemContent {
   /** Every staff persona the instance seeds: Bosses, Mod Bots and any other, one shape. */
   readonly roster: readonly Persona[];
-  /** The member group every staff character is in; the engine reads its name from here. */
-  readonly staffGroup: { readonly name: string };
   /** The roster key of the first season's Boss. */
   readonly firstBoss: string;
   /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */

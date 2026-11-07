@@ -71,8 +71,6 @@ export function instanceSeed(instance: Instance) {
           visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness) })),
       ],
       firstStaff: [...instance.system.firstStaff],
-      // The member group every staff character is in, named by the instance.
-      staffGroup: { name: instance.system.staffGroup.name },
       // The first season's Boss, set on an open season that has none (0047).
       firstBoss: instance.system.firstBoss,
       // The thread on The System's board where moves land and end, made once (0048).

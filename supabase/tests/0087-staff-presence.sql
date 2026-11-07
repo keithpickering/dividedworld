@@ -16,7 +16,6 @@ begin
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'The Devs', 'title', 'Developers', 'avatar', ''),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sp-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'sp-boss', 'name', 'Sp Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'sp-mod', 'name', 'Sp Mod', 'title', 'Mod', 'signature', 'b')),

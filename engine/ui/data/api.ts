@@ -82,13 +82,9 @@ export interface ScreenSettings {
    */
   readonly economy: Readonly<Record<string, number>>;
   /**
-   * The staff group's name, which the instance names ("Personality Cores"; `SystemContent.staffGroup`, seeded as the setting
-   * `staffGroup`): drawn beside every staff character's name, on the postbit, the profile and the presence boxes. Public.
-   */
-  readonly staffGroup: { readonly name: string };
-  /**
    * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0116): the key a
-   * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public.
+   * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public. The staff rung is a group like any other: a
+   * staff character's `group` names it, and its name is the one the postbit's bar, the profile's Group row and the presence chip show.
    */
   readonly groups: readonly { readonly key: string; readonly name: string; readonly color: string; readonly stripe: boolean }[];
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
@@ -338,6 +334,8 @@ export interface Character {
   readonly staff?: string;
   /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
   readonly office?: Office;
+  /** The key of the group it is in now (characters_public's `group`, 0116): the look is in `ScreenSettings.groups`. Absent from an answer that predates groups, which draws no bar. */
+  readonly group?: string;
   /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
   readonly warnPoints?: number;
   /** When its ban ends (characters_public, carried by a thread's page); absent when it is not banned. A ban holds only this character, and ends by itself at that time. */
@@ -657,7 +655,7 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  */
 export interface Presence {
   /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there, or while it has an open visit in the thread, whose post's number is `visitPost` (a visit is a public Act). */
-  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; readonly visitPost?: number }[];
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; /** The key of the group it is in now (group_now, 0116): a staff name's chip is that group's name. */ readonly group?: string; readonly visitPost?: number }[];
   readonly others: number;
 }
 

@@ -15,7 +15,6 @@ begin
         'bossArrival', jsonb_build_array('Hello from {boss}.'))),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'of-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'of-boss', 'name', 'Of Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'of-mod', 'name', 'Of Mod', 'title', 'Mod', 'signature', 'b'),
@@ -75,9 +74,14 @@ begin
   end if;
   seen := (select office from characters_public where staff = 'of-boss');
   if seen is distinct from 'boss' or (select office from characters_public where staff = 'of-mod') is distinct from 'mod' then raise exception 'characters_public does not show the office: %', seen; end if;
-  -- The seed writes the log once, for the first staff, and the group's name.
+  -- The seed writes the log once, for the first staff.
   if pg_temp.rows('of-mod') is distinct from 'mod:seed' or exists (select 1 from staff_offices where staff <> 'of-mod') then raise exception 'the seed wrote % rows', (select count(*) from staff_offices); end if;
-  if (select value from settings where key = 'staffGroup') is distinct from '{"name": "Test Cores"}'::jsonb then raise exception 'the seed did not write the staffGroup setting: %', (select value from settings where key = 'staffGroup'); end if;
+  -- The staff group is the ladder's staff rung (0120): the seed writes no staffGroup setting, and screen_settings carries none an older seed left, so an instance seeded before it still boots.
+  if exists (select 1 from settings where key = 'staffGroup') then raise exception 'the seed wrote a staffGroup setting: %', (select value from settings where key = 'staffGroup'); end if;
+  insert into settings (key, value) values ('staffGroup', '{"name": "Old Cores"}'::jsonb);
+  if (select settings from screen_settings) ? 'staffGroup' then raise exception 'screen_settings still carries staffGroup'; end if;
+  if not ((select settings from screen_settings) ? 'groups') then raise exception 'screen_settings lost groups'; end if;
+  delete from settings where key = 'staffGroup';
   -- staff_now lists exactly the mods; the Boss's office is never a row.
   if (select string_agg(staff, ',' order by staff) from staff_now) is distinct from 'of-mod' then raise exception 'staff_now should hold of-mod alone: %', (select string_agg(staff, ',') from staff_now); end if;
   -- A reseed hires no one again and debuts no one.

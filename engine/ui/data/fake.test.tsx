@@ -1736,7 +1736,7 @@ describe('presence', () => {
     expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
     expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
     const online = await fake.here({ kind: 'index' }, null);
-    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false }], others: 0 });
+    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false, group: 'members' }], others: 0 });
   });
   test('a hidden mask is written nowhere and omitted for another account; my characters say it is hidden', async () => {
     const { fake, bo, anaFace, boFace, thread } = world();

@@ -15,7 +15,15 @@ const character = (over: Partial<Character> = {}): Character => ({
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
   character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
 });
-const show = (p: PostbitPerson, layout: 'side' | 'stacked' = 'side') => renderInWorld(<Postbit person={p} layout={layout} />);
+const show = (p: PostbitPerson, layout: 'side' | 'stacked' = 'side') => renderInWorld(<Postbit person={p} layout={layout} />, { settings: { groups: GROUPS } });
+/* The groups the screens hold (screen_settings.groups): the ladder lowest first, then the groups a move confers. */
+const GROUPS = [
+  { key: 'members', name: 'Members', color: '#7a7a7a', stripe: false },
+  { key: 'cores', name: 'Test Cores', color: '#d4a017', stripe: false },
+  { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', stripe: true },
+];
+/** Whether `a` comes before `b` in the document. */
+const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
 const slot = () => document.querySelector('.kb-postbit-avatar')!;
 
 afterEach(() => vi.unstubAllGlobals());
@@ -288,5 +296,44 @@ describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
     show(person({}, { warnPoints: 6, bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
     const bad = await axeViolations(screen.getByRole('group', { name: 'About Pipewrench' }));
     expect(bad, describeViolations(bad)).toEqual([]);
+  });
+});
+
+describe('the group bar on the postbit', () => {
+  test('a member shows its group\'s bar under the name and over the title, the pips and the warn meter', () => {
+    show(person({}, { group: 'members', warnPoints: 4 }));
+    const bit = screen.getByRole('group', { name: 'About Pipewrench' });
+    const bar = within(bit).getByText('Members');
+    expect(bar.className).toContain('kb-group-bar');
+    expect(bar).not.toHaveAttribute('data-kb-stripe');
+    expect(before(within(bit).getByRole('link', { name: 'Pipewrench' }), bar)).toBe(true);
+    expect(before(bar, within(bit).getByText('Professional Wrench'))).toBe(true);
+    expect(before(within(bit).getByText('Professional Wrench'), bit.querySelector('.kb-pips')!)).toBe(true);
+    expect(before(bit.querySelector('.kb-pips')!, bit.querySelector('.kb-postbit-warn')!)).toBe(true);
+    expect(before(bit.querySelector('.kb-postbit-warn')!, within(bit).getByText('Posts: 212'))).toBe(true);
+  });
+
+  test('a Trial Member\'s bar is striped, and BANNED sits under it with the title', () => {
+    show(person({}, { group: 'trialMembers', bannedUntil: '2099-01-01T00:00:00Z' }));
+    const bit = screen.getByRole('group', { name: 'About Pipewrench' });
+    const bar = within(bit).getByText('Trial Members');
+    expect(bar).toHaveAttribute('data-kb-stripe', '');
+    expect(before(bar, within(bit).getByText('BANNED'))).toBe(true);
+  });
+
+  test('a staff postbit shows the staff rung\'s bar with the office title beside it, and the badge is the title alone', () => {
+    show(person({ standing: null }, { name: 'The Director', title: 'Head of Board Operations', staff: 'director', office: 'boss', group: 'cores' }));
+    const bit = screen.getByRole('group', { name: 'About The Director' });
+    const bar = within(bit).getByText('Test Cores');
+    const office = within(bit).getByText('ADMINISTRATOR');
+    expect(bar.className).toContain('kb-group-bar');
+    expect(bar.closest('.kb-postbit-group')).toBe(office.closest('.kb-postbit-group'));
+    expect(bit.querySelector('.kb-staff-group')).toBeNull();
+    expect(before(bar, within(bit).getByText('Head of Board Operations'))).toBe(true);
+  });
+
+  test('a character whose group the settings do not list gets no bar rather than a wrong one', () => {
+    show(person({}, { group: 'gone' }));
+    expect(document.querySelector('.kb-group-bar')).toBeNull();
   });
 });

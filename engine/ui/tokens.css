@@ -95,6 +95,20 @@
   --kb-meter-fill: #0a246a;
 
   /*
+   * The member group's rank bar (postbit/GroupBar.tsx, the member groups design): a 2003 rank image under the name. Its color is the
+   * group's, a game piece from the settings, and no theme's; a theme restyles only the shape here. Its lettering is `ink` on the face
+   * with a `halo` shadow, because a group's color may be too light to hold white lettering alone (postbit/group-bar-face.ts measures it).
+   */
+  --kb-group-bar-width: 160px;
+  --kb-group-bar-height: 18px;
+  --kb-group-bar-radius: 0;
+  --kb-group-bar-edge: var(--kb-group-bar-halo);
+  --kb-group-bar-font: bold 10.5px / 16px var(--kb-font-body);
+  --kb-group-bar-ink: #fff;
+  --kb-group-bar-halo: #000;
+  --kb-group-bar-gloss: #fff;
+
+  /*
    * The period skin (docs/plans/2026-11-06-board-look-plan.md, Task 1). Each default draws the plain black-and-white board, by
    * pointing at a token above, so the dark blocks need none of their own: a var() here follows --kb-bg and --kb-fg into dark. A
    * theme gives the look. A background token may hold a gradient or layers of them, never a url() (tools/check-theme.mjs), and
