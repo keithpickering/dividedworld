@@ -13,11 +13,18 @@ type Watcher = (inView: boolean) => void;
  * itself shows, or when what shows of it fills that share of the viewport, so an element taller than the viewport over the
  * threshold still counts. A threshold has its own observer.
  */
-export interface WatchOptions { readonly threshold?: number }
+export interface WatchOptions {
+  readonly threshold?: number;
+  /**
+   * The viewport grown or shrunk before anything counts as in view, as IntersectionObserver's `rootMargin` (`'-20% 0px'` is the
+   * middle 60% of its height). Default: the viewport itself.
+   */
+  readonly rootMargin?: string;
+}
 
 interface Shared { observer: IntersectionObserver; watchers: Map<Element, Watcher> }
-/** One observer per threshold, so a page of posts watched alike shares one. */
-const shared = new Map<number, Shared>();
+/** One observer per threshold and margin, so a page of posts watched alike shares one. */
+const shared = new Map<string, Shared>();
 
 /** Steps of a tenth, so the callback fires as the visible share grows, whatever the element's height. */
 const LADDER: readonly number[] = Object.freeze(Array.from({ length: 11 }, (_, i) => i / 10));
@@ -37,7 +44,9 @@ export function watchInView(el: Element, onChange: Watcher, options: WatchOption
     return () => {};
   }
   const threshold = Math.min(1, Math.max(0, options.threshold ?? 0));
-  let mine = shared.get(threshold);
+  const margin = options.rootMargin ?? '';
+  const key = `${threshold}|${margin}`;
+  let mine = shared.get(key);
   if (!mine) {
     const watchers = new Map<Element, Watcher>();
     const observer = new IntersectionObserver((entries) => {
@@ -46,9 +55,9 @@ export function watchInView(el: Element, onChange: Watcher, options: WatchOption
         const showing = entry.isIntersecting && (threshold === 0 || fills(entry, threshold));
         watchers.get(entry.target)?.(showing);
       }
-    }, threshold > 0 ? { threshold: [...LADDER] } : undefined);
+    }, threshold > 0 || margin ? { ...(threshold > 0 ? { threshold: [...LADDER] } : {}), ...(margin ? { rootMargin: margin } : {}) } : undefined);
     mine = { observer, watchers };
-    shared.set(threshold, mine);
+    shared.set(key, mine);
   }
   const { observer, watchers } = mine;
   watchers.set(el, onChange);
@@ -56,9 +65,9 @@ export function watchInView(el: Element, onChange: Watcher, options: WatchOption
   return () => {
     watchers.delete(el);
     observer.unobserve(el);
-    if (watchers.size === 0 && shared.get(threshold) === mine) {
+    if (watchers.size === 0 && shared.get(key) === mine) {
       observer.disconnect();
-      shared.delete(threshold);
+      shared.delete(key);
     }
   };
 }
