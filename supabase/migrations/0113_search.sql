@@ -447,12 +447,12 @@ grant select on post_search to authenticated;
 create extension if not exists btree_gin with schema extensions;
 create index post_search_words on post_search using gin (words);
 create index post_search_board_words on post_search using gin (board, words);
-create index post_search_first_words on post_search using gin (board, words) where first;      -- titles only, in a board or anywhere (a GIN on a subset of its columns reads those alone)
+create index post_search_first_words on post_search using gin (board, words) where first;      -- titles only in a board
+create index post_search_first_title_words on post_search using gin (words) where first;       -- titles only anywhere: a partial btree on the first posts (post_search_first_newest) has no condition of its own and is read whole as a bitmap leg, so the planner needs a cheaper way to the word's titles than ANDing that leg; (board, words) is costed high for a search with no board
 create index post_search_newest on post_search (created_at desc, act desc);
 create index post_search_board_newest on post_search (board, created_at desc, act desc);       -- the board's posts in time order: the keyset walk of a board filter
 create index post_search_first_newest on post_search (created_at desc, act desc) where first;  -- the same for titles only
 create index post_search_first_board_newest on post_search (board, created_at desc, act desc) where first;
-create index post_search_thread_words on post_search using gin (thread, words);          -- a thread and a word: the walk's probe of a thread for a rare word reads that thread's matches alone, not its rows between
 create index post_search_character on post_search (character, created_at desc);
 
 -- The stemming language the index is written in: the instance's setting, and the language-neutral `simple` before an instance is seeded.
