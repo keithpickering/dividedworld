@@ -2,8 +2,8 @@
  * The rule predicates (Mod Bots design, section 4): the engine's one fixed list of what a `setRule` move may demand of a post.
  * Each is checked by plain code when a post is made, reading only the post, its thread and the character's own public posts,
  * never who owns the mask; a rule never refuses a post, it draws a visit. This is the one list: `seed_instance` writes it to
- * `rule_predicates` (supabase/functions/_shared/seed.ts), and `rule_breaks` (supabase/migrations/0100_rules.sql) has a branch for
- * every key, which supabase/tests/0102-rule-predicates.sql proves ("Two lists that must agree are one list").
+ * `rule_predicates` (supabase/functions/_shared/seed.ts), and `rule_breaks` (supabase/migrations/0102_rules.sql) has a branch for
+ * every key, which supabase/tests/0104-rule-predicates.sql proves ("Two lists that must agree are one list").
  *
  * A parameter is bounded here, and a bound overshot is a rule rejected naming the predicate that failed, never a rule changed:
  * a threshold nudged to fit would be a rule nobody set.
@@ -92,7 +92,7 @@ const sameWord = (a: unknown, b: unknown): boolean => typeof a === 'string' && t
 
 /**
  * The plain reason a new rule would leave no compliant post against the rules in force where it would apply, or null. It mirrors
- * `rule_conflict` (supabase/migrations/0100_rules.sql) pair for pair, so the meeting drops a rule the queue would refuse: a rule on one
+ * `rule_conflict` (supabase/migrations/0102_rules.sql) pair for pair, so the meeting drops a rule the queue would refuse: a rule on one
  * board meets that board's rules and the every-board rules, and an every-board rule meets all of them. A banned word that is also required,
  * a minimum length above a maximum, and the same rule twice on the same scope are the conflicts.
  */

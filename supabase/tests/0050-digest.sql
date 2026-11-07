@@ -68,7 +68,7 @@ begin
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
       -- The pool's thread and names reads (0089): the two functions it owns.
       'pool_thread(uuid,integer,integer,uuid)', 'pool_names(jsonb)',
-      -- A patrol's sample of the beat's recent posts (0108): the one function it owns, reading acts_public, characters_public and thread_list.
+      -- A patrol's sample of the beat's recent posts (0110): the one function it owns, reading acts_public, characters_public and thread_list.
       'patrol_sample(uuid[],integer)',
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])']) x) then

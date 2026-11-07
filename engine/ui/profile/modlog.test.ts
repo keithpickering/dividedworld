@@ -1,4 +1,4 @@
-/** The plain words of a Mod's visit, a report it judged and an appeal it heard, in its moderation log (modlog.ts; `moves_log`, 0109). */
+/** The plain words of a Mod's visit, a report it judged and an appeal it heard, in its moderation log (modlog.ts; `moves_log`, 0111). */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { didWords, endedModWords, isModAct, postOf } from './modlog.ts';

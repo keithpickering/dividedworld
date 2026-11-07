@@ -20,6 +20,15 @@ What the build reuses, read before Task 4: `engine/system/moves.ts` (`MoveKind`,
 `0053_stored_progress.sql`), `reverse_move` (`0049_admin_queue.sql`), `moves_log` (`0051_succession.sql`),
 `write_staff_act` (`0051_succession.sql`). A redefinition starts from the latest definition, whole.
 
+**Amended 2026-11-06, after the Mod Bots design** (the design's section 8). This plan builds **after the Mod Bots plan
+(`docs/plans/2026-11-06-mod-bots-plan.md`) has merged, all fifteen tasks**, and reuses what it builds:
+`MoveKind.offices` and `move_kinds.offices` (its Task 3); `beat_of`, `mod_allowance` and the guard's office and beat
+refusals (Task 4); per-character bans in `post`, `start_thread`, `spin` and `edit_post` (Task 5); the `staff` Edge
+Function, `MOD_MOVE_RULE` and `repairModMove` in `engine/system/judgment.ts`, and `apply_mod_move` (Task 7); `open_appeal`,
+`close_appeal`, `refund_appeal` and the `appeal` and `appeal_ruling` Acts (Task 10); `staff_punishments` and
+`Settings.modBots.cap` (Task 11); the log's `my_*` views (Task 13). Read each before the task here that names it. Where a
+task below and this paragraph disagree, the task's amended text (marked **Amended**) wins. Tasks 13 and 14 are new.
+
 ## Task 1: groups in the engine (engine)
 
 Model: sonnet
@@ -108,6 +117,9 @@ gain `unmet` and `apology`).
 - `APOLOGY_ACCEPTED: DemandKind`: key `apologyAccepted`, params `{}` (the move is its own subject), unit "apology", met
   when one is accepted; template "an accepted apology". The meeting may not choose it: the code sets it (Task 7).
 - `MoveKind` gains no field for inversion: a favor's move carries `checkAt` in its params, and the tick (Task 5) reads it.
+- **Amended:** `CONFER_GROUP.offices` is `['boss', 'mod']` (Mod Bots Task 3). `endedWords` also gains `overturned` ("Ended:
+  overturned on appeal"). `apologyJudge` is assigned by the instance as `appeal` is, to the staff member who made the move
+  (Mod Bots Task 7 names that assignee `filer`).
 
 Tests first: `moveParamsProblems('conferGroup', …)` accepting a punishment with a board and a favor with `checkAt`,
 rejecting a non-uuid board and naming `isUuid`; a 41-character group key rejected; `demandProblems` accepting
@@ -122,7 +134,7 @@ Files: a new migration (`NNNN_group_moves.sql`); `supabase/tests/NNNN-group-move
 
 - `demand_params_problem` and `demand_progress` gain the `apologyAccepted` case: met when an `apologies` row for the move
   is `accepted` (the table is Task 6's; this migration creates it, Task 6 adds its functions).
-- `end_move` and `acts_move_end_payload` accept `why = 'unmet'`.
+- `end_move` and `acts_move_end_payload` accept `why = 'unmet'` and (**Amended**, Task 14) `why = 'overturned'`.
 - `queued_moves_guard`, redefined whole, gains a `conferGroup` case:
   - the character is in `characters_public` and is not staff;
   - the group is a `conferred` row of `group_kinds`;
@@ -130,11 +142,13 @@ Files: a new migration (`NNNN_group_moves.sql`); `supabase/tests/NNNN-group-move
   - a punishment that names a board carries the demand `apologyAccepted`, and nothing else carries it;
   - a favor carries `checkAt` between its go-live and its expiry, and a punishment carries none;
   - no other `conferGroup` move on the character is in force or queued unheld;
-  - a punishment is refused when `punishments_in_window(character) >= targetingCap` (settings `targetingCap` 3,
-    `targetingWindowDays` 7, added to `settings_held` and its shape check).
-- `punishments_in_window(in_character)`: the count of landed `move` Acts and unheld queued moves of kind `conferGroup`
-  whose group is a punishment and whose `params->>'character'` is the character, in the window. Every later
-  character-aimed punishment adds its kind here (the staff design, section 11).
+  - a punishment is refused when `staff_punishments(character, cap.days) >= cap.punishments` (**Amended:** Mod Bots
+    Task 11's function and `Settings.modBots.cap`; no setting of this plan's own);
+  - **Amended:** a Mod's `conferGroup` (`queued_moves.staff` a Mod's key) is a punishment and names a board whose
+    `beat_of` is that Mod; a Mod's favor, or a Mod's punishment with no board or a board off its beat, is refused.
+- **Amended:** `staff_punishments`, redefined whole from Mod Bots Task 11, also counts landed `move` Acts and unheld
+  queued moves of kind `conferGroup` whose group is a punishment and whose `params->>'character'` is the character, in
+  the window, whoever made them. The cap is one function and one setting ("Two lists that must agree are one list").
 - `system_tick`, redefined whole, gains a pass after pass 3: for each open `conferGroup` move whose `params->>'checkAt'`
   has passed and whose `progress` is not met, `end_move(act, 'unmet', 'check')` then `say_move_end`. A met favor is left
   to its expiry. Add a stock line key `moveUnmet` to the instance's system lines and `seed`'s line list.
@@ -157,9 +171,12 @@ Files: a new migration (`NNNN_bars_apologies.sql`); `engine/rules/actions.ts` (a
   redefined) each refuse with `"%s is barred from posting on %s until %s"` (character name, board name from
   `boards_now`, the move's `expires_at`) after `acting(through)` and the board lookup, beside `not_the_systems`. A spin's
   board is the board its thread opens on.
+  **Amended:** each of the four is redefined from Mod Bots Task 5's version, which refuses a banned character first; the
+  ban's refusal stays first, so a banned and barred character is told of its ban.
 - `apologies(id, move_act, apology_act, character, state text check (state in ('pending','accepted','rejected','returned')), ruling_act null, created_at)`:
   the state lives here, never in an Act ("Append-only").
-- `apologize(in_move uuid, through uuid, title text, body text)`: `acting(through)`; the move is an open `conferGroup`
+- `apologize(in_move uuid, through uuid, title text, body text)`: `acting(through)`; **Amended:** refused while
+  `through` is banned (the ban ends by itself, then the apology is open); the move is an open `conferGroup`
   move whose character is `through` and whose demand is `apologyAccepted`; no `pending` row for it; no `accepted`,
   `rejected` or `pending` row for this character and move in the last `apologyEveryHours` (setting, 24); then writes the
   spin of the move Act exactly as `spin` does, skipping only the bar, and a `pending` row. Returns the thread.
@@ -175,14 +192,14 @@ the same board (the masks: a bar is per character); an apology accepted for a mo
 onto; a second apology within 24 hours refused and one after a `returned` allowed; `apologize` on someone else's move
 refused; `rule_apology('accepted')` meeting the demand so that `system_tick` ends the move `met`.
 
-## Task 7: the judge (edge function, engine prompt, instance duty)
+## Task 7: the judge (the `staff` Edge Function, engine prompt, instance duty)
 
 Model: sonnet
 
-Files: `engine/system/apology.ts`, `apology.test.ts` (the prompt, the schema, the repair); `supabase/functions/judge/`
-(`index.ts`, `core.ts`, `core.test.ts`), modeled on `supabase/functions/chatter/core.ts`; a migration adding
-`schedule_judge()` as `schedule_chatter()` is (`0089_pool_spends.sql`) at the setting `judgeCron` (every 10 minutes by
-default); `instances/divided-world/system/index.ts` assigns `apologyJudge` as it assigns `appeal`.
+Files: `engine/system/apology.ts`, `apology.test.ts` (the prompt, the schema, the repair); **Amended:** a `runApologies`
+job in Mod Bots' `supabase/functions/staff/` (`core.ts`, `core.test.ts`), run on its cron (`modBots.filingCron`) beside
+`runFilings` and `runPatrols`, with no function, cron or schedule of its own; `instances/divided-world/system/index.ts`
+assigns `apologyJudge` as it assigns `appeal`. The judge is the move's staff member, the Boss or a Mod.
 
 - `apologyPrompt(persona, move words, apology body)`: the persona's voice, what the move did in plain words, the apology,
   and the two verdicts. It is given no owner and no class.
@@ -218,6 +235,8 @@ Files: `engine/system/meeting.ts`, `meeting.test.ts`; `supabase/functions/meet/c
   `apologyAccepted` by the code, whatever the model wrote; a favor without a `checkAt` gets one at half its expiry; a
   favor naming a board drops the board and records the trim.
 - `apply_meeting` passes `checkAt` through in `params`.
+- **Amended:** the prompt's line from Mod Bots Task 4, that `setRule` is the one kind the Boss can hand on, becomes
+  `setRule` and `conferGroup` punishments on the Mod's beat.
 
 Tests first: `repairAnswer` on each branch above, each with its recorded drop or trim.
 
@@ -237,7 +256,9 @@ use of `StaffGroup`; `engine/ui/tokens.css` (`--kb-group-bar-width`, `-height`, 
   custom property from settings, so `check-ui-tokens` passes), the stripe for `stripe`. Text contrast is measured on the
   bar's face (`engine/ui/contrast.ts`); a color too light for white text gets a dark text shadow strong enough to pass, and
   the test says which.
-- The postbit shows it under the name for every character. A staff postbit shows the staff rung's bar and the office title
+- The postbit shows it under the name for every character. **Amended:** top down, a postbit reads name, group bar,
+  title or BANNED, pips, warn meter (Mod Bots Task 13 places the meter under the rank).
+  A staff postbit shows the staff rung's bar and the office title
   (ADMINISTRATOR or MODERATOR) beside it; `StaffBadge` keeps only the title.
 - The profile shows a Group row. The presence boxes' staff chip reads the staff rung's name.
 
@@ -259,23 +280,27 @@ thread; `engine/ui/thread/Post.tsx` (a `conferGroup` move and a ruling post); `e
   After a rejection, the time the next one may be written. Board copy, plain and true.
 - A ruling post shows ACCEPTED or REJECTED in the move's label style above the staff member's words.
 - The other masks: the box is per acting character; swapping masks in the composer swaps the box away.
+- **Amended:** a banned character's composer note (Mod Bots Task 13) shows instead of this box, and its Write an apology
+  is not offered while the ban holds.
+- **Amended:** the barred box gains **Appeal** with its price, opening Mod Bots' appeal form on the move (Task 14).
 
 Tests first: the box for a barred character, gone for the same player's other character; the three apology states.
 
-## Task 11: the log and the alert (migration, engine UI)
+## Task 11: the log (migration, engine UI)
 
 Model: sonnet
 
 Files: a migration with `my_group_moves` (a security-invoker view in the shape of `my_cards_ended`,
-`0092_card_end.sql`) and an alert kind `grouped` (as `cardEnded` was added: `alerts_kind_check`, the toast check,
-`set_preferences`, `settings_held`); `engine/ui/log/lines.ts` (`LineKind` gains `grouped`), `Log.tsx`, `lines.test.tsx`;
+`0092_card_end.sql`), beside Mod Bots Task 13's `my_*` views; `engine/ui/log/lines.ts` (`LineKind` gains `grouped`), `Log.tsx`, `lines.test.tsx`;
 `supabase/tests/NNNN-group-log.sql`.
 
 - A row for each `conferGroup` move on one of the caller's characters, and its end. The line, in plain words: "The Boss
   put Pipewrench in Trial Members and barred it from posting on General until Nov 13." and "Pipewrench left Trial
   Members: an apology was accepted." (or: it expired; an admin reversed it; the demand wasn't met by its check). It names
   the move with a link. It never names who else is in a group.
-- The alert is written to the character's player when the move lands, by the tick's landing pass for `conferGroup`.
+- **Amended:** no alert (the design's section 8), as Mod Bots sends none for a visit. An appeal's ruling on a group move
+  is a line too: "The Boss reduced Pipewrench's Trial Members on appeal: it now ends Nov 10." (or overturned, upheld,
+  increased).
 
 Tests first: the caller sees their own character's rows and not another player's; the four end lines.
 
@@ -287,9 +312,56 @@ Files: `instances/divided-world/guide/` (the section on staff moves). The develo
 bluffing, approved by the owner in review:
 
 > **Groups.** Every character wears a group bar. Most climb on their own: post enough and you're a Regular; survive two
-> seasons and you're Old Guard. The Boss can also move a character into a group for a while, as a favor or a punishment.
-> A punishment can bar a character from one board until it ends. The fastest way out is a public apology, and the Boss
-> reads every one. Your log always says what happened and when it ends.
+> seasons and you're Old Guard. The staff can also move a character into a group for a while: the Boss as a favor or a
+> punishment, a Mod as a punishment only. A punishment can bar a character from one board until it ends. The fastest
+> way out is a public apology, read by whoever put you there, and you can appeal too. Your log always says what
+> happened and when it ends.
+
+## Task 13: a Mod's one move confers a group (engine, edge) — added 2026-11-06
+
+Model: sonnet
+
+Files: `engine/system/judgment.ts`, `judgment.test.ts`; `supabase/functions/staff/core.ts`, `core.test.ts`. Builds after
+Tasks 4, 5 and 8.
+
+- `MOD_MOVE_RULE`'s `kind` widens from `'setRule'` to `'setRule' | 'conferGroup'`, with `conferGroup`'s params from
+  `CONFER_GROUP`.
+- `repairModMove`'s `conferGroup` branch, each drop recorded: a key outside the conferred catalog; a favor; no board, or
+  a board off the Mod's beat; a capped or held character (the same reads as Task 8's `meeting_context`, passed in the
+  call's context). It sets the demand to `apologyAccepted` whatever the model wrote, as Task 8 does for the Boss.
+- `modPrompt` lists the conferred punishments by key and name beside the predicates, with the rule: one board, on your
+  beat, and an apology you will judge.
+- A Mod's `conferGroup` goes through `apply_mod_move` and spends its allowance as a `setRule` does (Mod Bots Task 7); the
+  guard of Task 5 refuses it again in SQL.
+
+Tests first: `repairModMove` on each drop and on the demand it sets; `staff/core.test.ts` with a patrol whose answer
+carries a `conferGroup` queueing it and spending one allowance, and one with no allowance dropping it.
+
+## Task 14: appealing a group punishment (migration, edge, engine UI) — added 2026-11-06
+
+Model: sonnet
+
+Files: a migration redefining `open_appeal` and `close_appeal` from Mod Bots Task 10, and `system_tick`'s expiry pass and
+`open_moves` from their latest; `supabase/functions/staff/core.ts` (`appeal`); `engine/system/moves.ts` or the appeal's
+words in Mod Bots' `judgment.ts` for the prompt's description of the punishment; the appeal form (Mod Bots Task 13);
+`supabase/tests/NNNN-group-appeals.sql`.
+
+- `open_appeal` accepts a landed `conferGroup` move Act whose group is a punishment, appealed only by its
+  `params->>'character'`, one per move, at `appealPrice`. The hearer is the move's staff character (Boss or Mod).
+- `close_appeal` on a group move:
+  - **overturned:** `end_move(move, 'overturned', 'appeal')` then `say_move_end`, and the fee refunded;
+  - **upheld:** nothing;
+  - **reduced:** the ruling's payload carries `expires_at = now + (expiry - now) / 2`;
+  - **increased:** `expires_at = expiry + least((expiry - landed_at) / 2, the phase's moveExpiryMostDays from landing - (expiry - landed_at))`.
+  The ruling Act carries the new time; `open_moves` gains `expires_at`, set from the move when it lands and from the
+  latest such ruling after, and the tick's expiry pass reads it. Nothing is written into the move Act ("Append-only").
+- `bars_now`, the barred box and the log read the expiry from `open_moves`, never the move's payload.
+- The appeal and the apology are independent: an apology pending while an appeal is ruled is judged as usual; whichever
+  ends the move first wins, and `end_move`'s idempotence makes the second a no-op.
+
+Tests first: each verdict's effect on `open_moves.expires_at` and on `characters_public.group` after the tick; the
+increase clamped by the phase; a second appeal refused; another character's appeal refused; an apology accepted after a
+reduced ruling ends the move once.
 
 ## Review focus
 
@@ -305,3 +377,7 @@ bluffing, approved by the owner in review:
 - The targeting cap counts queued as well as landed punishments, so the meeting can't queue a fourth before the third
   lands.
 - The barred box's words and the log's lines say exactly what happened and when it ends, never in the Boss's voice.
+- **Amended:** a group move's expiry now comes from `open_moves`, moved by an appeal's ruling: check the tick, `bars_now`,
+  the barred box and the log all read it there, and that a ruling racing the tick's expiry pass ends the move once.
+- **Amended:** a Mod's `conferGroup` must spend its allowance once and stay on its beat, and `staff_punishments` must
+  count it with the Boss's: a Boss and a Mod together cannot pass the cap on one character.

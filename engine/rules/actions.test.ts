@@ -16,7 +16,7 @@ const instance: Instance = {
     postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
-  copy: { turnsThreadTitle: 'S{season} Turns', revealTitle: 'S{season} Reveal', revealBody: 'All.' },
+  copy: { announcementsThreadTitle: 'S{season} Promos' },
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';

@@ -31,6 +31,7 @@ import { Link, useLocation } from '../router.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
 import { useLog } from './useLog.ts';
 import { economyNow, paramsOf } from '../economy.ts';
+import { untilWords } from '../characters/format.ts';
 import './log.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 
@@ -77,7 +78,8 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
                   {tab === null && <span className="kb-log-reason-who">{nameOf(l.character)} · </span>}
                   <span data-kb-reason="">{words.ui.reasonWords(l.reason, paramsOf(l, words.economy))}</span>
                 </span>
-                <span className="kb-log-num" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
+                <span className="kb-log-num" data-kb-column="aura" data-kb-amount="" data-kb-sign={Math.sign(l.amount)}>{signed(l.amount)}</span>
+                <span className="kb-log-wallet" data-kb-column="wallet" aria-hidden="true" />
               </h2>
               {l.shares.length === 0
                 ? <p className="kb-log-reason-none">{NO_SHARES}</p>
@@ -89,7 +91,8 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
                         <li key={`${sh.act}:${sh.quadrant ?? ''}`} className="kb-log-share">
                           <span className="kb-log-share-post">{link === null ? 'an Act' : <Said parts={[link]} />}</span>
                           <span className="kb-log-share-quadrant">{sh.quadrant ? words.ui.quadrantLabels[sh.quadrant] : 'No quadrant'}</span>
-                          <span className="kb-log-num" data-kb-sign={Math.sign(sh.amount)}>{signed(sh.amount)}</span>
+                          <span className="kb-log-num" data-kb-column="aura" data-kb-sign={Math.sign(sh.amount)}>{signed(sh.amount)}</span>
+                          <span className="kb-log-wallet" data-kb-column="wallet" aria-hidden="true" />
                         </li>
                       );
                     })}
@@ -143,6 +146,31 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
   );
 }
 
+/**
+ * What a log says while nothing has settled for it. A settlement writes a line only for a character it scored (a quiet one gets none), so the words promise
+ * a line when a settlement scores it, never that the next one writes it; the next settlement's time is said where it is known and still ahead. `name` is the
+ * open tab's character; All says "you" and "one of your characters".
+ */
+export function nothingSettled(name: string | null, next: string | null): string {
+  const until = next === null ? null : untilWords(next);
+  const head = name === null ? 'Nothing has settled for you yet.' : `Nothing has settled for ${name} yet.`;
+  const scored = name === null ? 'one of your characters' : 'it';
+  return until === null ? `${head} A line comes here when a settlement scores ${scored}.` : `${head} A line comes here when a settlement scores ${scored}; the next is ${until}.`;
+}
+
+/** The one row of a log with nothing in it (board 30): the table keeps its shape, and the row says when the next settlement is and what a line here will be. */
+function NothingYet({ name, next }: { readonly name: string | null; readonly next: string | null }) {
+  return (
+    <tr data-kb-kind="nothing">
+      <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null ? utcWhen(next) : '—'}</td>
+      <td className="kb-log-what" data-kb-label="What">Nothing yet</td>
+      <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next)}</td>
+      <td className="kb-log-num" data-kb-label="Aura" />
+      <td className="kb-log-num" data-kb-label="Wallet">—</td>
+    </tr>
+  );
+}
+
 export interface LogProps {
   readonly data: LogData;
   /** The tab open: one of the player's characters, or null for All. */
@@ -168,6 +196,10 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   const table = useRef<HTMLTableElement>(null);
   const reading = useRef(false);
   const last = data.log.before === null;
+  /* On the phone the character tabs are one row that scrolls (log.css); the current one is kept in view. */
+  const tabRow = useRef<HTMLDivElement>(null);
+  const currentId = current?.id ?? null;
+  useEffect(() => { tabRow.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }); }, [currentId, tabs.length]);
   useEffect(() => {
     if (!last || !reading.current) return;
     reading.current = false;
@@ -179,12 +211,14 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
         title="My log"
         tabs={tabs.length > 0 && (
           <CalmRegion as="nav" aria-label="Whose log">
-            <ButtonRow>
-              <GlassButton kind={current === null ? 'primary' : 'secondary'} aria-pressed={current === null} onClick={() => onTab(null)}>All</GlassButton>
-              {tabs.map((c) => (
-                <GlassButton key={c.id} kind={current?.id === c.id ? 'primary' : 'secondary'} aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}>{c.name}</GlassButton>
-              ))}
-            </ButtonRow>
+            <div ref={tabRow} className="kb-log-tabs">
+              <ButtonRow>
+                <GlassButton kind={current === null ? 'primary' : 'secondary'} aria-pressed={current === null} onClick={() => onTab(null)}>All</GlassButton>
+                {tabs.map((c) => (
+                  <GlassButton key={c.id} kind={current?.id === c.id ? 'primary' : 'secondary'} aria-pressed={current?.id === c.id} onClick={() => onTab(c.id)}>{c.name}</GlassButton>
+                ))}
+              </ButtonRow>
+            </div>
           </CalmRegion>
         )}
       />
@@ -192,35 +226,32 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
         Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or
         any character's class but your own.
       </CalmRegion>
-      {!settled && rows.length === 0
-        ? <CalmRegion as="p" className="kb-log-empty">Nothing has settled for you yet. Your first settlement is the first line here.</CalmRegion>
-        : (
-          <CalmRegion className="kb-log-board">
-            <table ref={table} className="kb-log-table" tabIndex={-1}>
-              <caption className="kb-visually-hidden">{current ? `${current.name}'s log` : 'Your log'}, newest first</caption>
-              <thead>
-                <tr>
-                  <th scope="col" className="kb-log-when">When (UTC)</th>
-                  <th scope="col" className="kb-log-what">What</th>
-                  <th scope="col">Details</th>
-                  <th scope="col" className="kb-log-num">Aura</th>
-                  <th scope="col" className="kb-log-num">Wallet</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => <Row key={r.key} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
-              </tbody>
-            </table>
-            {!settled && <p className="kb-log-empty">Nothing has settled for you yet. Your first settlement is the first line here.</p>}
-            {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
-            {onOlder && data.log.before !== null && (
-              <p className="kb-log-older">
-                <GlassButton size="s" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}>Show older lines</GlassButton>
-                {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
-              </p>
-            )}
-          </CalmRegion>
+      <CalmRegion className="kb-log-board">
+        <table ref={table} className="kb-log-table" tabIndex={-1}>
+          <caption className="kb-visually-hidden">{current ? `${current.name}'s log` : 'Your log'}, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col" className="kb-log-when">When (UTC)</th>
+              <th scope="col" className="kb-log-what">What</th>
+              <th scope="col">Details</th>
+              <th scope="col" className="kb-log-num">Aura</th>
+              <th scope="col" className="kb-log-num">Wallet</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} next={data.nextSettlement} />}
+            {rows.map((r) => <Row key={r.key} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
+          </tbody>
+        </table>
+        {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement)}</p>}
+        {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
+        {onOlder && data.log.before !== null && (
+          <p className="kb-log-older">
+            <GlassButton size="s" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}>Show older lines</GlassButton>
+            {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
+          </p>
         )}
+      </CalmRegion>
       <CalmRegion as="p" className="kb-log-foot">If a line here looks wrong, that is a bug and not the game. <Link to={CONTACT_PATH}>Tell an admin</Link>.</CalmRegion>
     </div>
   );

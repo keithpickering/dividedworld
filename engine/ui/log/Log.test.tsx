@@ -5,13 +5,15 @@
  * plainly. Out of character and true: it names the Act, what changed and how much, never who reacted
  * or anyone's class but the player's own.
  */
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
 import { buildWorld, renderIn } from '../test-world.tsx';
+import { utcWhen } from './lines.ts';
 import { LogScreen } from './Log.tsx';
+import logCss from './log.css?raw';
 
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 
@@ -60,7 +62,14 @@ const bodyRows = () => within(screen.getByRole('table')).getAllByRole('row').sli
 const cells = (row: HTMLElement) => within(row).getAllByRole('cell').map((c) => c.textContent?.replace(/\s+/gu, ' ').trim());
 const tab = (name: string) => within(screen.getByRole('navigation', { name: 'Whose log' })).getByRole('button', { name });
 
-afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
+/* jsdom has no scrollIntoView: a test that stubs it puts it back, so no stub outlives its test. */
+let scrolled: unknown = null;
+const hadScroll = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+afterEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+  if (scrolled !== null) { if (hadScroll) Object.defineProperty(Element.prototype, 'scrollIntoView', hadScroll); else delete (Element.prototype as unknown as Record<string, unknown>).scrollIntoView; scrolled = null; }
+});
 
 describe('My log', () => {
   test('opens on the HUD\'s character, with a tab for All and each character, and says it is true', async () => {
@@ -194,14 +203,97 @@ describe('My log', () => {
     expect(gain!.slice(3)).toEqual(['+0.30', '6.00']);
   });
 
-  test('before the first settlement it says so, and shows no table of settlements', async () => {
+  /** A player with Pipewrench and Mrs. Hooligan debuted and nothing settled, the next settlement 7 h 42 min off (the empty log's board). */
+  function nothingYet(next: number | null = Date.now() + (7 * 60 + 42) * 60_000) {
     const fake = buildWorld();
     const me = fake.seed.account('me');
     const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    const hoo = fake.seed.character(me, 'Mrs. Hooligan', 'face');
+    if (next !== null) fake.seed.nextSettlementAt(next);
     fake.signInAs(me);
+    return { fake, me, pipe, hoo, next };
+  }
+
+  test('before the first settlement the table keeps its head and draws one row: when it comes, "Nothing yet", and what its first line will be', async () => {
+    const { fake, me, hoo, next } = nothingYet();
+    open(fake, me, hoo);
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['When (UTC)', 'What', 'Details', 'Aura', 'Wallet']);
+    expect(bodyRows()).toHaveLength(1);
+    expect(cells(bodyRows()[0]!)).toEqual([
+      utcWhen(new Date(next!).toISOString()), 'Nothing yet',
+      'Nothing has settled for Mrs. Hooligan yet. A line comes here when a settlement scores it; the next is in 7 h 42 min.', '', '—',
+    ]);
+    expect(screen.queryByText('Nothing has settled for you yet. Your first settlement is the first line here.')).toBeNull();
+  });
+
+  /*
+   * The tabs are drawn from the log's own reads and the open one from the HUD's character, which the player context reads on its own (player.tsx): either can
+   * arrive first. A player context slower than the log leaves the page on All for a moment (nothing to scroll to but All's tab), then on the HUD's character, so
+   * what the page scrolls into view is the tab that is current when it is current, and a test waits for that rather than for the table.
+   */
+  test('the character tabs are one row that scrolls on the phone, and the current one is scrolled into view, whichever read arrives first', async () => {
+    const { fake, me, hoo } = nothingYet();
+    const real = fake.wallet.bind(fake);
+    /* The player context is slower than the log: the HUD's character is not known when the table first stands, and is not until the test lets it be. */
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    vi.spyOn(fake, 'wallet').mockImplementation(async () => { await gate; return real(); });
+    const into = vi.fn();
+    scrolled = into;
+    Element.prototype.scrollIntoView = into;
+    open(fake, me, hoo);
+    await screen.findByRole('table');
+    const named = () => (into.mock.contexts as HTMLElement[]).map((e) => e.textContent);
+    /* The effect that scrolls runs after the commit the table stands in, which the query can resolve before. */
+    await waitFor(() => expect(named()[0], 'the first read to arrive scrolls the tab that is current then').toBe('All'));
+    release();
+    await waitFor(() => expect(named().at(-1)).toBe('Mrs. Hooligan'));
+    expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
+    into.mockClear();
+    fireEvent.click(tab('All'));
+    expect(named()).toEqual(['All']);
+    const css = logCss.replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).toMatch(/\[data-kb-layout='phone'\]\) \.kb-log-tabs \{[^}]*overflow-x:\s*auto/u);
+    expect(css).toMatch(/\.kb-log-tabs > \.kb-button-row \{[^}]*flex-wrap:\s*nowrap/u);
+  });
+
+  test('on All it says "you", and where no settlement is set it names no time and leaves the row\'s when empty', async () => {
+    const { fake, me, hoo } = nothingYet();
+    open(fake, me, hoo);
+    await screen.findByRole('table');
+    fireEvent.click(tab('All'));
+    expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for you yet. A line comes here when a settlement scores one of your characters; the next is in 7 h 42 min.');
+    cleanup();
+    const none = nothingYet(null);
+    open(none.fake, none.me, none.pipe);
+    await screen.findByRole('table');
+    expect(cells(bodyRows()[0]!)).toEqual(['—', 'Nothing yet', 'Nothing has settled for Pipewrench yet. A line comes here when a settlement scores it.', '', '—']);
+  });
+
+  /* A settlement writes a line only for a character it scored: a quiet one gets none, so the empty log promises a line only when one scores it, never that the next settlement writes it. */
+  test('where nothing has settled but other lines are read (an estimate, a card), a note under the table still says so, truly', async () => {
+    const { fake, me, hoo } = nothingYet();
+    const th = fake.seed.thread('general', hoo, 'a thread', 'Opening.', { at: at(27) });
+    const post = fake.seed.post(th.thread, hoo, 'Mrs. Hooligan speaks.', { at: at(28, 11) });
+    fake.seed.estimate(me, { lines: [{ character: hoo, reason: 'face.cheered', amount: 10, act: post, quadrant: 'excitedPositive', at: at(29, 11, 5) }] });
+    open(fake, me, hoo);
+    await screen.findByRole('table');
+    expect(bodyRows().length).toBeGreaterThan(0);
+    expect(screen.queryByText('Nothing yet')).toBeNull();
+    expect(screen.getByText('Nothing has settled for Mrs. Hooligan yet. A line comes here when a settlement scores it; the next is in 7 h 42 min.', { selector: 'p' })).toBeInTheDocument();
+  });
+
+  test('a settlement that is due names no time either, and one settled leaves no empty row', async () => {
+    const due = nothingYet(Date.now() - 60_000);
+    open(due.fake, due.me, due.pipe);
+    await screen.findByRole('table');
+    expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores it.');
+    cleanup();
+    const { fake, me, pipe } = world();
     open(fake, me, pipe);
-    expect(await screen.findByText('Nothing has settled for you yet. Your first settlement is the first line here.')).toBeInTheDocument();
-    expect(screen.queryByRole('table')).toBeNull();
+    await screen.findByRole('table');
+    expect(screen.queryByText('Nothing yet')).toBeNull();
   });
 
   test('names no one who reacted, and no class but the player\'s own: it never asks for anyone else\'s', async () => {
@@ -314,7 +406,7 @@ describe('My log', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
     expect(document.body.textContent).not.toContain('Pipewrench');
     release();
-    await waitFor(() => expect(screen.getByText('Nothing has settled for you yet. Your first settlement is the first line here.')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Nothing has settled for Gloomba yet. A line comes here when a settlement scores it.')).toBeInTheDocument());
     expect(document.body.textContent).not.toContain('Pipewrench');
   });
 });
@@ -337,7 +429,7 @@ describe('the log\'s card lines (the cards plan\'s Task 6)', () => {
     return { fake, me, rival, pipe, hoo, glo, g1, p2, h3 };
   }
   /* Whoops!'s look, as an instance gives the log a save worth a line (CardUi.logSave). */
-  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', image: '' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
+  const cards = [{ key: 'whoops', describe: () => '', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, logSave: (state: unknown) => ((state as { clean?: boolean }).clean ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' } : undefined) }];
   const show = (fake: Fake, me: string, hud: string) => { localStorage.clear(); localStorage.setItem(hudKey(me), hud); return renderIn(fake, <LogScreen />, { path: '/log', cards: cards as never }); };
   const rowsOf = async () => { await screen.findByRole('table'); return bodyRows().map(cells); };
 
@@ -529,6 +621,55 @@ describe('the breakdown', () => {
     const thunder = within(breakdown).getByRole('region', { name: 'Stole the thunder' });
     expect(within(thunder).getByText('Scored over the whole window, not post by post.')).toBeInTheDocument();
     expect(within(within(breakdown).getByRole('region', { name: 'Drew heat' })).queryByText('Scored over the whole window, not post by post.')).toBeNull();
+  });
+
+  test('every nested amount, a reason\'s total and each post\'s share, stands in the Aura column, and the Wallet column is empty there', () => {
+    /* Rendered below; here the rule the columns rest on: one set of widths for the table and the breakdown, so they cannot drift. */
+    const css = logCss.replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).toMatch(/--kb-log-aura:\s*110px/u);
+    expect(css).toMatch(/--kb-log-wallet:\s*120px/u);
+    expect(css).toMatch(/\.kb-log-breakdown-body\s*\{[^}]*margin-left:\s*calc\(var\(--kb-log-when\) \+ var\(--kb-log-what\)\)/u);
+    for (const selector of ['.kb-log-reason-head', '.kb-log-share']) {
+      const rule = new RegExp(`${selector.replace('.', '\\.')}\\s*\\{[^}]*grid-template-columns:([^;]*);`, 'u').exec(css)?.[1] ?? '';
+      expect(rule, selector).toMatch(/var\(--kb-log-aura\)\s+var\(--kb-log-wallet\)/u);
+    }
+  });
+
+  test('on the phone each post\'s kind stands beside its link, and no Wallet gap is drawn', () => {
+    const css = logCss.replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).toMatch(/\[data-kb-layout='phone'\]\) \.kb-log-share \{[^}]*grid-template-areas:\s*'post quadrant amount'/u);
+    expect(css).toMatch(/\[data-kb-layout='phone'\]\) \.kb-log-wallet \{ display: none; \}/u);
+  });
+
+  test('on the phone the empty row draws no Aura or Wallet label over nothing, and the rule outweighs the cells\' own', () => {
+    const css = logCss.replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rule = /\[data-kb-layout='phone'\]\) \.kb-log-table tbody > tr\[data-kb-kind='nothing'\] > td\.kb-log-num \{([^}]*)\}/u.exec(css);
+    expect(rule, 'the nothing row has a phone rule for its number cells').not.toBeNull();
+    expect(rule![1]).toMatch(/display:\s*none/u);
+  });
+
+  test('each nested row is its words, then its amount in the Aura column, then an empty Wallet cell', async () => {
+    const { fake, me, pipe } = split();
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
+    const breakdown = document.querySelector<HTMLElement>('.kb-log-breakdown:not([hidden])')!;
+    const nested = [...breakdown.querySelectorAll<HTMLElement>('.kb-log-reason-head, .kb-log-share')];
+    /* Three reasons and the five shares of the two that were split across posts. */
+    expect(nested).toHaveLength(3 + 5);
+    for (const row of nested) {
+      const aura = row.querySelector<HTMLElement>(':scope > [data-kb-column="aura"]')!;
+      const wallet = row.querySelector<HTMLElement>(':scope > [data-kb-column="wallet"]')!;
+      expect(aura, row.textContent ?? '').not.toBeNull();
+      expect(aura.textContent).toMatch(/^[+−]\d\.\d\d$/u);
+      expect(wallet.textContent).toBe('');
+      expect(wallet).toHaveAttribute('aria-hidden', 'true');
+      /* In order: the words, the Aura amount, the Wallet gap. */
+      expect(row.lastElementChild).toBe(wallet);
+      expect(wallet.previousElementSibling).toBe(aura);
+    }
+    /* Nothing under Wallet but the settlement's own balance. */
+    expect(breakdown.querySelectorAll('[data-kb-column="wallet"]:not(:empty)')).toHaveLength(0);
   });
 });
 

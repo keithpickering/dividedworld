@@ -12,6 +12,8 @@
  * shows on the next thread view with no reload. Tips has a switch, Show tips again and Replay the HUD tour, each calling its own tips function; the next board
  * page shows the result.
  *
+ * Every section's rail ends with Reach a person, a sibling right after the sections' navigation, ruled off under it (board 33); signed out, where there is no rail, it stands at the foot.
+ *
  * Account: the address the session signed in with, plainly and not as a field (it is changed nowhere
  * here), the player's invites (Invites.tsx), and Sign out at its foot. `/invites`, the page invites
  * had before, opens this section (web/src/App.tsx).
@@ -144,20 +146,24 @@ function Frame({ section, children }: { readonly section: Section | null; readon
       <PageHead title="Settings" />
       <div className="kb-settings-body">
         {section && (
-          <CalmRegion as="nav" className="kb-settings-nav" aria-label="Settings sections">
-            <ul>
-              {SECTIONS.map((s) => (
-                <li key={s.key}>
-                  <GlassButton to={sectionHref(s.key)} kind={s.key === section ? 'primary' : 'secondary'} aria-current={s.key === section ? 'page' : undefined}>{s.label}</GlassButton>
-                </li>
-              ))}
-            </ul>
-          </CalmRegion>
+          <div className="kb-settings-rail">
+            <CalmRegion as="nav" className="kb-settings-nav" aria-label="Settings sections">
+              <ul>
+                {SECTIONS.map((s) => (
+                  <li key={s.key}>
+                    <GlassButton to={sectionHref(s.key)} kind={s.key === section ? 'primary' : 'secondary'} aria-current={s.key === section ? 'page' : undefined}>{s.label}</GlassButton>
+                  </li>
+                ))}
+              </ul>
+            </CalmRegion>
+            {/* Every screen of Settings says how to reach a person, under the sections, ruled off (board 33): /contact is readable signed out too. */}
+            <CalmRegion as="p" className="kb-settings-rail-reach"><ReachAPerson /></CalmRegion>
+          </div>
         )}
         {children}
       </div>
-      {/* Every screen of Settings says how to reach a person; /contact is readable signed out, and the player who needs it may not be signed in. */}
-      <CalmRegion as="p" className="kb-acct-text kb-settings-reach"><ReachAPerson /></CalmRegion>
+      {/* Signed out there is no rail to put it under, and the player who needs it may not be signed in. */}
+      {!section && <CalmRegion as="p" className="kb-acct-text kb-settings-reach"><ReachAPerson /></CalmRegion>}
     </div>
   );
 }

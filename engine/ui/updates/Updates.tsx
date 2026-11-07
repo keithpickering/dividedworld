@@ -15,13 +15,13 @@
  * one (the newest by default, and the newest too where the named one is not in what was read). Every read is the same for every player but the
  * player's own reactions to the open update, which only say what they already know.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { UPDATES_PAGE, type Id, type Update } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
-import { PersonaMark } from './Persona.tsx';
-import { ChangedList, Prose } from './UpdateWords.tsx';
+import { UpdateArticle } from './UpdateArticle.tsx';
+import { utcDay } from './time.ts';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { createMine } from '../reactions/mine.ts';
@@ -34,19 +34,6 @@ import '../cards/kit.css';
 import './updates.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const two = (n: number) => String(n).padStart(2, '0');
-
-/** "Nov 2": a day in UTC, as the update's own time is told, so every player reads the same date. Nothing when it cannot be read. */
-export function utcDay(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
-}
-/** "Nov 2 · 08:00 UTC". */
-export function utcStamp(iso: string): string {
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : `${utcDay(iso)} · ${two(d.getUTCHours())}:${two(d.getUTCMinutes())} UTC`;
-}
 const possessive = (name: string) => (name.endsWith('s') ? `${name}'` : `${name}'s`);
 const updatesAt = (act: Id) => `/updates?update=${encodeURIComponent(act)}`;
 
@@ -70,13 +57,11 @@ export interface UpdatesProps {
 }
 
 function Post({ update }: { readonly update: Update }) {
-  const { api, ui } = useKayfa();
-  const headline = useId();
+  const { api } = useKayfa();
   const tallies = useMemo(() => createTallies(), []);
   const mine = useMemo(() => createMine(), []);
   const drafts = useSpinDrafts();
   const [spinning, setSpinning] = useState(false);
-  const picture = update.avatar === null ? undefined : ui.avatars?.[update.avatar];
 
   /* This update's reactions: the counts everyone sees, the player's own, and the counts as they change. */
   useEffect(() => {
@@ -88,23 +73,7 @@ function Post({ update }: { readonly update: Update }) {
   }, [api, update.act, update.thread, tallies, mine]);
 
   return (
-    <article className="kb-glass-cut-dialog kb-updates-post" aria-labelledby={headline}>
-      <div className="kb-updates-by">
-        <PersonaMark name={update.name} picture={picture} />
-        <div>
-          <b className="kb-updates-name">{update.name}</b>
-          {update.tagline !== '' && <span className="kb-updates-tagline">{update.tagline}</span>}
-        </div>
-      </div>
-      <h2 id={headline} className="kb-updates-headline kb-glass-display">{update.title}</h2>
-      <time className="kb-updates-time" dateTime={update.at}>{utcStamp(update.at)}</time>
-      <Prose body={update.body} />
-      {update.changes.length > 0 && (
-        <>
-          <h3 className="kb-updates-changed">What changed</h3>
-          <ChangedList changes={update.changes} />
-        </>
-      )}
+    <UpdateArticle update={update}>
       <div className="kb-updates-acts">
         <Reactions act={update.act} author={update.character} authorName={update.name} tallies={tallies} mine={mine} subject={`the update “${update.title}”`} />
         <GlassButton aria-expanded={spinning} onClick={() => setSpinning(!spinning)}>Spin a thread on the board</GlassButton>
@@ -115,7 +84,7 @@ function Post({ update }: { readonly update: Update }) {
         </div>
       )}
       <p className="kb-updates-note">Reactions here pay no one. A spun thread opens on the board with this update in its origin box.</p>
-    </article>
+    </UpdateArticle>
   );
 }
 
@@ -151,12 +120,12 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
         </aside>
         <div className="kb-updates-main">
           {admin && (
-            <div className="kb-updates-write">
+            <CalmRegion as="div" className="kb-updates-write">
               <ButtonRow><GlassButton aria-expanded={writing} onClick={() => setWriting(!writing)}>Write an update</GlassButton></ButtonRow>
               {writing && handoverGone !== undefined && <p className="kb-updates-note" role="status">There is no to-do for season {handoverGone}: an update was posted after its handover, or it was dismissed.</p>}
               {writing && handoverProblem !== undefined && <p className="kb-updates-note" role="status">{handoverProblem}</p>}
               {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
-            </div>
+            </CalmRegion>
           )}
           {current ? <Post key={current.act} update={current} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
         </div>

@@ -114,14 +114,14 @@ describe('one mark per kind', () => {
     expect(within(document.body).getByRole('tab', { name: 'Card 2', selected: true })).toBeInTheDocument();
   });
 
-  test('on a phone it draws three and "+3"', async () => {
+  test('on a phone it draws two and "+4"', async () => {
     width(true);
     const w = world();
     for (const k of KEYS) w.play(k);
     open(w);
     const post = await article(2);
-    await waitFor(() => expect(marks(post)).toHaveLength(4));
-    expect(within(post).getByRole('button', { name: '+3 more cards played on this post' })).toHaveTextContent('+3');
+    await waitFor(() => expect(marks(post)).toHaveLength(3));
+    expect(within(post).getByRole('button', { name: '+4 more cards played on this post' })).toHaveTextContent('+4');
   });
 
   test('a mark opens the Lens on its kind, and stays expanded while it is open', async () => {

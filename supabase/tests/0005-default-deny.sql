@@ -10,7 +10,7 @@ declare
   -- What the API roles are granted, on purpose; a new grant joins this list with its migration.
   readable text[] := array['class_kinds', 'reaction_kinds', 'card_kinds', 'boards', 'threads', 'acts',
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
-                           'seasons', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
+                           'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
@@ -18,7 +18,7 @@ declare
                            'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
-                           -- The log's lines for the Mod Bots (0109): each the caller's own characters' rows.
+                           -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
                            'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text)', 'post(uuid,uuid,text,uuid)',
                            'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text)', 'create_character(text,text,text,text)', 'set_debut(uuid,text,text)',
@@ -31,6 +31,8 @@ declare
                            'board_page(text,integer,text[])', 'index_page()',
                            -- A character's two pages, each in one read (0096): invoker and stable, held to the web's read lists by the screen-function guard.
                            'profile_page(uuid)', 'record_page(uuid,text,integer)',
+                           -- A finished season's results (0099): its list, a page of 50 and a character's place, invoker reads for a signed-in player.
+                           'finished_seasons()', 'results_page(integer,integer)', 'result_place(integer,uuid)',
                            -- A thread's page in one read (0094), a security invoker function.
                            'thread_page(uuid,integer,integer,integer,text[])',
                            -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.
@@ -49,17 +51,17 @@ declare
                            'staff_career(text)',
                            -- How players reach an admin (0081): a visitor and a player read the contact, an admin writes it.
                            'admin_contact()', 'set_admin_contact(jsonb)',
-                           -- The bar and the ban (0102): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
+                           -- The bar and the ban (0104): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
                            'warn_points(uuid)', 'banned_until(uuid)',
-                           -- A report (0105): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
+                           -- A report (0107): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
                            'open_report(uuid,uuid,text)',
-                           -- An interception (0106): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,
+                           -- An interception (0108): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,
                            -- with its choices and never its answer, which thread_page (invoker) reads for the signed-in player.
                            'intercept(uuid,uuid,text)', 'visit_quiz(uuid)',
-                           -- An appeal (0107): the punished character's door, which verifies the caller plays the character (and does not refuse a banned one: a ban is appealed by the banned).
+                           -- An appeal (0109): the punished character's door, which verifies the caller plays the character (and does not refuse a banned one: a ban is appealed by the banned).
                            -- Its ruling, its refund, its sweep and its helpers are the service's.
                            'open_appeal(uuid,uuid,text)',
-                           -- The screens' reads (0109): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
+                           -- The screens' reads (0111): the report's judge, and the two functions the log's views call, each a public fact about any id (a view's functions run as its reader).
                            'beat_mod_name(uuid)', 'punishment_words(uuid)', 'infraction_relief(uuid)',
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])'];

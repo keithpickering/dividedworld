@@ -41,7 +41,7 @@ import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useNarrow, useUntil } from './Effects.tsx';
+import { inkOf, useSheet, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
@@ -234,6 +234,17 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   return Object.keys(fallback.notes).length > 0 && !isBack(kind) ? { ...given, notes: { ...fallback.notes, ...given.notes } } : given;
 }
 
+/** Where the strip of tabs has more past its edges: `start` (scrolled off at the left), `end`, both, or none (all of it in view). */
+export type TabFade = 'none' | 'start' | 'end' | 'both';
+export function fadeOf(el: { readonly scrollLeft: number; readonly clientWidth: number; readonly scrollWidth: number }): TabFade {
+  const start = el.scrollLeft > 1;
+  const end = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+  return start && end ? 'both' : start ? 'start' : end ? 'end' : 'none';
+}
+
+/** Whether a scrolling part has more below what it shows: the fade at the Lens's foot is there only while it has. A scroll position can be fractional (zoom), so it is rounded up: at the end it never reads as one px short. */
+export const moreBelow = (el: { readonly scrollTop: number; readonly clientHeight: number; readonly scrollHeight: number }): boolean => Math.ceil(el.scrollTop) + el.clientHeight < el.scrollHeight;
+
 /** A tab's name: the card's, or for the card backs, "Card back", and the card it was once one has sprung. */
 export function kindName(instance: { readonly cards: readonly { readonly key: string; readonly name: string }[] }, kind: string, plays: readonly CardPlay[]): string {
   if (!isBack(kind)) return instance.cards.find((c) => c.key === kind)?.name ?? kind;
@@ -392,6 +403,24 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
   const hosted = useLensHost() !== document.body;
+  /* The foot is a grid of two columns whose wrappers take no box (lens.css), so how many tiles it holds (the React meta tile among the kit tiles) is read from the page: an odd last one spans both. */
+  const foot = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = foot.current;
+    if (!el) return undefined;
+    const count = () => {
+      const tiles = [...el.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
+      tiles.forEach((t, i) => {
+        const span = tiles.length % 2 === 1 && i === tiles.length - 1;
+        if (span !== t.hasAttribute('data-kb-span')) { if (span) t.setAttribute('data-kb-span', ''); else t.removeAttribute('data-kb-span'); }
+      });
+    };
+    count();
+    if (typeof MutationObserver !== 'function') return undefined;
+    const changed = new MutationObserver(count);
+    changed.observe(el, { childList: true, subtree: true });
+    return () => changed.disconnect();
+  }, []);
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
       {note && <p className="kb-lens-note">{note}</p>}
@@ -399,8 +428,8 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
-      <div className="kb-lens-row-foot">
-        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} />
+      <div ref={foot} className="kb-lens-row-foot">
+        <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />
         <div className="kb-lens-actions">
           {hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
@@ -471,7 +500,7 @@ export interface LensProps {
 export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, form }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
-  const narrow = useNarrow();
+  const narrow = useSheet();
   const host = useLensHost();
   const now = useUntil(here.billed);
   const billed = markedPlays(shownPlays(here.billed, instance.settings.setLasts), now);
@@ -502,18 +531,50 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       return marks.find((m) => m.getAttribute('data-kb-card') === o.card) ?? marks.find((m) => m.classList.contains('kb-mark-more')) ?? marks[0] ?? null;
     },
   }), []);
-  const beside = useMemo(() => ({ get current(): HTMLElement | null { return anchor.current?.closest<HTMLElement>('article, .kb-origin') ?? null; } }), [anchor]);
   const [unfolded, setUnfolded] = useState(false);
   /* Esc and × are a deliberate close: focus goes back to the mark whatever held it (a press on the post moves it to the post). */
   const dismiss = () => {
     store.close();
     queueMicrotask(() => { anchor.current?.focus(); });
   };
-  const [placed, setPlaced] = useState<FloatPlace>(narrow ? 'sheet' : 'side');
+  const [placed, setPlaced] = useState<FloatPlace>(narrow ? 'sheet' : 'dock');
   /* On open, focus moves to the open tab. */
   useLayoutEffect(() => { tabs.current.get(open.card)?.focus({ preventScroll: true }); }, []);
   /* A form opened over the tab that was open (Appeal, from the visit's tab) takes the control that was pressed with it: focus goes to the form's tab. */
   useLayoutEffect(() => { if (onForm) tabs.current.get(open.card)?.focus({ preventScroll: true }); }, [onForm, open.card]);
+  /* The strip of tabs is one row that scrolls, with the current tab kept in view, and a fade at the edge where more wait. */
+  const tabRow = useRef<HTMLDivElement>(null);
+  const [fade, setFade] = useState<TabFade>('none');
+  useLayoutEffect(() => { tabs.current.get(card ?? '')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }); }, [card]);
+  useEffect(() => {
+    const el = tabRow.current;
+    if (!el) return undefined;
+    const read = () => setFade(fadeOf(el));
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
+    resized?.observe(el);
+    return () => { el.removeEventListener('scroll', read); resized?.disconnect(); };
+  }, [card, kinds.length]);
+  /* The body scrolls inside the panel; its foot fades while more lies below it (the box's `data-kb-more`). */
+  const body = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    const el = body.current;
+    if (!el) return undefined;
+    const read = () => setMore(moreBelow(el));
+    read();
+    el.addEventListener('scroll', read, { passive: true });
+    const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
+    resized?.observe(el);
+    /* What the body holds changes while it is open (a live play adds a row, a section unfolds): each child is watched as it comes, and the fade is read again. */
+    const watched = new Set<Element>();
+    const watch = () => { for (const child of el.children) if (!watched.has(child)) { watched.add(child); resized?.observe(child); } };
+    watch();
+    const changed = typeof MutationObserver === 'function' ? new MutationObserver(() => { watch(); read(); }) : null;
+    changed?.observe(el, { childList: true, subtree: true });
+    return () => { el.removeEventListener('scroll', read); resized?.disconnect(); changed?.disconnect(); };
+  }, [card, unfolded, narrow]);
   if (card === null) return null;
 
   const rules = instance.cards.find((c) => c.key === card);
@@ -564,28 +625,32 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   return (
     <Float
-      label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
+      label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} keep={() => anchor.current?.closest<HTMLElement>('article, .kb-origin') ?? null} sheet={narrow} host={host}
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
-      data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined }}
+      data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined, 'kb-more': more ? 'true' : 'false' }}
     >
       <DialogBar close={<CloseCross onClick={dismiss} />}>
-        <div className="kb-lens-tabs" role="tablist" aria-label={onForm ? 'Form' : visit ? 'Visit and card kinds' : 'Card kinds'} onKeyDown={move}>
+        <div className="kb-lens-tabstrip" data-kb-fade={fade}>
+        <div ref={tabRow} className="kb-lens-tabs" role="tablist" aria-label={onForm ? 'Form' : visit ? 'Visit and card kinds' : 'Card kinds'} onKeyDown={move}>
           {kinds.map((kind) => {
             const label = onForm ? formTabName(form) : kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
             const selected = kind === card;
             return (
               <button
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
-                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-display" aria-selected={selected} aria-controls={selected ? panelId : undefined}
+                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-skew" aria-selected={selected} aria-controls={selected ? panelId : undefined}
                 tabIndex={selected ? 0 : -1} data-kb-card={kind} onClick={() => store.select(kind)}
-              >{label}</button>
+              ><span className="kb-glass-upright">{label}</span></button>
             );
           })}
         </div>
+        </div>
       </DialogBar>
-      <div className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
+      {/* Before the body: the body is the dialog's last child, which the frame's own checks lay their probes in. */}
+      <div className="kb-lens-fade" aria-hidden="true" />
+      <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
         {onForm && form.kind === REPORT_KIND && <ReportForm post={form.post} seq={form.seq} />}
         {onForm && form.kind === APPEAL_KIND && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} />}
         {onVisit && (

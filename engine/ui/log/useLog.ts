@@ -53,15 +53,17 @@ async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogDat
   const own = before ?? await (async () => {
     const mine = await api.myCharacters();
     const ids = mine.map((c) => c.id);
-    const [estimate, standings, season, announced] = await Promise.all([
+    const [estimate, standings, season, announced, nextSettlement] = await Promise.all([
       api.estimate().catch(() => null),
       ids.length === 0 ? {} : api.standingAmounts(ids),
       api.season(),
       ids.length === 0 ? [] : api.turnsAnnounced(ids),
+      /* Only the empty log says it, and a failed read leaves that row without its time. */
+      orElse(api.nextSettlementAt(), null),
     ]);
     /* Only a character's latest Turn is a line (lines.ts), so only its announcement is named. */
     const turns = announced.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
-    return { mine, estimate, standings, season, turns, acts: new Map<Id, Act>(), names: new Map<Id, string>(), titles: new Map<Id, string>(), states: new Map<Id, unknown>() };
+    return { mine, estimate, standings, season, turns, nextSettlement, acts: new Map<Id, Act>(), names: new Map<Id, string>(), titles: new Map<Id, string>(), states: new Map<Id, unknown>() };
   })();
   const ids = own.mine.map((c) => c.id);
   const acts = new Map(own.acts);

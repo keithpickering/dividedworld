@@ -194,3 +194,14 @@ For the variant design, which takes up the booster packs design's alternate art:
 - **A credits page** in the Strategy Guide.
 - **The placeholders' license.** The repository has no license yet; the placeholders' manifests say they are the
   project's own art, and the owner gives the license when the repository gets one.
+
+## Amended 2026-11-07: the back carries the instance's mark
+
+The owner, during the build: "Can we make card backs use our favicon, maybe?" So section 8's back gains an emblem, the
+way a trading card's back carries its game's logo. An instance may give one mark for its cards' backs
+(`InstanceUi.cardBack.mark`, a URL the bundler resolved), and `PostcardBack` draws it centered on the crossed bands. The
+engine names no instance's mark: without one, the back is the bands alone, as section 8 drew it. Divided World gives its
+favicon's vector, `instances/divided-world/ui/icon/coin.svg`. The back still says nothing about the card it is: the
+mark is the instance's, the same on every back. A hit's back keeps its gold ring and bands, with the same mark on them.
+The mark's back (`.kb-card-back`, a post's face-down tile) is unchanged by this amendment. Bluff's art, a red held-up
+card with a question mark, stays clear of the back either way.

@@ -12,9 +12,9 @@ exception when others then
   return sqlstate || ' ' || sqlerrm;
 end $$;
 
--- The fixture: Pam has 26 posts, a spin, a card play on a post of Quill's, a class reveal, an announced Turn (a tally
--- naming her) and a season reveal post; Quill has a post and has never done more; Waiting has not debuted.
-create table pg_temp.pr (pam uuid, quill uuid, waiting uuid, viewer uuid, t uuid, quill_post uuid, play uuid, spin uuid, unmask uuid, tally uuid, reveal uuid);
+-- The fixture: Pam has 26 posts, a spin, a card play on a post of Quill's, a class reveal, an announced Turn (an announce Act
+-- of hers) and a finished season's result; Quill has a post and has never done more; Waiting has not debuted.
+create table pg_temp.pr (pam uuid, quill uuid, waiting uuid, viewer uuid, t uuid, quill_post uuid, play uuid, spin uuid, unmask uuid, tally uuid, season_id bigint);
 grant all on pg_temp.pr to public;
 
 do $$
@@ -32,7 +32,7 @@ declare
   spin uuid;
   unmasked jsonb;
   tally uuid;
-  reveal uuid;
+  finished bigint;
   i integer;
 begin
   insert into characters (owner, name, created_at) values (quill_owner, 'Pr Waiting', now()) returning id into waiting;
@@ -44,10 +44,10 @@ begin
   perform tests.become(pam_owner);
   unmasked := unmask(pam, t, 'Pam says.');
   perform tests.unbecome();
-  tally := tests.act(null, 'tally', tests.thread('Pr turns'), jsonb_build_object('season', 1, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
-    'turns', jsonb_build_array(jsonb_build_object('character', pam, 'name', 'Pr Pam', 'loudness', 'announced', 'was', 'alpha'))), null, now() - interval '10 days');
-  reveal := tests.act(null, 'reveal', tests.thread('Pr reveals'), jsonb_build_object('character', pam, 'season', 0, 'place', 2), null, now() - interval '5 days');
-  insert into pg_temp.pr values (pam, quill, waiting, viewer, t, quill_post, play, spin, (unmasked ->> 'id')::uuid, tally, reveal);
+  tally := (write_announce(pam, tests.thread('Pr turns'), 'turn', 'alpha', null, now() - interval '10 days') ->> 'id')::uuid;
+  insert into seasons (number, starts_at, ends_at, results_at) values (90, '1990-01-01', '1990-02-01', '1990-02-01') returning id into finished;
+  insert into season_results (season, character, name, place, standing) values (finished, pam, 'Pr Pam', 2, 7);
+  insert into pg_temp.pr values (pam, quill, waiting, viewer, t, quill_post, play, spin, (unmasked ->> 'id')::uuid, tally, finished);
 end $$;
 
 -- ---- Each piece of the profile equals the direct read ----
@@ -75,9 +75,9 @@ begin
   want := (select jsonb_agg(to_jsonb(a) order by a.created_at desc) from (select * from acts_public where character = f.pam and kind in ('post', 'spin', 'card') order by created_at desc limit 5) a);
   if doc -> 'acts' is distinct from want or jsonb_array_length(doc -> 'acts') is distinct from 5 then raise exception 'acts: %', doc -> 'acts'; end if;
   if doc -> 'acts' -> 0 ->> 'id' is distinct from f.play::text or doc -> 'acts' -> 1 ->> 'id' is distinct from f.spin::text then raise exception 'the newest acts are out of order'; end if;
-  -- The play's target and the Turn's tally, for placing links.
+  -- The play's target and the Turn's announcement, for placing links.
   if (select array_agg(x ->> 'id' order by x ->> 'id') from jsonb_array_elements(doc -> 'targets') x) is distinct from (select array_agg(i::text order by i::text) from unnest(array[f.quill_post, f.tally]) i) then raise exception 'targets: %', doc -> 'targets'; end if;
-  if doc -> 'seasons' is distinct from (select jsonb_agg(to_jsonb(a)) from acts_public a where a.id = f.reveal) then raise exception 'seasons: %', doc -> 'seasons'; end if;
+  if doc -> 'seasons' is distinct from jsonb_build_array(jsonb_build_object('season', 90, 'place', 2, 'standing', 7, 'at', (select results_at from seasons where id = f.season_id))) then raise exception 'seasons: %', doc -> 'seasons'; end if;
   if doc -> 'unread' is distinct from to_jsonb(my_alerts_unread()) then raise exception 'unread: %', doc -> 'unread'; end if;
   -- A character that has done nothing: empty lists.
   doc := profile_page(f.quill);
@@ -121,14 +121,14 @@ begin
   doc := record_page(f.pam, 'card', 1);
   if jsonb_array_length(doc -> 'acts') is distinct from 1 or doc -> 'acts' -> 0 ->> 'id' is distinct from f.play::text
      or jsonb_array_length(doc -> 'targets') is distinct from 1 or doc -> 'targets' -> 0 ->> 'id' is distinct from f.quill_post::text then raise exception 'cards: %', doc; end if;
-  -- Class statements: the reveal and the Turn, read whole, with the tally for the link; no Acts.
+  -- Class statements: the reveal and the Turn, read whole, with the announcement for the link; no Acts.
   doc := record_page(f.pam, 'class', 1);
   if jsonb_array_length(doc -> 'reveals') <> 1 or jsonb_array_length(doc -> 'turns') <> 1 or jsonb_array_length(doc -> 'acts') <> 0
      or doc -> 'targets' -> 0 ->> 'id' is distinct from f.tally::text then raise exception 'class: %', doc; end if;
   if doc -> 'counts' is not null and doc -> 'counts' <> 'null'::jsonb then raise exception 'class read the counters: %', doc -> 'counts'; end if;
   -- Seasons: the reveal post alone.
   doc := record_page(f.pam, 'seasons', 1);
-  if jsonb_array_length(doc -> 'seasons') <> 1 or doc -> 'seasons' -> 0 ->> 'id' is distinct from f.reveal::text or jsonb_array_length(doc -> 'acts') <> 0 or jsonb_array_length(doc -> 'reveals') <> 0 then raise exception 'seasons: %', doc; end if;
+  if jsonb_array_length(doc -> 'seasons') <> 1 or doc -> 'seasons' -> 0 ->> 'season' is distinct from '90' or jsonb_array_length(doc -> 'acts') <> 0 or jsonb_array_length(doc -> 'reveals') <> 0 then raise exception 'seasons: %', doc; end if;
   if doc -> 'counts' is not null and doc -> 'counts' <> 'null'::jsonb then raise exception 'seasons read the counters: %', doc -> 'counts'; end if;
   -- All: the extras (1 reveal, 1 Turn, 1 season reveal = 3) and the Acts window mergeWindow asks for.
   doc := record_page(f.pam, 'all', 1);

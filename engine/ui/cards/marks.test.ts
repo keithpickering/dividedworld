@@ -23,7 +23,7 @@ describe('kindsOf', () => {
 
 test('a strip draws four marks on a desktop and three on a phone', () => {
   assert.equal(MARKS_WIDE, 4);
-  assert.equal(MARKS_NARROW, 3);
+  assert.equal(MARKS_NARROW, 2);
 });
 
 /* The card mechanic's marks (docs/plans/2026-11-01-card-plays-plan.md, Task 7). */

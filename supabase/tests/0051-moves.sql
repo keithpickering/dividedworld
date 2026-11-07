@@ -9,7 +9,7 @@ declare made uuid;
 begin
   select id into made from characters where staff = 'mv-boss';
   if made is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Mv Boss', 'mv-boss', 'persona', now()) returning id into made; end if;
-  -- The queue holds a move to the office that makes it (0101): this Boss is the open season's.
+  -- The queue holds a move to the office that makes it (0103): this Boss is the open season's.
   update seasons set boss = 'mv-boss' where ends_at is null and boss is distinct from 'mv-boss';
   return made;
 end $$;

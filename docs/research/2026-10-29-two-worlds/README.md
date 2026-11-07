@@ -34,6 +34,17 @@ the Lurker peeking under a fade, with a count and arrows, in the order Face, Hee
 Lurker in violet. The four-card board it replaces is in this folder's history; the build that copied it over is
 `docs/plans/2026-10-30-technician-plan.md`, Task 5.
 
+**Amended 2026-11-05, by the card template design** (`docs/plans/2026-11-05-card-template-design.md`, sections 2 and 9):
+every card is now one 2:3 shape. `05-cards.html` draws its three cards (the two postcards and the sealed slot) at 276 by
+414, where they were 276 by 480, each keeping its old top edge (the build lays the row out from the top, so the cards
+lose their height at the bottom).
+`07-vending.html` draws each slot's card, and the card dispensed in the tray, at 86 by 129, where they were 92 by 128, centered where the old
+box was. The fan (150 by
+225) and the phone sheet (104 by 156), which boards 01 and 02 draw, did not change. The cards' faces on these boards are
+still the first drawing; only their boxes are held to the build. The faces' inner layout on `05-cards.html` was drawn for
+480 high and was not redrawn, so in the 414 box their text overlaps the foot row; the build's postcard
+(`engine/ui/cards/postcard.css`) is the reference for a face.
+
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the
   eligible posts. Drawn before the pause menu was decided, so its banner still lists the glass's pages and its HUD has

@@ -25,7 +25,7 @@ import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
-import { LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
+import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -46,6 +46,14 @@ function Body({ act, name, person, editing, onDone, marks, visit }: { readonly m
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   switch (act.kind) {
     case 'unmask': return <UnmaskLine act={act} name={name} />;
+    case 'announce':
+      /* A character's own Act: its line, with the postbit above and the reactions under, which are scored for the character. */
+      return (
+        <>
+          <AnnounceLine act={act} name={name} />
+          <Reactions act={act.id} author={act.character} authorName={name} tallies={tallies} mine={mine} />
+        </>
+      );
     case 'move_end': return <MoveEndLine act={act} />;
     case 'move_keep': return <MoveKeepLine name={name} />;
     case 'move':

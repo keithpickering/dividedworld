@@ -355,5 +355,7 @@ test('the fade covers only a peeking card, at its start and its end, and never a
   await expect(group.getByText('2–2 of 5')).toBeVisible();
   // Snapped to the Heel, nothing of the Face shows: no fade at its start; the Jabroni peeks at its end.
   await expect.poll(async () => (await fades(phone)).before).toBe(0);
-  expect((await fades(phone)).after).toBeGreaterThan(40);
+  // The status text and `before` settle the moment the Heel is the first card shown, while the snap is still gliding;
+  // the Jabroni's peek grows with the scroll, so wait for the glide to land before reading how much of it shows.
+  await expect.poll(async () => (await fades(phone)).after).toBeGreaterThan(40);
 });

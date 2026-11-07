@@ -108,7 +108,7 @@ begin
   select * into hand from season_handovers where season = (select id from seasons where ends_at is null);
   if hand.how is distinct from 'rotation' or hand.outgoing is distinct from 'su-a' then raise exception 'the handover recorded %', to_jsonb(hand); end if;
   -- The reveal and the new season are there.
-  if not exists (select 1 from seasons where number = 1 and ends_at is not null and reveal_act is not null) then raise exception 'the season was not revealed'; end if;
+  if not exists (select 1 from seasons where number = 1 and ends_at is not null and results_at is not null) then raise exception 'the season was not revealed'; end if;
   -- The farewell and the arrival, said once, each by its own Boss; and the arriving Boss starts at zero.
   if pg_temp.posts_by('su-a', 'Farewell from Su A.') is distinct from 1::bigint then raise exception 'the farewell was said % times', pg_temp.posts_by('su-a', 'Farewell from Su A.'); end if;
   if pg_temp.posts_by('su-b', 'Hello from Su B.') is distinct from 1::bigint then raise exception 'the arrival was said % times', pg_temp.posts_by('su-b', 'Hello from Su B.'); end if;
@@ -437,7 +437,7 @@ begin
   update characters set retired_at = now() where staff = nominee;
   perform pg_temp.roll();
   if (select number from seasons where ends_at is null) is distinct from before_number + 1 then raise exception 'the new season did not open'; end if;
-  if not exists (select 1 from seasons where number = before_number and reveal_act is not null) then raise exception 'the reveal did not happen'; end if;
+  if not exists (select 1 from seasons where number = before_number and results_at is not null) then raise exception 'the reveal did not happen'; end if;
   select * into h from season_handovers where season = (select id from seasons where ends_at is null);
   if h.how is distinct from 'rotation' or h.boss is not distinct from nominee or h.boss is null or h.note not like 'the nomination did not seat%' then raise exception 'the failed succession was recorded as %', to_jsonb(h); end if;
 
@@ -450,7 +450,7 @@ begin
   if pg_temp.boss() is distinct from outgoing then raise exception 'the season did not keep the outgoing Boss: %', pg_temp.boss(); end if;
   select * into h from season_handovers where season = (select id from seasons where ends_at is null);
   if h.how is distinct from 'unchanged' or h.note not like '%the rotation did not choose%' then raise exception 'the failed rotation was recorded as %', to_jsonb(h); end if;
-  if not exists (select 1 from seasons where number = before_number and reveal_act is not null) then raise exception 'the reveal did not happen when the rotation failed'; end if;
+  if not exists (select 1 from seasons where number = before_number and results_at is not null) then raise exception 'the reveal did not happen when the rotation failed'; end if;
 
   -- Even the handover itself failing stops neither: the season keeps the outgoing Boss.
   update characters set retired_at = null where staff_kind = 'persona';
@@ -461,7 +461,7 @@ begin
   if (select number from seasons where ends_at is null) is distinct from before_number + 1 then raise exception 'the new season did not open when the handover raised'; end if;
   if pg_temp.boss() is distinct from outgoing then raise exception 'the season did not keep the outgoing Boss when the handover raised: %', pg_temp.boss(); end if;
   if (select note from season_handovers where season = (select id from seasons where ends_at is null)) not like 'the handover failed: boom%' then raise exception 'the raised handover was not recorded'; end if;
-  if not exists (select 1 from seasons where number = before_number and reveal_act is not null) then raise exception 'the reveal did not happen when the handover raised'; end if;
+  if not exists (select 1 from seasons where number = before_number and results_at is not null) then raise exception 'the reveal did not happen when the handover raised'; end if;
 end $$;
 
 -- ---- The review is capped: inheritance_due at the cap it is given, the meeting's context at 20 ----

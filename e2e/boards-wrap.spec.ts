@@ -36,8 +36,9 @@ async function compareNudged(browser: Browser, baseURL: string | undefined, id: 
     await boardPage.goto(pathToFileURL(path.join(here, '..', 'docs', 'research', path.dirname(id), `${path.basename(id)}.html`)).href);
     const query = 'moment' in manifest.build ? `moment=${encodeURIComponent(manifest.build.moment)}` : `story=${encodeURIComponent(manifest.build.story)}`;
     await buildPage.goto(`/?fixture=boards&${query}`);
-    await pressControls(buildPage, manifest.press);
+    /* The nudge is on before the presses: a fill scrolls the page by how the words above its field wrap, and a part held from a sticky bar moves with that. */
     await buildPage.addStyleTag({ content: `html{word-spacing:${nudge}px !important}` });
+    await pressControls(buildPage, manifest.press);
     for (const page of [boardPage, buildPage]) await page.evaluate(() => document.fonts.ready);
     const board: Snapshot = await snapshotPage(boardPage, manifest, 'board');
     const build: Snapshot = await settledSnapshot(buildPage, manifest, 'build');

@@ -311,9 +311,9 @@ begin
   end if;
   -- The season's reveal names none.
   if reveal_season('2100-01-01T00:00:00Z') is null then raise exception 'the season did not reveal'; end if;
-  if exists (select 1 from acts where kind = 'reveal' and payload ->> 'character' = boss::text) then raise exception 'the reveal names a staff character'; end if;
-  if (select (payload ->> 'characters')::integer from acts where kind = 'reveal' and character is null and payload ? 'body') is distinct from (select count(*)::integer from characters where debuted_at < '2100-01-01' and staff is null) then
-    raise exception 'the reveal counts a staff character';
+  if exists (select 1 from season_results where character = boss) then raise exception 'the results name a staff character'; end if;
+  if (select count(*)::integer from season_results where season = (select id from seasons where ends_at = '2100-01-01T00:00:00Z')) is distinct from (select count(*)::integer from characters where debuted_at < '2100-01-01' and staff is null) then
+    raise exception 'the results count a staff character';
   end if;
   -- And the season it opens has no row for it.
   if exists (select 1 from standings where character = boss) then raise exception 'the next season''s roster holds a staff character'; end if;

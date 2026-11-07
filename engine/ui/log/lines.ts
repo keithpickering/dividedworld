@@ -67,6 +67,8 @@ export interface LogData {
   readonly season: Season | null;
   /** The announced Turns of the player's characters. */
   readonly turns: readonly TurnAnnounced[];
+  /** When the next settlement is (ISO), which a log with no line yet says its first will be; null where none is scheduled or the read failed. */
+  readonly nextSettlement: string | null;
   /** The Acts the lines name, and the posts the card plays among them landed on. */
   readonly acts: ReadonlyMap<Id, Act>;
   /** Names of the characters whose posts the lines name. */

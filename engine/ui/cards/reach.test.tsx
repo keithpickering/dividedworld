@@ -35,7 +35,7 @@ const dab = reaching('dab', 'Dab', 'common', ['post'], { lasts: undefined });
 const instance: Instance = { ...testInstance, cards: [sparkle, beacon, rumble, dab], settings: { ...testInstance.settings, economy: { 'test.price': 100 } } };
 /* Each card's effect wraps the words in a box naming it, and the reach it was drawn from. */
 const Wrap = (key: string) => function Effect({ children, reach }: EffectProps) { return <div data-kb-wrap={key} data-kb-reach={reach}>{children}</div>; };
-const cards: CardUi[] = ['sparkle', 'beacon', 'rumble', 'dab'].map((key) => ({ key, art: { color: '#ffd23f', ink: '#1a1300' }, describe: () => `${key}.`, Effect: Wrap(key) }));
+const cards: CardUi[] = ['sparkle', 'beacon', 'rumble', 'dab'].map((key) => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: Wrap(key) }));
 
 /* The first render of the Frame in a file parses the house CSS, which takes a few seconds under jsdom. */
 vi.setConfig({ testTimeout: 20_000 });

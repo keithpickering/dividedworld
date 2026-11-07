@@ -43,7 +43,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending', '/admin/queue']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings&season=1', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending', '/admin/queue']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -102,7 +102,7 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'], ['admin queue', '/admin/queue'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings&season=1'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'], ['admin queue', '/admin/queue'],
 ];
 
 /** Opens a page; the admin queue is the demo player made an admin in the app (a load starts the demo over), then moved to. */
@@ -163,7 +163,7 @@ for (const scheme of ['light', 'dark'] as const) {
         });
       }
 
-      /* The longest the HUD's wallet gets: a full wallet with an estimate on top, and the part past the cap, which the Phone board does not draw. */
+      /* The longest the HUD's wallet gets: a full wallet with an estimate on top, and the part past the cap with the way out under it. */
       test('the Game HUD holds a wallet past its cap inside its glass and the window', async ({ page }) => {
         await page.goto('/b/general');
         await expect(ready(page, '/b/general')).toBeVisible();
@@ -177,11 +177,11 @@ for (const scheme of ['light', 'dark'] as const) {
         });
         await expect(page.locator('.kb-hud-orbs')).toHaveCount(0);
         await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
-        /* The Main board's layout draws the words as board 04 does; the Phone board's draws a mark on the last orb instead (issue 48). */
-        if (width >= ABOVE_SWITCH) await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d past the cap$/);
-        else {
+        /* Both layouts say the figure once and the way out under it (the backfill design, section 7); the Phone board's also marks the last orb. */
+        await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toHaveText(/^\+\d\.\d\d est\. past the cap$/);
+        await expect(page.locator('.kb-hud-orbs .kb-orbs-way')).toHaveText("Spend some before the settlement, or it won't fit.");
+        if (width < ABOVE_SWITCH) {
           await expect(page.locator('.kb-hud-orbs .kb-orb:last-child .kb-orb-over')).toBeVisible();
-          await expect(page.locator('.kb-hud-orbs .kb-orbs-over')).toBeHidden();
           /* The demo's estimate lies wholly past a full wallet, so the name carries that estimate as its amount. */
           const name = await page.locator('.kb-hud-orbs [role="img"]').getAttribute('aria-label');
           const pending = /, (\d\.\d\d) pending until the next settlement/.exec(name ?? '')?.[1];
@@ -202,8 +202,14 @@ for (const scheme of ['light', 'dark'] as const) {
           await page.emulateMedia({ forcedColors: 'none' });
         }
         expect(await hudCut(page)).toEqual([]);
-        /* The docked HUD keeps its 124px on a phone with an over-cap wallet: the words are not drawn there. */
-        if (width < ABOVE_SWITCH) expect(Math.abs((await page.locator('.kb-hud-glass').boundingBox())!.height - 124)).toBeLessThanOrEqual(0.5);
+        /* On a phone the docked HUD is 124px, and past the cap it grows by the line that says the way out (board 36), which then lies inside it. */
+        if (width < ABOVE_SWITCH) {
+          const glass = (await page.locator('.kb-hud-glass').boundingBox())!;
+          const way = (await page.locator('.kb-hud-orbs .kb-orbs-way').boundingBox())!;
+          expect(glass.height).toBeGreaterThan(124);
+          expect(way.y).toBeGreaterThanOrEqual(glass.y);
+          expect(way.y + way.height).toBeLessThanOrEqual(glass.y + glass.height + 0.5);
+        }
         expect(await pageViolations(page)).toEqual([]);
       });
 

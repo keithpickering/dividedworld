@@ -370,6 +370,22 @@ describe('Acts that are not posts', () => {
     expect(line).toHaveTextContent('It was me.');
   });
 
+  test('an announce is a character\'s own Act: its line, its postbit, its reactions, and a thread can be spun from it', async () => {
+    const w = world(1);
+    w.fake.seed.season({ number: 1 });
+    const announced = w.fake.seed.announce(w.spritey, 'turn', { was: 'face', class: 'heel' });
+    w.fake.seed.react(w.me, w.pipe, announced, 'fire');
+    const promos = (await w.fake.actsById([announced]))[0]!.thread;
+    renderIn(w.fake, <LoadedThread thread={promos} />, { path: `/t/${promos}` });
+    const line = await screen.findByRole('article', { name: /^Post 1 by Spritey/u });
+    expect(line).toHaveTextContent('Spritey has Turned from Face to Heel.');
+    expect(line.querySelector('.kb-postbit-avatar')).not.toBeNull();
+    expect(line.querySelector('[data-kb-reaction="fire"]')).toHaveTextContent('1');
+    const user = userEvent.setup();
+    await user.click(within(line).getByRole('button', { name: 'Spin thread' }));
+    expect(await screen.findByRole('form', { name: 'Spin a thread from post 1' })).toBeInTheDocument();
+  });
+
   test('The System\'s tally lists debuts and announced Turns by name and class', async () => {
     const w = world(1);
     const sys = w.fake.seed.thread('the-system', null, 'Tally', '');
@@ -874,7 +890,7 @@ describe('back from the glass, to a thread that grew meanwhile', { timeout: 15_0
 /** An instance's card, drawing what it is given as data a test can read, around the post's words. */
 function fx(key: string): CardUi {
   return {
-    key, art: { color: '#000000', ink: '#ffffff' }, describe: () => `${key}`,
+    key, art: { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}`,
     Effect: ({ plays, states, released, reader, place, save, release, children }) => (
       <div
         data-testid={`fx-${key}`} data-plays={plays.map((p) => `${p.layer}:${p.message}`).join('|')} data-author={String(reader.author)} data-caster={String(reader.caster)}

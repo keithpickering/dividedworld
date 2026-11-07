@@ -103,7 +103,7 @@ test('a spin from The System\'s reveal settles like any other, and the settlemen
       ('${ids['e2e-spin-a']}', 'Spinner', '${at(-1)}', '${at(-1)}'), ('${ids['e2e-spin-b']}', 'Replier', '${at(-1)}', '${at(-1)}') returning id, name),
     h as (insert into class_history (character, class_key, started_at) select id, 'face', '${at(-1)}' from c returning 1)
     select json_object_agg(name, id) from c`));
-  // The System's own Act, as the reveal writes it, then a spin from it and a reply in the spun thread.
+  // The System's own Act, as an earlier season's end wrote it, then a spin from it and a reply in the spun thread.
   sql(`
     with t as (insert into threads (board, title) select id, 'Season 0: The Reveal' from boards order by created_at limit 1 returning id, board),
     r as (insert into acts (character, kind, thread, payload, created_at) select null, 'reveal', t.id, '{}', '${at(1)}' from t returning id, thread),
@@ -169,7 +169,7 @@ test('two missed days settle as two windows through the real migrations, the hal
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 20, 'a whole vote each day, never halved across the two');
 });
 
-test('the settlement of a season\'s last window posts its tally and its reveal, and sends both live', async () => {
+test('the settlement of a season\'s last window announces its debuts and ends in results, and sends both live', async () => {
   const db = psqlDb();
   const start = sql(`select to_jsonb(max(ends_at))#>>'{}' from settlements`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
@@ -184,15 +184,13 @@ test('the settlement of a season\'s last window posts its tally and its reveal, 
   const sent: { topic: string; event: string; payload: { kind?: string; id?: string } }[] = [];
   const out = await runSettlement(db, instance, at(24), { deliver: async (m) => { sent.push(...(m as typeof sent)); return 'sent' as const; } });
   assert.equal(out.status, 'applied', JSON.stringify(out));
-  const tally = sql(`select id from acts where kind = 'tally' and payload -> 'debuts' @> '[{"name": "Debutante"}]'`);
-  assert.ok(tally, 'the tally names the debut');
-  assert.ok(sent.some((m) => m.event === 'act' && m.payload.id === tally), 'the tally is sent live');
-  const reveals = sql(`select string_agg(id::text, ',' order by id) from acts where kind = 'reveal' and created_at = '${at(24)}'`).split(',');
-  assert.ok(reveals.length > 1, 'the season is revealed');
-  // An earlier test's runs sent nothing, so what they posted went out with this run too.
-  const sentIds = new Set(sent.filter((m) => m.event === 'act').map((m) => m.payload.id));
-  assert.deepEqual(reveals.filter((id) => !sentIds.has(id)), [], 'every Act of the reveal is sent live');
-  assert.ok(sent.some((m) => m.event === 'thread'), 'and its thread, for its board');
+  const tally = sql(`select id from acts where kind = 'announce' and character = '${made}' and payload = '{"what": "debut"}'`);
+  assert.ok(tally, 'the debut is announced as the character\'s own Act');
+  assert.ok(sent.some((m) => m.event === 'act' && m.payload.id === tally), 'the announcement is sent live');
+  // The season's end writes no Act and opens no thread: its results are rows, and the news of them is sent live.
+  assert.equal(sql(`select count(*) from acts where kind = 'reveal' and created_at = '${at(24)}'`), '0', 'a season\'s end writes no reveal Act');
+  assert.ok(Number(sql(`select count(*) from season_results r join seasons s on s.id = r.season where s.ends_at = '${at(24)}'`)) > 0, 'the season\'s results are written');
+  assert.ok(sent.some((m) => m.event === 'news' && (m.payload as unknown as { sub?: string }).sub === 'results'), 'the results are sent live as news');
   assert.equal(sql(`select count(*) from broadcasts_due`), '0', 'nothing is left waiting');
   sql(`update settings set value = '{"unit": "month", "count": 3}' where key = 'seasonLength'`);
 });

@@ -48,6 +48,12 @@ const GATHERER = buildSync({
 
 type Bundled = typeof globalThis & { kbGlassText: typeof Gatherer };
 
+/**
+ * What a dialog scrolls in: the Lens keeps its bar standing and scrolls its body (`.kb-lens-body`), every other dialog scrolls itself. A line the
+ * body cuts is read where the body has scrolled it whole, so the Lens's longer states (the React tile is 44px, Who unfolded) are read to their end.
+ */
+const LENS_SCROLLER = '.kb-glass-dialog .kb-lens-body';
+
 /** How far the window moves between reads: less than its height by more than any line is tall. */
 const OVERLAP = 240;
 
@@ -97,12 +103,12 @@ async function measure(page: Page, panel?: string): Promise<string[]> {
       return new Promise<{ top: number; max: number }>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: scroller.scrollTop, max: scroller.scrollHeight - scroller.clientHeight }))));
     }, y);
     for (let d = 0; ; d += 1) {
-      const dlg = await page.evaluate((step) => {
-        const el = document.querySelector<HTMLElement>('.kb-glass-dialog');
+      const dlg = await page.evaluate(([step, lens]) => {
+        const el = document.querySelector<HTMLElement>(lens) ?? document.querySelector<HTMLElement>('.kb-glass-dialog');
         if (!el) return { top: 0, max: 0 };
         el.scrollTop = step;
         return new Promise<{ top: number; max: number }>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done({ top: el.scrollTop, max: el.scrollHeight - el.clientHeight }))));
-      }, d * (await page.evaluate(() => Math.max(60, (document.querySelector('.kb-glass-dialog')?.clientHeight ?? 400) - 100))));
+      }, [d * (await page.evaluate((lens) => Math.max(60, ((document.querySelector(lens) ?? document.querySelector('.kb-glass-dialog'))?.clientHeight ?? 400) - 100), LENS_SCROLLER)), LENS_SCROLLER] as const);
       await readWindow();
       if (dlg.top >= dlg.max) break;
     }
@@ -546,7 +552,7 @@ test.describe('the poisons, planted in a real page', () => {
   test('a line in a face the page has not loaded fails loudly, not in the fallback', async ({ page }) => {
     await open(page, rankings);
     await plant(page, '.kb-rankings-lead { font-family: "Barlow Condensed Missing", sans-serif !important; }');
-    await expect(measure(page)).rejects.toThrow(/The face Barlow Condensed Missing 600 is not loaded \(no such face in the document\), so "The season's standings[^"]*" in div\.kb-rankings > p\.kb-rankings-lead would be measured in a fallback/u);
+    await expect(measure(page)).rejects.toThrow(/The face Barlow Condensed Missing 600 is not loaded \(no such face in the document\), so "The season's standings[^"]*" in div\.kb-rankings-area > p\.kb-rankings-lead would be measured in a fallback/u);
   });
 
   test('a line that never lies wholly in the window is named as cut off', async ({ page }) => {

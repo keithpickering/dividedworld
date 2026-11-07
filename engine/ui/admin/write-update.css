@@ -5,41 +5,64 @@
  */
 .kb-write-update {
   display: grid;
-  gap: 16px;
-  max-width: 760px;
+  gap: 22px;
+  max-width: 920px;
   margin: 0 0 32px;
-  padding: 24px 28px;
-  background: color-mix(in srgb, var(--kb-glass-ground) 90%, transparent);
-  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 55%, transparent);
+}
+
+/* Write an update is the glass's chamfered piece (glass/base.css): the element is the edge's color, cut, and its ::after the ground, one border in. The compound outranks the lone phone rule below. */
+.kb-glass-cut-dialog.kb-write-update-piece {
+  --kb-cut: 24px;
+  padding: 30px 34px;
+  background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+}
+
+.kb-glass-cut-dialog.kb-write-update-piece::after {
+  background: color-mix(in srgb, var(--kb-glass-ground) 94%, transparent);
+}
+
+.kb-write-update-intro {
+  display: grid;
+  gap: 8px;
+}
+
+.kb-write-update-head {
+  margin: 0;
+  font-size: var(--kb-glass-size-display-m);
+  line-height: 1;
+  color: var(--kb-glass-text);
 }
 
 .kb-write-update-note,
 .kb-write-update-hint {
   margin: 0;
+  max-width: 680px;
   font-size: var(--kb-glass-size-body);
-  font-weight: 600;
-  line-height: 1.4;
+  font-weight: 500;
+  line-height: 1.5;
   color: var(--kb-glass-text-2);
 }
 
 .kb-write-update-field {
   display: grid;
-  gap: 6px;
+  gap: 10px;
 }
 
 .kb-write-update-field > label,
 .kb-write-update-changes > legend {
-  font-size: var(--kb-glass-size-label);
+  /* The glass's field label (characters.css .kb-glass-field): the lead's size, in the text color. */
+  font-size: var(--kb-glass-size-lead);
   font-weight: 800;
-  letter-spacing: 2px;
+  line-height: 1.1;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--kb-glass-neon-text);
+  color: var(--kb-glass-text);
 }
 
 .kb-write-update-input {
   box-sizing: border-box;
   width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   padding: 8px 12px;
   font: inherit;
   font-size: var(--kb-glass-size-body);
@@ -47,6 +70,10 @@
   color: var(--kb-glass-text);
   background: var(--kb-glass-field);
   border: 1.5px solid color-mix(in srgb, var(--kb-glass-pale) 60%, transparent);
+}
+
+.kb-write-update-input:is(textarea) {
+  min-height: 130px;
 }
 
 .kb-write-update-input:focus-visible {
@@ -81,8 +108,13 @@
   color: var(--kb-glass-loss);
 }
 
-:where(:root[data-kb-layout='phone']) .kb-write-update {
+:where(:root[data-kb-layout='phone']) .kb-glass-cut-dialog.kb-write-update-piece {
   padding: 16px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-write-update-field > label,
+:where(:root[data-kb-layout='phone']) .kb-write-update-changes > legend {
+  font-size: var(--kb-glass-size-phone-display);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-write-update-note,
@@ -102,3 +134,51 @@
   color: var(--kb-glass-text-2);
 }
 .kb-write-update-why:empty { display: none; }
+
+/* "What everyone will see": the glass's heading over the Updates page's own article, under the form. */
+.kb-write-update-preview {
+  max-width: 920px;
+  /* The board sets the preview 54px under the form; the form's own 32px margin collapses into this. */
+  margin-top: 54px;
+}
+
+.kb-write-update-preview-head {
+  margin: 0 0 14px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+/* The form's own buttons, Add a change and Post update, stand in one row under a rule. */
+.kb-write-update-piece > .kb-button-row {
+  margin-top: 6px;
+  padding-top: 22px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+/* The preview draws the post at the board's compact size on the Main board's layout: the article is the Updates page's own, at a smaller scale. On the Phone board's layout it is the page's own at the phone's sizes (updates.css), so none of this applies there. */
+:where(:root:not([data-kb-layout='phone'])) .kb-write-update-preview .kb-glass-cut-dialog.kb-updates-post {
+  padding: 26px 30px;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-write-update-preview .kb-updates-ava {
+  width: 56px;
+  height: 56px;
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-write-update-preview .kb-updates-name {
+  font-size: var(--kb-glass-size-display-s);
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-write-update-preview .kb-updates-headline {
+  margin: 16px 0 6px;
+  font-size: var(--kb-glass-size-display-m);
+}
+
+:where(:root:not([data-kb-layout='phone'])) .kb-write-update-preview .kb-updates-changed {
+  margin-top: 12px;
+  font-size: var(--kb-glass-size-label);
+}

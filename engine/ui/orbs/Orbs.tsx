@@ -10,15 +10,16 @@
  * `Orb` is one orb on its own, for a page that shows the orbs apart from a wallet: the Orbs board's
  * anatomy and the cascade's frames, held still.
  *
- * A wallet past its cap marks its last orb (`kb-orb-over`), which only the Phone board's layout draws: there
- * the words "past the cap" would cost the docked HUD a line, so they are left to the name below (issue 48).
+ * A wallet past its cap marks its last orb (`kb-orb-over`), which only the Phone board's layout draws, and says so under the row on both
+ * layouts: the figure once ("+0.85 est. past the cap" where the whole estimate is past it) and the way out beneath it (the backfill design,
+ * section 7; boards 35 and 36). The row's name carries the figure too, so only the way out is read aloud beyond it.
  *
  * A screen reader hears the wallet's name (fill.ts's walletName), always the wallet as it now is,
  * never a frame of the animation; a page that previews a spend names the row itself (`label`).
  */
 import { useLayoutEffect, useState, type CSSProperties } from 'react';
 import { motionReduced } from '../appearance.ts';
-import { cascade, clamp, orbFills, walletName, type OrbFill } from './fill.ts';
+import { cascade, clamp, orbFills, walletName, WAY_OUT, type OrbFill } from './fill.ts';
 import './orbs.css';
 
 const figure = (h: number) => (h / 100).toFixed(2);
@@ -101,6 +102,8 @@ export function Orbs({ settled, pending, cap, cascadeFrom = null, figures = true
   }, [settled, cascadeFrom, cap]);
 
   const { orbs, overflow } = orbFills(shown, pending, cap);
+  /* What is said under the row follows the settled wallet, not the cascade's frame on show, so the line and the glass do not jump as the orbs fill. */
+  const said = orbFills(settled, pending, cap).overflow;
   return (
     <span className="kb-orbs">
       <span className="kb-orbs-row" role="img" aria-label={label ?? walletName(settled, pending, cap)}>
@@ -117,12 +120,19 @@ export function Orbs({ settled, pending, cap, cascadeFrom = null, figures = true
             <span className="kb-orbs-figure kb-num">{figure(clamp(settled, 0, cap))}</span>
             <span className="kb-orbs-cap kb-num">/ {figure(cap)}</span>
           </span>
-          {pending !== 0 && (
+          {/* An estimate wholly past the cap is one figure, said once; one only partly past it has two that differ, and keeps both. */}
+          {pending !== 0 && !(said > 0 && said === pending) && (
             <span className="kb-orbs-pending kb-num" aria-hidden="true">
               {pending > 0 ? `+${figure(pending)}` : `−${figure(-pending)}`} est.
             </span>
           )}
-          {overflow > 0 && <span className="kb-orbs-over kb-num" aria-hidden="true">+{figure(overflow)} past the cap</span>}
+          {said > 0 && (
+            <span className="kb-orbs-note">
+              <span className="kb-orbs-over kb-num" aria-hidden="true">+{figure(said)} est. past the cap</span>
+              {' '}
+              <span className="kb-orbs-way">{WAY_OUT}</span>
+            </span>
+          )}
         </>
       )}
     </span>

@@ -65,9 +65,9 @@ interface World {
   notes?: string[];
   /** When the Boss's latest memory version was written (staff_memory_at; default: with the last meeting's slot). */
   memoryAt?: string;
-  /** The Mods on staff as meeting_context() lists them (0101); absent: an older database that does not. */
+  /** The Mods on staff as meeting_context() lists them (0103); absent: an older database that does not. */
   mods?: { key: string; allowance: number; granted: number | null; boards: string[]; order: string | null }[];
-  /** The rules in force as meeting_context() lists them (0101). */
+  /** The rules in force as meeting_context() lists them (0103). */
   rules?: { board: string | null; predicate: string; param: unknown; number: number }[];
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;

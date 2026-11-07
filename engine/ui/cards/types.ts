@@ -193,12 +193,14 @@ export interface CardArt {
   readonly color: string;
   /** The ink set on `color`, readable on it. */
   readonly ink: string;
-  /** The picture on the card's face, a URL the bundler resolved; none draws the color alone. It is decoration: the card's name and rules say the rest. */
-  readonly image?: string;
+  /** The card's art: an SVG on the 540 by 840 canvas (TEMPLATE.canvas), a URL the bundler resolved. It is decoration: the card's name and rules say the rest. */
+  readonly canvas: string;
+  /** The mark: a square SVG drawn to read at 18px, a URL the bundler resolved. */
+  readonly mark: string;
+  /** Who made the art, from its manifest, said on the sheet's foot line: "Art · <credit>". */
+  readonly credit: string;
   /** One short line for the face of a small card, such as the hand's ("Hold a reader on a post."); none draws the name alone. */
   readonly tagline?: string;
-  /** A small icon for the card's mark on a post (a URL the bundler resolved); `image` when none is given. */
-  readonly mark?: string;
 }
 
 export interface CardUi {

@@ -199,26 +199,26 @@ test('an instance exported and imported into a fresh database is the same instan
       kept := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
         'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
-      -- Its cause (0104): the Act that drew a move, carried across with the row.
+      -- Its cause (0106): the Act that drew a move, carried across with the row.
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p from meetings m;
-      -- A Mod's order from that meeting (0101), and a visit by the Mod on the post with its open row (0103), one failed attempt to draw a visit and one to file it, so the
+      -- A Mod's order from that meeting (0103), and a visit by the Mod on the post with its open row (0105), one failed attempt to draw a visit and one to file it, so the
       -- tables the Mod Bots add are carried across with the Acts that name them. The order hands out nothing: an
       -- allowance left unspent here would be returned to the Boss's bank by e2e/0011's meeting, which counts the bank.
       insert into staff_orders (meeting, staff, boards, order_line, allowance) select max(id), 'exp-bot', '{}', 'Watch the boards.', 0 from meetings;
       perform write_staff_act('exp-bot', 'visit', t, p, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', gen, 'band', 'minor', 'cause', 'rule', 'about_act', p::text)),
         'ends_at', now() + interval '3 hours', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
-      -- The Mod Bots' settings (so the filing run's job exists, 0104) and one judged call's record.
+      -- The Mod Bots' settings (so the filing run's job exists, 0106) and one judged call's record.
       insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
         on conflict (key) do update set value = excluded.value;
-      -- A patrol the Mod made (0108): its meeting, the posts it was shown, a finding dropped at the cap and what came of it, and the record of its call (keyed by the patrol,
+      -- A patrol the Mod made (0110): its meeting, the posts it was shown, a finding dropped at the cap and what came of it, and the record of its call (keyed by the patrol,
       -- which has no Act), carried across with the rows that name them.
       insert into patrols (meeting, n, staff, at, ran_at, sampled, dropped, outcome)
       select max(id), 1, 'exp-bot', now() - interval '1 hour', now() - interval '59 minutes', array[p], jsonb_build_array(jsonb_build_object('post', p, 'why', 'cap', 'staff', 'exp-bot')), '{"findings": 1, "visits": 0, "capped": 1}' from meetings;
       perform record_patrol_call((select max(id) from patrols), 'exp-bot', '{"findings": 1, "trims": [], "dropped": [], "calls": 1}');
       perform record_staff_call(p, 'filing', 'exp-bot', '{"trims": [{"path": "move.expires_in_hours", "predicate": "atMost(168)", "before": 900, "after": 168}], "dropped": [], "calls": 1}');
-      -- Two reports of Ann's post by Bob's mask (0105): one answered by the Mod, one refunded, so a report, its verdict, the price paid and returned, and the refund's own
+      -- Two reports of Ann's post by Bob's mask (0107): one answered by the Mod, one refunded, so a report, its verdict, the price paid and returned, and the refund's own
       -- table are carried across with the Acts that name them.
       perform set_config('kayfabb.report_writer', 'on', true);
       insert into acts (character, kind, thread, target_act_id, payload) select b, 'report', t, p, jsonb_build_object('reason', 'Carried across ' || n) from generate_series(1, 2) n;
@@ -230,7 +230,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into wallet_events (account, kind, change, balance_after, ref) select bob, 'refund', 25, 25, id from acts where kind = 'report' and payload ->> 'reason' = 'Carried across 2';
       insert into visit_draw_failures (post_act, rule_number, error) values (p, 1, 'planted: carried across');
       insert into visit_file_failures (visit_act, error) select id, 'planted: carried across' from acts where kind = 'visit' and target_act_id = p;
-      -- Bob's mask tried that visit and failed, and the tail it left, the visit the tail drew, and a quiz persona's question with its answer (0106): carried across with the
+      -- Bob's mask tried that visit and failed, and the tail it left, the visit the tail drew, and a quiz persona's question with its answer (0108): carried across with the
       -- Acts that name them.
       perform set_config('kayfabb.intercept_writer', 'on', true);
       insert into acts (character, kind, thread, target_act_id, payload) select b, 'intercept', t, p, jsonb_build_object('visit_act', v.id, 'kind', 'distraction', 'succeeded', false)
@@ -239,7 +239,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into tails (character, staff, intercept_act, until) select b, 'exp-bot', i.id, now() + interval '1 day' from acts i where i.kind = 'intercept' and i.character = b;
       insert into tail_visits (tail, visit_act) select k.id, v.id from tails k, acts v where k.character = b and v.kind = 'visit' and v.target_act_id = p;
       insert into staff_quiz_questions (staff, idx, question, choices, answer) values ('exp-bot', 0, 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz');
-      -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0107): carried across with the
+      -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0109): carried across with the
       -- Acts that name them. (The bar's setting is planted where a database made from the migrations alone has none.)
       insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;
       perform infract(a, 'minor', p, 'exp-bot');
@@ -253,6 +253,13 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into wallet_events (account, kind, change, balance_after, ref) select ann, 'refund', 50, 50, id from acts where kind = 'appeal' and character = a;
       -- The open season revealed at its end, as the settlement of its last window would.
       perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
+      -- An earlier season's reveal thread, as the seasons before 0099 wrote them: the season points at its header and the thread is unlisted (0063).
+      declare old_thread uuid; old_head uuid;
+      begin
+        insert into threads (board, title) values (system_board(), 'Season 0: The Reveal') returning id into old_thread;
+        insert into acts (character, kind, thread, payload) values (null, 'reveal', old_thread, '{"season": 0, "body": "Every mask.", "characters": 0}') returning id into old_head;
+        update seasons set reveal_act = old_head where number = (select max(number) - 1 from seasons);
+      end;
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -260,7 +267,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -446,7 +453,12 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
+    const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
+    assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');
+    assert.equal(guards(from), guards(fresh.toString()));
+    assert.match(psqlOn(fresh.toString(), `select count(*) from public.season_results`), /^[1-9]/, 'the imported instance holds the season\'s results');
     // The contact an admin set is the same contact in the imported instance, as the page's read answers it (0081).
     const contact = (url: string) => psqlOn(url, `select admin_contact()::text`);
     assert.match(contact(from), /Exported mail/, 'the exported instance holds the contact');

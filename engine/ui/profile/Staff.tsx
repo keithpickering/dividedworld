@@ -120,7 +120,7 @@ function CareerList({ staff }: { readonly staff: string }) {
 /** A staff key no public name resolves: a persona that has not debuted stays unnamed. */
 const UNINTRODUCED = 'a Boss who has not been introduced';
 
-/** A visit, a report judged or an appeal heard (`moves_log`, 0109): what it did, linked to the post, and how it ended. */
+/** A visit, a report judged or an appeal heard (`moves_log`, 0111): what it did, linked to the post, and how it ended. */
 function ModActCells({ row, perPage }: { readonly row: MoveLogRow; readonly perPage: number }) {
   const seq = postOf(row);
   const words = didWords(row);

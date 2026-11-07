@@ -58,13 +58,14 @@ test('a Turn asked "revealed" before 0028 takes effect after it with its old cla
       set role authenticated;
       select turn('00000000-0000-4000-8000-0000000000c2', 'beta', 'revealed');
       reset role;`);
-    // Two statements: the second sees the tally the first wrote.
+    // Two statements: the second sees the announcements the first wrote.
     const written = psqlOn(db.toString(), `select masks_change(now() + interval '1 minute')`);
-    const tally = JSON.parse(psqlOn(db.toString(), `select payload::text from acts where id = '${written}'`));
+    assert.ok(written, 'the settlement announces the Turns');
     for (const who of ['Asked Before', 'Asked After']) {
-      const entry = tally.turns.find((t: { name: string }) => t.name === who);
-      assert.equal(entry?.was, 'alpha', `${who}'s Turn names its old class: ${JSON.stringify(tally)}`);
-      assert.equal(entry?.class, undefined, `${who}'s Turn names no new class`);
+      const announced = JSON.parse(psqlOn(db.toString(), `select a.payload::text from acts a join characters c on c.id = a.character where a.kind = 'announce' and c.name = '${who}'`));
+      assert.equal(announced.what, 'turn', `${who}'s announcement is of a Turn`);
+      assert.equal(announced.was, 'alpha', `${who}'s Turn names its old class: ${JSON.stringify(announced)}`);
+      assert.equal(announced.class, undefined, `${who}'s Turn names no new class`);
     }
     assert.equal(psqlOn(db.toString(), `select count(*) from acts where kind = 'unmask'`), '0', 'naming the old class alone writes no unmask');
   } finally {

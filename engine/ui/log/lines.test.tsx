@@ -20,7 +20,7 @@ const words: Words = {
   economy: {},
 };
 const data = (over: Partial<LogData>): LogData => ({
-  log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,
+  log: empty, mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(), ...over,
 });
 const season = (startsAt: string) => ({ id: 2, number: 2, startsAt, endsAt: null, turnsThread: null, revealAct: null });
 
@@ -408,7 +408,7 @@ describe('a play beyond a post, in the caster\'s and the target\'s logs', () => 
 /* A card may say in the log what a play of it did (CardUi.logPlay; docs/plans/2026-11-03-autocorrect-plan.md, Task 7). */
 describe('a card\'s own words for a play', () => {
   const key = testInstance.cards[0]!.key;
-  const w: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff' }, describe: () => '', logPlay: (config) => (typeof config.phrase === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined) }] } };
+  const w: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '', logPlay: (config) => (typeof config.phrase === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined) }] } };
   const at = '2026-11-03T10:00:00.000Z';
   const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
     ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
@@ -437,7 +437,7 @@ describe('a card\'s own words for a play', () => {
   });
 
   test('a card that says nothing adds nothing', () => {
-    const quiet: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff' }, describe: () => '' }] } };
+    const quiet: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '' }] } };
     const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }] };
     const [row] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), quiet, 600, null);
     expect(text(row!)).not.toContain('covers');

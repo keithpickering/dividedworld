@@ -131,7 +131,7 @@ function poolRule(v: unknown): string | null {
 
 /**
  * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
- * in supabase/migrations/0101_orders.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ * in supabase/migrations/0103_orders.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1 } as const;
 /** The most a patrol's judgment reads: a bounded read. */
@@ -162,7 +162,7 @@ function modBotsRule(v: unknown): string | null {
 
 /**
  * The warn bar's settings (`Settings.warnBar`): a bar of whole points, three bands each from 1 to the bar's size, a decay span (minutes allowed, so
- * a test can set it short) and a ladder of ban days. Mirrors `setting_warnbar` in supabase/migrations/0102_warn_bar.sql, and
+ * a test can set it short) and a ladder of ban days. Mirrors `setting_warnbar` in supabase/migrations/0104_warn_bar.sql, and
  * supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const WARN_BAR_BANDS = ['minor', 'moderate', 'severe'] as const;
@@ -326,11 +326,9 @@ export function instanceProblems(instance: Instance): string[] {
     if (typeof p.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(p.key)) out.push(`pip style key "${p.key}" is not lowercase words joined by hyphens`);
     for (const part of ['name', 'full', 'empty'] as const) if (typeof p[part] !== 'string' || p[part].trim() === '') out.push(`pip style "${p.key}" has no ${part}`);
   }
-  for (const key of ['turnsThreadTitle', 'revealTitle', 'revealBody'] as const) {
-    const words = instance.copy?.[key];
-    if (typeof words !== 'string' || words.trim() === '') out.push(`the instance has no copy for ${key}`);
-    else if (key !== 'revealBody' && !words.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
-  }
+  const title = instance.copy?.announcementsThreadTitle;
+  if (typeof title !== 'string' || title.trim() === '') out.push('the instance has no copy for announcementsThreadTitle');
+  else if (!title.includes('{season}')) out.push('the copy for announcementsThreadTitle does not say which season ({season})');
   const settingsSay = settingsProblems(instance.settings);
   out.push(...settingsSay);
   // Every economy number a class or card reads is one the settings hold.

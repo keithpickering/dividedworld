@@ -33,7 +33,7 @@ import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -120,6 +120,11 @@ export interface Seed {
   cards(account: Id, held: Readonly<Record<string, number>>): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
+  /**
+   * An invite the account made, dated `at` (else now), so a list of them can be seeded: `used` is one that someone registered with, which keeps no code a
+   * page could show. It writes no Act and counts toward the account's open invites like a made one (`createInvite` is the action).
+   */
+  invite(account: Id, invite?: { at?: number; used?: boolean }): number;
   /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player, refused as it is, with its wallet event and card ledger row. */
   buy(account: Id, card: string, options?: { at?: number }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
@@ -128,8 +133,23 @@ export interface Seed {
   estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[] }): void;
   /** A character's unmask Act in a thread, as its player's reveal (`via` 'act') or a debut's or a Turn's. */
   reveal(character: Id, thread: Id, options?: { via?: ClassReveal['via']; class?: string; at?: number; message?: string }): Id;
-  /** A tally Act in a thread of The System's board that announces a Turn of a character; `since` writes a tally as one written before #23 was. */
-  announceTurn(character: Id, thread: Id, options?: { was?: string; since?: string; at?: number }): Id;
+  /**
+   * An announce Act (0100) of a Turn of a character, in the thread: the character's own Act, naming the class it Turned from (`was`) and to (`class`)
+   * where its player said so. `since` writes instead the tally of The System's that announced Turns before #23 and 0100, which the database still holds.
+   */
+  announceTurn(character: Id, thread: Id, options?: { was?: string; class?: string; since?: string; at?: number }): Id;
+  /**
+   * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on The System's board where the
+   * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
+   * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
+   */
+  announce(character: Id, what: 'debut' | 'turn', options?: { was?: string; class?: string; at?: number }): Id;
+  /**
+   * A season's results as they landed (`season_results`, 0099): one frozen row per character, `name` as it was then (else the character's now),
+   * dated `at` (else now). The fake never ends a season itself; this is the state its end would have left. Written once: a second call for the
+   * season throws, as the table refuses an edit.
+   */
+  seasonResults(season: number, rows: readonly { character: Id; name?: string; place: number; standing: number; shown?: readonly SeasonShown[] }[], options?: { at?: number }): void;
   avatar(character: Id, urls: { square?: string; portrait?: string }): void;
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
@@ -320,7 +340,7 @@ interface InviteRec { readonly id: number; readonly owner: Id; code: string; rea
 const refuse = (error: string, field?: string): Refusal => (field === undefined ? { ok: false, error } : { ok: false, error, field });
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
-/** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0107): an edit, a card's marks and the Mod Bots' meta acts. */
+/** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
 const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 
 /** The methods that are not a promise of something: everything else is made one. */
@@ -376,6 +396,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** Presence (0041): one row per character, written only by that character's own polls. */
   const presence = new Map<Id, { kind: PresencePlace['kind']; place: Id | null; board: Id | null; placeSince: number; onlineSince: number; seenAt: number }>();
   const standingOf = new Map<Id, number>();
+  /** `season_results` and the season's `results_at` (0099), by season number: written once, as the season ended. */
+  const results = new Map<number, { at: number; rows: readonly SeasonResultRow[] }>();
   const seasons: Season[] = [{ id: 1, number: 1, startsAt: iso(START), endsAt: null, turnsThread: null, revealAct: null }];
   let lastSettled: number | null = null;
   let nextSettlement: number | null = null;
@@ -599,7 +621,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /** The points of a character's infractions that have not dropped off (the seeds write no ban, so none resets the bar). */
   const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > Date.now() ? n + (a.payload.points as number) : n), 0);
-  /** When a character's latest running ban ends, or null (banned_until, 0107): a ban's end, an appeal's ruling on it read in its place. */
+  /** When a character's latest running ban ends, or null (banned_until, 0109): a ban's end, an appeal's ruling on it read in its place. */
   const bannedUntilOf = (id: Id): number | null => {
     let latest: number | null = null;
     for (const a of acts.values()) {
@@ -717,8 +739,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     updatesThreadId = openThread(board.id, 'Updates', null).id;
     return threads.get(updatesThreadId)!;
   }
-  /* A board's list leaves out the updates thread and the season's reveal and Turns threads (thread_list, 0063); thread() opens any of them by id (thread_open). */
-  const seasonThreads = (): Set<Id> => new Set(seasons.flatMap((s) => [s.turnsThread, s.revealAct === null ? null : acts.get(s.revealAct)?.thread ?? null]).filter((x): x is Id => x !== null));
+  /* A board's list leaves out the updates thread and an old season's reveal thread (thread_list, 0063, 0099); the Promos thread is listed. thread() opens any of them by id (thread_open). */
+  const seasonThreads = (): Set<Id> => new Set(seasons.map((s) => (s.revealAct === null ? null : acts.get(s.revealAct)?.thread ?? null)).filter((x): x is Id => x !== null));
   const listed = (t: ThreadRec) => t.id !== updatesThreadId && !seasonThreads().has(t.id);
   /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
   const within = (field: string, value: string, most: number): string | null =>
@@ -796,24 +818,40 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   const names = (v: unknown): TallyName[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []).map((e) => ({
     character: String(e['character']), name: String(e['name']), class: typeof e['class'] === 'string' ? e['class'] : null, was: typeof e['was'] === 'string' ? e['was'] : null }));
-  /** `season_news` (0063) over the Acts the fake holds: the reveal's header and top three, each tally with names, the Boss's arrival and farewell. */
+  /** A character's past seasons (profile_page, record_page, 0099): its row in each season's results, by when they landed and then number, newest first, at most 50. */
+  const seasonsOf = (id: Id): SeasonRecordRow[] => [...results.entries()].sort(([x, a], [y, b]) => b.at - a.at || y - x).flatMap(([season, r]) => {
+    const row = r.rows.find((x) => x.character === id);
+    return row ? [{ season, place: row.place, standing: row.standing, at: iso(r.at) }] : [];
+  }).slice(0, 50);
+  /** The final table's order (`season_results_by_place`): place, then name, then character. */
+  const resultOrder = (rows: readonly SeasonResultRow[]): SeasonResultRow[] =>
+    [...rows].sort((x, y) => x.place - y.place || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0) || (x.character < y.character ? -1 : x.character > y.character ? 1 : 0));
+  /** `season_news` (0063, 0099, 0100) over what the fake holds: a results item from each season's rows, each landing of announce Acts and each old tally with names, the Boss's arrival and farewell. */
   function newsItems(): SeasonNewsItem[] {
     const out: SeasonNewsItem[] = [];
     const base = { act: null, thread: null, seq: null, name: null, quote: null, count: null, top: [], debuts: [], turns: [] } as const;
-    for (const s of seasons) {
-      const h = s.revealAct === null ? undefined : acts.get(s.revealAct);
-      if (!h) continue;
-      const top = [...acts.values()].filter((a) => a.thread === h.thread && a.kind === 'reveal' && typeof a.payload['character'] === 'string').sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order).slice(0, 3)
-        .map((a) => ({ character: String(a.payload['character']), name: String(a.payload['name']), place: Number(a.payload['place']), standing: Number(a.payload['standing']),
-          shown: ((a.payload['shown'] ?? []) as Record<string, unknown>[]).map((x): SeasonShown => ({ kind: x['kind'] === 'turn' ? 'turn' : 'reveal', act: String(x['act']), at: String(x['at']), class: typeof x['class'] === 'string' ? x['class'] : null, was: typeof x['was'] === 'string' ? x['was'] : null })) }));
-      out.push({ ...base, kind: 'results', act: h.id, thread: h.thread, seq: h.seq, at: iso(h.at), season: Number(h.payload['season'] ?? s.number), count: Number(h.payload['characters'] ?? 0), top });
-    }
+    for (const [season, r] of results) out.push({ ...base, kind: 'results', at: iso(r.at), season, count: r.rows.length, top: resultOrder(r.rows).slice(0, 3) });
     for (const a of acts.values()) {
       if (a.kind !== 'tally') continue;
       const debuts = names(a.payload['debuts']);
       const turns = names(a.payload['turns']);
       if (debuts.length + turns.length === 0) continue;
       out.push({ ...base, kind: 'tally', act: a.id, thread: a.thread, seq: a.seq, at: iso(a.at), season: Number(a.payload['season'] ?? 0), count: debuts.length + turns.length, debuts, turns });
+    }
+    /* A landing is the announce Acts of one thread at one instant (news_landed, 0100): its item names the first, counts them all and lists the first 20 names, debuts then Turns. */
+    const landings = new Map<string, ActRec[]>();
+    for (const a of [...acts.values()].filter((x) => x.kind === 'announce').sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order)) {
+      const key = `${a.thread}|${a.at}`;
+      landings.set(key, [...(landings.get(key) ?? []), a]);
+    }
+    for (const group of landings.values()) {
+      const first = group[0]!;
+      const entry = (a: ActRec): TallyName => ({ character: a.character!, name: characters.get(a.character!)?.name ?? '', class: typeof a.payload['class'] === 'string' ? a.payload['class'] : null, was: typeof a.payload['was'] === 'string' ? a.payload['was'] : null });
+      const named = group.slice(0, 20);
+      out.push({
+        ...base, kind: 'tally', act: first.id, thread: first.thread, seq: first.seq, at: iso(first.at), season: seasons.find((x) => x.turnsThread === first.thread)?.number ?? 0, count: group.length,
+        debuts: named.filter((a) => a.payload['what'] === 'debut').map(entry), turns: named.filter((a) => a.payload['what'] === 'turn').map(entry),
+      });
     }
     for (const h of handovers) {
       if (h.boss === h.outgoing) continue;
@@ -1492,7 +1530,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
         }),
       );
-      /* A Mod with an open visit in the thread is listed in its box too, with the post's number (0109); one name, though it also posted. */
+      /* A Mod with an open visit in the thread is listed in its box too, with the post's number (0111); one name, though it also posted. */
       const visiting: Listed[] = where.kind !== 'thread' ? [] : [...acts.values()].flatMap((v): Listed[] => {
         const c = v.character === null ? undefined : characters.get(v.character);
         const post = v.target === null ? undefined : acts.get(v.target);
@@ -1518,7 +1556,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return found ?? (typeof inf.payload.rule_number === 'number' ? `Rule ${inf.payload.rule_number}` : 'the board\'s premise');
   }
   /**
-   * The log's Mod Bots sources as the views read them (my_infractions, my_bans, my_reports, my_appeals, 0109): the rows of the account's own characters, each as the view says
+   * The log's Mod Bots sources as the views read them (my_infractions, my_bans, my_reports, my_appeals, 0111): the rows of the account's own characters, each as the view says
    * it. A seeded infraction names its Mod by `staff`, a key the fake may not hold a character for, so `mod` is then null, as the view's join is.
    */
   function modLogOf(
@@ -1569,7 +1607,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** What the next report and appeal are answered with: the Mod's judgment, which the fake does not make (`Seed.judging`). */
   const judged: { report: ReportVerdict | 'failed'; appeal: AppealVerdict | 'failed' } = { report: 'dismissed', appeal: 'upheld' };
-  /** my_reports_left (0109): the day's quota (UTC) less the character's reports since midnight, none counted for one refunded for a failed judgment. */
+  /** my_reports_left (0111): the day's quota (UTC) less the character's reports since midnight, none counted for one refunded for a failed judgment. */
   const reportsLeftNow = (character: Id): number => {
     const midnight = Math.floor(now() / 86_400_000) * 86_400_000;
     return Math.max(0, settings.modBots.reportsPerDay - [...acts.values()].filter((a) => a.kind === 'report' && a.character === character && a.at >= midnight && !refundedReports.has(a.id)).length);
@@ -1649,7 +1687,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const page = after.slice(0, MOVES_LOG_PAGE);
       const seqOf = (id: unknown): number | null => (typeof id === 'string' ? acts.get(id)?.seq ?? null : null);
       const rows = page.map((a): MoveLogRow => {
-        /* A Mod's visit, a report it judged and an appeal it heard are rows too (0109), each with how it ended. */
+        /* A Mod's visit, a report it judged and an appeal it heard are rows too (0111), each with how it ended. */
         if (a.kind === 'visit') {
           const charge = ((a.payload.charges ?? []) as { rule?: string; rule_number?: number | null; band?: string; cause?: string }[])[0] ?? {};
           const e = [...acts.values()].find((x) => x.kind === 'visit_end' && x.target === a.id);
@@ -2118,8 +2156,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         : [];
       return all.slice(page.offset, page.offset + page.limit).map(publicAct);
     },
-    characterReveals: (id, limit = 50) => [...acts.values()].filter((a) => a.kind === 'reveal' && a.payload.character === id)
-      .sort((x, y) => y.at - x.at || y.order - x.order).slice(0, Math.max(1, limit)).map(publicAct),
+    finishedSeasons: () => [...results.entries()].sort(([x], [y]) => y - x).slice(0, 200).map(([number, r]): SeasonFinished => {
+      const season = seasons.find((s) => s.number === number);
+      return { number, startsAt: season?.startsAt ?? iso(r.at), endsAt: season?.endsAt ?? iso(r.at), resultsAt: iso(r.at), characters: r.rows.length };
+    }),
+    resultsPage: (season, page) => resultOrder(results.get(season)?.rows ?? []).slice((Math.min(Math.max(Math.floor(page) || 1, 1), 10_000) - 1) * 50).slice(0, 50),
+    resultPlace(season, character) {
+      const index = resultOrder(results.get(season)?.rows ?? []).findIndex((r) => r.character === character);
+      return index < 0 ? null : index;
+    },
     tallies: (ids) => Object.fromEntries(ids.map((id) => [id, tallyOf(id)])),
     viewCounts: (ids) => Object.fromEntries(ids.map((id) => [id, views.get(id) ?? 0])),
     /* The open season, else the one that started last: standings_season()'s rule, never the highest number. */
@@ -2132,22 +2177,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     standingsPage: (offset, limit) => ranking().slice(Math.max(0, Math.floor(offset)), Math.max(0, Math.floor(offset)) + Math.max(0, Math.min(Math.floor(limit), 1000))),
     standingsCount: () => [...characters.values()].filter((c) => c.debutedAt !== null).length,
     lastSettledAt: () => (lastSettled === null ? null : iso(lastSettled)),
-    classReveals: (ids) => [...acts.values()].filter((a) => a.kind === 'unmask' && a.character !== null && ids.includes(a.character))
+    classReveals: (ids) => [...acts.values()].filter((a) => a.character !== null && ids.includes(a.character) && (a.kind === 'unmask' || (a.kind === 'announce' && typeof a.payload.class === 'string')))
       .sort((a, b) => a.at - b.at || a.order - b.order)
       .map((a): ClassReveal => ({
-        act: a.id, character: a.character!, class: String(a.payload.class), at: iso(a.at), via: a.payload.via as ClassReveal['via'], thread: a.thread,
+        act: a.id, character: a.character!, class: String(a.payload.class), at: iso(a.at), via: (a.kind === 'announce' ? a.payload.what : a.payload.via) as ClassReveal['via'], thread: a.thread,
       })),
     turnsAnnounced(ids) {
-      const out: TurnAnnounced[] = [];
-      for (const a of [...acts.values()].filter((x) => x.kind === 'tally').sort((x, y) => x.at - y.at || x.order - y.order)) {
+      /* The old tallies' Turns beside the announce Acts that are Turns (0100), in the order they were written. */
+      const out: { at: number; order: number; turn: TurnAnnounced }[] = [];
+      for (const a of acts.values()) {
+        if (a.kind === 'announce' && a.payload.what === 'turn' && a.character !== null && ids.includes(a.character)) {
+          out.push({ at: a.at, order: a.order, turn: { act: a.id, character: a.character, at: iso(a.at), was: typeof a.payload.was === 'string' ? a.payload.was : null } });
+        }
+        if (a.kind !== 'tally') continue;
         const turns = Array.isArray(a.payload.turns) ? (a.payload.turns as readonly Record<string, unknown>[]) : [];
         for (const t of turns) {
           if (typeof t.character === 'string' && ids.includes(t.character)) {
-            out.push({ act: a.id, character: t.character, at: iso(a.at), was: typeof t.was === 'string' ? t.was : null });
+            out.push({ at: a.at, order: a.order, turn: { act: a.id, character: t.character, at: iso(a.at), was: typeof t.was === 'string' ? t.was : null } });
           }
         }
       }
-      return out;
+      return out.sort((x, y) => x.at - y.at || x.order - y.order).map((x) => x.turn);
     },
     nextSettlementAt: () => takesEffectAt(),
 
@@ -2273,7 +2323,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = played.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
       const ids = [...acts, ...played].map((a) => a.id);
       const visits = visitsOn(acts.filter((a) => a.kind === 'post' || a.kind === 'spin').map((a) => a.id));
-      /* A visit's Mod is named on the page (`who` in thread_page, 0106), though it has no post there. */
+      /* A visit's Mod is named on the page (`who` in thread_page, 0108), though it has no post there. */
       const who = [...new Set([...acts, ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
       const [chars, stats, standings, reveals, turns] = [core.characters(who), core.characterStats(who), core.standingAmounts(who), core.classReveals(who), core.turnsAnnounced(who)];
       return {
@@ -2297,7 +2347,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return {
         character, counts: core.characterCounts(id), standing: core.standingPlace(id), settledAt: core.lastSettledAt(), season: core.season(), reveals, turns, acts,
         targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
-        seasons: core.characterReveals(id), unread: core.alertsUnread(),
+        seasons: seasonsOf(id), unread: core.alertsUnread(),
       };
     },
     recordPage(id, asked, page): RecordPage | null {
@@ -2308,7 +2358,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const shown = Math.min(Math.max(page, 1), 10_000);
       const reveals = kind === 'all' || kind === 'class' ? core.classReveals([id]) : [];
       const turns = kind === 'all' || kind === 'class' ? core.turnsAnnounced([id]) : [];
-      const seasons = kind === 'all' || kind === 'seasons' ? core.characterReveals(id, 50) : [];
+      const seasons = kind === 'all' || kind === 'seasons' ? seasonsOf(id) : [];
       const kinds: Record<RecordKind, readonly ActKind[]> = { all: ['post', 'spin', 'card'], post: ['post'], spin: ['spin'], card: ['card'], class: [], seasons: [] };
       const from = kind === 'all' ? Math.max(0, (shown - 1) * RECORD - (reveals.length + turns.length + seasons.length)) : (shown - 1) * RECORD;
       const limit = kind === 'all' ? shown * RECORD - from : RECORD;
@@ -2770,6 +2820,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
     wallet(account, balance) { setWallet(account, balance); },
+    invite(account, o) {
+      if (!accounts.has(account)) throw new Error(`no such account ${account}`);
+      const at = o?.at ?? now();
+      const id = invites.length + 1;
+      /* A used invite's user is an account; the seed has none to name, so the owner stands in (nothing reads who). */
+      invites.push({ id, owner: account, code: newCode(id), createdAt: at, issuedAt: at, usedBy: o?.used === true ? account : null });
+      return id;
+    },
     buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
@@ -2782,10 +2840,37 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return write({ character, kind: 'unmask', thread, payload: { class: o.class ?? classAt(c, at), message: o.message ?? '', via: o.via ?? 'act' }, at }).id;
     },
     announceTurn(character, thread, o = {}) {
-      const turned: Record<string, unknown> = { character, name: characters.get(character)!.name, loudness: 'announced' };
-      if (o.was !== undefined) turned.was = o.was;
-      if (o.since !== undefined) turned.since = o.since;
+      if (o.since === undefined) {
+        const payload: Record<string, unknown> = { what: 'turn' };
+        if (o.was !== undefined) payload.was = o.was;
+        if (o.class !== undefined) payload.class = o.class;
+        return write({ character, kind: 'announce', thread, payload, at: o.at }).id;
+      }
+      const turned: Record<string, unknown> = { character, name: characters.get(character)!.name, loudness: 'announced', was: o.was, since: o.since };
+      if (o.was === undefined) delete turned.was;
       return systemAct(thread, { at: o.at, kind: 'tally', payload: { turns: [turned] } }, '').id;
+    },
+    announce(character, what, o = {}) {
+      if (!characters.has(character)) throw new Error(`no such character ${character}`);
+      if (what === 'debut' && o.was !== undefined) throw new Error('a debut has no class it was');
+      const at = o.at ?? now();
+      const season = seasons.filter((x) => Date.parse(x.startsAt) <= at && (x.endsAt === null || Date.parse(x.endsAt) > at)).sort((x, y) => y.number - x.number)[0]
+        ?? seasons.find((x) => x.endsAt === null) ?? seasons[seasons.length - 1]!;
+      let thread = season.turnsThread;
+      if (thread === null) {
+        const board = boards.find((b) => b.isSystem);
+        if (!board) throw new Error('the instance has no System board');
+        thread = openThread(board.id, (options.instance.copy?.announcementsThreadTitle ?? 'Season {season}: Promos').replace('{season}', String(season.number)), null, at).id;
+        seasons.splice(seasons.indexOf(season), 1, { ...season, turnsThread: thread });
+      }
+      const payload: Record<string, unknown> = { what };
+      if (o.was !== undefined) payload.was = o.was;
+      if (o.class !== undefined) payload.class = o.class;
+      return write({ character, kind: 'announce', thread, payload, at }).id;
+    },
+    seasonResults(season, rows, o = {}) {
+      if (results.has(season)) throw new Error(`season ${season}'s results are written once, as the season ended`);
+      results.set(season, { at: o.at ?? now(), rows: rows.map((r) => ({ character: r.character, name: r.name ?? characters.get(r.character)?.name ?? '', place: r.place, standing: r.standing, shown: r.shown ?? [] })) });
     },
     tally(act, counts) {
       if (!acts.has(act)) throw new Error(`no such Act ${act}`);

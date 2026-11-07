@@ -1,5 +1,5 @@
 /**
- * The plain words of a Mod's visit, a report it judged and an appeal it heard, as its moderation log lists them (the Mod Bots design, section 9; `moves_log`, 0109). Pure: the glass's
+ * The plain words of a Mod's visit, a report it judged and an appeal it heard, as its moderation log lists them (the Mod Bots design, section 9; `moves_log`, 0111). Pure: the glass's
  * own voice, true and out of character. What a Mod said is not here; this says what it did and how it ended, from the Acts alone.
  */
 import type { MoveLogRow } from '../data/api.ts';

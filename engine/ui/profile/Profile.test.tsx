@@ -178,10 +178,8 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const w = world(fake);
     const sys = fake.seed.thread('the-system', null, 'Turns', '');
     const tally = fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
-    const reveal = fake.seed.post(sys.thread, null, '', {
-      kind: 'reveal', at: OCT20 + DAY, payload: { season: 1, character: w.pipe, name: 'Pipewrench', place: 2, standing: 120, shown: [] },
-    });
-    return { ...w, sys: sys.thread, tally, reveal };
+    fake.seed.seasonResults(1, [{ character: w.pipe, place: 2, standing: 120 }], { at: OCT20 + DAY });
+    return { ...w, sys: sys.thread, tally };
   }
 
   test('the place is of the whole season, from one count', async () => {
@@ -192,13 +190,13 @@ describe('past seasons, announced Turns and the size of the season', () => {
     await waitFor(() => expect(facts).toHaveTextContent('Place 1 of 2'));
   });
 
-  test('a past season\'s reveal post is a row of the record that links to the post', async () => {
+  test('a past season is a row of the record that links to its row on Rankings', async () => {
     const fake = buildWorld();
     const w = withReveals(fake);
     open(w.pipe, fake);
     const record = await screen.findByRole('region', { name: 'Public record' });
-    const link = await within(record).findByRole('link', { name: 'Season 1 reveal: finished #2' });
-    expect(link).toHaveAttribute('href', `/t/${w.sys}?page=1#post-3`);
+    const link = await within(record).findByRole('link', { name: 'Season 1: finished #2' });
+    expect(link).toHaveAttribute('href', `/season?tab=rankings&season=1&character=${w.pipe}`);
   });
 
   test('an announced Turn links to its tally', async () => {
@@ -214,7 +212,7 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const fake = buildWorld();
     const w = withReveals(fake);
     const page = vi.spyOn(fake, 'profilePage');
-    const names = ['actsById', 'characterReveals', 'standingPlace', 'characterActs', 'standingsPage', 'standingsCount', 'characterCounts', 'classReveals', 'turnsAnnounced', 'characters', 'lastSettledAt', 'season'] as const;
+    const names = ['actsById', 'standingPlace', 'characterActs', 'standingsPage', 'standingsCount', 'characterCounts', 'classReveals', 'turnsAnnounced', 'characters', 'lastSettledAt', 'season'] as const;
     const spies = names.map((n) => [n, vi.spyOn(fake, n)] as const);
     open(w.pipe, fake);
     await screen.findByRole('link', { name: 'Announced a Turn' });

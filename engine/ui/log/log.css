@@ -16,6 +16,14 @@
  * sizes.
  */
 .kb-log {
+  /*
+   * The table's column widths, which a settlement's breakdown stands on too: it starts where Details does, and its amounts are in the Aura
+   * column with the Wallet column left empty (board 31). One set of widths for both, so they cannot drift apart.
+   */
+  --kb-log-when: 170px;
+  --kb-log-what: 250px;
+  --kb-log-aura: 110px;
+  --kb-log-wallet: 120px;
   padding-top: 32px;
 }
 
@@ -85,7 +93,7 @@
 }
 
 .kb-log-table .kb-log-when {
-  width: 170px;
+  width: var(--kb-log-when);
   white-space: nowrap;
 }
 
@@ -94,7 +102,7 @@
 }
 
 .kb-log-table .kb-log-what {
-  width: 250px;
+  width: var(--kb-log-what);
 }
 
 .kb-log-table td.kb-log-what {
@@ -106,7 +114,7 @@
 }
 
 .kb-log-table .kb-log-num {
-  width: 110px;
+  width: var(--kb-log-aura);
   padding-right: 0;
   text-align: right;
   white-space: nowrap;
@@ -114,7 +122,7 @@
 
 .kb-log-table thead th:last-child,
 .kb-log-table tbody > tr > td:last-child {
-  width: 120px;
+  width: var(--kb-log-wallet);
   padding-left: 16px;
 }
 
@@ -155,27 +163,26 @@
   display: none;
 }
 
-.kb-log-table tr.kb-log-breakdown > td {
+.kb-log-table tbody > tr.kb-log-breakdown > td:last-child {
   padding: 0 0 20px;
 }
 
 .kb-log-breakdown-body {
-  margin-left: 186px;
-  padding: 20px 24px;
-  background: var(--kb-glass-panel);
-  border-left: 1px solid color-mix(in srgb, var(--kb-glass-neon) 70%, transparent);
+  margin-left: calc(var(--kb-log-when) + var(--kb-log-what));
+  padding: 0;
 }
 
 .kb-log-reason + .kb-log-reason {
-  margin-top: 18px;
+  margin-top: 0;
 }
 
+/* A reason's words, then its total in the Aura column, the Wallet column empty; a share's post, its kind, its amount in Aura, Wallet empty. */
 .kb-log-reason-head {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 90px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) var(--kb-log-aura) var(--kb-log-wallet);
   align-items: baseline;
   margin: 0;
+  padding: 10px 0;
   font-family: var(--kb-glass-font-body);
   letter-spacing: normal;
   font-size: var(--kb-glass-size-body);
@@ -199,17 +206,16 @@
 }
 
 .kb-log-shares {
-  margin: 6px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .kb-log-share {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px 90px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 140px var(--kb-log-aura) var(--kb-log-wallet);
   align-items: baseline;
-  padding: 6px 0 6px 16px;
+  padding: 6px 0 6px 18px;
   border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
   font-size: var(--kb-glass-size-body);
   font-weight: 600;
@@ -239,7 +245,7 @@
 }
 
 .kb-log-shares-are {
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 .kb-log-older {
@@ -261,6 +267,25 @@
 }
 
 /* ---- the Phone board's layout: each row stacked, each part labeled ---- */
+
+/* The character tabs are one row that scrolls sideways, the current one scrolled into view (Log.tsx), where they wrapped raggedly (board 32). */
+:where(:root[data-kb-layout='phone']) .kb-log-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-tabs > .kb-button-row {
+  flex-wrap: nowrap;
+  width: max-content;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-log-tabs .kb-glass-button {
+  flex: none;
+}
 
 :where(:root[data-kb-layout='phone']) .kb-log {
   padding-top: 16px;
@@ -354,7 +379,8 @@
 
 :where(:root[data-kb-layout='phone']) .kb-log-breakdown-body {
   margin-left: 0;
-  padding: 12px;
+  padding: 0 0 0 14px;
+  border-left: 1px solid var(--kb-glass-neon);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-log-reason-head,
@@ -364,9 +390,16 @@
   font-size: var(--kb-glass-size-phone-body);
 }
 
+/* The row of a log with nothing in it has no amount to label, so its Aura and Wallet cells are not drawn (the label would stand over nothing, board 32). */
+:where(:root[data-kb-layout='phone']) .kb-log-table tbody > tr[data-kb-kind='nothing'] > td.kb-log-num { display: none; }
+
+/* On the phone no Wallet column is drawn there, and each post's kind stands beside its link (board 32). */
+:where(:root[data-kb-layout='phone']) .kb-log-wallet { display: none; }
+
 :where(:root[data-kb-layout='phone']) .kb-log-share {
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas: 'post amount' 'quadrant quadrant';
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: 'post quadrant amount';
+  column-gap: 12px;
   padding-left: 0;
 }
 
@@ -383,6 +416,7 @@
 
 :where(:root[data-kb-layout='phone']) .kb-log-reason-head {
   grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
 }
 
 

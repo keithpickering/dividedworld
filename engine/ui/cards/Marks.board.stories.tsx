@@ -184,7 +184,7 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 export const OnePlay: Story = { args: { kinds: 1, armed: false, quiet: true } };
 /** The same, for a reader who has never met the card: its callout hangs off the mark. */
 export const Callout: Story = { args: { kinds: 1, armed: false, quiet: false } };
-/** Six kinds on #41: the strip draws four and ends in "+2" (three and "+3" on a phone). */
+/** Six kinds on #41: the strip draws four and ends in "+2" (two and "+4" on a phone). */
 export const SixKinds: Story = { args: { kinds: 6, armed: false, quiet: true } };
 /** Whoops! armed: #41 and #42 end their strips with a dashed ghost mark, "Play Whoops! on post N". */
 export const Armed: Story = { args: { kinds: 1, armed: true, quiet: true } };

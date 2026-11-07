@@ -1,3 +1,8 @@
+/*
+ * Backfill boards 30 (`Empty`: My log before anything has settled, Mrs. Hooligan's tab, the next settlement 7 h 42 min off) and 31 (`Open`, with
+ * its phone twin, board 32's third screen; `EmptyPhone` is its second). The Empty story is the log the 12-log moment reads, with every line taken
+ * away and the next settlement set, so the page is the one a player sees before their first settlement.
+ */
 /**
  * "12 Log, open": My log with a settlement's breakdown open under its row, drawn first as a story for
  * the owner (the log shares plan's Task 5; the glass plan, section 8), because no board draws it. The
@@ -17,7 +22,11 @@ import { Page } from '../glass/Page.tsx';
 import { useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Log } from './Log.tsx';
+import type { LogData } from './lines.ts';
 import { useLog } from './useLog.ts';
+
+/** The boards' count down to the settlement: 7 h 42 min, from when the story is drawn. */
+const SETTLEMENT_IN = (7 * 60 + 42) * 60_000;
 
 /** The log at the board's moment, the newest settlement's breakdown open until it is closed. */
 function LogOpen() {
@@ -35,6 +44,27 @@ function LogOpen() {
     setOpen(next);
   };
   return <Log data={state.data} tab={tab !== undefined ? tab : (hudCharacter?.id ?? null)} onTab={setTab} open={shown} onToggle={toggle} />;
+}
+
+/** The log a player sees before their first settlement: the moment's characters, no line of any, the next settlement 7 h 42 min off, on Mrs. Hooligan's tab. */
+function LogEmpty() {
+  const { api } = useKayfa();
+  const signedIn = useSignedIn(api);
+  const { session } = usePlayer();
+  const { state } = useLog(api, signedIn, session.account);
+  const [tab, setTab] = useState<string | null | undefined>(undefined);
+  if (state.status !== 'ready') return <div className="kb-log" aria-busy="true" />;
+  const bare: LogData = {
+    ...state.data,
+    log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null },
+    estimate: null, turns: [], nextSettlement: new Date(Date.now() + SETTLEMENT_IN).toISOString(),
+  };
+  const hooligan = bare.mine.find((c) => c.name === 'Mrs. Hooligan')?.id ?? null;
+  return <Log data={bare} tab={tab !== undefined ? tab : hooligan} onTab={setTab} open={new Set()} onToggle={() => {}} />;
+}
+
+function LogEmptyStory() {
+  return <Page surface="log"><LogEmpty /></Page>;
 }
 
 function LogOpenStory() {
@@ -55,5 +85,13 @@ export const Open: Story = { name: '12 Log, open' };
 /** The same on the Phone board's layout, at 390 by 844. */
 export const OpenPhone: Story = {
   name: '12 Log, open, phone 390 × 844',
+  globals: { viewport: { value: 'glassPhone390', isRotated: false } },
+};
+
+/** My log before anything has settled, on Mrs. Hooligan's tab (board 30). */
+export const Empty: StoryObj<typeof LogEmptyStory> = { name: '12 Log, empty', render: () => <LogEmptyStory /> };
+/** The same on the Phone board's layout, at 390 by 844 (board 32's second screen). */
+export const EmptyPhone: StoryObj<typeof LogEmptyStory> = {
+  name: '12 Log, empty, phone 390 × 844', render: () => <LogEmptyStory />,
   globals: { viewport: { value: 'glassPhone390', isRotated: false } },
 };

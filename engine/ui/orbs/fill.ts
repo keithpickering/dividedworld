@@ -39,6 +39,9 @@ export function orbFills(settled: number, pending: number, cap: number): { reado
 
 const orbs = (h: number) => (h / ORB).toFixed(2);
 
+/** What a player can do about an estimate that will not fit: the orbs' own words (Orbs.board.stories.tsx), the glass's, plain and true. */
+export const WAY_OUT = "Spend some before the settlement, or it won't fit.";
+
 /** The wallet as a screen reader hears it: settled, then what is pending and that it is an estimate. */
 export function walletName(settled: number, pending: number, cap: number): string {
   const s = clamp(settled, 0, cap);

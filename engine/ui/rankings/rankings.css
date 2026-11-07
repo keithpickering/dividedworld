@@ -351,3 +351,55 @@
   padding: 0 6px;
 }
 
+
+/* ---- the season choice, in the row of the page head ---- */
+
+.kb-rankings-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin: 0 0 12px;
+}
+
+.kb-rankings-bar .kb-rankings-season {
+  margin: 0;
+}
+
+.kb-rankings .kb-rankings-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+/* The row of the character a link opened the table at. */
+.kb-rankings-table tr[data-kb-highlight] > * {
+  background: color-mix(in srgb, var(--kb-glass-neon) 14%, transparent);
+}
+
+/* Beyond color: a band of the pale along the linked row's left edge, with a hidden phrase for a screen reader. Inset, so it never shifts the table, and the first cell is padded to clear it so the band never covers the place numeral. */
+.kb-rankings-table tr[data-kb-highlight] > :first-child {
+  box-shadow: inset 4px 0 0 var(--kb-glass-pale);
+  padding-left: 12px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tr[data-kb-highlight] > :first-child {
+  box-shadow: none;
+  padding-left: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-rankings-table tbody tr[data-kb-highlight] {
+  box-shadow: inset 4px 0 0 var(--kb-glass-pale);
+  padding-left: 12px;
+}
+
+/* The table area wraps the lead, the table and the pager so aria-busy can sit on it alone; it adds no box. */
+.kb-rankings-area {
+  display: contents;
+}

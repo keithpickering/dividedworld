@@ -7,6 +7,7 @@
  * Turn, never since when (#23): since when could date a silent Turn before it, so a `since` a
  * reveal written before 0073 still carries is not read.
  */
+import type { SeasonShown } from '../data/api.ts';
 import { shortDate } from '../postbit/dates.ts';
 
 export interface Statement {
@@ -56,4 +57,17 @@ export function wording(s: Statement, className: (key: string) => string): strin
   if (s.kind === 'reveal') return `${className(s.class!)}, revealed ${shortDate(s.at)}${s.until ? `, until its Turn on ${shortDate(s.until)}` : ''}`;
   if (s.class === null) return `a Turn on ${shortDate(s.at)}`;
   return `${className(s.class)}, until its Turn on ${shortDate(s.at)}`;
+}
+
+/**
+ * What a finished season's row says of its character's class: the last class its player revealed that season, when, and the date of the
+ * first Turn announced after it (null where none was). The row's `shown` list is the season's own, so a reveal and a Turn are read in the
+ * order they were made. Null where no class was revealed.
+ */
+export function finalClass(shown: readonly SeasonShown[]): { readonly cls: string; readonly at: string; readonly turnedAt: string | null } | null {
+  let at = -1;
+  shown.forEach((x, i) => { if (x.kind === 'reveal' && x.class !== null) at = i; });
+  if (at < 0) return null;
+  const turn = shown.slice(at + 1).find((x) => x.kind === 'turn');
+  return { cls: shown[at]!.class!, at: shown[at]!.at, turnedAt: turn?.at ?? null };
 }

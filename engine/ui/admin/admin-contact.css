@@ -2,17 +2,56 @@
  * How players reach you (AdminContact.tsx), on the admin screen: the form is Write an update's (write-update.css), a label and an address to a row,
  * and a refusal stands under the row it names. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file).
  */
+/* A section of its own, ruled off from the queue above it. */
 .kb-admin-contact {
-  margin: 40px 0 0;
+  max-width: 920px;
+  margin: 54px 0 0;
+  padding-top: 34px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
 }
 
-.kb-admin-contact .kb-write-update {
+/* The links are rows on the page, not a box: the form is the shared layout of write-update.css without its edge. */
+.kb-admin-contact .kb-admin-contact-form {
+  gap: 0;
   margin-bottom: 0;
 }
+
+.kb-admin-contact-form > .kb-write-update-note { margin-bottom: 14px; }
 
 .kb-admin-contact-line {
   display: grid;
   gap: 6px;
+  padding: 12px 0;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-admin-contact-line .kb-write-update-row {
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.kb-admin-contact .kb-write-update-input {
+  min-height: 52px;
+}
+
+.kb-admin-contact-field {
+  display: grid;
+  gap: 8px;
+}
+
+/* The field's label, in the label color the other glass forms use. */
+.kb-admin-contact-key {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-admin-contact-form > .kb-button-row {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
 }
 
 .kb-admin-contact-line .kb-write-update-input[aria-invalid='true'] {
@@ -23,4 +62,9 @@
   color: var(--kb-glass-text);
   padding-left: 14px;
   border-left: 3px solid var(--kb-glass-neon);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-admin-contact-line .kb-write-update-row {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
 }

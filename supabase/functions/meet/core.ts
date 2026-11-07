@@ -91,9 +91,9 @@ interface Context {
   readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
-  /** The Mod Bots on staff (0101): each one's latest order, and the allowance it has not spent (which returns to the Boss's bank before the meeting counts it). Absent from an older database. */
+  /** The Mod Bots on staff (0103): each one's latest order, and the allowance it has not spent (which returns to the Boss's bank before the meeting counts it). Absent from an older database. */
   readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
-  /** The rules in force (0101), so a rule that would leave no compliant post is dropped here; absent from an older database. */
+  /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
   readonly rules?: readonly RuleInForce[];
 }
 

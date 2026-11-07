@@ -1,6 +1,6 @@
 /**
  * The Mod Bots' Edge Function, with two doors. The filing run: pg_cron calls it at the instance's `modBots.filingCron` with the minute it fired
- * (supabase/migrations/0104_mod_moves.sql), and it accepts only the jobs key (kayfabb_jobs, in apikey). A player's report: the client calls it with the player's own
+ * (supabase/migrations/0106_mod_moves.sql), and it accepts only the jobs key (kayfabb_jobs, in apikey). A player's report: the client calls it with the player's own
  * session (Authorization), as it calls the act function; nothing is done as the service before the database has taken the report AS THE PLAYER (`open_report` verifies the
  * session, that the caller plays the character, and that it is not banned), and a request with no session is answered 401 the same whoever its target is. A player's appeal is
  * the same door at `/staff/appeal` (`open_appeal`, which does not refuse a banned character: a ban is appealed by the banned). The work is
