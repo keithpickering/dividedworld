@@ -25,6 +25,7 @@
  * offer to play again, in so many words ("Play again anyway").
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
 import { casterMessage, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
@@ -229,7 +230,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
         <div className="kb-play-fields">
           <p className="kb-play-target">
             {beyond || !post
-              ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of theirs` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
+              ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of ${words(beyond.pronouns ?? ENGINE_DEFAULT_PRONOUNS).theirs}` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
               : <>On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.</>}
           </p>
           {ownBoth && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}

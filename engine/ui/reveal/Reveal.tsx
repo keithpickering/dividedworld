@@ -81,7 +81,7 @@ function ClassBar({ shown }: { readonly shown: ReturnType<typeof statements> }) 
   const className = useClassName();
   const named = shown.filter((s) => s.class !== null);
   if (named.length === 0) return null;
-  const description = `Classes its player made public: ${shown.map((s) => wording(s, className)).join('; ')}.`;
+  const description = `Classes made public by the player: ${shown.map((s) => wording(s, className)).join('; ')}.`;
   return (
     <div className="kb-class-bar" role="img" aria-label={description}>
       {named.map((s, i) => {
@@ -128,7 +128,7 @@ export function RevealPost({ act, quoteLink }: { readonly act: Act; readonly quo
       </p>
       <ClassBar shown={shown} />
       {shown.length === 0
-        ? <p className="kb-small kb-muted">Its player made nothing about its class public.</p>
+        ? <p className="kb-small kb-muted">The player made nothing about this character's class public.</p>
         : (
           <ul className="kb-reveal-stated kb-small">
             {shown.map((s, i) => <li key={i}>{wording(s, className).replace(/^./u, (c) => c.toUpperCase())}</li>)}

@@ -4,6 +4,7 @@
  * Acts (posts, spins, card plays); its reveals and announced Turns are the "Class statements"
  * filter and its past seasons the "Seasons" filter, short lists read whole and paged here. Out of character and plain.
  */
+import { words as pronounWords } from '../../rules/pronouns.ts';
 import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { ActKind, CharacterCounts, Id, RecordPage } from '../data/api.ts';
@@ -68,7 +69,7 @@ function Record({ id, doc }: { readonly id: Id; readonly doc: RecordPage }) {
           : <Link key={k} className="kb-record-kind" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>))}
       </nav>
       {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} seasons.</p>}
-      {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and past seasons, newest first.</p>}
+      {kind === 'all' && <p className="kb-small kb-muted">{pronounWords(doc.character.pronouns).Their} Acts with {pronounWords(doc.character.pronouns).their} reveals, announced Turns and past seasons, newest first.</p>}
       <Rows id={id} kind={kind} page={page} rows={loaded.rows} total={loaded.total} />
     </div>
   );

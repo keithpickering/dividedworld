@@ -2,6 +2,7 @@
  * The report form and the appeal form (the Mod Bots design, section 9; docs/research/2026-11-06-mod-bots/03-report.png): one tab of the Lens's panel, opened from "Report" in a post's
  * foot links and from "Appeal" in a filed visit's tab. Their words are the glass's plain voice; the Mod's own are quoted as its words.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -21,7 +22,7 @@ function world() {
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
   const spritey = fake.seed.character(other, 'Spritey', 'face');
-  const clerk = fake.seed.staff('clerk', 'The Clerk', 'mod');
+  const clerk = fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.he });
   const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
   const second = fake.seed.post(thread, spritey, 'post 2');
   const mine = fake.seed.post(thread, pipe, 'post 3 is mine');
@@ -216,7 +217,7 @@ describe('the appeal form', () => {
     expect(within(panel).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Appeal']);
     expect(within(panel).getByRole('tab')).toHaveFocus();
     await waitFor(() => expect(panel).toHaveTextContent('The punishment: Rule 2: No double posting, a minor breach, 2 points on Pipewrench\'s warn bar, dropping off'));
-    expect(panel).toHaveTextContent('The Clerk hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
+    expect(panel).toHaveTextContent('The Clerk hears it, or whoever has taken his place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
     expect(within(panel).getByRole('button', { name: 'Appeal · 0.50 Aura' })).toBeInTheDocument();
     expect(within(panel).getByRole('textbox', { name: 'Your plea (public)' })).toHaveAccessibleDescription('0 of 1000');
   });

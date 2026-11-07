@@ -7,6 +7,8 @@
  * class"); every other option's preview carries none, and a silent one says nobody is told.
  */
 
+import { words, type PronounSet } from '../../rules/pronouns.ts';
+
 export interface PreviewLine {
   readonly by: string;
   readonly text: string;
@@ -24,12 +26,13 @@ export interface Preview {
 const SYSTEM = 'The System';
 const say = (text: string): PreviewLine => ({ by: SYSTEM, text });
 
-export function debutPreview(o: { readonly name: string; readonly className: string; readonly timing: 'now' | 'tally'; readonly loudness: 'silent' | 'announced' | 'with_class' }): Preview {
+export function debutPreview(o: { readonly name: string; readonly className: string; readonly pronouns: PronounSet; readonly timing: 'now' | 'tally'; readonly loudness: 'silent' | 'announced' | 'with_class' }): Preview {
   const now = o.timing === 'now';
+  const w = words(o.pronouns);
   if (o.loudness === 'silent') {
     return {
       lines: [],
-      nothing: now ? `Nothing is posted. ${o.name} is on the board at once, and its first post is its entrance.` : `Nothing is posted. ${o.name} simply appears after the next settlement.`,
+      nothing: now ? `Nothing is posted. ${o.name} is on the board at once, and ${w.their} first post is ${w.their} entrance.` : `Nothing is posted. ${o.name} simply appears after the next settlement.`,
       where: now ? 'At once' : 'At the next settlement',
     };
   }

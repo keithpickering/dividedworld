@@ -96,7 +96,7 @@ export const DEMAND_KINDS: readonly DemandKind[] = [
     params: { type: 'object', fields: { character: uuid, thread: uuid } },
     uuids: ['character', 'thread'],
     numbers: {},
-    met: () => 'it posted',
+    met: () => 'the named character posted',
     needs: () => 'one named character to post in one named thread',
     template: (_p, g) => `Needs one named character to post in one named thread: ${so(g)}.`,
   },

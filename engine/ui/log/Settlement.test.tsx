@@ -5,6 +5,7 @@
  * change and a Turn that took effect, with Open my log and Back to the board. It reads the same rows
  * as the log and says nothing the log does not; the last settlement seen is kept on the account (alerts plan, Task 2), so a second device does not show it again.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -22,8 +23,8 @@ function world() {
   const { seed } = fake;
   seed.season({ number: 1, startsAt: new Date(at(1, 0)).toISOString() });
   const me = seed.account('me');
-  const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
-  const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3) });
+  const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2), pronouns: PRONOUN_PRESETS.she });
+  const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3), pronouns: PRONOUN_PRESETS.they });
   const turns = seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
   const { thread } = seed.thread('general', pipe, 'a thread', 'Opening.', { at: at(27) });
   const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
@@ -96,7 +97,7 @@ describe('the settlement\'s summary', () => {
     const turn = screen.getByRole('region', { name: 'Turn' });
     expect(within(turn).getByText('Heel')).toBeInTheDocument();
     expect(within(turn).getByText('Face')).toBeInTheDocument();
-    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement it scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.');
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.');
   });
 
   test('each line is the log\'s line for the same reason: the same name and the same amount', async () => {

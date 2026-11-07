@@ -15,7 +15,7 @@ import { useMemo } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, ClassReveal, Id, ProfilePage, StandingPlace, TurnAnnounced } from '../data/api.ts';
-import { pronounLabel } from '../../rules/pronouns.ts';
+import { pronounLabel, words as pronounWords } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { Ago } from '../mini.tsx';
@@ -93,7 +93,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
                     Aura this season: <b>{figure(data.standing.standing)}</b> (settled {dayAndTime(data.settledAt)}) · Place {data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link>
                   </p>
                 )
-                : <p className="kb-profile-standing kb-muted">Nothing has settled for it yet. <Link to="/season?tab=rankings">Season standings</Link></p>}
+                : <p className="kb-profile-standing kb-muted">Nothing has settled for {pronounWords(c.pronouns).them} yet. <Link to="/season?tab=rankings">Season standings</Link></p>}
               <p className="kb-profile-counts">
                 <span>Posts: {data.counts.posts}</span> · <span>Threads spun: {data.counts.spins}</span> · <span>Cards played: {data.counts.cards}</span>
                 {monthYear(c.joined) && <> · <span>Joined {monthYear(c.joined)}</span></>}

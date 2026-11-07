@@ -18,6 +18,7 @@ import { Overlay } from '../glass/Overlay.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { usePlayer } from '../player.tsx';
 import { ThreadCtx } from '../thread/context.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import { auraWords, appealTerms, modRole, pointsPlain, rulingWords, shortDate, topCharge, markedAs } from './visit.ts';
 import { Layers } from '../glass/layer.tsx';
 import './visit.css';
@@ -172,7 +173,7 @@ function said(act: Act): Said | null {
   };
 }
 
-export function AppealForm({ infraction, visit, nameOf, ban }: { readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly ban?: MyBan }) {
+export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban }: { readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly modPronouns?: PronounSet | null; readonly ban?: MyBan }) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const [facts, setFacts] = useState<Said | null | 'failed'>(null);
@@ -235,7 +236,7 @@ export function AppealForm({ infraction, visit, nameOf, ban }: { readonly infrac
                 : <>The punishment: {rule}, a {f.band} breach, {pointsPlain(f.points)} on {nameOf(f.character)}&apos;s warn bar
                   {f.expiresAt !== '' ? (Date.parse(f.expiresAt) > Date.now() ? `, dropping off ${shortDate(f.expiresAt)}` : `, dropped off ${shortDate(f.expiresAt)}`) : ''}.</>}
             </p>
-            <p className="kb-visit-terms">{appealTerms(mod, { points: f === null ? 0 : f.points })}</p>
+            <p className="kb-visit-terms">{appealTerms(mod, visit ? modPronouns : null, { points: f === null ? 0 : f.points })}</p>
           </>
         )}
       </div>

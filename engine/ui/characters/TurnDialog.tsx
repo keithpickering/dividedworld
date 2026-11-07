@@ -12,6 +12,7 @@
  * return to My characters with focus where it was (the web plan's 2026-10-30 amendment to Task 9).
  */
 import { useState } from 'react';
+import { words } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, MyCharacter } from '../data/api.ts';
@@ -53,6 +54,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
 
   const nameOf = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const now = nameOf(character.class);
+  const pw = words(character.pronouns);
   /* A silent Turn names nothing: the boxes are off and clear while it is chosen. */
   const showFrom = loudness === 'announced' && named.was;
   const showTo = loudness === 'announced' && named.to;
@@ -104,7 +106,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
             <dt>Who can see it</dt><dd>Only you</dd>
           </dl>
           <p className="kb-turn-line">
-            {character.name} is {withArticle(now)} (since {shortDate(character.classSince)}). After a Turn it can Turn again in {spanWords(settings.turnCooldown)}.
+            {character.name} is {withArticle(now)} (since {shortDate(character.classSince)}). After a Turn {pw.they} can Turn again in {spanWords(settings.turnCooldown)}.
           </p>
         </aside>
         <div className="kb-turn-choice">

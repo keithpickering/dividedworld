@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, CharacterCounts, MoveLogRow, MovesCursor, StaffProfile as StaffProfileData } from '../data/api.ts';
 import { careerText, type Career } from '../../system/career.ts';
-import { pronounLabel } from '../../rules/pronouns.ts';
+import { pronounLabel, words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { endedWords } from '../board/move-words.ts';
@@ -36,6 +36,7 @@ interface Said {
 export function StaffProfile({ character: c }: { readonly character: Character }) {
   const { api } = useKayfa();
   const staff = c.staff!;
+  const pw = pronounWords(c.pronouns);
   const [said, setSaid] = useState<Said | 'failed' | null>(null);
   useEffect(() => {
     let live = true;
@@ -60,9 +61,9 @@ export function StaffProfile({ character: c }: { readonly character: Character }
           <div className="kb-profile-facts">
             <p className="kb-profile-title"><StaffBadge character={c} />{c.title && <span className="kb-muted"> {c.title}</span>}</p>
             <p className="kb-profile-pronouns kb-muted">{pronounLabel(c.pronouns)}</p>
-            {said === 'failed' && <p className="kb-notice" data-kb-tone="refusal">Its profile could not be loaded. Reload the page to try again.</p>}
+            {said === 'failed' && <p className="kb-notice" data-kb-tone="refusal">{pw.Their} profile could not be loaded. Reload the page to try again.</p>}
             {data && (
-              <table className="kb-table kb-staff-table" aria-label={`About ${c.name}, in its own words`}>
+              <table className="kb-table kb-staff-table" aria-label={`About ${c.name}, in ${pw.their} own words`}>
                 <tbody>
                   <tr><th scope="row">Interests</th><td>{data.profile && data.profile.interests.length > 0 ? data.profile.interests.join(', ') : <span className="kb-muted">None yet</span>}</td></tr>
                   <tr>
@@ -79,11 +80,11 @@ export function StaffProfile({ character: c }: { readonly character: Character }
               </table>
             )}
             {signature && <div className="kb-signature kb-small"><BbCode text={signature} /></div>}
-            <p className="kb-small kb-muted">The interests, favorites, mood and signature are what it says about itself, in character, and it may bluff. The moderation log is a plain record.</p>
+            <p className="kb-small kb-muted">The interests, favorites, mood and signature are what {pw.they} say{pw.s} about {pw.themself}, in character, and {pw.they} may bluff. The moderation log is a plain record.</p>
           </div>
         </section>
-        <CareerList staff={staff} />
-        <ModerationLog staff={staff} bot={c.office === 'mod'} />
+        <CareerList staff={staff} pronouns={c.pronouns} />
+        <ModerationLog staff={staff} bot={c.office === 'mod'} pronouns={c.pronouns} />
       </div>
     </div>
   );
@@ -93,8 +94,9 @@ export function StaffProfile({ character: c }: { readonly character: Character }
  * The career: the seasons it led and the offices it held, as plain facts (`staff_career`, public like "Former Administrator" on a forum),
  * newest first and cut to the engine's bound with "and N more." This is the glass, not the persona: it never bluffs.
  */
-function CareerList({ staff }: { readonly staff: string }) {
+function CareerList({ staff, pronouns }: { readonly staff: string; readonly pronouns: PronounSet }) {
   const { api } = useKayfa();
+  const pw = pronounWords(pronouns);
   const [career, setCareer] = useState<Career | 'failed' | null>(null);
   useEffect(() => {
     let live = true;
@@ -106,7 +108,7 @@ function CareerList({ staff }: { readonly staff: string }) {
   return (
     <section className="kb-staff-career" aria-label="Career">
       <h2 className="kb-heading">Career</h2>
-      {career === 'failed' && <p role="alert" className="kb-notice" data-kb-tone="refusal">Its career could not be loaded. Reload the page to try again.</p>}
+      {career === 'failed' && <p role="alert" className="kb-notice" data-kb-tone="refusal">{pw.Their} career could not be loaded. Reload the page to try again.</p>}
       <div role="status">{career === null && <p className="kb-visually-hidden">Reading the career</p>}</div>
       {career === null && <p className="kb-muted" aria-hidden="true">Loading the career…</p>}
       {lines !== null && lines.length === 0 && <p>No office held yet.</p>}
@@ -138,7 +140,8 @@ function ModActCells({ row, perPage }: { readonly row: MoveLogRow; readonly perP
   );
 }
 
-function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: boolean }) {
+function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; readonly bot: boolean; readonly pronouns: PronounSet }) {
+  const pw = pronounWords(pronouns);
   const { api, settings } = useKayfa();
   const [rows, setRows] = useState<readonly MoveLogRow[] | null>(null);
   const [older, setOlder] = useState<MovesCursor | null>(null);
@@ -176,7 +179,7 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
       {state === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The moderation log could not be loaded. Reload the page to try again.</p>}
       {rows === null && state !== 'failed' && <p className="kb-muted" aria-busy="true">Loading the log…</p>}
       {rows !== null && rows.length === 0 && (
-        <p>{bot ? 'Nothing here yet. A Mod Bot\'s log lists its visits, the reports it judged and the appeals it heard, once it has any.' : 'Nothing here yet. It has not made a move.'}</p>
+        <p>{bot ? `Nothing here yet. A Mod Bot's log lists ${pw.their} visits, the reports ${pw.they} judged and the appeals ${pw.they} heard, once ${pw.they} ${pw.has} any.` : `Nothing here yet. ${pw.They} ${pw.has} not made a move.`}</p>
       )}
       {rows !== null && rows.length > 0 && (
         <table className="kb-table kb-modlog" aria-label="Moderation log, newest first">

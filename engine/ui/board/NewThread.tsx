@@ -53,7 +53,7 @@ export function NewThread({ board }: { readonly board: string }) {
         <h2 className="kb-box-head" id={`${id}-head`}>Start a thread</h2>
         {!hudCharacter ? (
           <p className="kb-new-thread-none">
-            None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; one waiting to debut can post once it has.
+            None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; a character waiting to debut can post after the debut.
           </p>
         ) : (
           <>

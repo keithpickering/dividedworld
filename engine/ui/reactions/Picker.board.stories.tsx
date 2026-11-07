@@ -13,6 +13,7 @@
  * author's postbit, its tallies and the viewer's own reactions) and drawn by the thread's own
  * article, alone, at the board's place on the page.
  */
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
 import { userEvent, within } from 'storybook/test';
@@ -53,7 +54,7 @@ function OnePost() {
       mine.merge(act.id, await api.myReactions([act.id]));
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', pronounsOf: () => ENGINE_DEFAULT_PRONOUNS, observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, thread, seq, tallies, mine]);

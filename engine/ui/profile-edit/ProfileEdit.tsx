@@ -20,7 +20,7 @@ import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
 import { PronounPicker, pronounsHold } from '../characters/PronounPicker.tsx';
-import type { PronounSet } from '../../rules/pronouns.ts';
+import { words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { AvatarEditor } from './Cropper.tsx';
 import { ProfilePreview } from './ProfilePreview.tsx';
 import type { PictureIo } from './crops.ts';
@@ -109,10 +109,10 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
     </div>
   );
   if (mine.retiredAt !== null) {
-    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is retired. An admin can restore it; until then its profile cannot be edited.</CalmRegion>{back}</>);
+    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is retired. An admin can restore {pronounWords(mine.pronouns).them}; until then {pronounWords(mine.pronouns).their} profile cannot be edited.</CalmRegion>{back}</>);
   }
   if (mine.debutedAt === null) {
-    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is waiting to debut at the next settlement. It has no profile to edit until it has debuted.</CalmRegion>{back}</>);
+    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is waiting to debut at the next settlement. {pronounWords(mine.pronouns).They} {pronounWords(mine.pronouns).has} no profile to edit until {pronounWords(mine.pronouns).they} {pronounWords(mine.pronouns).has} debuted.</CalmRegion>{back}</>);
   }
   if (profile === 'failed') return shell(<CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</CalmRegion>);
   if (profile === null) return shell(<div aria-busy="true" />);

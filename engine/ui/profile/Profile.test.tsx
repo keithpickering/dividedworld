@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -76,11 +77,11 @@ describe('the public profile', () => {
   test('before anything has settled, says so and gives no standing', async () => {
     const fake = buildWorld();
     const account = fake.seed.account('x');
-    const c = fake.seed.character(account, 'Fresh', 'face');
+    const c = fake.seed.character(account, 'Fresh', 'face', { pronouns: PRONOUN_PRESETS.she });
     fake.signInAs(account);
     open(c, fake);
     const facts = await screen.findByRole('region', { name: 'About Fresh' });
-    await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
+    await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for her yet'));
   });
 
   test('a character that is waiting to debut, and one that does not exist, are the same page: the router\'s "cannot be found"', async () => {

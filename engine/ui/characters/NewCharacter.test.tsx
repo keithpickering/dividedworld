@@ -198,6 +198,25 @@ describe('New character\'s head, name and foot', () => {
     expect(/\.kb-debut,\s*\.kb-reveal\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
   });
 
+  test('every line about the new character follows the pronouns chosen on the form: she/her, then they/them', async () => {
+    open(world());
+    const f = await form();
+    const line = () => f.querySelector('.kb-glass-form-foot-line')!;
+    await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
+    await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
+    expect(within(f).getByText('Only you will know her class, unless you choose to reveal it.')).toBeInTheDocument();
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays yours alone.');
+    expect(within(f).getByText(/Nothing is posted\. Waiting Wanda is on the board at once, and her first post is her entrance\./u)).toBeInTheDocument();
+    await userEvent.click(within(f).getByRole('radio', { name: /^they\/them/u }));
+    expect(within(f).getByText('Only you will know their class, unless you choose to reveal it.')).toBeInTheDocument();
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays yours alone.');
+    expect(within(f).getByText('When they debut')).toBeInTheDocument();
+    expect(within(f).getByText(/They are on the board at once, and can post at once\./u)).toBeInTheDocument();
+    expect(within(f).getByText(/They wait, seen by no one but you, and debut at the next settlement\./u)).toBeInTheDocument();
+    expect(within(f).getByRole('radio', { name: /^Announced, with their class/u })).toBeInTheDocument();
+  });
+
   test('says in one line, beside Cancel and Make the character, what will happen, as the form is filled', async () => {
     open(world());
     const f = await form();

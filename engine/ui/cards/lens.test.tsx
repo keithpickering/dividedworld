@@ -4,6 +4,7 @@
  * kit) and Who (a play's row: the #97 panel's content, reached for every play of the kind). It never dims or blocks the
  * page, and closes by Esc, its ×, its mark, another post's Lens or leaving the page, giving focus back to the mark.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
@@ -966,7 +967,7 @@ describe('a visit\'s tab', () => {
   /** A visit on Spritey's post 2, and on Pipewrench's post 4 where `mine` is set: the reader plays Pipewrench. */
   function visited(o: { challenge?: Parameters<Fake['seed']['visit']>[2] extends infer T ? T extends { challenge?: infer C } ? C : never : never; mine?: boolean; endsInMs?: number } = {}) {
     const w = world();
-    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
     const post = o.mine ? w.fake.seed.post(w.thread, w.pipe, 'post 4') : w.second;
     const visit = w.fake.seed.visit(clerk, post, { at: Date.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
     return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
@@ -1183,7 +1184,7 @@ describe('a visit\'s tab', () => {
       await userEvent.click(mark);
       const l = visitLens();
       expect(within(l).getByRole('tab', { name: 'Filed' })).toHaveAttribute('aria-selected', 'true');
-      expect(within(l).getByRole('heading', { name: 'The Clerk filed its report' })).toBeInTheDocument();
+      expect(within(l).getByRole('heading', { name: 'The Clerk filed their report' })).toBeInTheDocument();
       await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 points; they drop off on [A-Z][a-z]{2} \d{1,2}\. The bar now stands at 2 of 10\. The post keeps its words under the notice\./u));
       /* Nothing to talk down any more. */
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
@@ -1222,7 +1223,7 @@ describe('a visit\'s tab', () => {
       w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
       openVisit(w);
       const l = await press(w);
-      expect(l).toHaveTextContent('The Clerk filed its report');
+      expect(l).toHaveTextContent('The Clerk filed their report');
       expect(l).toHaveTextContent('The visit filed.');
       expect(l).not.toHaveTextContent(/\d+ (warn )?points?/u);
       expect(l).not.toHaveTextContent(/of 10/u);
@@ -1235,7 +1236,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       const l = await press(w);
       const appeal = await within(l).findByRole('button', { name: 'Appeal · 0.50 Aura' });
-      expect(l).toHaveTextContent('The Clerk hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
+      expect(l).toHaveTextContent('The Clerk hears it, or whoever has taken their place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
       appeal.focus();
       await userEvent.keyboard('{Enter}');
       /* The post provides AppealCtx (Task 13): the same panel moves to the Appeal form, whose tab takes the focus. */

@@ -110,10 +110,10 @@ function Names({ names, own, verb, className }: { readonly names: readonly Tally
       <>
         <h3>{one.name} {verb}</h3>
         {verb === 'debuted'
-          ? <p>A new character joins the board. {one.class !== null ? <>Announced with its class: <ClassChip cls={one.class} name={className(one.class)} />. </> : 'Its class is its own secret until it says otherwise. '}{profile(one)}{own.has(one.character) && <> <Yours /></>}</p>
+          ? <p>A new character joins the board. {one.class !== null ? <>Announced with the class: <ClassChip cls={one.class} name={className(one.class)} />. </> : 'The class stays a secret until the player says otherwise. '}{profile(one)}{own.has(one.character) && <> <Yours /></>}</p>
           : <p>
-            {one.was !== null ? <>Announced with its old class: {one.name} was a <ClassChip cls={one.was} name={className(one.was)} />. </> : 'Announced. '}
-            {one.class !== null ? <>It is now a <ClassChip cls={one.class} name={className(one.class)} />. </> : 'What it is now, it isn\u2019t saying. '}
+            {one.was !== null ? <>Announced with the old class: {one.name} was a <ClassChip cls={one.was} name={className(one.was)} />. </> : 'Announced. '}
+            {one.class !== null ? <>{one.name} is now a <ClassChip cls={one.class} name={className(one.class)} />. </> : <>What {one.name} is now isn’t being said. </>}
             {profile(one)}{own.has(one.character) && <> <Yours /></>}
           </p>}
       </>
@@ -140,10 +140,10 @@ function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPa
     <>
       <h3>{name} has {arrived ? 'arrived' : 'left'}</h3>
       {arrived
-        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ' Its first words, on The System’s board:'}</p>
-        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ' Its last words are still on The System’s board.'}</p>}
+        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ` ${name}’s first words, on The System’s board:`}</p>
+        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ` ${name}’s last words are still on The System’s board.`}</p>}
       {words !== '' && <blockquote className="kb-season-quote">{'“'}{words}{'”'}</blockquote>}
-      {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</Link></p>}
+      {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read the post on the board' : 'Read the last post on the board'}</Link></p>}
     </>
   );
 }

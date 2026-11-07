@@ -12,6 +12,7 @@
  */
 import type { CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import type { Act } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useThread } from '../thread/context.ts';
@@ -73,6 +74,8 @@ export interface ReachAt {
   readonly reach: BeyondPost;
   readonly target: Id;
   readonly name: string;
+  /** The target character's pronouns, for a play on a character (the postbit's person); none for a thread or a board. */
+  readonly pronouns?: PronounSet;
   /** The post whose postbit offers it: a character play's Act sits on it. */
   readonly fromPost: Act | null;
   /** The thread and the board above the target, whose live plays its card's rules see. */
@@ -115,7 +118,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
   if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, setLasts: instance.settings.setLasts, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
-  const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
+  const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (
     <button
       type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}

@@ -14,10 +14,10 @@ function world() {
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'face');
-  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false });
+  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, pronouns: PRONOUN_PRESETS.they });
   const stranger = fake.seed.character(other, 'Stranger', 'heel');
   fake.signInAs(me);
-  return { fake, pipe, waiting, stranger };
+  return { fake, me, pipe, waiting, stranger };
 }
 /** Opens the one address the page has; `name` picks a character in the page, as a player does. */
 const open = async (w: ReturnType<typeof world>, name?: string) => {
@@ -74,10 +74,19 @@ describe('profile edit', () => {
     expect(screen.getByRole('link', { name: 'Make a character' })).toHaveAttribute('href', '/characters/new');
   });
 
+  test('a retired she/her character says an admin can restore her, and that her profile cannot be edited', async () => {
+    const w = world();
+    const gone = w.fake.seed.character(w.me, 'Gloomba', 'heel', { pronouns: PRONOUN_PRESETS.she });
+    w.fake.seed.retire(gone);
+    await open(w, 'Gloomba');
+    expect(await screen.findByText('Gloomba is retired. An admin can restore her; until then her profile cannot be edited.')).toBeInTheDocument();
+  });
+
   test('a character waiting to debut has no profile to edit yet', async () => {
     const w = world();
     await open(w, 'Spritey');
     expect(await screen.findByText(/waiting to debut/iu)).toBeInTheDocument();
+    expect(screen.getByText('Spritey is waiting to debut at the next settlement. They have no profile to edit until they have debuted.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Title')).toBeNull();
   });
 

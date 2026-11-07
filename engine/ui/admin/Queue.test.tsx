@@ -1,6 +1,7 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { seedMoves } from '../board/move-world.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { QueueScreen } from './Queue.tsx';
@@ -133,7 +134,7 @@ describe('holding and reversing', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
     const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
     expect(dialog).toHaveTextContent('Rename Off Topic to Small Soldiers Situation Room');
-    expect(dialog).toHaveTextContent('It will never land, and no player will see it. A hold cannot be taken back.');
+    expect(dialog).toHaveTextContent('It will never land, and no player will see it. A hold cannot be taken back. The Boss chooses her next move at her next meeting, and learns of the hold only then.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect((await fake.adminQueue()).waiting).toHaveLength(1);
@@ -157,7 +158,7 @@ describe('holding and reversing', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Reverse/u }));
     const dialog = await screen.findByRole('dialog', { name: 'Reverse this move?' });
     expect(dialog).toHaveTextContent('Renamed General to Pointless Toast Palace');
-    expect(dialog).toHaveTextContent('It ends now, as reversed by an admin, and the old name returns at once.');
+    expect(dialog).toHaveTextContent('It ends now, as reversed by an admin, and the old name returns at once. The Boss says so in the move\'s thread, and learns of it at her next meeting.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reverse it' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Reverse/u })).toBeNull());
     expect((await fake.board(w.general))?.name).toBe('General');
@@ -199,8 +200,8 @@ describe('who may see it', () => {
 
 describe('a nomination of a successor', () => {
   const nominate = (fake: ReturnType<typeof buildWorld>) => {
-    fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' });
-    fake.seed.staff('hype-man', 'Hype Man', 'boss', { title: 'Hype' });
+    fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms', pronouns: PRONOUN_PRESETS.they });
+    fake.seed.staff('hype-man', 'Hype Man', 'boss', { title: 'Hype', pronouns: PRONOUN_PRESETS.he });
     return fake.seed.queueSuccessor('director', 'the-clerk', { goLiveAt: fake.clock.now() + 20 * 3_600_000, why: 'It has the stamina.' });
   };
 
@@ -218,7 +219,7 @@ describe('a nomination of a successor', () => {
   test('offers REPLACE with the roster\'s other personas (a Mod Bot too, since the Boss may come from any office), never the Boss that wrote it nor the one it names; replacing changes the nomination and reads the queue again', async () => {
     const { fake } = open({ build: (f) => { nominate(f); } });
     const waiting = await group(/^Waiting to land/u);
-    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
+    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in their place' });
     expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man']);
     const replace = within(waiting).getByRole('button', { name: 'Replace the nominated Boss, The Clerk' });
     expect(replace).toBeDisabled();
@@ -227,9 +228,9 @@ describe('a nomination of a successor', () => {
     await userEvent.click(replace);
     await waitFor(() => expect(waiting).toHaveTextContent('Name Hype Man as the next Boss'));
     expect((await fake.adminQueue()).waiting.map((q) => q.params['boss'])).toContain('hype-man');
-    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).not.toBeNull();
+    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in his place' })).not.toBeNull();
     /* What was chosen is done: the pick is empty and the button waits, and the line in plain words names who will follow. */
-    expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' })).toHaveValue('');
+    expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in his place' })).toHaveValue('');
     expect(within(waiting).getByRole('button', { name: 'Replace the nominated Boss, Hype Man' })).toBeDisabled();
     expect(within(waiting).getAllByRole('status').map((n) => n.textContent)).toContain('Replaced. Hype Man will follow.');
     expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
@@ -244,7 +245,7 @@ describe('a nomination of a successor', () => {
       void id;
     } });
     const waiting = await group(/^Waiting to land/u);
-    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
+    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in their place' });
     expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man', 'Newcomer']);
     expect((await fake.adminQueue()).roster.map((b) => b.staff)).not.toContain('old-timer');
   });
@@ -252,7 +253,7 @@ describe('a nomination of a successor', () => {
   test('a held nomination no longer waits, so it has no REPLACE', async () => {
     open({ build: (fake) => { const id = nominate(fake); fake.seed.holdQueued(id); } });
     const waiting = await group(/^Waiting to land/u);
-    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).toBeNull();
+    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in their place' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Replace the nominated Boss/u })).toBeNull();
   });
 

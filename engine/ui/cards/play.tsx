@@ -26,6 +26,7 @@ import { useBoard } from '../glass/useBoard.ts';
 import type { Act, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
 import type { Plays } from './plays.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
 import { Layers } from '../glass/layer.tsx';
 
@@ -37,7 +38,7 @@ export interface PlayTarget {
    * A play beyond a post (the card mechanic's design, section 7): the reach, its target, the target's name as the form says it ("Spritey",
    * "“Glitter everywhere”", "General"), and the live plays above it, which the card's rules see.
    */
-  readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly above?: EffectsAbove };
+  readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly pronouns?: PronounSet; readonly above?: EffectsAbove };
   /** Where focus goes when the form closes, for a target the form cannot find by its post's number (a thread's head, a board's banner). */
   readonly focusBack?: () => HTMLElement | null;
   /** The thread's title. */

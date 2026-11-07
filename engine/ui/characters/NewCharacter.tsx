@@ -20,7 +20,7 @@ import { usePlayer } from '../player.tsx';
 import { useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { PronounPicker, pronounsHold } from './PronounPicker.tsx';
-import type { PronounSet } from '../../rules/pronouns.ts';
+import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { DebutChoice } from './DebutChoice.tsx';
 import { newCharacterFooter } from './footers.ts';
 import './characters.css';
@@ -91,13 +91,13 @@ export function NewCharacter() {
         </div>
         <div className="kb-new-classes">
           <ClassCards legend="Class" value={cls} onChange={setCls} />
-          <p className="kb-roster-line">Only you will know its class, unless you choose to reveal it.</p>
+          <p className="kb-roster-line">Only you will know {words(pronouns).their} class, unless you choose to reveal it.</p>
         </div>
         <PronounPicker name={name} value={pronouns} onChange={setPronouns} />
-        <DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
+        <DebutChoice name={name} pronouns={pronouns} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
-        <FormFoot line={newCharacterFooter({ name, className, timing, loudness })}>
+        <FormFoot line={newCharacterFooter({ name, pronouns, className, timing, loudness })}>
           <GlassButton to="/characters">Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns) || busy}>Make the character</GlassButton>
         </FormFoot>

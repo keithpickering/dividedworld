@@ -36,6 +36,7 @@ import { LensProvider } from '../cards/Lens.tsx';
 import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
 import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
@@ -161,6 +162,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
   const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
+  const pronounsOf = useCallback((id: Id | null) => (id === null ? ENGINE_DEFAULT_PRONOUNS : people.current.get(id)?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS), []);
 
   /*
    * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
@@ -551,8 +553,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const canReply = systemBoard === false;
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, ensurePeople, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, pronounsOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, pronounsOf, ensurePeople, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 

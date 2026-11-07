@@ -23,9 +23,9 @@ const log = () => screen.findByRole('table', { name: 'Moderation log, newest fir
 const rows = async () => within(await log()).getAllByRole('row').filter((r) => within(r).queryAllByRole('cell').length > 0);
 
 describe('a staff profile\'s pronouns', () => {
-  test('shows the default set under the title, and a persona\'s own', async () => {
+  test('shows a persona\'s set under the title, the default for one with none, and a custom persona\'s own', async () => {
     const { fake } = open('director');
-    expect(await screen.findByText('it/its')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+    expect(await screen.findByText('she/her')).toHaveClass('kb-profile-pronouns', 'kb-muted');
     cleanup();
     const sage = fake.seed.staff('sage', 'Sage', 'mod', { pronouns: PRONOUN_PRESETS.they });
     renderIn(fake, <LoadedProfile id={sage} />, { path: `/c/${sage}` });
@@ -41,7 +41,7 @@ describe('a Boss\'s profile', () => {
     expect(within(card).getByText('ADMINISTRATOR')).toBeInTheDocument();
     expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(card).toHaveTextContent('Head of Board Operations (Toast Division)');
-    const table = await within(card).findByRole('table', { name: 'About The Director, in its own words' });
+    const table = await within(card).findByRole('table', { name: 'About The Director, in her own words' });
     const row = (name: string) => within(table).getByRole('rowheader', { name }).closest('tr')!;
     expect(row('Interests')).toHaveTextContent('toast, artisanal breads, the 1998 film Small Soldiers (since Tuesday)');
     expect(within(row('Favorite Members')).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);
@@ -49,7 +49,7 @@ describe('a Boss\'s profile', () => {
     expect(row('Current Mood')).toHaveTextContent('Disappointed but Hopeful');
     expect(row('Posts')).toHaveTextContent(/^Posts0/u);
     expect(card).toHaveTextContent('A forum is like a loaf of bread. Somebody has to slice it.');
-    expect(card).toHaveTextContent('what it says about itself, in character, and it may bluff');
+    expect(card).toHaveTextContent('what she says about herself, in character, and she may bluff');
   });
 
   test('has no standing, no class and no season record', async () => {
@@ -106,7 +106,7 @@ describe('a staff profile\'s career', () => {
     const career = await screen.findByRole('region', { name: 'Career' });
     const items = await within(career).findAllByRole('listitem');
     expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Boss in Season 5, from 2026-06-07 until now, named by the Boss before it.');
+    expect(items[0]).toHaveTextContent('Boss in Season 5, from 2026-06-07 until now, named by the previous Boss.');
     expect(items[1]).toHaveTextContent('Mod Bot from 2026-03-29 to 2026-06-07, at a handover.');
     expect(items[2]).toHaveTextContent('Boss in Season 2, from 2026-02-01 to 2026-03-29 (8 weeks), by rotation.');
   });
@@ -119,6 +119,17 @@ describe('a staff profile\'s career', () => {
   });
 });
 
+describe('a Boss who has made no move', () => {
+  test('says so in the Boss\'s own set: "They have not made a move", with the profile\'s lines in the same words', async () => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('x'));
+    const quiet = fake.seed.staff('quiet', 'Quiet Boss', 'boss', { pronouns: PRONOUN_PRESETS.they });
+    renderIn(fake, <LoadedProfile id={quiet} />, { path: `/c/${quiet}` });
+    expect(await screen.findByText('Nothing here yet. They have not made a move.')).toBeInTheDocument();
+    expect(screen.getByText(/what they say about themself, in character, and they may bluff/u)).toBeInTheDocument();
+  });
+});
+
 describe('a Mod Bot\'s profile', () => {
   test('is the same screen with a MODERATOR badge and its own title, and says plainly that its log is empty until it has made a visit', async () => {
     open('bot');
@@ -128,7 +139,7 @@ describe('a Mod Bot\'s profile', () => {
     expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
     expect(card).toHaveTextContent('Keeper of the Hall');
-    expect(await screen.findByText(/Nothing here yet\. A Mod Bot's log lists its visits, the reports it judged and the appeals it heard, once it has any\./u)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing here yet\. A Mod Bot's log lists their visits, the reports they judged and the appeals they heard, once they have any\./u)).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Moderation log, newest first' })).toBeNull();
   });
 });
@@ -151,7 +162,7 @@ describe('the career\'s loading and failure', () => {
   test('a failed load is announced in an alert region', async () => {
     open('director', (f) => { f.staffCareer = () => Promise.reject(new Error('down')); });
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Its career could not be loaded');
+    expect(alert).toHaveTextContent('Her career could not be loaded');
     expect(within(screen.getByRole('region', { name: 'Career' })).getByRole('alert')).toBe(alert);
   });
   test('loading is announced in a status region, and goes when the career arrives', async () => {
