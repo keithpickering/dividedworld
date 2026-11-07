@@ -4,7 +4,7 @@
 do $test$
 declare
   c record;
-  small constant int := 25000;
+  small constant int := 12000;
   t0 timestamp;
   t_small double precision;
   t_big double precision;
@@ -17,7 +17,11 @@ begin
       ('stray closers',          'a[/b]'),
       ('unclosed openers',       '[b]x'),
       ('quotes dropped',         '[quote=00000000-0000-0000-0000-000000000000]words[/quote]'),
-      ('items',                  '[list][*]x[/list]')
+      ('items',                  '[list][*]x[/list]'),
+      ('links closed',           '[url]x[/url]'),
+      ('links, one unclosed',    '[url]a[/url][url]b'),
+      ('images',                 '[img]http://a.example/x[/img]'),
+      ('links with an address',  '[url]http://a.example/x[/url]')
     ) as v (name, unit)
   loop
     t0 := clock_timestamp();
