@@ -1506,7 +1506,7 @@ export interface LogPage {
   readonly boards: readonly Board[];
   /** `standingAmounts(ids)` of the player's characters. */
   readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
-  /** The latest announced Turn of each of the player's characters (`turnsAnnounced(ids)` that the log draws). */
+  /** Every announced Turn of the player's characters (`turnsAnnounced(ids)`); the log draws only each character's latest, which the screen picks with the characters it holds (the one whose announcement is dated at its `classSince`). */
   readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
   readonly season: Awaited<ReturnType<KayfaApi['season']>>;
 }

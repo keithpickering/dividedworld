@@ -2425,7 +2425,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const mine = core.myCharacters();
       const ids = mine.map((c) => c.id);
       /* Only a character's latest Turn is a line (lines.ts), so only its announcement is named. */
-      const turns = core.turnsAnnounced(ids).filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
+      const announced = core.turnsAnnounced(ids);
+      const turns = announced.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
       const acts = new Map<Id, Act>();
       for (const a of core.actsById(actsNamed(log, null, turns))) acts.set(a.id, a);
       for (let round = 0; round < 2; round++) for (const a of core.actsById(actsFollowed(acts))) acts.set(a.id, a);
@@ -2441,7 +2442,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return {
         log, acts: [...acts.values()], states: core.effectStates([...new Set(log.saves.map((s) => s.play))]), people: core.characters(others),
         threads: threads.flatMap((id) => core.thread(id) ?? []), boards: [...new Set(unnamed.board)].flatMap((id) => core.board(id) ?? []),
-        standings: core.standingAmounts(ids), turns, season: core.season(),
+        standings: core.standingAmounts(ids), turns: announced, season: core.season(),
       };
     },
     setPresenceHidden(character, hidden) {

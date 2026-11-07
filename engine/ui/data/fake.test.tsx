@@ -2592,7 +2592,7 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect(page.standings).toEqual(await fake.standingAmounts(ids));
     expect(page.season).toEqual(await fake.season());
     const turns = (await fake.turnsAnnounced(ids)).filter((t) => characters.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
-    expect(page.turns).toEqual(turns);
+    expect(page.turns).toEqual(await fake.turnsAnnounced(ids));
     const acts = new Map((await fake.actsById(actsNamed(log, null, turns))).map((a) => [a.id, a]));
     for (let round = 0; round < 2; round++) for (const a of await fake.actsById(actsFollowed(acts))) acts.set(a.id, a);
     expect(page.acts).toEqual([...acts.values()]);
@@ -2628,5 +2628,37 @@ describe('a screen in one call is what the separate calls answer', () => {
     expect(updates).toMatchObject({ updates: await fake.updates(null), tallies: {}, mine: [] });
     expect('queue' in updates).toBe(false);
     expect(await fake.queuePage()).toBeNull();
+  });
+
+  test('alertsPage carries the Acts, people, openings and reading its rows name', async () => {
+    const { fake, ana, bo, anaFace, boFace, thread, opener } = world();
+    fake.signInAs(bo);
+    await fake.follow(thread, true);
+    fake.signInAs(ana);
+    const reply = must(await fake.post(thread, anaFace, 'a reply', opener));
+    fake.signInAs(bo);
+    const page = await fake.alertsPage(null);
+    expect(page.alerts).toEqual(await fake.alerts(null));
+    expect(page.alerts.length).toBeGreaterThan(0);
+    const named = page.alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
+    expect(named).toContain(reply.id);
+    expect(page.acts.map((a) => a.id)).toEqual(expect.arrayContaining(named));
+    expect(page.people).toEqual(await fake.characters([...new Set(page.acts.flatMap((a) => (a.character === null ? [] : [a.character])))]));
+    expect(page.people.map((c) => c.id)).toContain(anaFace);
+    const followed = [...new Set(page.alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
+    expect(page.openings).toEqual(await fake.openingActs(followed));
+    expect(page.reading).toEqual(await fake.reading(followed));
+    expect(boFace).toBeTruthy();
+  });
+
+  test('queuePage and updatesPage carry an admin\'s queue, and only an admin\'s', async () => {
+    const { fake, ana } = world();
+    fake.seed.admin(ana);
+    const queue = await fake.queuePage();
+    expect(queue).toEqual({ queue: await fake.adminQueue(), boardNames: await fake.boardNames(), bosses: await fake.bosses(), contact: await fake.adminContact() });
+    expect(await fake.updatesPage(null, null, 3)).toMatchObject({ queue: await fake.adminQueue() });
+    expect('queue' in (await fake.updatesPage(null, null, null))).toBe(false);
+    const other = world();
+    expect('queue' in (await other.fake.updatesPage(null, null, 3))).toBe(false);
   });
 });

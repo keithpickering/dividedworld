@@ -1997,7 +1997,8 @@ describe('a screen in one call', () => {
     const answer = {
       characters: [
         { ...mine, face: { ...CHAR, profile: PROFILE }, counts: { character: B, posts: 4, spins: 1, cards: 2 }, standing: 340, reveals: [REVEAL_ROW], turns: [TURN_ROW] },
-        { ...mine, id: C, name: 'Zed', face: null, counts: null, standing: null, reveals: [], turns: [] },
+        { ...mine, id: C, name: 'Zed', face: { ...CHAR, id: C, name: 'Zed', profile: null }, counts: null, standing: null,
+          reveals: [{ ...REVEAL_ROW, act: SET, character: C, at: '2026-09-30T10:00:00+00:00' }], turns: [{ ...TURN_ROW, act: SPRING, character: C, at: '2026-10-01T10:00:00+00:00' }] },
       ],
       nextSettlementAt: '2026-10-31T08:17:00+00:00',
     };
@@ -2005,11 +2006,12 @@ describe('a screen in one call', () => {
     const page = await h.api.myCharactersPage();
     expect(only(h, 'my_characters_page') ?? {}).toEqual({});
     expect(page.characters.map((c) => [c.id, c.name, c.class])).toEqual([[B, 'Bea', 'face'], [C, 'Zed', 'face']]);
-    expect(page.faces).toEqual([BEA]);
+    expect(page.faces.map((f) => f.name)).toEqual(['Bea', 'Zed']);
     expect(page.counts).toEqual({ [B]: { posts: 4, spins: 1, cards: 2 }, [C]: { posts: 0, spins: 0, cards: 0 } });
-    expect(page.standings).toEqual({ [B]: 340 });
-    expect(page.reveals).toEqual([{ act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T }]);
-    expect(page.turns).toEqual([{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }]);
+    expect(page.standings).toEqual({ [B]: 340, [C]: 0 });
+    /* Both lists are one list in time order across the characters, whichever is named first. */
+    expect(page.reveals.map((r) => [r.act, r.character])).toEqual([[SET, C], [A, B]]);
+    expect(page.turns.map((t) => [t.act, t.character])).toEqual([[SPRING, C], [C, B]]);
     expect(page.nextSettlementAt).toBe('2026-10-31T08:17:00+00:00');
   });
 
@@ -2030,6 +2032,9 @@ describe('a screen in one call', () => {
     const c = await done.api.seasonPage(null, 1, B, null);
     expect(only(done, 'season_page')).toEqual({ in_tab: null, in_season: 1, in_character: B, in_page: null });
     expect(c).toMatchObject({ tab: 'results', page: 1, place: 4, results: [{ character: B, name: 'Bea', place: 5, standing: 900, shown: [] }] });
+    expect(c).not.toHaveProperty('standings');
+    const unplaced = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 1, place: null, results: [] });
+    expect(await unplaced.api.seasonPage(null, 1, A, null)).toMatchObject({ tab: 'results', place: null, results: [] });
     expect(await once('season_page', null).api.seasonPage(null, 9, null, null)).toBeNull();
   });
 
@@ -2097,7 +2102,7 @@ describe('a screen in one call', () => {
         saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
       }), {
         shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
-        people: [{ ...CHAR, profile: PROFILE }], threads: [THREAD_ROW], boards: [BOARD_ROW], standings: [{ character: B, standing: 340 }], turns: [TURN_ROW], season: SEASON_ROW,
+        people: [{ ...CHAR, profile: PROFILE }], threads: [THREAD_ROW], boards: [BOARD_ROW], standings: [{ character: B, standing: 340 }], turns: [{ ...TURN_ROW, act: A, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, TURN_ROW], season: SEASON_ROW,
       });
       const h = once('log_page', answer);
       const page = await h.api.logPage('2026-10-31T00:00:00+00:00');
@@ -2115,7 +2120,8 @@ describe('a screen in one call', () => {
       expect(page.threads[0]).toMatchObject({ id: T });
       expect(page.boards).toEqual([BOARD]);
       expect(page.standings).toEqual({ [B]: 340 });
-      expect(page.turns).toEqual([{ act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }]);
+      /* Every announced Turn of the character, in the order sent: the screen picks the latest with the characters it holds. */
+      expect(page.turns).toEqual([{ act: A, character: B, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, { act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }]);
       expect(page.season).toMatchObject({ number: 2 });
     });
 
