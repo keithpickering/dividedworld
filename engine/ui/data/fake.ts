@@ -1118,6 +1118,54 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }));
   /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0115). */
   const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
+  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0119), in the server's words, and which of the two. */
+  function slotWords(availability: unknown, price: unknown): { readonly error: string; readonly field: 'availability' | 'price' } | null {
+    if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return { error: 'a slot is on sale, sold out or hidden', field: 'availability' };
+    if (typeof price !== 'number' || !Number.isInteger(price) || price < 1) return { error: 'a price is at least 0.01', field: 'price' };
+    if (price > 100000000) return { error: 'a price is at most 1000000.00', field: 'price' };
+    return null;
+  }
+  /** The availability and price an admin sees on a slot: a Pull's sold out and a Boss's price are the Boss's, not the admin's. */
+  const adminAvailability = (r: SlotRec): SlotRec['availability'] => (r.move?.kind === 'pullSlot' && r.availability === 'soldOut' ? 'onSale' : r.availability);
+  const adminPrice = (r: SlotRec): number => (r.move ? r.move.was : r.price);
+  /** Writes what an admin changed on a slot, and only what changed, so a Boss's move over it stays. True where a pack just left sale. */
+  function applySlot(rec: SlotRec, availability: SlotRec['availability'], price: number): boolean {
+    const was = adminAvailability(rec);
+    if (availability !== was) rec.availability = availability;
+    if (price !== adminPrice(rec)) {
+      rec.price = price;
+      if (rec.move) rec.move = { ...rec.move, was: price };
+    }
+    return 'pack' in rec.item && was === 'onSale' && availability !== 'onSale';
+  }
+  /** `card_in_open_pack` (0117): whether a pack on sale can still give the card. */
+  function cardInOpenPack(card: string): boolean {
+    const rarity = instance.cards.find((c) => c.key === card)?.rarity;
+    if (!rarity) return false;
+    return slotRecs.some((r) => {
+      if (!('pack' in r.item) || r.availability !== 'onSale') return false;
+      const key = r.item.pack;
+      const pack = instance.packs.find((p) => p.key === key);
+      return pack !== undefined && !(pack.leaves ?? []).includes(card) && pack.pulls.some((pull) => rarity in pull.weights);
+    });
+  }
+  /** After a pack leaves sale: ends, as reversed by the admin, every Pull whose card is then in no pack on sale. Returns how many. */
+  function endUnfloored(): number {
+    let ended = 0;
+    for (const r of [...slotRecs].sort((x, y) => x.position - y.position)) {
+      const m = r.move;
+      if (!m || m.kind !== 'pullSlot' || !('card' in r.item) || cardInOpenPack(r.item.card)) continue;
+      const a = acts.get(m.act);
+      if (a && a.kind === 'move' && !moveEnds.has(m.act)) {
+        moveEnds.set(m.act, { why: 'reversed', by: 'admin', at: now() });
+        write({ character: null, kind: 'move_end', thread: a.thread, target: m.act, payload: { why: 'reversed', by: 'admin' } });
+      }
+      r.availability = adminAvailability(r);
+      r.move = null;
+      ended += 1;
+    }
+    return ended;
+  }
   /** `slot_for_sale` (0115): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
   function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
     const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
@@ -2166,20 +2214,40 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!me()?.admin) throw new Error('only an admin reads the machine');
       /* The admin's own availability and price: a seeded move is already applied to the slot's (see `seed.slot`), so a Pull reads on sale again here and `was` is the price. */
       return [...slotRecs].sort((x, y) => x.position - y.position).map((r): AdminSlot => ({
-        id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.move?.kind === 'pullSlot' && r.availability === 'soldOut' ? 'onSale' : r.availability,
-        price: r.move ? r.move.was : r.price, move: r.move ? { kind: r.move.kind, act: r.move.act, ends: r.move.ends, percent: r.move.percent, hours: r.move.hours } : null,
+        id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: adminAvailability(r),
+        price: adminPrice(r), move: r.move ? { kind: r.move.kind, act: r.move.act, ends: r.move.ends, percent: r.move.percent, hours: r.move.hours } : null,
       }));
     },
     setSlot(slot, availability, price) {
       if (!me()?.admin) return refuse('only an admin changes the machine');
-      if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return refuse('a slot is on sale, sold out or hidden');
-      if (!Number.isInteger(price) || price < 1) return refuse('a price is at least 0.01');
-      if (price > 100000000) return refuse('a price is at most 1000000.00');
+      const words = slotWords(availability, price);
+      if (words) return refuse(words.error);
       const rec = slotRecs.find((r) => r.id === slot);
       if (!rec) return refuse('the machine has no such slot');
-      rec.availability = availability;
-      rec.price = price;
-      return ok({ slot, ended: 0 });
+      const left = applySlot(rec, availability, price);
+      return ok({ slot, ended: left ? endUnfloored() : 0 });
+    },
+    saveMachine(changes) {
+      if (!me()?.admin) return refuse('only an admin changes the machine');
+      if (!Array.isArray(changes)) return refuse('the machine is saved as a list of its slots');
+      /* All of it or none: every word is checked before anything is written. */
+      const seen = new Set<string>();
+      for (const c of changes) {
+        const words = slotWords(c.availability, c.price);
+        if (words) return refuse(words.error, `${c.slot}/${words.field}`);
+        if (!slotRecs.some((r) => r.id === c.slot)) return refuse('the machine has no such slot');
+        if (seen.has(c.slot)) return refuse('a slot is named once');
+        seen.add(c.slot);
+      }
+      if (seen.size !== slotRecs.length) return refuse('the machine has changed since this page was read: reload the page');
+      const places = slotRecs.map((r) => r.position).sort((x, y) => x - y);
+      let left = false;
+      changes.forEach((c, i) => {
+        const rec = slotRecs.find((r) => r.id === c.slot)!;
+        rec.position = places[i]!;
+        if (applySlot(rec, c.availability, c.price)) left = true;
+      });
+      return ok({ ended: left ? endUnfloored() : 0 });
     },
     moveSlot(slot, direction) {
       if (!me()?.admin) return refuse('only an admin moves a slot');

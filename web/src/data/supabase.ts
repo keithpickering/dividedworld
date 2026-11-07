@@ -1210,6 +1210,21 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('move_slot', { slot, direction }));
       return a.ok ? { ok: true, value: { slot: a.value['slot'], moved: a.value['moved'] === true } } : a;
     },
+    async saveMachine(changes) {
+      let r: { readonly data: unknown; readonly error: { readonly message?: string; readonly details?: string; readonly hint?: string } | null; readonly status?: number };
+      try {
+        r = (await client.rpc('save_machine', { changes })) as typeof r;
+      } catch {
+        return uncertain();
+      }
+      if (!r.error) return { ok: true, value: { ended: num((r.data as Row | null)?.['ended']) } };
+      if (r.error.hint === REFUSAL_HINT && r.error.message) {
+        /* The refusal's detail is `slot=<id> field=<availability|price>`: the page marks that field. */
+        const m = /^slot=([0-9a-f-]{36}) field=(availability|price)$/u.exec(r.error.details ?? '');
+        return refusal(r.error.message, m ? `${m[1]}/${m[2]}` : undefined);
+      }
+      return (r.status ?? 0) === 0 || (r.status ?? 0) >= 500 ? uncertain() : refusal(NOT_DONE);
+    },
     async reading(threads) {
       const out: Record<Id, number> = {};
       if (threads.length === 0) return out;

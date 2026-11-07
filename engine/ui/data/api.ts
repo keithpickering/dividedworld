@@ -1666,6 +1666,12 @@ export interface KayfaApi {
   setSlot(slot: Id, availability: AdminSlot['availability'], price: number): Promise<Answer<{ readonly slot: Id; readonly ended: number }>>;
   /** Swaps a slot with its neighbor in the grid (`move_slot`); the first slot up and the last slot down answer `moved: false` and change nothing. An admin's alone. */
   moveSlot(slot: Id, direction: 'up' | 'down'): Promise<Answer<{ readonly slot: Id; readonly moved: boolean }>>;
+  /**
+   * Saves the machine page in one transaction (`save_machine`): the slots in the order given (all of them, each once) and each one's availability and price. A refusal
+   * anywhere in the list saves nothing; its `field` is `<slot id>/availability` or `<slot id>/price` where one slot's word is at fault, so the page can mark it.
+   * `ended` counts the Pulls this ended (see `setSlot`). An admin's alone.
+   */
+  saveMachine(changes: readonly { readonly slot: Id; readonly availability: AdminSlot['availability']; readonly price: number }[]): Promise<Answer<{ readonly ended: number }>>;
   /** Which of these plays the player has released themselves from (Stick Around's certification): the player's own rows, never counted or broadcast. */
   myReleases(plays: readonly Id[]): Promise<readonly Id[]>;
   /** The furthest seq read in each thread asked about; a thread never read is absent. */
