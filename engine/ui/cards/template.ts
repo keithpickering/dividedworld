@@ -1,0 +1,76 @@
+/**
+ * The postcard template: the one set of measures a card face is drawn to, and the file an artist works from.
+ * Lengths are in card units on a 600 by 900 card (2:3); the stylesheet draws them as fractions of the card's own
+ * width, so the same face is right at every size. The canvas is the art's: a full-art SVG on 540 by 840.
+ */
+
+export const TEMPLATE = {
+  card: { w: 600, h: 900 },
+  border: 30,
+  outerRadius: 45, // border + canvas.r: the border is 30 thick all the way round
+  canvas: { x: 30, y: 30, w: 540, h: 840, r: 15 },
+  keepClear: 12, // no piece is drawn outside this line, 12 units in from the outer edge
+  focus: { x: 70, y: 100, w: 460, h: 400 }, // card units; an optional guide, never a mask
+  plateTop: 600, // card units; the plate zone runs from here to the canvas's bottom
+} as const;
+
+export type PostcardSize = 'slot' | 'phone' | 'fan' | 'sheet';
+export const SIZES: Readonly<Record<PostcardSize, number>> = { slot: 86, phone: 104, fan: 150, sheet: 276 }; // widths in px; height is 1.5×
+
+/** A length in card units, as a fraction of the card's width, written for CSS. */
+function fraction(units: number): string {
+  return `calc(var(--kb-pc-w) * ${Number((units / TEMPLATE.card.w).toFixed(5))})`;
+}
+
+/**
+ * The custom properties a card face draws from. Never `cqw` on the card itself: on the card's own box a container
+ * unit measures the nearest container above it, which is the page.
+ */
+export function templateVars(size: PostcardSize): Record<string, string> {
+  return {
+    '--kb-pc-w': `${SIZES[size]}px`,
+    '--kb-pc-border': fraction(TEMPLATE.border),
+    '--kb-pc-radius': fraction(TEMPLATE.outerRadius),
+    '--kb-pc-canvas-radius': fraction(TEMPLATE.canvas.r),
+    '--kb-pc-keep': fraction(TEMPLATE.keepClear),
+  };
+}
+
+const GUIDE = '#b6ff3b'; // one neutral green, as the board's guides are
+
+/** The artist's template file: a locked guides layer over an empty art layer. */
+export function templateSvg(): string {
+  const { card, border, outerRadius, canvas, keepClear, focus, plateTop } = TEMPLATE;
+  const keep = keepClear;
+  const label = (x: number, y: number, text: string, anchor: 'start' | 'end' = 'start') =>
+    `    <text x="${x}" y="${y}" text-anchor="${anchor}" font-family="monospace" font-size="14" font-weight="700" fill="${GUIDE}">${text}</text>`;
+  const plateH = canvas.y + canvas.h - plateTop;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd" viewBox="0 0 ${card.w} ${card.h}" width="${card.w}" height="${card.h}">
+  <title>Postcard template</title>
+  <defs>
+    <pattern id="plate-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <line x1="0" y1="0" x2="0" y2="10" stroke="${GUIDE}" stroke-opacity="0.45" stroke-width="3"/>
+    </pattern>
+  </defs>
+  <g id="art" inkscape:groupmode="layer" inkscape:label="Art">
+    <rect x="${canvas.x}" y="${canvas.y}" width="${canvas.w}" height="${canvas.h}" fill="none" stroke="none" pointer-events="all"/>
+  </g>
+  <g id="guides" inkscape:groupmode="layer" inkscape:label="Guides, locked" sodipodi:insensitive="true" fill="none" stroke="${GUIDE}" stroke-width="1.5">
+    <rect x="0" y="0" width="${card.w}" height="${card.h}" rx="${outerRadius}" ry="${outerRadius}"/>
+    <rect x="${canvas.x}" y="${canvas.y}" width="${canvas.w}" height="${canvas.h}" rx="${canvas.r}" ry="${canvas.r}"/>
+    <rect x="${keep}" y="${keep}" width="${card.w - 2 * keep}" height="${card.h - 2 * keep}" rx="${outerRadius - keep}" ry="${outerRadius - keep}" stroke-dasharray="2 4"/>
+    <rect x="${focus.x}" y="${focus.y}" width="${focus.w}" height="${focus.h}" stroke-dasharray="8 6"/>
+    <rect x="${canvas.x}" y="${plateTop}" width="${canvas.w}" height="${plateH}" fill="url(#plate-hatch)" stroke="none"/>
+    <line x1="${canvas.x}" y1="${plateTop}" x2="${canvas.x + canvas.w}" y2="${plateTop}" stroke-dasharray="8 6"/>
+    <g stroke="none">
+${label(border + 6, border + 20, `canvas ${canvas.w}x${canvas.h} at ${canvas.x},${canvas.y}, radius ${canvas.r}`)}
+${label(border + 6, border + 38, `frame ${card.w}x${card.h}, radius ${outerRadius}, border ${border}`)}
+${label(keep + 4, card.h - keep - 6, `keep clear ${keep}: no piece crosses this dotted line`)}
+${label(focus.x + 6, focus.y + 20, `focus zone ${focus.w}x${focus.h} at ${focus.x},${focus.y} (optional, never a mask)`)}
+${label(canvas.x + canvas.w - 6, plateTop + 20, 'plates', 'end')}
+    </g>
+  </g>
+</svg>
+`;
+}

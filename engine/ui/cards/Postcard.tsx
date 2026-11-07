@@ -14,10 +14,11 @@
  */
 import type { CSSProperties, ElementType, HTMLAttributes, Ref } from 'react';
 import { gemOf, playWord, priceOf, rarityName, type CardFace } from './faces.ts';
+import type { PostcardSize } from './template.ts';
 import './postcard.css';
 
 /** Where the card is drawn: its size and which parts of the face it holds. */
-export type PostcardSize = 'slot' | 'fan' | 'phone' | 'sheet';
+export type { PostcardSize };
 
 export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
   readonly face: CardFace;
