@@ -127,6 +127,8 @@ test('Esc pressed the moment the menu opens, at full motion, returns to the same
   await post.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await expect.poll(() => post.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBeLessThan(40);
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+  /* The moment the glass is in (the board still held under it): an Esc before that stops the load and leaves the board where it was, which is another test's. */
+  await expect(page.locator('[data-kb-world="glass"]')).toBeAttached();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe(thread);
