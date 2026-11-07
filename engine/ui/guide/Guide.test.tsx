@@ -306,12 +306,18 @@ describe('the cards marker\'s prices', () => {
     rendered((fake) => fake.seed.slot({ card: 'whoops' }, { price: 250 }));
     expect(await priceOfWhoops()).toBe('2.50');
   });
-  test('a card whose slot is sold out, or hidden, has no price to say', async () => {
+  test('a card whose slot is sold out says so, and one whose slot is hidden is not on sale; neither has a price to say', async () => {
     rendered((fake) => fake.seed.slot({ card: 'whoops' }, { availability: 'soldOut' }));
-    expect(await priceOfWhoops()).toBe('Not on sale');
+    expect(await priceOfWhoops()).toBe('Sold out');
     cleanup();
     rendered((fake) => fake.seed.slot({ card: 'whoops' }, { availability: 'hidden' }));
     expect(await priceOfWhoops()).toBe('Not on sale');
+  });
+  test('a machine that cannot be read says the price is unavailable, and guesses none', async () => {
+    const fake = buildWorld(undefined, instance);
+    vi.spyOn(fake, 'machine').mockRejectedValue(new Error('down'));
+    renderIn(fake, <Guide />, { path: '/guide', instance, guide: guide('## Cards\n\n<!-- kayfabb:cards -->') });
+    expect(await priceOfWhoops()).toBe('Price unavailable');
   });
 });
 

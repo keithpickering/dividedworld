@@ -75,6 +75,19 @@ export const priceOf = (price: number, extra: number): string => `${orbs(price)}
 export const saleOf = (slots: readonly Slot[] | null | undefined, card: string): Slot | null =>
   slots?.find((s) => 'card' in s.item && s.item.card === card && s.availability === 'onSale') ?? null;
 
+/**
+ * What a card's price cell says: the on-sale slot's price (with the card's "+" where playing it can cost more), "Sold out" for a
+ * slot that is sold out, "Not on sale" for a card with no slot the machine lists (a hidden one, or none), "Price unavailable" where the
+ * machine could not be read, and nothing while the first read has not answered.
+ */
+export function priceWords(look: { readonly slots: readonly Slot[] | null; readonly status: 'loading' | 'ready' | 'failed' }, card: string, extra: number): string {
+  if (look.status === 'failed') return 'Price unavailable';
+  if (look.slots === null) return '';
+  const sale = saleOf(look.slots, card);
+  if (sale) return priceOf(sale.price, extra);
+  return look.slots.some((s) => 'card' in s.item && s.item.card === card && s.availability === 'soldOut') ? 'Sold out' : 'Not on sale';
+}
+
 /** The face a card with no `CardUi` has: the tokens' own, no picture. */
 const PLAIN: FaceArt = { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' };
 

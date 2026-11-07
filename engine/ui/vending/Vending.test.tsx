@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -77,17 +77,6 @@ describe('the machine as the Vending board draws it', () => {
     expect(screen.getByRole('status', { name: 'Selected: A2, Whoops!, 2.50' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 2.50' }));
     await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent('3.12'));
-  });
-
-  test('only a card on an on-sale slot is in the machine: a sold out or hidden slot has no price anywhere, and its place is empty', async () => {
-    const fake = seeded(562);
-    fake.seed.slot({ card: 'whoops' }, { availability: 'soldOut' });
-    fake.seed.slot({ card: 'stick' }, { availability: 'hidden' });
-    open(fake);
-    await screen.findByRole('group');
-    await waitFor(() => expect(screen.getByText('6 slots empty')).toBeInTheDocument());
-    expect(screen.queryByRole('button', { name: /^Buy / })).toBeNull();
-    expect(document.querySelector('.kb-vending-lcd-price')).toHaveTextContent('0.00');
   });
 
   test('a price that moved after the look is refused in plain words, and the machine is read again to show the new one', async () => {
@@ -472,5 +461,285 @@ describe('what the machine says to a screen reader', () => {
     const line = screen.getByText('More postcards arrive in later seasons.').parentElement!;
     expect(line).toHaveClass('kb-vending-empty-line');
     expect(line).not.toHaveClass('kb-vending-sealed');
+  });
+});
+
+
+/*
+ * The machine with a pack in it (the booster packs plan, Task 5): a Booster in A1, two commons, an uncommon, and a rare that is hidden (it comes in packs
+ * and is not sold on its own). The Booster's four first pulls roll commons; the hit pull rolls an uncommon (3 in 4) or the rare (1 in 4).
+ */
+const ruleOf = (key: string, name: string, rarity: CardRules['rarity'], alignment: CardRules['alignment'] = 'sweet'): CardRules => ({ key, name, alignment, rarity, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) });
+const trap = ruleOf('trap', 'Trap Card', 'uncommon', 'pepperoni');
+const main = ruleOf('main', 'Main Event', 'rare');
+const stocked: Instance = {
+  ...testInstance, cards: [stick, whoops, trap, main],
+  packs: [{ key: 'booster', pulls: [{ weights: { common: 1 } }, { weights: { common: 1 } }, { weights: { common: 1 } }, { weights: { common: 1 } }, { weights: { uncommon: 3, rare: 1 } }] }],
+  machine: [
+    { item: { pack: 'booster' }, availability: 'onSale', price: 300 }, { item: { card: 'stick' }, availability: 'onSale', price: 100 },
+    { item: { card: 'whoops' }, availability: 'onSale', price: 100 }, { item: { card: 'trap' }, availability: 'onSale', price: 150 },
+    { item: { card: 'main' }, availability: 'hidden', price: 300 },
+  ],
+};
+const stockedFaces: CardUi[] = [...faces, { key: 'trap', art: { ...art, color: '#ff3d7f' }, describe: () => 'A Pepperoni card. Catches a play.' }, { key: 'main', art, describe: () => 'A Sweet card. Pins a thread.' }];
+const packsUi = { booster: { name: 'Booster', art: { color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '', credit: 'Test' } } };
+
+function stockedWorld(wallet: number) {
+  const fake = buildWorld(undefined, stocked);
+  const account = fake.seed.account('ana');
+  fake.seed.character(account, 'Pipewrench', 'heel');
+  fake.seed.wallet(account, wallet);
+  fake.seed.cards(account, { stick: 1, whoops: 1 });
+  fake.signInAs(account);
+  return fake;
+}
+const openStocked = (fake: Fake) => renderIn(fake, <Vending />, { instance: stocked, cards: stockedFaces, packs: packsUi, path: '/vending' });
+const slotNames = () => [...document.querySelectorAll<HTMLElement>('.kb-vending-slots .kb-vending-slot')].map((e) => e.getAttribute('aria-label')!);
+const BOOSTER = 'Buy Booster, 3.00 orbs, a pack of 5 postcards';
+
+describe('the machine\'s slots, from the machine', () => {
+  test('draws the machine\'s slots in their order, a pack among them, and no hidden slot; the places left are sealed', async () => {
+    openStocked(stockedWorld(562));
+    await screen.findByRole('button', { name: BOOSTER });
+    expect(slotNames()).toEqual([
+      BOOSTER, 'Buy Stick Around, 1.00 orb, common Cast', 'Buy Whoops!, 1.00 orb, common Cast', 'Buy Trap Card, 1.50 orbs, uncommon Cast',
+      'Empty slot C1, waiting for a future postcard', 'Empty slot C2, waiting for a future postcard',
+    ]);
+    expect(screen.queryByRole('button', { name: /Main Event/u })).toBeNull();
+    expect(screen.getByText('2 slots empty')).toBeInTheDocument();
+  });
+
+  test('says nothing of empty slots before the first look has answered', async () => {
+    const fake = stockedWorld(562);
+    let answer: (s: Awaited<ReturnType<Fake['machine']>>) => void = () => {};
+    const real = fake.machine.bind(fake);
+    vi.spyOn(fake, 'machine').mockImplementation(() => new Promise((resolve) => { answer = resolve; }));
+    openStocked(fake);
+    await screen.findByRole('group', { name: 'Shop' });
+    expect(screen.queryByText(/slots? empty/u)).toBeNull();
+    expect(screen.queryByRole('img', { name: /^Empty slot/u })).toBeNull();
+    expect(document.querySelector('.kb-vending-slots')).toHaveAttribute('aria-busy', 'true');
+    await act(async () => { answer(await real()); });
+    expect(await screen.findByText('2 slots empty')).toBeInTheDocument();
+    expect(document.querySelector('.kb-vending-slots')).not.toHaveAttribute('aria-busy');
+  });
+
+  test('a machine that cannot be read says so plainly, draws no slot and no price, and Try again reads it again', async () => {
+    const fake = stockedWorld(562);
+    const read = vi.spyOn(fake, 'machine').mockRejectedValueOnce(new Error('down'));
+    openStocked(fake);
+    expect(await screen.findByText('The machine can\'t be read right now.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Buy / })).toBeNull();
+    expect(screen.queryByText(/slots? empty/u)).toBeNull();
+    read.mockRestore();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('button', { name: BOOSTER })).toBeInTheDocument();
+    expect(screen.queryByText('The machine can\'t be read right now.')).toBeNull();
+  });
+
+  test('a sold out slot is greyed and says it is sold out; it cannot be selected', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'stick' }, { availability: 'soldOut' });
+    openStocked(fake);
+    const slot = await screen.findByRole('button', { name: 'Stick Around, sold out' });
+    expect(slot).toHaveAttribute('aria-disabled', 'true');
+    expect(slot.closest('.kb-vending-cell')).toHaveAttribute('data-kb-sold', '');
+    fireEvent.click(slot);
+    expect(screen.getByRole('status', { name: 'Nothing selected' })).toBeInTheDocument();
+    expect(slot).not.toHaveAttribute('aria-pressed', 'true');
+    /* Its info is still there: what the card is can be read. */
+    expect(screen.getByRole('button', { name: 'About Stick Around' })).toBeInTheDocument();
+  });
+
+  test('a price the Boss moved shows the admin\'s price struck through beside the new one, and the slot\'s name says it was marked up', async () => {
+    const fake = stockedWorld(562);
+    fake.seed.slot({ card: 'trap' }, { price: 225, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-08T20:00:00Z', demand: null, progress: null, was: 150, percent: 150, hours: null } });
+    openStocked(fake);
+    const slot = await screen.findByRole('button', { name: 'Buy Trap Card, 2.25 orbs, marked up from 1.50, uncommon Cast' });
+    const shelf = slot.closest('.kb-vending-cell')!.querySelector('.kb-vending-shelf')!;
+    expect(shelf.querySelector('s')).toHaveTextContent('1.50');
+    expect(shelf).toHaveTextContent('2.25');
+  });
+
+  test('a pulled slot reads the move\'s words: on the slot, and in the Boss\'s moves beside the machine, with its way out and how far it is', async () => {
+    const fake = stockedWorld(562);
+    const [board] = await fake.boardNames();
+    fake.seed.slot({ card: 'whoops' }, {
+      availability: 'soldOut',
+      move: { kind: 'pullSlot', act: 'a2', ends: '2026-11-09T12:00:00Z', was: 100, percent: null, hours: null,
+        demand: { kind: 'distinctCharactersOnBoard', params: { board: board!.id, count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
+    });
+    openStocked(fake);
+    expect(await screen.findByRole('button', { name: 'Whoops!, sold out: pulled by the Boss until Nov 9' })).toHaveAttribute('aria-disabled', 'true');
+    const moves = await screen.findByRole('region', { name: 'The Boss\'s moves' });
+    expect(moves).toHaveTextContent(`Whoops! is pulled until Nov 9, or sooner if its demand is met: 12 different characters to post in ${board!.name} (7 of 12 so far). It still comes in Boosters.`);
+  });
+
+  test('a flash sale and a markup are each worded plainly, and a machine with no move in force has no Boss\'s moves', async () => {
+    const fake = stockedWorld(562);
+    openStocked(fake);
+    await screen.findByRole('button', { name: BOOSTER });
+    expect(screen.queryByRole('region', { name: 'The Boss\'s moves' })).toBeNull();
+    cleanup();
+    const other = stockedWorld(562);
+    other.seed.slot({ card: 'main' }, { availability: 'onSale', price: 300, move: { kind: 'flashSale', act: 'a3', ends: '2026-11-08T21:00:00Z', demand: null, progress: null, was: 300, percent: null, hours: 24 } });
+    other.seed.slot({ card: 'trap' }, { price: 225, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-08T20:00:00Z', demand: { kind: 'postsOnBoard', params: { board: 'none', count: 20 } }, progress: { done: 4, of: 20, met: false, checkedAt: null }, was: 150, percent: 150, hours: null } });
+    openStocked(other);
+    const moves = await screen.findByRole('region', { name: 'The Boss\'s moves' });
+    expect(within(moves).getByText(/^Main Event is on flash sale/u).parentElement).toHaveTextContent(/Main Event is on flash sale at 3\.00 until Nov 8, \d\d?:00 [AP]M\./u);
+    expect(within(moves).getByText(/^Trap Card is marked up/u).parentElement).toHaveTextContent('Trap Card is marked up from 1.50 to 2.25 until Nov 8, or sooner if its demand is met: 20 new posts on its board.');
+  });
+});
+
+describe('a pack in the machine', () => {
+  test('its info lists its odds plainly: each pull\'s table, and each card\'s chance in the hit pull', async () => {
+    openStocked(stockedWorld(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Booster' }));
+    const dialog = screen.getByRole('dialog', { name: 'Booster' });
+    const table = within(dialog).getByRole('table', { name: 'Booster odds' });
+    expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Cards 1 to 4, each', 'Card 5, the hit']);
+    const rows = within(table).getAllByRole('row').filter((r) => within(r).queryAllByRole('cell').length === 2).map((r) => within(r).getAllByRole('cell').map((c) => c.textContent));
+    expect(rows).toEqual([['Common', '100%'], ['Trap Card', '75%'], ['Main Event', '25%']]);
+  });
+
+  test('a rarity is drawn as a gem whose glyph says it by shape, in the table as on a card', async () => {
+    const fake = stockedWorld(562);
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    const gems = [...document.querySelectorAll('.kb-vending-odds .kb-gem')].map((g) => [g.getAttribute('data-kb-gem'), g.getAttribute('data-kb-rarity')]);
+    expect(gems).toEqual([['●', 'common'], ['◆', 'uncommon'], ['★', 'rare']]);
+    for (const g of document.querySelectorAll('.kb-vending-odds .kb-gem')) expect(g).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('selected, the pack shows five small backs, the last gold, and what opening does; the odds and what is not sold on its own stand beside the machine', async () => {
+    openStocked(stockedWorld(562));
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    expect(screen.getByRole('button', { name: `${BOOSTER}, selected` })).toHaveAttribute('aria-pressed', 'true');
+    const inPack = screen.getByRole('region', { name: 'In this pack' });
+    const backs = [...inPack.querySelectorAll('.kb-postcard-back')];
+    expect(backs.map((b) => b.hasAttribute('data-hit'))).toEqual([false, false, false, false, true]);
+    expect(inPack).toHaveTextContent('Five cards, the last one at least uncommon. It opens as soon as you buy it.');
+    const aside = screen.getByRole('complementary', { name: 'About the Booster' });
+    expect(within(aside).getByRole('table', { name: 'Booster odds' })).toBeInTheDocument();
+    expect(aside).toHaveTextContent('Main Event isn\'t sold on its own. Within a rarity, every card is equally likely.');
+    expect(screen.getByRole('status', { name: 'Selected: A1, Booster, 3.00' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy Booster · 3.00' })).toBeEnabled();
+    expect(document.querySelector('.kb-vending-sum')).toHaveTextContent('5.62 → 2.62');
+    expect(screen.getByRole('link', { name: 'Your hand 2 → 7' })).toBeInTheDocument();
+  });
+
+  test('a card selected has no pack\'s odds or backs beside it', async () => {
+    openStocked(stockedWorld(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Stick Around, 1.00 orb, common Cast' }));
+    expect(screen.queryByRole('region', { name: 'In this pack' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: /^About the/u })).toBeNull();
+  });
+
+  test('a stale pack price is refused in the server\'s words, no reveal opens, and the machine is read again to show the new price', async () => {
+    const fake = stockedWorld(562);
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fake.seed.slot({ pack: 'booster' }, { price: 350 });
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    expect(await screen.findByText('The price is now 3.50, not 3.00.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(await screen.findByRole('button', { name: /^Buy Booster, 3\.50 orbs, a pack of 5 postcards/u })).toBeInTheDocument();
+    expect((await fake.wallet()).balance).toBe(562);
+  });
+
+  test('a pack that sold out meanwhile is refused in the server\'s words, and the machine shows it sold out', async () => {
+    const fake = stockedWorld(562);
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fake.seed.slot({ pack: 'booster' }, { availability: 'soldOut' });
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    expect(await screen.findByText('This slot is sold out.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Booster, sold out' })).toBeInTheDocument();
+  });
+
+  test('too little solid Aura is refused before the server is asked', async () => {
+    const fake = stockedWorld(262);
+    const buy = vi.spyOn(fake, 'buyPack');
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Booster costs 3.00 and your wallet holds 2.62.');
+    expect(buy).not.toHaveBeenCalled();
+  });
+});
+
+describe('buying a pack opens the reveal', () => {
+  /** The pack bought: the answer the machine gave, kept so a test can say what was shown is what was answered. */
+  function buyBooster() {
+    const fake = stockedWorld(562);
+    const answers: string[][] = [];
+    const real = fake.buyPack.bind(fake);
+    vi.spyOn(fake, 'buyPack').mockImplementation(async (slot) => { const a = await real(slot); if (a.ok) answers.push([...a.value.contents]); return a; });
+    openStocked(fake);
+    return { fake, answers };
+  }
+  const press = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    return screen.findByRole('dialog', { name: 'Opening a Booster' });
+  };
+  const names: Record<string, string> = { stick: 'Stick Around', whoops: 'Whoops!', trap: 'Trap Card', main: 'Main Event' };
+
+  test('the five cards are in the hand, in the answer\'s order, before any is turned', async () => {
+    const { fake, answers } = buyBooster();
+    await press();
+    expect(answers).toHaveLength(1);
+    const contents = answers[0]!;
+    expect(contents).toHaveLength(5);
+    const hand = Object.fromEntries((await fake.myCards()).map((c) => [c.card, c.held]));
+    const expected: Record<string, number> = { stick: 1, whoops: 1 };
+    for (const c of contents) expected[c] = (expected[c] ?? 0) + 1;
+    expect(hand).toEqual(expected);
+    expect((await fake.wallet()).balance).toBe(262);
+    expect(within(screen.getByRole('dialog')).getByRole('status')).toHaveTextContent('0 of 5 turned over');
+    /* The reveal shows what was answered: turned one at a time, the names are the answer's, in its order. */
+    for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: /^Turn the next card$/u }));
+    const shown = within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem').map((li) => li.getAttribute('aria-label')!.split(':')[1]!.split(',')[0]!.trim());
+    expect(shown).toEqual(contents.map((c) => names[c]));
+    expect(shown[4]).toMatch(/^(Trap Card|Main Event)$/u);
+  });
+
+  test('Esc before every card is turned closes the reveal, and the hand still holds all five', async () => {
+    const { fake } = buyBooster();
+    await press();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn the next card' }));
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    act(() => { screen.getByRole('dialog').dispatchEvent(esc); });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await fake.myCards()).reduce((n, c) => n + c.held, 0)).toBe(7);
+    expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('7');
+  });
+
+  test('focus goes back to the pack\'s slot when it closes', async () => {
+    buyBooster();
+    await press();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.getByRole('button', { name: `${BOOSTER}, selected` })).toHaveFocus());
+  });
+
+  test('the words of what was bought are said as the purchase\'s outcome, and the wallet shows what is left', async () => {
+    buyBooster();
+    await press();
+    expect(document.querySelector('.kb-vending-outcome[role="status"]')).toHaveTextContent('Booster opened: its 5 cards are in your hand. 2.62 is left, solid.');
+    expect(screen.getByRole('img', { name: /^Wallet: 2\.62 of 6\.00/u })).toBeInTheDocument();
+  });
+
+  test('another account signing in while the reveal is open shows nothing of it', async () => {
+    const fake = stockedWorld(562);
+    const other = fake.seed.account('bo');
+    fake.seed.character(other, 'Sprocket', 'face');
+    fake.seed.wallet(other, 300);
+    openStocked(fake);
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
+    await screen.findByRole('dialog', { name: 'Opening a Booster' });
+    act(() => fake.signInAs(other));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

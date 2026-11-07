@@ -1177,6 +1177,15 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect((await fake.machine()).map((m) => [m.availability, m.price])).toEqual([['soldOut', 175], ['onSale', 300]]);
   });
 
+  test('a move seeded on a slot is shown as seeded and changes nothing else: the fake applies no move, so a test seeds the availability and price a move would have made', async () => {
+    const { fake } = shopWorld(0);
+    const pulled = { kind: 'pullSlot' as const, act: 'act-1', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: null, hours: null };
+    fake.seed.slot({ card: 'splat' }, { move: pulled });
+    expect((await fake.machine()).map((m) => [m.availability, m.price, m.move])).toEqual([['onSale', 100, pulled], ['onSale', 300, null]]);
+    fake.seed.slot({ card: 'splat' }, { move: null });
+    expect((await fake.machine())[0]!.move).toBeNull();
+  });
+
   test('a pack adds its five cards to the hand, takes its price, and says what it gave in pull order', async () => {
     const { fake } = shopWorld(500);
     const slot = (await fake.machine()).find((m) => 'pack' in m.item)!;

@@ -321,7 +321,9 @@ button.kb-vending-slot {
 .kb-vending-slot-code {
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
-  letter-spacing: 1px;
+  /* Tight and upper case, so that "E1 · 1.50 2.25" and "A2 · SOLD OUT" still leave the info control its place on the shelf (a wrapped shelf makes every row taller). */
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
@@ -423,6 +425,7 @@ button.kb-vending-slot {
 .kb-vending-buy-card {
   display: block;
   margin-top: 4px;
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   letter-spacing: 1px;
@@ -675,6 +678,286 @@ button.kb-vending-slot {
 
 
 /* A slot answers a pointer with a wash of the neon behind its card; the selected one lights further (e2e/glass-hover.spec.ts). */
-button.kb-vending-slot:hover {
+button.kb-vending-slot:not([aria-disabled='true']):hover {
   background: color-mix(in srgb, var(--kb-glass-neon) 14%, transparent);
+}
+
+
+/* ---- packs, sold out slots and the Boss's moves (the booster packs plan, Task 5; boards 01 and 04 in docs/research/2026-11-07-booster-packs/) ---- */
+
+/* A pack in a slot is drawn at the card's 86 by 129 and zoomed with it. */
+.kb-vending-slot > .kb-pack {
+  flex: 0 0 auto;
+  zoom: var(--kb-slot-scale);
+}
+
+/* A slot that is sold out is greyed, its code says so, and a stripe says why; it takes no pointer's wash and cannot be picked. */
+.kb-vending-cell[data-kb-sold] .kb-vending-slot > :is(.kb-postcard, .kb-pack) {
+  filter: grayscale(1) brightness(0.45);
+}
+
+button.kb-vending-slot[aria-disabled='true'] {
+  cursor: default;
+}
+
+.kb-vending-stripe {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  top: 30px;
+  padding: 3px 0;
+  transform: rotate(-12deg);
+  background: var(--kb-glass-salty);
+  color: var(--kb-glass-ink-salty);
+  text-align: center;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.kb-vending-stripe::before {
+  content: attr(data-kb-stripe);
+}
+
+/* A price the Boss moved: the admin's price struck through beside the new one. */
+.kb-vending-slot-code s {
+  opacity: 0.7;
+}
+
+/* Before the first look has answered the places are held, empty: nothing is said of what is in them. */
+.kb-vending-cell--waiting {
+  min-height: 7rem;
+}
+
+/* The machine could not be read: a plain line and a way to try again, where the slots would be. */
+.kb-vending-unread {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 24px 18px;
+  font-size: var(--kb-glass-size-body);
+  line-height: 1.5;
+}
+
+.kb-vending-unread p {
+  margin: 0;
+}
+
+/* "In this pack": five small backs, the last the hit's gold, and the line about opening. */
+.kb-vending-inpack {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-pale) 35%, transparent);
+  /* A solid panel under its words, over the machine's body, as the contrast guard wants a line of words backed. */
+  background: var(--kb-glass-panel-strong);
+}
+
+.kb-vending-inpack-head {
+  margin: 0;
+  font-size: var(--kb-glass-size-phone-small);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-vending-inpack-head::before {
+  content: 'In this pack';
+}
+
+.kb-vending-backs {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.kb-vending-backs > .kb-postcard {
+  flex: none;
+  zoom: 0.3;
+}
+
+.kb-vending-inpack-line {
+  margin: 12px 0 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--kb-glass-text-2);
+}
+
+/* ---- the column to the right of the machine: the selected pack's odds, and the Boss's moves in force ---- */
+
+.kb-vending-right {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  min-width: 0;
+}
+
+.kb-vending-odds {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
+.kb-vending-odds caption {
+  padding: 0 0 2px;
+  text-align: left;
+  caption-side: top;
+  font-family: var(--kb-glass-font-display);
+  font-weight: 400;
+  font-size: var(--kb-glass-size-display-m);
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-vending-odds th {
+  padding: 16px 0 8px;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-pale) 40%, transparent);
+}
+
+.kb-vending-odds td {
+  padding: 7px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-vending-odds td:last-child {
+  text-align: right;
+  font-weight: 800;
+}
+
+.kb-vending-odds-who {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* A rarity's gem, as the card face draws it: a rotated tile, its glyph saying the rarity by shape (postcard.css), never by color alone. */
+.kb-gem {
+  --kb-gem-color: var(--kb-glass-text-2);
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  transform: rotate(45deg);
+  background: var(--kb-glass-card);
+  box-shadow: inset 0 0 0 1.5px var(--kb-gem-color);
+}
+
+.kb-gem::before {
+  content: attr(data-kb-gem);
+  transform: rotate(-45deg);
+  color: var(--kb-gem-color);
+  font-family: var(--kb-glass-font-body);
+  /* A share of the table's own type, so it follows the player's text size with the row it stands in (never a fixed px). */
+  font-size: 0.8em;
+  line-height: 1;
+}
+
+.kb-gem[data-kb-rarity='uncommon'] { --kb-gem-color: var(--kb-glass-sweet); }
+.kb-gem[data-kb-rarity='rare'] { --kb-gem-color: var(--kb-glass-ready); }
+.kb-gem[data-kb-rarity='legendary'] { --kb-gem-color: var(--kb-glass-salty-text); }
+
+@media (forced-colors: active) {
+  .kb-gem { outline: 1px solid CanvasText; }
+}
+
+.kb-vending-note {
+  margin: 12px 0 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-vending-moves {
+  padding-top: 24px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-vending-moves-head {
+  margin: 0;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--kb-glass-salty-text);
+}
+
+.kb-vending-move {
+  margin: 12px 0 0;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-vending-move b {
+  color: var(--kb-glass-text-hi);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-odds {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-odds caption {
+  font-size: var(--kb-glass-size-display-s);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-odds th {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) :is(.kb-vending-note, .kb-vending-move, .kb-vending-inpack-line) {
+  font-size: var(--kb-glass-size-phone-body);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-right {
+  gap: 22px;
+}
+
+/* On the phone "In this pack" is a row, as board 04 draws it: the five backs small, and the line beside them; its label is left to the section's name. */
+:where(:root[data-kb-layout='phone']) .kb-vending-inpack {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  padding: 12px 14px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-inpack-head {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-backs {
+  flex: none;
+  margin-top: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-backs > .kb-postcard {
+  zoom: 0.26;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-inpack-line {
+  /* At least ten times its type wide, as the layout check holds every block of words to: beside the backs where the column has the room, under them where it does not. */
+  flex: 1 1 10.5em;
+  margin: 0;
+  line-height: 1.35;
+}
+
+/* The selected pack's aside: its odds and the line under them, never wider than the column. */
+.kb-vending-about-pack {
+  min-width: 0;
 }

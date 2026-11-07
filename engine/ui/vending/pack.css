@@ -1,0 +1,93 @@
+/*
+ * A pack drawn as the foil pack the machine sells (PackArt.tsx): a wrapper at a card's 2:3, crimped at both ends, the instance's art on it and the
+ * engine's printing over that. `--kb-pack-w` is its width; every measure is a share of it (`--kb-u` is a hundredth), as a card's are of `--kb-pc-w`. The
+ * instance gives the art (`--kb-pack-canvas`), the color it falls back to and the ink the count is printed in (`--kb-pack-color`, `--kb-pack-ink`).
+ * `data-part='opened'` is the pack after it tore: its top is the jagged tear, which the reveal parks at the top of its screen with the foot in view.
+ */
+.kb-pack {
+  --kb-pack-w: 86px;
+  --kb-u: calc(var(--kb-pack-w) / 100);
+  --kb-crimp: calc(var(--kb-u) * 3.2);
+  --kb-tear-hi: calc(var(--kb-u) * 14);
+  --kb-tear-lo: calc(var(--kb-u) * 9);
+  position: relative;
+  display: block;
+  width: var(--kb-pack-w);
+  height: calc(var(--kb-pack-w) * 1.5);
+  background: var(--kb-pack-canvas, none) center / cover, var(--kb-pack-color, var(--kb-glass-ready));
+  clip-path: polygon(
+    0% var(--kb-crimp), 10% 0, 20% var(--kb-crimp), 30% 0, 40% var(--kb-crimp), 50% 0, 60% var(--kb-crimp), 70% 0, 80% var(--kb-crimp), 90% 0, 100% var(--kb-crimp),
+    100% calc(100% - var(--kb-crimp)), 90% 100%, 80% calc(100% - var(--kb-crimp)), 70% 100%, 60% calc(100% - var(--kb-crimp)), 50% 100%, 40% calc(100% - var(--kb-crimp)), 30% 100%, 20% calc(100% - var(--kb-crimp)), 10% 100%, 0% calc(100% - var(--kb-crimp))
+  );
+}
+
+.kb-pack[data-part='opened'] {
+  clip-path: polygon(
+    0% var(--kb-tear-hi), 8.33% var(--kb-tear-lo), 16.67% var(--kb-tear-hi), 25% var(--kb-tear-lo), 33.33% var(--kb-tear-hi), 41.67% var(--kb-tear-lo), 50% var(--kb-tear-hi), 58.33% var(--kb-tear-lo), 66.67% var(--kb-tear-hi), 75% var(--kb-tear-lo), 83.33% var(--kb-tear-hi), 91.67% var(--kb-tear-lo), 100% var(--kb-tear-hi),
+    100% calc(100% - var(--kb-crimp)), 90% 100%, 80% calc(100% - var(--kb-crimp)), 70% 100%, 60% calc(100% - var(--kb-crimp)), 50% 100%, 40% calc(100% - var(--kb-crimp)), 30% 100%, 20% calc(100% - var(--kb-crimp)), 10% 100%, 0% calc(100% - var(--kb-crimp))
+  );
+}
+
+/* The two seal lines the crimps leave. */
+.kb-pack-seal {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: color-mix(in srgb, var(--kb-glass-ground) 45%, transparent);
+}
+
+.kb-pack-seal-top { top: calc(var(--kb-u) * 9); }
+.kb-pack-seal-foot { bottom: calc(var(--kb-u) * 9); }
+
+.kb-pack-sheen {
+  position: absolute;
+  inset: calc(var(--kb-u) * 14) calc(var(--kb-u) * 8) calc(var(--kb-u) * 18);
+  background: linear-gradient(115deg, transparent 30%, color-mix(in srgb, var(--kb-glass-text-hi) 45%, transparent) 48%, transparent 62%);
+}
+
+.kb-pack-mark {
+  position: absolute;
+  left: calc(var(--kb-u) * 25);
+  top: calc(var(--kb-u) * 30);
+  width: calc(var(--kb-u) * 50);
+  height: calc(var(--kb-u) * 50);
+  filter: drop-shadow(0 0 calc(var(--kb-u) * 3) color-mix(in srgb, var(--kb-glass-ground) 70%, transparent));
+}
+
+.kb-pack-name {
+  position: absolute;
+  left: calc(var(--kb-u) * 6);
+  right: calc(var(--kb-u) * 6);
+  top: calc(var(--kb-u) * 92);
+  padding: calc(var(--kb-u) * 2) 0;
+  transform: skewX(var(--kb-glass-skew-tag, -12deg));
+  background: color-mix(in srgb, var(--kb-glass-ground) 88%, transparent);
+  color: var(--kb-glass-text-hi);
+  text-align: center;
+  font-family: var(--kb-glass-font-display);
+  font-size: calc(var(--kb-u) * 15);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.kb-pack-count {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(var(--kb-u) * 116);
+  text-align: center;
+  font-family: var(--kb-glass-font-body);
+  font-size: calc(var(--kb-u) * 8.5);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--kb-pack-ink, var(--kb-glass-ground));
+}
+
+.kb-pack-name::before,
+.kb-pack-count::before {
+  content: attr(data-kb-text);
+}
