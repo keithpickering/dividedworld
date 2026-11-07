@@ -25,17 +25,20 @@ import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import type { Career } from '../../system/career.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
+import { visibleText } from '../../bbcode/visible.ts';
+import { parse } from '../../bbcode/parse.ts';
+import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson, PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -278,6 +281,11 @@ export interface Fake extends KayfaApi {
     hold(): void;
     /** Deliver the held events, and stop holding; returns how many were held. */
     flush(options?: { reverse?: boolean; twice?: boolean }): number;
+    /**
+     * How many listeners hear `reach` now. A screen subscribes in an effect, which React may run after the screen is already drawn, and an
+     * event sent before it subscribes is lost (as a real Realtime event would be), so a test that sends one waits for the listener it means.
+     */
+    reachListeners(): number;
   };
   readonly seed: Seed;
   /** Always `KAYFA_FAKE_BACKEND`: what the bundle guard finds if the fake ever reaches a production build. */
@@ -359,7 +367,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
   const instance: Instance = { ...options.instance, settings };
   const screen: ScreenSettings = {
-    postsPerPage: settings.postsPerPage, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
+    postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
@@ -1612,6 +1620,162 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const midnight = Math.floor(now() / 86_400_000) * 86_400_000;
     return Math.max(0, settings.modBots.reportsPerDay - [...acts.values()].filter((a) => a.kind === 'report' && a.character === character && a.at >= midnight && !refundedReports.has(a.id)).length);
   };
+  /* ---------------------------------------------------------------- search ---- */
+  /*
+   * search_posts, search_threads and search_suggest over the fake's own Acts, on a small scale and with a plain word match: a whole word,
+   * case and accents apart, every word needed and `-word` leaving a post out (no stemming, phrases or `or`). The caps, the pool, the
+   * cursor and the ordering are the SQL's (supabase/migrations/0116_search.sql); only the matching is cruder.
+   */
+  const foldText = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  const wordsOf = (s: string): string[] => foldText(s).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const searchCmp = (sort: SearchSort) => (x: SearchRow, y: SearchRow): number => {
+    const time = x.at - y.at || (x.act < y.act ? -1 : x.act > y.act ? 1 : 0);
+    return sort === 'oldest' ? time : sort === 'newest' ? -time : y.rank - x.rank || -time;
+  };
+  interface SearchRow { readonly act: Id; readonly thread: ThreadRec; readonly rec: ActRec; readonly at: number; readonly seq: number; readonly body: string; rank: number }
+  function searchKeep(q: SearchQuery): { readonly rows: SearchRow[]; readonly words: string[]; readonly sort: SearchSort; readonly perPage: number } {
+    /* The SQL's refusals, in its order (search_posts, search_threads). */
+    const perPage = q.perPage ?? SEARCH_PER_PAGE;
+    if ([...q.q].length > 200) throw new Error('a search is at most 200 characters');
+    if (q.sort != null && q.sort !== 'relevance' && q.sort !== 'newest' && q.sort !== 'oldest') throw new Error('sort is relevance, newest or oldest');
+    if (!Number.isInteger(perPage) || perPage < 1 || perPage > SEARCH_PER_PAGE_MAX) throw new Error(`a page holds 1 to ${SEARCH_PER_PAGE_MAX} results`);
+    if (q.fromAt !== null && q.toAt !== null && Date.parse(q.fromAt) >= Date.parse(q.toAt)) throw new Error('the range ends before it begins');
+    const include: string[] = [];
+    const exclude: string[] = [];
+    for (const token of q.q.split(/\s+/).filter(Boolean)) (token.startsWith('-') ? exclude : include).push(...wordsOf(token));
+    /* Relevance needs keywords to rank by: without them the order is newest first. */
+    const sort: SearchSort = (q.sort ?? 'relevance') === 'relevance' && include.length === 0 ? 'newest' : q.sort ?? 'relevance';
+    const from = q.fromAt === null ? -Infinity : Date.parse(q.fromAt);
+    const to = q.toAt === null ? Infinity : Date.parse(q.toAt);
+    /* Who may be found: a character that has debuted. One that has not, and one that is no character, find nothing: the same empty answer. */
+    const author = q.author === null ? null : characters.get(q.author);
+    if (q.author !== null && (author == null || author.debutedAt === null)) return { rows: [], words: include, sort, perPage };
+    const latest = new Map<Id, ActRec>();
+    for (const a of acts.values()) if (a.kind === 'edit' && a.target !== null && (!latest.has(a.target) || latest.get(a.target)!.at <= a.at)) latest.set(a.target, a);
+    const rows: SearchRow[] = [];
+    for (const a of acts.values()) {
+      if ((a.kind !== 'post' && a.kind !== 'spin') || a.seq === null) continue;
+      const thread = threads.get(a.thread);
+      if (!thread || thread.id === updatesThreadId) continue;
+      if (q.board !== null && thread.board !== q.board) continue;
+      if (q.author !== null && a.character !== q.author) continue;
+      /* A post by a character that has not debuted is kept, its name null (the SQL left-joins characters_public). */
+      if (a.at < from || a.at >= to) continue;
+      if (q.titlesOnly && a.seq !== 1) continue;
+      const raw = (latest.get(a.id)?.payload ?? a.payload).body;
+      const body = visibleText(parse(typeof raw === 'string' ? raw : '')).replace(/\s+/g, ' ').trim();
+      /* A thread's first post carries its title at the heaviest weight, so a title and a post match in one index. */
+      const title = a.seq === 1 ? wordsOf(thread.title) : [];
+      const here = q.titlesOnly ? title : [...title, ...wordsOf(body)];
+      const counts = new Map<string, number>();
+      for (const w of here) counts.set(w, (counts.get(w) ?? 0) + 1);
+      if (include.some((w) => !counts.has(w)) || exclude.some((w) => counts.has(w))) continue;
+      const rank = include.reduce((n, w) => n + (counts.get(w) ?? 0) + 3 * title.filter((t) => t === w).length, 0);
+      rows.push({ act: a.id, thread, rec: a, at: a.at, seq: a.seq, body, rank });
+    }
+    return { rows, words: include, sort, perPage };
+  }
+  /** A snippet of about thirty words around the first matched one, the matched words between `<<` and `>>`; without keywords, the post's first 200 characters. */
+  function searchSnippet(row: SearchRow, words: readonly string[]): string {
+    if (words.length === 0) return row.body.slice(0, 200);
+    const text = !wordsOf(row.body).some((w) => words.includes(w)) ? row.thread.title : row.body;
+    const tokens = text.split(' ');
+    const first = Math.max(0, tokens.findIndex((t) => wordsOf(t).some((w) => words.includes(w))));
+    const start = Math.max(0, first - 8);
+    return tokens.slice(start, start + 30).join(' ').replace(/[\p{L}\p{N}]+/gu, (w) => (words.includes(foldText(w)) ? `<<${w}>>` : w));
+  }
+  function searchPage<T>(q: SearchQuery, after: SearchCursor | null | undefined, group: boolean, make: (row: SearchRow, matches: number, words: readonly string[]) => T): SearchPage<T> {
+    const { rows, words, sort, perPage } = searchKeep(q);
+    /* search_cursor_ok: a time and an id that cast, a rank that is a finite number (a relevance search needs it; a time-ordered one takes one or none). */
+    if (after != null && !(typeof after === 'object' && typeof after.at === 'string' && /^\d{4}-\d{2}-\d{2}[T ][0-9:.]+(Z|[+-][0-9:]+)?$/.test(after.at) && !Number.isNaN(Date.parse(after.at))
+      && new Date(after.at).toISOString().slice(0, 10) === after.at.slice(0, 10)
+      && typeof after.act === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(after.act)
+      && (sort === 'relevance' ? typeof after.rank === 'number' && Number.isFinite(after.rank) : after.rank == null || (typeof after.rank === 'number' && Number.isFinite(after.rank))))) throw new Error('that is not a cursor this search gave');
+    const pool = settings.searchRankPool;
+    const relevant = sort === 'relevance';
+    /* A search by relevance ranks the newest `pool` of its matches, and says so only when more matched than that; newest and oldest page by time and have no pool, posts and threads alike. */
+    const pooled = relevant && rows.length > pool;
+    const ranked = relevant ? [...rows].sort(searchCmp('newest')).slice(0, pool) : rows;
+    if (!relevant) for (const r of rows) r.rank = 0;
+    const order = searchCmp(sort);
+    const per = new Map<Id, SearchRow[]>();
+    for (const r of rows) per.set(r.thread.id, [...(per.get(r.thread.id) ?? []), r]);
+    const cursorRow = after ? ({ act: after.act, at: Date.parse(after.at), rank: after.rank ?? 0 } as SearchRow) : null;
+    if (group && !relevant) {
+      /* Threads by time, as the SQL's walk (search_walk) reads them: the matches in order from the cursor, at most `pool` of them, keeping each thread's key (its first match in this order);
+         at one past a page of keys it stops; at the pool with matches left it stops with the last match it read as the cursor, a page of however many keys it passed (maybe none). */
+      const inOrder = [...rows].sort(order);
+      const keyOf = new Set<Id>();
+      const keys = new Set<Id>();
+      for (const r of inOrder) if (!keys.has(r.thread.id)) { keys.add(r.thread.id); keyOf.add(r.act); }
+      const window = cursorRow ? inOrder.filter((r) => order(r, cursorRow) > 0) : inOrder;
+      const kept: SearchRow[] = [];
+      let lastRead: SearchRow | undefined;
+      let cut = false;
+      let read = 0;
+      for (const r of window) {
+        if (read >= pool) { cut = true; break; }
+        read += 1; lastRead = r;
+        if (keyOf.has(r.act)) { kept.push(r); if (kept.length > perPage) break; }
+      }
+      const shown = kept.slice(0, perPage);
+      const edge = kept.length > perPage ? shown[shown.length - 1] : cut ? lastRead : undefined;
+      const walked = countThreads(rows, pool);
+      return {
+        count: walked.count, more: walked.more, pooled: false,
+        results: shown.map((r) => make(r, per.get(r.thread.id)!.length, words)),
+        next: edge ? { rank: 0, at: iso(edge.at), act: edge.act } : null,
+      };
+    }
+    const sorted = [...ranked].sort(order);
+    const seenThreads = new Set<Id>();
+    const candidates = group ? sorted.filter((r) => (seenThreads.has(r.thread.id) ? false : (seenThreads.add(r.thread.id), true))) : sorted;
+    /* The count is of every match, or (threads) of the threads among the first `pool` matches newest first, to 1,001 (the SQL's walk); a pooled relevance search still counts past its pool for posts. */
+    const walked = group ? countThreads(rows, pool) : { count: Math.min(rows.length, SEARCH_COUNT_CAP + 1), more: rows.length > SEARCH_COUNT_CAP };
+    const past = cursorRow ? candidates.filter((r) => order(r, cursorRow) > 0) : candidates;
+    const shown = past.slice(0, perPage);
+    const last = shown[shown.length - 1];
+    return {
+      count: walked.count, more: walked.more, pooled,
+      results: shown.map((r) => make(r, per.get(r.thread.id)!.length, words)),
+      next: last && past.length > shown.length ? { rank: sort === 'relevance' ? last.rank : 0, at: iso(last.at), act: last.act } : null,
+    };
+  }
+  /** The threads' count, whatever the sort: the threads among the newest `pool` matches, to 1,001; `more` when past 1,000 or when matches were left unread. */
+  function countThreads(rows: readonly SearchRow[], pool: number): { readonly count: number; readonly more: boolean } {
+    const read = [...rows].sort(searchCmp('newest')).slice(0, pool);
+    const n = new Set(read.map((r) => r.thread.id)).size;
+    return { count: Math.min(n, SEARCH_COUNT_CAP + 1), more: n > SEARCH_COUNT_CAP || rows.length > pool };
+  }
+  function searchHit(row: SearchRow, words: readonly string[]): PostHit {
+    const board = boards.find((b) => b.id === row.thread.board)!;
+    const who = row.rec.character === null ? undefined : characters.get(row.rec.character);
+    return {
+      act: row.act, thread: row.thread.id, title: row.thread.title, board: board.id, boardSlug: board.slug, boardName: board.name, seq: row.seq,
+      page: pageOf(row.seq, settings.postsPerPage), character: row.rec.character, name: who?.debutedAt != null ? who.name : null, createdAt: iso(row.at),
+      snippet: searchSnippet(row, words),
+      /* card and spring plays that reach the post and have no card_end, oldest first (the SQL's `cards`). */
+      cards: [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'spring') && a.target === row.act && (a.payload.reach ?? 'post') === 'post' && typeof a.payload.card === 'string'
+        && ![...acts.values()].some((e) => e.kind === 'card_end' && e.target === a.id)).sort((x, y) => x.at - y.at || x.order - y.order).slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
+    };
+  }
+  /** Two same-length strings a letter apart, or two adjacent letters swapped. */
+  const oneOff = (a: string, b2: string): boolean => {
+    const at = [...a].flatMap((c, i) => (c === b2[i] ? [] : [i]));
+    return at.length <= 1 || (at.length === 2 && at[1] === at[0]! + 1 && a[at[0]!] === b2[at[1]!] && a[at[1]!] === b2[at[0]!]);
+  };
+  /**
+   * How well a typed prefix names a text, 0 for not at all: 2 when the text starts with it, 1.5 when a word of it does, 1 when a word starts a
+   * letter off it (a stand-in for pg_trgm's similarity, which the SQL uses).
+   */
+  function suggestMatch(text: string, prefix: string): number {
+    const f = foldText(text);
+    if (f.startsWith(prefix)) return 2;
+    const words = f.split(/[^\p{L}\p{N}]+/u);
+    if (words.some((w) => w.startsWith(prefix))) return 1.5;
+    return prefix.length >= 4 && words.some((w) => w.length >= prefix.length && oneOff(w.slice(0, prefix.length), prefix)) ? 1 : 0;
+  }
+
   const core: Sync<KayfaApi> = {
     session: () => sessionNow(),
     onSession(listener) { sessionListeners.add(listener); return () => { sessionListeners.delete(listener); }; },
@@ -2284,6 +2448,38 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const boards = core.boards();
       const people = [...new Set(boards.flatMap((b) => (b.lastCharacter === null ? [] : [b.lastCharacter])))];
       return { boards, characters: core.characters(people), presence: presenceAt({ kind: 'index' }), unread: core.alertsUnread() };
+    },
+    searchPosts: (q, after) => searchPage(q, after, false, (row, _n, words) => searchHit(row, words)),
+    searchThreads: (q, after) => searchPage(q, after, true, (row, n, words): ThreadHit => ({ ...searchHit(row, words), matches: Math.min(n, SEARCH_MATCHES_CAP), matchesMore: n > SEARCH_MATCHES_CAP })),
+    suggest(prefix, o) {
+      const kinds = o?.kinds ?? ['threads', 'characters', 'boards'];
+      const most = o?.most ?? 5;
+      /* The SQL's refusals, in its order (search_suggest); the prefix is measured trimmed. */
+      if (kinds.length === 0 || !kinds.every((k) => k === 'threads' || k === 'characters' || k === 'boards')) throw new Error('kinds are threads, characters and boards');
+      if (!Number.isInteger(most) || most < 1 || most > 10) throw new Error('a list holds 1 to 10 suggestions');
+      const length = [...prefix.trim()].length;
+      if (length > 100) throw new Error('a prefix is at most 100 characters');
+      if (length === 1) throw new Error('a prefix is at least 2 characters');
+      /* An empty prefix lists the newest threads, and only where threads alone are asked (the Reveal field's empty state). */
+      if (length === 0 && !(kinds.length === 1 && kinds[0] === 'threads')) throw new Error('only the threads list takes an empty prefix');
+      const empty = length === 0;
+      const p = foldText(prefix.trim());
+      const score = (text: string): number => (empty ? 1 : suggestMatch(text, p));
+      const systemBoard = (id: Id): boolean => boards.find((b) => b.id === id)?.isSystem === true;
+      const best = <T,>(items: readonly { readonly item: T; readonly text: string; readonly at: number }[]): T[] =>
+        items.map((x) => ({ ...x, s: score(x.text) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s || y.at - x.at).slice(0, most).map((x) => x.item);
+      return {
+        threads: kinds.includes('threads')
+          ? best([...threads.values()].filter((t) => t.id !== updatesThreadId && (o?.board == null || t.board === o.board) && !(o?.excludeSystem && systemBoard(t.board)))
+            .map((t) => ({ item: { id: t.id, title: t.title, board: t.board, boardName: boards.find((b) => b.id === t.board)!.name }, text: t.title, at: t.at })))
+          : [],
+        characters: kinds.includes('characters') && !empty
+          ? best([...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ item: { id: c.id, name: c.name }, text: c.name, at: c.debutedAt! })))
+          : [],
+        boards: kinds.includes('boards') && !empty
+          ? best(boards.filter((b) => !(o?.excludeSystem && b.isSystem)).map((b) => ({ item: { id: b.id, slug: b.slug, name: b.name }, text: b.name, at: 0 })))
+          : [],
+      };
     },
     boardPage(slug, page, effectCards): BoardPage | null {
       const board = core.board(slug);
@@ -3097,6 +3293,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     clock: { now, advance: (ms: number) => { offset += ms; } },
     broadcast: {
       log,
+      reachListeners: () => reachListeners.size,
       hold() { held ??= []; },
       flush(o: { reverse?: boolean; twice?: boolean } = {}) {
         const batch = held ?? [];

@@ -29,7 +29,8 @@ import { SendToWelcome } from '../../engine/ui/welcome/Welcome.tsx';
 import { SettlementOnLoad } from '../../engine/ui/log/Settlement.tsx';
 import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useRouterInternals } from '../../engine/ui/router.tsx';
 import { effectCards } from '../../engine/ui/cards/plays.ts';
-import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadThread, recordKey, threadKey, type LoadEnv, type ScreenDoc } from '../../engine/ui/screen-docs.ts';
+import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from '../../engine/ui/screen-docs.ts';
+import { SearchScreen } from '../../engine/ui/search/SearchScreen.tsx';
 import { Routes, type Route } from '../../engine/ui/routes.tsx';
 import { ThreadScreen } from '../../engine/ui/thread/Thread.tsx';
 import { instance } from '../../instances/divided-world/index.ts';
@@ -59,7 +60,7 @@ const LogScreen = lazy(() => import('../../engine/ui/log/Log.tsx').then((m) => (
 const SettlementScreen = lazy(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen })));
 
 /**
- * The routes. The five board-world routes load their screen's whole document before they move (the forum-load plan, Task 13), signed out
+ * The routes. The six board-world routes load their screen's whole document before they move (the forum-load plan, Task 13), signed out
  * answering a marker with no request; the rest render as they always did. `env` is what a loader needs of the app, read when it runs.
  */
 function routesFor(env: LoadEnv): readonly Route[] {
@@ -69,6 +70,8 @@ function routesFor(env: LoadEnv): readonly Route[] {
       path: '/b/:slug', load: ({ params, query }) => loadBoard(env, params.slug!, query), key: (params, query) => boardKey(params.slug!, query),
       render: ({ slug }, doc) => <BoardScreen slug={slug!} doc={doc as ScreenDoc<BoardPage>} />,
     },
+    /* Search is a board page like the board's: its document (the results of the address) loads before the move, and the form's fields are the address's. */
+    { path: '/search', load: ({ query }) => loadSearch(env, query), key: (_, query) => searchKey(query), render: (_, doc) => <SearchScreen doc={doc as ScreenDoc<SearchDoc>} /> },
     { path: '/characters', render: () => <Characters /> },
     { path: '/characters/new', render: () => <NewCharacter /> },
     { path: '/characters/edit', render: () => <ProfileEdit /> },

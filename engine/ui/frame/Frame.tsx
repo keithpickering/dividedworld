@@ -24,6 +24,7 @@ import { usePlayer } from '../player.tsx';
 import { Icon, type IconName } from '../board/Icons.tsx';
 import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
 import { PlayProvider } from '../cards/play.tsx';
+import { BannerSearch } from '../search/BannerSearch.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
 import { Hud } from './Hud.tsx';
 import { Loading } from './Loading.tsx';
@@ -78,6 +79,14 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name, icon: 'board' as const })),
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
+  /*
+   * Search (the search design, section 7, as amended by the owner): signed in, the banner's right side is a column, the host line with its
+   * loading meter on top and the search box on a row of its own under it (section 7 had the box take the host line's place; the host line
+   * now always shows). The boards bar ends in a Search link. On /search the page has its own keyword field, so the box is not drawn there.
+   * Signed out there is neither (a visitor reads no thread).
+   */
+  const onSearch = path === '/search';
+  const box = session.signedIn && !onSearch;
 
   return (
     <TipsProvider>
@@ -85,8 +94,13 @@ export function Frame({ children }: { readonly children: ReactNode }) {
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-            <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
-            <Loading />
+            <div className="kb-banner-side">
+              <div className="kb-banner-host">
+                <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+                <Loading />
+              </div>
+              {box && <BannerSearch />}
+            </div>
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
@@ -96,6 +110,13 @@ export function Frame({ children }: { readonly children: ReactNode }) {
               {links.map((l) => (
                 <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.icon && <Icon name={l.icon} />}{l.label}</Link></li>
               ))}
+              {session.signedIn && (
+                <li className="kb-nav-search">
+                  <Link to="/search" aria-current={onSearch ? 'page' : undefined} onClick={() => setOpen(false)}>
+                    <Icon name="search" />Search
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
           <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>

@@ -201,6 +201,9 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   titleMaxLength: (v) => (isWhole(v, 1) ? null : 'a whole number of characters, at least 1'),
   postsPerPage: (v) => (isWhole(v, 1) ? null : 'a whole number of posts, at least 1'),
   hotReplies: (v) => (isWhole(v, 1) ? null : 'a whole number of replies, at least 1'),
+  // A name only: whether the database holds a configuration of that name is the settings trigger's check (supabase/migrations/0116_search.sql), which has the same words.
+  searchLanguage: (v) => (typeof v === 'string' && /^[a-z][a-z0-9_]*$/.test(v) ? null : 'the name of a text search configuration this database holds (english or simple, for example)'),
+  searchRankPool: (v) => (isWhole(v, 100) && (v as number) <= 100_000 ? null : 'a whole number of matches from 100 to 100,000'),
   presenceWindow: (v) => (isSpan(v, GRACE_UNITS) ? null : 'a span: a unit of minute, day, week or month and a whole count from 1 to 1000'),
   presenceNames: (v) => (isWhole(v, 1) ? null : 'a whole number of names, at least 1'),
   // At least 10, so no instance is polled into load; at most 300, so the window still means something.

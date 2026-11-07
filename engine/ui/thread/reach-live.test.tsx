@@ -22,6 +22,9 @@ const reaching = (key: string, name: string, rarity: CardRules['rarity'], reache
 const instance: Instance = { ...testInstance, cards: [reaching('sparkle', 'Sparkle', 'uncommon', ['character']), reaching('beacon', 'Beacon', 'rare', ['thread'])], settings: { ...testInstance.settings, economy: { 'test.price': 100 } } };
 
 vi.setConfig({ testTimeout: 20_000 });
+/* A play heard on reach crosses the fake's realtime and a re-render of the whole frame; on a loaded runner that can take past waitFor's 1 s default,
+   so each wait here gets the time the test allows for (it still fails, naming the mark, if the play never lands or never leaves). */
+const landed = { timeout: 5_000 };
 class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', Observer);
@@ -45,6 +48,9 @@ async function open(withCards = false) {
   fake.signInAs(me);
   renderIn(fake, <Frame><LoadedThread thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
+  /* The post is drawn before React has run the screen's effects when the machine is loaded, and a play sent before the thread subscribes to
+     `reach` is never heard (as on the wire). The frame listens to `reach` too, so the thread is the second listener. */
+  await waitFor(() => expect(fake.broadcast.reachListeners()).toBeGreaterThanOrEqual(2), landed);
   return { fake, me, spritey, gloomba, here, elsewhere, gloombaThere };
 }
 const postbit = (seq: number) => document.getElementById(`post-${seq}`)!.querySelector('.kb-postbit') as HTMLElement;
@@ -55,7 +61,7 @@ describe('a play beyond a post, heard on reach', () => {
     const w = await open();
     expect(sparkleMark(postbit(1))).toBeNull();
     w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 60_000 });
-    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull(), landed);
   });
 
   test('a play on a character this page does not show is dropped', async () => {
@@ -71,7 +77,7 @@ describe('a play beyond a post, heard on reach', () => {
     w.fake.broadcast.hold();
     w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 60_000 });
     w.fake.broadcast.flush({ twice: true });
-    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull(), landed);
   });
 
   test('a play whose read goes wrong is dropped quietly, never an unhandled rejection', async () => {
@@ -96,8 +102,8 @@ describe('the end of a play beyond a post, heard on reach', () => {
     const w = await open();
     w.fake.seed.admin(w.me);
     const played = w.fake.seed.reach(w.spritey, 'character', w.spritey, 'sparkle', { post: w.elsewhere.act, live: true, ends: Date.now() + 3_600_000 });
-    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull());
+    await waitFor(() => expect(sparkleMark(postbit(1))).not.toBeNull(), landed);
     expect((await w.fake.reverseCard(played)).ok).toBe(true);
-    await waitFor(() => expect(sparkleMark(postbit(1))).toBeNull());
+    await waitFor(() => expect(sparkleMark(postbit(1))).toBeNull(), landed);
   });
 });
