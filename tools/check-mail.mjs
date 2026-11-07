@@ -43,6 +43,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /** Where Gmail clips a message, in bytes. */
 export const GMAIL_CLIP = 102400;
 const IMAGES = ['smoke.jpg', 'cut-panel.png', 'cut-button.png', 'coin.png'];
+const TEMPLATE_PATH = /^supabase\/templates\/[A-Za-z0-9_-][A-Za-z0-9._-]*\.html$/;
 const TEXT_COLORS = ['text', 'text2', 'hi', 'neonText', 'violet'];
 
 /** A JPEG's `{ width, height }` from its first SOF marker, or null if it is not a JPEG or has none. */
@@ -156,6 +157,9 @@ export function mailFaults({ ui, mailDir, templates, rendered }) {
     else if (t.text !== html) out.push(`${t.path}: differs from what authTemplates() writes; run  node tools/check-mail.mjs --write  and commit it`);
   }
 
+  const committed = new Set(templates.map((t) => t.path));
+  for (const r of rendered) if (!committed.has(r.path)) out.push(`${r.path}: authTemplates() writes it, but it is not among the committed templates; run  node tools/check-mail.mjs --write  and commit it`);
+
   /* 6 */
   for (const r of rendered) {
     const bytes = Buffer.byteLength(r.html);
@@ -216,6 +220,10 @@ export async function loadRoot(root, { write = false } = {}) {
     : [];
   if (names.length === 0) return [];
   const rendered = (await importTs(path.join(root, 'supabase', 'functions', '_shared', 'mail', 'auth.ts'))).authTemplates();
+  /* --write writes where authTemplates() says, so a path outside supabase/templates/*.html is refused before anything is written. */
+  for (const r of rendered) {
+    if (!TEMPLATE_PATH.test(r.path)) throw new Error(`authTemplates() names ${JSON.stringify(r.path)}, which is not supabase/templates/<name>.html; refusing to write or read it`);
+  }
   if (write) {
     for (const r of rendered) {
       fs.mkdirSync(path.dirname(path.join(root, r.path)), { recursive: true });
@@ -256,7 +264,13 @@ export async function loadRoot(root, { write = false } = {}) {
 async function main() {
   const i = process.argv.indexOf('--root');
   const root = path.resolve(i === -1 ? repoRoot : process.argv[i + 1]);
-  const loaded = await loadRoot(root, { write: process.argv.includes('--write') });
+  let loaded;
+  try {
+    loaded = await loadRoot(root, { write: process.argv.includes('--write') });
+  } catch (e) {
+    console.error(`  mail: ${e.message}`);
+    process.exit(1);
+  }
   if (loaded.length === 0) {
     console.error('  mail: no instance has a mail/ folder, so there is nothing to check; refusing to report a pass on nothing');
     process.exit(1);

@@ -16,7 +16,7 @@ import os from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
-import { loadRoot, mailFaults } from './check-mail.mjs';
+import { jpegSize, loadRoot, mailFaults } from './check-mail.mjs';
 import { canonicalJson, sha256, sourceSlices } from './mail-assets.mjs';
 
 const script = path.join(path.dirname(fileURLToPath(import.meta.url)), 'check-mail.mjs');
@@ -78,6 +78,18 @@ function png(width, height, { seed = 0, hole } = {}) {
   }
   const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(Buffer.concat(rows))), chunk('IEND', Buffer.alloc(0))]);
+}
+
+/** A 24 by 24 palette PNG whose one palette entry is transparent through a tRNS chunk. */
+function palettePng(side) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(side, 0);
+  ihdr.writeUInt32BE(side, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 3;
+  const rows = Buffer.alloc(side * (side + 1));
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return Buffer.concat([sig, chunk('IHDR', ihdr), chunk('PLTE', Buffer.from([1, 2, 3])), chunk('tRNS', Buffer.from([0])), chunk('IDAT', zlib.deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
 }
 
 /** A JPEG's markers (SOI, a baseline SOF0 saying `width` by `height`, EOI), then `pad` bytes after the end. */
@@ -155,7 +167,13 @@ function repo(name, poison = () => {}) {
   return dir;
 }
 
-const faultsOf = async (dir) => (await loadRoot(dir)).flatMap((args) => mailFaults(args));
+const faultsOf = async (dir) => {
+  try {
+    return (await loadRoot(dir)).flatMap((args) => mailFaults(args));
+  } catch (e) {
+    return [`threw: ${e.message}`];
+  }
+};
 const run = (dir) => spawnSync(process.execPath, [script, '--root', dir], { encoding: 'utf8' });
 const themeFile = (theme) => `export const mailTheme = ${JSON.stringify(theme)};\n`;
 
@@ -191,6 +209,23 @@ try {
   await red('a corner of 25 by 25', (f) => { f[`${ui}/public/mail/cut-button.png`] = png(25, 25); }, /cut-button\.png.*25x25.*24x24/);
   await red('a coin of 80 by 80 with a transparent pixel', (f) => { f[`${ui}/public/mail/coin.png`] = png(80, 80, { hole: { x: 0, y: 0, alpha: 0 } }); }, /coin\.png.*opaque/);
 
+  await red('a palette PNG with a tRNS chunk as a corner', (f) => { f[`${ui}/public/mail/cut-panel.png`] = palettePng(24); }, /cut-panel\.png.*palette/);
+  await red('a truncated smoke.jpg', (f) => { f[`${ui}/public/mail/smoke.jpg`] = jpeg(1200, 360).subarray(0, 8); }, /smoke\.jpg.*not a JPEG/);
+
+  /* ---- the JPEG reader ---- */
+  {
+    const withLen = (marker, body) => { const b = Buffer.concat([Buffer.from([0xff, marker, 0, 0]), body]); b.writeUInt16BE(body.length + 2, 2); return b; };
+    const sof = (marker) => { const b = jpeg(640, 480); b[3] = marker; return b.subarray(2, 21); };
+    const wrap = (...parts) => Buffer.concat([Buffer.from([0xff, 0xd8]), ...parts, Buffer.from([0xff, 0xd9])]);
+    const same = (a, b) => a && a.width === b.width && a.height === b.height;
+    check('jpegSize skips APP0 and DQT before the SOF', same(jpegSize(wrap(withLen(0xe0, Buffer.alloc(14, 2)), withLen(0xdb, Buffer.alloc(65, 3)), sof(0xc0))), { width: 640, height: 480 }));
+    check('jpegSize reads a progressive SOF2', same(jpegSize(wrap(withLen(0xe0, Buffer.alloc(14)), sof(0xc2))), { width: 640, height: 480 }));
+    check('jpegSize steps over a fill byte before a marker', same(jpegSize(wrap(withLen(0xe0, Buffer.alloc(14)), Buffer.from([0xff]), sof(0xc0))), { width: 640, height: 480 }));
+    check('jpegSize does not take DHT (C4) for a SOF', jpegSize(wrap(withLen(0xc4, Buffer.alloc(17)))) === null);
+    check('jpegSize reads null from a truncated SOF', jpegSize(Buffer.concat([Buffer.from([0xff, 0xd8]), sof(0xc0).subarray(0, 6)])) === null);
+    check('jpegSize reads null from a file that is not a JPEG', jpegSize(Buffer.from('GIF89a....')) === null);
+  }
+
   /* ---- (3) the fonts are the ui's ---- */
   await red('a font with one byte changed', (f, { fonts }) => {
     const b = Buffer.from(fonts[FONTS[0]]);
@@ -215,6 +250,13 @@ try {
   await red('a committed template with one word changed', (f) => { f[TEMPLATES[0].path] = TEMPLATES[0].html.replace('code', 'cove'); }, /sign-in\.html.*differs.*check-mail\.mjs --write/);
   await red('a missing committed template', (f) => { f[TEMPLATES[1].path] = null; }, /sign-up\.html.*missing/);
 
+  await red('a committed template authTemplates() does not write', (f) => { f['supabase/templates/stray.html'] = '<html></html>'; }, /stray\.html.*not a template authTemplates\(\) writes/);
+  {
+    const args = (await loadRoot(repo('uncommitted'))).map((a) => ({ ...a, templates: a.templates.filter((t) => t.path !== TEMPLATES[1].path) }));
+    const faults = args.flatMap((a) => mailFaults(a));
+    check('a rendered template absent from the committed list is named', faults.some((x) => /sign-up\.html.*not among the committed/.test(x)), JSON.stringify(faults));
+  }
+
   /* ---- (6) Gmail's clip ---- */
   {
     const fat = TEMPLATES[0].html + '<!--' + 'x'.repeat(102400) + '-->';
@@ -229,6 +271,18 @@ try {
     theme.colors.text2 = '#6a6a88';
     f[`${mail}/index.ts`] = themeFile(theme);
   }, /text2.*field.*4\.5/);
+  await red('violet passing 4.5:1 on ground and failing on field', (f, { theme }) => {
+    theme.colors.violet = '#808088';
+    f[`${mail}/index.ts`] = themeFile(theme);
+  }, /violet #808088 on field/);
+  await red('hi failing on a light ground only', (f, { theme }) => {
+    theme.colors.ground = '#9090a0';
+    f[`${mail}/index.ts`] = themeFile(theme);
+  }, /hi #ffffff on ground/);
+  await red('neonText failing on a light ground only', (f, { theme }) => {
+    theme.colors.ground = '#9090a0';
+    f[`${mail}/index.ts`] = themeFile(theme);
+  }, /neonText #5ff0ff on ground/);
   await red('ink on neon failing 4.5:1', (f, { theme }) => {
     theme.colors.ink = '#40e0f0';
     f[`${mail}/index.ts`] = themeFile(theme);
@@ -251,10 +305,23 @@ try {
   }
 
   /* ---- --write ---- */
+  const listing = (dir) => fs.readdirSync(dir, { recursive: true }).map(String).sort();
   {
     const dir = repo('write', (f) => { f[TEMPLATES[0].path] = 'stale'; f[TEMPLATES[1].path] = null; });
+    const before = listing(dir);
     const c = spawnSync(process.execPath, [script, '--root', dir, '--write'], { encoding: 'utf8' });
+    const added = listing(dir).filter((p) => !before.includes(p));
     check('--write writes the templates, then the check is clean', c.status === 0 && fs.readFileSync(path.join(dir, TEMPLATES[0].path), 'utf8') === TEMPLATES[0].html && fs.existsSync(path.join(dir, TEMPLATES[1].path)), `${c.status} ${c.stderr}`);
+    check('  and nothing else was written', added.length === 1 && added[0].endsWith('sign-up.html'), JSON.stringify(added));
+  }
+  for (const bad of ['../escape.html', 'supabase/templates/../../escape.html', 'supabase/templates/sub/x.html', '/tmp/escape.html', 'supabase/functions/x.ts']) {
+    const dir = repo('write-bad', (f) => {
+      f['supabase/functions/_shared/mail/auth.ts'] = `export function authTemplates() { return ${JSON.stringify([...TEMPLATES, { path: bad, html: 'x' }])}; }\n`;
+    });
+    const before = listing(dir);
+    const c = spawnSync(process.execPath, [script, '--root', dir, '--write'], { encoding: 'utf8' });
+    check(`--write refuses ${bad}, writing nothing`, c.status === 1 && /not supabase\/templates/.test(c.stderr) && JSON.stringify(listing(dir)) === JSON.stringify(before) && !fs.existsSync(path.join(root, 'escape.html')) && !fs.existsSync('/tmp/escape.html'), `${c.status} ${c.stderr}`);
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 
   /* ---- no instance has a mail/ folder ---- */
