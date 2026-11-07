@@ -27,10 +27,12 @@ describe('the presets', () => {
     expect(stagger(null, 20)).toEqual([]);
   });
 
-  it('carry a clip-path under Snappy and none under Smooth', () => {
+  it('carry a clip-path under Snappy, and under Smooth only the crossing does (a window opening from the HUD tab)', () => {
     const { backdrop: _b, item: _i, ...shapes } = presets(snappy);
     for (const [name, p] of Object.entries(shapes)) expect(JSON.stringify(p), name).toContain('clipPath');
-    for (const [name, p] of Object.entries(presets(smooth))) expect(JSON.stringify(p), name).not.toContain('clipPath');
+    const { crossing: _c, ...rest } = presets(smooth);
+    for (const [name, p] of Object.entries(rest)) expect(JSON.stringify(p), name).not.toContain('clipPath');
+    expect(JSON.stringify(_c)).toContain('clipPath');
   });
 
   it('slant Snappy\'s clip along the glass\'s skew', () => {
@@ -81,6 +83,16 @@ describe('the presets', () => {
     }
   });
 
+  it('crossing (Smooth) is a window: a clip from the rect, inset in px from the screen\'s edges, to inset(0), with no scale', () => {
+    const p = crossing(smooth, { from: rect, within });
+    const clip = (t: unknown) => (t as { clipPath: string }).clipPath;
+    /* top 20, right 1000-110, bottom (the box's own foot less the rect's foot), left 10 */
+    expect(clip(p.initial)).toBe('inset(20px 890px calc(100% - 60px) 10px)');
+    expect(clip(p.exit)).toBe(clip(p.initial));
+    expect(clip(p.animate)).toBe('inset(0px 0px calc(100% - 700px) 0px)');
+    expect(JSON.stringify(p)).not.toContain('scale');
+  });
+
   it('crossing (Snappy) starts its clip at the given rect and ends at the full screen', () => {
     const p = crossing(snappy, { from: rect, within });
     const clip = (t: unknown) => (t as { clipPath: string }).clipPath;
@@ -106,9 +118,9 @@ describe('the crossing of a pinned world', () => {
     expect(exitOf(p, 300).clipPath).not.toBe(exitOf(p, 0).clipPath);
   });
 
-  it('closes (Smooth) from the rect centre as the window sees it', () => {
+  it('closes (Smooth) into the rect as the window sees it', () => {
     const p = crossingPinned(smooth, { from: rect, within });
-    expect(exitOf(p, 300).transformOrigin).toBe(`${rect.x + rect.width / 2}px ${rect.y + 300 + rect.height / 2}px`);
+    expect(exitOf(p, 300).clipPath).toBe('inset(320px 890px calc(100% - 360px) 10px)');
   });
 
   it('enters and exits as the plain crossing does, and is empty under Off', () => {

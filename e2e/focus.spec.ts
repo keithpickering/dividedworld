@@ -272,6 +272,8 @@ test('Back to a thread that grew while the reader was in the glass holds the new
   const post = await readTo(page, 162);
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
   await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  /* The reader is away from the board: the crossing has settled and the board's page has left (until then it is held, subscribed, under the glass). */
+  await expect(page.locator('.kb-world')).toHaveCount(1);
   await page.evaluate(async () => {
     const { __kbFake: fake, __kbDemo: demo } = globalThis as E2eWindow;
     fake.seed.post(demo.longThread, demo.characters.spritey, 'Post 171, written while you were away.');

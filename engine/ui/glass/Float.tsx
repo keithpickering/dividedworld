@@ -27,6 +27,7 @@ import { pageEscape } from './keys.ts';
 import { hudTopOf } from './place.ts';
 import { FRAME } from './Frame.tsx';
 import { FIELD_PLACED } from './field.ts';
+import { isLeaving } from './Held.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import './shell.css';
 
@@ -158,7 +159,7 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
    */
   useLayoutEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pageEscape(e)) return;
+      if (!pageEscape(e) || isLeaving(anchor.current)) return;
       if (modalOpen() && !topModalHolds(host ?? null)) return;
       e.preventDefault();
       e.stopPropagation();
@@ -166,7 +167,7 @@ export function Float({ label, surface, onClose, children, anchor, keep, sheet, 
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [host]);
+  }, [host, anchor]);
 
   /* Focus goes back to what opened it, once it has closed, only where focus fell to the page (what held it left with the float). */
   useLayoutEffect(() => {

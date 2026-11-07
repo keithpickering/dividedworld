@@ -43,6 +43,7 @@ import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
+import { isLeaving } from '../glass/Held.tsx';
 import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
@@ -271,7 +272,7 @@ export function Hud() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || e.repeat || e.isComposing) return;
       /* A frame that is leaving (the crossing holds it, inert, under the glass) takes no key: input is the arriving page's from the first frame. */
-      if (section.current?.closest('[inert]')) return;
+      if (isLeaving(section.current)) return;
       /* An armed card is put back first, and the hand, if it is open, stays; the next Esc is the hand's. */
       if (armed !== null) {
         e.preventDefault();

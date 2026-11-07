@@ -37,6 +37,7 @@ import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link, useLocation } from '../router.tsx';
+import { isLeaving } from './Held.tsx';
 import { backHref, boardPlace, useBackToBoard } from './back.ts';
 import { pageEscape, plainClick } from './keys.ts';
 import { bezier, useFeel } from './motion.ts';
@@ -102,7 +103,7 @@ export function MenuBar() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pageEscape(e)) return;
+      if (!pageEscape(e) || isLeaving(bar.current)) return;
       e.preventDefault();
       back();
     };

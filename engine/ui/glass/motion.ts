@@ -5,7 +5,7 @@
  * `transition`) for the `motion` package. Under Off the feel is `null` and every preset returns `{}`,
  * so a component spreads a preset with no branch of its own: `<motion.div {...screen(feel, 1)} />`.
  *
- * Smooth fades with a slight scale and a blur-in and never uses a clip-path. Snappy springs where a
+ * Smooth fades with a slight scale and a blur-in and clips only the crossing (a window with straight edges). Snappy springs where a
  * thing lands and wipes with a clip-path whose edges are slanted by the glass's skew
  * (`--kb-glass-skew`, base.css), so a mask cuts along the same angle as the buttons.
  *
@@ -100,14 +100,11 @@ export function slantedRect(r: Rect): string {
   return `polygon(calc(${l}px + ${s}) ${t}px, calc(${rt}px + ${s}) ${t}px, calc(${rt}px - ${s}) ${b}px, calc(${l}px - ${s}) ${b}px)`;
 }
 
-/** Smooth's crossing grows from at most this scale: the window has to start visibly small, from the HUD tab, where an enter's own 0.98 would barely move. A starting number to tune in the prototype story. */
-const CROSSING_SCALE = 0.9;
-
 const BLUR = (px: number) => `blur(${px}px)`;
 
 /**
  * The crossing: the glass page's window opens from the HUD tab's rect (`from`) to the whole screen
- * (`within`), and the exit closes it back into the rect. Smooth grows it from the rect's center;
+ * (`within`), and the exit closes it back into the rect. Smooth clips it from the rect with straight edges;
  * Snappy clips it from the slanted rect. Esc during either reverses it from where it is, which Motion
  * does when the element's `animate` flips back.
  */
@@ -125,11 +122,16 @@ export function crossing(feel: ActiveFeel, args: { readonly from: Rect; readonly
       exit: { clipPath: closed, opacity: 0, transition: eased(feel, feel.screen) },
     };
   }
-  const origin = `${from.x + from.width / 2}px ${from.y + from.height / 2}px`;
-  const closed = { opacity: 0, scale: Math.min(feel.scale, CROSSING_SCALE), filter: BLUR(feel.blur), transformOrigin: origin };
+  /*
+   * Smooth is the same window as Snappy's, with a straight edge: a clip from the rect to the screen, inset in px from the screen's edges (the
+   * foot is measured from the box's own foot, since the box is as tall as the page), with the feel's fade and blur. No scale: the clip is the
+   * growth, and a scale on top would move the rect it opens from.
+   */
+  const inset = (top: number, right: number, foot: number, left: number) => `inset(${top}px ${right}px calc(100% - ${foot}px) ${left}px)`;
+  const closed = { opacity: 0, filter: BLUR(feel.blur), clipPath: inset(from.y, within.width - from.x - from.width, from.y + from.height, from.x) };
   return {
     initial: closed,
-    animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin: origin, transition: landing(feel, feel.screen) },
+    animate: { opacity: 1, filter: 'none', clipPath: inset(0, 0, within.height, 0), transition: landing(feel, feel.screen) },
     exit: { ...closed, transition: eased(feel, feel.screen) },
   };
 }
@@ -167,7 +169,7 @@ export function screen(feel: ActiveFeel): MotionProps {
       }
     : {
         enter: (d: Dir) => ({ x: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
-        center: { x: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.screen) },
+        center: { x: 0, opacity: 1, scale: 1, filter: 'none', transition: landing(feel, feel.screen) },
         exit: (d: Dir) => ({ x: -d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel, feel.screen) }),
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };
@@ -188,7 +190,7 @@ export function overlay(feel: ActiveFeel, anchor?: { readonly x: number; readonl
   }
   return {
     initial: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin },
-    animate: { opacity: 1, scale: 1, filter: BLUR(0), transformOrigin, transition: landing(feel, feel.enter) },
+    animate: { opacity: 1, scale: 1, filter: 'none', transformOrigin, transition: landing(feel, feel.enter) },
     exit: { opacity: 0, scale: feel.scale, filter: BLUR(feel.blur), transformOrigin, transition: eased(feel) },
   };
 }
@@ -205,7 +207,7 @@ export function modal(feel: ActiveFeel): MotionProps {
   }
   return {
     initial: { opacity: 0, y: feel.distance, scale: feel.scale, filter: BLUR(feel.blur) },
-    animate: { opacity: 1, y: 0, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter) },
+    animate: { opacity: 1, y: 0, scale: 1, filter: 'none', transition: landing(feel, feel.enter) },
     exit: { opacity: 0, y: feel.distance / 2, scale: feel.scale, filter: BLUR(feel.blur), transition: eased(feel) },
   };
 }
@@ -234,7 +236,7 @@ export function staggerItem(feel: ActiveFeel, delays: readonly number[], index: 
   const delay = delays[index] ?? 0;
   return {
     initial: { opacity: 0, y: feel.distance / 2, filter: BLUR(feel.blur) },
-    animate: { opacity: 1, y: 0, filter: BLUR(0), transition: landing(feel, feel.enter, delay) },
+    animate: { opacity: 1, y: 0, filter: 'none', transition: landing(feel, feel.enter, delay) },
   };
 }
 
@@ -253,7 +255,7 @@ export function swap(feel: ActiveFeel): MotionProps {
       }
     : {
         enter: (d: Dir) => ({ y: d * feel.distance, opacity: 0, scale: feel.scale, filter: BLUR(feel.blur) }),
-        center: { y: 0, opacity: 1, scale: 1, filter: BLUR(0), transition: landing(feel, feel.enter) },
+        center: { y: 0, opacity: 1, scale: 1, filter: 'none', transition: landing(feel, feel.enter) },
         exit: (d: Dir) => ({ y: -d * feel.distance / 2, opacity: 0, filter: BLUR(feel.blur), transition: eased(feel) }),
       };
   return { variants, initial: 'enter', animate: 'center', exit: 'exit' };

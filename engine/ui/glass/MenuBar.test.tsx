@@ -118,6 +118,28 @@ describe('going back', () => {
     await userEvent.keyboard('{Escape}');
     expect(window.location.pathname + window.location.search + window.location.hash).toBe('/t/abc?page=2#post-4');
   });
+  test('an Esc while the bar\'s tree is leaving (inert, held for an exit) is not the bar\'s', async () => {
+    const { container } = renderInWorld(<MenuBar />, { path: '/settings', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Settings' });
+    const leaving = document.createElement('div');
+    leaving.setAttribute('inert', '');
+    container.parentElement!.append(leaving);
+    leaving.append(container);
+    await userEvent.keyboard('{Escape}');
+    expect(window.location.pathname).toBe('/settings');
+  });
+  test('the selected tab\'s underline is one element, and the same one after a change of tab', async () => {
+    renderInWorld(<MenuBar />, { path: '/alerts', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Alerts' });
+    const one = () => bar().querySelectorAll('.kb-glass-menu-underline');
+    expect(one()).toHaveLength(1);
+    const before = one()[0]!;
+    expect(before.closest('li')).toHaveTextContent('Alerts');
+    await userEvent.click(within(bar()).getByRole('link', { name: 'Settings' }));
+    await waitFor(() => expect(within(bar()).getByRole('link', { name: 'Settings' })).toHaveAttribute('aria-current', 'page'));
+    expect(one()).toHaveLength(1);
+    expect(one()[0]!.closest('li')).toHaveTextContent('Settings');
+  });
   test('with nothing kept, Back goes to the index', async () => {
     renderInWorld(<MenuBar />, { path: '/characters', seed: signedIn });
     expect(await within(bar()).findByRole('link', { name: 'Back to the board' })).toHaveAttribute('href', '/');
