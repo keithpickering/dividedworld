@@ -39,7 +39,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
@@ -1531,11 +1531,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
           return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
         };
-        const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, reportRows, appealRows] = await Promise.all([
+        const [ledgerRows, walletRows, cardRows, packRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, reportRows, appealRows] = await Promise.all([
           rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
             (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
           rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
-          rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
+          rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs,pack,repriced'), 'at', (q) => q, ['card', 'kind', 'act', 'price', 'pack']),
+          /* The packs the player bought (0115): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
+          rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at'), 'bought_at', (q) => q, ['id']),
           rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
           rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
           /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
@@ -1576,6 +1578,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           cards: cardRows.map((r): CardEvent => ({
             card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'],
             ...(typeof r['springs'] === 'boolean' ? { springs: r['springs'] } : {}),
+            ...(typeof r['pack'] === 'string' ? { pack: r['pack'] } : {}),
+            ...(r['kind'] === 'bought' && r['repriced'] === true ? { repriced: true } : {}),
+          })),
+          packs: packRows.map((r): PackEvent => ({
+            pack: r['id'], kind: r['pack'], price: num(r['price']), repriced: r['repriced'] === true,
+            contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], at: r['bought_at'],
           })),
           playsOnMine: playRows.map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
           saves: saveRows.map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),

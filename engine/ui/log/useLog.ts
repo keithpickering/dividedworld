@@ -24,6 +24,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     settlements: [...newer.settlements, ...older.settlements.filter((s) => !have.has(s.id))],
     wallet: [...newer.wallet, ...older.wallet],
     cards: [...newer.cards, ...older.cards],
+    packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],

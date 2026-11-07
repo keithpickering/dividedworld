@@ -1196,6 +1196,18 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect(await fake.myCards()).toEqual([{ card: 'splat', held: 5 }]);
   });
 
+  test('a pack is in the player\'s log as its row and a pulled row per card, and a purchase at a moved price says so', async () => {
+    const { fake } = shopWorld(1000);
+    const slot = (await fake.machine()).find((m) => 'pack' in m.item)!;
+    const opened = must(await fake.buyPack(slot));
+    const log = await fake.log(null);
+    expect(log.packs).toEqual([{ pack: opened.pack, kind: 'booster', price: 300, repriced: false, contents: opened.contents, at: expect.any(String) }]);
+    expect(log.cards.filter((c) => c.kind === 'pulled').map((c) => [c.card, c.pack, c.price])).toEqual(opened.contents.map((c) => [c, opened.pack, 0]));
+    fake.seed.slot({ card: 'splat' }, { price: 150, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-09T12:00:00Z', demand: null, progress: null, was: 100, percent: 150, hours: null } });
+    must(await fake.buyCard((await fake.machine()).find((m) => 'card' in m.item)!));
+    expect((await fake.log(null)).cards.find((c) => c.kind === 'bought')).toMatchObject({ price: 150, repriced: true });
+  });
+
   test('a purchase is refused in the server\'s words: a sold out slot, a stale price, the wrong kind of slot, and a wallet that falls short', async () => {
     const { fake } = shopWorld(500);
     const card = await slotOf(fake, 'splat');
@@ -1497,7 +1509,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });

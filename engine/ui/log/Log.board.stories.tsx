@@ -56,7 +56,7 @@ function LogEmpty() {
   if (state.status !== 'ready') return <div className="kb-log" aria-busy="true" />;
   const bare: LogData = {
     ...state.data,
-    log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], reports: [], appeals: [], before: null },
+    log: { settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], reports: [], appeals: [], before: null },
     estimate: null, turns: [], nextSettlement: new Date(Date.now() + SETTLEMENT_IN).toISOString(),
   };
   const hooligan = bare.mine.find((c) => c.name === 'Mrs. Hooligan')?.id ?? null;

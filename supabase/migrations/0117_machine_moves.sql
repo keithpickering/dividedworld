@@ -497,6 +497,39 @@ create or replace view machine_now as
   left join (select distinct on (m.slot) m.* from machine_moves_open m where m.slot is not null order by m.slot, m.landed_at desc, m.move_act desc) mv on mv.slot = s.id
   where s.availability <> 'hidden' or mv.kind = 'flashSale';
 
+-- buy_card and buy_pack (0115), writing whether the price was one the Boss moved: a Reprice in force on the slot whose result differs from the admin's price. Read from the slot as
+-- slot_for_sale returned it, and written in the purchase's own insert (an Act-like row is never updated, "Append-only"). Everything else as 0115 wrote them.
+create or replace function buy_card(who uuid, slot uuid, price integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  seen machine_now;
+  left_over integer;
+begin
+  seen := slot_for_sale(slot, 'card', price);
+  left_over := wallet_spend(who, seen.price, 'purchase', null);
+  insert into card_ledger (account, card, kind, price, repriced) values (who, seen.card, 'bought', seen.price, coalesce(seen.move ->> 'kind' = 'repriceSlot' and seen.price is distinct from (seen.move ->> 'was')::integer, false));
+  return jsonb_build_object('card', seen.card, 'balance', left_over, 'held', card_held(who, seen.card));
+end $$;
+
+create or replace function buy_pack(who uuid, slot uuid, price integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  seen machine_now;
+  pk pack_kinds;
+  rolled text[];
+  made uuid;
+  left_over integer;
+begin
+  seen := slot_for_sale(slot, 'pack', price);
+  select * into pk from pack_kinds k where k.key = seen.pack;
+  rolled := roll_pack(pk.pulls, pk.leaves);
+  left_over := wallet_spend(who, seen.price, 'purchase', null);
+  insert into packs (account, slot, pack, price, odds, contents, opened_at, repriced)
+  values (who, seen.slot, pk.key, seen.price, pk.pulls, rolled, now(), coalesce(seen.move ->> 'kind' = 'repriceSlot' and seen.price is distinct from (seen.move ->> 'was')::integer, false)) returning id into made;
+  insert into card_ledger (account, card, kind, price, pack) select who, c.card, 'pulled', 0, made from unnest(rolled) with ordinality c(card, i) order by c.i;
+  return jsonb_build_object('pack', made, 'kind', pk.key, 'contents', to_jsonb(rolled), 'balance', left_over);
+end $$;
+
 -- apply_meeting (0110), also skipping and recording a machine move the queue's guard would refuse (`machineSkipped`, as `rulesSkipped` records a rule), spending nothing. Everything
 -- else as 0110 wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb

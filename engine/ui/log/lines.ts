@@ -29,7 +29,7 @@ import type { InstanceUi } from '../types.ts';
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved'
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
   | 'set' | 'sprung' | 'payout' | 'setEnded' | 'passed' | 'caught' | 'struck' | 'wardEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
@@ -81,7 +81,7 @@ export interface LogData {
 
 export interface Words {
   readonly instance: Instance;
-  readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy'>;
+  readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy' | 'packs'>;
   readonly postsPerPage: number;
   /** The economy as the server holds it now (`economyNow`): the numbers a line with none of its own is said with. */
   readonly economy: Readonly<Record<string, number>>;
@@ -321,7 +321,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -445,12 +445,31 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     used.add(i);
     return data.log.wallet[i];
   };
+  /* What a purchase at the machine says after its price: the Boss's markup or markdown, when the slot was moved when it was bought (recorded with the purchase). */
+  const bossSaid = (repriced: boolean | undefined) => (repriced ? ' The Boss had repriced it.' : '');
+  /* A pack is one line: its pulled rows (one per card) with the pack row that holds its kind, its price and the cards in pull order. */
+  const packsDone = new Set<Id>();
   data.log.cards.forEach((e, i) => {
     if (e.kind === 'bought') {
       const spent = take((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
       rows.push({
-        key: `bought:${i}`, kind: 'bought', at: e.at, what: `You bought ${cardName(e.card)}`, details: [`From the ${ui.copy.shopName}, for ${plain(e.price)}.`],
+        key: `bought:${i}`, kind: 'bought', at: e.at, what: `You bought ${cardName(e.card)}`, details: [`From the ${ui.copy.shopName}, for ${plain(e.price)}.${bossSaid(e.repriced)}`],
         aura: -e.price, wallet: spent?.balanceAfter ?? null, characters: [],
+      });
+      return;
+    }
+    if (e.kind === 'pulled') {
+      if (!e.pack || packsDone.has(e.pack)) return;
+      packsDone.add(e.pack);
+      const bought = data.log.packs.find((p) => p.pack === e.pack);
+      /* Pull order is the pack row's; the pulled rows only say which pack, since they are read at one instant in no order of their own. */
+      const names = (bought?.contents ?? data.log.cards.filter((c) => c.kind === 'pulled' && c.pack === e.pack).map((c) => c.card)).map(cardName);
+      const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('');
+      const spent = bought ? take((w) => w.kind === 'purchase' && at(w.at) === at(bought.at) && w.change === -bought.price) : undefined;
+      rows.push({
+        key: `pack:${e.pack}`, kind: 'pack', at: e.at, what: `You bought ${withArticle(ui.packs[bought?.kind ?? '']?.name ?? 'pack')}`,
+        details: [`${list}. From the ${ui.copy.shopName}${bought ? `, for ${plain(bought.price)}` : ''}.${bossSaid(bought?.repriced)}`],
+        aura: bought ? -bought.price : 0, wallet: spent?.balanceAfter ?? null, characters: [],
       });
       return;
     }

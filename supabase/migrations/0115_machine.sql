@@ -59,7 +59,9 @@ create table packs (
   odds jsonb not null,
   contents text[] not null check (cardinality(contents) >= 1),
   bought_at timestamptz not null default now(),
-  opened_at timestamptz
+  opened_at timestamptz,
+  -- Whether the Boss had moved the price when it was bought (0117 writes it; here a pack is never repriced). Recorded with the purchase, so the log can say it was.
+  repriced boolean not null default false
 );
 create index packs_account on packs (account, bought_at);
 create trigger packs_no_update before update or delete on packs for each row execute function ledger_append_only();
@@ -73,6 +75,19 @@ alter table card_ledger add constraint card_ledger_kind_check check (kind in ('b
 alter table card_ledger add column pack uuid references packs (id);
 alter table card_ledger add constraint card_ledger_pulled_from_pack check ((kind = 'pulled') = (pack is not null));
 alter table card_ledger add constraint card_ledger_pulled_is_free check (kind <> 'pulled' or price = 0);
+-- A bought card's row says whether the Boss had moved the price it was bought at (0117 writes it), written in the purchase's own insert.
+alter table card_ledger add column repriced boolean not null default false;
+alter table card_ledger add constraint card_ledger_repriced_is_bought check (not repriced or kind = 'bought');
+
+-- my_card_ledger (0075), with the pack a pulled row came from and whether a purchase was at a price the Boss moved. Both are the caller's own rows' columns,
+-- so nothing here reaches another player; the view stays its own-rows read it was.
+create or replace view my_card_ledger as
+  select l.card, l.kind, l.act, l.price, l.at,
+         case when l.kind = 'played' and k.play = 'set' then k.trap is not null end as springs,
+         l.pack, l.repriced
+  from card_ledger l
+  left join card_kinds k on k.key = l.card
+  where l.account = auth.uid();
 
 -- ------------------------------------------------------------------------------------------ the data migration ----
 
@@ -245,7 +260,7 @@ end $$;
 
 -- The caller's own packs, for the log.
 create view my_packs with (security_invoker = true) as
-  select p.id, p.slot, p.pack, p.price, p.odds, p.contents, p.bought_at, p.opened_at from packs p where p.account = auth.uid();
+  select p.id, p.slot, p.pack, p.price, p.odds, p.contents, p.bought_at, p.opened_at, p.repriced from packs p where p.account = auth.uid();
 
 -- --------------------------------------------------------------------------------------------- access ----
 

@@ -34,7 +34,7 @@ import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, ProfilePage, RecordPage, Slot, SlotMove, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -1100,6 +1100,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number>>; readonly shares: readonly LogShare[] }
   const settlements: SettlementRec[] = [];
   const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
+  const packLedger: { readonly account: Id; readonly order: number; readonly event: PackEvent; readonly ms: number }[] = [];
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
@@ -1176,6 +1177,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (shown.price !== seen.price) return refuse(`the price is now ${orbsOf(seen.price)}, not ${orbsOf(shown.price)}`);
     return seen;
   }
+  /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0117, write it). */
+  const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
@@ -1246,7 +1249,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const left = spend(account, seen.price, 'purchase', null);
     if (typeof left !== 'number') return left;
     account.cards[card] = (account.cards[card] ?? 0) + 1;
-    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price: seen.price });
+    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price: seen.price, ...(movedPrice(seen) ? { repriced: true } : {}) });
     return ok({ card, balance: left, held: account.cards[card]! });
   }
 
@@ -1263,7 +1266,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const left = spend(account, seen.price, 'purchase', null);
     if (typeof left !== 'number') return left;
     for (const card of contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
-    return ok({ pack: uuid(), contents, balance: left });
+    /* The pack's row and one pulled row per card, in pull order, at the purchase's instant, as buy_pack writes them. */
+    const made = uuid();
+    const at = stamp ?? now();
+    packLedger.push({ account: account.id, order: ++logOrder, ms: at, event: { pack: made, kind: pack.key, price: seen.price, repriced: movedPrice(seen), contents, at: iso(at) } });
+    for (const card of contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack: made, price: 0 });
+    return ok({ pack: made, contents, balance: left });
   }
 
   /**
@@ -2172,6 +2180,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
+          packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),

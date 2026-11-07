@@ -45,6 +45,7 @@ const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';
 const SET = '55555555-5555-4555-8555-555555555555';
+const PACK = '66666666-6666-4666-8666-666666666666';
 const SPRING = '66666666-6666-4666-8666-666666666666';
 const T = '44444444-4444-4444-8444-444444444444';
 
@@ -1326,8 +1327,11 @@ describe('the log', () => {
         return rows([
           { card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00', springs: null },
           { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+          { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', springs: null, pack: null, repriced: true },
+          { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
         ]);
       }
+      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
       if (name === 'my_posts_played_on') {
         return r.url.searchParams.get('select') === 'play,post,saved_at'
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
@@ -1361,7 +1365,11 @@ describe('the log', () => {
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
       /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
-      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false }],
+      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+        /* A purchase keeps whether the Boss had moved its price (0117); a pulled row keeps its pack (0115), and no other row carries either. */
+        { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
+        { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
+      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
@@ -1380,7 +1388,7 @@ describe('the log', () => {
     expect(ledger?.url.searchParams.get('ends_at')).toBeNull();
     const [shares] = h.to('my_ledger_shares');
     expect(shares?.url.searchParams.get('settlement')).toBe('in.(9)');
-    for (const [name, column] of [['my_wallet_events', 'at'], ['my_card_ledger', 'at']] as const) {
+    for (const [name, column] of [['my_wallet_events', 'at'], ['my_card_ledger', 'at'], ['my_packs', 'bought_at']] as const) {
       const [req] = h.to(name);
       expect(req?.url.searchParams.get('order')).toBe(`${column}.desc`);
       expect(req?.url.searchParams.get('limit')).toBe('200');
@@ -1411,6 +1419,7 @@ describe('the log', () => {
     expect(h.to('my_ledger')[0]?.url.searchParams.get('ends_at')).toBe(`lte.${before}`);
     expect(h.to('my_wallet_events')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_card_ledger')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    expect(h.to('my_packs')[0]?.url.searchParams.get('bought_at')).toBe(`lte.${before}`);
     const [plays, saves] = h.to('my_posts_played_on');
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);

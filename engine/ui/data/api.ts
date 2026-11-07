@@ -877,16 +877,34 @@ export interface WalletEvent {
   readonly at: string;
 }
 
-/** A card the player bought or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event. */
+/**
+ * A card the player bought, pulled from a pack or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event,
+ * and a pulled card costs nothing, since its pack holds the price (`PackEvent`).
+ */
 export interface CardEvent {
   readonly card: string;
-  readonly kind: 'bought' | 'played';
-  /** The play's Act; null for a purchase. */
+  readonly kind: 'bought' | 'played' | 'pulled';
+  /** The play's Act; null for a purchase and a pulled card. */
   readonly act: Id | null;
+  /** The pack a pulled card came from; absent on any other row. */
+  readonly pack?: Id;
+  /** For a purchase: true when the Boss had moved the price it was bought at. Absent otherwise, and on any other row. */
+  readonly repriced?: boolean;
   readonly price: number;
   readonly at: string;
   /** For a card the player set face down, whether it carries a trap: false for a Bluff, which never springs. Absent on any other row. */
   readonly springs?: boolean;
+}
+
+/** A pack the player bought (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order. */
+export interface PackEvent {
+  readonly pack: Id;
+  /** The pack kind's key, which `InstanceUi.packs` names. */
+  readonly kind: string;
+  readonly price: number;
+  readonly repriced: boolean;
+  readonly contents: readonly string[];
+  readonly at: string;
 }
 
 /**
@@ -1221,6 +1239,8 @@ export interface Log {
   readonly settlements: readonly LogSettlement[];
   readonly wallet: readonly WalletEvent[];
   readonly cards: readonly CardEvent[];
+  /** The packs the player bought, by when each was bought. */
+  readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */

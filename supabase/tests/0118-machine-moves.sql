@@ -529,3 +529,49 @@ begin
   perform pg_temp.expect(jsonb_array_length(rec -> 'machineSkipped') = 2 and rec #>> '{machineSkipped,0,index}' = '0' and rec #>> '{machineSkipped,0,why}' like '%a reprice is at most 200 percent%'
     and rec #>> '{machineSkipped,1,index}' = '2', 'the skipped ones are on the record: ' || rec::text);
 end $$;
+
+-- ---- 13. A purchase records whether the Boss had moved its price, and the player's own log reads it with the pack ----
+-- (Poison: buy_card and buy_pack left as 0115 wrote them. The test is red on "bought at a markup" when nothing writes the flag.)
+do $$
+declare
+  player uuid := pg_temp.ann();
+  bought jsonb;
+  pk jsonb;
+  seen_price integer;
+  rows_n integer;
+begin
+  insert into wallets (account, balance) values (player, 600) on conflict (account) do update set balance = 600;
+  perform tests.become_service();
+  -- Before any move: card B at its own price, the pack at its own.
+  update wallets set balance = 600 where account = player;
+  bought := buy_card(player, pg_temp.slot('B'), 200);
+  perform pg_temp.expect((select not repriced from card_ledger where account = player and kind = 'bought' and card = 'mv-b'), 'a card bought at its own price is not repriced');
+  update wallets set balance = 600 where account = player;
+  pk := buy_pack(player, pg_temp.slot('pack'), 300);
+  perform pg_temp.expect((select not repriced from packs where id = (pk ->> 'pack')::uuid), 'a pack bought at its own price is not repriced');
+  -- A markup in force on both slots.
+  perform tests.unbecome();
+  perform pg_temp.landed('repriceSlot', jsonb_build_object('slot', pg_temp.slot('B'), 'percent', 150), null, now() + interval '1 day');
+  perform pg_temp.landed('repriceSlot', jsonb_build_object('slot', pg_temp.slot('pack'), 'percent', 150), null, now() + interval '1 day');
+  perform tests.become_service();
+  update wallets set balance = 600 where account = player;
+  bought := buy_card(player, pg_temp.slot('B'), 300);
+  perform pg_temp.expect((select repriced from card_ledger where account = player and kind = 'bought' and card = 'mv-b' order by id desc limit 1) and (select count(*) from card_ledger where repriced) = 1, 'a card bought at a markup is repriced');
+  update wallets set balance = 600 where account = player;
+  pk := buy_pack(player, pg_temp.slot('pack'), 450);
+  perform pg_temp.expect((select repriced and price = 450 from packs where id = (pk ->> 'pack')::uuid), 'a pack bought at a markup is repriced');
+  perform pg_temp.expect((select count(*) from packs where repriced) = 1 and (select count(*) from card_ledger where kind = 'pulled' and repriced) = 0, 'the flag is on the purchase alone');
+  perform tests.unbecome();
+  -- The player's own log: the pulled rows with their pack in pull order's company, the purchase's flag, and the pack's kind and price.
+  perform tests.become(player);
+  perform pg_temp.expect((select count(*) from my_card_ledger where kind = 'pulled' and pack = (pk ->> 'pack')::uuid) = 2, 'my_card_ledger shows the pulled rows with their pack');
+  perform pg_temp.expect((select count(*) from my_card_ledger where kind = 'bought' and repriced) = 1, 'my_card_ledger shows a repriced purchase');
+  perform pg_temp.expect((select repriced and pack = 'mv-pack' and price = 450 and cardinality(contents) = 2 from my_packs where id = (pk ->> 'pack')::uuid), 'my_packs carries kind, price and the flag');
+  perform tests.unbecome();
+  -- Another player sees none of it.
+  perform tests.account('mv-bob');
+  perform tests.become((select id from auth.users where email = 'mv-bob@test.invalid'));
+  perform pg_temp.expect(not exists (select 1 from my_card_ledger) and not exists (select 1 from my_packs), 'another player reads the pulled rows or the packs');
+  perform tests.unbecome();
+  perform end_move(m.move_act, 'reversed', 'admin') from machine_moves_open m;
+end $$;

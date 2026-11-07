@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CardEvent, WalletEvent } from './api.ts';
 import { cutLog, justBefore, LOG_ROWS, micros, readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from './log-page.ts';
 
-const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], reports: [], appeals: [] };
+const none: LogRead = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], reports: [], appeals: [] };
 const line = (settlement: number, endsAt: string, character: string, reason: string, amount: number): LedgerRow =>
   ({ settlement, startsAt: '2026-10-28T08:17:00Z', endsAt, sharesKept: true, character, reason, amount });
 const bought = (at: string): CardEvent => ({ card: 'whoops', kind: 'bought', act: null, price: 100, at });

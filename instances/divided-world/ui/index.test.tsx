@@ -195,7 +195,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
     const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
-    const log: Log = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+    const log: Log = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
@@ -303,5 +303,43 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
     expect(boardSwitch(instanceUi.glass)).toBe(1152);
+  });
+});
+
+describe('a Booster in the log (the booster packs plan, Task 7)', () => {
+  const at = '2026-11-07T10:00:00.000000+00:00';
+  const contents = ['whoops', 'bluff', 'feelin-fab', 'stick-around', 'trap-card'];
+  const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
+  const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
+    log: { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null, ...over },
+    mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
+  }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const purchase = (price: number, balanceAfter: number): Log['wallet'][number] => ({ settlement: null, kind: 'purchase', change: -price, overflow: 0, floored: 0, balanceAfter, ref: null, at });
+
+  test('five pulled rows and their purchase read as one line, in pull order, with the price and the wallet', () => {
+    const rows = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at }] }, [purchase(300, 1200)]);
+    expect(rows.map((r) => r.kind)).toEqual(['pack']);
+    expect(rows[0]!.what).toBe('You bought a Booster');
+    expect(said(rows[0]!)).toBe('Whoops!, Bluff, Feelin\' Fab, Stick Around and Trap Card. From the Vending Machine, for 3.00.');
+    expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([-300, 1200]);
+  });
+  test('a purchase at a price the Boss moved says so, for a pack and for a card', () => {
+    const pack = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 450, repriced: true, contents, at }] }, [purchase(450, 1050)]);
+    expect(said(pack[0]!)).toBe('Whoops!, Bluff, Feelin\' Fab, Stick Around and Trap Card. From the Vending Machine, for 4.50. The Boss had repriced it.');
+    const card = lines({ cards: [{ card: 'whoops', kind: 'bought', act: null, price: 150, repriced: true, at }] }, [purchase(150, 100)]);
+    expect(said(card[0]!)).toBe('From the Vending Machine, for 1.50. The Boss had repriced it.');
+    const plainCard = lines({ cards: [{ card: 'whoops', kind: 'bought', act: null, price: 100, repriced: false, at }] }, []);
+    expect(said(plainCard[0]!)).toBe('From the Vending Machine, for 1.00.');
+  });
+  test('two packs bought at one instant are two lines, each with its own cards', () => {
+    const second = ['bluff', 'bluff', 'bluff', 'bluff', 'bluff'];
+    const rows = lines({
+      cards: [...pulled, ...second.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk2', price: 0, at }))],
+      packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at }, { pack: 'pk2', kind: 'booster', price: 300, repriced: false, contents: second, at }],
+    }, [purchase(300, 900), purchase(300, 600)]);
+    expect(rows.map((r) => r.kind)).toEqual(['pack', 'pack']);
+    expect(new Set(rows.map((r) => r.wallet))).toEqual(new Set([900, 600]));
+    expect(rows.map(said).sort()[0]).toContain('Bluff, Bluff, Bluff, Bluff and Bluff');
   });
 });
