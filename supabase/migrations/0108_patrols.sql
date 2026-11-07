@@ -22,6 +22,8 @@
 --   start_visit (cause 'patrol')  refuses past `cap.punishments` in `cap.days` (returns {visit: null, capped: true}, writes no Act) and records the drop on the patrol's row
 --                                 (the charge carries `patrol_id`), once per post. Nothing is shown to anyone. The count and the visit are one decision under the character's lock.
 --
+-- The cap counts patrol and backfire visits filed or still open (so visits in flight count, and one later talked down frees its slot), less any whose infraction an appeal overturned.
+--
 -- Masks. The cap counts public punishments of one character; the sample and the record read public play; no function here reads an owner, a class or a reactor.
 -- Ways out. A character at the cap has nothing to escape: staff cannot choose it until the window passes. A patrol is never anyone's state.
 -- Budget. A patrol's call is a ledger row of duty patrolJudge, which judgment_calls_today already counts (0105).
@@ -102,6 +104,8 @@ language sql security definer set search_path = public, pg_temp as $$
   select (
     (select count(*) from acts i join acts v on v.id = (i.payload ->> 'visit_act')::uuid
      where i.kind = 'infraction' and i.payload ->> 'character' = who::text and i.created_at >= clock_timestamp() - make_interval(days => greatest(staff_punishments.days, 0))
+       and not exists (select 1 from acts a join acts r on r.kind = 'appeal_ruling' and r.target_act_id = a.id
+                       where a.kind = 'appeal' and a.target_act_id = i.id and r.payload ->> 'verdict' = 'overturned')
        and v.kind = 'visit' and v.payload #>> '{charges,0,cause}' in ('patrol', 'backfire'))
     +
     (select count(*) from visits_open o join acts v on v.id = o.visit_act join acts p on p.id = o.post

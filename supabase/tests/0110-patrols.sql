@@ -272,6 +272,21 @@ begin
   v := (start_visit(posts[7], 'pt-m1', pg_temp.charge('patrol', posts[7])) ->> 'visit')::uuid;
   perform end_visit(v, 'reversed', null, 'Reversed.');
   if staff_punishments(cy, 7) is distinct from 3 then raise exception 'a reversed patrol visit counted: %', staff_punishments(cy, 7); end if;
+  -- A filed visit whose infraction an appeal overturned is no punishment (warn_points and the ladder already leave it out); an upheld one stays.
+  declare inf uuid; ap uuid; ap2 uuid; begin
+    select i.id into inf from acts i where i.kind = 'infraction' and i.payload ->> 'about_act' = posts[5]::text;
+    perform set_config('kayfabb.appeal_writer', 'on', true);
+    insert into acts (character, kind, thread, target_act_id, payload) values (cy, 'appeal', t, inf, '{"plea": "Overturn this."}') returning id into ap;
+    perform set_config('kayfabb.appeal_writer', '', true);
+    perform write_staff_act('pt-m1', 'appeal_ruling', t, ap, jsonb_build_object('appeal_act', ap::text, 'verdict', 'upheld', 'points_delta', 0, 'line', 'Upheld.'));
+    if staff_punishments(cy, 7) is distinct from 3 then raise exception 'an upheld appeal freed a slot: %', staff_punishments(cy, 7); end if;
+    select i.id into inf from acts i where i.kind = 'infraction' and i.payload ->> 'about_act' = posts[4]::text;
+    perform set_config('kayfabb.appeal_writer', 'on', true);
+    insert into acts (character, kind, thread, target_act_id, payload) values (cy, 'appeal', t, inf, '{"plea": "Overturn this too."}') returning id into ap2;
+    perform set_config('kayfabb.appeal_writer', '', true);
+    perform write_staff_act('pt-m1', 'appeal_ruling', t, ap2, jsonb_build_object('appeal_act', ap2::text, 'verdict', 'overturned', 'points_delta', -1, 'line', 'Overturned.'));
+    if staff_punishments(cy, 7) is distinct from 2 then raise exception 'an overturned appeal did not free its slot: %', staff_punishments(cy, 7); end if;
+  end;
   -- It is the character's own: another mask has none. And the window: none lands before "now" for a window of no days.
   if staff_punishments(ann, 7) is distinct from 0 then raise exception 'another character''s punishments counted'; end if;
   if staff_punishments(cy, 0) is distinct from 0 then raise exception 'a window of no days counted punishments'; end if;
