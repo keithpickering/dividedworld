@@ -557,6 +557,9 @@ describe('replacing a description', () => {
   test('a waiting rename takes an admin\'s words, shows them beside the Boss\'s, and a second save replaces the first', async () => {
     const { fake } = open();
     const waiting = await group(/^Waiting to land/u);
+    /* Shut at first, beside HOLD, so the row is the board's; one press opens it. */
+    expect(within(waiting).queryByRole('textbox', { name: /^Replace description/u })).toBeNull();
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Replace the description of/u }));
     const field = within(waiting).getByRole('textbox', { name: /^Replace description/u });
     const save = within(waiting).getByRole('button', { name: /^Save the description of/u });
     expect(save).toBeDisabled();
@@ -576,7 +579,7 @@ describe('replacing a description', () => {
   test('a nomination has no description to replace', async () => {
     open({ build: (fake) => { fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' }); fake.seed.queueSuccessor('director', 'the-clerk', { goLiveAt: fake.clock.now() + 3_600_000 }); } });
     const waiting = await group(/^Waiting to land/u);
-    expect(within(waiting).getAllByRole('textbox', { name: /^Replace description/u })).toHaveLength(1);
+    expect(within(waiting).getAllByRole('button', { name: /^Replace the description of/u })).toHaveLength(1);
   });
 
   test('the Boards group lists each board with its description now, and a board\'s description is replaced at once', async () => {
@@ -585,6 +588,7 @@ describe('replacing a description', () => {
     const first = (await fake.boards())[0]!;
     const card = within(boards).getByRole('article', { name: first.name });
     expect(card).toHaveTextContent(`Description: “${first.description}”`);
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace the description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
     await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));
     await waitFor(() => expect(card).toHaveTextContent('Description: “Words from an admin.”'));
@@ -598,6 +602,7 @@ describe('replacing a description', () => {
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
     const card = within(boards).getByRole('article', { name: first.name });
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace the description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), '   x');
     vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });
     await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${first.name}` }));

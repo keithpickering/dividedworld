@@ -28,7 +28,7 @@
  * Cost: one read, capped on the server (100 a group, `more` says a group was cut), with the in-force moves' progress read from what the
  * tick stored (so each says when it was counted, or that it has not been) and none counted by the read itself.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
@@ -200,7 +200,9 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
  * An admin's words in the place of a description: for a waiting rename (they land beside it) or for a board now. The Boss's words are
  * never edited; the server holds the same bounds (1 to 2000 characters) and answers in its own words.
  */
-function ReplaceDescription({ id, about, saved, save, onSaved }: { readonly id: string; readonly about: string; readonly saved: string; readonly save: (words: string) => Promise<Answer<unknown>>; readonly onSaved: () => Promise<void> }) {
+function ReplaceDescription({ id, about, saved, save, onSaved, lead }: { readonly lead?: ReactNode; readonly id: string; readonly about: string; readonly saved: string; readonly save: (words: string) => Promise<Answer<unknown>>; readonly onSaved: () => Promise<void> }) {
+  /* Shut until an admin opens it, so a row keeps the shape the approved boards draw (37 and 39 show no field); opening it is the one press more. */
+  const [open, setOpen] = useState(false);
   const [words, setWords] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -223,14 +225,26 @@ function ReplaceDescription({ id, about, saved, save, onSaved }: { readonly id: 
     }
   };
   return (
-    <div className="kb-queue-replace">
-      <label htmlFor={`${id}-words`}>Replace description<span className="kb-visually-hidden"> of {about}</span></label>
-      <textarea id={`${id}-words`} className="kb-queue-select kb-queue-text" rows={3} maxLength={2000} value={words} onChange={(e) => setWords(e.target.value)} />
-      <ButtonRow><GlassButton size="s" disabled={words.trim() === '' || busy} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
-      {/* Always in the page, filled on change, so a reader of the page is told of it. */}
-      <p role="alert" className="kb-queue-failure">{refusal}</p>
-      <p role="status" className="kb-small kb-muted">{done}</p>
-    </div>
+    <>
+      {lead && <ButtonRow>{lead}</ButtonRow>}
+      <div className={lead ? 'kb-queue-under' : undefined}>
+        <ButtonRow>
+          <GlassButton size="s" aria-expanded={open} aria-controls={`${id}-form`} aria-label={`Replace the description of ${about}`} onClick={() => setOpen((o) => !o)}>{open ? 'CLOSE' : 'REPLACE DESCRIPTION'}</GlassButton>
+        </ButtonRow>
+      </div>
+      <div id={`${id}-form`} className="kb-queue-replace" data-open={open ? 1 : undefined}>
+        {open && (
+          <>
+            <label htmlFor={`${id}-words`}>Replace description<span className="kb-visually-hidden"> of {about}</span></label>
+            <textarea id={`${id}-words`} className="kb-queue-select kb-queue-text" rows={3} maxLength={2000} value={words} onChange={(e) => setWords(e.target.value)} />
+            <ButtonRow><GlassButton size="s" disabled={words.trim() === '' || busy} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
+          </>
+        )}
+        {/* Always in the page, filled on change, so a reader of the page is told of it. */}
+        <p role="alert" className="kb-queue-failure">{refusal}</p>
+        <p role="status" className="kb-small kb-muted">{done}</p>
+      </div>
+    </>
   );
 }
 
@@ -334,9 +348,14 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
               )}
             </div>
             <div className="kb-queue-act">
-              <ButtonRow><GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton></ButtonRow>
+              {(() => {
+                const hold = <GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton>;
+                /* A rename's replacement field sits shut under HOLD, so the row keeps the board's width and its words wrap as the board's do. */
+                return q.kind === 'renameBoard'
+                  ? <ReplaceDescription lead={hold} id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />
+                  : <ButtonRow>{hold}</ButtonRow>;
+              })()}
               {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
-              {q.kind === 'renameBoard' && <ReplaceDescription id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />}
             </div>
           </article>
         );
