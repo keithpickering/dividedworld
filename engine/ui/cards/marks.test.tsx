@@ -324,3 +324,99 @@ describe('a mark whose plays an admin ended', () => {
     expect(dimmed(post)).toEqual([null, null, 'true']);
   });
 });
+
+/*
+ * A visit's mark (the Mod Bots design, section 9): the Marks' glass tile first in the strip, the stopwatch and the time left as h:mm, redrawn each
+ * minute, or how it went; its name for a screen reader says the Mod, the time or how it ended, and that it opens the visit.
+ */
+describe('a visit\'s mark', () => {
+  const MINUTE = 60_000;
+  const visited = (endsInMinutes = 161) => {
+    const w = world();
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(clerk, w.second, { at: Date.now(), endsInMs: endsInMinutes * MINUTE });
+    return { ...w, clerk, visit };
+  };
+  const visitMark = async (seq = 2) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
+
+  test('is a button named for the Mod, the time left and what it opens, showing the time as h:mm', async () => {
+    const w = visited();
+    open(w);
+    const mark = await visitMark();
+    expect(mark).toHaveAccessibleName('The Clerk is on a visit to this post, 2 hours 41 minutes left. Opens the visit.');
+    expect(mark).toHaveTextContent('2:41');
+    expect(mark).toHaveAttribute('aria-haspopup', 'dialog');
+    expect(mark).toHaveAttribute('aria-expanded', 'false');
+    expect(mark).toHaveClass('kb-meta-tile');
+  });
+
+  test('is first in the strip, ahead of the cards\' marks', async () => {
+    const w = visited();
+    w.play('k1'); w.play('k2');
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(within(post).getAllByRole('button', { name: /Opens the (visit|cards on this post)\./u })).toHaveLength(3));
+    const strip = within(post).getAllByRole('button', { name: /Opens the (visit|cards on this post)\./u });
+    expect(strip[0]).toHaveAccessibleName(/Opens the visit\.$/u);
+    expect(strip[1]).toHaveAccessibleName(/Card 2/u);
+  });
+
+  test('takes one of the strip\'s places: four cards and a visit are the visit, three cards and "+1"', async () => {
+    const w = visited();
+    for (const k of ['k1', 'k2', 'k3', 'k4']) w.play(k);
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(within(post).getByRole('button', { name: /^\+1 more card/u })).toBeInTheDocument());
+    expect(within(post).getAllByRole('button', { name: /Opens the cards on this post\./u })).toHaveLength(3);
+  });
+
+  test('a post with no visit has no visit mark', async () => {
+    const w = world();
+    w.play('k1');
+    open(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(1));
+    expect(within(post).queryByRole('button', { name: /Opens the visit\./u })).toBeNull();
+  });
+
+  test('redraws its time each minute while the visit is open, and stops at the time\'s end', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    try {
+      const w = visited(161);
+      open(w);
+      const mark = await visitMark();
+      expect(mark).toHaveTextContent('2:41');
+      await act(async () => { vi.advanceTimersByTime(MINUTE); });
+      expect(mark).toHaveTextContent('2:40');
+      expect(mark).toHaveAccessibleName(/2 hours 40 minutes left/u);
+      await act(async () => { vi.advanceTimersByTime(160 * MINUTE); });
+      expect(mark).toHaveTextContent('0:00');
+    } finally { vi.useRealTimers(); }
+  });
+
+  test.each([
+    ['filed', 'Filed', 'The Clerk filed its visit to this post. Opens the visit.'],
+    ['intercepted', 'Talked down', 'The Clerk\'s visit to this post was talked down. Opens the visit.'],
+    ['trapped', 'Trapped', 'The Clerk\'s visit to this post was ended by a trap. Opens the visit.'],
+  ] as const)('a visit that ended %s says so in place of the time', async (outcome, text, label) => {
+    const w = visited();
+    w.fake.seed.visitEnd(w.visit, { outcome, line: 'Done.' });
+    open(w);
+    const mark = await visitMark();
+    expect(mark).toHaveTextContent(text);
+    expect(mark).not.toHaveTextContent(/\d:\d\d/u);
+    expect(mark).toHaveAccessibleName(label);
+  });
+
+  test('opens the Lens on the visit\'s tab and the same mark closes it', async () => {
+    const w = visited();
+    open(w);
+    const mark = await visitMark();
+    await userEvent.click(mark);
+    expect(mark).toHaveAttribute('aria-expanded', 'true');
+    const lens = screen.getByRole('dialog', { name: 'Visit to this post' });
+    expect(within(lens).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true');
+    await userEvent.click(mark);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});

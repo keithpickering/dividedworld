@@ -38,8 +38,12 @@
   --kb-salty: #3f8fd2;
   --kb-pepperoni: #d24a2c;
   --kb-gold: #d4a017;
-  /* The visit mark's ink, the instance's yellow (the Mod Bots design); a DRAFT shade, the owner's to tune. */
-  --kb-visit-ink: #8a6d00;
+  /*
+   * The visit mark's ink, the instance's yellow (the Mod Bots design); a DRAFT shade, the owner's to tune. The mark and the Lens tab are glass,
+   * drawn on the glass's dark field (#160d2a) in light mode as in dark, so the same yellow serves both: the light page's darker #8a6d00 was
+   * 3.79:1 on that field and 1.4:1 on the Lens's smoke, #f5d442 is 12.8:1 and 4.8:1 (instances/divided-world/system/system.test.ts holds it).
+   */
+  --kb-visit-ink: #f5d442;
   /*
    * The glass's violet laid toward the window's corners and up from the foot, over the whole window: over the '03 board's posts too, so
    * the HUD and the board are not a sandwich (the owner, 2026-11-05: "bridge the HUD/settings and the '03 board"), but held to half its

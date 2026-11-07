@@ -1,6 +1,6 @@
 /** What a post reads of the thread it is in. */
 import { createContext, useContext } from 'react';
-import type { Act, Id, ThreadSummary } from '../data/api.ts';
+import type { Act, Id, ThreadSummary, Visit } from '../data/api.ts';
 import type { Plays } from '../cards/plays.ts';
 import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from './tallies.ts';
@@ -14,6 +14,8 @@ export interface ThreadContext {
   readonly mine: Mine;
   /** The card plays on the posts on screen, with what their effects keep (engine/ui/cards/plays.ts). */
   readonly plays: Plays;
+  /** Each post's latest visit, by the post's id, as the pages read carried it. */
+  readonly visits?: ReadonlyMap<Id, Visit>;
   /** A character's name as the thread knows it, for a card tag's caster: "A character" where it could not be read, The System's for none. */
   readonly nameOf: (character: Id | null) => string;
   /**

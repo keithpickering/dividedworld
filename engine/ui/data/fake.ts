@@ -36,6 +36,7 @@ import type {
   Act, AccountListener, ActKind, Alert, ContactLink, SeasonNewsItem, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -175,6 +176,22 @@ export interface Seed {
   set(character: Id, target: Id, card: string, options?: { at?: number }): Id;
   /** The spring of a set (what `spring_traps` writes): a spring Act on its post naming the card, and `caught` where it caught a play. Returns the spring Act. */
   spring(set: Id, options?: { trigger?: string; caught?: Id; at?: number }): Id;
+  /**
+   * A Mod's visit to a post, as `start_visit` writes it (the Mod Bots design, section 6): the `visit` Act, ending `endsInMs` from now (default 3 hours)
+   * with `charges` (default one minor breach of Rule 2) and a `challenge`. A quiz's `answer` is the fake's alone, never carried to a reader.
+   */
+  visit(mod: Id, post: Id, options?: { at?: number; endsInMs?: number; line?: string; charges?: readonly SeedCharge[]; challenge?: SeedChallenge }): Id;
+  /** A visit's end (`end_visit`): filed, intercepted, trapped or reversed, with the Act that ended it where one did. */
+  visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number }): Id;
+  /** A character's report of a post (`open_report`), with its reason. */
+  report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
+  /** A Mod's verdict on a report (`close_report`): the visit it sent, where it sent one. */
+  verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
+  /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on). */
+  infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
+  /** A character's appeal of an infraction (`open_appeal`), and the Mod's ruling on it. */
+  appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
+  ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number }): Id;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
@@ -183,6 +200,14 @@ export interface Seed {
    */
   loseNextAnswer(went: boolean): void;
 }
+
+/** A charge a seeded visit carries. */
+export interface SeedCharge { readonly rule?: string; readonly ruleNumber?: number | null; readonly band?: VisitBand; readonly cause?: VisitCharge['cause'] }
+/** A seeded visit's challenge; a quiz's `answer` is one of its `choices`. */
+export type SeedChallenge =
+  | { readonly kind: 'quiz'; readonly question: string; readonly choices: readonly string[]; readonly answer: string }
+  | { readonly kind: 'bribe'; readonly price: number }
+  | { readonly kind: 'distraction' };
 
 /** A settled ledger line a seed writes: one reason's amount for one character, and its shares, which add up to it. */
 export interface SeedLine {
@@ -291,6 +316,8 @@ interface InviteRec { readonly id: number; readonly owner: Id; code: string; rea
 const refuse = (error: string, field?: string): Refusal => (field === undefined ? { ok: false, error } : { ok: false, error, field });
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
+/** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0107): an edit, a card's marks and the Mod Bots' meta acts. */
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 
 /** The methods that are not a promise of something: everything else is made one. */
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
@@ -469,6 +496,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const opening = placed(threadId)[0];
     return opening?.character != null && characters.get(opening.character)?.owner === account.id;
   };
+  /** The answer a seeded quiz visit holds (never carried to a reader), and its question and choices, by visit. */
+  const visitQuizzes = new Map<Id, { readonly question: string; readonly choices: readonly string[]; readonly answer: string }>();
+  const visitEndOf = (e: ActRec): VisitEnd => ({ act: e.id, at: iso(e.at), outcome: e.payload.outcome as VisitOutcome, byAct: (e.payload.by_act as Id | undefined) ?? null, line: (e.payload.line as string | undefined) ?? '' });
+  /** A visit as `thread_page` carries it: its charges (the start's and each join's), its challenge without an answer, and its end. */
+  function visitOf(v: ActRec): Visit {
+    const c = v.payload.challenge as { kind: string; price?: number };
+    const quiz = visitQuizzes.get(v.id);
+    const end = [...acts.values()].find((a) => a.kind === 'visit_end' && a.target === v.id);
+    const joins = [...acts.values()].filter((a) => a.kind === 'visit_join' && a.target === v.id).sort((a, b) => a.order - b.order).map((a) => a.payload.charge as Record<string, unknown>);
+    return {
+      id: v.id, post: v.target!, mod: v.character!, at: iso(v.at), endsAt: v.payload.ends_at as string, line: (v.payload.line as string | undefined) ?? '',
+      charges: [...(v.payload.charges as Record<string, unknown>[]), ...joins].map((x): VisitCharge => ({ rule: (x.rule as string | undefined) ?? null, ruleNumber: (x.rule_number as number | null | undefined) ?? null, band: x.band as VisitBand, cause: x.cause as VisitCharge['cause'] })),
+      challenge: c.kind === 'quiz' && quiz ? { kind: 'quiz', question: quiz.question, choices: quiz.choices } : c.kind === 'bribe' ? { kind: 'bribe', price: c.price ?? 0 } : { kind: 'distraction' },
+      end: end ? visitEndOf(end) : null,
+    };
+  }
+  /** Each of these posts' latest visit (`vis` in thread_page). */
+  const visitsOn = (posts: readonly Id[]): Visit[] => posts.flatMap((p) => {
+    const latest = [...acts.values()].filter((a) => a.kind === 'visit' && a.target === p).sort((a, b) => b.order - a.order)[0];
+    return latest ? [visitOf(latest)] : [];
+  });
   const placed = (threadId: Id) => [...acts.values()].filter((a) => a.thread === threadId && a.seq !== null).sort((a, b) => a.seq! - b.seq!);
 
   /** The account's followed threads with posts past its place by characters it does not own, newest first, at most 50 (my_followed_threads, 0059). */
@@ -791,7 +839,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function write(a: { id?: Id; character: Id | null; kind: ActKind; thread: Id; target?: Id | null; payload: Record<string, unknown>; at?: number }): ActRec {
     const t = threads.get(a.thread)!;
     /* An edit is a version of its post and a card is a tag on its post: neither takes a place in the thread (0035_card_takes_no_seq.sql). */
-    const placedAct = a.kind !== 'edit' && a.kind !== 'card' && a.kind !== 'set' && a.kind !== 'spring' && a.kind !== 'card_end';
+    const placedAct = !UNPLACED.has(a.kind);
     const rec: ActRec = {
       id: a.id ?? uuid(), order: ++order, character: a.character, kind: a.kind, thread: a.thread, target: a.target ?? null, seq: placedAct ? t.nextSeq++ : null,
       at: a.at ?? stamp ?? now(), payload: a.payload,
@@ -1647,6 +1695,49 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!onPost(p)) { const shown = publicAct(end); send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); }); }
       return ok({ act: end.id, play });
     },
+    visitStory(thread, visit, post): VisitStory {
+      const mine = [...acts.values()].filter((a) => a.thread === thread);
+      const attempts = mine.filter((a) => a.kind === 'intercept' && a.target === post && a.payload.visit_act === visit).sort((a, b) => a.order - b.order).map(publicAct);
+      const verdict = mine.find((a) => a.kind === 'report_verdict' && a.payload.visit_act === visit);
+      const report = verdict?.target ? mine.find((a) => a.id === verdict.target && a.kind === 'report') : undefined;
+      const end = mine.find((a) => a.kind === 'visit_end' && a.target === visit);
+      const inf = mine.find((a) => a.kind === 'infraction' && a.payload.visit_act === visit);
+      const appeal = inf ? mine.filter((a) => a.kind === 'appeal' && a.target === inf.id).sort((a, b) => a.order - b.order)[0] : undefined;
+      const ruling = appeal ? mine.find((a) => a.kind === 'appeal_ruling' && a.target === appeal.id) : undefined;
+      return {
+        report: report ? publicAct(report) : null, verdict: verdict ? publicAct(verdict) : null, attempts, end: end ? visitEndOf(end) : null,
+        infraction: inf ? { act: inf.id, character: inf.payload.character as Id, points: inf.payload.points as number, band: inf.payload.band as VisitBand, ruleNumber: (inf.payload.rule_number as number | null) ?? null, expiresAt: inf.payload.expires_at as string, at: iso(inf.at) } : null,
+        appeal: appeal ? publicAct(appeal) : null, ruling: ruling ? publicAct(ruling) : null,
+      };
+    },
+    intercept(through, visit, answer) {
+      const who = acting(through);
+      if (isRefusal(who)) return who;
+      const v = acts.get(visit);
+      if (!v || v.kind !== 'visit') return refuse('there is no such visit');
+      if ([...acts.values()].some((a) => a.kind === 'visit_end' && a.target === visit)) return refuse('this visit is over');
+      if ([...acts.values()].some((a) => a.kind === 'intercept' && a.character === through && a.payload.visit_act === visit)) return refuse('this character has already tried this visit');
+      const challenge = v.payload.challenge as { kind: string; price?: number };
+      const quiz = visitQuizzes.get(visit);
+      let worked: boolean;
+      if (challenge.kind === 'quiz') {
+        const said = (answer ?? '').trim();
+        if (said === '') return refuse('pick an answer');
+        if (!quiz?.choices.includes(said)) return refuse('pick one of the answers shown');
+        worked = said === quiz.answer;
+      } else if (challenge.kind === 'bribe') {
+        const account = me()!;
+        const short = covers(account, challenge.price ?? 0);
+        if (short) return short;
+        account.wallet -= challenge.price ?? 0;
+        worked = true;
+      } else return refuse('this Mod is moved by a card played on the thread, not by an answer or a payment');
+      const written = write({ character: through, kind: 'intercept', thread: v.thread, target: v.target, payload: { visit_act: visit, kind: challenge.kind, succeeded: worked, ...(challenge.kind === 'quiz' ? { answer: (answer ?? '').trim() } : {}) } });
+      let tailUntil: string | null = null;
+      if (worked) write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, payload: { visit_act: visit, outcome: 'intercepted', by_act: written.id, line: `${who.name} got past ${characters.get(v.character!)?.name ?? 'the Mod'}'s ${challenge.kind === 'quiz' ? 'quiz' : 'price'}.` } });
+      else tailUntil = iso(now() + 24 * 3_600_000);
+      return ok({ act: written.id, succeeded: worked, tailUntil });
+    },
     threads(board, page) {
       const all = [...threads.values()].filter((t) => t.board === board && listed(t)).map(summary)
         .sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id));
@@ -1954,7 +2045,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const played = [...plays, ...above.map((p) => p.act)];
       const wanted = played.filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
       const ids = [...acts, ...played].map((a) => a.id);
-      const who = [...new Set([...acts, ...played].flatMap((a) => (a.character === null ? [] : [a.character])))].sort();
+      const visits = visitsOn(acts.filter((a) => a.kind === 'post' || a.kind === 'spin').map((a) => a.id));
+      /* A visit's Mod is named on the page (`who` in thread_page, 0106), though it has no post there. */
+      const who = [...new Set([...acts, ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
       const [chars, stats, standings, reveals, turns] = [core.characters(who), core.characterStats(who), core.standingAmounts(who), core.classReveals(who), core.turnsAnnounced(who)];
       return {
         thread: summary, page, acts,
@@ -1963,6 +2056,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
         plays, above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
       };
@@ -2611,6 +2705,58 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return written.id;
     },
     loseNextAnswer(went) { losing = { went }; },
+    visit(mod, post, o) {
+      const p = acts.get(post);
+      if (!p || (p.kind !== 'post' && p.kind !== 'spin')) throw new Error(`no such post ${post}`);
+      if (!characters.get(mod)?.staff) throw new Error('only a staff character visits');
+      const at = o?.at ?? now();
+      const ch = o?.challenge ?? { kind: 'distraction' as const };
+      const id = write({
+        character: mod, kind: 'visit', thread: p.thread, target: post, at,
+        payload: {
+          charges: (o?.charges ?? [{}]).map((c) => ({ rule: c.rule ?? 'Rule 2: No double posting', rule_number: c.ruleNumber === undefined ? 2 : c.ruleNumber, band: c.band ?? 'minor', cause: c.cause ?? 'rule', about_act: post })),
+          ends_at: iso(at + (o?.endsInMs ?? 3 * 3_600_000)), line: o?.line ?? 'Routine inspection.',
+          challenge: ch.kind === 'quiz' ? { kind: 'quiz', question_index: 0 } : ch.kind === 'bribe' ? { kind: 'bribe', price: ch.price } : { kind: 'distraction' },
+        },
+      }).id;
+      if (ch.kind === 'quiz') visitQuizzes.set(id, { question: ch.question, choices: ch.choices, answer: ch.answer });
+      return id;
+    },
+    visitEnd(visit, e) {
+      const v = acts.get(visit);
+      if (!v || v.kind !== 'visit') throw new Error(`no such visit ${visit}`);
+      return write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, at: e.at, payload: { visit_act: visit, outcome: e.outcome, ...(e.by ? { by_act: e.by } : {}), line: e.line ?? '' } }).id;
+    },
+    report(character, post, reason, o) {
+      const p = acts.get(post);
+      if (!p) throw new Error(`no such post ${post}`);
+      return write({ character, kind: 'report', thread: p.thread, target: post, at: o?.at, payload: { reason } }).id;
+    },
+    verdict(report, mod, verdict, o) {
+      const r = acts.get(report);
+      if (!r || r.kind !== 'report') throw new Error(`no such report ${report}`);
+      return write({ character: mod, kind: 'report_verdict', thread: r.thread, target: report, at: o?.at, payload: { report_act: report, verdict, line: o?.line ?? '', ...(o?.visit ? { visit_act: o.visit } : {}) } }).id;
+    },
+    infraction(visit, o) {
+      const v = acts.get(visit);
+      const post = v?.target ? acts.get(v.target) : undefined;
+      if (!v || v.kind !== 'visit' || !post) throw new Error(`no such visit ${visit}`);
+      const at = o?.at ?? now();
+      return write({
+        character: null, kind: 'infraction', thread: v.thread, at,
+        payload: { character: post.character, band: o?.band ?? 'minor', points: o?.points ?? 2, rule_number: o?.ruleNumber === undefined ? 2 : o.ruleNumber, about_act: post.id, visit_act: visit, staff: 'seed', expires_at: iso(o?.expiresAt ?? at + 14 * 86_400_000) },
+      }).id;
+    },
+    appeal(character, infraction, plea, o) {
+      const i = acts.get(infraction);
+      if (!i || i.kind !== 'infraction') throw new Error(`no such infraction ${infraction}`);
+      return write({ character, kind: 'appeal', thread: i.thread, target: infraction, at: o?.at, payload: { plea } }).id;
+    },
+    ruling(appeal, mod, verdict, o) {
+      const a = acts.get(appeal);
+      if (!a || a.kind !== 'appeal') throw new Error(`no such appeal ${appeal}`);
+      return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '' } }).id;
+    },
     effect(thread, play) {
       const savedAt = iso(now());
       send(`thread:${thread}`, 'effect', () => { for (const l of [...(threadListeners.get(thread) ?? [])]) l.onEffect?.(play, savedAt); });

@@ -161,7 +161,9 @@ export type OriginPlace =
   /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end';
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end'
+  /* The Mod Bots' Acts (supabase/migrations/0102 to 0107): meta acts like a card play, none a place in the thread (`seq` null). */
+  | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling';
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -182,6 +184,92 @@ export interface Act {
   readonly editedAt: string | null;
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
+}
+
+/* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
+
+/** How heavy a charge is: the warn bar's bands (`Settings.warnBar.bands`). */
+export type VisitBand = 'minor' | 'moderate' | 'severe';
+
+/** One charge on a visit: the rule broken (in the glass's plain words, as the rule's catalog says it), its band, and what sent it. */
+export interface VisitCharge {
+  /** "Rule 2: No double posting", or the premise of a board; null where the visit's Act named none. */
+  readonly rule: string | null;
+  readonly ruleNumber: number | null;
+  readonly band: VisitBand;
+  /** What drew the charge: a rule broken, a report, a patrol, a tail (obstruction) or a backfired report. */
+  readonly cause: 'rule' | 'report' | 'patrol' | 'tail' | 'backfire';
+}
+
+/**
+ * What a visit asks of anyone who would talk it down. Never an answer: a quiz carries its question and its choices, a bribe its price
+ * (hundredths), a distraction nothing (any card cast on the thread does it).
+ */
+export type VisitChallenge =
+  | { readonly kind: 'quiz'; readonly question: string; readonly choices: readonly string[] }
+  | { readonly kind: 'bribe'; readonly price: number }
+  | { readonly kind: 'distraction' };
+
+/** How a visit ended: filed (the points landed), intercepted (talked down), trapped (a card's trap sprang) or reversed (an admin). */
+export type VisitOutcome = 'filed' | 'intercepted' | 'trapped' | 'reversed';
+
+export interface VisitEnd {
+  readonly act: Id;
+  readonly at: string;
+  readonly outcome: VisitOutcome;
+  /** The Act that ended it where one did: the interception, or the spring. */
+  readonly byAct: Id | null;
+  /** The words the end carries: the Mod's filing line (its own words, which may bluff), or the plain sentence the server wrote. */
+  readonly line: string;
+}
+
+/** A post's latest visit as the page carries it (thread_page's `visits`). */
+export interface Visit {
+  readonly id: Id;
+  readonly post: Id;
+  /** The Mod's character. */
+  readonly mod: Id;
+  readonly at: string;
+  /** When the visit files if nobody talks it down. */
+  readonly endsAt: string;
+  /** The Mod's arrival line, in its own voice. */
+  readonly line: string;
+  readonly charges: readonly VisitCharge[];
+  readonly challenge: VisitChallenge;
+  readonly end: VisitEnd | null;
+}
+
+/** What a visit's filing put on its author: the infraction Act's own facts. */
+export interface VisitInfraction {
+  readonly act: Id;
+  readonly character: Id;
+  readonly points: number;
+  readonly band: VisitBand;
+  readonly ruleNumber: number | null;
+  readonly expiresAt: string;
+  readonly at: string;
+}
+
+/**
+ * How a visit went, from its Acts (read when its Lens tab opens): the report that sent it and the Mod's verdict, each attempt to talk it down,
+ * its end, the infraction it filed and the appeal of it with its ruling. Each is an Act as every reader sees it.
+ */
+export interface VisitStory {
+  readonly report: Act | null;
+  readonly verdict: Act | null;
+  /** Each `intercept` Act of this visit, oldest first. */
+  readonly attempts: readonly Act[];
+  readonly end: VisitEnd | null;
+  readonly infraction: VisitInfraction | null;
+  readonly appeal: Act | null;
+  readonly ruling: Act | null;
+}
+
+/** What `intercept` answers: the attempt's Act, whether it worked, and the character's tail where it did not. */
+export interface InterceptResult {
+  readonly act: Id;
+  readonly succeeded: boolean;
+  readonly tailUntil: string | null;
 }
 
 /** The state a card's effect has saved on one play, and when: what every reader loads, the post author's version. */
@@ -1139,6 +1227,8 @@ export interface ThreadPage {
   readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
   readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
   readonly spun: Awaited<ReturnType<KayfaApi['spunFromMany']>>;
+  /** Each page post's latest visit, if it has one. */
+  readonly visits: readonly Visit[];
   /** `reading([thread])` */
   readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
   /** `board(thread.board)`; null where it cannot be read. */
@@ -1379,6 +1469,13 @@ export interface KayfaApi {
   boardPage(slug: string, page: number, effectCards: readonly string[]): Promise<BoardPage | null>;
   /** A thread's page in one read, at a page or around a seq (the seq wins); null where the thread does not exist. Also the read for a next page and a gap. A null `perPage` is the instance's own postsPerPage, which the server reads (a first load does not know it yet). */
   threadPage(thread: Id, at: { readonly page?: number | null; readonly seq?: number | null }, perPage: number | null, effectCards: readonly string[]): Promise<ThreadPage | null>;
+  /** How a visit went (`VisitStory`), read when its Lens tab opens: its thread and post are the page's. */
+  visitStory(thread: Id, visit: Id, post: Id): Promise<VisitStory>;
+  /**
+   * One try to talk a visit down, through this character (`intercept`): a quiz's `answer` is one of its choices; a bribe and a distraction take none.
+   * Refused in the server's words (a character that has tried, a visit that is over, a short wallet).
+   */
+  intercept(through: Id, visit: Id, answer: string | null): Promise<Answer<InterceptResult>>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

@@ -136,7 +136,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know, visits } = useThread();
   const ref = useRef<HTMLElement>(null);
   const seq = act.seq!;
   useEffect(() => {
@@ -158,7 +158,10 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = act.kind === 'post'
-    ? <PostMarks post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })} />
+    ? <PostMarks
+        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+        visit={visits?.get(act.id)} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })}
+      />
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
   /* Drawn only where a play or an armed card concerns the character; memoized, so the memo on Postbit still skips a postbit whose character, post and page are unchanged. */

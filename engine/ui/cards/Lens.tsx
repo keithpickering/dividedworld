@@ -28,7 +28,7 @@ import {
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, PlayMoment } from '../data/api.ts';
+import type { Act, Id, PlayMoment, Visit, VisitEnd } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
 import { CloseCross, DialogBar } from '../glass/Frame.tsx';
@@ -47,7 +47,10 @@ import { Kit } from './Kit.tsx';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
+import { VisitPanel } from './Visit.tsx';
+import { VISIT_KIND, tabName, visitState } from './visit.ts';
 import './lens.css';
+import './visit.css';
 
 /** A play's name, as its row is named and the spin form says it: "Mrs. Hooligan's Whoops!". */
 export const playName = (caster: string, card: string): string => `${caster}'s ${card}`;
@@ -455,9 +458,14 @@ export interface LensProps {
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
   /** Whether a play's row offers As it landed (true but where the moment is already shown: a play-spun ORIGIN box). */
   readonly moments?: boolean;
+  /** The post's visit: a tab ahead of the card kinds (Visit.tsx), "On a visit" or how it ended. */
+  readonly visit?: {
+    readonly visit: Visit; readonly thread: Id; readonly author: Id | null;
+    readonly onSpinAct: ((act: Id, name: string, opener: HTMLElement) => void) | undefined; readonly onEnded: (end: VisitEnd) => void;
+  } | undefined;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit }: LensProps) {
   const { instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useNarrow();
@@ -465,8 +473,11 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const now = useUntil(here.billed);
   const billed = markedPlays(shownPlays(here.billed, instance.settings.setLasts), now);
   const admin = useLensAdmin();
-  const kinds = kindsOf(billed);
+  const cardKinds = kindsOf(billed);
+  /* A visit's tab is ahead of the cards'. */
+  const kinds = useMemo(() => (visit ? [VISIT_KIND, ...cardKinds] : cardKinds), [visit, cardKinds.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
   const card = kinds.includes(open.card) ? open.card : null;
+  const onVisit = card === VISIT_KIND && visit !== undefined;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
   useEffect(() => { if (card === null) store.close(); }, [card, store]);
   const view = useResolvedView(plays, post, open.card, nameOf);
@@ -501,9 +512,9 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
-  const name = kindName(instance, card, here.plays);
+  const name = onVisit ? tabName(visitState(visit.visit)) : kindName(instance, card, here.plays);
   const ofKind = billed.filter((p) => p.card === card);
-  const ink = inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder)) ?? cardUi?.art.color;
+  const ink = onVisit ? 'var(--kb-visit-ink)' : inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder)) ?? cardUi?.art.color;
   /* A card whose rules stack lists its rows by layer, top first; any other in billing order. */
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
@@ -547,16 +558,16 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
 
   return (
     <Float
-      label={`Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
+      label={visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} beside={beside} sheet={narrow} host={host}
       returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined }}
     >
       <DialogBar close={<CloseCross onClick={dismiss} />}>
-        <div className="kb-lens-tabs" role="tablist" aria-label="Card kinds" onKeyDown={move}>
+        <div className="kb-lens-tabs" role="tablist" aria-label={visit ? 'Visit and card kinds' : 'Card kinds'} onKeyDown={move}>
           {kinds.map((kind) => {
-            const label = kindName(instance, kind, here.plays);
+            const label = kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
             const selected = kind === card;
             return (
               <button
@@ -569,18 +580,24 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         </div>
       </DialogBar>
       <div className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
-        <div className="kb-lens-section kb-lens-state">
+        {onVisit && (
+          <VisitPanel
+            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} tallies={tallies} mine={mine} onEnded={visit.onEnded}
+            onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
+          />
+        )}
+        {!onVisit && <div className="kb-lens-section kb-lens-state">
           <p className="kb-lens-line">{view.state}</p>
           {view.ends && <p className="kb-lens-ends">{view.ends}</p>}
           {view.report && <p className="kb-lens-report">{view.report}</p>}
-        </div>
-        {view.controls.length > 0 && (
+        </div>}
+        {!onVisit && view.controls.length > 0 && (
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
-        <Who
+        {!onVisit && <Who
           plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
-        />
+        />}
       </div>
     </Float>
   );

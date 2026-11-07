@@ -43,6 +43,7 @@ import type {
   Alert, ContactLink, EffectState, SeasonNewsItem, SeasonResult, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  InterceptResult, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -286,6 +287,39 @@ const toUnread = (v: unknown): number => Math.min(ALERTS_UNREAD_BOUND, Math.max(
 /** character_post_counts' row, or none: a character that has done nothing counts zero. */
 const toCounts = (v: unknown): CharacterCounts => ({ posts: num(isObject(v) ? v['posts'] : 0), spins: num(isObject(v) ? v['spins'] : 0), cards: num(isObject(v) ? v['cards'] : 0) });
 const rowsOf = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
+
+const BANDS: readonly VisitBand[] = ['minor', 'moderate', 'severe'];
+const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'tail', 'backfire'];
+const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed'];
+
+/** A charge as a visit's Act carries it: a band it does not name is the lightest, a cause it does not name the rule's. */
+function toCharge(c: Row): VisitCharge {
+  return {
+    rule: str(c['rule']), ruleNumber: typeof c['rule_number'] === 'number' ? c['rule_number'] : null,
+    band: BANDS.find((b) => b === c['band']) ?? 'minor', cause: CAUSES.find((k) => k === c['cause']) ?? 'rule',
+  };
+}
+
+/** A visit's end, from thread_page's `end` or a `visit_end` Act's payload: null where the outcome is not one of the four. */
+function toVisitEnd(e: Row, at: unknown, act: unknown): VisitEnd | null {
+  const outcome = OUTCOMES.find((o) => o === e['outcome']);
+  return outcome && typeof act === 'string' ? { act, at: str(at) ?? '', outcome, byAct: str(e['by_act']), line: str(e['line']) ?? '' } : null;
+}
+
+/** The challenge a visit carries: never an answer. A quiz whose question the page could not read is a distraction, which asks nothing it cannot say. */
+function toChallenge(c: Row): VisitChallenge {
+  if (c['kind'] === 'quiz' && typeof c['question'] === 'string' && Array.isArray(c['choices'])) return { kind: 'quiz', question: c['question'], choices: (c['choices'] as unknown[]).filter((x): x is string => typeof x === 'string') };
+  if (c['kind'] === 'bribe') return { kind: 'bribe', price: num(c['price']) };
+  return { kind: 'distraction' };
+}
+
+function toVisit(v: Row): Visit {
+  const end = isObject(v['end']) ? toVisitEnd(v['end'], (v['end'] as Row)['at'], (v['end'] as Row)['act']) : null;
+  return {
+    id: v['visit'], post: v['post'], mod: v['mod'], at: str(v['at']) ?? '', endsAt: str(v['ends_at']) ?? '', line: str(v['line']) ?? '',
+    charges: rowsOf(v['charges']).map(toCharge), challenge: toChallenge(isObject(v['challenge']) ? v['challenge'] : {}), end,
+  };
+}
 /** effect_state rows, as effectStates() answers them. */
 const toStates = (list: Row[]): Record<Id, EffectState> => Object.fromEntries(list.map((r) => [r['play'], { state: r['state'], savedAt: r['saved_at'] }]));
 /** An answer's tallies as tallies() answers them for the acts asked: an act with none is an empty tally. */
@@ -1172,12 +1206,45 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           character: toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined), posts: num(p['posts']), standing: num(p['standing']),
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
         })),
+        visits: rowsOf(d['visits']).map(toVisit),
         plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
         presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
       };
+    },
+    async visitStory(thread, visit, post): Promise<VisitStory> {
+      if (!idOk(thread) || !idOk(visit) || !idOk(post)) return { report: null, verdict: null, attempts: [], end: null, infraction: null, appeal: null, ruling: null };
+      /* Each read is one post's, by thread and target (or by the visit the Act names): a bounded handful of Acts, read when the tab opens and never with the page. */
+      const [onPost, ended, infractions] = await Promise.all([
+        list(() => client.from('acts_public').select('*').eq('thread', thread).eq('target_act_id', post).in('kind', ['report', 'intercept']).order('created_at', { ascending: true }).limit(200)),
+        list(() => client.from('acts_public').select('*').eq('thread', thread).eq('target_act_id', visit).eq('kind', 'visit_end').limit(1)),
+        list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'infraction').eq('payload->>visit_act', visit).limit(1)),
+      ]);
+      const reports = onPost.filter((r) => r['kind'] === 'report').map((r) => r['id'] as Id);
+      const attempts = onPost.filter((r) => r['kind'] === 'intercept' && isObject(r['payload']) && r['payload']['visit_act'] === visit).map(toAct);
+      const verdicts = await byChunks(reports, (part) => list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'report_verdict').in('target_act_id', part)));
+      const verdict = verdicts.find((r) => isObject(r['payload']) && r['payload']['visit_act'] === visit);
+      const report = verdict ? onPost.find((r) => r['id'] === verdict['target_act_id']) : undefined;
+      const inf = infractions[0];
+      const appeals = inf ? await list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'appeal').eq('target_act_id', inf['id']).order('created_at', { ascending: true }).limit(10)) : [];
+      const appeal = appeals[0];
+      const rulings = appeal ? await list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'appeal_ruling').eq('target_act_id', appeal['id']).limit(1)) : [];
+      const p = isObject(inf?.['payload']) ? (inf!['payload'] as Row) : null;
+      return {
+        report: report ? toAct(report) : null, verdict: verdict ? toAct(verdict) : null, attempts,
+        end: ended[0] && isObject(ended[0]['payload']) ? toVisitEnd(ended[0]['payload'], ended[0]['created_at'], ended[0]['id']) : null,
+        infraction: inf && p && typeof p['character'] === 'string'
+          ? { act: inf['id'], character: p['character'], points: num(p['points']), band: BANDS.find((b) => b === p['band']) ?? 'minor', ruleNumber: typeof p['rule_number'] === 'number' ? p['rule_number'] : null, expiresAt: str(p['expires_at']) ?? '', at: str(inf['created_at']) ?? '' }
+          : null,
+        appeal: appeal ? toAct(appeal) : null, ruling: rulings[0] ? toAct(rulings[0]) : null,
+      };
+    },
+    async intercept(through, visit, answer): Promise<Answer<InterceptResult>> {
+      if (!idOk(through) || !idOk(visit)) return refusal('that visit could not be found');
+      const a = await rpcWrite(() => client.rpc('intercept', { through, visit_act: visit, answer }));
+      return a.ok ? { ok: true, value: { act: a.value['intercept'], succeeded: a.value['succeeded'] === true, tailUntil: str(a.value['tail_until']) } } : a;
     },
     async profilePage(character): Promise<ProfilePage | null> {
       if (!idOk(character)) return null;

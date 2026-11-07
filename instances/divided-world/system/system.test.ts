@@ -143,6 +143,26 @@ test('the theme sets the visit mark\'s ink in the light, device-dark and chosen-
   for (const [name, block] of [['light', light], ['device-dark', device], ['chosen-dark', chosen]] as const) assert.match(block, /--kb-visit-ink:\s*#[0-9a-f]{6}/i, name);
 });
 
+test('the visit mark\'s ink holds 3:1 against the glass tile\'s field and against the Lens\'s brightest smoke, in every block', async () => {
+  const { readFileSync } = await import('node:fs');
+  const css = readFileSync(new URL('../ui/theme.css', import.meta.url), 'utf8');
+  const glass = JSON.parse(readFileSync(new URL('../ui/glass.json', import.meta.url), 'utf8')) as { keys: { standard: Record<string, { value: string }> } };
+  const ceilings = JSON.parse(readFileSync(new URL('../../../e2e/glass-ceilings.json', import.meta.url), 'utf8')) as Record<string, { surfaces: Record<string, { worst: number }> }>;
+  const lum = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const ratio = (a: number, b: number) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  const field = lum(glass.keys.standard['--kb-glass-field']!.value);
+  const worst = Object.values(ceilings)[0]!.surfaces['effect']!.worst;
+  const inks = [...css.matchAll(/--kb-visit-ink:\s*(#[0-9a-f]{6})/gi)].map((m) => m[1]!);
+  assert.equal(inks.length, 3);
+  for (const ink of inks) {
+    assert.ok(ratio(lum(ink), field) >= 3, `${ink} on the tile's field`);
+    assert.ok(ratio(lum(ink), worst) >= 3, `${ink} on the Lens's smoke`);
+  }
+});
+
 test('every persona\'s bands are keys of the warn bar\'s bands', async () => {
   const { defaults } = await import('../settings.ts');
   for (const p of system.roster) for (const b of p.strictness.bands) assert.ok(b in defaults.warnBar.bands, `${p.key}: ${b}`);
