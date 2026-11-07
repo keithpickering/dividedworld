@@ -42,7 +42,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, Opened, Slot, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -285,6 +285,14 @@ function toPresence(v: Row): Presence {
 const toSeason = (r: Row): Season => ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null });
 const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] });
 const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
+/** A slot of machine_now (0115_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
+const toSlot = (r: Row): Slot => ({
+  id: r['slot'], position: num(r['position']),
+  item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
+  rarity: str(r['rarity']) as Slot['rarity'],
+  availability: r['availability'] === 'soldOut' ? 'soldOut' : 'onSale',
+  price: num(r['price']), move: null,
+});
 const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
 const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
 const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) });
@@ -1045,8 +1053,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('release_effect', { play }));
       return a.ok ? { ok: true, value: { play: a.value['play'], releasedAt: a.value['released_at'] } } : a;
     },
-    /* The price is the card's rules' and the Edge Function's (it reads the settings rows as they stand), so a purchase sends the card alone. */
-    buyCard: (card) => act({ action: 'buyCard', card }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
+    /* A purchase names its slot and the price the screen showed; the database holds the slot and refuses a price that has since changed. */
+    buyCard: (slot) => act({ action: 'buyCard', slot: slot.id, price: slot.price }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
+    buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
     playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     setCard: (card, character, target, config) => act({ action: 'setCard', card, character, target, config }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
@@ -1155,6 +1164,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async myCards() {
       return (await list(() => client.from('my_cards').select('card,held'))).map(toHeldCard);
+    },
+    async machine() {
+      return (await list(() => client.from('machine_now').select('slot,position,card,pack,rarity,availability,price').order('position', { ascending: true }))).map(toSlot);
     },
     async reading(threads) {
       const out: Record<Id, number> = {};

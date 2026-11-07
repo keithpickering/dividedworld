@@ -23,6 +23,8 @@ export type { PostcardSize };
 export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
   readonly face: CardFace;
   readonly size: PostcardSize;
+  /** The card's price at the machine, in hundredths, from its on-sale slot (`saleOf`); a sheet draws it in its foot. A face has none: without one the foot has no price. */
+  readonly price?: number | null;
   /** The element: a button where it acts, an article on a sheet. */
   readonly as?: ElementType;
   readonly armed?: boolean;
@@ -46,7 +48,7 @@ export function cardLabel(face: CardFace, size: PostcardSize): string {
   return `${shown}, ${face.rarity} postcard`;
 }
 
-export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
+export function Postcard({ face, size, price = null, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
   const vars = { ...templateVars(size), '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, '--kb-name-chars': face.name.length, ...style } as CSSProperties;
   const { canvas, credit } = face.art;
   return (
@@ -94,7 +96,7 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
             {credit ? <span className="kb-postcard-credit">Art · {credit}</span> : null}
           </span>
           {' '}
-          <span className="kb-postcard-price kb-num"><span className="kb-postcard-orb" />{priceOf(face)}</span>
+          {price !== null && <span className="kb-postcard-price kb-num"><span className="kb-postcard-orb" />{priceOf(price, face.extra)}</span>}
         </span>
       )}
     </As>

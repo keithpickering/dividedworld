@@ -69,6 +69,37 @@ describe('the machine as the Vending board draws it', () => {
     expect(screen.getByText('4 slots empty')).toBeInTheDocument();
   });
 
+  test('a price an admin has tuned is the one the slot, the display and the button say, and the purchase pays it', async () => {
+    const fake = seeded(562);
+    fake.seed.slot({ card: 'whoops' }, { price: 250 });
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 2.50 orbs, common Cast' }));
+    expect(screen.getByRole('status', { name: 'Selected: A2, Whoops!, 2.50' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 2.50' }));
+    await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent('3.12'));
+  });
+
+  test('only a card on an on-sale slot is in the machine: a sold out or hidden slot has no price anywhere, and its place is empty', async () => {
+    const fake = seeded(562);
+    fake.seed.slot({ card: 'whoops' }, { availability: 'soldOut' });
+    fake.seed.slot({ card: 'stick' }, { availability: 'hidden' });
+    open(fake);
+    await screen.findByRole('group');
+    await waitFor(() => expect(screen.getByText('6 slots empty')).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: /^Buy / })).toBeNull();
+    expect(document.querySelector('.kb-vending-lcd-price')).toHaveTextContent('0.00');
+  });
+
+  test('a price that moved after the look is refused in plain words, and the machine is read again to show the new one', async () => {
+    const fake = seeded(562);
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
+    fake.seed.slot({ card: 'whoops' }, { price: 175 });
+    fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
+    expect(await screen.findByText('The price is now 1.75, not 1.00.')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Buy Whoops!, 1.75 orbs, common Cast/ })).toBeInTheDocument();
+  });
+
   test('the price display and the buy button carry the selection, and nothing is bought before the buy button is pressed', async () => {
     const fake = seeded(562);
     const buy = vi.spyOn(fake, 'buyCard');
@@ -286,8 +317,8 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     fake.seed.cards(other, { stick: 1 });
     const real = fake.buyCard.bind(fake);
     let release: () => void = () => {};
-    vi.spyOn(fake, 'buyCard').mockImplementation(async (card) => {
-      const answer = await real(card);
+    vi.spyOn(fake, 'buyCard').mockImplementation(async (slot) => {
+      const answer = await real(slot);
       await new Promise<void>((resolve) => { release = resolve; });
       return answer;
     });

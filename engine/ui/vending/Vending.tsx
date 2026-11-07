@@ -37,9 +37,10 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { motionReduced } from '../appearance.ts';
 import { Postcard } from '../cards/Postcard.tsx';
 import { facesOf, orbs, plainRefusal, playWord, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
+import { useMachine } from '../cards/machine.ts';
 import { signInHref } from '../account/next.ts';
 import { useKayfa } from '../context.tsx';
-import type { Id } from '../data/api.ts';
+import type { Id, Slot } from '../data/api.ts';
 import { backHref, boardPlace } from '../glass/back.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
@@ -68,6 +69,9 @@ const DELIVERY_MS = 1500;
 
 /** "orb" for one orb exactly, "orbs" for any other amount: the slot's name says "1.00 orb". */
 const orbWord = (hundredths: number) => (hundredths === 100 ? 'orb' : 'orbs');
+
+/** A card on sale: its face, and the slot that sells it with the price that slot shows now (a face has no buy price). */
+type Stocked = CardFace & { readonly slot: Slot; readonly price: number };
 
 interface Outcome {
   readonly tone: 'refusal' | 'done';
@@ -102,8 +106,8 @@ export function pick(list: readonly string[] | undefined, fallback: string, rand
 }
 
 function Machine({ faces, picked, onPick, onAbout, onBuy, busy, drop, onLanded, shopName, marquees, random }: {
-  readonly faces: readonly CardFace[];
-  readonly picked: CardFace | null;
+  readonly faces: readonly Stocked[];
+  readonly picked: Stocked | null;
   readonly onPick: (key: string) => void;
   readonly onAbout: (key: string, button: HTMLElement) => void;
   readonly onBuy: () => void;
@@ -205,8 +209,16 @@ export function Vending() {
   const { instance, settings, ui, random } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
-  /* Priced as the server will charge (withCardEconomy): a price an admin has tuned is the one the machine shows. */
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), instance.machine), [instance, ui.cards, settings.cardEconomy]);
+  /*
+   * What the machine sells is its slots as the server shows them now (api.machine): a card on an on-sale slot, in the grid's order, at the
+   * price that slot has, so a price an admin has tuned is the one shown. A card with no on-sale slot is not in the machine.
+   */
+  const { slots, look } = useMachine();
+  const cardFaces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
+  const faces = useMemo(() => (slots ?? []).flatMap((slot): Stocked[] => {
+    const face = 'card' in slot.item && slot.availability === 'onSale' ? cardFaces.find((f) => f.key === (slot.item as { card: string }).card) : undefined;
+    return face ? [{ ...face, slot, price: slot.price }] : [];
+  }), [slots, cardFaces]);
   /*
    * What the screen holds (the pick, the answer in words, the drain, the card in flight, the press
    * in progress) is kept with the account it was made for and read in render against the account
@@ -271,11 +283,13 @@ export function Vending() {
     pressed.current.add(account);
     change(account, () => ({ busy: true, outcome: null }));
     const before = balance;
-    const bought = await player.buyCard(picked.key);
+    const bought = await player.buyCard(picked.slot);
     pressed.current.delete(account);
     /* The answer is the account's that pressed: for anyone signed in now it is not shown. */
     if (!bought.ok) {
       change(account, () => ({ busy: false, outcome: { tone: 'refusal', text: plainRefusal(bought.error) } }));
+      /* A price that moved, or a slot that sold out, is read again, so the machine shows what it is now. */
+      void look();
       return;
     }
     const text = `${picked.name} is in your hand. ${orbs(bought.value.balance)} is left, solid.`;
@@ -352,7 +366,7 @@ export function Vending() {
       {aboutFace && (
         <Overlay title={aboutFace.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
           <div className="kb-vending-about-body" data-kb-alignment={aboutFace.alignment}>
-            <p className="kb-vending-about-price kb-num">{priceOf(aboutFace)}</p>
+            <p className="kb-vending-about-price kb-num">{priceOf(aboutFace.price, aboutFace.extra)}</p>
             <p className="kb-vending-about-says">{aboutFace.describe}</p>
           </div>
         </Overlay>

@@ -26,8 +26,8 @@ const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'b.price': 250 } } as unknown as Settings;
 const rules: CardRules = { key: 'b', name: 'B card', alignment: 'salty', rarity: 'rare', stack: 3, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const ui = (art: Partial<CardUi['art']>): CardUi => ({ key: 'b', art: { color: '#f0f', ink: '#000', canvas: '/b.svg', mark: '/b-mark.svg', credit: 'Divided World', tagline: 'A short line.', ...art }, summary: 'One sentence of rules.', describe: () => 'In full.' });
-const face = (art: Partial<CardUi['art']> = {}): CardFace => faceOf(rules, ui(art), settings, 250);
-const shown = (size: PostcardSize, f: CardFace = face()) => render(<Postcard face={f} size={size} />).container.querySelector<HTMLElement>('.kb-postcard')!;
+const face = (art: Partial<CardUi['art']> = {}): CardFace => faceOf(rules, ui(art), settings);
+const shown = (size: PostcardSize, f: CardFace = face(), price?: number) => render(<Postcard face={f} size={size} price={price} />).container.querySelector<HTMLElement>('.kb-postcard')!;
 const has = (card: HTMLElement, selector: string) => card.querySelector(selector) !== null;
 
 describe('the frame at every size', () => {
@@ -94,7 +94,7 @@ describe('what each size holds', () => {
   });
 
   test('the sheet adds the summary, the price and the foot, which says the credit', () => {
-    const card = shown('sheet');
+    const card = shown('sheet', face(), 250);
     expect(card.querySelector('.kb-postcard-line')?.textContent).toBe('One sentence of rules.');
     expect(card.querySelector('.kb-postcard-price')?.textContent).toBe('2.50');
     const foot = card.querySelector('.kb-postcard-foot')!.textContent!;
@@ -103,9 +103,15 @@ describe('what each size holds', () => {
   });
 
   test('a face with no credit draws no credit, and a card that stacks once says one per post', () => {
-    const card = shown('sheet', faceOf({ ...rules, stack: 1 }, ui({ credit: undefined }), settings, 250));
+    const card = shown('sheet', faceOf({ ...rules, stack: 1 }, ui({ credit: undefined }), settings));
     expect(card.querySelector('.kb-postcard-foot')!.textContent).toContain('Postcard · One per post');
     expect(card.querySelector('.kb-postcard-foot')!.textContent).not.toContain('Art');
+  });
+
+  test('a sheet given no price draws none: a card in the hand is not for sale', () => {
+    const card = shown('sheet');
+    expect(has(card, '.kb-postcard-price')).toBe(false);
+    expect(has(card, '.kb-postcard-foot')).toBe(true);
   });
 
   test('every word is real text in the label\'s order, and aria-hidden', () => {
@@ -120,7 +126,7 @@ describe('what each size holds', () => {
 
 describe('the bottom border\'s row', () => {
   test('the foot and the price share one flex row, so the foot ends where the price begins at any price width', () => {
-    const base = shown('sheet').querySelector('.kb-postcard-base')!;
+    const base = shown('sheet', face(), 250).querySelector('.kb-postcard-base')!;
     expect(base.querySelector(':scope > .kb-postcard-foot')).not.toBeNull();
     expect(base.querySelector(':scope > .kb-postcard-price')).not.toBeNull();
     expect(body('.kb-postcard-base')).toMatch(/display:\s*flex/u);
@@ -134,7 +140,7 @@ describe('the bottom border\'s row', () => {
 
 describe('the canvas', () => {
   test('a face with no canvas draws no img', () => {
-    const card = shown('sheet', faceOf(rules, undefined, settings, 250));
+    const card = shown('sheet', faceOf(rules, undefined, settings));
     expect(card.querySelector('img')).toBeNull();
     expect(has(card, '.kb-postcard-canvas')).toBe(true);
   });

@@ -17,7 +17,7 @@
  * epoch milliseconds as the estimate function sends it.
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
-import type { BeyondPost, Reach } from '../../rules/cards.ts';
+import type { BeyondPost, Rarity, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
 import type { RecordKind } from '../profile/record.ts';
@@ -71,8 +71,8 @@ export interface ScreenSettings {
   /** The numbers the instance's cards give the screens, by name (`Settings.cardSettings`). */
   readonly cardSettings: Readonly<Record<string, number>>;
   /**
-   * The economy numbers the cards' prices read, as the server prices with them now (0039_card_economy.sql): each card's price and
-   * the keys its rules read, from the economy row an admin tunes. A key it lacks is the compiled economy's (`withCardEconomy`).
+   * The economy numbers the cards' rules read, as the server uses them now (0039_card_economy.sql), from the economy row an admin
+   * tunes. A card's buy price is not here: it is its slot's (`KayfaApi.machine`). A key it lacks is the compiled economy's (`withCardEconomy`).
    */
   readonly cardEconomy: Readonly<Record<string, number>>;
   /**
@@ -763,6 +763,29 @@ export interface Bought {
   readonly card: string;
   readonly balance: number;
   readonly held: number;
+}
+
+/**
+ * One slot of the Vending Machine as every player sees it (`machine_now`, 0115_machine.sql): its place in the grid, what it sells,
+ * whether it is for sale, and the price now, in hundredths. A hidden slot is not here. `move` is the Boss's move on it, none until
+ * the machine's moves exist (the booster packs plan, Task 4).
+ */
+export interface Slot {
+  readonly id: Id;
+  readonly position: number;
+  readonly item: { readonly card: string } | { readonly pack: string };
+  /** A card's rarity; null for a pack. */
+  readonly rarity: Rarity | null;
+  readonly availability: 'onSale' | 'soldOut';
+  readonly price: number;
+  readonly move: null;
+}
+
+/** A pack opened: its id, the cards it gave in pull order, and the settled wallet after it (`buy_pack`'s answer). */
+export interface Opened {
+  readonly pack: Id;
+  readonly contents: readonly string[];
+  readonly balance: number;
 }
 
 /* ------------------------------------------------------------------ the log ---- */
@@ -1593,6 +1616,8 @@ export interface KayfaApi {
   wallet(): Promise<Wallet>;
   myReactions(acts: readonly Id[]): Promise<readonly MyReaction[]>;
   myCards(): Promise<readonly HeldCard[]>;
+  /** The Vending Machine's slots as everyone sees them now, in grid order: public, the same for every caller, a hidden slot absent. */
+  machine(): Promise<readonly Slot[]>;
   /** Which of these plays the player has released themselves from (Stick Around's certification): the player's own rows, never counted or broadcast. */
   myReleases(plays: readonly Id[]): Promise<readonly Id[]>;
   /** The furthest seq read in each thread asked about; a thread never read is absent. */
@@ -1737,10 +1762,16 @@ export interface KayfaApi {
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
-   * Buy a card from the Vending Machine at its base price, from the settled wallet only: the ghost estimate cannot be spent. The
-   * price is the card's rules' (`basePrice`), never sent by the screen. Private, and nothing about it is broadcast.
+   * Buy a card from its slot of the Vending Machine, from the settled wallet only: the ghost estimate cannot be spent. The slot is
+   * sent with the price it showed, and the server refuses, in plain words, a price that is no longer its own. Private, and nothing
+   * about it is broadcast.
    */
-  buyCard(card: string): Promise<Answer<Bought>>;
+  buyCard(slot: Slot): Promise<Answer<Bought>>;
+  /**
+   * Buy a pack from its slot, the same way; the server rolls it, and it comes back opened: the cards it gave in pull order, already in
+   * the hand. Private.
+   */
+  buyPack(slot: Slot): Promise<Answer<Opened>>;
   /**
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.

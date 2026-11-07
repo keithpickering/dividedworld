@@ -869,17 +869,42 @@ describe('a card\'s effect', () => {
 });
 
 describe('buying and playing a card', () => {
-  it('buys through the act function, naming the card and no price, and reads the wallet and count the function answers', async () => {
+  const SLOT_CARD = { slot: A, position: 2, card: 'whoops', pack: null, rarity: 'common', availability: 'onSale', price: 250 };
+  const SLOT_PACK = { slot: B, position: 1, card: null, pack: 'booster', rarity: null, availability: 'onSale', price: 300 };
+  const slotOf = async (row: Record<string, unknown>) => {
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([row]) : undefined));
+    return (await h.api.machine())[0]!;
+  };
+
+  it('reads the machine as the database shows it now: an admin-tuned slot price is the price on the machine', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_PACK, SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'soldOut', price: 175 }]) : undefined));
+    expect(await h.api.machine()).toEqual([
+      { id: B, position: 1, item: { pack: 'booster' }, rarity: null, availability: 'onSale', price: 300, move: null },
+      { id: A, position: 2, item: { card: 'whoops' }, rarity: 'common', availability: 'onSale', price: 250, move: null },
+      { id: C, position: 3, item: { card: 'stick' }, rarity: 'common', availability: 'soldOut', price: 175, move: null },
+    ]);
+    const asked = h.log.find((r) => r.url.pathname === `${REST}/machine_now`)!;
+    expect(asked.url.searchParams.get('order')).toBe('position.asc');
+  });
+
+  it('buys through the act function, naming the slot and the price it showed, and reads the wallet and count the function answers', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ card: 'whoops', balance: 462, held: 3 }) : undefined));
-    expect(await h.api.buyCard('whoops')).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
-    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyCard', card: 'whoops' }]);
-    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'that costs 100, and your wallet holds 62' }, 400) : undefined));
-    expect(await refused.api.buyCard('whoops')).toEqual({ ok: false, error: 'that costs 100, and your wallet holds 62' });
+    const slot = await slotOf(SLOT_CARD);
+    expect(await h.api.buyCard(slot)).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyCard', slot: A, price: 250 }]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'the price is now 3.00, not 2.50' }, 400) : undefined));
+    expect(await refused.api.buyCard(slot)).toEqual({ ok: false, error: 'the price is now 3.00, not 2.50' });
     /* Never resent: a lost answer may have spent the Aura, and the player looks before they buy again. */
     const lost = harness(() => new Error('network'));
-    const gone = await lost.api.buyCard('whoops');
+    const gone = await lost.api.buyCard(slot);
     expect(gone.ok === false && gone.uncertain).toBe(true);
     expect(lost.log.filter((r) => r.url.pathname === '/functions/v1/act')).toHaveLength(1);
+  });
+
+  it('buys a pack through the act function, and reads what it gave in pull order', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 }) : undefined));
+    expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyPack', slot: B, price: 300 }]);
   });
 
   it('plays through the act function with the card, the character, the post, the settings and the message, and reads the card\'s Act', async () => {

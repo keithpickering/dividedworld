@@ -14,7 +14,6 @@
  */
 import type { Instance } from './types.ts';
 import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
-import { cardPrice } from './packs.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -60,6 +59,12 @@ type Fields = Record<string, unknown>;
 const id = (r: Fields, field: string): string => {
   const v = r[field];
   if (typeof v !== 'string' || !UUID.test(v)) throw new Refused(field, 'is not an id');
+  return v;
+};
+/** The price a purchase's screen showed: a whole number of hundredths above 0 and within the database's integer. */
+const shownPrice = (r: Fields): number => {
+  const v = r.price;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 2_147_483_647) throw new Refused('price', 'is not a price the machine shows');
   return v;
 };
 const optionalId = (r: Fields, field: string): string | null => (r[field] === undefined || r[field] === null ? null : id(r, field));
@@ -179,10 +184,10 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (!said.ok) throw new Refused('message', said.why);
     return { rpc: 'unmask', args: { through: id(r, 'character'), in_thread: id(r, 'thread'), message: said.value } };
   },
-  buyCard: (r, instance) => {
-    const key = card(r, instance);
-    return { rpc: 'buy_card', args: { card: key, price: cardPrice(instance.machine, key) }, asService: true };
-  },
+  // A purchase names the slot and the price the screen showed (supabase/migrations/0115_machine.sql): the database holds the slot and
+  // refuses, in plain words, a price that is no longer its own, so an admin's change between the look and the press is never charged unseen.
+  buyCard: (r) => ({ rpc: 'buy_card', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
+  buyPack: (r) => ({ rpc: 'buy_pack', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
   playCard: (r, instance) => ({
     rpc: 'play_card',
     // The message is the card's rules' to read (decidePlay), with the target they price.

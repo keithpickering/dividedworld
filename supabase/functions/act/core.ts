@@ -14,7 +14,6 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { cardPrice } from '../../../engine/rules/packs.ts';
 import { casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
@@ -102,6 +101,7 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   react: (a) => withSprung(a, a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
   buy_card: () => [],
+  buy_pack: () => [],
   // A player's own: a character appears on the next load of who is here, and an invite or an
   // account is nobody else's to hear of. A drop announced is the character's announce Act, sent now
   // with the Promos thread it opened (0100_announce.sql).
@@ -152,9 +152,9 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
     if (who === SIGN_IN || !who) return SIGN_IN;
     let args: Record<string, unknown> = { ...decision.args, who };
-    // A card's prices are settings: read as the rows hold them now, not as the code was deployed.
-    const tuned = decision.rpc === 'buy_card' || decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
-    if (decision.rpc === 'buy_card') args = { ...args, price: cardPrice(tuned.machine, String(decision.args.card)) };
+    // A play's prices are settings: read as the rows hold them now, not as the code was deployed. A purchase's is its slot's, which the
+    // database holds and compares with the price the screen showed (machine_now, 0115_machine.sql); it is sent as it was shown.
+    const tuned = decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
     if (decision.needsTarget) {
       // The target as its rules see it (card_target_reach, 0055): a post, a character, a thread or a board, with its own effects and
       // the live ones above it, which a card's canApply sees too (effectsOnTarget).

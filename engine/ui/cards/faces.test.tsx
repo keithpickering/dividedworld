@@ -4,7 +4,8 @@ import type { CardRules } from '../../rules/cards.ts';
 import type { Settings } from '../../rules/types.ts';
 import { render } from '@testing-library/react';
 import { RARITIES } from '../../rules/cards.ts';
-import { alignmentTag, faceOf, facesOf, gemOf, orbs, priceOf, withCardEconomy } from './faces.ts';
+import { alignmentTag, faceOf, facesOf, gemOf, orbs, priceOf, saleOf, withCardEconomy } from './faces.ts';
+import type { Slot } from '../data/api.ts';
 import { cardLabel, Postcard } from './Postcard.tsx';
 import type { CardUi } from './types.ts';
 
@@ -15,11 +16,12 @@ const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salt
 const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', canvas: '', mark: '', tagline: 'Short.', credit: 'Test' }, summary: 'One sentence.', describe: () => 'In full.' };
 
 describe('what every screen knows of a card', () => {
-  test('its price is the rules\' own, said in orbs, with a plus where playing it on a long post costs more', () => {
-    expect(faceOf(plain, undefined, settings, 100)).toMatchObject({ price: 100, extra: 0, stack: 1, tag: 'Sweet' });
-    expect(faceOf(longer, ui, settings, 250)).toMatchObject({ price: 250, extra: 200, stack: 3, tag: 'Salty' });
-    expect(priceOf(faceOf(plain, undefined, settings, 100))).toBe('1.00');
-    expect(priceOf(faceOf(longer, ui, settings, 250))).toBe('2.50+');
+  test('its face has no buy price, and a price is said in orbs, with a plus where playing it on a long post costs more', () => {
+    expect(faceOf(plain, undefined, settings)).toMatchObject({ extra: 0, stack: 1, tag: 'Sweet' });
+    expect(faceOf(longer, ui, settings)).toMatchObject({ extra: 200, stack: 3, tag: 'Salty' });
+    expect(faceOf(plain, undefined, settings)).not.toHaveProperty('price');
+    expect(priceOf(100, faceOf(plain, undefined, settings).extra)).toBe('1.00');
+    expect(priceOf(250, faceOf(longer, ui, settings).extra)).toBe('2.50+');
     expect(orbs(5)).toBe('0.05');
   });
 
@@ -34,10 +36,18 @@ describe('what every screen knows of a card', () => {
     expect(faceOf(plain, { key: 'a', art: { color: '#0f0', ink: '#000', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Whole.' }, settings).summary).toBe('Whole.');
   });
 
-  test('a card the machine has no slot for has no price on its face', () => {
-    expect(faceOf(plain, undefined, settings).price).toBe(0);
-    expect(facesOf([plain, longer], [], settings, [{ item: { card: 'b' }, availability: 'onSale', price: 250 }]).map((f) => f.price)).toEqual([0, 250]);
+  test('only an on-sale slot gives a card a price: none for no slot, a sold out slot, a hidden one (unlisted) or no look at the machine yet', () => {
+    const slot = (card: string, availability: 'onSale' | 'soldOut', price: number): Slot => ({ id: `s-${card}`, position: 1, item: { card }, rarity: 'common', availability, price, move: null });
+    const pack: Slot = { id: 's-p', position: 3, item: { pack: 'a' }, rarity: null, availability: 'onSale', price: 300, move: null };
+    const machine = [slot('a', 'soldOut', 100), slot('b', 'onSale', 250), pack];
+    expect(saleOf(machine, 'b')?.price).toBe(250);
+    expect(saleOf(machine, 'a')).toBeNull();
+    expect(saleOf(machine, 'hidden-one')).toBeNull();
+    expect(saleOf(null, 'b')).toBeNull();
+    expect(saleOf([], 'b')).toBeNull();
+    expect(facesOf([plain, longer], [], settings).map((f) => f.key)).toEqual(['a', 'b']);
   });
+
 
   test('every card the instance sells, in its order, matched to its art by key', () => {
     expect(facesOf([plain, longer], [ui], settings).map((f) => [f.key, f.tagline])).toEqual([['a', ''], ['b', 'Short.']]);

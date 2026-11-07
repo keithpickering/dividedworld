@@ -77,9 +77,20 @@ test('a reaction the instance does not have is refused', () => {
   assert.match(refusal({ action: 'react', act: other, character: id, kind: 'shrug' }) ?? '', /^kind:.*shrug/);
 });
 
-test('a card is bought at the Vending Machine\'s price, by the service, for the caller', () => {
-  assert.deepEqual(decide({ action: 'buyCard', card: 'splat' }, instance), { ok: true, rpc: 'buy_card', args: { card: 'splat', price: 100 }, asService: true });
-  assert.match(refusal({ action: 'buyCard', card: 'nothing' }) ?? '', /^card:/);
+test('a card is bought from a slot at the price the screen showed, by the service, for the caller', () => {
+  assert.deepEqual(decide({ action: 'buyCard', slot: other, price: 250 }, instance), { ok: true, rpc: 'buy_card', args: { slot: other, price: 250 }, asService: true });
+  assert.match(refusal({ action: 'buyCard', slot: 'nothing', price: 250 }) ?? '', /^slot:/);
+  assert.match(refusal({ action: 'buyCard', slot: other }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', slot: other, price: 0 }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', slot: other, price: 1.5 }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', card: 'splat' }) ?? '', /^slot:/, 'a card is no longer bought by its key');
+});
+
+test('a pack is bought from a slot and names the slot and the price the screen showed', () => {
+  assert.deepEqual(decide({ action: 'buyPack', slot: other, price: 300 }, instance), { ok: true, rpc: 'buy_pack', args: { slot: other, price: 300 }, asService: true });
+  assert.match(refusal({ action: 'buyPack', slot: 'nothing', price: 300 }) ?? '', /^slot:/);
+  assert.match(refusal({ action: 'buyPack', slot: other }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyPack', slot: other, price: -3 }) ?? '', /^price:/);
 });
 
 test('a play names the card, the character, the post and the caster\'s configuration; its price waits on the post', () => {

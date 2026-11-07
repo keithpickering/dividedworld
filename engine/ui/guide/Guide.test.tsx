@@ -5,7 +5,7 @@
  * the class card's own entry (its description, its marks), and only the hint is the guide's.
  */
 import fs from 'node:fs';
-import { act, screen, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
@@ -256,10 +256,11 @@ describe('the cards marker', () => {
     key: 'whoops', describe: () => 'Long words with numbers 1.00.', summary: 'Splats a post in your ink.',
     art: { color: '#ff3d7f', ink: '#14030a', canvas: '', mark: '', tagline: 'Splat a post in ink.', credit: 'Test' },
   };
-  test('lists each card with its rarity, its play, its flavor and what it does', () => {
+  test('lists each card with its rarity, its play, its flavor and what it does', async () => {
     page('## Cards\n\n<!-- kayfabb:cards -->', { cards: [whoops] });
     const table = within(sectionOf('Cards')).getByRole('table', { name: 'The cards' });
     const row = within(table).getByRole('row', { name: /Whoops!/u });
+    await within(row).findByText('1.00');
     expect(within(row).getByRole('rowheader')).toHaveTextContent('Whoops!');
     const cells = within(row).getAllByRole('cell').map((c) => c.textContent);
     expect(cells).toEqual(['Salty Common', 'Cast', '1.00', 'Splat a post in ink. Splats a post in your ink.']);
@@ -282,10 +283,35 @@ describe('the cards marker', () => {
     /* A block table, row group, row, header or cell is no table to a reader (browsers drop the role with the display). */
     expect(blocked.filter((x) => /^\.kb-guide-cards( tbody( tr| th| td)?)?$/u.test(x))).toEqual([]);
   });
-  test('a card the instance gave no face is listed all the same, by its name and its rules', () => {
+  test('a card the instance gave no face is listed all the same, by its name and its rules', async () => {
     page('## Cards\n\n<!-- kayfabb:cards -->');
     const row = screen.getByRole('row', { name: /Whoops!/u });
+    await within(row).findByText('1.00');
     expect(within(row).getAllByRole('cell').map((c) => c.textContent)).toEqual(['Salty Common', 'Cast', '1.00', '']);
+  });
+});
+
+describe('the cards marker\'s prices', () => {
+  const priceOfWhoops = async () => {
+    const row = screen.getByRole('row', { name: /Whoops!/u });
+    await waitFor(() => expect(within(row).getAllByRole('cell')[2]!.textContent).not.toBe(''));
+    return within(row).getAllByRole('cell')[2]!.textContent;
+  };
+  const rendered = (change?: (fake: ReturnType<typeof buildWorld>) => void) => {
+    const fake = buildWorld(undefined, instance);
+    change?.(fake);
+    renderIn(fake, <Guide />, { path: '/guide', instance, guide: guide('## Cards\n\n<!-- kayfabb:cards -->') });
+  };
+  test('an admin-tuned price is the one the table says', async () => {
+    rendered((fake) => fake.seed.slot({ card: 'whoops' }, { price: 250 }));
+    expect(await priceOfWhoops()).toBe('2.50');
+  });
+  test('a card whose slot is sold out, or hidden, has no price to say', async () => {
+    rendered((fake) => fake.seed.slot({ card: 'whoops' }, { availability: 'soldOut' }));
+    expect(await priceOfWhoops()).toBe('Not on sale');
+    cleanup();
+    rendered((fake) => fake.seed.slot({ card: 'whoops' }, { availability: 'hidden' }));
+    expect(await priceOfWhoops()).toBe('Not on sale');
   });
 });
 

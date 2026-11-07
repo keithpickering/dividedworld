@@ -20,7 +20,7 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { cardPrice } from '../../rules/packs.ts';
+import { rollPack } from '../../rules/packs.ts';
 import { atOrBelow, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -36,7 +36,7 @@ import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson,
+  Boot, BoardPage, IndexPage, Opened, ProfilePage, RecordPage, Slot, ThreadPage, ThreadPerson,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -126,8 +126,13 @@ export interface Seed {
    * page could show. It writes no Act and counts toward the account's open invites like a made one (`createInvite` is the action).
    */
   invite(account: Id, invite?: { at?: number; used?: boolean }): number;
-  /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player, refused as it is, with its wallet event and card ledger row. */
+  /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player from the card's on-sale slot, refused as it is, with its wallet event and card ledger row. */
   buy(account: Id, card: string, options?: { at?: number }): void;
+  /**
+   * An admin's change to the slot that sells a card or a pack (`item`): whether it is for sale, hidden or sold out, and its price in hundredths.
+   * The machine reads it at once, as the database's rows are read at the next look.
+   */
+  slot(item: { readonly card: string } | { readonly pack: string }, change: { availability?: 'onSale' | 'soldOut' | 'hidden'; price?: number }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
   turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
@@ -1096,6 +1101,31 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
+  /*
+   * The Vending Machine's slots (machine_slots, 0115_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
+   * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
+   * fixed-seed generator: the fake is deterministic, and a test that wants other cards seeds the hand.
+   */
+  interface SlotRec { readonly id: Id; readonly position: number; readonly item: Slot['item']; availability: 'onSale' | 'soldOut' | 'hidden'; price: number }
+  const slotRecs: SlotRec[] = instance.machine.map((m, i): SlotRec => ({ id: `00000000-0000-4000-9000-${(i + 1).toString(16).padStart(12, '0')}`, position: i + 1, item: m.item, availability: m.availability, price: m.price }));
+  let rolls = 0x9e3779b9;
+  const random = (): number => { rolls = (rolls + 0x6d2b79f5) | 0; let t = Math.imul(rolls ^ (rolls >>> 15), 1 | rolls); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rarityOf = (item: Slot['item']): Slot['rarity'] => ('card' in item ? instance.cards.find((c) => c.key === item.card)?.rarity ?? null : null);
+  const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').map((r): Slot => ({
+    id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: null,
+  }));
+  /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0115). */
+  const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
+  /** `slot_for_sale` (0115): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
+  function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
+    const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
+    if (!seen) return refuse('the machine has no such slot');
+    if (wants === 'card' && !('card' in seen.item)) return refuse('this slot sells a pack, not a card');
+    if (wants === 'pack' && !('pack' in seen.item)) return refuse('this slot sells a card, not a pack');
+    if (seen.availability === 'soldOut') return refuse('this slot is sold out');
+    if (shown.price !== seen.price) return refuse(`the price is now ${orbsOf(seen.price)}, not ${orbsOf(shown.price)}`);
+    return seen;
+  }
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
@@ -1155,17 +1185,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
   const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
-  /** `buy_card` (0006_cards.sql): the card's base price from the settled wallet, and one more of it in the hand. */
-  function buyCard(card: string): Answer<Bought> {
-    const bad = request({ action: 'buyCard', card });
+  /** `buy_card` (0115_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
+  function buyCard(shown: Slot): Answer<Bought> {
+    const bad = request({ action: 'buyCard', slot: shown.id, price: shown.price });
     if (bad) return bad;
     const account = me()!;
-    const price = cardPrice(instance.machine, card);
-    const left = spend(account, price, 'purchase', null);
+    const seen = slotForSale(shown, 'card');
+    if (isRefusal(seen)) return seen;
+    const card = (seen.item as { card: string }).card;
+    const left = spend(account, seen.price, 'purchase', null);
     if (typeof left !== 'number') return left;
     account.cards[card] = (account.cards[card] ?? 0) + 1;
-    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price });
+    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price: seen.price });
     return ok({ card, balance: left, held: account.cards[card]! });
+  }
+
+  /** `buy_pack` (0115_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
+  function buyPack(shown: Slot): Answer<Opened> {
+    const bad = request({ action: 'buyPack', slot: shown.id, price: shown.price });
+    if (bad) return bad;
+    const account = me()!;
+    const seen = slotForSale(shown, 'pack');
+    if (isRefusal(seen)) return seen;
+    const pack = instance.packs.find((p) => p.key === (seen.item as { pack: string }).pack);
+    if (!pack) return refuse('the machine has no such slot');
+    const contents = rollPack(pack, instance.cards, random);
+    const left = spend(account, seen.price, 'purchase', null);
+    if (typeof left !== 'number') return left;
+    for (const card of contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
+    return ok({ pack: uuid(), contents, balance: left });
   }
 
   /**
@@ -2110,6 +2158,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     releaseEffect,
     saveEffect,
     buyCard: lossy(buyCard),
+    buyPack: lossy(buyPack),
+    machine: () => machine(),
     playCard: lossy(playCard),
     setCard: lossy(setCard),
     useCard: lossy(useCard),
@@ -2829,7 +2879,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       invites.push({ id, owner: account, code: newCode(id), createdAt: at, issuedAt: at, usedBy: o?.used === true ? account : null });
       return id;
     },
-    buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },
+    buy(account, card, o) {
+      const slot = machine().find((m) => 'card' in m.item && m.item.card === card);
+      accepted(asAt(account, o?.at, () => (slot ? buyCard(slot) : refuse(`the machine has no slot for card ${card}`))));
+    },
+    slot(item, change) {
+      const rec = slotRecs.find((r) => ('card' in item ? 'card' in r.item && r.item.card === item.card : 'pack' in r.item && r.item.pack === item.pack));
+      if (!rec) throw new Error(`the machine has no slot for ${JSON.stringify(item)}`);
+      if (change.availability) rec.availability = change.availability;
+      if (change.price !== undefined) rec.price = change.price;
+    },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
