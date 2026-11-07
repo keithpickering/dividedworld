@@ -52,6 +52,10 @@ test('the premise holds the design\'s hard facts: it cannot know who is behind a
   assert.match(BOSS_PREMISE, /never acted on/);
 });
 
+test('both premises tell the persona to use the pronouns written beside each character\'s name', () => {
+  for (const premise of [BOSS_PREMISE, MOD_BOT_PREMISE]) assert.ok(premise.includes('Each character\'s pronouns are written beside its name; use them.'));
+});
+
 test('one placeholder Mod Bot is on staff at the start', () => {
   const bots = system.roster.filter((p) => system.firstStaff.includes(p.key));
   assert.equal(bots.length, 1);

@@ -111,3 +111,13 @@ export function words(set: PronounSet): Readonly<Record<PronounForm, string>> {
 export function selfPronounLine(set: PronounSet): string {
   return `Your pronouns are ${pronounLabel(set)} (${set.subject}, ${set.object}, ${set.determiner}, ${set.possessive}, ${set.reflexive}).`;
 }
+
+/** A character as every prompt writes it: `Gloomba (she/her)`. */
+export function taggedName(name: string, set: PronounSet): string {
+  return `${name} (${pronounLabel(set)})`;
+}
+
+/** The set a read gave, else the fallback (a persona's own, else `Settings.pronouns`, else `ENGINE_DEFAULT_PRONOUNS`): a character with no profile row reads null. */
+export function pronounsOr(read: PronounSet | null | undefined, fallback: PronounSet): PronounSet {
+  return read ?? fallback;
+}

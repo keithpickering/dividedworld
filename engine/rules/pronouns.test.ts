@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PRONOUN_FORMS, PRONOUN_PRESETS, ENGINE_DEFAULT_PRONOUNS, normalizePronouns, presetOf, pronounLabel, pronounProblems, selfPronounLine, words } from './pronouns.ts';
+import { PRONOUN_FORMS, PRONOUN_PRESETS, ENGINE_DEFAULT_PRONOUNS, normalizePronouns, presetOf, pronounLabel, pronounProblems, pronounsOr, selfPronounLine, taggedName, words } from './pronouns.ts';
 import type { PronounSet } from './pronouns.ts';
 
 const xe: PronounSet = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
@@ -59,4 +59,12 @@ test('each poison is refused with its predicate named', () => {
   assert.match(pronounProblems(null).join('|'), /not an object/);
   assert.match(pronounProblems([]).join('|'), /not an object/);
   assert.deepEqual(pronounProblems({ ...xe, subject: "x’e", object: 'xem-xem' }), []);
+});
+
+test('a character is written Name (label) in a prompt, and a missing set falls back to the one given', () => {
+  assert.equal(taggedName('Gloomba', PRONOUN_PRESETS.she), 'Gloomba (she/her)');
+  assert.equal(taggedName('Gabe', PRONOUN_PRESETS.it), 'Gabe (it/its)');
+  assert.equal(pronounsOr(null, PRONOUN_PRESETS.they), PRONOUN_PRESETS.they);
+  assert.equal(pronounsOr(undefined, PRONOUN_PRESETS.they), PRONOUN_PRESETS.they);
+  assert.equal(pronounsOr(PRONOUN_PRESETS.he, PRONOUN_PRESETS.they), PRONOUN_PRESETS.he);
 });

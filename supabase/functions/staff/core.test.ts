@@ -79,7 +79,7 @@ function fakeDb(w: World = {}) {
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return ['Games gets bumped.'] as T;
-        case 'pool_names': return {} as T;
+        case 'character_faces': return {} as T;
         case 'pool_thread': {
           const v = visits.find((x) => x.thread === args.in_thread)!;
           return { title: 'Best Mario game?', posts: [{ act: v.post, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;

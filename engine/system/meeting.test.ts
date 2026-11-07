@@ -3,9 +3,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, repairAnswer, ruleSchema, type InheritedMove, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
+import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 
 const H = 3_600_000;
 const NOW = Date.parse('2026-11-01T12:00:00Z');
@@ -116,7 +117,7 @@ test('the inheritance section is in plain words, says reviewing is free and what
 
 test('the system prompt carries the Boss\'s career as plain facts, and says so when there is none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
   };
   const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, since: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
   assert.ok(served.includes('Your career, as plain facts'), served);
@@ -126,7 +127,7 @@ test('the system prompt carries the Boss\'s career as plain facts, and says so w
 
 test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at notesRead with the newest kept, and the section is absent when there are none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
     career: { led: [], offices: [] },
   };
   const notes = Array.from({ length: settings.pool.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
@@ -151,7 +152,7 @@ test('the rule\'s schema lists description among the rename\'s params, and the p
   const params = schema.properties.moves.items.properties.params;
   assert.ok('description' in params.properties, JSON.stringify(Object.keys(params.properties)));
   assert.ok(!params.required.includes('description'), 'optional: a Boss that gives none gets the stock line');
-  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   const rename = prompt
     .split('\n').find((l) => l.startsWith('- renameBoard'))!;
   assert.match(rename, /description \(text\)/);
@@ -195,7 +196,7 @@ test('a setRule on a board outside the meeting\'s list, or with a param its pred
 });
 
 test('the prompt lists the predicates a rule may use', () => {
-  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /setRule: set a rule/);
   for (const key of ['minLength', 'noDoublePost', 'repliesOnly']) assert.ok(text.includes(key), key);
 });
@@ -309,14 +310,14 @@ test('a rule that conflicts with the rules in force is dropped and recorded, and
 
 test('the prompt shows each Mod: its name, career, beat preferences, pet rules, temperament, notes, memory and what it spent; and which kinds a Mod may make', () => {
   const mod = {
-    key: M1, name: 'Sir Patrols-a-Lot', temperament: 'fussy about bumps', beats: ['games', 'general'], petRules: ['noDoublePost'],
+    key: M1, name: 'Sir Patrols-a-Lot', pronouns: PRONOUN_PRESETS.they, temperament: 'fussy about bumps', beats: ['games', 'general'], petRules: ['noDoublePost'],
     career: { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00+00:00', until: null, cause: 'seed' }] }, notes: ['Saw a bump in Games.'],
     memory: memoryOf('birdwatching', { opinions: [{ character: ANN, score: 2, note: 'Polite.' }] }),
     granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
   };
-  const facts = { boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
   const text = meetingSystemPrompt({ ...facts, mods: [mod] });
-  for (const piece of ['Sir Patrols-a-Lot', `key ${M1}`, 'Mod Bot from 2026-10-01', 'games, general', 'noDoublePost', 'fussy about bumps', 'Saw a bump in Games.', 'birdwatching', 'Ann the Great 2', 'it spent 2 and 1 goes back to your bank', `Mario Fan Games (${BOARD})`, 'Crack down on bumping.']) {
+  for (const piece of ['Sir Patrols-a-Lot', `key ${M1}`, 'Mod Bot from 2026-10-01', 'games, general', 'noDoublePost', 'fussy about bumps', 'Saw a bump in Games.', 'birdwatching', 'Ann the Great 2', 'they spent 2 and 1 goes back to your bank', `Mario Fan Games (${BOARD})`, 'Crack down on bumping.']) {
     assert.ok(text.includes(piece), `${piece} is in the prompt`);
   }
   assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
@@ -327,9 +328,39 @@ test('the prompt shows each Mod: its name, career, beat preferences, pet rules, 
   assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');
   assert.match(meetingSystemPrompt({ ...facts, mods: [] }), /You have no Mod Bots on staff\. Do not answer with orders or patrols\./);
   const fresh = meetingSystemPrompt({ ...facts, mods: [{ ...mod, granted: null, unspent: 0, memory: null, order: null, boards: [], notes: [] }] });
-  assert.match(fresh, /You have never handed it an allowance/);
-  assert.match(fresh, /It has no memory yet/);
-  assert.match(fresh, /Its beat is empty now/);
+  assert.match(fresh, /You have never handed them an allowance/);
+  assert.match(fresh, /They have no memory yet; write their first\./);
+  assert.match(fresh, /Their beat is empty now/);
+});
+
+test('a Mod\'s section is written with its own pronouns: they/them reads "Their beat now", it/its "Its beat now", and the heading and the roster carry the label', () => {
+  const mod = {
+    key: M1, name: 'Sir Patrols-a-Lot', pronouns: PRONOUN_PRESETS.they, temperament: 'fussy', beats: [], petRules: [],
+    career: { led: [], offices: [] }, notes: ['Saw a bump.'], memory: memoryOf('birdwatching'),
+    granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
+  };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'mod-x', name: 'Xe', pronouns: PRONOUN_PRESETS.he }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone' };
+  const they = meetingSystemPrompt({ ...facts, mods: [mod] });
+  assert.ok(they.includes('## Sir Patrols-a-Lot (they/them) (key mod-one)'), 'the heading');
+  for (const line of ['They have held no office before.', 'You last handed them 3 moves; they spent 2', 'Their beat now: Mario Fan Games', 'Your standing order to them: Crack down', 'Their memory: hobby birdwatching', 'Their notes since their last memory (their own thoughts;']) assert.ok(they.includes(line), line);
+  const it = meetingSystemPrompt({ ...facts, mods: [{ ...mod, pronouns: PRONOUN_PRESETS.it }] });
+  for (const line of ['## Sir Patrols-a-Lot (it/its) (key mod-one)', 'It has held no office before.', 'You last handed it 3 moves; it spent 2', 'Its beat now: Mario Fan Games', 'Its notes since its last memory (its own thoughts;']) assert.ok(it.includes(line), line);
+  assert.ok(they.includes(`${testSystem.roster[0]!.persona}\n\nYour pronouns are she/her (she, her, her, hers, herself).`), 'the self line follows the persona');
+  assert.ok(they.includes('mod-x (Xe, he/him)'), 'the successors\' roster');
+  const section = they.slice(they.indexOf('## Sir Patrols-a-Lot'), they.indexOf('The season is in its last week'));
+  assert.ok(!/ its |\bIt \b/.test(section), section);
+});
+
+test('the inheritance section names no pronoun for the Boss before', () => {
+  const due: InheritedMove = { act: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', kind: 'renameBoard', params: { board: BOARD, name: 'Pie Place' }, landedAt: '2026-10-20T09:00:00Z', expiresAt: null, by: 'The Old Boss', boardName: 'General' };
+  const text = inheritedText([due], 1).join('\n');
+  assert.match(text, /These moves, made by the Boss before you, are still in force\./);
+  assert.ok(!/of theirs/.test(text));
+});
+
+test('the ids the model may use write each character as Name (label)', () => {
+  const text = referenceText({ boards: [], threads: [], characters: [{ id: ANN, name: 'Gloomba', pronouns: PRONOUN_PRESETS.she }, { id: BOB, name: 'Zed', pronouns: PRONOUN_PRESETS.they }] });
+  assert.ok(text.includes(`- Gloomba (she/her): ${ANN}`) && text.includes(`- Zed (they/them): ${BOB}`), text);
 });
 
 test('the rule\'s schema offers orders and patrols, both optional, and an order\'s memory is optional', () => {

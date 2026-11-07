@@ -56,6 +56,8 @@ interface World {
   open?: boolean;
   failOn?: string | string[];
   publicIds?: string[];
+  /** The digest's characters as system_digest hands them over (pronouns null: no profile row). */
+  digestCharacters?: unknown[];
   boss?: string;
   /** The keys meeting_context() lists as a nomination's candidates (default: the roster but the Boss). */
   successors?: string[];
@@ -90,7 +92,7 @@ function fakeDb(w: World = {}) {
         case 'meeting_context':
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}) } as T;
         case 'system_digest':
-          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [{ id: ANN, name: 'Ann the Great', staff: false }] } as T;
+          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
         case 'staff_memory_at': return (w.memories?.[String(args.staff)] ? (w.memoryAt ?? '2026-10-31T09:23:00.000Z') : null) as T;
@@ -182,6 +184,19 @@ test('the call is a strong-tier meeting call for the Boss, naming the meeting, w
   const digest = d.calls.find((c) => c.fn === 'system_digest')!;
   assert.equal(digest.args.since, '2026-10-31T09:23:00.000Z', 'the window starts where the last meeting\'s ended');
   assert.equal(digest.args.until, SLOT);
+});
+
+test('every character the model is shown carries its pronouns, a character with no profile row takes the instance default, and the Boss is told its own', async () => {
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  const d = fakeDb({ digestCharacters: [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: she }, { id: BOB, name: 'Bob the Bare', staff: false, pronouns: null }] });
+  const m = fakeModels(answer([rename(0)]));
+  await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  const sent = m.chats[0]!.messages[0]!.content;
+  assert.ok(sent.includes(`- Ann the Great (she/her): ${ANN}`), 'the ids list');
+  const def = dividedWorld.settings.pronouns;
+  const label = def.object === def.subject ? `${def.subject}/${def.determiner}` : `${def.subject}/${def.object}`;
+  assert.ok(sent.includes(`- Bob the Bare (${label}): ${BOB}`), 'no profile row: the instance default');
+  assert.match(m.chats[0]!.system, /Your pronouns are \w+\/\w+ \(/, 'the Boss is told its own');
 });
 
 test('a rename whose name fails the style is dropped, not rewritten', async () => {

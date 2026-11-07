@@ -2,6 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CLIPS, DIGEST_MOST, renderDigest, type Digest } from './digest.ts';
 import type { Memory } from './memory.ts';
+import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
+
+const she = PRONOUN_PRESETS.she;
+const they = PRONOUN_PRESETS.they;
 
 const id = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const small: Digest = {
@@ -14,8 +18,8 @@ const small: Digest = {
   bossReactions: [{ act: id(9), thread: id(1), total: 5, tally: { fire: 4, skull: 1 } }],
   excerpts: [{ act: id(8), thread: id(1), character: id(3), reactions: 7, text: 'It was me all along' }],
   characters: [
-    { id: id(2), name: 'Mario', staff: false },
-    { id: id(3), name: 'Luigi', staff: false },
+    { id: id(2), name: 'Mario', staff: false, pronouns: she },
+    { id: id(3), name: 'Luigi', staff: false, pronouns: they },
   ],
 };
 const memory: Memory = {
@@ -33,11 +37,11 @@ test('a digest renders as plain text with each section and the characters by nam
     assert.ok(text.includes(`## ${heading}`), heading);
   }
   assert.ok(text.includes('"Who ate the pie" on General: 9 posts in the window (0.38 an hour), 40 in all, controversy 0.5.'));
-  assert.ok(text.includes('1. Mario: 120'));
-  assert.ok(text.includes('Mario quoted Luigi 2 times.'));
+  assert.ok(text.includes('1. Mario (she/her): 120'));
+  assert.ok(text.includes('Mario (she/her) quoted Luigi (they/them) 2 times.'));
   assert.ok(text.includes('5 in all: fire 4, skull 1.'));
-  assert.ok(text.includes('Luigi (7 reactions): It was me all along'));
-  assert.ok(text.includes('Opinion of Mario: 3. funny'));
+  assert.ok(text.includes('Luigi (they/them) (7 reactions): It was me all along'));
+  assert.ok(text.includes('Opinion of Mario (she/her): 3. funny'));
   assert.ok(text.includes('- A feed item'));
   assert.ok(!/[<>]|\{|\}/.test(text.replace(/## /g, '')), 'plain text, no markup or json');
 });
@@ -70,22 +74,22 @@ test('a move in force and one that ended read as plain lines with their state an
 
 test('a move that ended met says who met it, by name, up to the ceiling, and names no one it was not given', () => {
   const met = { act: id(30), kind: 'renameBoard', params: { name: 'Toast' }, demand: { kind: 'postsOnBoard' }, progress: { done: 3, of: 3, met: true }, ended: { why: 'met', by: 'demand', at: '2026-10-31T00:00:00Z' }, state: 'ended' };
-  const people = Array.from({ length: DIGEST_MOST.metBy + 2 }, (_, i) => ({ id: id(40 + i), name: `Person ${i}`, staff: false }));
+  const people = Array.from({ length: DIGEST_MOST.metBy + 2 }, (_, i) => ({ id: id(40 + i), name: `Person ${i}`, staff: false, pronouns: she }));
   const render = (metBy: unknown) => renderDigest({ ...small, moves: [{ ...met, metBy }], characters: people }, null, []);
-  assert.ok(render([people[0]!.id, people[1]!.id, people[2]!.id]).includes('met by Person 0, Person 1 and Person 2.'));
-  assert.ok(render([people[0]!.id]).includes('met by Person 0.'));
-  assert.ok(render([people[0]!.id, id(99)]).includes('met by Person 0 and someone.'), 'an id the digest does not name reads as someone');
+  assert.ok(render([people[0]!.id, people[1]!.id, people[2]!.id]).includes('met by Person 0 (she/her), Person 1 (she/her) and Person 2 (she/her).'));
+  assert.ok(render([people[0]!.id]).includes('met by Person 0 (she/her).'));
+  assert.ok(render([people[0]!.id, id(99)]).includes('met by Person 0 (she/her) and someone.'), 'an id the digest does not name reads as someone');
   assert.ok(!/met by Person/.test(render([])), 'no one listed, nothing said');
   assert.ok(!/met by Person/.test(render('not a list')));
   const all = render(people.map((p) => p.id));
-  assert.ok(all.includes(`Person ${DIGEST_MOST.metBy - 1}.`) && !all.includes(`Person ${DIGEST_MOST.metBy}`), 'at most the ceiling are named');
+  assert.ok(all.includes(`Person ${DIGEST_MOST.metBy - 1} (she/her).`) && !all.includes(`Person ${DIGEST_MOST.metBy}`), 'at most the ceiling are named');
 });
 
 test('the rendered length is bounded by the ceilings, whatever the digest holds', () => {
   const { threads: T, excerpts: E, excerptChars: C, feed: F, metBy: M } = DIGEST_MOST;
   const OVER = 3;
   const long = (n: number): string => 'x'.repeat(n);
-  const names = Array.from({ length: (4 + M) * (E + OVER) }, (_, i) => ({ id: id(1000 + i), name: long(500), staff: false }));
+  const names = Array.from({ length: (4 + M) * (E + OVER) }, (_, i) => ({ id: id(1000 + i), name: long(500), staff: false, pronouns: PRONOUN_PRESETS.it }));
   const lists = (n: number) => Array.from({ length: n }, (_, i) => i);
   const digest: Digest = {
     since: '2026-10-30T00:00:00.000000+00:00',
