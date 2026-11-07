@@ -156,14 +156,6 @@
   margin-left: auto;
 }
 
-.kb-nav-icon {
-  flex: none;
-  /* The magnifier is the line's own height, so the link is no taller than its words and the bar keeps the board's height. */
-  width: 1em;
-  height: 1em;
-  vertical-align: -0.125em;
-}
-
 /* The banner's search box stands where the host line stood; a phone's banner has no room for it, and its Boards menu holds the Search link. */
 .kb-banner-search {
   position: relative; /* the suggest list hangs from this, so its right edge is the button's */
@@ -173,6 +165,8 @@
   flex: 0 1 auto;
   min-width: 0;
   margin-left: auto; /* the banner's right side, with the meter after it */
+  /* Centered on the name's line, not baseline-aligned with it: a baseline offset would grow the banner past the board's height. */
+  align-self: center;
 }
 
 .kb-banner-search .kb-search-combo {

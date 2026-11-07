@@ -107,11 +107,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
               {session.signedIn && (
                 <li className="kb-nav-search">
                   <Link to="/search" aria-current={onSearch ? 'page' : undefined} onClick={() => setOpen(false)}>
-                    <svg className="kb-nav-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" focusable="false">
-                      <circle cx="5.5" cy="5.5" r="4" fill="none" stroke="currentColor" strokeWidth="1" />
-                      <path d="M8.5,8.5 L12.5,12.5" fill="none" stroke="currentColor" strokeWidth="1" />
-                    </svg>
-                    Search
+                    <Icon name="search" />Search
                   </Link>
                 </li>
               )}
