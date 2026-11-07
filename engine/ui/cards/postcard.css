@@ -175,6 +175,7 @@ button.kb-postcard {
 }
 
 .kb-postcard[data-size='slot'] .kb-postcard-plate { top: auto; bottom: 7cqw; width: calc(100% - 9cqw); height: 20cqw; }
+/* instances/divided-world/ui/index.test.tsx reads this rule to hold the longest name legible at the slot. */
 .kb-postcard[data-size='slot'] .kb-postcard-name { font-size: max(7px, min(15cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
 .kb-postcard[data-size='phone'] .kb-postcard-plate { top: auto; bottom: 8cqw; width: calc(100% - 9cqw); height: 18cqw; }
 .kb-postcard[data-size='phone'] .kb-postcard-name { font-size: max(7px, min(13.5cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
@@ -291,7 +292,7 @@ button.kb-postcard {
     var(--kb-glass-field);
 }
 
-/* The instance's mark on the back, as a TCG back's emblem: about 45% of the canvas's width, on a dark disc so it reads over the bands. */
+/* The instance's mark on the back, as a TCG back's emblem: half the card's width, on a dark disc so it reads over the bands. */
 .kb-postcard-emblem {
   position: absolute;
   left: 50%;
