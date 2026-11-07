@@ -272,7 +272,7 @@ function splitAddresses(text: string): BbNode[] | null {
     if (start >= runEnd || start < runStart) {
       runStart = start;
       runEnd = start;
-      while (runEnd < text.length && !BAD_URL_CHAR.test(text[runEnd] as string)) runEnd++;
+      while (runEnd < text.length && !BAD_URL_CHAR.test(text[runEnd] as string) && !(text[runEnd] === '[' && runEnd > start && tagShaped(text, runEnd))) runEnd++;
     }
     const hostFrom = start + m[0].length;
     let hostEnd = hostFrom;
@@ -280,7 +280,9 @@ function splitAddresses(text: string): BbNode[] | null {
     /* With a path, the host part is judged alone first (it holds no scheme, so no two host parts overlap); without one, the
        host part is the whole run and trailing punctuation goes before it is judged. */
     /* A run longer than the longest address from here is no address, and is not measured again for each scheme in it. */
-    const hostOk = runEnd - start > MAX_URL_LENGTH ? false : hostEnd < runEnd ? safeHref(text.slice(start, hostEnd)) !== null : true;
+    /* A run that a refused character (not whitespace) ends inside its host part names another host than the one written, so it is no address. */
+    const hostCut = hostEnd === runEnd && runEnd < text.length && !/\s/.test(text[runEnd] as string) && text[runEnd] !== '[';
+    const hostOk = hostCut || runEnd - start > MAX_URL_LENGTH ? false : hostEnd < runEnd ? safeHref(text.slice(start, hostEnd)) !== null : true;
     const end = hostOk ? trimAddress(text, start, runEnd) : start;
     const href = hostOk && end > hostFrom ? safeHref(text.slice(start, end)) : null;
     if (href === null) {
@@ -296,6 +298,17 @@ function splitAddresses(text: string): BbNode[] | null {
   if (!parts) return null;
   if (from < text.length) parts.push({ type: 'text', text: text.slice(from) });
   return parts;
+}
+
+/** Whether the `[` at `i` begins something tag-shaped: `[/name]`, or `[name` then `]` or `=` (name is letters or `*`). Reads its own name once. */
+function tagShaped(text: string, i: number): boolean {
+  let j = i + 1;
+  if (text[j] === '/') j++;
+  const nameFrom = j;
+  while (j < text.length && /[A-Za-z*]/.test(text[j] as string)) j++;
+  if (j === nameFrom) return false;
+  const c = text[j];
+  return c === ']' || (c === '=' && text[i + 1] !== '/');
 }
 
 /** Where the address `text[start..end)` ends once trailing `.,;:!?` and a closer with no opener inside it are left outside. */

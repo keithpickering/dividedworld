@@ -828,7 +828,7 @@ test('javascript:, data: and refused addresses are not linked', () => {
   assert.deepEqual(parse('javascript:alert(1)'), [text('javascript:alert(1)')]);
   // The address ends at a character safeHref refuses.
   assert.deepEqual(links('https://x.example/a"b'), ['https://x.example/a']);
-  assert.deepEqual(links('http://exa"mple.com'), ['http://exa']);
+  assert.deepEqual(links('http://exa"mple.com'), []);
 });
 
 test('a long run of schemes, and of valid addresses, stays linear', () => {
@@ -857,4 +857,38 @@ test('the visible text of a post with an address is what it was before auto-link
   ["before https://a.example/x!? after", "before https://a.example/x!? after"],
   ];
   for (const [input, expected] of recorded) assert.equal(visibleText(parse(input)), expected, input);
+});
+
+test('a literal tag closer after an address stays text after the link', () => {
+  assert.deepEqual(parse('[img=x]https://a.b/c.png[/img]'), [text('[img=x]'), { type: 'autolink', href: 'https://a.b/c.png', text: 'https://a.b/c.png' }, text('[/img]')]);
+  assert.deepEqual(links('https://a.b/x[/b]'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/x[b]y'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/x[color=red'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/x[*]'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/w[1]'), ['https://a.b/w[1]']);
+  assert.deepEqual(links('https://a.b/w[a-b]'), ['https://a.b/w[a-b]']);
+});
+
+test('a refused character inside the host leaves the whole run unlinked, one in the path only cuts', () => {
+  assert.deepEqual(links('http://exa"mple.com'), []);
+  assert.deepEqual(links('http://exa<mple.com/p'), []);
+  assert.deepEqual(links('http://a.example/p"q'), ['http://a.example/p']);
+  assert.deepEqual(links('http://a.example "q'), ['http://a.example']);
+});
+
+test('an auto-linked address at the maximum length links and one past it stays text', () => {
+  const base = 'https://a.example/';
+  const ok = base + 'a'.repeat(MAX_URL_LENGTH - base.length);
+  assert.equal(ok.length, MAX_URL_LENGTH);
+  assert.deepEqual(links(ok), [ok]);
+  assert.deepEqual(links(ok + 'a'), []);
+});
+
+test('tag-shaped scans stay linear', () => {
+  for (const unit of ['https://a.b/[x', 'https://a.b/[/b]']) {
+    const started = performance.now();
+    parse(unit.repeat(100000));
+    const ms = performance.now() - started;
+    assert.ok(ms < 3000, `${unit} took ${ms}ms`);
+  }
 });
