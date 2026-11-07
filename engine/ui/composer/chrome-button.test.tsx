@@ -52,14 +52,30 @@ describe('.kb-button in base.css', () => {
     for (const t of ['--kb-button-shadow', '--kb-button-tracking']) expect(r, t).toContain(t);
   });
 
-  test('a primary button takes the primary tokens; pressed is aria-expanded or aria-current, drawn with an inset shadow', () => {
+  /* A rule whose selector list holds `sel` (as any member): its body. Anchored to the rule's braces, so deleting the rule empties it. */
+  const block = (sel: string) => new RegExp(`${sel.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}[^{}]*\\{([^}]*)\\}`, 'u').exec(base)?.[1] ?? '';
+
+  test('a primary button takes the primary tokens; pressed is aria-expanded, aria-pressed or aria-current, drawn with the pressed shadow and a dimmer face', () => {
     expect(rule('.kb-button[data-kb-primary]')).toMatch(/--kb-button-primary-bg[\s\S]*--kb-button-primary-fg|--kb-button-primary-fg[\s\S]*--kb-button-primary-bg/u);
-    expect(base).toMatch(/\.kb-button\[aria-expanded='true'\][\s\S]*?\{[^}]*inset/u);
-    expect(base).toMatch(/\.kb-button\[aria-current\][\s\S]*?\{[^}]*inset/u);
+    for (const sel of ["[aria-expanded='true']", "[aria-pressed='true']", "[aria-current]:not([aria-current='false'])"]) {
+      const body = block(`.kb-button${sel}`);
+      expect(body, sel).toMatch(/box-shadow:\s*var\(--kb-button-pressed-shadow\)/u);
+      expect(body, sel).toMatch(/filter:\s*brightness\(var\(--kb-button-pressed-brightness\)\)/u);
+    }
     expect(base).toMatch(/\.kb-button\[data-kb-size='small'\]/u);
   });
 
   test('the focus ring is the board\'s own', () => {
-    expect(base).toMatch(/\.kb-button:focus-visible[\s\S]*?--kb-focus/u);
+    expect(block('.kb-button:focus-visible')).toMatch(/outline:[^;]*var\(--kb-focus\)/u);
+  });
+
+  test('aria-disabled draws as :disabled does', () => {
+    const body = block(".kb-button[aria-disabled='true']");
+    for (const decl of [/color:\s*var\(--kb-muted\)/u, /background:\s*var\(--kb-button-bg\)/u, /border-color:\s*var\(--kb-muted\)/u, /box-shadow:\s*none/u]) expect(body).toMatch(decl);
+    expect(base).toMatch(/\.kb-button:disabled,\s*\.kb-button\[aria-disabled='true'\]\s*\{/u);
+  });
+
+  test('a small button is at least 24px tall (WCAG 2.5.8), at the root size of 16px', () => {
+    expect(block(".kb-button[data-kb-size='small']")).toMatch(/min-height:\s*1\.5rem/u);
   });
 });

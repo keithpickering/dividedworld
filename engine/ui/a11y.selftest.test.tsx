@@ -32,7 +32,7 @@ describe('the accessibility check detects', () => {
       --kb-meter-face:#d4d0c8; --kb-meter-fill:#0a246a;
       --kb-link-hover:#000; --kb-row-1:#fff; --kb-row-2:#f0f0f0; --kb-row-3:#e0e0e0; --kb-head-fg:#fff; --kb-head-bg:#222; --kb-head-focus:#fff;
       --kb-bar-fg:#000; --kb-bar-bg:#ddd; --kb-nav-fg:#fff; --kb-nav-hover:#fff; --kb-nav-bg:#222; --kb-logo-fg:#000; --kb-banner-bg:#fff;
-      --kb-button-fg:#000; --kb-button-bg:#fff; --kb-button-primary-fg:#fff; --kb-button-primary-bg:#000; --kb-button-hover-fg:#fff; --kb-button-hover-bg:#000; --kb-button-primary-hover-fg:#fff; --kb-button-primary-hover-bg:#000; --kb-input-bg:#fff;
+      --kb-button-fg:#000; --kb-button-bg:#fff; --kb-button-primary-fg:#fff; --kb-button-primary-bg:#000; --kb-button-hover-fg:#fff; --kb-button-hover-bg:#000; --kb-button-primary-hover-fg:#fff; --kb-button-primary-hover-bg:#000; --kb-button-pressed-brightness:0.92; --kb-input-bg:#fff;
       --kb-badge-a:#000; --kb-badge-a-fg:#fff; --kb-badge-b:#eee; --kb-badge-b-fg:#000; }`;
   const DARK = `--kb-bg:#000; --kb-fg:#fff; --kb-muted:#aaa; --kb-hud-bg:#000; --kb-chip-bg:#000; --kb-chip-own:#fff; --kb-link:#fff; --kb-link-visited:#ccc; --kb-rule:#fff; --kb-focus:#fff; --kb-pip:#fff; --kb-selection-fg:#000; --kb-selection-bg:#fff; --kb-meter-face:#1e1e1e; --kb-meter-fill:#7fb2ff;
     --kb-link-hover:#fff; --kb-row-1:#000; --kb-row-2:#111; --kb-row-3:#222; --kb-head-fg:#fff; --kb-head-bg:#333; --kb-head-focus:#fff;

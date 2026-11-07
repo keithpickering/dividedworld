@@ -253,6 +253,20 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-badge-b-fg', '--kb-badge-b', 3, 'the second footer badge (decorative)'],
 ];
 
+/**
+ * A pressed button (aria-expanded, aria-pressed, aria-current) is drawn under `filter: brightness(--kb-button-pressed-brightness)`
+ * (base.css), which scales the face and the label alike. Its pairs are the button pairs at rest and under the pointer, read through
+ * that factor, so a re-skin that passes the pair at rest and fails dimmed is caught.
+ */
+const PRESSED_PAIRS: readonly (readonly [string, string, string])[] = [
+  ['--kb-button-fg', '--kb-button-bg', 'a pressed Chrome button\'s label'],
+  ['--kb-button-primary-fg', '--kb-button-primary-bg', 'a pressed primary Chrome button\'s label'],
+  ['--kb-button-hover-fg', '--kb-button-hover-bg', 'a pressed Chrome button\'s label under the pointer'],
+  ['--kb-button-primary-hover-fg', '--kb-button-primary-hover-bg', 'a pressed primary Chrome button\'s label under the pointer'],
+];
+
+const dim = (color: string, factor: number): string => `rgb(${parseColor(color).map((c) => Math.round(Math.min(255, c * factor))).join(' ')})`;
+
 /** The worst ratio of `fg` over every stop of `bg`; throws on a value that cannot be read. */
 export function worstRatio(tokens: Tokens, fg: string, bg: string): number {
   const text = resolveToken(tokens, fg);
@@ -270,6 +284,18 @@ export function contrastFailures(...sheets: string[]): string[] {
       try { got = worstRatio(tokens, fg, bg); }
       catch (e) { failures.push(`${mode}: ${what} (${fg} on ${bg}) cannot be read: ${(e as Error).message}`); continue; }
       if (got < least) failures.push(`${mode}: ${what} (${fg} ${tokens[fg]} on ${bg} ${tokens[bg]}) is ${got.toFixed(2)}:1 at its worst stop, needs ${least}:1`);
+    }
+    const factorName = '--kb-button-pressed-brightness';
+    let factor: number;
+    try { factor = Number(resolveToken(tokens, factorName)); } catch { factor = Number.NaN; }
+    if (!Number.isFinite(factor) || factor < 0) { failures.push(`${mode}: ${factorName} must be a number, which no stylesheet sets`); continue; }
+    for (const [fg, bg, what] of PRESSED_PAIRS) {
+      if (!tokens[fg] || !tokens[bg]) continue; /* named above, with the pair at rest */
+      try {
+        const text = dim(resolveToken(tokens, fg), factor);
+        const got = Math.min(...backgroundStops(resolveToken(tokens, bg)).map((stop) => ratio(text, dim(stop, factor))));
+        if (got < 4.5) failures.push(`${mode}: ${what} (${fg} on ${bg}, dimmed by ${factorName} ${factor}) is ${got.toFixed(2)}:1 at its worst stop, needs 4.5:1`);
+      } catch (e) { failures.push(`${mode}: ${what} (${fg} on ${bg}) cannot be read when pressed: ${(e as Error).message}`); }
     }
   }
   return failures;

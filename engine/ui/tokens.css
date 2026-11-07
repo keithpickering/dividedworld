@@ -131,6 +131,8 @@
   --kb-button-primary-shadow: inset 0 0 0 1px currentColor;
   --kb-button-pressed-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45);
   --kb-button-radius: 0;
+  /* How much the pressed look dims the button (a filter on face and label alike); contrast.ts holds both at the dimmer value. */
+  --kb-button-pressed-brightness: 0.92;
   --kb-button-primary-bg: var(--kb-fg);
   --kb-button-primary-fg: var(--kb-bg);
   /* A button under the pointer. By default today's inversion; a skin sets a lighter face of its own. A primary button already is

@@ -176,3 +176,22 @@ describe('the skin tokens: the defaults draw today\'s board', () => {
     expect(seen.dark).toMatchObject({ '--kb-fg': '#fff', '--kb-bg': '#000', '--kb-rule': '#fff', '--kb-link': '#fff', '--kb-muted': '#aaa' });
   });
 });
+
+describe('a pressed Chrome button is held too (the pressed filter dims face and label together)', () => {
+  /* #767676 on white is 4.54:1, which passes; the pressed filter's brightness takes both toward 0.92 of themselves and lands under 4.5. */
+  const reskin = THEME_LIGHT('--kb-button-bg: #fff; --kb-button-fg: #767676; --kb-button-hover-bg: #fff; --kb-button-hover-fg: #767676;');
+
+  test('a face and label that pass at rest but fail pressed are caught, and the message says pressed', () => {
+    const f = fails(reskin);
+    expect(f.some((x) => /^light: a Chrome button's label \(/u.test(x)), 'the pair at rest passes').toBe(false);
+    expect(f.some((x) => /^light: a pressed Chrome button's label/u.test(x)), f.join('\n')).toBe(true);
+  });
+
+  test('the factor is read from --kb-button-pressed-brightness, so a theme that dims less passes', () => {
+    expect(fails(THEME_LIGHT('--kb-button-bg: #fff; --kb-button-fg: #767676; --kb-button-hover-bg: #fff; --kb-button-hover-fg: #767676; --kb-button-pressed-brightness: 1;')).filter((x) => /pressed/u.test(x))).toEqual([]);
+  });
+
+  test('the engine defaults hold pressed, primary and hovered included', () => {
+    expect(fails(engine).filter((x) => /pressed/u.test(x))).toEqual([]);
+  });
+});

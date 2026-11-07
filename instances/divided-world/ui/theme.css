@@ -177,7 +177,7 @@
     --kb-button-radius: 0;
     --kb-button-primary-bg: linear-gradient(#5a5a5a, #3c3c3c 50%, #2c2c2c 51%, #202020);
     --kb-button-primary-fg: #fff;
-    --kb-button-hover-bg: linear-gradient(#747474 0%, #505050 48%, #363636 52%, #484848 100%);
+    --kb-button-hover-bg: linear-gradient(#6e6e6e 0%, #505050 48%, #363636 52%, #484848 100%);
     --kb-button-hover-fg: #fff;
     --kb-button-primary-hover-bg: linear-gradient(#6e6e6e, #505050 50%, #3c3c3c 51%, #2e2e2e);
     --kb-button-primary-hover-fg: #fff;
@@ -254,7 +254,7 @@
   --kb-button-radius: 0;
   --kb-button-primary-bg: linear-gradient(#5a5a5a, #3c3c3c 50%, #2c2c2c 51%, #202020);
   --kb-button-primary-fg: #fff;
-  --kb-button-hover-bg: linear-gradient(#747474 0%, #505050 48%, #363636 52%, #484848 100%);
+  --kb-button-hover-bg: linear-gradient(#6e6e6e 0%, #505050 48%, #363636 52%, #484848 100%);
   --kb-button-hover-fg: #fff;
   --kb-button-primary-hover-bg: linear-gradient(#6e6e6e, #505050 50%, #3c3c3c 51%, #2e2e2e);
   --kb-button-primary-hover-fg: #fff;

@@ -222,7 +222,8 @@ h1 {
 }
 
 .kb-button[data-kb-size='small'] {
-  min-height: 0;
+  /* A target of at least 24px at the default root size (WCAG 2.5.8): Quote, Spin and History, and the toolbar's buttons, stand side by side. */
+  min-height: 1.5rem;
   padding: 0.25em 0.6em;
   font-size: var(--kb-size-fine);
   letter-spacing: var(--kb-button-tracking-small);
@@ -254,7 +255,26 @@ h1 {
 .kb-button[aria-pressed='true'],
 .kb-button[aria-current]:not([aria-current='false']) {
   box-shadow: var(--kb-button-pressed-shadow);
-  filter: brightness(0.92);
+  /* The factor is a token so the contrast check (engine/ui/contrast.ts) holds the face and label at the dimmer ground too. */
+  filter: brightness(var(--kb-button-pressed-brightness));
+}
+
+/*
+ * Forced colors (Windows High Contrast) paints no background or shadow, so the two things those say are said in lines: the primary
+ * button by a second pixel of border, a pressed one by an outline drawn inside its edge. Before the focus ring below, which wins on a
+ * focused button.
+ */
+@media (forced-colors: active) {
+  .kb-button[data-kb-primary] {
+    border-width: 2px;
+  }
+
+  .kb-button[aria-expanded='true'],
+  .kb-button[aria-pressed='true'],
+  .kb-button[aria-current]:not([aria-current='false']) {
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
 }
 
 /* The board's ring, outside the edge so it is held on the ground the button stands on (PAIRS checks it at 3:1 there). */
@@ -265,6 +285,11 @@ h1 {
 
 .kb-button:disabled {
   cursor: not-allowed;
+}
+
+/* aria-disabled keeps focus where a disabled attribute would drop it (Characters, Follow), so it draws the same; its cursor is its own (thread.css). */
+.kb-button:disabled,
+.kb-button[aria-disabled='true'] {
   color: var(--kb-muted);
   background: var(--kb-button-bg);
   border-color: var(--kb-muted);
