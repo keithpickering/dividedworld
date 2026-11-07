@@ -1,8 +1,9 @@
 /**
  * The response headers the site is served with, in one place. netlify.toml repeats these values
  * (a TOML file cannot import them) and web/headers.test.tsx fails if the two differ; vite.config.ts
- * serves them from `vite preview`, so the end-to-end run in e2e/ is the page under the same policy
- * Netlify applies. The Content-Security-Policy allows the page itself and the Supabase origin:
+ * serves SECURITY_HEADERS from `vite preview`, so the end-to-end run in e2e/ is the page under the
+ * same policy Netlify applies. The path-scoped ones (ASSET_CACHE_CONTROL, MAIL_HEADERS) are Netlify's
+ * alone: preview's headers apply to every path. The Content-Security-Policy allows the page itself and the Supabase origin:
  * connections to https://*.supabase.co (and wss for Realtime); images from any https host, since a
  * post's [img] may name one (the owner's choice, 2026-10-29: as on an old forum, the image's host
  * can see who loads it); and
