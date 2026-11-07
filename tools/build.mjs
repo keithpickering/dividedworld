@@ -96,6 +96,8 @@ export const STEPS = [
   'node tools/check-id-reads.mjs',
   'node tools/test-name-folds.mjs',
   'node tools/check-name-folds.mjs',
+  'node tools/test-bbcode-plain.mjs',
+  'node tools/check-bbcode-plain.mjs',
   'npm run test:engine',
   'npm run test:ui',
   'npm run build:web',
