@@ -44,6 +44,7 @@ test('each poison is named in words', () => {
     ['an empty ladder', { ...good, ladder: [] }, /0 default rungs/],
     ['a bad name on a conferred group', { ...good, conferred: [{ key: 'trial', name: '', color: '#d2691e', tone: 'punishment' }] }, /group "trial" has a name of 0 characters/],
     ['an empty key', { ...good, conferred: [{ key: '', name: 'Blank', color: '#d2691e', tone: 'favor' }] }, /empty key/],
+    ['a tone outside the two', { ...good, conferred: [{ key: 'odd', name: 'Odd', color: '#d2691e', tone: 'reward' } as never] }, /tone "reward"/],
     ['a missing when', { ...good, ladder: [base!, { ...posty!, when: undefined } as never, old!, crew!] }, /rung "posty" has no condition/],
     ['a zero atLeast', { ...good, ladder: [base!, { ...posty!, when: { kind: 'posts', atLeast: 0 } }, old!, crew!] }, /atLeast/],
   ];

@@ -40,6 +40,9 @@ export function groupsProblems(content: GroupsContent): string[] {
     if (!COLOR.test(g.color)) out.push(`group "${g.key}" has color ${JSON.stringify(g.color)}; a color is #rrggbb`);
     if (typeof g.name !== 'string' || g.name.length < 1 || g.name.length > 32) out.push(`group "${g.key}" has a name of ${typeof g.name === 'string' ? g.name.length : 0} characters; a name is 1 to 32 characters`);
   }
+  for (const c of conferred) {
+    if (c.tone !== 'punishment' && c.tone !== 'favor') out.push(`conferred group "${c.key}" has tone ${JSON.stringify(c.tone)}; a tone is punishment or favor`);
+  }
   for (const r of ladder) {
     if (r.when === undefined || r.when === null) out.push(`rung "${r.key}" has no condition`);
     else if (!(CONDITION_KINDS as readonly string[]).includes(r.when.kind)) out.push(`rung "${r.key}" has condition kind ${JSON.stringify(r.when.kind)}; the kinds are ${CONDITION_KINDS.join(', ')}`);
@@ -53,13 +56,13 @@ export function groupsProblems(content: GroupsContent): string[] {
 /** The key of the highest rung (ladder is lowest first) whose condition the facts meet. */
 export function earnedGroup(ladder: readonly Rung[], facts: { readonly posts: number; readonly seasons: number; readonly staff: boolean }): string {
   const holds = (rung: Rung): boolean => {
-    const w = rung.when;
-    switch (w.kind) {
+    const w = rung.when as Condition | undefined;
+    switch (w?.kind) {
       case 'default': return true;
       case 'posts': return facts.posts >= w.atLeast;
       case 'seasons': return facts.seasons >= w.atLeast;
       case 'staff': return facts.staff;
-      default: throw new Error(`rung "${rung.key}" has condition kind ${JSON.stringify((w as { kind: unknown }).kind)}, which earnedGroup has no case for`);
+      default: throw new Error(`rung "${rung.key}" has condition kind ${JSON.stringify((w as { kind?: unknown } | undefined)?.kind)}, which earnedGroup has no case for`);
     }
   };
   for (let i = ladder.length - 1; i >= 0; i--) if (holds(ladder[i]!)) return ladder[i]!.key;
