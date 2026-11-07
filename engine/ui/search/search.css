@@ -160,3 +160,10 @@
 .kb-search-page > h1.kb-heading:focus {
   outline: none;
 }
+
+/* A form field's list hangs from the field's own left edge and is never wider than the field, so on a phone it cannot pass the viewport. */
+.kb-search-field .kb-search-list {
+  left: 0;
+  right: auto;
+  width: min(420px, 100%);
+}

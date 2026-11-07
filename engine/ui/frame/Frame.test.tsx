@@ -837,6 +837,20 @@ describe('search in the banner (the search plan, Task 6)', () => {
     await user.type(await within(banner()).findByRole('combobox'), 'green shell{Enter}');
     expect(here()).toBe('/search?q=green+shell');
   });
+  test('a Search button beside the box does what Enter does: it searches for the typed words, or opens the plain page', async () => {
+    const user = userEvent.setup();
+    setup();
+    const form = await within(banner()).findByRole('search');
+    await user.type(within(form).getByRole('combobox'), 'green shell');
+    await user.click(within(form).getByRole('button', { name: 'Search' }));
+    expect(here()).toBe('/search?q=green+shell');
+  });
+  test('the Search button with nothing typed opens the plain search page', async () => {
+    const user = userEvent.setup();
+    setup();
+    await user.click(await within(await within(banner()).findByRole('search')).findByRole('button', { name: 'Search' }));
+    expect(here()).toBe('/search');
+  });
   test('the banner is axe clean with its list open', async () => {
     const user = userEvent.setup();
     const { unmount } = setup();

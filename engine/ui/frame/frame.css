@@ -145,8 +145,17 @@
 
 /* The banner's search box stands where the host line stood; a phone's banner has no room for it, and its Boards menu holds the Search link. */
 .kb-banner-search {
+  position: relative; /* the suggest list hangs from this, so its right edge is the button's */
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex: 0 1 auto;
   min-width: 0;
+  margin-left: auto; /* the banner's right side, with the meter after it */
+}
+
+.kb-banner-search .kb-search-combo {
+  position: static;
 }
 
 @media (max-width: 40em) {
