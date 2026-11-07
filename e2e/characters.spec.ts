@@ -98,8 +98,8 @@ test('at 1440 the roster panel keeps a readable measure; at 390 it fills the wid
   const wide = await panel.evaluate((el) => ({ width: el.getBoundingClientRect().width, cap: parseFloat(getComputedStyle(el).fontSize) * 56 }));
   expect(wide.width).toBeLessThanOrEqual(wide.cap);
   await page.setViewportSize({ width: 390, height: 844 });
-  const narrow = await panel.evaluate((el) => ({ width: el.getBoundingClientRect().width, parent: el.parentElement!.getBoundingClientRect().width }));
-  expect(narrow.width).toBeGreaterThanOrEqual(narrow.parent - 1);
+  /* The window's resize reaches the layout a frame or two later (the board's layout is set from it): read it once it has. */
+  await expect.poll(async () => panel.evaluate((el) => el.getBoundingClientRect().width - el.parentElement!.getBoundingClientRect().width)).toBeGreaterThanOrEqual(-1);
 });
 
 /*
