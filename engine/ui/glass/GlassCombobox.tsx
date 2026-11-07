@@ -24,7 +24,7 @@ export function GlassCombobox<O extends ComboOption = ComboOption>({ label, plac
   return (
     <div className="kb-glass-combo">
       <label className="kb-glass-field">
-        {label}
+        <span>{label}</span>
         <input type="text" className="kb-glass-input" placeholder={placeholder} {...view.inputProps} />
       </label>
       {view.open && (

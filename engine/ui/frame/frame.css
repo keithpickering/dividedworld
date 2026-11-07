@@ -134,13 +134,17 @@
 }
 
 .kb-nav-search a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
+  line-height: inherit;
 }
 
 .kb-nav-icon {
   flex: none;
+  /* The magnifier is the line's own height, so the link is no taller than its words and the bar keeps the board's height. */
+  width: 1em;
+  height: 1em;
+  margin-right: 6px;
+  vertical-align: -0.125em;
 }
 
 /* The banner's search box stands where the host line stood; a phone's banner has no room for it, and its Boards menu holds the Search link. */

@@ -4,11 +4,10 @@
 }
 
 .kb-glass-combo-list {
-  position: absolute;
-  z-index: 5;
-  top: 100%;
-  left: 0;
-  right: 0;
+  /*
+   * In the flow, under the field, not laid over what follows it: the glass pickers stand in dialogs whose next fields' labels must stay
+   * legible on the smoke (a list laid over them puts its own bright words behind theirs), and the dialog scrolls to make room.
+   */
   max-height: 50vh;
   overflow-y: auto;
   border: 1px solid var(--kb-glass-neon);
@@ -29,13 +28,20 @@
 
 .kb-glass-combo-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 2px 12px;
   min-height: 44px;
   align-items: center;
   padding: 4px 10px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.kb-glass-combo-row > :first-child {
+  /* The title keeps a readable measure: when the detail would squeeze it, the detail drops under it. */
+  flex: 1 1 11em;
+  min-width: 0;
 }
 
 .kb-glass-combo-row[aria-selected='true'] {
