@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { instanceSeed } from './seed.ts';
 import { chooseInstance, instance } from './instance.ts';
 import { MOVE_KINDS } from '../../../engine/system/moves.ts';
+import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
+import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
@@ -39,19 +41,43 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.deepEqual(seed.system.firstStaff, [...firstStaff]);
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
-    assert.deepEqual(Object.keys(s).sort(), ['key', 'name', 'signature', 'title']);
+    const p = roster.find((r) => r.key === s.key)!;
+    assert.deepEqual(Object.keys(s).sort(), p.weakness.kind === 'quiz' ? ['beats', 'challenge', 'key', 'name', 'quiz', 'signature', 'title', 'visitHours'] : ['beats', 'challenge', 'key', 'name', 'signature', 'title', 'visitHours']);
+    assert.deepEqual(s.beats, [...p.beats], 'the beat preferences travel, for beat_of (0103)');
+    // A quiz persona's questions travel as a list of their own, beside the challenge (never in it), for seed_instance to keep where no client can read them (0108).
+    if (p.weakness.kind === 'quiz') assert.deepEqual((s as { quiz?: unknown }).quiz, p.weakness.questions.map((q) => ({ question: q.question, choices: [...q.choices], answer: q.answer })), 'a quiz persona\'s questions and answers travel');
+    assert.deepEqual(s.visitHours, p.strictness.visitHours, 'the persona\'s visit hours travel, for start_visit (0105)');
+    assert.equal(s.challenge.kind, p.weakness.kind);
+    assert.ok(!JSON.stringify(s.challenge).includes('answer') && !('questions' in s.challenge && typeof s.challenge.questions !== 'number'), 'a challenge carries a count, never a question or an answer');
+    if (p.weakness.kind === 'quiz') assert.equal(s.challenge.questions, p.weakness.questions.length, 'a quiz carries how many questions it has');
     assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');
   }
   const bytes = JSON.stringify(seed);
   for (const b of roster) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
 });
 
-test('the seed carries the engine\'s catalogs of moves (with whether each is structural and shapes a board) and demands', () => {
+test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it) and demands', () => {
   const { moves, demands } = instanceSeed(instance).system;
-  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard })));
-  assert.deepEqual(moves, [{ key: 'renameBoard', structural: true, shapesBoard: true }, { key: 'nameSuccessor', structural: true, shapesBoard: false }]);
+  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: m.offices })));
+  assert.deepEqual(moves, [
+    { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'] },
+    { key: 'nameSuccessor', structural: true, shapesBoard: false, offices: ['boss'] },
+    { key: 'setRule', structural: false, shapesBoard: false, offices: ['boss', 'mod'] },
+  ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);
+});
+
+test('the seed carries the rule predicates, each with its parameter kind, its bounds and its words as a template', () => {
+  const { predicates } = instanceSeed(instance).system;
+  assert.deepEqual(predicates.map((p) => p.key), PREDICATES.map((p) => p.key));
+  const by = Object.fromEntries(predicates.map((p) => [p.key, p]));
+  assert.deepEqual(by['minLength'], { key: 'minLength', param: 'count', least: 1, most: 200, plain: 'posts of at least {param} characters' });
+  assert.deepEqual(by['noDoublePost'], { key: 'noDoublePost', param: 'none', least: null, most: null, plain: 'no double posting' });
+  assert.deepEqual(by['bannedWord'], { key: 'bannedWord', param: 'word', least: 1, most: 40, plain: 'the word "{param}" is banned' });
+  assert.equal(by['noTag']!.param, 'tag');
+  assert.deepEqual((by['noTag'] as { tags?: string[] }).tags, [...BBCODE_TAGS], 'the tags a rule may name are the parser\'s');
+  assert.ok(predicates.filter((p) => p.key !== 'noTag').every((p) => !('tags' in p)));
 });
 
 test('the deployed instance is chosen by profile: the playtest\'s shorter season, or the defaults', () => {

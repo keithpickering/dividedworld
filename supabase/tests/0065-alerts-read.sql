@@ -251,7 +251,10 @@ begin
     if plan !~ 'Index (Only )?Scan( Backward)? using alerts_by_account' then raise exception '%: written alerts are one range of (account, at): %', src, plan; end if;
     if plan !~ '(Index (Only )?Scan( Backward)? using|Bitmap Index Scan on) ledger_account' then raise exception '%: settlements are found by ledger_account: %', src, plan; end if;
     bufs := (regexp_match(plan, 'Buffers: shared hit=(\d+)'))[1]::integer;
-    if bufs > 300 then raise exception '%: a page of the busy account''s list reads a bounded number of buffers, not %: %', src, bufs, plan; end if;
+    -- The bound is what a page costs on an empty database plus slack, not a count of rows: the read plans the news (season_news, alerts_news) on each call,
+    -- and planning opens every index of acts to read its root, so the figure grows with the indexes on acts (252 at 0100, 348 with the Mod Bots' twelve more) and
+    -- not with the data (the same test with three times the settlements reads 3 buffers more).
+    if bufs > 400 then raise exception '%: a page of the busy account''s list reads a bounded number of buffers, not %: %', src, bufs, plan; end if;
     raise notice '% reads % buffers', src, bufs;
     execute format('deallocate plan_%s', src);
   end loop;

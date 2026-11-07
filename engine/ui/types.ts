@@ -87,6 +87,11 @@ export interface UiCopy {
    * none), such as "a card that holds you in place still does, only instantly."
    */
   readonly reducedMotionCard: string;
+  /**
+   * What the glass calls a Mod Bot's role where a screen names it, as it begins a sentence or a by-line ("A Moderator"): the Lens's visit tab
+   * credits a Mod's acts with it. Absent, the engine's plain "A Mod" stands (engine/ui/cards/visit.ts).
+   */
+  readonly modRole?: string;
   /** Words where the instance names a thing in an alert; absent, the engine's plain words stand (engine/ui/alerts/words.ts). */
   readonly alerts?: AlertCopy;
 }

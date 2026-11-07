@@ -18,6 +18,7 @@ import { monthYear, shortDate } from './dates.ts';
 import { Link } from '../router.tsx';
 import type { Statement } from './reveals.ts';
 import { StaffBadge } from './StaffBadge.tsx';
+import { WarnMeter } from './WarnMeter.tsx';
 import './postbit.css';
 
 /** A character and what a postbit shows beside it, gathered once for a page of posts. */
@@ -74,6 +75,8 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const rank = instance.ranks[index]?.name ?? '';
   const className = (key: string | undefined) => (key === undefined ? undefined : instance.classes.find((k) => k.key === key)?.name ?? key);
   const joined = monthYear(c.joined);
+  /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
+  const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > Date.now();
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
@@ -82,7 +85,12 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
         <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
         {c.staff && <StaffBadge character={c} />}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
-        {c.title && <span className="kb-postbit-title kb-small kb-muted">{c.title}</span>}
+        {(c.title || banned) && (
+          <span className="kb-postbit-title kb-small kb-muted">
+            {c.title}
+            {banned && <>{c.title && ' '}<strong className="kb-postbit-banned">BANNED<span className="kb-visually-hidden"> until {shortDate(c.bannedUntil!)}</span></strong></>}
+          </span>
+        )}
         {/* A staff character is not scored: no rank, no pips, and no class to reveal. */}
         {!c.staff && (
           <span className="kb-postbit-rank">
@@ -90,6 +98,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
             {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
           </span>
         )}
+        {c.warnPoints !== undefined && c.warnPoints > 0 && !c.staff && <WarnMeter points={c.warnPoints} size={instance.settings.warnBar.size} />}
         <span className="kb-postbit-counts kb-small kb-muted">
           <span>Posts: {person.posts}</span>
           {joined && <span>Joined {joined}</span>}

@@ -12,6 +12,7 @@ import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { fadeOf, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
@@ -948,6 +949,451 @@ describe('End this card', () => {
     await userEvent.click(screen.getByRole('button', { name: 'End it' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('an admin has already ended that card');
     expect(screen.getByRole('dialog', { name: 'End this card?' })).toBeInTheDocument();
+  });
+});
+
+
+/*
+ * A visit's tab (the Mod Bots design, section 9; docs/research/2026-11-06-mod-bots/01-on-a-visit.png and 02-filed-author.png): the Lens opens on the
+ * visit, ahead of the card kinds. Its words are the glass's plain voice; the Mod's lines are quoted as its own.
+ */
+describe('a visit\'s tab', () => {
+  const HOUR = 3_600_000;
+  const QUIZ = { kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'], answer: 'Form 0' } as const;
+
+  /** A visit on Spritey's post 2, and on Pipewrench's post 4 where `mine` is set: the reader plays Pipewrench. */
+  function visited(o: { challenge?: Parameters<Fake['seed']['visit']>[2] extends infer T ? T extends { challenge?: infer C } ? C : never : never; mine?: boolean; endsInMs?: number } = {}) {
+    const w = world();
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const post = o.mine ? w.fake.seed.post(w.thread, w.pipe, 'post 4') : w.second;
+    const visit = w.fake.seed.visit(clerk, post, { at: Date.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
+    return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
+  }
+  const openVisit = (w: ReturnType<typeof visited>) =>
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, cards, copy: { modRole: 'A Moderator' } });
+  const visitMark = async (seq: number) => within(await article(seq)).findByRole('button', { name: /Opens the visit\.$/u });
+  const visitLens = () => screen.getByRole('dialog', { name: /^Visit/u });
+  /** Tab until the control has the focus, as a keyboard reader reaches it (the Lens's tab, its close cross, then its controls). */
+  const tabTo = async (el: HTMLElement) => { for (let i = 0; i < 8 && document.activeElement !== el; i++) await userEvent.tab(); expect(el).toHaveFocus(); };
+  /** Opens the visit's Lens and waits for its story to be read: the challenge is drawn from it. */
+  const press = async (w: ReturnType<typeof visited>) => {
+    await userEvent.click(await visitMark(w.seq));
+    const l = visitLens();
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toHaveAttribute('aria-busy'));
+    return l;
+  };
+  /** The filing of the visit and what it put on its author, as the tick writes them. */
+  const file = (w: ReturnType<typeof visited>, by: Id = w.spritey) => {
+    w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.' });
+    return w.fake.seed.infraction(w.visit, { points: 2 });
+  };
+
+  test('is first of the Lens\'s tabs, ahead of the card kinds, and is the one open', async () => {
+    width(false);
+    const w = visited();
+    w.play('k1');
+    openVisit(w);
+    const l = await press(w);
+    expect(l).toHaveAccessibleName('Visit and cards on this post');
+    expect(within(l).getAllByRole('tab').map((t) => t.textContent)).toEqual(['On a visit', 'Card 1']);
+    expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveFocus();
+    /* The arrow key moves to the cards' tab, which draws its own State, and back. */
+    await userEvent.keyboard('{ArrowRight}');
+    expect(within(visitLens()).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(within(visitLens()).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  describe('while it is open', () => {
+    test('says who is visiting, the charge and what lands on whom and when, in the glass\'s plain words', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).getByRole('heading', { name: 'The Clerk is on a visit' })).toBeInTheDocument();
+      expect(l).toHaveTextContent('Charge: Rule 2: No double posting (minor, 2 warn points).');
+      expect(l).toHaveTextContent(/If nobody talks it down by .*, Spritey's warn bar gains 2 warn points and this post is marked as breaking Rule 2\./u);
+    });
+
+    test('says plainly that the time is up while it waits for its filing', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, endsInMs: -60_000 });
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent(/The time is up, so it files at the next check unless it is talked down first\./u);
+    });
+
+    test('a quiz is the Mod\'s question, quoted, and its answers as full-width block buttons, one to a row', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).getByRole('heading', { name: 'Talk it down' })).toBeInTheDocument();
+      expect(l).toHaveTextContent('The Clerk asks: “Which form is used to request another form?”');
+      const group = within(l).getByRole('group', { name: /Answers to The Clerk's question/u });
+      const choices = within(group).getAllByRole('button');
+      expect(choices.map((c) => c.textContent)).toEqual(['Form 1-A', 'Form 0', 'Form 27-B/6']);
+      for (const c of choices) expect(c).toHaveClass('kb-visit-choice');
+      expect(l).toHaveTextContent('One try for Pipewrench. A wrong answer, and The Clerk visits Pipewrench\'s next post within 24 hours, charging Obstruction (minor, 2 warn points). There is no timer.');
+      expect(within(l).getByRole('status')).toBeEmptyDOMElement();
+    });
+
+    test('a right answer reached and pressed by keyboard talks it down: the result is said in the status region, and the tab and the mark follow', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 0' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('Pipewrench got past The Clerk. The visit is over, and nothing landed on Spritey.'));
+      expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toBeInTheDocument();
+      expect(within(await article(2)).getByRole('button', { name: /^The Clerk's visit to this post was talked down/u })).toHaveTextContent('Talked down');
+      /* The try ended the visit and took the challenge with the button that was pressed: focus is on the open tab, not lost to the page. */
+      expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toHaveFocus();
+    });
+
+    test('a wrong answer says so and the tail; the answers stay, spent, and one try is all it takes', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 1-A' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('That was not the answer. The Clerk will visit Pipewrench\'s next post within 24 hours.'));
+      const first = within(l).getByRole('button', { name: 'Form 1-A' });
+      expect(first).toHaveAttribute('aria-disabled', 'true');
+      expect(first).toHaveAttribute('aria-pressed', 'true');
+      await userEvent.click(within(l).getByRole('button', { name: 'Form 0' }));
+      expect((await w.fake.visitStory(w.thread, w.visit, w.second)).attempts).toHaveLength(1);
+      expect(within(visitLens()).getByRole('tab', { name: 'On a visit' })).toBeInTheDocument();
+    });
+
+    test('a try the server took is spent here even when the story cannot be read again, and a right one ends the visit', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const real = w.fake.visitStory.bind(w.fake);
+      let reads = 0;
+      w.fake.visitStory = async (...a) => { if (++reads > 1) throw new Error('offline'); return real(...a); };
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 0' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('Pipewrench got past The Clerk.'));
+      await waitFor(() => expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toBeInTheDocument());
+      expect((await real(w.thread, w.visit, w.second)).attempts).toHaveLength(1);
+    });
+
+    test('a wrong try the server took leaves the answers spent when the story cannot be read again', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const real = w.fake.visitStory.bind(w.fake);
+      let reads = 0;
+      w.fake.visitStory = async (...a) => { if (++reads > 1) throw new Error('offline'); return real(...a); };
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 1-A' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('That was not the answer'));
+      await waitFor(() => expect(within(l).getByRole('button', { name: 'Form 0' })).toHaveAttribute('aria-disabled', 'true'));
+    });
+
+    test('a refusal is said in the server\'s words, in the same region', async () => {
+      width(false);
+      const w = visited({ challenge: { kind: 'bribe', price: 50 } });
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(within(l).getByRole('button', { name: 'Pay 0.50 Aura' }));
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('that costs 50, and your wallet holds 0'));
+    });
+
+    test('draws no try before its story is read, and none for a visit the story says has ended', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      /* The page was read while the visit was open; it filed before the Lens read its story. */
+      let release!: () => void;
+      const held = new Promise<void>((r) => { release = r; });
+      const real = w.fake.visitStory.bind(w.fake);
+      w.fake.visitStory = async (...a) => { await held; return real(...a); };
+      openVisit(w);
+      const mark = await visitMark(w.seq);
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(w.visit, { points: 2 });
+      await userEvent.click(mark);
+      const l = visitLens();
+      expect(within(l).queryByRole('group')).toBeNull();
+      expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+      release();
+      await within(l).findByRole('tab', { name: 'Filed' });
+      expect(within(l).queryByRole('group')).toBeNull();
+      expect(within(l).queryByRole('button', { name: /^Form/u })).toBeNull();
+      expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+    });
+
+    test('a bribe is one button with its price, which ends the visit', async () => {
+      width(false);
+      const w = visited({ challenge: { kind: 'bribe', price: 50 } });
+      w.fake.seed.wallet(w.me, 200);
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent('The Clerk will go for a price, and the price goes nowhere. One try for Pipewrench.');
+      await userEvent.click(within(l).getByRole('button', { name: 'Pay 0.50 Aura' }));
+      await waitFor(() => expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toBeInTheDocument());
+      expect(within(visitLens()).getByRole('status')).toHaveTextContent('Pipewrench got past The Clerk.');
+    });
+
+    test('a distraction asks for no answer and no price: any card cast on the thread talks it down', async () => {
+      width(false);
+      const w = visited({ challenge: { kind: 'distraction' } });
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent('The Clerk is not moved by an answer or a price. Any card cast on this thread talks it down.');
+      expect(within(l).queryByRole('group')).toBeNull();
+      expect(within(l).queryByRole('button', { name: /^Pay/u })).toBeNull();
+    });
+
+    test('a reader with no mask to try as is told where to pick one', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.signInAs(w.fake.seed.account('lurker'));
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent('Pick a mask in the HUD to try.');
+    });
+
+    test('offers no Appeal: there is nothing to appeal yet', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, mine: true });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
+    });
+  });
+
+  describe('once filed', () => {
+    test('says what landed on whom and when it drops off, and "Filed" names the tab and the mark', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      file(w);
+      openVisit(w);
+      const mark = await visitMark(w.seq);
+      expect(mark).toHaveTextContent('Filed');
+      await userEvent.click(mark);
+      const l = visitLens();
+      expect(within(l).getByRole('tab', { name: 'Filed' })).toHaveAttribute('aria-selected', 'true');
+      expect(within(l).getByRole('heading', { name: 'The Clerk filed its report' })).toBeInTheDocument();
+      await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 points; they drop off on [A-Z][a-z]{2} \d{1,2}\. The bar now stands at 2 of 10\. The post keeps its words under the notice\./u));
+      /* Nothing to talk down any more. */
+      expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+    });
+
+    test('the bar now is read with the story: a stale page value never appears, and an expired infraction shows none', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      file(w);
+      openVisit(w);
+      const mark = await visitMark(w.seq);
+      /* The page was read with the bar at 2; another visit filed before the Lens opened, so the bar stands at 6. */
+      const other = w.fake.seed.visit(w.clerk, w.third, { at: Date.now() });
+      w.fake.seed.visitEnd(other, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(other, { points: 4, band: 'moderate' });
+      await userEvent.click(mark);
+      const l = visitLens();
+      await within(l).findByText(/The bar now stands at 6 of 10\./u);
+      expect(l).not.toHaveTextContent(/2 of 10/u);
+    });
+
+    test('an expired infraction says what it did and shows no bar', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      openVisit(w);
+      const l = await press(w);
+      await within(l).findByText(/they dropped off on/u);
+      expect(l).not.toHaveTextContent(/of 10/u);
+    });
+
+    test('a filing whose infraction cannot be read says only that the visit filed, with no number', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent('The Clerk filed its report');
+      expect(l).toHaveTextContent('The visit filed.');
+      expect(l).not.toHaveTextContent(/\d+ (warn )?points?/u);
+      expect(l).not.toHaveTextContent(/of 10/u);
+    });
+
+    test('Appeal, with its price and terms, is the author\'s current mask\'s alone, and opens the form', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, mine: true });
+      const inf = file(w);
+      openVisit(w);
+      const l = await press(w);
+      const appeal = await within(l).findByRole('button', { name: 'Appeal · 0.50 Aura' });
+      expect(l).toHaveTextContent('The Clerk hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
+      appeal.focus();
+      await userEvent.keyboard('{Enter}');
+      /* The post provides AppealCtx (Task 13): the same panel moves to the Appeal form, whose tab takes the focus. */
+      const form = await screen.findByRole('dialog', { name: 'Appeal on this post' });
+      expect(within(form).getByRole('tab', { name: 'Appeal' })).toHaveFocus();
+      expect(within(form).getByRole('form', { name: 'Appeal' })).toBeInTheDocument();
+      void inf;
+    });
+
+    test('another player\'s reader sees the state and no Appeal', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      file(w);
+      openVisit(w);
+      const l = await press(w);
+      await within(l).findByText(/gained 2 points/u);
+      expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
+    });
+
+    test('the author\'s own other mask sees no Appeal either: it is the current mask\'s', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, mine: true });
+      file(w);
+      const other = w.fake.seed.character(w.me, 'Second Mask', 'face');
+      /* The HUD's character is changed on this device, as the picker does. */
+      localStorage.setItem(`kb-hud:${w.me}`, other);
+      openVisit(w);
+      await userEvent.click(await visitMark(w.seq));
+      const l = visitLens();
+      await within(l).findByText(/gained 2 points/u);
+      expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
+    });
+
+    test('an appeal waiting says so and offers no second one; a ruling is said', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, mine: true });
+      const inf = file(w);
+      const appeal = w.fake.seed.appeal(w.pipe, inf, 'I was posting a changelog.');
+      openVisit(w);
+      let l = await press(w);
+      await within(l).findByText(/An appeal of it is waiting to be heard\. If it cannot be heard, the fee is refunded\./u);
+      expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
+      await userEvent.click(await visitMark(w.seq));
+      w.fake.seed.ruling(appeal, w.clerk, 'overturned', { line: 'Fine. Fine!' });
+      await userEvent.click(await visitMark(w.seq));
+      l = visitLens();
+      await within(l).findByText(/The Clerk heard an appeal of it and overturned it, so the points are gone\./u);
+    });
+
+    test('points that have dropped off are not appealed', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, mine: true });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      openVisit(w);
+      const l = await press(w);
+      await within(l).findByText(/they dropped off on/u);
+      expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
+    });
+  });
+
+  describe('when it ended another way', () => {
+    test('talked down, it says who and that nothing landed', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
+      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).getByRole('tab', { name: 'Talked down' })).toHaveAttribute('aria-selected', 'true');
+      expect(within(l).getByRole('heading', { name: 'The Clerk was talked down' })).toBeInTheDocument();
+      expect(l).toHaveTextContent(/Nothing landed on Spritey\./u);
+      expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+    });
+
+    test('trapped, it says a trap on the post ended it', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'trapped', line: 'A trap set on this post sprang as the visit began, and the visit ended.' });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).getByRole('tab', { name: 'Trapped' })).toBeInTheDocument();
+      expect(l).toHaveTextContent(/A trap set on this post sprang when the visit began/u);
+      expect(l).toHaveTextContent(/Nothing landed on Spritey\./u);
+    });
+  });
+
+  describe('how it went', () => {
+    test('is a fold of Lens rows, each the Act with React and Spin thread, the Mod\'s words quoted and its role named', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      /* Dated by the real clock, as the visit is: the rows are in the order the Acts happened. */
+      const report = w.fake.seed.report(w.gloomba, w.second, 'Third time this week.', { at: Date.now() - 2 * 60_000 });
+      w.fake.seed.verdict(report, w.clerk, 'visit', { line: 'Noted. Inspecting.', visit: w.visit, at: Date.now() - 60_000 });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.', at: Date.now() + 60_000 });
+      w.fake.seed.infraction(w.visit, { points: 2 });
+      openVisit(w);
+      const l = await press(w);
+      const fold = await within(l).findByRole('button', { name: /^How it went · 4 acts$/u });
+      expect(fold).toHaveAttribute('aria-expanded', 'false');
+      fold.focus();
+      await userEvent.keyboard('{Enter}');
+      expect(fold).toHaveAttribute('aria-expanded', 'true');
+      const rows = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')];
+      expect(rows).toHaveLength(4);
+      expect(rows[0]).toHaveTextContent('Gloomba · reported this post');
+      expect(rows[0]).toHaveTextContent('“Third time this week.”');
+      expect(rows[1]).toHaveTextContent('The Clerk · A Moderator · judged the report: it sent a visit');
+      expect(rows[1]).toHaveTextContent('“Noted. Inspecting.”');
+      expect(rows[2]).toHaveTextContent('began the visit');
+      expect(rows[2]).toHaveTextContent('“Routine inspection.”');
+      expect(rows[3]).toHaveTextContent('The Clerk · A Moderator · filed');
+      expect(rows[3]).toHaveTextContent('“Stamped, initialed, and filed under D.”');
+      for (const r of rows) {
+        expect(within(r).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+        expect(within(r).getByRole('button', { name: /React/u })).toBeInTheDocument();
+      }
+    });
+
+    test('a quiz attempt is a row naming the answer, and Spin thread closes the Lens and opens the post\'s spin form for it', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 1-A' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('That was not the answer'));
+      const fold = await within(l).findByRole('button', { name: /^How it went · 2 acts$/u });
+      await userEvent.click(fold);
+      const row = [...l.querySelectorAll<HTMLElement>('.kb-lens-row')].find((r) => r.textContent!.includes('tried the quiz'))!;
+      expect(row).toHaveTextContent('Pipewrench · tried the quiz and was wrong');
+      expect(row).toHaveTextContent('“Form 1-A”');
+      await userEvent.click(within(row).getByRole('button', { name: 'Spin thread' }));
+      expect(screen.queryByRole('dialog', { name: /^Visit/u })).toBeNull();
+      expect(document.getElementById(`spin-${w.second}`)!.children.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('accessibility', () => {
+    test.each(['open quiz', 'open bribe', 'open distraction', 'filed'] as const)('axe passes on the Lens with the %s tab open', async (which) => {
+      width(false);
+      const w = visited({ mine: which === 'filed', challenge: which === 'open bribe' ? { kind: 'bribe', price: 50 } : which === 'open distraction' ? { kind: 'distraction' } : QUIZ });
+      if (which === 'filed') file(w);
+      openVisit(w);
+      const l = await press(w);
+      if (which === 'filed') await within(l).findByRole('button', { name: /^Appeal/u });
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      const v = await axeViolations(l);
+      expect(v, describeViolations(v)).toEqual([]);
+    });
+
+    test('every control in the tab is a button, a link or a tab: the challenge has no timer and no pointer-only control', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const l = await press(w);
+      await within(l).findByRole('button', { name: /^How it went/u });
+      for (const el of l.querySelectorAll<HTMLElement>('[onclick], [role="button"]')) expect(el.tagName, el.outerHTML).toBe('BUTTON');
+      expect(l.querySelector('progress, [role="timer"], [role="progressbar"]')).toBeNull();
+    });
   });
 });
 

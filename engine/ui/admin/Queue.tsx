@@ -8,13 +8,13 @@
  *                     plain facts, and a link to Write an update with those facts filled in. It is the admin's to write, and no model writes any
  *                     of it. It goes away when an update is posted after the handover, or when an admin dismisses it.
  *   Waiting to land   queued moves, soonest first: the countdown and time, the full proposal (the move in the engine's words, its new
- *                     subject, its demand, the description in the Boss's old voice) and the Boss's own `why`, quoted as its words;
+ *                     subject, its demand, the description, which is the Boss's own words) and the Boss's own `why`, quoted as its words;
  *                     a move the tick could not land says why. HOLD, on these and nowhere else.
  *   In force          landed moves with no end: since and until, the demand with a progress bar and its why. REVERSE, on these
  *                     and nowhere else.
  *   Mod Bots' cards   the face-up cards of staff characters still in force (last 30 days): the card, its persona, whom it was played on, and
  *                     where. END, on these and nowhere else, asks first (the Lens's confirm) and takes the card's layer off for everyone.
- *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, or held (never landed).
+ *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, held or refused (never landed).
  *
  * Under the groups, ruled off, stands How players reach you (AdminContact.tsx): the links the public Reach a person page shows, which only an admin sets.
  *
@@ -28,14 +28,14 @@
  * Cost: one read, capped on the server (100 a group, `more` says a group was cut), with the in-force moves' progress read from what the
  * tick stored (so each says when it was counted, or that it has not been) and none counted by the read itself.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { EndCardDialog } from '../cards/Lens.tsx';
-import type { AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, StaffCardPlay } from '../data/api.ts';
+import type { AdminQueue, Answer, BoardName, BoardSummary, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, StaffCardPlay } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
@@ -69,6 +69,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
   const [admin, setAdmin] = useState<boolean | null>(null);
   const [queue, setQueue] = useState<AdminQueue | null>(null);
   const [boards, setBoards] = useState<readonly BoardName[]>([]);
+  const [summaries, setSummaries] = useState<readonly BoardSummary[]>([]);
   const [bosses, setBosses] = useState<readonly Roster[]>([]);
   const [failed, setFailed] = useState(false);
   const [asked, setAsked] = useState<Asked | null>(null);
@@ -78,9 +79,10 @@ export function QueueScreen({ now }: { readonly now?: number }) {
   const load = useCallback(async () => {
     try {
       /* The roster's names make a nomination read as a name; a roster that cannot be read leaves keys, and the replacing choice empty. */
-      const [q, names, roster] = await Promise.all([api.adminQueue(), api.boardNames(), api.bosses().catch((): readonly Roster[] => [])]);
+      const [q, names, roster, all] = await Promise.all([api.adminQueue(), api.boardNames(), api.bosses().catch((): readonly Roster[] => []), api.boards().catch((): readonly BoardSummary[] => [])]);
       setQueue(q);
       setBoards(names);
+      setSummaries(all);
       setBosses(roster);
       setFailed(false);
     } catch {
@@ -116,6 +118,7 @@ export function QueueScreen({ now }: { readonly now?: number }) {
                 <InForce rows={queue.inForce} more={queue.more.inForce} boards={boards} bosses={bosses} onReverse={(row) => setAsked({ kind: 'reverse', row })} />
                 <StaffCards rows={queue.staffCards} more={queue.more.staffCards} onEnd={setEnding} />
                 <Ended rows={queue.ended} more={queue.more.ended} boards={boards} bosses={bosses} />
+                <Boards rows={summaries} onDescribed={load} />
               </>
             )}
             <AdminContact />
@@ -193,6 +196,80 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
   );
 }
 
+/**
+ * An admin's words in the place of a description: for a waiting rename (they land beside it) or for a board now. The Boss's words are
+ * never edited; the server holds the same bounds (1 to 2000 characters) and answers in its own words.
+ */
+function ReplaceDescription({ id, about, saved, save, onSaved, lead }: { readonly lead?: ReactNode; readonly id: string; readonly about: string; readonly saved: string; readonly save: (words: string) => Promise<Answer<unknown>>; readonly onSaved: () => Promise<void> }) {
+  /* Shut until an admin opens it, so a row keeps the shape the approved boards draw (37 and 39 show no field); opening it is the one press more. */
+  const [open, setOpen] = useState(false);
+  const [words, setWords] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const submit = async () => {
+    if (words.trim() === '' || busy) return;
+    setBusy(true);
+    setRefusal(null);
+    setDone(null);
+    try {
+      const answer = await save(words);
+      if (!answer.ok) { setRefusal(answer.error); await onSaved(); return; }
+      setDone(saved);
+      setWords('');
+      await onSaved();
+    } catch {
+      setRefusal('That could not be sent. Check your connection and look at the queue before you try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      {lead && <ButtonRow>{lead}</ButtonRow>}
+      <div className={lead ? 'kb-queue-under' : undefined}>
+        <ButtonRow>
+          <GlassButton size="s" aria-expanded={open} aria-controls={`${id}-form`} aria-label={`${open ? 'Close' : 'Replace description'} of ${about}`} onClick={() => setOpen((o) => !o)}>{open ? 'CLOSE' : 'REPLACE DESCRIPTION'}</GlassButton>
+        </ButtonRow>
+      </div>
+      <div id={`${id}-form`} className="kb-queue-replace" data-open={open ? 1 : undefined}>
+        {open && (
+          <>
+            <label htmlFor={`${id}-words`}>Replace description<span className="kb-visually-hidden"> of {about}</span></label>
+            <textarea id={`${id}-words`} className="kb-queue-select kb-queue-text" rows={3} maxLength={2000} value={words} onChange={(e) => setWords(e.target.value)} />
+            <ButtonRow><GlassButton size="s" disabled={words.trim() === '' || busy} aria-label={`Save the description of ${about}`} onClick={() => void submit()}>SAVE</GlassButton></ButtonRow>
+          </>
+        )}
+        {/* Always in the page, filled on change, so a reader of the page is told of it. */}
+        <p role="alert" className="kb-queue-failure">{refusal}</p>
+        <p role="status" className="kb-small kb-muted">{done}</p>
+      </div>
+    </>
+  );
+}
+
+/** Every board with the description it shows now, and the means to replace it at any time. A rename in force keeps its own words, and the new ones end with it. */
+function Boards({ rows, onDescribed }: { readonly rows: readonly BoardSummary[]; readonly onDescribed: () => Promise<void> }) {
+  const { api } = useKayfa();
+  return (
+    <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-boards" data-kb-group="boards">
+      <GroupHead id="queue-boards" title="Boards" count={rows.length} more={false} />
+      <p className="kb-queue-note">New words replace the description at once. If a rename of the board is in force, they stay only as long as it does.</p>
+      {rows.map((b) => (
+        <article key={b.id} className="kb-queue-move" data-kb-board={b.slug} aria-label={b.name}>
+          <div className="kb-queue-body">
+            <h3 className="kb-queue-sentence">{b.name}</h3>
+            <p className="kb-queue-quote">Description: “{b.description}”</p>
+          </div>
+          <div className="kb-queue-act">
+            <ReplaceDescription id={`queue-board-${b.id}`} about={b.name} saved="Saved. This is the description now." save={(words) => api.describeBoard(b.id, words)} onSaved={onDescribed} />
+          </div>
+        </article>
+      ))}
+    </CalmRegion>
+  );
+}
+
 /** The handovers waiting for an announcement. Dismiss is not asked twice: it only puts a reminder away, and the form stays open to any admin. */
 function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; readonly onDismissed: () => Promise<void> }) {
   const { api } = useKayfa();
@@ -241,6 +318,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
 }
 
 function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
+  const { api } = useKayfa();
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
       <GroupHead id="queue-waiting" title="Waiting to land" count={rows.length} more={more} />
@@ -261,6 +339,7 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
               {q.kind === 'nameSuccessor' && <p>If it lands and is not held or reversed, the Boss it names takes the seat when the season rolls over. Otherwise the roster&apos;s rotation chooses.</p>}
               {q.replacedAt && <p>An admin put this Boss in the nomination&apos;s place on {dayAndTime(q.replacedAt)}.</p>}
               {description && <p className="kb-queue-quote">Description: “{description}”</p>}
+              {q.adminDescription && <p className="kb-queue-quote">An admin&apos;s replacement, which lands beside it: “{q.adminDescription}”</p>}
               {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
               {q.failedAt && (
                 <p className="kb-queue-failure" role="note">
@@ -269,7 +348,13 @@ function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }
               )}
             </div>
             <div className="kb-queue-act">
-              <ButtonRow><GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton></ButtonRow>
+              {(() => {
+                const hold = <GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton>;
+                /* A rename's replacement field sits shut under HOLD, so the row keeps the board's width and its words wrap as the board's do. */
+                return q.kind === 'renameBoard'
+                  ? <ReplaceDescription lead={hold} id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />
+                  : <ButtonRow>{hold}</ButtonRow>;
+              })()}
               {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
             </div>
           </article>
@@ -343,6 +428,7 @@ function StaffCards({ rows, more, onEnd }: { readonly rows: readonly StaffCardPl
 function endedLine(e: MoveEnded): string {
   if (e.card != null) return `Ended by an admin on ${shortDate(e.at)}. Its layer came off for everyone.`;
   switch (e.how) {
+    case 'refused': return `Refused when it came to land: ${(e.reason ?? 'it would leave no post that follows the rules').replace(/^that rule would leave no post that follows the rules: /u, '')}. It will not land.`;
     case 'held': return `Held by an admin on ${shortDate(e.at)}. It never landed.`;
     case 'met': return `${e.landedAt ? `${shortDate(e.landedAt)} to ${shortDate(e.at)}. ` : ''}Undone when its demand was met.`;
     case 'expired': return `${e.landedAt ? `${shortDate(e.landedAt)} to ${shortDate(e.at)}. ` : ''}Ran out on its own.`;
@@ -372,7 +458,7 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
               <h3 className="kb-queue-sentence">
-                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' ? 'plan' : 'done'} />}
+                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} />}
               </h3>
               <p>{endedLine(e)}</p>
             </div>

@@ -5,6 +5,7 @@ import { renderInWorld } from '../test-world.tsx';
 import { monthYear, shortDate } from './dates.ts';
 import { Postbit, Signature, type PostbitPerson } from './Postbit.tsx';
 import { reveals } from './reveals.ts';
+import { axeViolations, describeViolations } from '../a11y.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: 'sq.webp', avatarPortrait: 'tall.webp',
@@ -187,5 +188,66 @@ describe('a staff character\'s postbit', () => {
     show(person());
     expect(screen.queryByText('ADMINISTRATOR')).toBeNull();
     expect(screen.queryByText('MODERATOR')).toBeNull();
+  });
+});
+
+describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
+  const meter = (n: number) => screen.queryByRole('img', { name: `Warnings: ${n}/10` });
+
+  test('"Warnings: 6/10" is the meter\'s accessible name, over an 84 by 16 thermometer filled to 6 of 10', () => {
+    show(person({}, { warnPoints: 6 }));
+    const m = meter(6)!;
+    expect(m).toBeInTheDocument();
+    expect(m).toHaveTextContent('Warnings: 6/10');
+    const svg = m.querySelector('svg')!;
+    expect([svg.getAttribute('width'), svg.getAttribute('height'), svg.getAttribute('viewBox')]).toEqual(['84', '16', '0 0 84 16']);
+    /* The tube is white with a black outline, the bulb and the fill are the house red token, and the fill reaches 6 of 10 of the tube. */
+    const [tube, fill, bulb] = [...svg.querySelectorAll('rect, circle')] as SVGElement[];
+    expect(tube!.getAttribute('style')).toContain('var(--kb-warn-tube)');
+    expect(tube!.getAttribute('style')).toContain('var(--kb-warn-outline)');
+    expect(fill!.getAttribute('style')).toContain('var(--kb-warn-fill)');
+    expect(bulb!.getAttribute('style')).toContain('var(--kb-warn-fill)');
+    const tubeLength = Number(tube!.getAttribute('width')) - 1;
+    expect(Number(fill!.getAttribute('width'))).toBeCloseTo(tubeLength * 0.6, 1);
+  });
+
+  test('the fill grows with the points, and a full bar fills the tube', () => {
+    const { unmount } = show(person({}, { warnPoints: 2 }));
+    const two = Number(meter(2)!.querySelectorAll('rect')[1]!.getAttribute('width'));
+    unmount();
+    show(person({}, { warnPoints: 9 }));
+    expect(Number(meter(9)!.querySelectorAll('rect')[1]!.getAttribute('width'))).toBeGreaterThan(two * 4);
+  });
+
+  test('a character with no points shows no meter', () => {
+    show(person());
+    expect(screen.queryByRole('img', { name: /^Warnings/u })).toBeNull();
+    expect(document.querySelector('.kb-postbit-thermo')).toBeNull();
+  });
+
+  test('a staff character shows none', () => {
+    show(person({}, { warnPoints: 4, staff: 'clerk', office: 'mod' }));
+    expect(screen.queryByRole('img', { name: /^Warnings/u })).toBeNull();
+  });
+
+  test('BANNED is on the title line while the ban holds, with when it ends for a screen reader', () => {
+    show(person({}, { bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+    const title = document.querySelector('.kb-postbit-title')!;
+    expect(title).toHaveTextContent('Professional Wrench BANNED');
+    expect(title.querySelector('.kb-visually-hidden')?.textContent).toMatch(/^ until /u);
+  });
+
+  test('BANNED stands alone where the character has no title, and is gone once the ban has ended', () => {
+    const { unmount } = show(person({}, { title: '', bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+    expect(document.querySelector('.kb-postbit-title')).toHaveTextContent('BANNED');
+    unmount();
+    show(person({}, { bannedUntil: new Date(Date.now() - 1000).toISOString() }));
+    expect(screen.queryByText('BANNED')).toBeNull();
+  });
+
+  test('passes axe with the meter and BANNED drawn', async () => {
+    show(person({}, { warnPoints: 6, bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
+    const bad = await axeViolations(screen.getByRole('group', { name: 'About Pipewrench' }));
+    expect(bad, describeViolations(bad)).toEqual([]);
   });
 });

@@ -1,0 +1,46 @@
+/*
+ * The report and appeal forms in the Lens (Forms.tsx; the Mod Bots design, section 9). Loaded after visit.css, whose headings, terms and result line they share.
+ * The field is the glass's: the field color and the neon edge, its words in the glass's text.
+ */
+.kb-mod-field {
+  margin-top: 0.8rem;
+}
+
+.kb-mod-textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text);
+  font: inherit;
+  font-size: var(--kb-glass-size-body);
+  resize: vertical;
+}
+
+.kb-mod-textarea:focus-visible {
+  outline: 2px solid var(--kb-glass-ready-text);
+  outline-offset: 1px;
+}
+
+.kb-mod-form .kb-visit-heading label {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.kb-mod-form .kb-visit-appeal[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.kb-mod-form .kb-glass-field-count {
+  color: var(--kb-glass-text-2);
+}
+
+/* "Appeal to the Boss" on a banned note or a ban's line: the board's own button, a line of room from the words before it. */
+.kb-ban-appeal {
+  margin-inline-start: 0.3em;
+}

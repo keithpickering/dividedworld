@@ -23,13 +23,13 @@ export const theClerk: Persona = {
   startingHobby: 'stamping things (rubber stamps, official seals, anything with a form number)',
   temperament: 'Petty, bureaucratic and wounded. Treats every feud as a filing error.',
   phases: { honeymoon: { weeklyMoves: 3, bankCap: 6 } },
-  // DRAFT for the owner: the bot fields below are placeholders, there so every persona has every field.
+  // DRAFT for the owner: strictness, weakness, pet rules and what persuades it are drafts, and the rest are placeholders so every persona has every field.
   beats: ['general'],
-  petRules: [],
-  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+  petRules: ['noDoublePost', 'noDuplicateTitle', 'noNecropost'],
+  strictness: { visitHours: { least: 6, most: 12 }, bands: ['minor', 'moderate'] },
   weakness: { kind: 'distraction' },
   voice: 'chat',
-  persuadedBy: 'DRAFT: a sincere argument made in its own style.',
+  persuadedBy: 'DRAFT: a citation of the thread\'s own numbers or a form filled in correctly; it is unmoved by volume.',
   persona: persona({
     name,
     title,

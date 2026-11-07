@@ -21,8 +21,7 @@
  * between two meetings: the previous meeting's finish time would skip what happened between its slot and its close.
  *
  * **Cost does not grow with the instance.** One strong-tier call per meeting, a digest bounded by the settings' ceilings
- * (engine/system/digest.ts), a memory bounded by its caps, at most `bankCap` (28) description completions on the light end of
- * the old voice, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
+ * (engine/system/digest.ts), a memory bounded by its caps, and one fetch per configured feed with a short timeout. Nothing here reads a row per player, character or Act.
  *
  * Nothing private reaches the model: the digest is built by a role that reads public relations only, and the characters the
  * model names are checked against `characters_public`.
@@ -44,11 +43,13 @@ import {
   repairAnswer,
   ruleSchema,
   type InheritedMove,
+  type ModFacts,
   type PlannedMove,
 } from '../../../engine/system/meeting.ts';
+import type { RuleInForce } from '../../../engine/rules/predicates.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { phaseAt } from '../../../engine/system/phases.ts';
-import { cutCompletion, type Trim } from '../../../engine/system/validate.ts';
+import { type Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
@@ -90,6 +91,10 @@ interface Context {
   readonly successors?: readonly string[];
   /** The moves of an earlier Boss, still in force and shaping a board, that this Boss has neither kept nor ended (0051); absent from an older database. */
   readonly inheritanceDue?: readonly InheritedMove[];
+  /** The Mod Bots on staff (0103): each one's latest order, and the allowance it has not spent (which returns to the Boss's bank before the meeting counts it). Absent from an older database. */
+  readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
+  /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
+  readonly rules?: readonly RuleInForce[];
 }
 
 /** How long one feed may take: outside material is a garnish, not a dependency. */
@@ -176,7 +181,37 @@ export async function runMeeting(
       most: settings.pool.notesRead,
     });
 
-    const bank = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
+    const bankNow = await db.rpc<number>('bank_now', { staff: bossKey, weekly_moves: phase.numbers.weeklyMoves, bank_cap: phase.numbers.bankCap });
+
+    // The Mods on staff. What they did not spend goes back to the Boss's bank when the meeting is applied, before the bank is read, never above the cap: the
+    // prompt and the repair work from that bank, so what the Boss is told it holds is what the database will hold.
+    const staffMods = context.mods ?? [];
+    const bank = Math.min(phase.numbers.bankCap, bankNow + staffMods.reduce((n, m) => n + m.allowance, 0));
+    const boardNames = new Map(context.boards.map((b) => [b.id, b.name]));
+    const mods: ModFacts[] = [];
+    for (const m of staffMods) {
+      const persona = tuned.system.roster.find((p) => p.key === m.key);
+      const modMemory = await db.rpc<Memory | null>('staff_memory_latest', { staff: m.key });
+      const modMemoryAt = modMemory ? await db.rpc<string | null>('staff_memory_at', { staff: m.key }) : null;
+      mods.push({
+        key: m.key,
+        name: persona?.name ?? m.key,
+        temperament: persona?.temperament ?? '',
+        beats: persona?.beats ?? [],
+        petRules: persona?.petRules ?? [],
+        career: await db.rpc<Career>('staff_career', { of_staff: m.key }),
+        notes: await db.rpc<string[]>('staff_notes_recent', {
+          of_staff: m.key,
+          since: modMemoryAt ? new Date(Date.parse(modMemoryAt)).toISOString() : null,
+          most: settings.pool.notesRead,
+        }),
+        memory: modMemory,
+        granted: m.granted,
+        unspent: m.allowance,
+        boards: m.boards.filter((id) => boardNames.has(id)).map((id) => ({ id, name: boardNames.get(id)! })),
+        order: m.order,
+      });
+    }
 
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
@@ -188,6 +223,9 @@ export async function runMeeting(
       settings,
       phase,
       bank,
+      mods,
+      // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
+      characterName: (id) => digest.characters.find((c) => c.id === id)?.name ?? 'someone',
       successorAllowed,
       career,
       notes: bossNotes,
@@ -239,6 +277,8 @@ export async function runMeeting(
       boss: bossKey,
       phase,
       bank,
+      mods: new Set(mods.map((m) => m.key)),
+      rules: context.rules ?? [],
       now,
       boards: new Set(context.boards.map((b) => b.id)),
       // The threads the model was shown (the reference list is bounded), the only ones a demand may name.
@@ -255,7 +295,7 @@ export async function runMeeting(
     }
 
     const trims: Trim[] = [...repaired.trims];
-    const moves = await Promise.all(repaired.moves.map((m, i) => withDescription(models, tuned, m, i, bossKey, meeting, trims, notes)));
+    const moves = repaired.moves.map((m, i) => withDescription(tuned, m, i, notes));
 
     const record = {
       phase: phase.phase,
@@ -265,6 +305,8 @@ export async function runMeeting(
       feedsSkipped: skipped,
       inherited: repaired.inherited,
       successor: repaired.successor,
+      // The patrols the Boss scheduled for the Mods: kept on the record for the patrol run (Task 11).
+      patrols: repaired.patrols,
     };
     const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
       meeting,
@@ -283,6 +325,8 @@ export async function runMeeting(
         // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
         successor: repaired.successor,
         inherited: repaired.inherited,
+        // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
+        orders: repaired.orders.map((o) => ({ mod: o.mod, boards: o.boards, order: o.order, allowance: o.allowance, ...(o.memory ? { memory: o.memory } : {}) })),
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
         weekly_moves: phase.numbers.weeklyMoves,
         bank_cap: phase.numbers.bankCap,
@@ -313,49 +357,17 @@ export async function runMeeting(
   }
 }
 
-/** A move with its params complete: a rename gets the old voice's description, or the instance's stock one when the voice cannot. */
-async function withDescription(
-  models: Models,
-  instance: Instance,
-  move: PlannedMove,
-  index: number,
-  staff: string,
-  meeting: number,
-  trims: Trim[],
-  notes: string[],
-): Promise<PlannedMove> {
+/** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. */
+function withDescription(instance: Instance, move: PlannedMove, index: number, notes: string[]): PlannedMove {
   if (move.kind !== 'renameBoard') return move;
+  if (typeof move.params['description'] === 'string' && move.params['description'] !== '') return move;
   const name = String(move.params['name']);
-  const frame = instance.system.oldVoice({ name, premise: String(move.params['premise']) });
-  const stock = (why: string): PlannedMove => {
-    const lines = instance.system.stockLines.boardDescription;
-    // The same name always draws the same line, so a retried meeting writes what the first would have.
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
-    notes.push(`moves[${index}]: the old voice could not write a description (${why}); a stock description stands in.`);
-    return { ...move, params: { ...move.params, description: lines[h % lines.length]!.replaceAll('{board}', name) } };
-  };
-  try {
-    const out = await models.complete({
-      duty: 'meeting',
-      staff,
-      meeting,
-      prompt: frame.prompt,
-      temperature: 0.9,
-      topP: 0.95,
-      stop: frame.stop,
-      maxTokens: 120,
-      maxChars: 400,
-    });
-    const cut = cutCompletion(out.value, frame.stop, 400);
-    if (!cut.ok) return stock(cut.predicate);
-    trims.push(...cut.trims.map((t) => ({ ...t, path: `moves[${index}].params.description` })));
-    return { ...move, params: { ...move.params, description: cut.text } };
-  } catch (e) {
-    // A completion failing never fails the meeting; only a call the ledger could not record is not trusted.
-    if (e instanceof LedgerWriteFailed) throw e;
-    return stock(said(e));
-  }
+  const lines = instance.system.stockLines.boardDescription;
+  // The same name always draws the same line, so a retried meeting writes what the first would have.
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
+  notes.push(`moves[${index}]: the Boss gave no description; a stock description stands in.`);
+  return { ...move, params: { ...move.params, description: lines[h % lines.length]!.replaceAll('{board}', name) } };
 }
 
 /**

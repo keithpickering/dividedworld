@@ -1,8 +1,7 @@
 /**
- * PLACEHOLDER MOD BOT. The first Mod Bots are written with the owner when the Bosses are (the
- * system plan, Task 5, amended 2026-10-31). Until then this one keeps `firstStaff` valid, and the
- * setting `systemEnabled` (false) keeps it from acting. Nothing a Mod Bot does is built in Part 1;
- * these fields are fixed now so the roster can be written against them.
+ * PLACEHOLDER MOD BOT. The real Mod Bots are written with the owner. This one keeps `firstStaff` valid, and the setting
+ * `systemEnabled` (false) keeps it from acting. Its beats, pet rules, strictness, quiz and what persuades it are DRAFTS
+ * for the owner (the Mod Bots plan, Task 14); the Boss fields are placeholders so every persona has every field.
  */
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { persona } from '../persona.ts';
@@ -16,14 +15,18 @@ export const placeholderMonitor: Persona = {
   title,
   signature: 'Walk, do not post. (Placeholder Mod Bot.)',
   beats: ['general'],
-  petRules: [],
-  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
-  // A quiz: the placeholder has to be weak to something, and the questions are dumb on purpose.
+  petRules: ['noAllCaps', 'noTag', 'repliesOnly'],
+  strictness: { visitHours: { least: 3, most: 8 }, bands: ['minor', 'moderate'] },
+  // DRAFT for the owner: the questions are light forum and fan-game trivia, with the right answer in different places.
   weakness: {
     kind: 'quiz',
     questions: [
-      { question: 'What color is the orb?', choices: ['Orb-colored', 'Beige', 'Taxes'], answer: 'Orb-colored' },
+      { question: 'What color is the orb?', choices: ['Beige', 'Orb-colored', 'Taxes'], answer: 'Orb-colored' },
       { question: 'How many Bosses is it legal to have at once?', choices: ['One', 'Several', 'Yes'], answer: 'One' },
+      { question: 'What is the polite way to start a brand-new topic?', choices: ['Reply to a year-old thread', 'Shout in all caps', 'Start a new thread', 'Edit your signature'], answer: 'Start a new thread' },
+      { question: 'In a Mario fan game, what do you collect 100 of for an extra life?', choices: ['Stars', 'Keys', 'Mushrooms', 'Coins'], answer: 'Coins' },
+      { question: 'How many days are in a week?', choices: ['Five', 'Six', 'Seven', 'Eight', 'Nine'], answer: 'Seven' },
+      { question: 'What does a hall pass let you do?', choices: ['Walk in the hall', 'Skip a Boss', 'Post in all caps', 'Ignore a pet rule'], answer: 'Walk in the hall' },
     ],
   },
   voice: 'chat',

@@ -126,6 +126,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     marquees: Object.freeze(['[MACHINE NAME]', 'AURA-MATIC 3000', 'VEND-ETTA', 'THE CARD SHARK', 'POSTCARD PALACE', 'COIN-OP KAYFABE', 'MERCH TABLE', 'CHEAP POP', 'FINISHER FRIDGE', 'GIMMICK DISPENSER', 'HEAT LAMP', 'NO FOOD, ONLY CARDS']),
     // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
+    /* What the glass calls a Mod Bot where the Lens names its role (the Mod Bots design, section 9). */
+    modRole: 'A Moderator',
     // Hints (the alerts design's section 5): playful, and never a bluff.
     alerts: Object.freeze({ hint: hintWords }),
   }),

@@ -170,6 +170,16 @@
   color: var(--kb-glass-text-2);
 }
 
+.kb-queue-replace:not([data-open]) {
+  gap: 0;
+  margin-top: 0;
+}
+
+/* The closed form's two live regions are empty and take no room. */
+.kb-queue-replace:not([data-open]) > p:empty { margin: 0; }
+
+.kb-queue-under { margin-top: 8px; }
+
 .kb-queue-select {
   min-height: 44px;
   padding: 0 10px;
@@ -178,6 +188,14 @@
   color: var(--kb-glass-text-hi);
   font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-body);
+}
+
+.kb-queue-text {
+  min-height: 88px;
+  padding: 8px 10px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* A phone: one column, the act under the move. */

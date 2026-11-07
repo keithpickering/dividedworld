@@ -19,13 +19,13 @@ export const sighbot: Persona = {
   signature: 'No, it is fine. Really. (Placeholder Boss.)',
   startingHobby: 'houseplants (it keeps forgetting to water them and blames the board)',
   temperament: 'Weary and passive-aggressive: has seen every thread before and is not surprised, only let down.',
-  // DRAFT for the owner: the bot fields below are placeholders, there so every persona has every field.
+  // DRAFT for the owner: strictness, weakness (distraction), pet rules and what persuades it are drafts, and the rest are placeholders so every persona has every field.
   beats: ['general'],
-  petRules: [],
-  strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
+  petRules: ['noNecropost', 'maxLength'],
+  strictness: { visitHours: { least: 4, most: 10 }, bands: ['minor'] },
   weakness: { kind: 'distraction' },
   voice: 'chat',
-  persuadedBy: 'DRAFT: a sincere argument made in its own style.',
+  persuadedBy: 'DRAFT: a sincere argument made in its own style, delivered quietly and without exclamation points.',
   persona: persona({
     name,
     title,
