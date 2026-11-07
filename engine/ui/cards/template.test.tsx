@@ -27,20 +27,57 @@ describe('the card template', () => {
   });
 
   it('writes its custom properties without container units', () => {
-    const vars = templateVars('slot');
-    expect(vars['--kb-pc-w']).toBe('86px');
-    for (const k of ['--kb-pc-border', '--kb-pc-radius', '--kb-pc-canvas-radius', '--kb-pc-keep']) {
-      expect(vars[k], k).toMatch(/^calc\(var\(--kb-pc-w\) \* [\d.]+\)$/);
+    const { card, border, outerRadius, canvas, keepClear } = TEMPLATE;
+    const expected: Record<string, number> = {
+      '--kb-pc-border': border,
+      '--kb-pc-radius': outerRadius,
+      '--kb-pc-canvas-radius': canvas.r,
+      '--kb-pc-keep': keepClear,
+    };
+    for (const s of sizes) {
+      const vars = templateVars(s);
+      expect(vars['--kb-pc-w']).toBe(`${SIZES[s]}px`);
+      for (const [k, units] of Object.entries(expected)) {
+        const m = /^calc\(var\(--kb-pc-w\) \* ([\d.]+)\)$/.exec(vars[k] ?? '');
+        expect(m, k).not.toBeNull();
+        expect(Number(m![1]) * card.w, k).toBeCloseTo(units, 3);
+      }
+      for (const v of Object.values(vars)) expect(v).not.toContain('cqw');
     }
-    for (const v of Object.values(vars)) expect(v).not.toContain('cqw');
   });
 
   it("draws the artist's template", async () => {
+    const { card, outerRadius, canvas, keepClear, focus, plateTop } = TEMPLATE;
     const svg = templateSvg();
-    expect(svg).toContain('viewBox="0 0 600 900"');
-    expect(svg).toMatch(/<g\b[^>]*id="guides"[^>]*sodipodi:insensitive="true"|<g\b[^>]*sodipodi:insensitive="true"[^>]*id="guides"/);
-    expect(svg).toContain('inkscape:label="Guides, locked"');
-    expect(svg).toMatch(/<g\b[^>]*id="art"/);
+    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    expect(doc.querySelector('parsererror')).toBeNull();
+    expect(doc.documentElement.getAttribute('viewBox')).toBe(`0 0 ${card.w} ${card.h}`);
+
+    const art = doc.getElementById('art');
+    expect(art).not.toBeNull();
+    const guides = doc.getElementById('guides');
+    expect(guides?.getAttribute('sodipodi:insensitive')).toBe('true');
+    expect(guides?.getAttribute('inkscape:label')).toBe('Guides, locked');
+
+    const rects = Array.from(guides!.querySelectorAll('rect'));
+    const num = (el: Element, a: string) => Number(el.getAttribute(a));
+    const at = (x: number, y: number, w: number, h: number) =>
+      rects.find((r) => num(r, 'x') === x && num(r, 'y') === y && num(r, 'width') === w && num(r, 'height') === h);
+
+    const frame = at(0, 0, card.w, card.h);
+    expect(num(frame!, 'rx')).toBe(outerRadius);
+    const canvasRect = at(canvas.x, canvas.y, canvas.w, canvas.h);
+    expect(num(canvasRect!, 'rx')).toBe(canvas.r);
+    expect(at(keepClear, keepClear, card.w - 2 * keepClear, card.h - 2 * keepClear)).toBeDefined();
+    const focusRect = at(focus.x, focus.y, focus.w, focus.h);
+    expect(focusRect?.getAttribute('stroke-dasharray')).toBeTruthy();
+    const plateLine = Array.from(guides!.querySelectorAll('line')).find((l) => num(l, 'y1') === plateTop);
+    expect(plateLine).toBeDefined();
+    expect(num(plateLine!, 'y2')).toBe(plateTop);
+
+    const artRect = art!.querySelector('rect');
+    expect([num(artRect!, 'x'), num(artRect!, 'y'), num(artRect!, 'width'), num(artRect!, 'height')]).toEqual([canvas.x, canvas.y, canvas.w, canvas.h]);
+
     await expect(svg).toMatchFileSnapshot('./card-template.svg');
   });
 });
