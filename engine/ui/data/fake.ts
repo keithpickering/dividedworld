@@ -52,7 +52,7 @@ const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sig
 const SYSTEM_BOARD = 'only The System posts here; spin a thread from what it said';
 const MINUTE = 60_000;
 const DAY = 86_400_000;
-const START = Date.UTC(2026, 9, 29, 12);
+export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;

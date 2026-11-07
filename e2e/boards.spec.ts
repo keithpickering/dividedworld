@@ -5,6 +5,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 import { boardIds, boardsToRun, compareBoard, compareSides, phoneSizeProblems, screensWithoutBoards, type BoardManifest, type Mismatch, type Snapshot } from './board-match.ts';
 import { FIXTURE_OVERLAYS, OVERLAYS, PAGES, STORIES } from './glass-screens.ts';
 import { loadFaces } from './fonts.ts';
+import { START } from '../engine/ui/data/fake.ts';
 import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInFaces } from './board-snapshot.ts';
 
 /**
@@ -175,6 +176,8 @@ function reportPage(board: string, mismatches: readonly Mismatch[], error?: stri
 async function compareSide(browser: Browser, baseURL: string | undefined, id: string, manifest: BoardManifest, folder: string): Promise<string[]> {
   const context = await browser.newContext({ baseURL, viewport: manifest.size, deviceScaleFactor: 1, reducedMotion: 'reduce', timezoneId: 'UTC', bypassCSP: true });
   try {
+    /* The build's dates drop this year's year and count days ago against the browser's clock: pinned to the fixture's own moment, a board's words hold past 2026. */
+    await context.clock.setFixedTime(START);
     await standInFaces(context);
     const boardPage = await context.newPage();
     const buildPage = await context.newPage();

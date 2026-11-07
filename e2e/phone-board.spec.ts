@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loadFaces } from './fonts.ts';
 import { standInFaces } from './board-snapshot.ts';
+import { START } from '../engine/ui/data/fake.ts';
 
 /**
  * The board look's phone (the plan's Task 8, docs/research/2026-11-06-board-look/03-phone.html): at 390 a thread row's counts, and the
@@ -9,9 +10,11 @@ import { standInFaces } from './board-snapshot.ts';
  */
 test.use({ reducedMotion: 'reduce', bypassCSP: true, viewport: { width: 390, height: 844 } });
 
-async function open(page: Page, story: string, ready: string) {
+/** The browser's clock is the fixture's own moment (engine/ui/data/fake.ts START), so "this year" is 2026 whatever day the suite runs. */
+async function open(page: Page, story: string, ready: string, now: number = START, query = 'story') {
   await standInFaces(page.context());
-  await page.goto(`/?fixture=boards&story=${story}`);
+  await page.context().clock.setFixedTime(now);
+  await page.goto(`/?fixture=boards&${query}=${story}`);
   await expect(page.locator(ready).first()).toBeVisible();
   await loadFaces(page);
 }
@@ -79,4 +82,54 @@ test('poison: counts that each take a line are named as not sharing one', async 
   await open(page, 'boards-02-board--board', '.kb-thread-row');
   const rows = await middles(page, '.kb-thread-row', ['.kb-thread-replies', '.kb-thread-views', '.kb-thread-last .kb-who']);
   expect(sameLine(rows).some((spread) => spread > 12)).toBe(true);
+});
+
+/** The reply box's pieces at 390: the thread, the 01-main moment, whose last post stands over the box. */
+const openReply = async (page: Page) => {
+  await open(page, '01-main', '.kb-toolbar', START, 'moment');
+  await page.locator('.kb-toolbar').scrollIntoViewIfNeeded();
+};
+const toolbarYs = (page: Page) => page.locator('.kb-toolbar .kb-toolbar-button').evaluateAll((bs) => bs.map((b) => Math.round(b.getBoundingClientRect().y)));
+
+test('the formatting toolbar\'s nine buttons share one row and the page does not scroll sideways at 390', async ({ page }) => {
+  await openReply(page);
+  const ys = await toolbarYs(page);
+  expect(ys).toHaveLength(9);
+  expect(new Set(ys).size, `the buttons stand at ${ys.join(', ')}`).toBe(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test('the keyboard hint is dropped on a phone and still describes the box', async ({ page }) => {
+  await openReply(page);
+  const hint = page.locator('.kb-editor-hint').first();
+  await expect(hint).toHaveCSS('display', 'none');
+  const id = await hint.getAttribute('id');
+  expect(id).toBeTruthy();
+  expect((await page.locator('textarea[aria-describedby]').first().getAttribute('aria-describedby'))!.split(' ')).toContain(id);
+});
+
+test('poison: buttons that wrap, and a hint that shows, are named', async ({ page }) => {
+  await page.addInitScript(() => {
+    document.addEventListener('DOMContentLoaded', () => {
+      const style = document.createElement('style');
+      style.textContent = '.kb-toolbar { flex-wrap: wrap !important } .kb-toolbar .kb-toolbar-button { min-width: 80px !important } .kb-editor-hint { display: block !important }';
+      document.head.append(style);
+    });
+  });
+  await openReply(page);
+  expect(new Set(await toolbarYs(page)).size).toBeGreaterThan(1);
+  await expect(page.locator('.kb-editor-hint').first()).toHaveCSS('display', 'block');
+});
+
+/* The year-dropping reads the clock, so the suite pins it (the fixture's own moment); with the clock in 2027 the same date reads with its year. */
+const POST_41_WHEN = (page: Page) => page.getByText(/^Oct 29, (2026, )?9:14 PM$/).first();
+
+test('with the clock pinned to the fixture\'s moment, post 41\'s date drops its year', async ({ page }) => {
+  await open(page, '01-main', '.kb-postbit', START, 'moment');
+  await expect(POST_41_WHEN(page)).toHaveText('Oct 29, 9:14 PM');
+});
+
+test('with the clock in 2027, post 41\'s date reads with its year (the pin is what holds the board match)', async ({ page }) => {
+  await open(page, '01-main', '.kb-postbit', Date.UTC(2027, 0, 5, 12), 'moment');
+  await expect(POST_41_WHEN(page)).toHaveText('Oct 29, 2026, 9:14 PM');
 });
