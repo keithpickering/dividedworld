@@ -193,6 +193,9 @@ test('an instance exported and imported into a fresh database is the same instan
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
       insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
+      -- The member groups (0116): a rung and a conferred group, carried across with the rest of the instance's catalogs.
+      insert into group_kinds (key, name, color, source, rung, condition, at_least) values ('expPosts', 'Exported Posts', '#7a7a7a', 'ladder', 98, 'posts', 1) on conflict (key) do nothing;
+      insert into group_kinds (key, name, color, stripe, source, tone) values ('expTrial', 'Exported Trial', '#d2691e', true, 'conferred', 'punishment') on conflict (key) do nothing;
       moved := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Old Palace', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
       ended := (end_move(moved, 'expired', 'tick') ->> 'act')::uuid;

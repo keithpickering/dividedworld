@@ -51,6 +51,13 @@ export function instanceSeed(instance: Instance) {
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
+    // The member groups (0116): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
+    // (engine/rules/groups.ts CONDITION_KINDS), `atLeast` its count where it has one. seed_instance upserts them into group_kinds.
+    groups: [
+      ...instance.groups.ladder.map((r, i) => ({ key: r.key, name: r.name, color: r.color, stripe: r.stripe === true, source: 'ladder' as const, rung: i,
+        condition: r.when.kind, ...('atLeast' in r.when ? { atLeast: r.when.atLeast } : {}) })),
+      ...instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, color: g.color, stripe: g.stripe === true, source: 'conferred' as const, tone: g.tone })),
+    ],
     pipStyles: instance.pipStyles.map((p) => ({ key: p.key, name: p.name, full: p.full, empty: p.empty })),
     // The roster as characters (0043): a Boss or a Mod Bot, once each, with the profile its title and signature give. The
     // prompts stay in the instance module; the meeting reads them in code (chooseInstance), so they are not seeded.

@@ -35,6 +35,7 @@ const FALLBACK: ScreenSettings = {
   economy: {},
   toastDefaults: ['quote', 'update'],
   staffGroup: { name: 'Test Cores' },
+  groups: [],
 };
 
 const B64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString('base64url');

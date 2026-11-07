@@ -365,6 +365,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
+    /* What screen_settings's groups holds (0116): the ladder lowest first, then the groups a move confers. */
+    groups: options.settings?.groups ?? [...options.instance.groups.ladder, ...options.instance.groups.conferred].map((g) => ({ key: g.key, name: g.name, color: g.color, stripe: g.stripe === true })),
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),

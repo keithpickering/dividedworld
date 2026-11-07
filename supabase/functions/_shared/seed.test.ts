@@ -33,6 +33,16 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.equal(seed.reactions.length, 16);
 });
 
+test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0116)', () => {
+  const { groups } = instanceSeed(instance);
+  const ladder = groups.filter((g) => g.source === 'ladder');
+  assert.deepEqual(ladder.map((g) => [g.key, 'rung' in g ? g.rung : null, 'condition' in g ? g.condition : null]),
+    instance.groups.ladder.map((r, i) => [r.key, i, r.when.kind]), 'lowest first, each rung numbered by its place');
+  assert.deepEqual(groups.find((g) => g.key === 'regulars'), { key: 'regulars', name: 'Regulars', color: '#2f6fb0', stripe: false, source: 'ladder', rung: 1, condition: 'posts', atLeast: 100 });
+  assert.deepEqual(groups.find((g) => g.key === 'trialMembers'), { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', stripe: true, source: 'conferred', tone: 'punishment' });
+  assert.equal(groups.length, instance.groups.ladder.length + instance.groups.conferred.length);
+});
+
 test('the seed carries the roster as staff characters, one kind of persona, the first staff named, and no prompt', () => {
   const seed = instanceSeed(instance);
   const { roster, firstStaff, staffGroup } = instance.system;

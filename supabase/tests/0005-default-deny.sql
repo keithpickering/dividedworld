@@ -53,6 +53,8 @@ declare
                            'admin_contact()', 'set_admin_contact(jsonb)',
                            -- The bar and the ban (0104): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
                            'warn_points(uuid)', 'banned_until(uuid)',
+                           -- The group (0116): a column of characters_public and my_characters, whose reader executes the function; public facts, the same for any id.
+                           'group_now(uuid)',
                            -- A report (0107): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
                            'open_report(uuid,uuid,text)',
                            -- An interception (0108): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,

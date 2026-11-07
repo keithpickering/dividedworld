@@ -86,6 +86,11 @@ export interface ScreenSettings {
    * `staffGroup`): drawn beside every staff character's name, on the postbit, the profile and the presence boxes. Public.
    */
   readonly staffGroup: { readonly name: string };
+  /**
+   * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0116): the key a
+   * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public.
+   */
+  readonly groups: readonly { readonly key: string; readonly name: string; readonly color: string; readonly stripe: boolean }[];
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */

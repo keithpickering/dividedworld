@@ -6,6 +6,7 @@
 import type { ScreenSettings } from '../../../engine/ui/data/api.ts';
 import { defaults } from '../../../instances/divided-world/settings.ts';
 import { system } from '../../../instances/divided-world/system/index.ts';
+import { groups } from '../../../instances/divided-world/groups.ts';
 
 export const fallbackSettings: ScreenSettings = Object.freeze({
   postsPerPage: defaults.postsPerPage,
@@ -27,6 +28,8 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   toastDefaults: defaults.toastDefaults,
   /* The group's name is the instance's; the database holds it as the setting staffGroup once seeded (0084 shows it to the screens). */
   staffGroup: { name: system.staffGroup.name },
+  /* The groups' looks are the instance's too; the database holds them in group_kinds once seeded (0116 shows them to the screens). */
+  groups: [...groups.ladder, ...groups.conferred].map((g) => ({ key: g.key, name: g.name, color: g.color, stripe: g.stripe === true })),
   /* None held: every price is the compiled economy's until the view says otherwise. */
   cardEconomy: {},
   /* None held: every class's numbers are the compiled economy's until the view says otherwise. */
