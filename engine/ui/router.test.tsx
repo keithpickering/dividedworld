@@ -810,6 +810,7 @@ describe('a navigation names its source', () => {
   }
   function Pend({ name }: { readonly name: string }) { return <span data-testid={`pending-${name}`}>{String(usePendingFrom(name))}</span>; }
   const flag = (name: string) => screen.getByTestId(`pending-${name}`).textContent;
+  function Undef() { return <span data-testid="undef">{String(usePendingFrom(undefined))}</span>; }
   function mountLinks(load: Route['load']) {
     const routes: Route[] = [
       { path: '/', render: () => <Index /> },
@@ -817,7 +818,7 @@ describe('a navigation names its source', () => {
     ];
     window.history.replaceState(null, '', '/');
     function Shell() {
-      return <><Probe /><Link to="/t/a" source="first">first link</Link><Link to="/t/a" source="second">second link</Link><Pendings names={['first', 'second', 'x']} /><Routes routes={routes} /></>;
+      return <><Probe /><Link to="/t/a" source="first">first link</Link><Link to="/t/a" source="second">second link</Link><Link to="/t/b" source="third">third link</Link><Pendings names={['first', 'second', 'third', 'x', 'y']} /><Undef /><Routes routes={routes} /></>;
     }
     return render(<KayfaProvider value={kayfa}><RouterProvider><Shell /></RouterProvider></KayfaProvider>);
   }
@@ -857,12 +858,62 @@ describe('a navigation names its source', () => {
     act(() => nav('/t/a', { source: 'x' }));
     expect(flag('x')).toBe('true');
     expect(flag('first')).toBe('false');
-    function Undef() { return <span data-testid="undef">{String(usePendingFrom(undefined))}</span>; }
-    const { unmount } = render(<KayfaProvider value={kayfa}><RouterProvider><Undef /></RouterProvider></KayfaProvider>);
-    expect(screen.getByTestId('undef').textContent).toBe('false');
-    unmount();
     await answer(calls[0], 'A1');
     expect(flag('x')).toBe('false');
+  });
+  test('usePendingFrom(undefined) is false while a load with no source is out', () => {
+    const { load } = manualLoader();
+    mountLinks(load);
+    act(() => {
+      window.history.pushState(null, '', '/t/z');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(navigation.pending?.source).toBeNull();
+    expect(screen.getByTestId('undef').textContent).toBe('false');
+  });
+  test('a load that replaces another moves the pending to the newer source', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    await userEvent.click(screen.getByRole('link', { name: 'first link' }));
+    expect(flag('first')).toBe('true');
+    await userEvent.click(screen.getByRole('link', { name: 'third link' }));
+    expect(flag('first')).toBe('false');
+    expect(flag('third')).toBe('true');
+    await answer(calls[1], 'B1');
+    expect(flag('first')).toBe('false');
+    expect(flag('third')).toBe('false');
+  });
+  test('a cached Back that takes the place of a sourced load ends its pending', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B1');
+    act(() => nav('/t/c', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.getByText('thread a: A1')).toBeInTheDocument());
+    expect(flag('x')).toBe('false');
+    expect(navigation.pending).toBeNull();
+  });
+  test('a same-key move, or a move to a route with no loader, ends a sourced load', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    act(() => nav('/t/a?again', { source: 'y' }));
+    expect(flag('x')).toBe('false');
+    expect(flag('y')).toBe('false');
+    expect(navigation.pending).toBeNull();
+    act(() => nav('/t/b', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    act(() => nav('/', { source: 'y' }));
+    expect(flag('x')).toBe('false');
+    expect(flag('y')).toBe('false');
+    expect(navigation.pending).toBeNull();
   });
   test('a navigate with no source has source null, and is pending for no source', () => {
     const { load } = manualLoader();
@@ -875,11 +926,13 @@ describe('a navigation names its source', () => {
   test('a link given no source names its own, and two links name different ones', async () => {
     const { load } = manualLoader();
     const routes: Route[] = [{ path: '/', render: () => <Index /> }, { path: '/t/:id', load, key: (p) => p.id!, render: () => <p>t</p> }];
+    function Own() { const src = useNavigation().pending?.source; return <span data-testid="own">{String(usePendingFrom(src ?? undefined))}</span>; }
     window.history.replaceState(null, '', '/');
-    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Link to="/t/a">one</Link><Link to="/t/a">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Own /><Link to="/t/a">one</Link><Link to="/t/a">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
     await userEvent.click(screen.getByRole('link', { name: 'one' }));
     const one = navigation.pending?.source;
     expect(typeof one).toBe('string');
+    expect(screen.getByTestId('own').textContent).toBe('true');
     await userEvent.click(screen.getByRole('link', { name: 'two' }));
     const two = navigation.pending?.source;
     expect(typeof two).toBe('string');
