@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLayoutEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
@@ -1155,6 +1155,9 @@ describe('a card\'s effect on a post', () => {
   });
 
   test('a card can choose the ink of its mark\'s edge and border from its top-billed play (Whoops!\'s top layer takes its ink)', async () => {
+    /* The glass's key resolves the tab's words on the root, as the app's stylesheet does (web/src/main.tsx); a test page has none. */
+    document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000');
+    onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
     const w = world(2);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'under', layer: 1 });
     w.fake.clock.advance(60_000);

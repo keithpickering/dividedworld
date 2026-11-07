@@ -19,7 +19,7 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment } from '../data/api.ts';
 import { when } from '../thread/lines.tsx';
 import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from './body.ts';
-import { MomentEffects, inkOf, momentParts } from './Effects.tsx';
+import { MomentEffects, inkOf, momentParts, useOnInk } from './Effects.tsx';
 import { useLensStore, type LensStore } from './Lens.tsx';
 import type { CardPlay, EffectPlace } from './types.ts';
 import './moment.css';
@@ -64,7 +64,8 @@ export function MomentFrame({ play, place, at, read, back, named, words, unrecor
   const { instance, ui } = useKayfa();
   /* A card back is drawn in no card's ink: which card it is stays the setter's. */
   const rules = play.faceDown ? undefined : instance.cards.find((c) => c.key === play.card);
-  const ink = play.faceDown ? undefined : inkOf(ui, play, [play]);
+  const onInk = useOnInk();
+  const ink = play.faceDown ? undefined : inkOf(ui, play, [play], onInk);
   const ring = useRing(place);
   return (
     <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
