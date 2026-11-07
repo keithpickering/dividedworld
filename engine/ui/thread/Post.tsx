@@ -199,7 +199,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
         reachAt={{ reach: 'character', target: act.character, name, fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
       />
-    : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, summary.board, summary.title, know]);
+    : null), [shown, act, plays, thread, seq, perPage, casterName, faceOf, tallies, mine, name, summary.board, summary.title, know]);
   return (
     <AppealCtx.Provider value={askAppeal}>
     <article
