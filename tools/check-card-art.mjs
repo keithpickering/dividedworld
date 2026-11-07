@@ -23,8 +23,10 @@
  * (it re-bases a relative reference); no `<set>` or `<animate...>` whose attributeName is an href
  * (it writes one after load); and no numeric character reference (`&#x6a;`, `&#106;`) inside an
  * attribute value, since it hides a character from the reading above. Not caught: a CSS escape in
- * a `<style>` (`u\72l(`), a `values`/`to` computed some other way, and anything a viewer does with
- * a `data-` attribute; none of these runs inside an `<img>`.
+ * a `<style>` (`u\72l(`), a `values`/`to` computed some other way, anything a viewer does with
+ * a `data-` attribute, and a character reference in a `<style>` that spells `url(`; none of these
+ * runs inside an `<img>`. Text and comments are read as markup, deliberately: a false positive is
+ * cheap and a miss is not.
  *
  * `cardArtFaults` is exported and reads only the root it is handed, so tools/test-card-art.mjs
  * drives it red over scratch folders. A repository with no card folder passes: there is nothing
@@ -72,7 +74,7 @@ function viewBoxOf(value) {
 
 /** Faults of one SVG's root viewBox: [] when `ok(box)` holds. */
 function rootFaults(name, text, what, ok) {
-  const root = tags(text, 'svg')[0];
+  const root = tags(text.replace(/<!--[\s\S]*?-->/gu, ''), 'svg')[0];
   if (!root) return [`${name}: has no <svg> root, so it has no viewBox; ${what}`];
   const vb = attributes(root).find(([n]) => n === 'viewBox');
   if (!vb) return [`${name}: its root svg has no viewBox; ${what}`];
@@ -86,7 +88,9 @@ function safetyFaults(name, text) {
   const out = [];
   const lower = text.toLowerCase();
   for (const bad of ['<script', '<foreignobject', '<image', '@import', '<!doctype', '<!entity']) {
-    if (lower.includes(bad)) out.push(`${name}: holds ${bad === '<foreignobject' ? '<foreignObject' : bad}; an art file is vector only and runs and fetches nothing`);
+    if (!lower.includes(bad)) continue;
+    const shown = bad === '<foreignobject' ? '<foreignObject' : bad;
+    out.push(`${name}: holds ${shown}; an art file is vector only and runs and fetches nothing${bad === '<!doctype' ? '; delete the DOCTYPE line' : ''}`);
   }
   for (const [n, v] of attributes(text)) {
     const attr = n.toLowerCase();
@@ -100,7 +104,7 @@ function safetyFaults(name, text) {
   }
   for (const t of tags(text, 'set|animate\\w*')) {
     for (const [n, v] of attributes(t)) {
-      if (n.toLowerCase() === 'attributename' && /^\s*(?:[\w-]+:)?href\s*$/iu.test(v)) out.push(`${name}: has a ${t.match(/^<\w+/u)[0]} writing ${v.trim()}, which sets a reference after load`);
+      if (n.toLowerCase() === 'attributename' && /^\s*(?:(?:[\w-]+:)?href|xml:base)\s*$/iu.test(v)) out.push(`${name}: has a ${t.match(/^<\w+/u)[0]} writing ${v.trim()}, which sets a reference after load`);
     }
   }
   return out;

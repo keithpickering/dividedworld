@@ -41,8 +41,10 @@ let n = 0;
 /**
  * A repository-shaped folder with one clean card folder, then `poison(files)` applied: `files` maps
  * a name in the card folder to its content, or to null for no file.
+ * @param {(files: Record<string, string | null>) => void} [poison]
  */
 function repo(poison = () => {}) {
+  /** @type {Record<string, string | null>} */
   const files = { 'art.svg': ART(), 'mark.svg': MARK, 'art.json': JSON_OK };
   poison(files);
   const dir = path.join(root, `r${n++}`);
@@ -131,6 +133,9 @@ try {
   red('a <set> writing an href', art('<a><set attributeName="href" to="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
   red('an <animate> writing xlink:href', art('<a><animate attributeName="xlink:href" values="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
   red('an <animate> with attributeName spelled in upper case', art('<a><ANIMATE ATTRIBUTENAME="HREF" values="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
+  red('an <animate> writing xml:base', art('<a><animate attributeName="xml:base" values="https://x/"/></a>'), /art\.svg.*(<set|<animate)/i);
+  red('a decoy <svg viewBox> inside a comment before the real root', (f) => { f['art.svg'] = `<!-- <svg viewBox="0 0 540 840"> --><svg ${NS} viewBox="0 0 1 1"/>`; }, /art\.svg.*viewBox/);
+  red('a DOCTYPE fault says to delete the line', (f) => { f['art.svg'] = `<!DOCTYPE svg>${ART()}`; }, /art\.svg.*delete the DOCTYPE line/);
   green('an <animate> of an ordinary attribute passes', art('<rect><animate attributeName="opacity" values="0;1" dur="1s"/></rect>'));
   red('an xml:base', art('', ' xml:base="https://example.com/"'), /art\.svg.*xml:base/i);
   red('a <!DOCTYPE with an entity', (f) => { f['art.svg'] = `<!DOCTYPE svg [<!ENTITY u "https://x/">]>${ART('<use href="&u;"/>')}`; }, /art\.svg.*(<!DOCTYPE|<!ENTITY)/i);
