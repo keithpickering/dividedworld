@@ -164,6 +164,13 @@ export interface Settings {
   /** A thread is HOT when it has had at least this many replies in the last 7 days. */
   readonly hotReplies: number;
   /**
+   * The text search configuration a post's words are stemmed in (a name Postgres's pg_ts_config holds: `english`, `simple`), so the engine assumes no language. Changing it
+   * rebuilds the search index in the background (supabase/migrations/0112_search.sql).
+   */
+  readonly searchLanguage: string;
+  /** How many of the newest matches a relevance search ranks (100 to 100,000); a common word fills it at once, which bounds the work at any size. */
+  readonly searchRankPool: number;
+  /**
    * How long after a character's last poll it stays listed in "Who is online" and "Users browsing":
    * a mask arrives on its first poll and leaves only by aging out this long after its last, so a
    * swap of masks is never shown as one leaving as another arrives.
