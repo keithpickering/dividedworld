@@ -13,6 +13,8 @@
  *  - The boards' bar draws no icons until the folder icons and nav icons (the plan's Task 5) do, so the board links after the first are compared by their y and height, not their x.
  *  - Who is online has no icon column until the folder icons (the plan's Task 5) draw it: its names are compared from the cell's own corner.
  *  - The kind of box the board draws around the credit is a footer, found by its role (its words hold the badges').
+ *  - A board's last post holds its name link and its time link each at the 24px target (WCAG 2.5.8) without overlap, so its row stands
+ *    about 12px taller than the board's line height draws it; what follows is within the match's tolerance.
  *  - A time is a link named by its words and where it goes ("Oct 6, 2026 — latest post in General"), the board's by the words alone.
  */
 import type { BoardManifest } from '../../board-match.ts';
