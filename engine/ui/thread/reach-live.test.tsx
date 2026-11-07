@@ -48,6 +48,9 @@ async function open(withCards = false) {
   fake.signInAs(me);
   renderIn(fake, <Frame><LoadedThread thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
+  /* The post is drawn before React has run the screen's effects when the machine is loaded, and a play sent before the thread subscribes to
+     `reach` is never heard (as on the wire). The frame listens to `reach` too, so the thread is the second listener. */
+  await waitFor(() => expect(fake.broadcast.reachListeners()).toBeGreaterThanOrEqual(2), landed);
   return { fake, me, spritey, gloomba, here, elsewhere, gloombaThere };
 }
 const postbit = (seq: number) => document.getElementById(`post-${seq}`)!.querySelector('.kb-postbit') as HTMLElement;
