@@ -43,7 +43,10 @@ export async function finishWelcome(page: Page): Promise<void> {
 export async function signInUnseasonedOnBoard(page: Page): Promise<void> {
   await signInUnseasoned(page);
   await finishWelcome(page);
-  await expect(page.getByRole('dialog', { name: TOUR_TITLES[0] })).toBeVisible();
+  /* The tour is asked for by the board that Back to the board draws, whose tips provider reads the account afresh after it mounts: the first step
+     is up a read and a render after the HUD is, and how long that takes is the page's CPU (measured 30ms to 3s with the page throttled 6x
+     and eight workers on four cores, with no tip ever dropped), not a time anything is waiting out. So wait for it for as long as a loaded runner needs. */
+  await expect(page.getByRole('dialog', { name: TOUR_TITLES[0] })).toBeVisible({ timeout: 20_000 });
 }
 
 /**
