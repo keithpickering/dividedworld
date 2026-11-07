@@ -40,6 +40,8 @@ declare
                            -- The glass screens, each in one read (the glass-load plan, Tasks 5 to 9): invoker, stable, a signed-in player alone, writing nothing.
                            -- The Characters screen (0115).
                            'my_characters_page()',
+                           -- The Season screen, Rankings and News (0117).
+                           'season_page(text,integer,uuid,integer)',
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
