@@ -12,14 +12,16 @@
  * blocks for the mode and then engine/ui/tokens.css, as the browser would on a page wearing that theme, and the preview
  * holds literals. A reference that resolves to nothing, or loops, is a fault.
  *
- * `light` is the `:root` block (with `[data-kb-mode="light"]` laid over it); `dark` is that with the dark blocks laid
- * over it, and is present only when the theme has dark blocks. A theme that holds one mode only fills one; the instance's
- * `modes` says which, and a dark-only theme that writes its colors in `:root` moves `light` to `dark` where it lists it.
+ * The preview's keys ARE the modes the theme holds. `light` is the `:root` block (with `[data-kb-mode="light"]` laid over
+ * it); `dark` is that with the dark blocks laid over it. A theme with no dark blocks holds light only, so the preview has
+ * `light` alone. A theme whose resolved light tokens equal its resolved dark tokens (a dark-only theme sets its tokens on
+ * `:root` and in both dark blocks alike) holds dark only, so the preview has `dark` alone. The instance's `modes` must agree
+ * with these keys: `instanceUiProblems` (engine/ui/tips/problems.ts) holds it to that.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { themeBlocks } from './check-theme.mjs';
+import { themeBlocks, THEME_FILE } from './check-theme.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -33,7 +35,8 @@ export const REQUIRED_TOKENS = [
 export const OPTIONAL_TOKENS = ['--kb-button-bg', '--kb-button-edge', '--kb-button-fg'];
 export const PREVIEW_TOKENS = [...REQUIRED_TOKENS, ...OPTIONAL_TOKENS];
 
-const VAR = /var\(\s*(--[\w-]+)\s*(?:,\s*([^()]*))?\)/;
+/* A fallback may itself hold a var() (`var(--a, var(--b))`): one nesting level is read, and resolve() follows it. */
+const VAR = /var\(\s*(--[\w-]+)\s*(?:,\s*((?:[^()]|\([^()]*\))*))?\)/;
 
 /** `value` with every var() followed through `scope` (name to value), or null if one resolves to nothing or loops. */
 function resolve(value, scope, seen = []) {
@@ -45,19 +48,17 @@ function resolve(value, scope, seen = []) {
     let replacement;
     if (scope.has(name) && !seen.includes(name)) {
       replacement = resolve(scope.get(name), scope, [...seen, name]);
-    } else if (fallback !== undefined) replacement = fallback.trim();
+    } else if (fallback !== undefined) replacement = resolve(fallback.trim(), scope, seen);
     else return null;
     if (replacement === null) return null;
-    out = out.replace(whole, replacement);
+    out = out.replace(whole, () => replacement);
   }
   return null;
 }
 
-let engineRoot;
-/** The engine's defaults: tokens.css's `:root`. */
+/** The engine's defaults: tokens.css's `:root`, read each time (a cache would go stale in a watch rebuild). */
 function engineTokens() {
-  engineRoot ??= themeBlocks(fs.readFileSync(path.join(repoRoot, 'engine/ui/tokens.css'), 'utf8')).root;
-  return engineRoot;
+  return themeBlocks(fs.readFileSync(path.join(repoRoot, 'engine/ui/tokens.css'), 'utf8')).root;
 }
 
 /**
@@ -69,8 +70,7 @@ function engineTokens() {
 export function previewOf(text, defaults = engineTokens()) {
   const b = themeBlocks(text);
   const faults = [];
-  const hasDark = b.dark.size > 0;
-  const mode = (name, own) => {
+  const mode = (name, own, faults) => {
     const scope = new Map([...defaults, ...own]);
     const tokens = {};
     for (const t of PREVIEW_TOKENS) {
@@ -83,9 +83,15 @@ export function previewOf(text, defaults = engineTokens()) {
   };
   const light = new Map([...b.root, ...b.light]);
   const dark = new Map([...b.root, ...b.dark]);
+  const lightFaults = [];
+  const hasLight = b.root.size > 0 || b.light.size > 0;
+  const lightTokens = hasLight ? mode('light', light, lightFaults) : undefined;
+  const darkTokens = b.dark.size > 0 ? mode('dark', dark, faults) : undefined;
   const out = { faults };
-  if (b.root.size > 0 || b.light.size > 0) out.light = mode('light', light);
-  if (hasDark) out.dark = mode('dark', dark);
+  /* A dark-only theme writes the same tokens in :root and in the dark blocks, so its light is not a mode it holds. */
+  const sameAsDark = lightTokens !== undefined && darkTokens !== undefined && JSON.stringify(lightTokens) === JSON.stringify(darkTokens);
+  if (lightTokens !== undefined && !sameAsDark) { out.light = lightTokens; faults.unshift(...lightFaults); }
+  if (darkTokens !== undefined) out.dark = darkTokens;
   return out;
 }
 
@@ -93,7 +99,7 @@ export function previewOf(text, defaults = engineTokens()) {
 export function previewFaults(files, defaults) {
   const out = [];
   for (const [file, text] of Object.entries(files)) {
-    if (!/^instances\/[^/]+\/ui\/[^/]+\.css$/.test(file)) continue;
+    if (!THEME_FILE.test(file)) continue;
     for (const why of previewOf(text, defaults).faults) out.push({ file, why });
   }
   return out;

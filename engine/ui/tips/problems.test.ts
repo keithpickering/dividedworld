@@ -36,6 +36,14 @@ const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }
 };
 
 describe('instanceUiProblems', () => {
+  test('holds a theme\'s modes to the keys of its preview', () => {
+    const withThemes = (themes: unknown) => instanceUiProblems({ ...ui(good), themes: themes as InstanceUi['themes'] }, rules);
+    const t = (modes: string, preview: unknown) => [{ key: 'night', name: 'Night', href: '/n.css', modes, preview }];
+    assert.deepEqual(withThemes(t('dark', { dark: {} })), []);
+    assert.deepEqual(withThemes(t('both', { light: {}, dark: {} })), []);
+    assert.deepEqual(withThemes(t('both', { dark: {} })), ['the theme "night" says it holds light and dark, and its file holds dark']);
+    assert.deepEqual(withThemes(t('dark', { light: {}, dark: {} })), ['the theme "night" says it holds dark, and its file holds light and dark']);
+  });
   test('refuses a shine tip with no action label, or a blank one', () => {
     for (const action of [undefined, '  ']) {
       const t = tips();

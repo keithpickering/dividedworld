@@ -18,8 +18,14 @@ export const BADGE_MAX = 12;
 /** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
 export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
+  /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
+  for (const t of ui.themes ?? []) {
+    const held = [t.preview?.light ? 'light' : '', t.preview?.dark ? 'dark' : ''].filter(Boolean);
+    const want = t.modes === 'both' ? ['light', 'dark'] : [t.modes];
+    if (held.join() !== want.join()) out.push(`the theme "${t.key}" says it holds ${want.join(' and ')}, and its file holds ${held.join(' and ') || 'no mode'}`);
+  }
   for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag'] as const) {
     const word: unknown = ui.copy?.[key];
     if (typeof word !== 'string' || word.trim() === '') out.push(`the copy has no ${key}`);
