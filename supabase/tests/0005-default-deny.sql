@@ -44,6 +44,8 @@ declare
                            'season_page(text,integer,uuid,integer)',
                            -- The Alerts screen (0119).
                            'alerts_page(timestampwithtimezone)',
+                           -- The Updates screen and the admin queue (0121).
+                           'updates_page(uuid,timestampwithtimezone,integer)', 'queue_page()',
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
