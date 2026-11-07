@@ -475,11 +475,14 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
       <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
         <span className="kb-lens-fold-sign" aria-hidden="true" />
         <span className="kb-lens-faces" aria-hidden="true">
-          {firsts.slice(0, NAMES_SHOWN).map((p) => (
-            <span key={p.caster ?? 'staff'} className="kb-lens-face-ink" style={inkOfPlay(p) ? ({ '--kb-play-ink': inkOfPlay(p) } as CSSProperties) : undefined}>
-              <Avatar className="kb-lens-face" src={faceOf(p.caster)} name={nameOf(p.caster)} />
-            </span>
-          ))}
+          {firsts.slice(0, NAMES_SHOWN).map((p) => {
+            const ink = inkOfPlay(p);
+            return (
+              <span key={p.caster ?? 'staff'} className="kb-lens-face-ink" style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+                <Avatar className="kb-lens-face" src={faceOf(p.caster)} name={nameOf(p.caster)} />
+              </span>
+            );
+          })}
         </span>
         {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
       </button>

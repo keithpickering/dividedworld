@@ -13,7 +13,10 @@ import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
-import { fadeOf, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
+import { createPlays } from './plays.ts';
+import { createTallies } from '../thread/tallies.ts';
+import { createMine } from '../reactions/mine.ts';
+import { fadeOf, Lens, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
@@ -299,6 +302,27 @@ describe('what the Lens says and offers', () => {
       const row = lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
       const name = row.querySelector('.kb-lens-who')!.textContent!;
       expect(row.querySelector('.kb-lens-row-avatar')).toHaveTextContent([...name][0]!);
+    });
+
+    test('a play with no caster (the staff\'s own) gets the staff word\'s first letter, folded and unfolded', async () => {
+      width(false);
+      const w = world();
+      const plays = createPlays();
+      plays.add([{ id: 'staff-play', character: null, kind: 'card', thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', payload: { card: 'k2' }, currentPayload: { card: 'k2' }, editedAt: null, shownEditedAt: null }]);
+      plays.setBilling(w.second, ['staff-play']);
+      function Staffed() {
+        const store = useLensStore();
+        return <Lens open={{ owner: 'o', card: 'k2', opener: document.body }} store={store} post={w.second} plays={plays} tallies={createTallies()} mine={createMine()} compare={false} to={null}
+          nameOf={(id) => (id === null ? 'The staff' : 'someone')} faceOf={() => null} onSpin={() => {}} />;
+      }
+      renderIn(w.fake, <LensProvider><Staffed /></LensProvider>, { path: '/', instance, cards });
+      const who = await screen.findByRole('button', { name: /^1 play · / });
+      expect(who).toHaveAccessibleName('1 play · The staff');
+      const faces = who.querySelectorAll('.kb-lens-faces .kb-lens-face');
+      expect(faces).toHaveLength(1);
+      expect(faces[0]).toHaveTextContent('T');
+      await userEvent.click(who);
+      expect(document.querySelector('[data-kb-play="staff-play"] .kb-lens-row-avatar')).toHaveTextContent('T');
     });
 
     test('each row\'s square, and each face in the fold, carries its play\'s ink', async () => {
