@@ -1166,6 +1166,16 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "plain": "[video]https://xn--/x.mp4[/video]x"
   },
   {
+    "name": "a file at an empty international label with a dot is text",
+    "body": "[video]https://xn--.com/a.mp4[/video]x",
+    "plain": "[video]https://xn--.com/a.mp4[/video]x"
+  },
+  {
+    "name": "a file at an international label of only hyphens is text",
+    "body": "[video]https://xn---.com/a.mp4[/video]x",
+    "plain": "[video]https://xn---.com/a.mp4[/video]x"
+  },
+  {
     "name": "a file at a host with a hyphen run",
     "body": "[video]https://ab--c.example/x.mp4[/video]x",
     "plain": "x"

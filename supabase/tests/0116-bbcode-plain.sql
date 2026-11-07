@@ -6360,6 +6360,8 @@ http://a.example/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     ($f$a file at an international host$f$, $f$[video]https://xn--bcher-kva.example/x.mp4[/video]x$f$, $f$x$f$),
     ($f$a file at a bad international host is text$f$, $f$[video]https://xn--a/x.mp4[/video]x$f$, $f$[video]https://xn--a/x.mp4[/video]x$f$),
     ($f$a file at an empty international label is text$f$, $f$[video]https://xn--/x.mp4[/video]x$f$, $f$[video]https://xn--/x.mp4[/video]x$f$),
+    ($f$a file at an empty international label with a dot is text$f$, $f$[video]https://xn--.com/a.mp4[/video]x$f$, $f$[video]https://xn--.com/a.mp4[/video]x$f$),
+    ($f$a file at an international label of only hyphens is text$f$, $f$[video]https://xn---.com/a.mp4[/video]x$f$, $f$[video]https://xn---.com/a.mp4[/video]x$f$),
     ($f$a file at a host with a hyphen run$f$, $f$[video]https://ab--c.example/x.mp4[/video]x$f$, $f$x$f$),
     ($f$a file at a host with a leading hyphen label$f$, $f$[video]https://-a-.b/x.mp4[/video]x$f$, $f$[video]https://-a-.b/x.mp4[/video]x$f$),
     ($f$a file with a port$f$, $f$[video]https://a.example:8443/x.mp4[/video]x$f$, $f$[video]https://a.example:8443/x.mp4[/video]x$f$),

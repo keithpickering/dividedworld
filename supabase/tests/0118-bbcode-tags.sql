@@ -21,6 +21,9 @@ declare
   edited uuid;
   n bigint;
   total bigint;
+  stale bigint;
+  cur_act uuid;
+  cur_ctid tid;
 begin
   -- 1. A post written now.
   spoiled := tests.post(a, t1, 'before [spoiler=Twist]hidden words[/spoiler] after');
@@ -41,9 +44,14 @@ begin
   perform tests.act(a, 'edit', t1, jsonb_build_object('body', 'second [ispoiler]version[/ispoiler] with [noparse][b]raw[/b][/noparse]'), edited);
   update post_search set words = to_tsvector('simple', 'first version') where act = edited;
 
-  n := search_reindex();
+  perform tests.post(a, t1, 'a post already current');
   select count(*) into total from post_search;
-  if n is distinct from total then raise exception 'the reindex rewrote % rows of %', n, total; end if;
+  select count(*) into stale from post_search p where p.words is distinct from search_words_of(p.act, search_lang());
+  if stale < 4 or stale >= total then raise exception 'the test did not leave some rows stale and some current (% of %)', stale, total; end if;
+  select p.act, p.ctid into cur_act, cur_ctid from post_search p where p.words is not distinct from search_words_of(p.act, search_lang()) limit 1;
+  n := search_reindex();
+  if n is distinct from stale then raise exception 'the reindex rewrote % rows, and % were stale', n, stale; end if;
+  if cur_act is null or not exists (select 1 from post_search p where p.act = cur_act and p.ctid = cur_ctid) then raise exception 'a row already current was rewritten'; end if;
   if pg_temp.matches(spoiled, 'spoiler') or not pg_temp.matches(spoiled, 'hidden') then raise exception 'the reindex left a spoiler''s tag as a word, or lost its words'; end if;
   if not pg_temp.matches(countered, 'forged') or pg_temp.matches(countered, 'wario') then raise exception 'the reindex did not index a counterfeit quote as the new walk does'; end if;
   if not pg_temp.matches(real_quoted, 'mine') or pg_temp.matches(real_quoted, 'real') then raise exception 'the reindex did not fill an empty row from its post'; end if;
@@ -51,7 +59,7 @@ begin
     raise exception 'the reindex did not index the post''s current version (an edit''s words, an inline spoiler''s and a noparse''s)';
   end if;
   if exists (select 1 from post_search p where p.words is distinct from search_words_of(p.act, search_lang())) then raise exception 'a row differs from the words of its post after the reindex'; end if;
-  if search_reindex() is distinct from total then raise exception 'a second reindex does not rewrite the same rows'; end if;
+  if search_reindex() <> 0 then raise exception 'a second reindex rewrote a row that was current'; end if;
 end
 $test$;
 

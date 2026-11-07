@@ -19,13 +19,14 @@
 --                        Helpers added: bbcode_plain_trim, bbcode_plain_quote_head, bbcode_plain_pct, bbcode_plain_query_v, bbcode_plain_ipv4_number, bbcode_plain_punycode_ok,
 --                        bbcode_plain_host_ok, bbcode_plain_video_ok. bbcode_plain_u16len and bbcode_plain_url_ok are 0113's and stay; bbcode_plain keeps its signature and its grants.
 --
---   The reindex   Every post_search row is rewritten once, in this migration, from its post's current version by search_words_of (the same call the language rebuild makes; search_reindex() holds
+--   The reindex   Every post_search row whose words change is rewritten once (a row already current is left alone), in this migration, from its post's current version by search_words_of (the same call the language rebuild makes; search_reindex() holds
 --                 the one UPDATE), so a post that
 --                 held `[spoiler]` as text before now indexes its words without the tags, and a post with a counterfeit quote now indexes its words. One statement: every post is
 --                 indexed once. Its cost grows with the number of posts and their length (bbcode_plain is linear, 0117 holds it to that) and with the GIN index it maintains; on a busy
 --                 instance it is minutes of one transaction that holds a row lock on each post_search row until it commits. A migration is the place for that: nothing reads a half-rebuilt
 --                 index, and the alternative, the background rebuild (search_rebuild_step, a batch a minute), would leave posts indexed by the old walk for hours. Searching is not blocked while
---                 it runs (readers do not take row locks); a post written meanwhile has a new row, and an edit to a post waits for the commit.
+--                 it runs (readers do not take row locks); writes to acts and post_search wait for the commit (the reindex takes `lock table acts, post_search in share row exclusive mode`), so no post or
+--                 edit lands after the UPDATE's snapshot and is indexed by the old walk.
 --
 -- Ways out: nothing here adds a state a player can be put in.
 
@@ -157,6 +158,8 @@ begin
   end if;
   rest := substr(label, b + 1);
   len := length(rest);
+  -- Nothing to decode (`xn--`, `xn---`): the parser refuses the host.
+  if cardinality(cps) = 0 and len = 0 then return false; end if;
   pos := 1;
   while pos <= len loop
     oldi := i; w := 1; k := 36;
@@ -628,7 +631,14 @@ create function search_reindex() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n bigint;
 begin
-  update post_search set words = coalesce(search_words_of(act, (select search_lang())), words);
+  -- Writes wait for the migration's commit, readers do not: a post or an edit landing after the UPDATE's snapshot would otherwise be indexed by the old walk, because the redefined
+  -- bbcode_plain is not visible to other sessions until this transaction commits. SHARE ROW EXCLUSIVE conflicts with the ROW EXCLUSIVE that every insert and update takes, and
+  -- not with the ACCESS SHARE of a search or a read.
+  lock table acts, post_search in share row exclusive mode;
+  -- Only a row whose words change is written: words is GIN-indexed, so no update is HOT, and an unchanged row would cost WAL, bloat and an index entry for nothing.
+  update post_search p set words = w.new_words
+    from (select s.act, coalesce(search_words_of(s.act, (select search_lang())), s.words) as new_words from post_search s) w
+    where p.act = w.act and p.words is distinct from w.new_words;
   get diagnostics n = row_count;
   return n;
 end $$;
