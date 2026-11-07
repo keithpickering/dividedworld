@@ -28,7 +28,7 @@ end $$;
 revoke execute on function fill_tokens(text, jsonb) from public, anon, authenticated;
 
 -- The tokens for one character's pronouns: `{prefix}.{form}` for every key of engine/rules/pronouns.ts's words(), from the character's profile, else the instance's `pronouns`
--- setting, else the it-set (new_pronouns, 0117). A form is the set's word and its capitalized twin; the verbs follow `plural` ("they are", "it is"). Definer, since it reads a
+-- setting, else the it-set (new_pronouns, 0118). A form is the set's word and its capitalized twin; the verbs follow `plural` ("they are", "it is"). Definer, since it reads a
 -- profile the caller has no grant on; no caller is a player.
 create function pronoun_tokens(prefix text, who uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$

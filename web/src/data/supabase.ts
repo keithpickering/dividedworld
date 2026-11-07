@@ -1651,7 +1651,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     async setProfile(character, title, signature, pipStyle, pronouns) {
-      /* A null set keeps the stored one (set_profile, 0117). */
+      /* A null set keeps the stored one (set_profile, 0118). */
       const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns ?? null }));
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },

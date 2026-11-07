@@ -66,7 +66,7 @@ begin
       'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
-      -- The pool's thread read (0089) and the faces read that replaced its names read (0120): the two functions it owns.
+      -- The pool's thread read (0089) and the faces read that replaced its names read (0121): the two functions it owns.
       'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)',
       -- A patrol's sample of the beat's recent posts (0110): the one function it owns, reading acts_public, characters_public and thread_list.
       'patrol_sample(uuid[],integer)',

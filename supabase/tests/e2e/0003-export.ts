@@ -128,7 +128,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform count_thread_views();
       -- Tilt turned on (0093), motion snappy (0112) and a mode chosen beside a theme (0115), so values other than the columns' defaults must survive the round trip.
       insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, tilt, mode, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen) values (ann, 'dusk', 'stacked', 'snappy', 'low', 'high', 150, 'on', 'light', '{whoops,stick-around}', now() - interval '1 hour', now() - interval '2 hours', '{quote,hint}', now() - interval '3 hours', 'off', '{tour-plate,grid}');
-      -- A custom pronoun set (0117), not the column's default, so the round trip has to carry it.
+      -- A custom pronoun set (0118), not the column's default, so the round trip has to carry it.
       insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pronouns)
       values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}',
         '{"subject": "xe", "object": "xem", "determiner": "xyr", "possessive": "xyrs", "reflexive": "xemself", "plural": false}');
@@ -455,7 +455,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    // A custom pronoun set (0117) is carried as it was chosen, not reset to the column's default.
+    // A custom pronoun set (0118) is carried as it was chosen, not reset to the column's default.
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');

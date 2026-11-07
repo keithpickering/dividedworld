@@ -1,4 +1,4 @@
--- The model is told (supabase/migrations/0120_pronouns_for_the_model.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 8; the first design's section 5, the amendment's 2 and 6).
+-- The model is told (supabase/migrations/0121_pronouns_for_the_model.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 8; the first design's section 5, the amendment's 2 and 6).
 --
 -- 1. system_digest: each of its `characters` carries `pronouns` (null for a character with no profile row).
 -- 2. pool_thread: each post carries its author's `pronouns`.

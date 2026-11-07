@@ -62,7 +62,7 @@ export function instanceSeed(instance: Instance) {
         // questions it has and never one of them or its answer. The questions and answers travel beside it in `quiz` (0108), which seed_instance writes where no client can read it.
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
           visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness),
-          // A persona's own pronouns (0117); left out, seed_instance gives it the instance's default.
+          // A persona's own pronouns (0118); left out, seed_instance gives it the instance's default.
           ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}) })),
       ],
       firstStaff: [...instance.system.firstStaff],

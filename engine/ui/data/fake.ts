@@ -1421,7 +1421,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
-  /** The SQL's words (pronouns_hold, 0117): a set is held after it is lowercased, as set_profile and create_character store it. */
+  /** The SQL's words (pronouns_hold, 0118): a set is held after it is lowercased, as set_profile and create_character store it. */
   const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
   const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
 
@@ -1635,7 +1635,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /*
    * search_posts, search_threads and search_suggest over the fake's own Acts, on a small scale and with a plain word match: a whole word,
    * case and accents apart, every word needed and `-word` leaving a post out (no stemming, phrases or `or`). The caps, the pool, the
-   * cursor and the ordering are the SQL's (supabase/migrations/0116_search.sql); only the matching is cruder.
+   * cursor and the ordering are the SQL's (supabase/migrations/0117_search.sql); only the matching is cruder.
    */
   const foldText = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const wordsOf = (s: string): string[] => foldText(s).match(/[\p{L}\p{N}]+/gu) ?? [];
