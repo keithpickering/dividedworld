@@ -16,6 +16,7 @@ const OTHER_THREAD = '44444444-4444-4444-8444-444444444444';
 const ANN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const BOB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const HIDDEN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const HIDDEN2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02';
 
 const settings = { ...systemSettings, reactionCap: 3 };
 
@@ -34,6 +35,11 @@ const ctx = (): RepairContext => ({
   successors: new Set(['some-boss']),
   mods: new Set(),
   rules: [],
+  groups: {
+    conferred: new Map([['trialMembers', 'punishment'], ['teachersPet', 'favor']]),
+    capped: new Set([HIDDEN]),
+    held: new Set([BOB]),
+  },
 });
 const move = (demand: unknown) => ({
   kind: 'renameBoard',
@@ -328,7 +334,7 @@ test('the prompt shows each Mod: its name, career, beat preferences, pet rules, 
   }
   assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
   assert.match(text, /renameBoard[^\n]*Made by the Boss\./);
-  assert.match(text, /\(setRule, conferGroup; every other kind stays yours\)/);
+  assert.match(text, /\(setRule, conferGroup punishments; every other kind stays yours\)/);
   assert.match(text, /a rule a Mod sets lasts at most 7 days/);
   assert.match(text, /at most 6 patrols/);
   assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');
@@ -352,4 +358,109 @@ test('an order with no line, no boards and no allowance is kept, not a reason to
   const r = repairAnswer(withOrders([{ mod: M1 }, { mod: M2, order: '', boards: [] }]), modCtx());
   assert.ok(r.ok, JSON.stringify(r));
   assert.deepEqual(r.orders.map((o) => [o.mod, o.boards, o.order, o.allowance]), [[M1, [], '', 0], [M2, [], '', 0]]);
+});
+
+
+// ---- Member groups (Task 8): the meeting confers groups ----
+
+const groupMove = (params: unknown, demand: unknown, extra: Record<string, unknown> = {}) => ({ ...move(demand), kind: 'conferGroup', params, ...extra });
+const groupAnswer = (...moves: unknown[]) => ({ ...answer(null), moves });
+const apology = { kind: 'apologyAccepted', params: {} };
+const posts = { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } };
+const repairedGroup = (moves: unknown[], extra: Partial<RepairContext> = {}) => {
+  const r = repairAnswer(groupAnswer(...moves), { ...ctx(), isPublic: (id) => id === ANN || id === BOB || id === HIDDEN, ...extra });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('a punishment that names a board gets the apology demand from the code, whatever the model wrote, and the change is recorded', () => {
+  const r = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', board: BOARD }, posts)]);
+  assert.equal(r.moves.length, 1);
+  assert.deepEqual(r.moves[0]!.demand, apology);
+  assert.deepEqual(r.moves[0]!.params, { character: ANN, group: 'trialMembers', board: BOARD });
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].demand' && t.predicate === 'setByCode(apologyAccepted)'), JSON.stringify(r.trims));
+  // The model that already wrote the apology changes nothing, and nothing is recorded.
+  const same = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', board: BOARD }, apology)]);
+  assert.deepEqual(same.moves[0]!.demand, apology);
+  assert.ok(!same.trims.some((t) => t.path === 'moves[0].demand'), JSON.stringify(same.trims));
+});
+
+test('a punishment that names no board keeps the demand the model chose; the apology demand is dropped there, as the code alone sets it', () => {
+  const kept = repairedGroup([groupMove({ character: ANN, group: 'trialMembers' }, posts)]);
+  assert.deepEqual(kept.moves[0]!.demand, posts);
+  const dropped = repairedGroup([groupMove({ character: ANN, group: 'trialMembers' }, apology)]);
+  assert.equal(dropped.moves.length, 0);
+  assert.ok(dropped.trims.some((t) => t.path === 'moves[0].demand.kind' && t.predicate.startsWith('oneOf(postsOnBoard')), JSON.stringify(dropped.trims));
+  // A punishment's board must be a board of the meeting's list.
+  const off = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', board: OTHER_BOARD }, apology)]);
+  assert.equal(off.moves.length, 0);
+  assert.ok(off.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'), JSON.stringify(off.trims));
+  // A punishment carries no check.
+  const checked = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', checkAt: new Date(NOW + 40 * H).toISOString() }, posts)]);
+  assert.equal(checked.moves.length, 1);
+  assert.ok(!('checkAt' in checked.moves[0]!.params));
+  assert.ok(checked.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'punishmentHasNoCheck'), JSON.stringify(checked.trims));
+});
+
+test('a group outside the conferred catalog drops the move and is recorded', () => {
+  for (const group of ['members', 'nonesuch']) {
+    const r = repairedGroup([groupMove({ character: ANN, group }, posts)]);
+    assert.equal(r.moves.length, 0, group);
+    assert.ok(r.trims.some((t) => t.path === 'moves[0].params.group' && t.predicate === 'conferredGroup'), JSON.stringify(r.trims));
+  }
+});
+
+test('a character who is not public now, who is capped or who is held drops the move, each recorded under its own predicate', () => {
+  const cases: [string, string][] = [[HIDDEN2, 'publicCharacter'], [HIDDEN, 'underPunishmentCap'], [BOB, 'inNoGroupMove']];
+  for (const [character, predicate] of cases) {
+    const r = repairedGroup([groupMove({ character, group: 'trialMembers' }, posts)]);
+    assert.equal(r.moves.length, 0, predicate);
+    assert.ok(r.trims.some((t) => t.path === 'moves[0].params.character' && t.predicate === predicate), `${predicate}: ${JSON.stringify(r.trims)}`);
+  }
+  // Two moves on one character in one answer: the second would be refused by the queue, so it is dropped here.
+  const twice = repairedGroup([groupMove({ character: ANN, group: 'trialMembers' }, posts), groupMove({ character: ANN.toUpperCase(), group: 'teachersPet' }, posts, { expires_in_hours: 72 })]);
+  assert.equal(twice.moves.length, 1);
+  assert.ok(twice.trims.some((t) => t.path === 'moves[1].params.character' && t.predicate === 'inNoGroupMove'), JSON.stringify(twice.trims));
+});
+
+test('a favor without a checkAt gets one at half its expiry from its go-live, and the addition is recorded', () => {
+  const r = repairedGroup([groupMove({ character: ANN, group: 'teachersPet' }, posts)]);
+  assert.equal(r.moves.length, 1);
+  const m = r.moves[0]!;
+  assert.equal(m.expiresInHours, 72);
+  assert.equal(m.params['checkAt'], new Date(m.goLiveAt + 36 * H).toISOString());
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'halfExpiry'), JSON.stringify(r.trims));
+  // One the model gave inside the window stays; one outside it is replaced and the change recorded.
+  const inside = new Date(NOW + 30 * H + 10 * H).toISOString();
+  const keeps = repairedGroup([groupMove({ character: ANN, group: 'teachersPet', checkAt: inside }, posts)]);
+  assert.equal(keeps.moves[0]!.params['checkAt'], inside);
+  assert.ok(!keeps.trims.some((t) => t.path === 'moves[0].params.checkAt'));
+  const late = repairedGroup([groupMove({ character: ANN, group: 'teachersPet', checkAt: new Date(NOW + 400 * H).toISOString() }, posts)]);
+  assert.equal(late.moves[0]!.params['checkAt'], new Date(late.moves[0]!.goLiveAt + 36 * H).toISOString());
+  assert.ok(late.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'halfExpiry'));
+});
+
+test('a favor that names a board loses the board, and the trim is recorded; the favor stands', () => {
+  const r = repairedGroup([groupMove({ character: ANN, group: 'teachersPet', board: BOARD }, posts)]);
+  assert.equal(r.moves.length, 1);
+  assert.ok(!('board' in r.moves[0]!.params));
+  assert.deepEqual(r.moves[0]!.demand, posts);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'favorBarsNoBoard'), JSON.stringify(r.trims));
+});
+
+test('namedCharacters includes the character a group move names, so it is checked against who is public now', () => {
+  assert.deepEqual(namedCharacters(groupAnswer(groupMove({ character: ANN.toUpperCase(), group: 'trialMembers' }, posts))), [ANN]);
+});
+
+test('the prompt lists the conferred groups with their tones and the rules for choosing, and says which kinds a Mod may be handed', () => {
+  const mod = { key: M1, name: 'Sir Patrols-a-Lot', temperament: 'fussy', beats: [], petRules: [], career: { led: [], offices: [] }, notes: [], memory: null, granted: null, unspent: 0, boards: [], order: null };
+  const facts = { boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [mod] };
+  const text = meetingSystemPrompt({ ...facts, groups: { conferred: [{ key: 'trialMembers', name: 'Trial Members', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', tone: 'favor' }] } });
+  assert.match(text, /trialMembers \(Trial Members\): a punishment/);
+  assert.match(text, /teachersPet \(Teacher's Pet\): a favor/);
+  assert.match(text, /A punishment may name one board[^\n]*accepted apology/);
+  assert.match(text, /A favor bars nothing[^\n]*it names a checkAt[^\n]*demand/);
+  assert.match(text, /capped \(punished[^\n]*or held \(already in a group move\) cannot be chosen/);
+  assert.match(text, /a Mod may be handed setRule and conferGroup punishments on its beat/);
+  assert.ok(!/Group moves\./.test(meetingSystemPrompt(facts)), 'no conferred groups, no section');
 });

@@ -95,6 +95,14 @@ interface Context {
   readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
   /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
   readonly rules?: readonly RuleInForce[];
+  /**
+   * The groups (0119): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
+   * group it is in now. Absent from an older database, which confers none.
+   */
+  readonly groups?: {
+    readonly conferred: readonly { readonly key: string; readonly name: string; readonly tone: 'punishment' | 'favor' }[];
+    readonly characters: readonly { readonly id: string; readonly group: string; readonly capped: boolean; readonly held: boolean }[];
+  };
 }
 
 /** How long one feed may take: outside material is a garnish, not a dependency. */
@@ -227,6 +235,7 @@ export async function runMeeting(
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
       characterName: (id) => digest.characters.find((c) => c.id === id)?.name ?? 'someone',
       successorAllowed,
+      groups: { conferred: context.groups?.conferred ?? [] },
       career,
       notes: bossNotes,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
@@ -279,6 +288,11 @@ export async function runMeeting(
       bank,
       mods: new Set(mods.map((m) => m.key)),
       rules: context.rules ?? [],
+      groups: {
+        conferred: new Map((context.groups?.conferred ?? []).map((g) => [g.key, g.tone])),
+        capped: new Set((context.groups?.characters ?? []).filter((x) => x.capped).map((x) => x.id.toLowerCase())),
+        held: new Set((context.groups?.characters ?? []).filter((x) => x.held).map((x) => x.id.toLowerCase())),
+      },
       now,
       boards: new Set(context.boards.map((b) => b.id)),
       // The threads the model was shown (the reference list is bounded), the only ones a demand may name.

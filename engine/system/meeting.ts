@@ -201,6 +201,15 @@ export interface PromptFacts {
   readonly career: Career;
   /** The Boss's own notes since its last memory version, oldest first (`staff_notes_recent`); the newest `notesRead` are shown. Read, never acted on. */
   readonly notes: readonly string[];
+  /** The groups a move may confer (`meeting_context().groups.conferred`); absent or empty, the prompt has no section for them. */
+  readonly groups?: { readonly conferred: readonly ConferredGroup[] };
+}
+
+/** A group a move may confer, as the meeting is shown it: the key a move names, the name players read, and whether it punishes or favors. */
+export interface ConferredGroup {
+  readonly key: string;
+  readonly name: string;
+  readonly tone: 'punishment' | 'favor';
 }
 
 /**
@@ -236,6 +245,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       ...demands,
       `Use only the ids you are given below for boards, threads and characters. A count is a whole number of at least 1. A reaction threshold (a quadrant's count, a crossQuote's reactions) is at least ${s.reactionCap + 1}.`,
     ].join('\n'),
+    ...groupsText(f.groups?.conferred ?? []),
     `Board names. ${f.system.nameStyleBrief} A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for. A name that is not in the style is dropped, not corrected. A renameBoard description is your own words, in character: the board's subtitle under its new name, a sentence or two.`,
     [
       'Your memory. Your answer is your whole new memory: what you leave out is forgotten. Order every list most important first.',
@@ -248,6 +258,22 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       : ['Do not answer with a successor.']),
     'Answer only in the structure you are asked for.',
   ].join('\n\n');
+}
+
+/**
+ * Group moves (member groups design, section 5): the conferred groups with their tones, and the rules the repair holds to. A punishment bars a
+ * character from posting on one board and lifts when an apology is accepted, or sits in a group with no bar; a favor carries a check and the demand
+ * it reads. Empty when the instance confers no group.
+ */
+function groupsText(conferred: readonly ConferredGroup[]): string[] {
+  if (conferred.length === 0) return [];
+  return [
+    [
+      'Group moves. A conferGroup move puts one character in one of these groups, named by its key:',
+      ...conferred.map((g) => `- ${g.key} (${g.name}): a ${g.tone}.`),
+      'A punishment may name one board (board, the id of a board of the players); then its demand is an accepted apology, which the code sets whatever you write, and the character cannot post on that board until an apology is accepted or the move runs out. A punishment may instead name no board, with a demand of your choice. A punishment carries no checkAt. A favor bars nothing and names no board: it names a checkAt (a time, ISO 8601, between its go-live and its expiry; left out, it is set to half the favor\'s length) and a demand the character should meet by then, such as posting a number of times on a board; a favor not met at its check is withdrawn, and one met is kept to its expiry. Each character is in at most one group move at a time. Characters who are capped (punished as often as staff may in the window) or held (already in a group move) cannot be chosen: a move that names one is dropped.',
+    ].join('\n'),
+  ];
 }
 
 const oneLineText = (s: string, n: number): string => s.replace(/\s+/g, ' ').trim().slice(0, n);
@@ -270,10 +296,11 @@ function modMemoryText(memory: Memory | null, name: (id: string) => string): str
 function modsText(f: PromptFacts): string {
   const { modBots: m, memoryOpinions, memoryGrudges, memoryWheelhouse, memoryRealWorld } = f.settings;
   if (f.mods.length === 0) return 'You have no Mod Bots on staff. Do not answer with orders or patrols.';
-  const handable = ASKABLE_MOVE_KINDS.filter((k) => k.offices.includes('mod')).map((k) => k.key);
+  // A Mod may confer only a punishment, which the queue holds it to; the wording says so.
+  const handable = ASKABLE_MOVE_KINDS.filter((k) => k.offices.includes('mod')).map((k) => (k.key === 'conferGroup' ? 'conferGroup punishments' : k.key));
   const out = [
     'Your Mod Bots.',
-    `They are your hands on the boards, with less power than you: they act between meetings, in their own judgments, and only with a move you hand them out of your bank (an allowance), of a kind they may make (${handable.join(', ')}; every other kind stays yours), on a board of their beat. A Mod holds at most ${m.allowanceMost} at once, and a rule a Mod sets lasts at most ${m.ruleDaysMost} days. A move you hand away is one you do not make. What a Mod does not spend goes back to your bank before this meeting counts it, and is shown below.`,
+    `They are your hands on the boards, with less power than you: they act between meetings, in their own judgments, and only with a move you hand them out of your bank (an allowance), of a kind they may make (${handable.join(', ')}; every other kind stays yours), on a board of their beat (a Mod may be handed setRule and conferGroup punishments on its beat). A Mod holds at most ${m.allowanceMost} at once, and a rule a Mod sets lasts at most ${m.ruleDaysMost} days. A move you hand away is one you do not make. What a Mod does not spend goes back to your bank before this meeting counts it, and is shown below.`,
     `Give each Mod on staff one order in "orders": {mod (its key), boards (the ids of the boards it watches), order (one line in your voice, at most ${ORDER_MOST} characters; it is read by that Mod's calls until the next meeting and never acted on), allowance (a whole number from 0 to ${m.allowanceMost}), memory (its whole new memory, in the shape of yours, at most ${memoryOpinions} opinions, ${memoryGrudges} grudges, ${memoryWheelhouse} wheelhouse and ${memoryRealWorld} real-world subjects, characters by the ids you are given)}. Every board is on exactly one Mod's beat: a board named in two orders stays with the first, and a board you leave out is given by plain code to the Mod whose beat preferences match it, and otherwise to the Mod with the fewest boards. The allowances together are cut to what your bank holds after your own moves, from the last order backward.`,
     `You may schedule at most ${m.patrolsPerDay} patrols today in "patrols": {mod, at (a time today, ISO 8601)}; the rest are cut from the end.`,
   ];
@@ -410,6 +437,16 @@ export interface RepairContext {
   readonly successorAllowed: boolean;
   /** The keys a nomination may name now, as `meeting_context().successors` lists them (0082): any persona that is not retired or benched, waiting ones included, and not the Boss. */
   readonly successors: ReadonlySet<string>;
+  /**
+   * The groups (`meeting_context().groups`): the conferred catalog by key with its tone, and the characters no move may name now, lowercase ids: `capped`
+   * (staff_punishments at the cap) and `held` (a group move in force on them, or queued and not held). A move naming a key outside the catalog, or either
+   * kind of character, is dropped here, where the queue would refuse it and a refusal there would fail the whole meeting.
+   */
+  readonly groups: {
+    readonly conferred: ReadonlyMap<string, 'punishment' | 'favor'>;
+    readonly capped: ReadonlySet<string>;
+    readonly held: ReadonlySet<string>;
+  };
   /** The moves the Boss inherits and was shown (`meeting_context().inheritanceDue`), when it was shown any: an answer naming another is dropped. Omitted: any move is accepted here and the database holds the line. */
   readonly inheritable?: ReadonlySet<string>;
 }
@@ -469,6 +506,9 @@ export function namedCharacters(raw: unknown): string[] {
     for (const m of a['moves']) {
       const params = record(record(record(m)['demand'])['params']);
       for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) if (role === 'character' && typeof params[name] === 'string') ids.add(params[name] as string);
+      // A group move's character is checked as public too.
+      const named = record(record(m)['params'])['character'];
+      if (record(m)['kind'] === 'conferGroup' && typeof named === 'string') ids.add(named);
     }
   }
   return [...ids].filter((id) => UUID.test(id)).map((id) => id.toLowerCase());
@@ -509,14 +549,57 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   const phaseLeast = s.moveExpiryLeastHours;
   const expiryMost = Math.min(c.phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24;
   const kept: PlannedMove[] = [];
+  const grouped = new Set<string>();
   (a['moves'] as Record<string, unknown>[]).forEach((m, i) => {
     const path = `moves[${i}]`;
     const kind = moveKind(String(m['kind']));
     if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
-    const demand = demandProblems(m['demand'], s.reactionCap);
+    // The kind's shape comes first: a group move's demand depends on its params. A description the Boss gave is bounded and trimmed there; a missing or blank one is
+    // not the Boss's to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
+    const offered = record(m['params']);
+    const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
+    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered);
+    const given = params.ok ? { ...(params.value as Record<string, unknown>) } : {};
+    if (blank) delete given['description'];
+    const extraTrims: Trim[] = [];
+    // A group move (member groups design, section 5). The group is one the instance confers; the character is public now, in no group move and under the cap; a favor bars no
+    // board and carries a check; a punishment carries none. A punishment that bars a board has its demand set by the code to the apology, whatever the model wrote.
+    let forced: PlannedMove['demand'] | null = null;
+    let favor = false;
+    if (params.ok && kind.key === 'conferGroup') {
+      // An optional param left out reads as null; the queue's guard reads a key that is there, so only a given one stays.
+      for (const name of ['board', 'checkAt']) if (given[name] === null || given[name] === undefined) delete given[name];
+      const tone = c.groups.conferred.get(String(given['group']));
+      if (!tone) return drop(`${path}.params.group`, 'conferredGroup');
+      const who = String(given['character']).toLowerCase();
+      if (!UUID.test(who) || !c.isPublic(who)) return drop(`${path}.params.character`, 'publicCharacter');
+      if (c.groups.capped.has(who)) return drop(`${path}.params.character`, 'underPunishmentCap');
+      if (c.groups.held.has(who) || grouped.has(who)) return drop(`${path}.params.character`, 'inNoGroupMove');
+      grouped.add(who);
+      given['character'] = who;
+      favor = tone === 'favor';
+      if (given['board'] !== undefined) {
+        if (favor) {
+          delete given['board'];
+          extraTrims.push({ path: 'params.board', predicate: 'favorBarsNoBoard', before: 1, after: 0 });
+        } else if (!c.boards.has(String(given['board']).toLowerCase())) return drop(`${path}.params.board`, 'isBoard');
+        else {
+          given['board'] = String(given['board']).toLowerCase();
+          forced = { kind: 'apologyAccepted', params: {} };
+        }
+      }
+      if (!favor && given['checkAt'] !== undefined) {
+        delete given['checkAt'];
+        extraTrims.push({ path: 'params.checkAt', predicate: 'punishmentHasNoCheck', before: 1, after: 0 });
+      }
+    }
+    const demand = forced
+      ? ({ ok: true, value: forced, trims: [] } as const)
+      : demandProblems(m['demand'], s.reactionCap);
     if (!demand.ok) return drop(`${path}.${demand.path}`, demand.predicate);
+    if (forced && record(m['demand'])['kind'] !== 'apologyAccepted') trims.push({ path: `${path}.demand`, predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 });
     // A demand only the code sets is never the meeting's to choose.
-    if (demandKind(String((demand.value as { kind: string }).kind))?.offered === false) return drop(`${path}.demand.kind`, `oneOf(${MEETING_DEMAND_KINDS.map((d) => d.key).join(', ')})`);
+    if (!forced && demandKind(String((demand.value as { kind: string }).kind))?.offered === false) return drop(`${path}.demand.kind`, `oneOf(${MEETING_DEMAND_KINDS.map((d) => d.key).join(', ')})`);
     // A demand names things that exist: a board of the meeting's list, a thread the model was given, a character public now.
     const named = (demand.value as { params: Record<string, unknown> }).params;
     for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) {
@@ -525,14 +608,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       const bad = role === 'board' ? (c.boards.has(id) ? null : 'isBoard') : role === 'thread' ? (c.threads.has(id) ? null : 'isThread') : c.isPublic(id) ? null : 'publicCharacter';
       if (bad) return drop(`${path}.demand.params.${name}`, bad);
     }
-    // The kind's shape. A description the Boss gave is bounded and trimmed there; a missing or blank one is not the Boss's
-    // to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
-    const offered = record(m['params']);
-    const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
-    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered);
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);
-    const given = { ...(params.value as Record<string, unknown>) };
-    if (blank) delete given['description'];
     if (kind.key === 'renameBoard') {
       const name = String(given['name']);
       const style = c.system.nameStyle(name);
@@ -563,6 +639,15 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     const hours = m['expires_in_hours'] as number;
     const expires = Math.min(Math.max(hours, phaseLeast), expiryMost);
     if (expires !== hours) trims.push({ path: `${path}.expires_in_hours`, predicate: `between(${phaseLeast}, ${expiryMost})`, before: hours, after: expires });
+    // A favor's check: the time the tick looks to see the demand was met, between its go-live and its expiry. One the model gave outside that, or none, is half the favor's length.
+    if (favor) {
+      const asked = Date.parse(String(given['checkAt']));
+      const half = new Date(goLive + (expires * HOUR) / 2).toISOString();
+      if (given['checkAt'] === undefined || Number.isNaN(asked) || asked <= goLive || asked >= goLive + expires * HOUR) {
+        trims.push({ path: `${path}.params.checkAt`, predicate: 'halfExpiry', before: given['checkAt'] === undefined ? 0 : 1, after: 1 });
+        given['checkAt'] = half;
+      }
+    }
     kept.push({
       kind: kind.key,
       params: given,
@@ -572,7 +657,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       why: m['why'] as string,
       structural: kind.structural,
     });
-    trims.push(...params.trims.map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
+    trims.push(...extraTrims.map((t) => ({ ...t, path: `${path}.${t.path}` })), ...params.trims.map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
   });
   const affordable = Math.max(0, Math.floor(c.bank));
   const moves = cut('moves', kept, affordable);
