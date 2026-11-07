@@ -281,6 +281,11 @@ export interface Fake extends KayfaApi {
     hold(): void;
     /** Deliver the held events, and stop holding; returns how many were held. */
     flush(options?: { reverse?: boolean; twice?: boolean }): number;
+    /**
+     * How many listeners hear `reach` now. A screen subscribes in an effect, which React may run after the screen is already drawn, and an
+     * event sent before it subscribes is lost (as a real Realtime event would be), so a test that sends one waits for the listener it means.
+     */
+    reachListeners(): number;
   };
   readonly seed: Seed;
   /** Always `KAYFA_FAKE_BACKEND`: what the bundle guard finds if the fake ever reaches a production build. */
@@ -3288,6 +3293,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     clock: { now, advance: (ms: number) => { offset += ms; } },
     broadcast: {
       log,
+      reachListeners: () => reachListeners.size,
       hold() { held ??= []; },
       flush(o: { reverse?: boolean; twice?: boolean } = {}) {
         const batch = held ?? [];
