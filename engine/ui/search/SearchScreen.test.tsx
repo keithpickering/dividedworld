@@ -258,6 +258,17 @@ describe('review fixes', () => {
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 1, name: 'Search' }));
   });
 
+  test('Q-3: focus the frame already placed (a move from another page) is left where it is', async () => {
+    const outside = document.createElement('main');
+    outside.tabIndex = -1;
+    document.body.append(outside);
+    outside.focus();
+    open('/search?q=green', { posts: page([hit(1)]) });
+    await screen.findByRole('link', { name: 'Thread 1' });
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
   test('Q-4: the results table is native, with no roles repeated on its parts', async () => {
     open('/search?q=green', { posts: page([hit(1)]) });
     const table = await screen.findByRole('table');
