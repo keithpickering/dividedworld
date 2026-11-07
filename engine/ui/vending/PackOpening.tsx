@@ -481,7 +481,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
         className="kb-opening-flip" data-kb-turned={faceShown ? '' : undefined} style={{ transformStyle: 'preserve-3d' }}
         initial={{ rotateY: flipped.current.has(i) ? 180 : 0 }}
       >
-        <span className="kb-opening-side kb-opening-side-back">{backOf(i, size)}</span>
+        <span className="kb-opening-side">{backOf(i, size)}</span>
         {faceShown && <span className="kb-opening-side kb-opening-side-face"><Postcard as="article" face={c} size={size} aria-label={saidOf(c)} /></span>}
       </motion.div>
     );
@@ -520,7 +520,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
         ) : (
           <motion.div className="kb-opening-pack" aria-hidden="true">
             <motion.div className="kb-opening-pack-in" initial={{ opacity: 0 }}>
-              <PackArt className="kb-opening-pack-body" part="opened" name={name} count={count} style={packStyle} {...(art ? { art } : {})} />
+              <PackArt part="opened" name={name} count={count} style={packStyle} {...(art ? { art } : {})} />
               <motion.div className="kb-opening-pack-top" style={{ transformOrigin: '0% 100%' }}>
                 <PackArt part="top" name={name} count={count} style={packStyle} {...(art ? { art } : {})} />
               </motion.div>
