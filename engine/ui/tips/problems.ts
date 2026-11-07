@@ -1,7 +1,7 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; the front door names only cast
+ * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
  * members, reactions and ranks the instance has, and cards with a `CardUi`. Pure, so the self-test can plant each defect; the build runs it
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
@@ -13,6 +13,8 @@ import { wordsProblems } from '../cards/lens-words.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
+/** The most characters a footer badge's two words hold between them: 80 pixels of the pixel face at 8px. */
+export const BADGE_MAX = 12;
 
 export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
@@ -23,6 +25,17 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
       marquees.forEach((m: unknown, i) => {
         if (typeof m !== 'string' || m.trim() === '') out.push(`the marquee ${i + 1} is empty`);
         else if (m.length > MARQUEE_MAX) out.push(`the marquee "${m}" is ${m.length} characters, over the ${MARQUEE_MAX} the sign holds`);
+      });
+    }
+  }
+  const badges: unknown = ui.copy?.badges;
+  if (badges !== undefined) {
+    if (!Array.isArray(badges) || badges.length === 0) out.push('the copy has a badges list with nothing in it');
+    else {
+      badges.forEach((b: unknown, i) => {
+        const pair = Array.isArray(b) && b.length === 2 && b.every((w: unknown) => typeof w === 'string' && w.trim() !== '') ? (b as [string, string]) : null;
+        if (pair === null) out.push(`the badge ${i + 1} is not a pair of words`);
+        else if (`${pair[0]} ${pair[1]}`.length > BADGE_MAX) out.push(`the badge "${pair[0]} ${pair[1]}" is ${`${pair[0]} ${pair[1]}`.length} characters, over the ${BADGE_MAX} an 80 by 15 badge holds`);
       });
     }
   }

@@ -124,3 +124,34 @@ describe('the index drawn from its document (the forum-load plan, Task 13)', () 
     expect(read).toEqual([]);
   });
 });
+
+describe('the index in the period table (board-look plan, Task 3)', () => {
+  test('the board table draws no icon column and no category row, and its heads are the three words', async () => {
+    renderInWorld(<LoadedIndex />, { seed: (f) => { f.signInAs(f.seed.account('me')); } });
+    const table = (await screen.findByRole('link', { name: 'General' })).closest('table')!;
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Board', 'Threads', 'Last post']);
+    expect(table.querySelector('svg, img')).toBeNull();
+    for (const row of within(table).getAllByRole('row').slice(1)) expect(row.querySelectorAll('td')).toHaveLength(3);
+    expect(table.querySelector('td[colspan], th[colspan]')).toBeNull();
+  });
+
+  test('Who is online\'s heading is an h2, and a section\'s heading is the one heading of its cell', async () => {
+    renderInWorld(<LoadedIndex />, { seed: (f) => { f.signInAs(f.seed.account('me')); } });
+    await screen.findByRole('link', { name: 'General' });
+    expect(await screen.findByRole('heading', { level: 2, name: 'Who is online' })).toBeInTheDocument();
+  });
+
+  test('a last post\'s avatar and name are one unit: a .kb-who holding the mini avatar and the name\'s link', async () => {
+    renderInWorld(<LoadedIndex />, {
+      seed: (f) => {
+        const spritey = f.seed.character(f.seed.account('other'), 'Spritey', 'face', { at: T0 });
+        f.seed.thread('general', spritey, 'One', 'x', { at: T0 });
+        f.signInAs(f.seed.account('me'));
+      },
+    });
+    const name = await screen.findByRole('link', { name: 'Spritey' });
+    const unit = name.parentElement!;
+    expect(unit).toHaveClass('kb-who');
+    expect(unit.querySelector('.kb-mini')).not.toBeNull();
+  });
+});

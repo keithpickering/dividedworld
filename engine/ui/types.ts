@@ -82,6 +82,13 @@ export interface UiCopy {
    */
   readonly marquees?: readonly string[];
   /**
+   * The footer's 80 by 15 badges, each a pair of short words (the first on the dark half, the second on the light), drawn in the
+   * instance's own pixel face (`--kb-font-badge`) and hidden from assistive tech: decoration the instance may joke in, never a claim.
+   * Absent, the footer holds the credit alone. A pair is at most 12 characters in all, which is what 80 pixels hold; `instanceUiProblems`
+   * refuses an empty list, a pair that is not two words and a pair too wide.
+   */
+  readonly badges?: readonly (readonly [string, string])[];
+  /**
    * How a card's effect stays under reduced motion, in Settings' Motion sentence after "A card's
    * effect stays: ", naming the instance's own card the way its players know it (the engine names
    * none), such as "a card that holds you in place still does, only instantly."

@@ -62,7 +62,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
     },
-    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
+    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
     settings: { walletCap: 600, registrationMode },
   } as unknown as Kayfa;
   const view = render(
@@ -138,6 +138,30 @@ describe('the banner: the board\'s own', () => {
     await userEvent.click(boards);
     expect(boards).toHaveAttribute('aria-expanded', 'true');
     expect(within(await hud()).getByRole('button', { name: 'Menu' })).not.toBe(boards);
+  });
+});
+
+describe('the footer ends every board page', () => {
+  test('says "Powered by KayfaBB", then the instance\'s badges in its own words, hidden from assistive tech, and links nothing', () => {
+    setup();
+    const foot = screen.getByRole('contentinfo');
+    expect(foot).toHaveTextContent('Powered by KayfaBB');
+    expect(foot.querySelectorAll('a')).toHaveLength(0);
+    const badges = foot.querySelector('.kb-badges')!;
+    expect(badges).toHaveAttribute('aria-hidden', 'true');
+    expect([...badges.querySelectorAll('.kb-badge')].map((b) => [...b.children].map((c) => c.textContent))).toEqual([['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']]);
+    expect(screen.getByRole('main')).not.toContainElement(foot);
+    expect(screen.getByRole('main').compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+  test('an instance with no badges has the credit alone', () => {
+    setup();
+    cleanup();
+    const copy = { siteName: 'X', siteTagline: 'x', shopName: 'S' };
+    render(
+      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
+    );
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Powered by KayfaBB');
+    expect(document.querySelector('.kb-badges')).toBeNull();
   });
 });
 

@@ -50,7 +50,7 @@
   --kb-size-fine: 0.78125rem;
   --kb-size-heading: 1.171875rem;
   --kb-size-title: 1.40625rem;
-  --kb-size-logo: 1.5625rem;
+  --kb-size-logo: 1.9375rem;
   --kb-line: 1.45;
   /*
    * How wide the board's own pages may be (the banner, the index, the boards, the threads, the profile,
@@ -136,6 +136,14 @@
   /* The page's scrollbar (scrollbar-color): the browser's own. */
   --kb-scrollbar-thumb: auto;
   --kb-scrollbar-track: auto;
+  /* The read-only tag beside a board's name, and the mini avatar's ground and edge: the plain board's, until a theme gives them. */
+  --kb-tag-bg: var(--kb-bg);
+  --kb-mini-bg: var(--kb-bg);
+  --kb-mini-rule: var(--kb-rule);
+  /* The footer badge's type size: a pixel face is cut for 8px, and the badge's box (frame.css) is in rem so the pair grow together with the text size. */
+  --kb-size-badge: 0.5rem;
+  /* The footer badges' pixel face: the instance serves it (its glass fonts) and names it here; until it does, the board's mono. */
+  --kb-font-badge: var(--kb-font-mono);
 }
 
 @media (prefers-color-scheme: dark) {

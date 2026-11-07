@@ -35,7 +35,7 @@ body {
 }
 
 * {
-  scrollbar-color: var(--kb-muted) var(--kb-bg);
+  scrollbar-color: var(--kb-scrollbar-thumb) var(--kb-scrollbar-track);
 }
 
 p {
@@ -112,23 +112,56 @@ h1 {
   font-size: var(--kb-size-small);
 }
 
-/* The classic table: 1px rules on every cell. */
+/*
+ * The period table (the board-look design): drawn as `cellspacing="1"` was, a 1px gap between cells that is the grid, the table's
+ * own ground, with its outer edge the frame. A cell has no border of its own; the head is a band, the rows alternate, a count
+ * cell and a section heading have grounds of their own. Every ground is a token whose default is the page's, so a theme that sets
+ * none draws the black-and-white board's 1px rules (e2e/table-defaults.spec.ts).
+ */
 .kb-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 1px;
+  background: var(--kb-grid);
+  border: 1px solid var(--kb-frame);
 }
 
 .kb-table th {
   font: bold var(--kb-size-small) / 1.3 var(--kb-font-mono);
   text-align: left;
-  border: 1px solid var(--kb-rule);
-  padding: 0.3em 0.6em;
+  background: var(--kb-head-bg);
+  color: var(--kb-head-fg);
+  text-shadow: var(--kb-head-shadow);
+  padding: 0.45em 0.75em;
 }
 
 .kb-table td {
-  border: 1px solid var(--kb-rule);
-  padding: 0.4em 0.6em;
+  background: var(--kb-row-1);
+  padding: 0.55em 0.65em;
   vertical-align: top;
+}
+
+.kb-table :where(tbody > tr:nth-child(even)) > td {
+  background: var(--kb-row-2);
+}
+
+/* A count (threads, replies, views): its own ground, figures in columns. */
+.kb-table td.kb-num {
+  background: var(--kb-row-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A section's heading (Who is online, Users browsing): an h2 in a cell on the light band. */
+.kb-table td.kb-bar {
+  background: var(--kb-bar-bg);
+  color: var(--kb-bar-fg);
+  text-shadow: var(--kb-bar-shadow);
+  font: bold var(--kb-size-body) / 1.3 var(--kb-font-mono);
+}
+
+.kb-table td.kb-bar > h2 {
+  margin: 0;
+  font: inherit;
 }
 
 .kb-box {

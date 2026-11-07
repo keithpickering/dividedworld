@@ -209,7 +209,8 @@
     { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-Bold.woff2", "weight": 700, "style": "normal", "ink": 0.9 },
     { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-ExtraBold.woff2", "weight": 800, "style": "normal", "ink": 0.91 },
     { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-BoldItalic.woff2", "weight": 700, "style": "italic", "ink": 0.9 },
-    { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-ExtraBoldItalic.woff2", "weight": 800, "style": "italic", "ink": 0.91 }
+    { "family": "Barlow Condensed", "file": "fonts/BarlowCondensed-ExtraBoldItalic.woff2", "weight": 800, "style": "italic", "ink": 0.91 },
+    { "family": "Silkscreen", "file": "fonts/Silkscreen-Regular.woff2", "weight": 400, "style": "normal", "ink": 0.75 }
   ],
   "classes": {
     "face": { "fill": "#3db8ff", "ink": "#03141a", "large": "#8fd6ff" },

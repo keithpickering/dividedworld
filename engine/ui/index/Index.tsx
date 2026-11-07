@@ -9,7 +9,7 @@
 import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, IndexPage } from '../data/api.ts';
-import { Ago, Mini } from '../mini.tsx';
+import { Ago, Who } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { spanWords } from '../characters/format.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -50,12 +50,12 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                   <span className="kb-small kb-muted">{b.description}</span>
                 </td>
                 <td role="cell" className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit"> threads</span></td>
-                <td role="cell" className="kb-board-last kb-small">
-                  {b.lastAt === null ? <span className="kb-muted">None yet</span> : (
+                <td role="cell" className="kb-board-last">
+                  {b.lastAt === null ? <span>None yet</span> : (
                     <>
                       <span className="kb-board-last-label">last: </span>
                       {b.lastCharacter
-                        ? <><Mini character={who} name={who?.name ?? 'A'} /><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></>
+                        ? <Who character={who} name={who?.name ?? 'A'}><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></Who>
                         : <span className="kb-system-name">The System</span>}
                       <br />
                       {b.lastThread

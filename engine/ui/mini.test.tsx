@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { Ago, ago, useSignedIn } from './mini.tsx';
+import { Ago, ago, useSignedIn, Who } from './mini.tsx';
 import { useKayfa } from './context.tsx';
 import { renderInWorld } from './test-world.tsx';
 
@@ -36,4 +36,14 @@ test('useSignedIn answers signed out when the session cannot be read, so the sig
   }
   renderInWorld(<Probe />, { seed: (fake) => { fake.session = () => Promise.reject(new Error('offline')); } });
   expect(await screen.findByText('signed out')).toBeInTheDocument();
+});
+
+test('Who is one unit: the mini avatar (hidden from assistive tech) and the name\'s own words, in one inline-flex box', () => {
+  render(<Who character={undefined} name="Spritey"><a href="/c/s">Spritey</a></Who>);
+  const link = screen.getByRole('link', { name: 'Spritey' });
+  const unit = link.parentElement!;
+  expect(unit).toHaveClass('kb-who');
+  expect(unit.firstElementChild).toHaveClass('kb-mini');
+  expect(unit.firstElementChild).toHaveAttribute('aria-hidden', 'true');
+  expect(unit.firstElementChild).toHaveTextContent('S');
 });

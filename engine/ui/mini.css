@@ -6,9 +6,37 @@
   height: 1.5em;
   vertical-align: middle;
   margin-right: 0.35em;
-  border: 1px solid var(--kb-rule);
+  border: 1px solid var(--kb-mini-rule);
+  background: var(--kb-mini-bg);
   overflow: hidden;
   line-height: 1;
+}
+
+/*
+ * A mini avatar and its name are one unit: an inline flex box, the avatar centered on the name's capitals and not on its line box.
+ * Verdana's line box holds more room under its capitals than over them (about 2px at the board's 13.75px), so the avatar is lifted
+ * by the measure below, in em so it follows the text size; e2e/boards/2026-11-06-board-look/01-index.ts holds the place on the
+ * loaded Verdana.
+ */
+.kb-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+/* The name's link is a box of its own beside the avatar, so it is a target of 24px at the least (WCAG 2.2, 2.5.8). */
+.kb-who > a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+
+.kb-who > .kb-mini {
+  width: 1.27em;
+  height: 1.27em;
+  margin-right: 0;
+  position: relative;
+  top: var(--kb-who-lift, -0.145em);
 }
 
 .kb-mini img {

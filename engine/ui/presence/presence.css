@@ -1,20 +1,11 @@
-/* The presence boxes (mock docs/research/2026-10-31-the-staff/mock-p1-presence.html): a 1px rule and the system face's header. */
+/* The presence boxes (mock docs/research/2026-10-31-the-staff/mock-p1-presence.html), each a period table: the band's heading, then the names. */
 .kb-presence {
-  border: 1px solid var(--kb-rule);
   margin-block-start: 0.8rem;
   overflow-wrap: anywhere;
 }
 
-.kb-presence-head {
-  margin: 0;
-  padding: 0.2em 1%;
-  border-bottom: 1px solid var(--kb-rule);
-  font: bold var(--kb-size-small) / 1.4 var(--kb-font-mono);
-}
-
 .kb-presence-names {
   margin: 0;
-  padding: 0.35em 1%;
 }
 
 .kb-presence-names a {

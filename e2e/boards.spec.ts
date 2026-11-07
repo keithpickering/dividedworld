@@ -10,7 +10,7 @@ import { pressControls, routeBoardFonts, settledSnapshot, snapshotPage, standInF
 /**
  * The board match, end to end: each board the two-worlds session drew (docs/research/2026-10-29-two-worlds/), the
  * alerts session (docs/research/2026-11-02-alerts/) and the later sessions (docs/research/2026-11-04-booster-packs/,
- * 2026-11-04-cosmetics/, 2026-11-05-card-template/ and 2026-11-05-backfill/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
+ * 2026-11-04-cosmetics/, 2026-11-05-card-template/, 2026-11-05-backfill/ and 2026-11-06-board-look/) opened beside the app at the same size, and the manifest's landmarks compared (e2e/board-match.ts).
  * The list of boards is the folder's, so a board with no manifest fails by name unless PENDING says
  * which plan, and which task of it, builds it; a board in PENDING that has a manifest fails too, so the
  * map cannot go stale. The task that builds a board takes it out of PENDING in the same change that
@@ -37,7 +37,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
  * The boards' folders, in the order the sessions drew them. The two-worlds boards are a record and are not edited; the alerts
  * design's (docs/plans/2026-11-02-alerts-design.md) are drawn over them and revise some of what they show, which the old boards'
  * manifests say where they compare it. The folders after them are the booster packs, cosmetics and card template designs (built later,
- * so every board of theirs is pending) and the backfill's. A board in the first BARE_FOLDERS folders has its file name as its id, so no
+ * so every board of theirs is pending), the backfill's and the board look's (each of whose boards is pending until the task that builds it writes its manifest; a dark board has none, since it is compared on colors only by web/contrast.test.tsx). A board in the first BARE_FOLDERS folders has its file name as its id, so no
  * two of them may hold the same one (checked below); a board in a later folder is <folder>/<file name>, since two of them draw a
  * 05-admin.html. A `.src.html` is a generator's source, not a board.
  */
@@ -48,6 +48,7 @@ const BOARD_FOLDERS = [
   path.join(here, '..', 'docs', 'research', '2026-11-04-cosmetics'),
   path.join(here, '..', 'docs', 'research', '2026-11-05-card-template'),
   path.join(here, '..', 'docs', 'research', '2026-11-05-backfill'),
+  path.join(here, '..', 'docs', 'research', '2026-11-06-board-look'),
 ];
 const BARE_FOLDERS = 2;
 const MANIFESTS = path.join(here, 'boards');
@@ -70,6 +71,36 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-04-cosmetics/05-admin': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
   '2026-11-05-backfill/34-vending-info': 'docs/plans/2026-11-05-card-template-plan.md (the card info, backfill Task 11)',
+  '2026-11-06-board-look/00-look': 'docs/plans/2026-11-06-board-look-plan.md (Task 17, the tribute themes: round one switchable board, the tribute looks reference, never a manifest)',
+  '2026-11-06-board-look/01-index-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 3, compared on colors only by web/contrast.test.tsx, never a manifest)',
+  '2026-11-06-board-look/02-board': 'docs/plans/2026-11-06-board-look-plan.md (Task 5)',
+  '2026-11-06-board-look/02-board-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 5, colors only)',
+  '2026-11-06-board-look/03-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 8)',
+  '2026-11-06-board-look/04-thread': 'docs/plans/2026-11-06-board-look-plan.md (Task 6)',
+  '2026-11-06-board-look/04-thread-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 6, colors only)',
+  '2026-11-06-board-look/05-reply': 'docs/plans/2026-11-06-board-look-plan.md (Task 6)',
+  '2026-11-06-board-look/05-reply-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 6, colors only)',
+  '2026-11-06-board-look/06-new-thread': 'docs/plans/2026-11-06-board-look-plan.md (Task 7)',
+  '2026-11-06-board-look/06-new-thread-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 7, colors only)',
+  '2026-11-06-board-look/07-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 8)',
+  '2026-11-06-board-look/08-profile': 'docs/plans/2026-11-06-board-look-plan.md (Task 9)',
+  '2026-11-06-board-look/08-profile-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 9, colors only)',
+  '2026-11-06-board-look/09-record': 'docs/plans/2026-11-06-board-look-plan.md (Task 9)',
+  '2026-11-06-board-look/09-record-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 9, colors only)',
+  '2026-11-06-board-look/10-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 8)',
+  '2026-11-06-board-look/11-move-notice': 'docs/plans/2026-11-06-board-look-plan.md (Task 10)',
+  '2026-11-06-board-look/11-move-notice-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 10, colors only)',
+  '2026-11-06-board-look/14-staff': 'docs/plans/2026-11-06-board-look-plan.md (Task 10)',
+  '2026-11-06-board-look/14-staff-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 10, colors only)',
+  '2026-11-06-board-look/15-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 10)',
+  '2026-11-06-board-look/16-not-found': 'docs/plans/2026-11-06-board-look-plan.md (Task 13)',
+  '2026-11-06-board-look/16-not-found-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 13, colors only)',
+  '2026-11-06-board-look/17-cannot-display': 'docs/plans/2026-11-06-board-look-plan.md (Task 13)',
+  '2026-11-06-board-look/17-cannot-display-dark': 'docs/plans/2026-11-06-board-look-plan.md (Task 13, colors only)',
+  '2026-11-06-board-look/18-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 13)',
+  '2026-11-06-board-look/19-theme-picker': 'docs/plans/2026-11-06-board-look-plan.md (Task 16)',
+  '2026-11-06-board-look/20-theme-picker-one-mode': 'docs/plans/2026-11-06-board-look-plan.md (Task 16)',
+  '2026-11-06-board-look/21-theme-picker-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 16)',
 };
 
 /** Where each board's file is, by its id; a bare id two of the first folders share is a problem the first test reports. */

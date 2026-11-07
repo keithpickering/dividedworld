@@ -93,8 +93,10 @@
   --kb-badge-a-fg: #fff;
   --kb-badge-b: #e8e8e8;
   --kb-badge-b-fg: #000;
-  --kb-scrollbar-thumb: auto;
-  --kb-scrollbar-track: auto;
+  --kb-tag-bg: #fff;
+  --kb-mini-bg: #fff;
+  --kb-mini-rule: #000;
+  --kb-font-badge: Silkscreen, "Courier New", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -160,8 +162,9 @@
     --kb-badge-a-fg: #000;
     --kb-badge-b: #2a2a2a;
     --kb-badge-b-fg: #e8e8e8;
-    --kb-scrollbar-thumb: auto;
-    --kb-scrollbar-track: auto;
+    --kb-tag-bg: #1a1a1a;
+    --kb-mini-bg: #1a1a1a;
+    --kb-mini-rule: #e8e8e8;
   }
 }
 
@@ -227,6 +230,7 @@
   --kb-badge-a-fg: #000;
   --kb-badge-b: #2a2a2a;
   --kb-badge-b-fg: #e8e8e8;
-  --kb-scrollbar-thumb: auto;
-  --kb-scrollbar-track: auto;
+  --kb-tag-bg: #1a1a1a;
+  --kb-mini-bg: #1a1a1a;
+  --kb-mini-rule: #e8e8e8;
 }

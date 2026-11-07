@@ -30,7 +30,8 @@ const manifest: BoardManifest = {
   press: [{ role: 'button', name: 'Hand, 3 postcards' }],
   landmarks: [
     /* The type scale (the glass polish, design section 7) sets the button's words at 15px where the board draws 12px, so it is 10.4px wider and, held to the right edge, 18.2px further left. */
-    { id: 'boards', role: 'button', name: 'Boards', buildSize: 15, buildShift: { x: -18.2, width: 10.4 } },
+    /* The banner stands 18px lower (its top margin, the board look's Task 3) and 1px more for its frame. */
+    { id: 'boards', role: 'button', name: 'Boards', buildSize: 15, buildShift: { x: -18.2, y: 19, width: 10.4 } },
     /* The sheet's box, its heading with the count, and its close button. */
     { id: 'hand', role: 'region', name: 'Your hand', type: false },
     { id: 'hand-head', role: 'heading', name: 'Hand · 3', within: 'hand' },

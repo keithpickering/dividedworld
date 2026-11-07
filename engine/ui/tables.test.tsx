@@ -37,3 +37,54 @@ describe('the log table', () => {
     }
   });
 });
+
+describe('the period table (board-look plan, Task 3)', () => {
+  const base = css('engine/ui/base.css');
+  const frame = css('engine/ui/frame/frame.css');
+  const tokens = css('engine/ui/tokens.css');
+  test('a table is drawn as cellspacing="1" was: separate borders, a 1px gap that is the grid, and an edge that is the frame', () => {
+    const own = rules(base, '.kb-table').join(';');
+    expect(own).toMatch(/border-collapse:\s*separate/);
+    expect(own).toMatch(/border-spacing:\s*1px/);
+    expect(own).toMatch(/background:\s*var\(--kb-grid\)/);
+    expect(own).toMatch(/border:\s*1px solid var\(--kb-frame\)/);
+  });
+  test('the heads, the alternating rows and the count cell read their tokens, and a cell has no border of its own', () => {
+    expect(rules(base, '.kb-table th').join(';')).toMatch(/background:\s*var\(--kb-head-bg\)[^]*color:\s*var\(--kb-head-fg\)[^]*text-shadow:\s*var\(--kb-head-shadow\)/);
+    const td = rules(base, '.kb-table td').join(';');
+    expect(td).toMatch(/background:\s*var\(--kb-row-1\)/);
+    expect(td).not.toMatch(/border:/);
+    expect(rules(base, '.kb-table th').join(';')).not.toMatch(/(^|;)\s*border:/);
+    expect(rules(base, '.kb-table :where(tbody > tr:nth-child(even)) > td').join(';')).toMatch(/background:\s*var\(--kb-row-2\)/);
+    expect(rules(base, '.kb-table td.kb-num').join(';')).toMatch(/background:\s*var\(--kb-row-3\)/);
+    expect(rules(base, '.kb-table td.kb-bar').join(';')).toMatch(/background:\s*var\(--kb-bar-bg\)[^]*color:\s*var\(--kb-bar-fg\)[^]*text-shadow:\s*var\(--kb-bar-shadow\)/);
+  });
+  test('selection, the focus ring and the scrollbar read their tokens', () => {
+    expect(rules(base, '::selection').join(';')).toMatch(/--kb-selection-bg/);
+    expect(rules(base, ':focus-visible').join(';')).toMatch(/outline:\s*2px solid var\(--kb-focus\)/);
+    expect(rules(base, '*').join(';')).toMatch(/scrollbar-color:\s*var\(--kb-scrollbar-thumb\) var\(--kb-scrollbar-track\)/);
+  });
+  test('the banner and the boards\' bar are one block on their tokens', () => {
+    expect(rules(frame, '.kb-banner').join(';')).toMatch(/background:\s*var\(--kb-banner-bg\)/);
+    expect(rules(frame, '.kb-logo').join(';')).toMatch(/color:\s*var\(--kb-logo-fg\)[^]*text-shadow:\s*var\(--kb-logo-shadow\)/);
+    expect(rules(frame, '.kb-nav').join(';')).toMatch(/background:\s*var\(--kb-nav-bg\)/);
+    expect(rules(frame, '.kb-nav a:focus-visible').join(';')).toMatch(/outline-color:\s*var\(--kb-nav-fg\)/);
+    expect(rules(frame, '.kb-nav a:visited').join(';')).toMatch(/color:\s*var\(--kb-nav-fg\)/);
+  });
+  test('the badges are 80 by 15 at 100% text, in rem, on the badge tokens, in the instance\'s own face', () => {
+    const badge = rules(frame, '.kb-badge').join(';');
+    expect(badge).toMatch(/width:\s*5rem/);
+    expect(badge).toMatch(/height:\s*0\.9375rem/);
+    expect(badge).toMatch(/font:[^;]*var\(--kb-font-badge\)/);
+    expect(rules(frame, '.kb-badge > :first-child').join(';')).toMatch(/background:\s*var\(--kb-badge-a\)[^]*color:\s*var\(--kb-badge-a-fg\)/);
+    expect(rules(frame, '.kb-badge > :last-child').join(';')).toMatch(/background:\s*var\(--kb-badge-b\)[^]*color:\s*var\(--kb-badge-b-fg\)/);
+    expect(base + frame).not.toMatch(/Silkscreen/);
+  });
+  test('the tag and the mini avatar have tokens whose defaults keep today\'s look', () => {
+    expect(tokens).toMatch(/--kb-tag-bg:\s*var\(--kb-bg\)/);
+    expect(tokens).toMatch(/--kb-mini-bg:\s*var\(--kb-bg\)/);
+    expect(tokens).toMatch(/--kb-mini-rule:\s*var\(--kb-rule\)/);
+    expect(tokens).toMatch(/--kb-font-badge:\s*var\(--kb-font-mono\)/);
+    expect(rules(css('engine/ui/mini.css'), '.kb-mini').join(';')).toMatch(/border:\s*1px solid var\(--kb-mini-rule\)/);
+  });
+});

@@ -3,7 +3,7 @@
  * "2 min ago" with its exact time on hover, and the "sign in" prompt a signed-out visitor sees
  * instead of boards (the API needs a session for reads).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Character, KayfaApi } from './data/api.ts';
 import { Link } from './router.tsx';
 import { usePlayer } from './player.tsx';
@@ -17,6 +17,14 @@ export function Mini({ character, name }: { readonly character: Character | unde
       {character?.avatarSquare ? <img src={character.avatarSquare} alt="" loading="lazy" /> : <span className="kb-mini-none">{name.slice(0, 1)}</span>}
     </span>
   );
+}
+
+/**
+ * A mini avatar and its name, one unit: an inline flex box that centers the avatar on the name's capitals (mini.css measures the
+ * nudge on Verdana's metrics), so the two never part across a line. The name is the caller's own link or words.
+ */
+export function Who({ character, name, children }: { readonly character: Character | undefined; readonly name: string; readonly children: ReactNode }) {
+  return <span className="kb-who"><Mini character={character} name={name} />{children}</span>;
 }
 
 /** "just now", "2 min ago", "3 hr ago", "yesterday", "5 days ago", then a date. */

@@ -69,7 +69,9 @@ test('the check finds a link with outline: none, and only that link', async ({ p
 test('the check finds an outline that is transparent or the color of the page', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline-color: transparent !important; } .kb-nav a[href="/"] { outline-color: rgb(255, 255, 255) !important; }' });
+  /* The color of the page is the theme's own (the Silver house's gray, not white), read where the check reads it. */
+  const ground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.addStyleTag({ content: `a[href="/b/the-system"] { outline-color: transparent !important; } .kb-nav a[href="/"] { outline-color: ${ground} !important; }` });
   const bare = await controlsWithoutFocusIndicator(page);
   expect(bare.some((b) => b.includes('The System'))).toBe(true);
   expect(bare.some((b) => b.includes('Index'))).toBe(true);

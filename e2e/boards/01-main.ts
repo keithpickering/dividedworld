@@ -58,14 +58,15 @@ function post(n: number, index: number, author: string, pips: number, rank: stri
    * rank under the author name stands 10.5px lower in the post, and #41's permalink, which sits below the nav, crumb, title and
    * pager rows the scale made taller, 38.8px lower on the page, as measured; and 11.1px more (49.9) since the thread head always reserves
    * the 2.25rem meta tile where its title was 27px tall (9px), and the date bar is 29.6px where it was 25.4px, its permalink centered in it
-   * (half of the 4.2px growth, 2.1px) (docs/plans/2026-11-06-meta-acts-plan.md, Task 2).
+   * (half of the 4.2px growth, 2.1px) (docs/plans/2026-11-06-meta-acts-plan.md, Task 2). The board look's Task 3 moved it 40.8px lower again (the banner's top margin and block, the bar's height and its margin: 90.7), and its type is not compared: its color is the house theme's muted (#454545, the Silver theme's) where this board draws #555;
+   * Task 6 of the board-look plan moves this landmark to 04-thread.
    */
   return [
     { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box: 'none', buildSize: POST_SIZE },
     { id: `${id}-author`, role: 'link', name: author, within: id, origin: placed, box: inside, buildSize: POST_SIZE },
     /* The rank's name is the postbit's (web Task 5), which says the rank's title where the board says pips. */
     { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, origin: placed, box: inside, type: false, buildShift: { y: 10.5 } },
-    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height', buildSize: POST_LINE_SIZE, buildShift: { y: 49.9 } },
+    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height', type: false, buildShift: { y: 90.7 } },
   ];
 }
 
@@ -91,10 +92,16 @@ const manifest: BoardManifest = {
      * So the links row is compared by its y and height, Index by its y and height too (its x is the column's edge), and the links
      * after it from Index, where they sit in the row.
      */
-    { id: 'nav', role: 'navigation', name: 'Main', box: 'height', buildSize: SMALL_SIZE },
-    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', buildSize: SMALL_SIZE },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', buildSize: SMALL_SIZE, buildShift: { x: 12.4 } },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', buildSize: SMALL_SIZE, buildShift: { x: 28.2 } },
+    /*
+     * The boards' bar is the Silver house theme's (the board-look plan, Task 3): white words on a dark band under the banner's block, where the
+     * black-and-white board draws black on white, so its type is not compared here (its color is the theme's, held by 01-index of
+     * docs/research/2026-11-06-board-look/), and it stands 33px lower (the banner's top margin, its 16px padding, the 31px name and the
+     * frame, 9.4px more in the bar's own height).
+     */
+    { id: 'nav', role: 'navigation', name: 'Main', box: 'height', type: false, buildShift: { y: 33, height: 9.4 } },
+    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36 } },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 12.4 } },
+    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 28.2 } },
 
     /*
      * The breadcrumb over the thread's head, by its type: the board's words lead from the instance

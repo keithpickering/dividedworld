@@ -24,9 +24,9 @@ const looks = (): Record<string, unknown> => ({
   heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.' },
 });
 const copy = { siteName: 'S', siteTagline: 't', shopName: 'Shop', reducedMotionCard: 'x' };
-const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown) => ({
+const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown, badges?: unknown) => ({
   onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
-  copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }) },
+  copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }), ...(badges === undefined ? {} : { badges: badges as InstanceUi['copy']['badges'] }) },
 });
 const good = { tips: tips(), letter: 'Hi.' };
 const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }) => void) => {
@@ -138,6 +138,15 @@ describe('instanceUiProblems', () => {
   test('passes a marquee list of names within 20 characters, and no list at all', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['AURA-MATIC 3000', 'NO FOOD, ONLY CARDS']), rules), []);
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(20)]), rules), []);
+  });
+  test('passes badges of two short words each, and none at all', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', 'On'], ['Kilter', 'Off']]), rules), []);
+  });
+  test('refuses an empty badge list, a badge that is not a pair of words, and one too wide for 80 pixels', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, []), rules), ['the copy has a badges list with nothing in it']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game']]), rules), ['the badge 1 is not a pair of words']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', ' ']]), rules), ['the badge 1 is not a pair of words']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Masks', 'On'], ['Kilterrr', 'Offffff']]), rules), ['the badge "Kilterrr Offffff" is 16 characters, over the 12 an 80 by 15 badge holds']);
   });
   test('refuses an empty marquee list', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), []), rules), ['the copy has a marquees list with nothing in it']);
