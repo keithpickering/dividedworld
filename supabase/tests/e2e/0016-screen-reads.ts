@@ -31,7 +31,7 @@ const lit = (xs: readonly string[]) => `array[${xs.map((x) => `'${x.replaceAll("
  */
 const NOT_SCREEN_FUNCTIONS = ['standings_page'];
 
-/** The search reads (0112) are screen functions without the `_page` name: one call, a SQL-standard body, an invoker, stable, reading what a screen may. */
+/** The search reads (0113) are screen functions without the `_page` name: one call, a SQL-standard body, an invoker, stable, reading what a screen may. */
 export const SEARCH_READS = ['search_posts', 'search_threads', 'search_suggest'];
 
 /** One line per fault, `function: predicate`, over every screen function visible to the session `db` runs in. */

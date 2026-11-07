@@ -1,4 +1,4 @@
--- The search index (supabase/migrations/0112_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
+-- The search index (supabase/migrations/0113_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
 --
 -- 1. A post, a spin and a Mod Bot's post each get a post_search row; a card play, a tally, a reveal and an announce get none.
 -- 2. A thread's first post carries its thread's title at weight A, so a title and a post match in one index; a later post does not.

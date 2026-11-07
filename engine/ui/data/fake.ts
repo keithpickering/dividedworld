@@ -1619,7 +1619,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /*
    * search_posts, search_threads and search_suggest over the fake's own Acts, on a small scale and with a plain word match: a whole word,
    * case and accents apart, every word needed and `-word` leaving a post out (no stemming, phrases or `or`). The caps, the pool, the
-   * cursor and the ordering are the SQL's (supabase/migrations/0112_search.sql); only the matching is cruder.
+   * cursor and the ordering are the SQL's (supabase/migrations/0113_search.sql); only the matching is cruder.
    */
   const foldText = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
   const wordsOf = (s: string): string[] => foldText(s).match(/[\p{L}\p{N}]+/gu) ?? [];

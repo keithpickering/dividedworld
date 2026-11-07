@@ -7,7 +7,7 @@
 --                        and separators are only a word boundary to the index, so the two are held equal after each collapses its whitespace.
 --
 -- The two walks are one list in two languages ("Two lists that must agree are one list"): engine/bbcode/plain.fixtures.ts is read by engine/bbcode/plain.test.ts against
--- visibleText(parse(body)), and tools/bbcode-plain.mjs makes supabase/tests/0115-bbcode-plain.sql from it, which asserts bbcode_plain on every fixture;
+-- visibleText(parse(body)), and tools/bbcode-plain.mjs makes supabase/tests/0116-bbcode-plain.sql from it, which asserts bbcode_plain on every fixture;
 -- tools/check-bbcode-plain.mjs holds that file to exactly what the fixtures make, and tools/test-bbcode-plain.mjs drives the check red.
 --
 -- How it differs from the parser, on purpose. The parser builds a tree and the walk reads it; this keeps an explicit stack (arrays, never recursion, so 10,000 nested tags
@@ -15,7 +15,7 @@
 -- strike, color or size tag leaves its words where they are, a quote or a link with a target cuts back to where it began and leaves one separator, a list leaves a separator before
 -- and after and one before each item, an image and code block leave a separator. A bare [url] is a link only when it closes around nothing but one good address, and otherwise
 -- its tag, its words and its closer stay as text. The pieces are joined once at the end, so no step copies what has been written so far.
--- The text is cut into tokens once (a tag is `[`, no bracket, `]`; the rest is text), so the work grows with the post (supabase/tests/0116-bbcode-plain-scale.sql holds that to a
+-- The text is cut into tokens once (a tag is `[`, no bracket, `]`; the rest is text), so the work grows with the post (supabase/tests/0117-bbcode-plain-scale.sql holds that to a
 -- ratio on adversarial posts), and the next closer of [code] and [img] is found once from the end of the post, never by a scan per opener.
 -- Lengths the parser counts in UTF-16 units (MAX_TAG, MAX_URL_LENGTH) are counted the same here (an astral character is two), by bbcode_plain_u16len.
 -- A null body gives an empty string: a post with no words has none.
@@ -572,7 +572,7 @@ grant execute on function fold_text(text), search_lang(), search_words(text, tex
 -- So the one place a match is found, search_matches, builds its query as text with the arguments written into it as literals (search_matches_sql, which holds every condition), and runs it:
 -- the planner then sees the word and its statistics, and chooses for it, and a condition on an argument that is null is simply not written. Every value is written through format's %L (a
 -- typed literal), the tsquery is made by websearch_to_tsquery before it is written, and the limit is an integer, so nothing a caller writes is ever part of the text. The function is
--- stable and security invoker, so a search reads as the caller. The text is a function of its own so that supabase/tests/0114-search.sql can read the plan of exactly what runs.
+-- stable and security invoker, so a search reads as the caller. The text is a function of its own so that supabase/tests/0115-search.sql can read the plan of exactly what runs.
 --
 -- The cursor is {rank, at, act}: the rank (0 unless the search is by relevance), the time and the id of the last result shown. Newest and oldest page by (at, act) inside search_matches,
 -- so page 40 costs what page 1 does. Relevance takes the newest `searchRankPool` matches, ranks them by ts_rank_cd (document length normalized) and pages through that list by
@@ -714,7 +714,7 @@ end $$;
 create index post_search_thread_at on post_search (thread, created_at desc, act desc);
 
 -- The card plays that reach a post and have not been ended, as the keys of the cards, oldest first, at most 8 (a face-down card has no key). Its own function so that a result's cost is one read of
--- acts by target, which supabase/tests/0114-search.sql reads the plan of.
+-- acts by target, which supabase/tests/0115-search.sql reads the plan of.
 create function search_post_cards(act uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp as $$
   select coalesce((
@@ -922,7 +922,7 @@ end;
 -- it, or where one of its words is near it by trigrams (word_similarity of at least 0.3, so "mairo" finds "Mario" and "mar" finds "Super Mario"), best match first, then newest.
 -- An empty prefix with kinds = {threads} lists the newest threads: the Reveal field's empty state. `most` is 1 to 10 for each kind.
 
--- The threads a prefix finds. A string body like suggest_characters's, so that supabase/tests/0114-search.sql reads its plan; it pins its search_path and carries the trigram threshold, so that
+-- The threads a prefix finds. A string body like suggest_characters's, so that supabase/tests/0115-search.sql reads its plan; it pins its search_path and carries the trigram threshold, so that
 -- called by itself it finds what the screen's read finds. $1 is the prefix, $2 the board, $3 whether to leave out the system board, $4 how many.
 create function search_suggest_threads(prefix text, board uuid, exclude_system boolean, most integer)
 returns table (id uuid, title text, board uuid)
