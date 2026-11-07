@@ -154,6 +154,24 @@ with a heavy halo on the words (bends the 4.5:1 rule rather than meets it).
 This replaces `stopsAreReadable` and `GLITTER_ALPHA`'s layer rule. The palettes still pass alone, and the band now
 holds every highlight drawn from them.
 
+**Amended 2026-11-07: the dark board's glints leave the band** (issue #340, the owner choosing its option 3). Held to the
+letter on the dark board, the band ends at 0.048, at most about 2:1 against the ground for any flake, and Glitter Bomb
+read as faint dust (the owner: "I would love to see it brighter, more like real glitter in its shading onscreen"). The
+decision now reads: every pixel of the shine holds 4.5:1 against every ink a post's words use, on both boards, **except
+the dark board's glitter glints**: the flares over the few settled flakes facing the light, lit past `GLINT_MIN`, which
+come and go as the light moves or a flake winks.
+
+- **The glint.** It is added to what is under it, in the flake's own hue at full brightness (each ink saturated as at
+  the ceiling, then its largest channel at 1), with the instance's glint (Divided World's white) over its heart at half
+  its size, as real glitter flashes white at its center and colored at its edge.
+- **The settled field stays inside.** Every flake's own color, lit or not, is clamped as before; so are the burst over
+  the words, the puff and the cling layer, which are not the settled glints this decision lets out.
+- **The check.** The readable-band check samples everything but the glints. A second check, `glintsAreFew`
+  (`engine/ui/shine/flakes.ts`), holds that at every light of the grid and every moment of a 20-second idle walk at most
+  3% of a post's settled flakes glint (about 1.4% at the most crowded light today); its self-test drives it red with a
+  post whose flakes all face one light. `engine/ui/shine/flakes.glint.test.ts` holds that a glint is out of the band, in
+  its flake's hue and added, and that nothing else the settled field draws is.
+
 ## 6. A busy page
 
 - **One loop for the page**, in the suds' shape: hosts register a canvas, a box and a density, and one animation loop
@@ -266,4 +284,5 @@ is held by section 5.
   ceiling with its chroma pushed (a lit flake mixed toward white came out a flat gray once scaled back under the
   ceiling), an unlit flake shows 42% of that rather than 5%, and a flake facing the light flares in its own hue, drawn
   over it rather than added. Going brighter than the band is the owner's question, not this amendment's: section 5's
-  "held everywhere" stands until the owner says otherwise.
+  "held everywhere" stands until the owner says otherwise. (The owner answered the same day, in issue #340: the glints
+  now leave the band and are added, in their hue at full brightness; section 5's amendment.)

@@ -7,8 +7,9 @@
  * unlit (the base, painted only when the board, the size or the settled count changes) and over that what the light changes this
  * frame (the lit flakes, their flares and the loose glitter); over the words, the burst. A canvas the browser re-rasters every frame
  * of a scroll is then the sparse one, never 4,200 flakes, and the words keep their text shadow in the board's ground. Every pixel the engine draws
- * is held inside the readable band the board leaves free of the post's inks (engine/ui/shine/band.ts), so nothing here proves a
- * palette's contrast at run time. The accessible path is reduced motion: no burst, every flake placed at once, the light at rest.
+ * is held inside the readable band the board leaves free of the post's inks (engine/ui/shine/band.ts), but the dark board's
+ * glints, the few flakes facing the light, which leave it by the owner's decision (shine design section 5, issue #340); so
+ * nothing here proves a palette's contrast at run time. The accessible path is reduced motion: no burst, every flake placed at once, the light at rest.
  *
  * Until its burst it shows 15% of its flakes. The burst waits for the reader to be looking at the spot it goes off from: a
  * point placed on the burst point (`.dw-glitter-origin`) is watched against the middle of the view (`ORIGIN_ZONE`, watchInView's
@@ -63,7 +64,7 @@ import './glitter.css';
 export const GLITTER_INKS: readonly string[] = Object.freeze(['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec']);
 /** The index from which inks are plain: the first seven are holographic. */
 export const GLITTER_HOLO = 7;
-/** The flare and the puff's tint (the engine names no color; this is Divided World's). It only lightens, inside the band. */
+/** The flare, the heart of a dark-board glint, and the puff's tint (the engine names no color; this is Divided World's). It only lightens. */
 export const GLITTER_GLINT = '#ffffff';
 /** CSS px squared per flake. */
 const AREA = 70;
