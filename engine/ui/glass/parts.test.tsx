@@ -5,8 +5,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fireEvent, screen } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, test, vi } from 'vitest';
+import { KayfaProvider, type Kayfa } from '../context.tsx';
+import { RouterProvider } from '../router.tsx';
+import { Routes, type Route } from '../routes.tsx';
 import { luminance } from '../../../tools/check-glass-contrast.mjs';
 import { renderInWorld } from '../test-world.tsx';
 import { BORDER_RULES, borderContrast, tokenDefaults } from './border-contrast.ts';
@@ -298,5 +302,81 @@ describe('FormFoot', () => {
     const css = sheet('parts.css');
     /* The form's own gap sets it a section gap from the last section, so the foot adds none (it would double). */
     expect(declsOf(css, '.kb-glass-form-foot')['margin-top']).toBeUndefined();
+  });
+});
+
+describe('the busy button', () => {
+  test('keeps its name, says it is busy, and a press does nothing; focus stays', () => {
+    const onClick = vi.fn();
+    const { container } = renderInWorld(<GlassButton busy onClick={onClick}>Send it</GlassButton>);
+    const b = screen.getByRole('button', { name: 'Send it' });
+    expect(b).toHaveAttribute('aria-busy', 'true');
+    expect(b).not.toBeDisabled();
+    b.focus();
+    fireEvent.click(b);
+    expect(onClick).not.toHaveBeenCalled();
+    expect(b).toHaveFocus();
+    expect(container.querySelector('.kb-spinner')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  test('a button at rest has no aria-busy and a press lands', () => {
+    const onClick = vi.fn();
+    renderInWorld(<GlassButton onClick={onClick}>Send it</GlassButton>);
+    const b = screen.getByRole('button', { name: 'Send it' });
+    expect(b).not.toHaveAttribute('aria-busy');
+    fireEvent.click(b);
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  test('the label and the spinner share one grid cell, so the width is the label\'s', () => {
+    const { container } = renderInWorld(<GlassButton busy>Send it</GlassButton>);
+    const upright = container.querySelector('.kb-glass-upright')!;
+    expect([...upright.children].map((c) => c.className)).toEqual(['kb-glass-label', 'kb-spinner']);
+    const css = sheet('parts.css');
+    expect(declsOf(css, '.kb-glass-button > .kb-glass-upright')['display']).toBe('inline-grid');
+    expect(declsOf(css, '.kb-glass-button .kb-glass-label')['grid-area']).toBe('1 / 1');
+    expect(declsOf(css, '.kb-glass-button .kb-spinner')['grid-area']).toBe('1 / 1');
+    expect(declsOf(css, ".kb-glass-button[aria-busy='true']")['cursor']).toBe('progress');
+    expect(declsOf(css, ".kb-glass-button[aria-busy='true'] .kb-glass-label")['opacity']).toBe('0');
+  });
+
+  test('under reduced motion the bars run no animation and stand at four heights', () => {
+    const css = sheet('spinner.css');
+    const reduce = ":root[data-kb-motion='reduce'] .kb-spinner > i";
+    expect(declsOf(css, reduce)['animation']).toBe('none');
+    const heights = [1, 2, 3, 4].map((n) => declsOf(css, `${reduce}:nth-child(${n})`)['transform']);
+    expect(heights).toEqual(['skewX(-10deg) scaleY(0.4)', 'skewX(-10deg) scaleY(0.6)', 'skewX(-10deg) scaleY(0.8)', 'skewX(-10deg) scaleY(1)']);
+    const parts = sheet('parts.css');
+    expect(declsOf(parts, ":root[data-kb-motion='reduce'] .kb-glass-button .kb-glass-label")['transition']).toBe('none');
+  });
+});
+
+describe('a busy link button', () => {
+  const kayfa = { ui: { copy: { siteName: 'Test Board' } } } as unknown as Kayfa;
+  test('is busy while its load is out, ignores a second press, and is not busy once it lands', async () => {
+    let resolve: (d: unknown) => void = () => undefined;
+    const load = vi.fn(() => new Promise<unknown>((r) => { resolve = r; }));
+    const routes: Route[] = [
+      { path: '/', render: () => <GlassButton to="/t/a">Open it</GlassButton> },
+      { path: '/t/:id', load, key: (p) => p.id!, render: () => <p>there</p> },
+    ];
+    window.history.replaceState(null, '', '/');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    const link = screen.getByRole('link', { name: 'Open it' });
+    expect(link).not.toHaveAttribute('aria-busy');
+    await userEvent.click(link);
+    expect(screen.getByRole('link', { name: 'Open it' })).toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(screen.getByRole('link', { name: 'Open it' }));
+    expect(load).toHaveBeenCalledTimes(1);
+    await act(async () => { resolve('doc'); });
+    expect(screen.queryByRole('link', { name: 'Open it' })).toBeNull();
+    expect(screen.getByText('there')).toBeInTheDocument();
+  });
+
+  test('a busy link with no pending load still does not navigate', async () => {
+    window.history.replaceState(null, '', '/');
+    renderInWorld(<GlassButton to="/elsewhere" busy>Go</GlassButton>);
+    await userEvent.click(screen.getByRole('link', { name: 'Go' }));
+    expect(window.location.pathname).toBe('/');
   });
 });
