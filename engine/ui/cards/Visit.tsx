@@ -25,6 +25,7 @@ import type { Tallies } from '../thread/tallies.ts';
 import {
   VISIT_KIND, appealTerms, auraWords, chargeWords, markLabel, markText, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, topCharge, tryTerms, pointsPlain, visitState,
 } from './visit.ts';
+import { useMinute } from './minute.ts';
 import './visit.css';
 
 /**
@@ -33,18 +34,6 @@ import './visit.css';
  */
 export type OpenAppeal = (infraction: Id, opener: HTMLElement) => void;
 export const AppealCtx = createContext<OpenAppeal | null>(null);
-
-/** The time, redrawn each minute while `active`: a mark's countdown moves with it and with nothing else. */
-export function useMinute(active: boolean): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!active) return;
-    setNow(Date.now());
-    const tick = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(tick);
-  }, [active]);
-  return now;
-}
 
 /** The stopwatch, drawn in the mark's ink. */
 function Stopwatch() {
@@ -61,7 +50,7 @@ export const VisitMark = memo(function VisitMark({ visit, mod, expanded, onOpen 
   readonly visit: Visit; readonly mod: string; readonly expanded: boolean; readonly onOpen: (kind: string, opener: HTMLElement) => void;
 }) {
   const state = visitState(visit);
-  const now = useMinute(state === 'open');
+  const now = useMinute(state === 'open' ? visit.endsAt : null);
   return (
     <button
       type="button" className="kb-mark kb-visit-mark kb-meta-tile" data-kb-card={VISIT_KIND} data-kb-visit={state}
@@ -156,8 +145,6 @@ export interface VisitPanelProps {
   readonly thread: Id;
   /** The post's author: whose warn bar the visit's filing lands on. */
   readonly author: Id | null;
-  /** The points on the author's warn bar now, where the page knows them. */
-  readonly warn?: number | undefined;
   readonly nameOf: (character: Id | null) => string;
   readonly tallies: Tallies;
   readonly mine: Mine;
@@ -168,17 +155,16 @@ export interface VisitPanelProps {
 }
 
 /** What the tab says is "a try": a quiz's answers, a bribe's price or a distraction's word, and the result in a status region. */
-function Challenge({ visit, mod, mask, tried, onTry, busy }: {
-  readonly visit: Visit; readonly mod: string; readonly mask: { readonly id: Id; readonly name: string } | null; readonly tried: Act | null;
+function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
+  readonly visit: Visit; readonly mod: string; readonly mask: { readonly id: Id; readonly name: string } | null; readonly spent: boolean; readonly picked: string | null;
   readonly onTry: (answer: string | null) => void; readonly busy: boolean;
 }) {
   const { instance } = useKayfa();
   const hours = instance.settings.modBots.tailHours;
   const c = visit.challenge;
-  const turn = (answer: string | null) => { if (!busy && tried === null) onTry(answer); };
+  const turn = (answer: string | null) => { if (!busy && !tried) onTry(answer); };
   /* A try spent keeps its buttons where they are, marked, so focus stays on the one pressed (a button that vanished would drop it). */
-  const spent = busy || tried !== null;
-  const picked = typeof tried?.payload['answer'] === 'string' ? tried.payload['answer'] : null;
+  const spent = busy || tried;
   const who = mask?.name ?? 'your mask';
   return (
     <div className="kb-lens-section kb-visit-talk">
@@ -212,7 +198,7 @@ function Challenge({ visit, mod, mask, tried, onTry, busy }: {
   );
 }
 
-export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine, onSpin, onEnded }: VisitPanelProps) {
+export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpin, onEnded }: VisitPanelProps) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const know = useContext(ThreadCtx)?.know;
@@ -222,6 +208,9 @@ export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine,
   const [names, setNames] = useState(0);
   const [result, setResult] = useState('');
   const [busy, setBusy] = useState(false);
+  /* The tries the server took from this panel, by mask and the answer given: a try is spent here whatever the reread of the story does. */
+  const [taken, setTaken] = useState<ReadonlyMap<Id, string | null>>(new Map());
+  const [localEnd, setLocalEnd] = useState<VisitEnd | null>(null);
   const [unfolded, setUnfolded] = useState(false);
   const foldId = useId();
   const root = useRef<HTMLDivElement>(null);
@@ -258,10 +247,10 @@ export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine,
   const authorName = author === null ? 'The author' : name(author);
   const role = modRole(ui.copy);
   const bands = instance.settings.warnBar.bands;
-  const end = story?.end ?? visit.end;
+  const end = story?.end ?? visit.end ?? localEnd;
   const state = visitState(visit, end);
   const inf = story?.infraction ?? null;
-  const now = useMinute(state === 'open' || inf !== null);
+  const now = useMinute(state === 'open' ? visit.endsAt : null);
   const top = topCharge(visit.charges);
   const topPoints = top ? bands[top.band] : 0;
   const mask = player.hudCharacter && player.hudCharacter.debutedAt !== null && player.hudCharacter.retiredAt === null ? player.hudCharacter : null;
@@ -276,6 +265,13 @@ export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine,
       const a = await api.intercept(mask.id, visit.id, answer);
       if (!live.current) return;
       if (!a.ok) { setResult(a.error); return; }
+      setTaken((t) => new Map(t).set(mask.id, answer));
+      if (a.value.succeeded) {
+        /* The visit is over whether or not the story can be read again: the mark and the tab follow from here. */
+        const over: VisitEnd = { act: a.value.act, at: new Date().toISOString(), outcome: 'intercepted', byAct: a.value.act, line: '' };
+        setLocalEnd(over);
+        ended.current(over);
+      }
       if (a.value.succeeded) setResult(`${mask.name} got past ${mod}. The visit is over, and nothing landed on ${authorName}.`);
       else setResult(`That was not the answer. ${mod} will visit ${mask.name}'s next post within ${instance.settings.modBots.tailHours} hours.`);
       const had = root.current?.contains(document.activeElement) ?? false;
@@ -319,10 +315,9 @@ export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine,
         )}
         {state === 'filed' && (
           <p className="kb-visit-facts">
-            {top ? `${top.rule ?? marked}: a ${top.band} breach. ` : ''}
             {inf
-              ? `${authorName}'s warn bar gained ${pointsPlain(inf.points)}${warn === undefined ? '' : ` (${warn} of ${instance.settings.warnBar.size})`}; ${stillCounts(inf, now) ? 'they drop off on' : 'they dropped off on'} ${shortDate(inf.expiresAt)}. The post keeps its words under the notice.`
-              : `${authorName}'s warn bar gained ${pointsPlain(topPoints)}${warn === undefined ? '' : ` (${warn} of ${instance.settings.warnBar.size})`}. The post keeps its words under the notice.`}
+              ? `${top ? `${top.rule ?? marked}: a ${inf.band} breach. ` : ''}${authorName}'s warn bar gained ${pointsPlain(inf.points)}; ${stillCounts(inf, now) ? 'they drop off on' : 'they dropped off on'} ${shortDate(inf.expiresAt)}.${stillCounts(inf, now) && story?.warnPoints != null ? ` The bar now stands at ${story.warnPoints} of ${instance.settings.warnBar.size}.` : ''} The post keeps its words under the notice.`
+              : 'The visit filed.'}
           </p>
         )}
         {state === 'intercepted' && <p className="kb-visit-facts">The visit ended on {dayAndTime(end!.at)}. Nothing landed on {authorName}.</p>}
@@ -332,7 +327,7 @@ export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine,
         {state === 'filed' && appealWaiting && <p className="kb-visit-facts">An appeal of it is waiting to be heard. If it cannot be heard, the fee is refunded.</p>}
       </div>
       {/* Drawn from the story, never the page alone: a visit that ended since the page was read offers no try. */}
-      {state === 'open' && story !== null && <Challenge visit={visit} mod={mod} mask={mask} tried={tried} onTry={(a) => void attempt(a)} busy={busy} />}
+      {state === 'open' && story !== null && <Challenge visit={visit} mod={mod} mask={mask} spent={tried !== null || (mask !== null && taken.has(mask.id))} picked={mask && taken.has(mask.id) ? taken.get(mask.id) ?? null : typeof tried?.payload['answer'] === 'string' ? tried.payload['answer'] : null} onTry={(a) => void attempt(a)} busy={busy} />}
       {/* One live region for the visit: the result of a try stays when the visit it ended is over, and a region that was there before it spoke is announced. */}
       <p role="status" className="kb-visit-result">{result || (state === 'open' ? earlier : '')}</p>
       {appealable && inf && (

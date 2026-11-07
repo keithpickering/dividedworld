@@ -1059,6 +1059,35 @@ describe('a visit\'s tab', () => {
       expect(within(visitLens()).getByRole('tab', { name: 'On a visit' })).toBeInTheDocument();
     });
 
+    test('a try the server took is spent here even when the story cannot be read again, and a right one ends the visit', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const real = w.fake.visitStory.bind(w.fake);
+      let reads = 0;
+      w.fake.visitStory = async (...a) => { if (++reads > 1) throw new Error('offline'); return real(...a); };
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 0' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('Pipewrench got past The Clerk.'));
+      await waitFor(() => expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toBeInTheDocument());
+      expect((await real(w.thread, w.visit, w.second)).attempts).toHaveLength(1);
+    });
+
+    test('a wrong try the server took leaves the answers spent when the story cannot be read again', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const real = w.fake.visitStory.bind(w.fake);
+      let reads = 0;
+      w.fake.visitStory = async (...a) => { if (++reads > 1) throw new Error('offline'); return real(...a); };
+      openVisit(w);
+      const l = await press(w);
+      await tabTo(within(l).getByRole('button', { name: 'Form 1-A' }));
+      await userEvent.keyboard('{Enter}');
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('That was not the answer'));
+      await waitFor(() => expect(within(l).getByRole('button', { name: 'Form 0' })).toHaveAttribute('aria-disabled', 'true'));
+    });
+
     test('a refusal is said in the server\'s words, in the same region', async () => {
       width(false);
       const w = visited({ challenge: { kind: 'bribe', price: 50 } });
@@ -1143,9 +1172,48 @@ describe('a visit\'s tab', () => {
       const l = visitLens();
       expect(within(l).getByRole('tab', { name: 'Filed' })).toHaveAttribute('aria-selected', 'true');
       expect(within(l).getByRole('heading', { name: 'The Clerk filed its report' })).toBeInTheDocument();
-      await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 points \(2 of 10\); they drop off on [A-Z][a-z]{2} \d{1,2}\. The post keeps its words under the notice\./u));
+      await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 points; they drop off on [A-Z][a-z]{2} \d{1,2}\. The bar now stands at 2 of 10\. The post keeps its words under the notice\./u));
       /* Nothing to talk down any more. */
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+    });
+
+    test('the bar now is read with the story: a stale page value never appears, and an expired infraction shows none', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      file(w);
+      openVisit(w);
+      const mark = await visitMark(w.seq);
+      /* The page was read with the bar at 2; another visit filed before the Lens opened, so the bar stands at 6. */
+      const other = w.fake.seed.visit(w.clerk, w.third, { at: Date.now() });
+      w.fake.seed.visitEnd(other, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(other, { points: 4, band: 'moderate' });
+      await userEvent.click(mark);
+      const l = visitLens();
+      await within(l).findByText(/The bar now stands at 6 of 10\./u);
+      expect(l).not.toHaveTextContent(/2 of 10/u);
+    });
+
+    test('an expired infraction says what it did and shows no bar', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(w.visit, { points: 2, at: Date.now() - 30 * 24 * HOUR, expiresAt: Date.now() - 16 * 24 * HOUR });
+      openVisit(w);
+      const l = await press(w);
+      await within(l).findByText(/they dropped off on/u);
+      expect(l).not.toHaveTextContent(/of 10/u);
+    });
+
+    test('a filing whose infraction cannot be read says only that the visit filed, with no number', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent('The Clerk filed its report');
+      expect(l).toHaveTextContent('The visit filed.');
+      expect(l).not.toHaveTextContent(/\d+ (warn )?points?/u);
+      expect(l).not.toHaveTextContent(/of 10/u);
     });
 
     test('Appeal, with its price and terms, is the author\'s current mask\'s alone, and opens the form', async () => {

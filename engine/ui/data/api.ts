@@ -263,6 +263,8 @@ export interface VisitStory {
   readonly infraction: VisitInfraction | null;
   readonly appeal: Act | null;
   readonly ruling: Act | null;
+  /** The points on the infraction's character's warn bar now, read with the story (`characters_public`); null with no infraction. */
+  readonly warnPoints: number | null;
 }
 
 /** What `intercept` answers: the attempt's Act, whether it worked, and the character's tail where it did not. */

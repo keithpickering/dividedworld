@@ -394,6 +394,46 @@ describe('a visit\'s mark', () => {
     } finally { vi.useRealTimers(); }
   });
 
+  test('every mark and panel shares one minute clock, which stops with the last of them', async () => {
+    const started: unknown[] = [];
+    const cleared: unknown[] = [];
+    const realSet = globalThis.setInterval;
+    const realClear = globalThis.clearInterval;
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      const id = realSet(fn, ms, ...rest);
+      if (ms === 60_000) started.push(id);
+      return id;
+    }) as typeof setInterval);
+    vi.spyOn(globalThis, 'clearInterval').mockImplementation(((id: Parameters<typeof clearInterval>[0]) => { cleared.push(id); realClear(id); }) as typeof clearInterval);
+    const w = visited();
+    const third = w.fake.seed.post(w.thread, w.spritey, 'post 4');
+    w.fake.seed.visit(w.clerk, third, { at: Date.now(), endsInMs: 90 * MINUTE });
+    const view = open(w);
+    await visitMark(2);
+    await visitMark(4);
+    expect(started).toHaveLength(1);
+    view.unmount();
+    expect(cleared).toContain(started[0]);
+  });
+
+  test('a visit past its end, still open, stops asking for the clock; one that ended never did', async () => {
+    const started: unknown[] = [];
+    const realSet = globalThis.setInterval;
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      const id = realSet(fn, ms, ...rest);
+      if (ms === 60_000) started.push(id);
+      return id;
+    }) as typeof setInterval);
+    const w = visited(-5);
+    const filed = w.fake.seed.post(w.thread, w.spritey, 'post 4');
+    const v = w.fake.seed.visit(w.clerk, filed, { at: Date.now(), endsInMs: 90 * MINUTE });
+    w.fake.seed.visitEnd(v, { outcome: 'filed', line: 'Filed.' });
+    open(w);
+    expect(await visitMark(2)).toHaveTextContent('0:00');
+    await visitMark(4);
+    expect(started).toHaveLength(0);
+  });
+
   test.each([
     ['filed', 'Filed', 'The Clerk filed its visit to this post. Opens the visit.'],
     ['intercepted', 'Talked down', 'The Clerk\'s visit to this post was talked down. Opens the visit.'],

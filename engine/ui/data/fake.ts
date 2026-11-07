@@ -1711,6 +1711,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         report: report ? publicAct(report) : null, verdict: verdict ? publicAct(verdict) : null, attempts, end: end ? visitEndOf(end) : null,
         infraction: inf ? { act: inf.id, character: inf.payload.character as Id, points: inf.payload.points as number, band: inf.payload.band as VisitBand, ruleNumber: (inf.payload.rule_number as number | null) ?? null, expiresAt: inf.payload.expires_at as string, at: iso(inf.at) } : null,
         appeal: appeal ? publicAct(appeal) : null, ruling: ruling ? publicAct(ruling) : null,
+        warnPoints: inf ? warnOf(inf.payload.character as Id) : null,
       };
     },
     intercept(through, visit, answer) {

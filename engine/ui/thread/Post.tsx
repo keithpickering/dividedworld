@@ -160,7 +160,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const marks = act.kind === 'post'
     ? <PostMarks
         post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
-        visit={visits?.get(act.id)} author={act.character} authorWarn={person ? person.character.warnPoints ?? 0 : undefined} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })}
+        visit={visits?.get(act.id)} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })}
       />
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */

@@ -24,7 +24,7 @@
 .kb-visit-time {
   color: var(--kb-glass-text-hi);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--kb-glass-control-spacing);
   white-space: nowrap;
 }
 
@@ -41,7 +41,7 @@
   font-family: var(--kb-glass-font-display);
   font-size: var(--kb-glass-size-display-xs);
   font-weight: 400;
-  letter-spacing: 0.5px;
+  letter-spacing: var(--kb-glass-control-spacing);
   line-height: 1.15;
   text-transform: uppercase;
 }

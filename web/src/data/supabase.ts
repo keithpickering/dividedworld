@@ -1215,31 +1215,36 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
       };
     },
-    async visitStory(thread, visit, post): Promise<VisitStory> {
-      if (!idOk(thread) || !idOk(visit) || !idOk(post)) return { report: null, verdict: null, attempts: [], end: null, infraction: null, appeal: null, ruling: null };
-      /* Each read is one post's, by thread and target (or by the visit the Act names): a bounded handful of Acts, read when the tab opens and never with the page. */
-      const [onPost, ended, infractions] = await Promise.all([
-        list(() => client.from('acts_public').select('*').eq('thread', thread).eq('target_act_id', post).in('kind', ['report', 'intercept']).order('created_at', { ascending: true }).limit(200)),
-        list(() => client.from('acts_public').select('*').eq('thread', thread).eq('target_act_id', visit).eq('kind', 'visit_end').limit(1)),
-        list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'infraction').eq('payload->>visit_act', visit).limit(1)),
+    async visitStory(thread, visit, _post): Promise<VisitStory> {
+      const none: VisitStory = { report: null, verdict: null, attempts: [], end: null, infraction: null, appeal: null, ruling: null, warnPoints: null };
+      if (!idOk(thread) || !idOk(visit)) return none;
+      /* Each read is narrowed on the server to this visit (the Act's own payload names it) or to its one Act, so no bound on the thread's reports or attempts can leave the visit's out. */
+      const mine = () => client.from('acts_public').select('*').eq('thread', thread);
+      const [attempts, ended, infractions, verdicts] = await Promise.all([
+        list(() => mine().eq('kind', 'intercept').eq('payload->>visit_act', visit).order('created_at', { ascending: true }).limit(200)),
+        list(() => mine().eq('kind', 'visit_end').eq('target_act_id', visit).limit(1)),
+        list(() => mine().eq('kind', 'infraction').eq('payload->>visit_act', visit).order('created_at', { ascending: true }).limit(1)),
+        list(() => mine().eq('kind', 'report_verdict').eq('payload->>visit_act', visit).order('created_at', { ascending: true }).limit(1)),
       ]);
-      const reports = onPost.filter((r) => r['kind'] === 'report').map((r) => r['id'] as Id);
-      const attempts = onPost.filter((r) => r['kind'] === 'intercept' && isObject(r['payload']) && r['payload']['visit_act'] === visit).map(toAct);
-      const verdicts = await byChunks(reports, (part) => list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'report_verdict').in('target_act_id', part)));
-      const verdict = verdicts.find((r) => isObject(r['payload']) && r['payload']['visit_act'] === visit);
-      const report = verdict ? onPost.find((r) => r['id'] === verdict['target_act_id']) : undefined;
+      const verdict = verdicts[0];
       const inf = infractions[0];
-      const appeals = inf ? await list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'appeal').eq('target_act_id', inf['id']).order('created_at', { ascending: true }).limit(10)) : [];
-      const appeal = appeals[0];
-      const rulings = appeal ? await list(() => client.from('acts_public').select('*').eq('thread', thread).eq('kind', 'appeal_ruling').eq('target_act_id', appeal['id']).limit(1)) : [];
       const p = isObject(inf?.['payload']) ? (inf!['payload'] as Row) : null;
+      const who = p && typeof p['character'] === 'string' ? p['character'] : null;
+      const [reports, appeals, bar] = await Promise.all([
+        verdict && idOk(String(verdict['target_act_id'])) ? list(() => mine().eq('kind', 'report').eq('id', verdict['target_act_id']).limit(1)) : Promise.resolve([] as Row[]),
+        inf ? list(() => mine().eq('kind', 'appeal').eq('target_act_id', inf['id']).order('created_at', { ascending: true }).limit(1)) : Promise.resolve([] as Row[]),
+        who && idOk(who) ? list(() => client.from('characters_public').select('warn_points').eq('id', who).limit(1)) : Promise.resolve([] as Row[]),
+      ]);
+      const appeal = appeals[0];
+      const rulings = appeal ? await list(() => mine().eq('kind', 'appeal_ruling').eq('target_act_id', appeal['id']).limit(1)) : [];
       return {
-        report: report ? toAct(report) : null, verdict: verdict ? toAct(verdict) : null, attempts,
+        report: reports[0] ? toAct(reports[0]) : null, verdict: verdict ? toAct(verdict) : null, attempts: attempts.map(toAct),
         end: ended[0] && isObject(ended[0]['payload']) ? toVisitEnd(ended[0]['payload'], ended[0]['created_at'], ended[0]['id']) : null,
-        infraction: inf && p && typeof p['character'] === 'string'
-          ? { act: inf['id'], character: p['character'], points: num(p['points']), band: BANDS.find((b) => b === p['band']) ?? 'minor', ruleNumber: typeof p['rule_number'] === 'number' ? p['rule_number'] : null, expiresAt: str(p['expires_at']) ?? '', at: str(inf['created_at']) ?? '' }
+        infraction: inf && p && who
+          ? { act: inf['id'], character: who, points: num(p['points']), band: BANDS.find((b) => b === p['band']) ?? 'minor', ruleNumber: typeof p['rule_number'] === 'number' ? p['rule_number'] : null, expiresAt: str(p['expires_at']) ?? '', at: str(inf['created_at']) ?? '' }
           : null,
         appeal: appeal ? toAct(appeal) : null, ruling: rulings[0] ? toAct(rulings[0]) : null,
+        warnPoints: inf && typeof bar[0]?.['warn_points'] === 'number' ? bar[0]['warn_points'] : null,
       };
     },
     async intercept(through, visit, answer): Promise<Answer<InterceptResult>> {

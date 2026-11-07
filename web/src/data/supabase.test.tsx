@@ -1985,3 +1985,54 @@ describe('a screen in one call', () => {
     expect(only(index, 'presence_box')).toEqual({ in_kind: 'index', in_place: null });
   });
 });
+
+describe('a visit\'s story', () => {
+  const VISIT = '77777777-7777-4777-8777-777777777777';
+  const POST = '88888888-8888-4888-8888-888888888888';
+  const REPORT = '99999999-9999-4999-8999-999999999999';
+  const row = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+    id, character: B, kind, thread: T, target_act_id: POST, seq: null, created_at: '2026-10-01T10:00:00+00:00', payload: {}, current_payload: {}, edited_at: null, shown_edited_at: null, ...extra,
+  });
+  /** A table that answers as PostgREST does for the equality filters the adapter sends, and honors a limit: the server filters, never the client. */
+  function table(all: ReturnType<typeof row>[]): Router {
+    return (r) => {
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ warn_points: 6 }]);
+      if (!r.url.pathname.endsWith('/acts_public')) return undefined;
+      let out = all;
+      for (const [k, v] of r.url.searchParams) {
+        if (!v.startsWith('eq.')) continue;
+        const want = v.slice(3);
+        out = out.filter((a) => (k.startsWith('payload->>') ? String((a.payload as Record<string, unknown>)[k.slice(10)]) : String((a as unknown as Record<string, unknown>)[k])) === want);
+      }
+      const limit = Number(r.url.searchParams.get('limit') ?? out.length);
+      return rows(out.slice(0, limit));
+    };
+  }
+
+  it('finds this visit\'s report, attempts, verdict and infraction among far more rows than any read\'s bound, by asking the server for them', async () => {
+    const noise = Array.from({ length: 450 }, (_, i) => [
+      row(`a${i}`.padEnd(36, '0'), 'report', { id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`, payload: { reason: 'other' } }),
+      row(`b${i}`.padEnd(36, '0'), 'intercept', { id: `10000000-0000-4000-8000-${String(i).padStart(12, '0')}`, payload: { visit_act: 'another', kind: 'quiz', succeeded: false } }),
+    ]).flat();
+    const mine = [
+      row(REPORT, 'report', { payload: { reason: 'Third time.' } }),
+      row('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'report_verdict', { target_act_id: REPORT, payload: { report_act: REPORT, verdict: 'visit', visit_act: VISIT } }),
+      row('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'intercept', { payload: { visit_act: VISIT, kind: 'quiz', succeeded: false, answer: 'Form 1-A' } }),
+      row('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'visit_end', { target_act_id: VISIT, payload: { visit_act: VISIT, outcome: 'filed', line: 'Filed.' } }),
+      row('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'infraction', { target_act_id: null, payload: { character: B, band: 'minor', points: 2, rule_number: 2, visit_act: VISIT, expires_at: '2026-11-01T00:00:00+00:00' } }),
+    ];
+    const h = harness(table([...noise, ...mine]));
+    const story = await h.api.visitStory(T, VISIT, POST);
+    expect(story.report?.id).toBe(REPORT);
+    expect(story.verdict?.id).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+    expect(story.attempts.map((a) => a.id)).toEqual(['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb']);
+    expect(story.end?.outcome).toBe('filed');
+    expect(story.infraction).toMatchObject({ character: B, points: 2 });
+    expect(story.warnPoints).toBe(6);
+    /* Every read of an Act of this visit is narrowed on the server to it, and none asks for the post's reports by a bound. */
+    for (const r of h.to('acts_public')) expect(r.url.searchParams.get('limit'), r.url.search).not.toBeNull();
+    const intercepts = h.to('acts_public').filter((r) => r.url.searchParams.get('kind') === 'eq.intercept');
+    expect(intercepts).toHaveLength(1);
+    expect(intercepts[0]!.url.searchParams.get('payload->>visit_act')).toBe(`eq.${VISIT}`);
+  });
+});
