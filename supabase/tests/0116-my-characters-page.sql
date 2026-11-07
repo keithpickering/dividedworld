@@ -1,4 +1,4 @@
--- my_characters_page() (supabase/migrations/0116_my_characters_page.sql; the glass-load design, section 7; its plan, Task 5): /characters and
+-- my_characters_page() (supabase/migrations/0118_my_characters_page.sql; the glass-load design, section 7; its plan, Task 5): /characters and
 -- /characters/edit in one read. Each piece equals the matching view read made directly, by id: the caller's own characters and no one else's, each
 -- with its public face and profile, its counters, its standing, its class reveals and its announced Turns. A caller with no account gets an empty
 -- list, and a visitor is refused.
