@@ -93,7 +93,7 @@ export function Welcome() {
               <div aria-busy={refusal === null || undefined}>{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</div>
             ) : (
               <>
-                <ThemeRow legend="Theme" level={4} value={prefs.theme} onChange={(v) => change({ theme: v })} />
+                <ThemeRow legend="Theme" level={4} value={prefs} onChange={change} />
                 <MotionRow level={4} value={prefs.motion} onChange={(v) => change({ motion: v })} />
                 <TextSizeRow level={4} value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
                 {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}

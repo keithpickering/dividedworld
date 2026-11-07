@@ -21,8 +21,10 @@ import type { GlassTheme, ThemeOption } from './types.ts';
 
 /** The account's preferences, as account_preferences holds them: "system" follows the device. */
 export interface AppearancePreference {
-  /** "system", "light", "dark", or an instance theme's key. */
+  /** Which theme: "default" (the instance's first theme) or a theme's key. */
   readonly theme: string;
+  /** Light, dark or the device's; a theme with one mode fixes it whatever this says. Left out, the device's. */
+  readonly mode?: 'system' | 'light' | 'dark';
   readonly motion: 'system' | 'reduce' | 'full';
   readonly smoke?: 'full' | 'low' | 'off';
   readonly contrast?: 'standard' | 'high';
@@ -43,10 +45,11 @@ export function resolveAppearance(pref: AppearancePreference, themes: readonly T
   if (!house) throw new Error('an instance offers at least one theme, its house theme');
   /* A preference is a row the server holds; anything but an override it knows follows the device. */
   const motion = pref.motion === 'reduce' || pref.motion === 'full' ? pref.motion : null;
-  /* "light" and "dark" are the house theme in that mode; a house theme holds both (InstanceUi.themes). */
-  if (pref.theme === 'light' || pref.theme === 'dark') return { href: house.href, mode: pref.theme, motion };
-  const chosen = themes.find((t) => t.key === pref.theme && pref.theme !== 'system') ?? house;
-  return { href: chosen.href, mode: chosen.modes === 'both' ? null : chosen.modes, motion };
+  /* The theme is which theme: "default" is the instance's first, and a key it does not offer falls back to it. */
+  const chosen = themes.find((t) => t.key === pref.theme && pref.theme !== 'default') ?? house;
+  /* A theme with one mode fixes it; otherwise the player's own mode, which stays stored for a theme that holds both. */
+  const own = pref.mode === 'light' || pref.mode === 'dark' ? pref.mode : null;
+  return { href: chosen.href, mode: chosen.modes === 'both' ? own : chosen.modes, motion };
 }
 
 /** Puts an appearance on the page: one theme link, swapped in place, and the override attributes. */

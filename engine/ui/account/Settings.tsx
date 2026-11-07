@@ -270,7 +270,7 @@ export function SettingsScreen() {
         <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
           sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
         <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
-        <ThemeRow value={prefs.theme} onChange={(v) => change({ theme: v })} />
+        <ThemeRow value={prefs} onChange={change} />
         <TiltRow value={prefs.tilt} onChange={(v) => change({ tilt: v })} />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />

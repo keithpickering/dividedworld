@@ -83,7 +83,7 @@ describe('the welcome page', () => {
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await userEvent.click(await within(before).findByRole('radio', { name: '150%' }));
     await userEvent.click(within(before).getByRole('radio', { name: 'White on black' }));
-    await waitFor(async () => expect(await fake.preferences()).toMatchObject({ textSize: 150, theme: 'dark' }));
+    await waitFor(async () => expect(await fake.preferences()).toMatchObject({ textSize: 150, theme: 'default', mode: 'dark' }));
   });
 
   test('marks the welcome seen when it opens, once, so it shows once whatever comes next', async () => {

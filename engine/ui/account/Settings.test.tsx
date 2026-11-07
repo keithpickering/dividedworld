@@ -107,7 +107,7 @@ describe('Settings, as board 11 draws it', () => {
 
   test('the board\'s colors and motion apply at once and persist across a fresh load', async () => {
     const w = world();
-    await persists(w, 'The board', 'White on black', { theme: 'dark' }, ['data-kb-mode', 'dark']);
+    await persists(w, 'The board', 'White on black', { theme: 'default', mode: 'dark' }, ['data-kb-mode', 'dark']);
     cleanup();
     await persists(w, 'Motion', 'Reduced', { motion: 'reduce' }, ['data-kb-motion', 'reduce']);
   });

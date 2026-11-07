@@ -119,7 +119,7 @@ describe('a choice made on one screen is the account\'s for the next', () => {
     fireEvent.click(screen.getByText('a dark'));
     fireEvent.click(screen.getByText('b tilt on'));
     await settle();
-    expect([text('a-theme'), text('a-tilt'), text('b-tilt')]).toEqual(['system', 'on', 'on']);
+    expect([text('a-theme'), text('a-tilt'), text('b-tilt')]).toEqual(['default', 'on', 'on']);
   });
 
   test('another account\'s choices never stand in: a screen for another account starts from its own preferences', async () => {

@@ -566,8 +566,10 @@ export interface EstimateLine {
 }
 
 export interface Preferences {
-  /** "system", "light", "dark", or an instance theme's key. */
+  /** Which theme: "default" (the instance's first theme, so the engine names none) or a theme's key. */
   readonly theme: string;
+  /** Light or dark, or the device's. A theme with one mode fixes it whatever this says, and this stays stored for the theme that holds both. */
+  readonly mode: 'system' | 'light' | 'dark';
   readonly postbit: 'side' | 'stacked';
   readonly motion: 'system' | 'reduce' | 'full';
   /** How much smoke stands behind the glass: all of it, a third of each layer, or none (plain ground). */
@@ -610,7 +612,7 @@ export interface Preferences {
 export type PreferencesPatch = Partial<Omit<Preferences, 'cardsMet' | 'alertsSeenAt' | 'settlementSeen' | 'welcomedAt' | 'tips' | 'tipsSeen'>>;
 
 /** What an account's preferences are before it has set any (account_preferences' defaults). */
-export const DEFAULT_PREFERENCES: Preferences = { theme: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
+export const DEFAULT_PREFERENCES: Preferences = { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] };
 
 export interface MyInvite {
   readonly id: number;

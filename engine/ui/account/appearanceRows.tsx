@@ -63,8 +63,15 @@ export function TextSizeRow({ value, onChange, level }: { readonly value: Prefer
   );
 }
 
-/** The board's colors: the device's, black on white, white on black, then the instance's own themes. An account's theme this instance does not offer is shown as the device's. */
-export function ThemeRow({ value, onChange, legend = 'The board', level }: { readonly value: string; readonly onChange: (v: string) => void; readonly legend?: string } & Level) {
+/** The theme and mode a ThemeRow choice writes together (the theme and the mode are held apart in the account). */
+export type LookChoice = Pick<Preferences, 'theme' | 'mode'>;
+
+/**
+ * The board's colors: the device's, black on white, white on black, then the instance's own themes. The first three are the
+ * instance's first theme in a mode; a theme of its own is chosen with the player's mode kept. An account's theme this instance
+ * does not offer is shown as the device's.
+ */
+export function ThemeRow({ value, onChange, legend = 'The board', level }: { readonly value: LookChoice; readonly onChange: (v: LookChoice) => void; readonly legend?: string } & Level) {
   const { ui } = useKayfa();
   const options: readonly Option<string>[] = [
     { value: 'system', label: 'Follow my device' },
@@ -72,10 +79,11 @@ export function ThemeRow({ value, onChange, legend = 'The board', level }: { rea
     { value: 'dark', label: 'White on black' },
     ...ui.themes.slice(1).map((t) => ({ value: t.key, label: t.name })),
   ];
-  const shown = options.some((o) => o.value === value) ? value : 'system';
+  const own = value.theme !== 'default' && ui.themes.slice(1).some((t) => t.key === value.theme);
+  const shown = own ? value.theme : value.mode;
   return (
-    <Choice legend={legend} options={options} value={shown} onChange={onChange} level={level}
-      sentence="The 2003 board stays 2003 whichever you choose. Only its colors swap." />
+    <Choice legend={legend} options={options} value={shown} onChange={(v) => onChange(v === 'system' || v === 'light' || v === 'dark' ? { theme: 'default', mode: v } : { theme: v, mode: value.mode })}
+      level={level} sentence="The 2003 board stays 2003 whichever you choose. Only its colors swap." />
   );
 }
 
