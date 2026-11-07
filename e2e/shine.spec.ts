@@ -36,6 +36,14 @@ import { expect, test, type Page } from '@playwright/test';
  * rate a moving light draws a post with no body to paint). With the whole body redrawn on every frame (9e513e4, the head before issue
  * #304), it was about twice that, and the frame gap missed its bound on CI. `redrawn` is checked on planted samples below.
  *
+ * And every timed run logs what it worked against, as one `shine-data` line of JSON, so a slow run can be told apart from a slow shine
+ * and the shine's cost can be followed as posts grow taller and effects stack (issue #304): the scroll's distance and speed, the
+ * shiny posts and canvases on screen and the share of the viewport those canvases cover (what a software compositor draws every frame
+ * of a scroll, redrawn or not), the screen the draws changed, a fixed piece of work timed on the page's thread just before (how loaded
+ * the machine was), and a control: the same scroll of the same page with every shine canvas hidden, so the loop draws nothing and
+ * nothing of the shine is composited. A control that drops frames as the run did says the machine or the layout cost them, not the
+ * shine. Nothing here is asserted; it is read from CI's log.
+ *
  * Draws and frames are the loop's own, handed over by the story as `window.__kbShine`.
  */
 const STORY = (name: string) => `/?fixture=boards&story=boards-15-shine--${name}`;
@@ -75,7 +83,7 @@ const REDRAWN_SHARE = 1.25;
 const FREED_MARGIN = 300;
 
 interface Box1 { top: number; bottom: number; width: number }
-interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number; painted?: Box1[]; own?: Box1[] }
+interface Sample { t: number; draws: number[]; top: number[]; bottom: number[]; height: number; painted?: Box1[]; own?: Box1[]; layers?: number[]; scrollY?: number }
 interface Held { top: number; bottom: number; area?: number; own?: number; sizes: { w: number; h: number }[]; shine?: { w: number; h: number }[] }
 
 /** The shiny posts that hold canvas buffers while fully out of view by more than `margin`, and how many posts hold any at all. */
@@ -175,6 +183,7 @@ async function scrollRun(page: Page): Promise<Run> {
         out.push({
           t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight,
           painted: hs.map((h) => ({ top: h.top, bottom: h.bottom, width: h.width })), own: hs.map((h) => h.own),
+          layers: hs.map((h) => h.layers), scrollY: window.scrollY,
         });
         const p = Math.min(1, (t - t0) / ms);
         window.scrollTo(0, p * max);
@@ -188,6 +197,63 @@ async function scrollRun(page: Page): Promise<Run> {
   /* A moving mouse, over the page's width and height, while it scrolls. */
   for (let i = 0; i < 60; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
   return run;
+}
+
+/** A fixed piece of work on the page's thread, in ms: how loaded the machine is just now (the same page, the same work, every run). */
+const calibrate = (page: Page): Promise<number> => page.evaluate(() => {
+  const t0 = performance.now();
+  let x = 0;
+  for (let i = 0; i < 3e6; i++) x += Math.sqrt(i) * Math.sin(i);
+  (window as { __kbSink?: number }).__kbSink = x;
+  return performance.now() - t0;
+});
+
+/**
+ * The control: the same scroll with every shine canvas hidden (`display: none`, so none is composited and the loop, told they left
+ * view, draws nothing), its frame gaps' 95th percentile and median and its frame count; the canvases are shown again after.
+ */
+async function controlRun(page: Page): Promise<{ gap: number; median: number; frames: number }> {
+  await page.evaluate(() => { window.scrollTo(0, 0); for (const c of document.querySelectorAll<HTMLElement>('[data-kb-fab] canvas, [data-kb-glitter] canvas')) c.style.display = 'none'; });
+  await page.waitForTimeout(500);
+  const run = page.evaluate((ms) => new Promise<number[]>((done) => {
+    const ts: number[] = [], max = document.documentElement.scrollHeight - window.innerHeight;
+    let t0 = 0;
+    const tick = (t: number) => {
+      t0 ||= t;
+      ts.push(t);
+      const p = Math.min(1, (t - t0) / ms);
+      window.scrollTo(0, p * max);
+      if (p < 1) requestAnimationFrame(tick); else done(ts);
+    };
+    requestAnimationFrame(tick);
+  }), 3000);
+  for (let i = 0; i < 60; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
+  const ts = await run;
+  await page.evaluate(() => { for (const c of document.querySelectorAll<HTMLElement>('[data-kb-fab] canvas, [data-kb-glitter] canvas')) c.style.display = ''; });
+  const gaps = ts.slice(1).map((t, k) => t - ts[k]!);
+  return { gap: percentile(gaps, 0.95), median: percentile(gaps, 0.5), frames: ts.length };
+}
+
+/** What a run worked against (the header's `shine-data`): means over its frames, the viewport's share in [0, 1]. */
+function conditions(r: Run): Record<string, number> {
+  const s = r.samples, n = s.length, vh = s[0]!.height, vw = 1200;
+  let posts = 0, layers = 0, cover = 0;
+  for (const f of s) {
+    f.draws.forEach((_, h) => {
+      const area = onScreen(f.painted![h]!, f.height);
+      if (area <= 0) return;
+      posts++;
+      layers += f.layers![h]!;
+      cover += area * f.layers![h]!;
+    });
+  }
+  const scrolled = (s[n - 1]!.scrollY ?? 0) - (s[0]!.scrollY ?? 0);
+  const red = redrawn(s);
+  return {
+    scrollPx: Math.round(scrolled), pxPerFrame: +(scrolled / Math.max(1, n - 1)).toFixed(1),
+    postsInView: +(posts / n).toFixed(2), layersInView: +(layers / n).toFixed(2), layerCover: +(cover / n / (vw * vh)).toFixed(3),
+    redrawn: +(red.changed / Math.max(1, red.words)).toFixed(3),
+  };
 }
 
 /** A timed run's three measures: the 95th percentile of the gap between animation frames, of the loop's own time in a frame, and of the foil worker's own time in a batch. */
@@ -323,10 +389,13 @@ test.describe('a busy thread', () => {
        must be under WORK_BUDGET in a timed run too, and so must the foil worker's own time per batch (which the loop cannot see). A loop that
        costs more than a frame meets neither bound in any run. */
     const runs: ReturnType<typeof measure>[] = [];
+    const data: Record<string, unknown>[] = [];
     for (let attempt = 0; attempt < 4 && !runs.slice(1).some(holdsAll); attempt += 1) {
+      const cpu = await calibrate(page);
       const run = await scrollRun(page), samples = run.samples;
       const m = measure(run);
       runs.push(m);
+      if (attempt > 0) data.push({ run: attempt, cpuMs: +cpu.toFixed(1), gap: +m.gap.toFixed(1), median: +m.median.toFixed(1), frames: m.frames, loop: +m.work.toFixed(2), worker: +m.worker.toFixed(2), ...conditions(run) });
       console.log(`scroll ${attempt === 0 ? 'warm-up' : attempt}: ${m.frames} frames, gap p95 ${m.gap.toFixed(1)} ms, median ${m.median.toFixed(1)} ms, max ${m.max.toFixed(1)} ms; loop ${m.loopFrames} frames, own time p95 ${m.work.toFixed(2)} ms; worker ${m.batches} batches, own time p95 ${m.worker.toFixed(2)} ms`);
       expect(samples.length, 'the scroll was sampled across three seconds').toBeGreaterThan(60);
       const last = samples[samples.length - 1]!, firstS = samples[0]!;
@@ -343,6 +412,10 @@ test.describe('a busy thread', () => {
       }
     }
     const timed = runs.slice(1);
+    /* The control, before anything is asserted, so a run that fails is logged with it. */
+    const cpu = await calibrate(page), control = await controlRun(page);
+    for (const d of data) console.log(`shine-data ${JSON.stringify({ ...d, throttle: THROTTLE, controlGap: +control.gap.toFixed(1), controlMedian: +control.median.toFixed(1), controlFrames: control.frames, controlCpuMs: +cpu.toFixed(1) })}`);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
     const passed = timed.findIndex(holdsAll);
     if (passed >= 0) {
       console.log(`passed in timed run ${passed + 1} of ${timed.length}: gap p95 ${timed[passed]!.gap.toFixed(1)} ms (bound ${GAP_BOUND}), loop own time p95 ${timed[passed]!.work.toFixed(2)} ms (budget ${WORK_BUDGET}), worker own time p95 ${timed[passed]!.worker.toFixed(2)} ms (budget ${WORK_BUDGET})`);
