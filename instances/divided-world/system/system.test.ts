@@ -167,3 +167,11 @@ test('every persona\'s bands are keys of the warn bar\'s bands', async () => {
   const { defaults } = await import('../settings.ts');
   for (const p of system.roster) for (const b of p.strictness.bands) assert.ok(b in defaults.warnBar.bands, `${p.key}: ${b}`);
 });
+
+test('no persona\'s startingHobby, persuadedBy or temperament refers to the persona as it, its or itself, so its pronouns can change without a sweep', () => {
+  for (const p of system.roster) {
+    for (const field of ['startingHobby', 'persuadedBy', 'temperament'] as const) {
+      assert.doesNotMatch(p[field], /\b(it|its|itself)\b/i, `${p.key}.${field}`);
+    }
+  }
+});

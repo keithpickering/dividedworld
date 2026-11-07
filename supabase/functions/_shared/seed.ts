@@ -49,7 +49,7 @@ export function instanceSeed(instance: Instance) {
     })),
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
-    developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}) },
+    developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
     pipStyles: instance.pipStyles.map((p) => ({ key: p.key, name: p.name, full: p.full, empty: p.empty })),
     // The roster as characters (0043): a Boss or a Mod Bot, once each, with the profile its title and signature give. The
@@ -61,7 +61,9 @@ export function instanceSeed(instance: Instance) {
         // `visitHours` and `challenge` are what a persona's visits are like (0105): the hours it runs them and what talks it down. A quiz's challenge carries how many
         // questions it has and never one of them or its answer. The questions and answers travel beside it in `quiz` (0108), which seed_instance writes where no client can read it.
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
-          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness) })),
+          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness),
+          // A persona's own pronouns (0113); left out, seed_instance gives it the instance's default.
+          ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The member group every staff character is in, named by the instance.
