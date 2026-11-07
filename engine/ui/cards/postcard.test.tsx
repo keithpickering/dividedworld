@@ -202,6 +202,8 @@ describe('the back', () => {
     expect(canvas).not.toMatch(/45deg/u);
     expect(canvas).toMatch(/background-blend-mode:\s*multiply/u);
     expect(canvas).toContain('var(--kb-back-tint)');
+    // A doubled comma makes the whole background-image invalid, and the back draws as a flat field.
+    expect(canvas).toMatch(/background-image:\s*var\(--kb-back-tint\),\s*url\("[^"]+"\),\s*url\("[^"]+"\);/u);
     expect(rule('.kb-postcard-back')).toMatch(/--kb-back-tint:\s*linear-gradient\([^;]*var\(--kb-glass-/u);
   });
 
