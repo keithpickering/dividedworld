@@ -31,3 +31,14 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 
 /** Built files carry a content hash in their names, so they never change under a name. */
 export const ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+/**
+ * The email's fonts and images (engine/mail/, docs/plans/2026-11-07-glass-mail-design.md), under
+ * /mail/. A mail client that checks CORS before it loads a web font may, so the origin is any. The
+ * names are stable rather than hashed, since mail already sent names them, so they are cached for a
+ * day: a re-bake reaches old mail within one. Every recipient loads the same URLs (design §6).
+ */
+export const MAIL_HEADERS: Readonly<Record<string, string>> = {
+  'Access-Control-Allow-Origin': '*',
+  'Cache-Control': 'public, max-age=86400',
+};
