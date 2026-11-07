@@ -537,6 +537,19 @@
   initial-value: 0px;
 }
 
+/* How much of the glow's room the mask hides at each end: all of it where cards lie past that end, none where nothing does. Eased with the fade. */
+@property --kb-class-room-before {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --kb-class-room-after {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 /*
  * The row and its count and arrows. The row's padding holds the chosen card's glow, which the scroll would clip
  * (32px, so the padding is no less): above and below, the rail gives that room back, so the cards stand the board's
@@ -562,16 +575,34 @@
   scrollbar-width: none;
   /*
    * One mask, always drawn, over the eased lengths: a length of none leaves its end whole, so the fade comes and goes
-   * by easing and never by a rule changing under it. The fade starts at the row's edge, over the glow's room.
+   * by easing and never by a rule changing under it. At an end with cards past it the room is hidden and the fade starts
+   * at the column's edge, so no card's words or edge are drawn outside the column; at an end with nothing past it the
+   * room is drawn, and holds the glow of the card there.
    */
   --kb-class-fade-before: var(--kb-class-peek-before, 0px);
   --kb-class-fade-after: var(--kb-class-peek-after, 0px);
-  mask-image: linear-gradient(90deg, transparent, currentColor var(--kb-class-fade-before), currentColor calc(100% - var(--kb-class-fade-after)), transparent);
+  --kb-class-room-before: 0px;
+  --kb-class-room-after: 0px;
+  mask-image: linear-gradient(
+    90deg,
+    transparent var(--kb-class-room-before),
+    currentColor calc(var(--kb-class-room-before) + var(--kb-class-fade-before)),
+    currentColor calc(100% - var(--kb-class-room-after) - var(--kb-class-fade-after)),
+    transparent calc(100% - var(--kb-class-room-after))
+  );
+}
+
+.kb-class-grid[data-kb-before] {
+  --kb-class-room-before: var(--kb-class-glow);
+}
+
+.kb-class-grid[data-kb-after] {
+  --kb-class-room-after: var(--kb-class-glow);
 }
 
 /* Eased once the carousel has read the row (Carousel.tsx sets `data-kb-eased` a frame after), so a card that peeks when it opens is faded from the first frame. */
 .kb-class-grid[data-kb-eased] {
-  transition: --kb-class-fade-before 0.2s ease-out, --kb-class-fade-after 0.2s ease-out;
+  transition: --kb-class-fade-before 0.2s ease-out, --kb-class-fade-after 0.2s ease-out, --kb-class-room-before 0.2s ease-out, --kb-class-room-after 0.2s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {

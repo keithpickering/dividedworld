@@ -30,16 +30,22 @@ changes with it, so the fade pops. The roster is the carousel at every width, it
 ## 1. The row keeps room for a glow at its ends
 
 **Decided:** the row has the same room for a glow at its two ends as above and below, `--kb-class-glow` (32px, the
-largest glow a card here draws reaches 30px past its box). The row is padded by it inline and drawn out past its column by
-the same amount, so its cards stand where they stood and the glow is inside the row's box. Snapping and the carousel's
-own scrolling keep their cards at the column's edge (`scroll-padding-inline`).
+largest glow a card here draws reaches 30px past its box), held to what holds the row: on a page no more than the
+column's gutter (a phone's is about 17px), so the row never reaches past the window, and in a dialog no more than its
+padding, so the overlay never scrolls sideways. The row is padded by it inline and drawn out past its column by the
+same amount, so its cards stand where they stood and the glow is inside the row's box. Snapping and the carousel's own
+scrolling keep their cards at the column's edge (`scroll-padding-inline`).
 
-A card is still counted whole (the count, "1–4 of 6") by whether it lies inside the column. A card that lies past the
-column shows up to the room more, inside the row's box, and that is its peek: the fade is drawn over it from the row's
-edge, so a card shown whole is never faded and nothing peeking is drawn unfaded. The numbers stay pure and tested
-(`engine/ui/characters/carousel.ts`, `peeks`).
+The room is drawn only at an end with nothing past it: there the card at that end shows its glow. At an end with cards
+past it, the mask hides the room (`--kb-class-room-before` and `-after`, eased with the fade), so a peeking card's words
+and edge are never drawn outside the column, where they would stand off the page's calm and over their own bright
+edge. Cards are counted whole and peek inside the column, as before (`engine/ui/characters/carousel.ts`, `peeks`). The
+class cards' row is a calm region of its own, as the roster's tablist already is, so the room it does draw stands in a
+calm.
 
-Weighed: `overflow-clip-margin`, which applies only to `overflow: clip`, not to a row that scrolls.
+Weighed: `overflow-clip-margin`, which applies only to `overflow: clip`, not to a row that scrolls; and drawing the room
+at both ends always, with the fade over it, which the glass's text check showed puts a peeking card's words outside the
+calm and over its bright edge.
 
 ## 2. The fade eases
 
@@ -79,7 +85,8 @@ six is two rows of three beside the panel, as the board's own grid is.
 One task, built in this session, test first:
 
 1. `peeks` in `engine/ui/characters/carousel.ts`, with its unit tests red first, and `Carousel.tsx` reading the row's
-   inline padding and drawing its counts for the stylesheet (`--kb-carousel-items`, `--kb-carousel-count`).
+   inline padding, marking the ends with cards past them, and drawing its counts for the stylesheet
+   (`--kb-carousel-items`, `--kb-carousel-count`).
 2. `e2e/characters.spec.ts`: the chosen card's glow lies inside the row at its start; the fade's lengths ease and, under
    reduced motion, do not; at 1440 the roster is three across with New character in the next slot and the panel beside
    it, with no count or arrows; on the Phone board's layout at 1024 it is still the carousel with its panel under it.

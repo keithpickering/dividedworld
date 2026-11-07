@@ -374,10 +374,20 @@ async function fades(dialog: ReturnType<Page['locator']>) {
     return { before: px('before'), after: px('after') };
   });
 }
-/** How much of a card shows inside the row, in whole px, measured from the boxes. */
+/** How much of the glow's room the mask hides at each end, in whole px (the eased lengths). */
+async function rooms(dialog: ReturnType<Page['locator']>) {
+  return classGroup(dialog).locator('.kb-class-grid').evaluate((row) => {
+    const s = getComputedStyle(row);
+    return { before: Math.round(parseFloat(s.getPropertyValue('--kb-class-room-before'))), after: Math.round(parseFloat(s.getPropertyValue('--kb-class-room-after'))), room: Math.round(parseFloat(s.paddingLeft)) };
+  });
+}
+
+/** How much of a card shows inside the row's column (its box less the glow's room), in whole px, measured from the boxes. */
 async function showing(dialog: ReturnType<Page['locator']>, key: string) {
   return classGroup(dialog).locator('.kb-class-grid').evaluate((row, k) => {
-    const r = row.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    const st = getComputedStyle(row);
+    const r = { left: box.left + parseFloat(st.paddingLeft), right: box.right - parseFloat(st.paddingRight) };
     const c = row.querySelector(`[data-kb-class="${k}"]`)!.getBoundingClientRect();
     return Math.max(0, Math.round(Math.min(r.right, c.right) - Math.max(r.left, c.left)));
   }, key);
@@ -402,8 +412,10 @@ test('the fade covers only a peeking card, at its start and its end, and never a
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(200, 0);
   await expect(group.getByText('2–2 of 6')).toBeVisible();
-  // Snapped to the Heel, the Face shows only in the glow's room before it, and the fade at the start covers that and no more; the Jabroni peeks at its end.
-  await expect.poll(async () => { const face = await showing(phone, 'face'); return face < 32 && (await fades(phone)).before === face; }).toBe(true);
+  // The Jabroni peeks at its end.
+  // Snapped to the Heel, nothing of the Face shows in the column: no fade at its start, and the glow's room there is hidden (cards lie before it).
+  await expect.poll(async () => (await fades(phone)).before).toBe(0);
+  await expect.poll(async () => (await rooms(phone)).before).toBeGreaterThan(0);
   // The status text and `before` settle the moment the Heel is the first card shown, while the snap is still gliding;
   // the Jabroni's peek grows with the scroll, so wait for the glide to land before reading how much of it shows.
   await expect.poll(async () => (await fades(phone)).after).toBeGreaterThan(40);
@@ -422,12 +434,8 @@ test('on a phone, choosing the Tweener on New character counts 5–5 of 6 and fa
   await expect(group.getByText('5–5 of 6')).toBeVisible();
   const row = group.locator('.kb-class-grid');
   await expect.poll(async () => (await inView(group, group)).whole).toEqual(['tweener']);
-  // The glide has landed; the fade at the row's start covers only what of the Technician shows in the glow's room, and none of the Tweener.
-  await expect.poll(async () => row.evaluate((el) => {
-    const before = el.hasAttribute('data-kb-peek-before') ? parseFloat(getComputedStyle(el).getPropertyValue('--kb-class-peek-before')) : 0;
-    const tweener = el.querySelector('[data-kb-class="tweener"]')!.getBoundingClientRect().left - el.getBoundingClientRect().left;
-    return before < 32 && before <= tweener;
-  })).toBe(true);
+  // The glide has landed; the fade at the row's start is none, since the Technician lies wholly out of the column.
+  await expect.poll(async () => row.evaluate((el) => (el.hasAttribute('data-kb-peek-before') ? parseFloat(getComputedStyle(el).getPropertyValue('--kb-class-peek-before')) : 0))).toBe(0);
   await expect(group.getByText('5–5 of 6')).toBeVisible();
 });
 
@@ -469,7 +477,7 @@ test('the fade eases to the peek it is drawn over, and under reduced motion foll
   await expect.poll(async () => { const m = await fadeMotion(dialog); return m.fade === m.peek && m.peek > 0; }).toBe(true);
   /* The mask is drawn over the eased length, not the measured one, and not some other. */
   const row = classGroup(dialog).locator('.kb-class-grid');
-  expect(await row.evaluate((el) => getComputedStyle(el).maskImage)).toContain(`${(await fadeMotion(dialog)).fade}px`);
+  expect(await row.evaluate((el) => getComputedStyle(el).maskImage)).toContain(`${32 + (await fadeMotion(dialog)).fade}px`);
 
   /*
    * The peek at the end dropped to none (as when the Tweener comes whole): a transition runs on the fade's length, and
@@ -565,4 +573,17 @@ test('at 150% text on a wide window the roster stays a carousel with its panel u
   expect(got.layout).toBe('phone');
   expect(got.row).toBe('auto');
   expect(got.panelTop).toBeGreaterThan(got.rowFoot);
+});
+
+/*
+ * The glow's room is drawn only at an end where no card lies beyond (section 1): there the chosen card's glow shows; where a
+ * card lies past the column, the room is hidden by the mask, so no card's words or edge are drawn outside the column.
+ */
+test('the glow\'s room shows at an end with nothing beyond it, and is hidden at an end with a card past it', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  await expect.poll(async () => rooms(dialog)).toEqual({ before: 0, after: 32, room: 32 });
+  await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
+  await expect.poll(async () => rooms(dialog)).toEqual({ before: 32, after: 0, room: 32 });
+  const mask = await classGroup(dialog).locator('.kb-class-grid').evaluate((el) => getComputedStyle(el).maskImage);
+  expect(mask).toMatch(/^linear-gradient\(90deg, rgba\(0, 0, 0, 0\) 32px, /u);
 });

@@ -52,8 +52,9 @@ export interface CarouselProps<T extends { readonly key: string }> {
  * Where the row stands: whether it overflows, the cards it shows whole, whether cards lie before or
  * past it (the arrows), and how much of a card only peeks in at each edge (the fades, drawn over
  * that much and no more, so a card shown whole is never faded). The row's inline padding is the
- * glow's room (characters.css, `--kb-class-glow`): the cards are counted whole in the column inside
- * it, and a card past that column peeks into it (docs/plans/2026-11-07-carousel-edges-design.md).
+ * glow's room (characters.css, `--kb-class-glow`): the cards are counted whole, and peek, in the column
+ * inside it, and the stylesheet hides the room at an end with cards past it, as `before` and `after`
+ * say (docs/plans/2026-11-07-carousel-edges-design.md, section 1).
  */
 interface RowState { readonly overflow: boolean; readonly first: number; readonly last: number; readonly before: boolean; readonly after: boolean; readonly peekBefore: number; readonly peekAfter: number }
 const STILL: RowState = { overflow: false, first: 0, last: 0, before: false, after: false, peekBefore: 0, peekAfter: 0 };
@@ -86,7 +87,7 @@ function read(row: HTMLElement): RowState {
   /* The column the cards are counted in is the row's box less the room at each end; scrolled by `scrollLeft`, the first card stands at its start. */
   const column = clientWidth - 2 * room;
   const { first, last } = shownRange(scrollLeft, column, card, gap, cards.length);
-  const { before: peekBefore, after: peekAfter } = peeks(scrollLeft, column, room, card, gap, cards.length);
+  const { before: peekBefore, after: peekAfter } = peeks(scrollLeft, column, card, gap, cards.length);
   return { overflow: true, first, last, before: scrollLeft > 1, after: scrollLeft + clientWidth < scrollWidth - 1, peekBefore, peekAfter };
 }
 
@@ -192,6 +193,7 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
       <CalmRegion
         ref={rowRef} calm={!tabs} className="kb-class-grid"
         data-kb-peek-before={row.peekBefore > 0 || undefined} data-kb-peek-after={row.peekAfter > 0 || undefined} data-kb-eased={eased || undefined}
+        data-kb-before={row.before || undefined} data-kb-after={row.after || undefined}
         style={{
           '--kb-class-peek-before': `${row.peekBefore}px`, '--kb-class-peek-after': `${row.peekAfter}px`,
           /* How many items and cards the row holds, for a stylesheet that lays it as a grid and places the card that is no item in the next slot. */
