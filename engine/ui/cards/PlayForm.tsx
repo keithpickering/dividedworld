@@ -90,6 +90,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [] }: PlayFor
     if (postId === null || postThread === null) return;
     let open = true;
     const take = (a: Act) => { if (open && a.id === postId && a.kind === 'post') setLive((held) => (held ? newer(held, a) : a)); };
+    /* The form opens at once from the answer read before it (it may be up to 30 s old); the post is read again here in the background, so an edit in the gap reaches the price. */
+    try { void api.actsById([postId]).then((again) => { for (const a of again) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
     const stop = api.subscribeThread(postThread, { onAct: take });
     return () => { open = false; stop(); };
   }, [api, postId, postThread]);

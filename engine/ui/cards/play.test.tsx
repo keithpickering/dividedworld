@@ -216,6 +216,33 @@ describe('the form opens whole', () => {
     expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
   });
 
+  test('the form opens at once from the answer read before it and reads the post again, so an edit in the gap reaches the price', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    const real = w.fake.actsById.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'actsById').mockImplementationOnce(async (...args) => (await real(...args)).map((a) => ({ ...a, currentPayload: { ...a.currentPayload, body: 'short' } })));
+    await user.click(here(2)!);
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    await waitFor(() => expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.25'));
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('Escape during the wait cancels the read and leaves the card armed', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(() => new Promise(() => undefined));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Escape}');
+    expect(here(2)).not.toHaveAttribute('aria-busy');
+    expect(here(2)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+  });
+
   test('a read that fails opens nothing and says so plainly', async () => {
     const user = userEvent.setup();
     const w = world();

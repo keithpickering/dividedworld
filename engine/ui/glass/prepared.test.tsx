@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { renderInWorld } from '../test-world.tsx';
 import { GlassButton } from './Button.tsx';
@@ -91,5 +92,80 @@ describe('usePrepared', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Open it' }));
     expect(screen.queryByText('That didn’t load. Try again.')).toBeNull();
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  test('Escape while busy is consumed: no other Escape listener sees it', async () => {
+    const g = gate();
+    renderInWorld(<Trigger read={() => g.promise} />, { path: '/characters' });
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    await userEvent.click(screen.getByRole('button', { name: 'Open it' }));
+    await userEvent.keyboard('{Escape}');
+    expect(seen).not.toHaveBeenCalled();
+    document.removeEventListener('keydown', seen);
+    expect(screen.getByRole('button', { name: 'Open it' })).not.toHaveAttribute('aria-busy');
+  });
+
+  test('an answer read early is kept 30 seconds and read again after', async () => {
+    const read = vi.fn(() => Promise.resolve('whole'));
+    renderInWorld(<Trigger read={read} />, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Open it' });
+    fireEvent.pointerEnter(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(31_000); });
+    fireEvent.click(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  test('the keep never aborts a read that is still out: an open that adopted it lands', async () => {
+    const g = gate();
+    let signal: AbortSignal | undefined;
+    renderInWorld(<Trigger read={(s) => { signal = s; return g.promise; }} />, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Open it' });
+    fireEvent.pointerEnter(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    fireEvent.click(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(40_000); });
+    expect(signal?.aborted).toBe(false);
+    await act(async () => { g.resolve('slow'); await g.promise; });
+    expect(screen.getByRole('dialog', { name: 'The overlay' })).toHaveTextContent('slow');
+  });
+
+  test('a read for A that lands after B was asked opens nothing of A', async () => {
+    const a = gate();
+    const b = gate();
+    function Two() {
+      const p = usePrepared<string, string>((_s, which) => (which === 'A' ? a.promise : b.promise), (which) => which);
+      return (
+        <>
+          <button type="button" onClick={() => void p.open('A')}>A</button>
+          <button type="button" onClick={() => void p.open('B')}>B</button>
+          {p.data !== null && <div role="dialog">{p.data}</div>}
+        </>
+      );
+    }
+    renderInWorld(<Two />, { path: '/characters' });
+    await userEvent.click(screen.getByRole('button', { name: 'A' }));
+    await userEvent.click(screen.getByRole('button', { name: 'B' }));
+    await act(async () => { a.resolve('from A'); await a.promise; });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await act(async () => { b.resolve('from B'); await b.promise; });
+    expect(screen.getByRole('dialog')).toHaveTextContent('from B');
+  });
+
+  test('under StrictMode an early then an open still make one read and open', async () => {
+    const read = vi.fn(() => Promise.resolve('whole'));
+    renderInWorld(<StrictMode><Trigger read={read} /></StrictMode>, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Open it' });
+    fireEvent.pointerEnter(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    fireEvent.click(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByRole('dialog', { name: 'The overlay' })).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
   });
 });

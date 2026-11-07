@@ -553,14 +553,20 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const visitP = usePrepared<VisitStory>(() => readVisit(api, visit!.visit, visit!.thread, tallies, mine), () => visit?.visit.id ?? '');
   const formP = onForm ? (form.kind === REPORT_KIND ? reportP : appealP) : null;
   const formKey = onForm ? (form.kind === APPEAL_KIND ? form.infraction : form.post) : '';
-  useEffect(() => { if (formP && formP.data === null) void formP.open(); }, [formKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* A form read is for the form it was asked for: a different form drops the kept answer and reads its own. */
+  useEffect(() => { if (formP) { formP.cancel(); void formP.open(); } }, [formKey]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (onVisit && visitP.data === null) void visitP.open(); }, [onVisit]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* The story is the panel's once it has been drawn from: leaving the tab drops it, so the tab read again is not a story from before a try. */
+  useEffect(() => { if (!onVisit && visitP.data !== null) visitP.cancel(); }, [onVisit]); // eslint-disable-line react-hooks/exhaustive-deps
   const readOf = (kind: string): { readonly data: unknown; readonly busy: boolean; readonly open: () => Promise<unknown>; readonly early: () => void } | null =>
     onForm ? (kind === form.kind ? formP : null) : kind === VISIT_KIND && visit ? visitP : null;
+  /* The latest press on a tab: a read that lands after another tab was pressed does not take the reader back. */
+  const pressed = useRef(0);
   const choose = (kind: string) => {
+    const mine = ++pressed.current;
     const read = readOf(kind);
     if (read === null || read.data !== null) { store.select(kind); return; }
-    void read.open().then((landed) => { if (landed !== null && !onForm) store.select(kind); });
+    void read.open().then((landed) => { if (landed !== null && !onForm && pressed.current === mine) store.select(kind); });
   };
   const waiting = onForm ? formP : onVisit ? visitP : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
@@ -645,7 +651,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     if (to_ < 0) return;
     e.preventDefault();
     const next = kinds[to_]!;
-    store.select(next);
+    choose(next);
     tabs.current.get(next)?.focus();
   };
 
@@ -702,7 +708,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       {/* Before the body: the body is the dialog's last child, which the frame's own checks lay their probes in. */}
       <div className="kb-lens-fade" aria-hidden="true" />
       <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
-        {waiting && waiting.data === null && waiting.failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
+        {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} facts={appealP.data} />}
         {onVisit && visitP.data && (

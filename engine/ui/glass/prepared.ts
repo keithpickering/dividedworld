@@ -36,7 +36,7 @@ interface Held<T> {
   readonly key: string;
   readonly controller: AbortController;
   readonly promise: Promise<T>;
-  readonly timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | undefined;
 }
 
 /**
@@ -72,8 +72,10 @@ export function usePrepared<T, A = void>(read: (signal: AbortSignal, arg: A) => 
     if (held.current) drop(held.current, true);
     const controller = new AbortController();
     const promise = Promise.resolve().then(() => reader.current(controller.signal, arg));
-    const h: Held<T> = { key: k, controller, promise, timer: setTimeout(() => drop(h, true), KEEP_MS) };
+    const h: Held<T> = { key: k, controller, promise, timer: undefined };
     held.current = h;
+    /* The keep starts when the answer is in, so it never aborts a read that is still out (an `open` may have adopted it). */
+    promise.then(() => { if (held.current === h) h.timer = setTimeout(() => drop(h, true), KEEP_MS); }, () => undefined);
     /* A read that fails is not kept: the next press reads again. */
     promise.catch(() => drop(h, false));
     return h;
@@ -108,9 +110,15 @@ export function usePrepared<T, A = void>(read: (signal: AbortSignal, arg: A) => 
 
   useEffect(() => {
     if (!busy) return undefined;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancel(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    /* The Escape that cancels the wait is consumed: the same press does not also disarm a card or close a Lens. Captured at the window so it comes first. */
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      cancel();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [busy, cancel]);
 
   return { data, busy, failed, open, early, cancel };

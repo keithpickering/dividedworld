@@ -250,8 +250,9 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
     const people = [visit.mod, s.report?.character ?? null, s.appeal?.character ?? null, ...s.attempts.map((a) => a.character), s.ruling?.character ?? null].filter((c): c is Id => c !== null);
     /* A name the thread did not know is read and then drawn: the characters in these Acts may not have a post on the page. */
     if (know) void know(people).then(() => { if (live.current) setNames((n) => n + 1); }).catch(() => undefined);
-    if (s.end) ended.current(s.end);
-  }, [visit.mod, know]);
+    /* Told once: a visit that already carries its end has told the strip. */
+    if (s.end && !visit.end) ended.current(s.end);
+  }, [visit.mod, visit.end, know]);
   useEffect(() => { settle(first); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* The reread after a try. */

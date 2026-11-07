@@ -1043,6 +1043,55 @@ describe('a visit\'s tab', () => {
     expect(within(l).getByRole('tab', { name: /^On a visit/u })).not.toHaveAttribute('aria-busy');
   });
 
+  /** The Lens opened on the card's tab, the visit's tab among the others. */
+  const onCardTab = async (w: ReturnType<typeof visited>) => {
+    width(false);
+    w.play('k1');
+    openVisit(w);
+    await userEvent.click(await markOf(w.seq, 'Card 1'));
+    const l = visitLens();
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    return l;
+  };
+
+  test('a visit read that fails from another tab says so plainly and stays on that tab', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    vi.spyOn(w.fake, 'visitStory').mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    expect(await within(l).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true'));
+    expect(within(l).queryByText('That didn\u2019t load. Try again.')).toBeNull();
+  });
+
+  test('pressing another tab while the visit is read does not take the reader back when it lands', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    let release!: () => void;
+    const real = w.fake.visitStory.bind(w.fake);
+    vi.spyOn(w.fake, 'visitStory').mockImplementationOnce((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'Card 1' }));
+    await act(async () => { release(); });
+    await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).not.toHaveAttribute('aria-busy'));
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  test('the tab read again after leaving it is a fresh story, not the one drawn before', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    const read = vi.spyOn(w.fake, 'visitStory');
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    await userEvent.click(within(l).getByRole('tab', { name: 'Card 1' }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   test('is first of the Lens\'s tabs, ahead of the card kinds, and is the one open', async () => {
     width(false);
     const w = visited();
