@@ -38,9 +38,12 @@ Lurker in violet. The four-card board it replaces is in this folder's history; t
 every card is now one 2:3 shape. `05-cards.html` draws its three cards (the two postcards and the sealed slot) at 276 by
 414, where they were 276 by 480, each keeping its old top edge (the build lays the row out from the top, so the cards
 lose their height at the bottom).
-`07-vending.html` draws each slot's card at 86 by 129, where it was 92 by 128, centered in the same cell. The fan (150 by
+`07-vending.html` draws each slot's card, and the card dispensed in the tray, at 86 by 129, where they were 92 by 128, centered where the old
+box was. The fan (150 by
 225) and the phone sheet (104 by 156), which boards 01 and 02 draw, did not change. The cards' faces on these boards are
-still the first drawing; only their boxes are held to the build.
+still the first drawing; only their boxes are held to the build. The faces' inner layout on `05-cards.html` was drawn for
+480 high and was not redrawn, so in the 414 box their text overlaps the foot row; the build's postcard
+(`engine/ui/cards/postcard.css`) is the reference for a face.
 
 - `01-main.html`: the game screen: the 2003 board with the HUD docked at the bottom as glass (the character being
   played and its swap, the orbs and the next settlement, the hand), a card armed with "Play Whoops! here" on the
