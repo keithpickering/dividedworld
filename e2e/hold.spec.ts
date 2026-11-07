@@ -36,6 +36,10 @@ const ready = async (page: Page) => { await page.evaluate(() => document.fonts.r
  * not a button a reader can press, so it is not looked for, as a screen reader does not find it either.
  */
 async function pressBreakFreeUntilFree(page: Page): Promise<string | null> {
+  /* The view enters once, from opacity 0, and holds at 1 for every press after (measured per frame across the loop: one mount, no
+   * remount, no dip). A press made in the first frames of that entrance would read a button that is not yet visible, which is the
+   * test being early, not the view flashing out; so the entrance is waited for, the armed ring's endless loop aside. */
+  await settled(page, { loops: true });
   return page.evaluate(() => new Promise<string | null>((done) => {
     let presses = 0;
     const name = (el: Element | null) => (el ? `${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/u).join('.')}` : ''}` : 'nothing');
