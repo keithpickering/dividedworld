@@ -454,7 +454,7 @@ export const NOTICE_REACTIONS = 3;
 
 /** How a landed move ended (moves_log). */
 export interface MoveEnd {
-  readonly why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent';
+  readonly why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'unmet' | 'overturned';
   /** `tick`, `admin`, `boss` (the new Boss's review), `inheritance` (the review never came) or `handover`. */
   readonly by: string;
   readonly at: string;

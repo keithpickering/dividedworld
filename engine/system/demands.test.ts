@@ -51,6 +51,7 @@ test('every demand kind accepts a well-formed demand and renders its template as
     quadrantOnBoard: { board, quadrant: 'calmPositive', count: 20 },
     characterPostsInThread: { character: a, thread: b },
     crossQuote: { a, b, reactions: 6 },
+    apologyAccepted: {},
   };
   assert.deepEqual(DEMAND_KINDS.map((k) => k.key).sort(), Object.keys(samples).sort(), 'a kind added here needs a sample here');
   for (const k of DEMAND_KINDS) {
@@ -109,4 +110,14 @@ test('every demand kind says in a few plain words what met it', () => {
   const params = { board, count: 12, quadrant: 'calmPositive', reactions: 6 };
   for (const k of DEMAND_KINDS) assert.doesNotMatch(k.met(params), /[{}]|undefined|NaN/u, k.key);
   assert.equal(demandKind('distinctCharactersOnBoard')!.met(params), '12 posted');
+});
+
+test('apologyAccepted takes no params, reads as an accepted apology, and the meeting is not offered it', () => {
+  assert.ok(demandProblems({ kind: 'apologyAccepted', params: {} }, CAP).ok);
+  const k = demandKind('apologyAccepted')!;
+  assert.deepEqual(k.unit, { one: 'APOLOGY', many: 'APOLOGIES' });
+  assert.equal(k.needs({}), 'an accepted apology');
+  assert.equal(k.met({}), 'an apology was accepted');
+  assert.equal(k.offered, false);
+  assert.ok(DEMAND_KINDS.filter((d) => d.key !== 'apologyAccepted').every((d) => d.offered !== false));
 });

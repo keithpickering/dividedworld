@@ -90,7 +90,7 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
   assert.ok(r.ok);
   assert.equal(r.moves.length, 0);
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup)'), JSON.stringify(r.trims));
 });
 
 test('an inheritance answer must name a move the Boss was shown, when it was shown a list', () => {
@@ -321,7 +321,7 @@ test('the prompt shows each Mod: its name, career, beat preferences, pet rules, 
   }
   assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
   assert.match(text, /renameBoard[^\n]*Made by the Boss\./);
-  assert.match(text, /\(setRule; every other kind stays yours\)/);
+  assert.match(text, /\(setRule, conferGroup; every other kind stays yours\)/);
   assert.match(text, /a rule a Mod sets lasts at most 7 days/);
   assert.match(text, /at most 6 patrols/);
   assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');

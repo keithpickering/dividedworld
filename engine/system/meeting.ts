@@ -27,7 +27,7 @@
  */
 import type { Persona, Settings, SystemContent } from '../rules/types.ts';
 import { careerText, type Career } from './career.ts';
-import { DEMAND_KINDS, demandProblems } from './demands.ts';
+import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
 import { ASKABLE_MOVE_KINDS, UUID, moveKind, moveParamsProblems } from './moves.ts';
@@ -74,7 +74,7 @@ function looseFields(rules: readonly Rule[]): Record<string, Rule> {
 const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params)) });
 const demandRule = (): Rule => ({
   type: 'object',
-  fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(DEMAND_KINDS.map((d) => d.params)) } },
+  fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(MEETING_DEMAND_KINDS.map((d) => d.params)) } },
 });
 
 /**
@@ -213,7 +213,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   const kinds = ASKABLE_MOVE_KINDS.map(
     (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
-  const demands = DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
+  const demands = MEETING_DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const career = careerText(f.career);
   const notes = recentNotes(f.notes, s.pool.notesRead);
   return [
@@ -515,6 +515,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
     const demand = demandProblems(m['demand'], s.reactionCap);
     if (!demand.ok) return drop(`${path}.${demand.path}`, demand.predicate);
+    // A demand only the code sets is never the meeting's to choose.
+    if (demandKind(String((demand.value as { kind: string }).kind))?.offered === false) return drop(`${path}.demand.kind`, `oneOf(${MEETING_DEMAND_KINDS.map((d) => d.key).join(', ')})`);
     // A demand names things that exist: a board of the meeting's list, a thread the model was given, a character public now.
     const named = (demand.value as { params: Record<string, unknown> }).params;
     for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) {

@@ -65,7 +65,7 @@ test('a kind the Mod\'s office may not make is dropped, naming why', () => {
   const unknown = repairModMove({ ...good, kind: 'burnItDown' }, ctx);
   assert.equal(unknown.move, null);
   assert.equal(unknown.dropped?.path, 'move.kind');
-  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule\)$/);
+  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule, conferGroup\)$/);
 });
 
 test('a board off the beat, or no board at all, is dropped', () => {

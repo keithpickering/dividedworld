@@ -62,13 +62,23 @@ export interface MoveKind {
    */
   readonly plain: string;
   /** How the move reads in a player's log, in plain words, with the actor's role (as `label` has it). */
-  readonly template: (params: Readonly<Record<string, unknown>>, role: string) => string;
+  readonly template: (params: Readonly<Record<string, unknown>>, role: string, names?: MoveNames) => string;
   /**
    * The move as one short plain sentence for a staff member's moderation log and for the admin queue: "Renamed General to Pointless
    * Toast Palace" once it has landed, "Rename General to Pointless Toast Palace" while it waits (`plan`). `was` is the name the board
    * had before the move, when the screen knows it; for a move that names a Boss, it is that Boss's name, when the screen knows it.
    */
-  readonly parts: (params: Readonly<Record<string, unknown>>, was: string | null, tense: 'done' | 'plan') => MoveParts;
+  readonly parts: (params: Readonly<Record<string, unknown>>, was: string | null, tense: 'done' | 'plan', names?: MoveNames) => MoveParts;
+}
+
+/**
+ * The names a move's words cannot read from its params: a character, a group (params hold only its key) and a board are named by
+ * the instance's rows, which the caller passes in. The engine names no group; a name left out falls to a plain stand-in.
+ */
+export interface MoveNames {
+  readonly character?: string;
+  readonly group?: string;
+  readonly board?: string;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -144,7 +154,45 @@ export const SET_RULE: MoveKind = {
   },
 };
 
-export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE];
+/** The longest a group's key may be: the instance's rows hold the key, and the move names it. */
+export const GROUP_KEY_MOST = 40;
+
+/**
+ * A member put in a group (member groups design): a punishment bars the character from a board (the group's `through` in the instance's
+ * rows), a favor lifts it. The group is named by its key; the instance's rows say what it is and what it does. A punishment that
+ * names a board carries the demand `apologyAccepted`; a favor carries `checkAt`, when the tick looks to see the demand was met.
+ */
+export const CONFER_GROUP: MoveKind = {
+  key: 'conferGroup',
+  offices: ['boss', 'mod'],
+  structural: false,
+  shapesBoard: false,
+  askable: true,
+  label: '{role} moved a member',
+  params: {
+    type: 'object',
+    fields: {
+      character: { type: 'string', minLength: 36, maxLength: 36 },
+      group: { type: 'string', minLength: 1, maxLength: GROUP_KEY_MOST },
+      board: { type: 'string', minLength: 36, maxLength: 36, optional: true },
+      checkAt: { type: 'string', minLength: 1, maxLength: 40, optional: true },
+    },
+  },
+  uuids: ['character', 'board'],
+  plain: 'moving a member into "{group}"',
+  template: (p, role, names) => {
+    const who = names?.character ?? 'a member';
+    const group = names?.group ?? text(p['group']);
+    return `${role} put ${who} in ${group}${p['board'] ? `, barred from posting on ${names?.board ?? 'a board'}` : ''}.`;
+  },
+  parts: (p, _was, tense, names) => {
+    const head = `Put ${names?.character ?? 'a member'} in ${names?.group ?? text(p['group'])}`;
+    const tail = tense === 'plan' ? ' (planned)' : '';
+    return p['board'] ? [`${head}, barred from `, { board: text(p['board']), name: names?.board ?? 'a board' }, ...(tail ? [tail] : [])] : [`${head}${tail}`];
+  },
+};
+
+export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP];
 
 /** The moves the Boss may propose among its `moves`: the catalog less the ones another answer queues. */
 export const ASKABLE_MOVE_KINDS: readonly MoveKind[] = MOVE_KINDS.filter((k) => k.askable);

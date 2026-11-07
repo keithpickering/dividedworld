@@ -41,6 +41,9 @@ function endedBase(end: MoveEnd | null, demand: Demand | null): string {
   if (end === null) return 'in force';
   if (end.why === 'superseded') return 'ended at the handover';
   if (end.why === 'spent') return 'used up at the handover';
+  if (end.why === 'unmet') return 'Stripped: the demand was not met by its check';
+  if (end.why === 'overturned') return 'Ended: overturned on appeal';
+  if (end.why === 'met' && demand?.kind === 'apologyAccepted') return 'Ended: an apology was accepted';
   if (end.why === 'met') {
     const met = demand ? demandKind(demand.kind)?.met(demand.params) : undefined;
     return met ? `undone: ${met}` : 'undone: its demand was met';
