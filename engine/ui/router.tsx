@@ -171,6 +171,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   const shownRef = useRef(shown);
   const entryRef = useRef<string | null>(unwrap(w.history.state).kb);
   const pendingRef = useRef<Pending | null>(null);
+  /* The DOM event inside which the pending load began, if any: the same keydown that began a load (Esc to go Back) must not also stop it. */
+  const startedBy = useRef<Event | undefined>(undefined);
   const routesRef = useRef<readonly RouteLike[]>([]);
   /* undefined until the first account is heard of: that one is the account the first loads ran under. */
   const accountRef = useRef<string | null | undefined>(undefined);
@@ -272,6 +274,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const controller = new AbortController();
     const startedAt = Date.now();
     const joined = takePrefetch(address);
+    startedBy.current = w.event;
     pendingRef.current = { id, to: req.full, controller, startedAt, account: accountRef.current, popped: req.popped, initial: !!req.initial, silent: !!req.silent, joined: joined ? prefetchKey(address) : null, source: req.source ?? null, req };
     setPending({ to: req.full, startedAt, source: req.source ?? null });
     const promise = joined ?? invoke(found.route, url, found.params, controller.signal);
@@ -325,6 +328,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !pendingRef.current || pendingRef.current.silent) return;
+      if (startedBy.current === e) return;
       const t = e.target;
       if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
       if (w.document.querySelector('[aria-modal="true"], dialog[open]')) return;

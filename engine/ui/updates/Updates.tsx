@@ -27,7 +27,8 @@ import { Reactions } from '../reactions/Reactions.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies } from '../thread/tallies.ts';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { todoDraft } from '../admin/handover-words.ts';
 import { WriteUpdate } from '../admin/WriteUpdate.tsx';
 import '../cards/kit.css';
@@ -107,10 +108,10 @@ export function Updates({ updates, open, more, onMore, admin, onWritten, initial
               <ul>
                 {updates.map((u) => (
                   <li key={u.act}>
-                    <Link to={updatesAt(u.act)} aria-current={u.act === current?.act ? 'page' : undefined}>
+                    <GlassLink to={updatesAt(u.act)} aria-current={u.act === current?.act ? 'page' : undefined}>
                       <b>{u.title}</b>
                       <span>{utcDay(u.at)}</span>
-                    </Link>
+                    </GlassLink>
                   </li>
                 ))}
               </ul>

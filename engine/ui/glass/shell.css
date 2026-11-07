@@ -167,6 +167,51 @@
   background: color-mix(in srgb, var(--kb-glass-neon) 16%, transparent);
 }
 
+/*
+ * A tab (or Back) waiting on its load shows the Signal spinner after its label (MenuBar.tsx): a slot whose width eases from 0 to 22px, so the label
+ * does not jump. Under Off the slot is open at once. The bar's end holds a spinner for a load no control on the page claims (claims.tsx).
+ */
+.kb-glass-menu-wait {
+  display: inline-block;
+  width: 0;
+  vertical-align: middle;
+  transition: width 180ms ease;
+}
+
+[data-kb-pending] > .kb-glass-upright > .kb-glass-menu-wait {
+  width: 22px;
+}
+
+.kb-glass-menu-wait > .kb-spinner {
+  /* Four 4px bars and three 2px gaps are the slot's 22px. */
+  gap: 2px;
+  height: 14px;
+  vertical-align: middle;
+}
+
+.kb-glass-menu-end {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  color: var(--kb-glass-text-hi);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-glass-menu-wait { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-glass-menu-wait {
+  transition: none;
+}
+
+/* A load is out (Page.tsx): the page shows the progress cursor over everything on it. */
+.kb-glass-page[data-kb-pending],
+.kb-glass-page[data-kb-pending] a,
+.kb-glass-page[data-kb-pending] button {
+  cursor: progress;
+}
+
 /* The selected tab's neon rule: one element that glides between tabs (MenuBar.tsx); it does not animate under Off, where it has no transition to run. */
 .kb-glass-menu-list > li {
   position: relative;

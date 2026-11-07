@@ -23,7 +23,8 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { finalClass } from '../reveal/statements.ts';
 import { seasonAt, type SeasonTab } from './address.ts';
@@ -79,7 +80,7 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
             return (
               <li key={r.character} className="kb-glass-cut-dialog kb-season-podium">
                 <span className="kb-season-place">{PLACES[i] ?? `Place ${r.place}`}</span>
-                <b className="kb-season-name"><Link to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</Link></b>
+                <b className="kb-season-name"><GlassLink to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</GlassLink></b>
                 <span className="kb-season-standing">
                   {figure(r.standing)}
                   {' · '}
@@ -91,14 +92,14 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
           })}
         </ol>
       )}
-      <p><Link className="kb-season-link" to={seasonAt('rankings', 1, item.season)}>{item.count !== null ? `All ${item.count} characters and their standings` : 'All the standings'}</Link></p>
+      <p><GlassLink className="kb-season-link" to={seasonAt('rankings', 1, item.season)}>{item.count !== null ? `All ${item.count} characters and their standings` : 'All the standings'}</GlassLink></p>
     </>
   );
 }
 
 function Names({ names, own, verb, className }: { readonly names: readonly TallyName[]; readonly own: ReadonlySet<Id>; readonly verb: 'debuted' | 'turned'; readonly className: (key: string) => string }) {
   const one = names.length === 1 ? names[0]! : null;
-  const profile = (n: TallyName) => <Link className="kb-season-link" to={`/c/${encodeURIComponent(n.character)}`}>{n.name}</Link>;
+  const profile = (n: TallyName) => <GlassLink className="kb-season-link" to={`/c/${encodeURIComponent(n.character)}`}>{n.name}</GlassLink>;
   const turn = (n: TallyName) => (
     <>
       {n.was !== null && <> was a <ClassChip cls={n.was} name={className(n.was)} /></>}
@@ -143,7 +144,7 @@ function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPa
         ? <p>{name} runs the board for Season {item.season}.{words !== '' && ' Its first words, on The System’s board:'}</p>
         : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ' Its last words are still on The System’s board.'}</p>}
       {words !== '' && <blockquote className="kb-season-quote">{'“'}{words}{'”'}</blockquote>}
-      {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</Link></p>}
+      {post !== null && <p><GlassLink className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</GlassLink></p>}
     </>
   );
 }

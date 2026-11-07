@@ -18,7 +18,8 @@ import { FieldCount } from '../glass/FieldCount.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link, useLocation } from '../router.tsx';
+import { useLocation } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { AvatarEditor } from './Cropper.tsx';
 import { ProfilePreview } from './ProfilePreview.tsx';
 import type { PictureIo } from './crops.ts';
@@ -75,7 +76,7 @@ export function ProfileEdit({ io }: { readonly io?: PictureIo }) {
     return (
       <div className="kb-profile-edit">
         <PageHead size="roster" title="Edit profile" />
-        <CalmRegion as="p" className="kb-notice">You have no characters yet, so there is no profile here for you to edit. <Link to="/characters/new">Make a character</Link> first.</CalmRegion>
+        <CalmRegion as="p" className="kb-notice">You have no characters yet, so there is no profile here for you to edit. <GlassLink to="/characters/new">Make a character</GlassLink> first.</CalmRegion>
         {back}
       </div>
     );

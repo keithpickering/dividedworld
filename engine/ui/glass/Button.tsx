@@ -1,6 +1,6 @@
-import { useId } from 'react';
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
-import { Link, usePendingFrom } from '../router.tsx';
+import { Link } from '../router.tsx';
+import { usePendingControl } from './claims.tsx';
 import { Spinner } from './Spinner.tsx';
 
 export type GlassButtonKind = 'primary' | 'secondary' | 'quiet';
@@ -29,8 +29,7 @@ export type GlassButtonProps = AsButton | AsLink;
  */
 export function GlassButton(props: GlassButtonProps) {
   const { kind = 'secondary', size = 'm', children, className } = props;
-  const source = useId();
-  const pending = usePendingFrom(props.to !== undefined ? source : undefined);
+  const { source, pending } = usePendingControl(props.to !== undefined);
   const busy = props.busy === true || pending;
   const cls = `kb-glass-button kb-glass-skew${className ? ` ${className}` : ''}`;
   const label = <span className="kb-glass-upright"><span className="kb-glass-label">{children}</span><Spinner /></span>;
