@@ -356,7 +356,7 @@ describe('Settings, as board 11 draws it', () => {
     /* The change reaches the screen, as it reaches the app's Appearance in the same render. */
     await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
     /* What Appearance does on the account's change: the defaults, signed out or before the next account's own arrive. */
-    applyAppearance(document, DEFAULT_PREFERENCES, [{ key: 'house', name: 'House', href: '/house.css', modes: 'both' }], testGlass);
+    applyAppearance(document, DEFAULT_PREFERENCES, [{ key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: {} }], testGlass);
     await waitFor(() => expect(calls).toHaveLength(1));
     return { calls, view };
   }

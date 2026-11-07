@@ -3,8 +3,8 @@ import { applyAppearance, motionReduced, resolveAppearance, smokeLevel, textSize
 import type { GlassTheme, ThemeOption } from './types.ts';
 
 const themes: ThemeOption[] = [
-  { key: 'house', name: 'House', href: '/house.css', modes: 'both' },
-  { key: 'midnight', name: 'Midnight', href: '/midnight.css', modes: 'dark' },
+  { key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: {} },
+  { key: 'midnight', name: 'Midnight', href: '/midnight.css', modes: 'dark', preview: {} },
 ];
 
 describe('the theme a preference resolves to', () => {

@@ -79,8 +79,8 @@ describe('the sweep reads every theme in the list, not only the first', () => {
   const text = { '../instances/x/ui/theme.css': HOUSE, '../instances/x/ui/sepia.css': ':root { --kb-fg: #c8c8c8; }' };
   const url = { '../instances/x/ui/theme.css': '/x/theme.css', '../instances/x/ui/sepia.css': '/x/sepia.css' };
   const list: ThemeOption[] = [
-    { key: 'house', name: 'House', href: '/x/theme.css', modes: 'both' },
-    { key: 'sepia', name: 'Sepia', href: '/x/sepia.css', modes: 'light' },
+    { key: 'house', name: 'House', href: '/x/theme.css', modes: 'both', preview: {} },
+    { key: 'sepia', name: 'Sepia', href: '/x/sepia.css', modes: 'light', preview: {} },
   ];
 
   test('a second theme file is found by its href and checked, and its poor contrast fails', () => {
@@ -92,7 +92,7 @@ describe('the sweep reads every theme in the list, not only the first', () => {
   });
 
   test('a theme whose href loads no stylesheet in an instance\'s ui/ folder is reported, not skipped', () => {
-    const found = themesOf(ui([...list, { key: 'gone', name: 'Gone', href: '/x/gone.css', modes: 'both' }]), text, url);
+    const found = themesOf(ui([...list, { key: 'gone', name: 'Gone', href: '/x/gone.css', modes: 'both', preview: {} }]), text, url);
     expect(found[2]!.css).toBeNull();
   });
 });

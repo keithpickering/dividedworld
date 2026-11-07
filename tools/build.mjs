@@ -86,6 +86,8 @@ export const STEPS = [
   'node tools/check-glass-contrast.mjs',
   'node tools/test-theme.mjs',
   'node tools/check-theme.mjs',
+  'node tools/test-theme-preview.mjs',
+  'node tools/check-theme-preview.mjs',
   'node tools/test-guide.mjs',
   'node tools/check-guide.mjs',
   'node tools/test-web-reads.mjs',

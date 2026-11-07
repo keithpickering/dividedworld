@@ -143,6 +143,53 @@ function declarationFaults(body, at, lineOf, file, out) {
   }
 }
 
+/** A rule body's declarations in order, as `[name, value]`; the value keeps its text, minus a trailing `!important`. */
+function declarationsOf(body) {
+  const out = [];
+  let i = 0;
+  while (i < body.length) {
+    const semi = scanTo(body, i, [';']);
+    const end = semi === -1 ? body.length : semi;
+    const decl = body.slice(i, end);
+    i = end + 1;
+    const colon = decl.indexOf(':');
+    if (colon === -1) continue;
+    out.push([decl.slice(0, colon).trim(), decl.slice(colon + 1).replace(/!\s*important\s*$/i, '').trim()]);
+  }
+  return out;
+}
+
+/**
+ * The tokens of a theme's blocks, by the mode the browser shows them in, each a Map of name to value in file order (a later
+ * declaration wins, as in the browser): `root` is `:root`; `light` is `:root[data-kb-mode="light"]`; `dark` is the device-dark
+ * query's block and `:root[data-kb-mode="dark"]` together. The theme preview (tools/theme-preview.mjs) reads a theme through
+ * this, so the picker's miniature and the contract this file holds are one parse. A block outside the contract is not read here;
+ * `themeFaults` is what refuses it.
+ * @param {string} raw the stylesheet's text
+ */
+export function themeBlocks(raw) {
+  const text = withoutComments(raw);
+  const blocks = { root: new Map(), light: new Map(), dark: new Map() };
+  const rules = (from, to, inMedia) => {
+    let i = from;
+    while (i < to) {
+      const stop = scanTo(text, i, ['{', ';', '}']);
+      if (stop === -1 || stop >= to || text[stop] !== '{') { i = stop === -1 || stop >= to ? to : stop + 1; continue; }
+      const close = closeOf(text, stop);
+      if (close === -1 || close >= to) return;
+      const sel = squash(text.slice(i, stop)).replace(/\s*([\[\]=])\s*/g, '$1');
+      if (!inMedia && sel.startsWith('@')) rules(stop + 1, close, true);
+      else {
+        const target = inMedia ? blocks.dark : sel === ':root' ? blocks.root : sel === ':root[data-kb-mode="dark"]' ? blocks.dark : sel === ':root[data-kb-mode="light"]' ? blocks.light : null;
+        if (target) for (const [name, value] of declarationsOf(text.slice(stop + 1, close))) target.set(name, value);
+      }
+      i = close + 1;
+    }
+  };
+  rules(0, text.length, false);
+  return blocks;
+}
+
 /**
  * Every departure of theme stylesheets from the contract, as `{ file, line, why }`; [] is clean.
  * @param {Record<string, string>} files repository path to text

@@ -10,6 +10,7 @@ import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
+import themePreview from './theme.css?preview';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
@@ -88,7 +89,7 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
 });
 
 export const instanceUi: InstanceUi = Object.freeze({
-  themes: Object.freeze([{ key: 'house', name: 'House', href: theme, modes: 'both' as const }]),
+  themes: Object.freeze([{ key: 'house', name: 'House', href: theme, modes: 'both' as const, preview: themePreview }]),
   // Placeholders until the owner names them.
   quadrantLabels: Object.freeze({
     excitedNegative: 'Heat',

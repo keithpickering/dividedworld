@@ -21,7 +21,16 @@ export interface ThemeOption {
   readonly name: string;
   readonly href: string;
   readonly modes: 'both' | 'light' | 'dark';
+  /**
+   * The tokens the picker's miniature draws, per mode, read from the theme's own file at build time (the instance imports it as
+   * `theme.css?preview`, tools/theme-preview.mjs), so a preview never drifts from its theme. A theme that holds one mode only fills
+   * that mode.
+   */
+  readonly preview: { readonly light?: ThemePreview; readonly dark?: ThemePreview };
 }
+
+/** A theme's tokens for one mode, resolved to literals (no `var()`), by token name: `--kb-head-bg`, `--kb-row-1` and the rest of tools/theme-preview.mjs's list. */
+export type ThemePreview = Readonly<Record<string, string>>;
 
 /** A class's look on the reveal's bar and a badge: a color, and a pattern for those who cannot tell colors apart. */
 export interface ClassLook {
