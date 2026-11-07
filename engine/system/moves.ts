@@ -45,7 +45,10 @@ export interface MoveKind {
   readonly shapesBoard: boolean;
   /** Whether the Boss may propose it among its `moves`. A move that is not is queued by the meeting from another answer. */
   readonly askable: boolean;
-  /** The label drawn on the glass for the move's Act, in capitals. */
+  /**
+   * The label drawn on the glass for the move's Act, a template on the actor's role: `{role}` is the instance's word for who made the
+   * move (`UiCopy.roleWord`, "The Boss"; a Mod Bot's move, when Mod Bots move, takes its own role word). The glass draws it in capitals.
+   */
   readonly label: string;
   /** The params' shape and string bounds. The ceilings here are outer ones; the meeting holds the tighter settings (`boardNameMaxLength`). */
   readonly params: Rule;
@@ -58,8 +61,8 @@ export interface MoveKind {
    * follows "the": it is said in the world's voice by the line and plainly by this). Travels in the seed as `systemMoveWords`.
    */
   readonly plain: string;
-  /** How the move reads in a player's log, in plain words. */
-  readonly template: (params: Readonly<Record<string, unknown>>) => string;
+  /** How the move reads in a player's log, in plain words, with the actor's role (as `label` has it). */
+  readonly template: (params: Readonly<Record<string, unknown>>, role: string) => string;
   /**
    * The move as one short plain sentence for a staff member's moderation log and for the admin queue: "Renamed General to Pointless
    * Toast Palace" once it has landed, "Rename General to Pointless Toast Palace" while it waits (`plan`). `was` is the name the board
@@ -76,7 +79,7 @@ export const RENAME_BOARD: MoveKind = {
   structural: true,
   shapesBoard: true,
   askable: true,
-  label: 'THE SYSTEM RENAMED THIS BOARD',
+  label: '{role} renamed this board',
   params: {
     type: 'object',
     fields: {
@@ -88,7 +91,7 @@ export const RENAME_BOARD: MoveKind = {
   },
   uuids: ['board'],
   plain: 'the renaming of a board to "{name}"',
-  template: (p) => `The System renamed a board to "${text(p['name'])}". Its subject is now: ${text(p['premise'])}`,
+  template: (p, role) => `${role} renamed a board to "${text(p['name'])}". Its subject is now: ${text(p['premise'])}`,
   parts: (p, was, tense) => [tense === 'plan' ? 'Rename ' : 'Renamed ', { board: text(p['board']), name: was ?? 'a board' }, ' to ', { board: text(p['board']), name: text(p['name']) }],
 };
 
@@ -99,11 +102,11 @@ export const NAME_SUCCESSOR: MoveKind = {
   structural: true,
   shapesBoard: false,
   askable: false,
-  label: 'THE SYSTEM NAMED ITS SUCCESSOR',
+  label: '{role} named its successor',
   params: { type: 'object', fields: { boss: { type: 'string', minLength: 1, maxLength: 80 } } },
   uuids: [],
   plain: 'the naming of a successor',
-  template: () => 'The System named the Boss who will follow this one.',
+  template: (_p, role) => `${role} named who will follow this one.`,
   parts: (p, was, tense) => [tense === 'plan' ? 'Name ' : 'Named ', was ?? text(p['boss']), ' as the next Boss'],
 };
 
@@ -116,7 +119,7 @@ export const SET_RULE: MoveKind = {
   structural: false,
   shapesBoard: false,
   askable: true,
-  label: 'SET A RULE',
+  label: 'Set a rule',
   params: {
     type: 'object',
     fields: {

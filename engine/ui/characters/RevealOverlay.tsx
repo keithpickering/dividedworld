@@ -31,10 +31,10 @@ export interface RevealOverlayProps {
 interface Chosen { readonly id: string; readonly title: string }
 
 export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: RevealOverlayProps) {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
   const r = useReveal(character);
   const { setRefusal } = r;
-  const words = revealWords(character, r.className);
+  const words = revealWords(character, r.className, ui.copy.gameWord);
   const [boards, setBoards] = useState<readonly Board[]>([]);
   /* The optional filter: '' is All boards. The field is remounted when it changes, so a thread chosen under another filter is cleared. */
   const [board, setBoard] = useState('');
@@ -97,7 +97,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         <PreviewBox preview={revealPreview({ name: character.name, className: r.className, message: r.message, threadTitle: title })} />
         {r.over && <p role="alert" className="kb-notice" data-kb-tone="refusal">The message is at most {MAX} characters.</p>}
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
-        <FormFoot line={revealFooter()}>
+        <FormFoot line={revealFooter(ui.copy.gameWord)}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" disabled={!chosen || r.over || r.busy}>{words.button}</GlassButton>
         </FormFoot>

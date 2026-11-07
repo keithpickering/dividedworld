@@ -101,3 +101,68 @@ for (const [label, viewport, moment] of [['a narrow post', { width: 390, height:
     });
   });
 }
+
+/*
+ * The post's three cells (the board look, Task 6): one color across the line, the words and the actions; posts alternate the two row grays; a 4px
+ * third-gray row splits them. The check reads a real page and returns its problems, [] when the page is right; the poisons plant each defect with a
+ * style tag (the site's policy would block it, so these two tests bypass it) and expect it named.
+ */
+async function cellProblems(page: Page): Promise<string[]> {
+  const read = await page.evaluate(() => {
+    const css = (e: Element | null) => (e ? getComputedStyle(e) : null);
+    const posts = ['#post-41', '#post-42', '#post-43'].map((id) => document.querySelector<HTMLElement>(id)!);
+    const rowToken = (name: string) => { const probe = document.createElement('i'); probe.style.background = `var(${name})`; document.body.append(probe); const c = getComputedStyle(probe).backgroundColor; probe.remove(); return c; };
+    return {
+      row1: rowToken('--kb-row-1'), row2: rowToken('--kb-row-2'), row3: rowToken('--kb-row-3'),
+      posts: posts.map((p) => {
+        const line = p.querySelector<HTMLElement>('[data-kb-cell="line"]')!;
+        const words = p.querySelector<HTMLElement>('[data-kb-cell="words"]')!;
+        const actions = p.querySelector<HTMLElement>('[data-kb-cell="actions"]')!;
+        const [l, w, a] = [line, words, actions].map((e) => e.getBoundingClientRect()) as [DOMRect, DOMRect, DOMRect];
+        return {
+          line: css(line)!.backgroundColor, words: css(words)!.backgroundColor, actions: css(actions)!.backgroundColor, bit: css(p.querySelector('.kb-postbit'))!.backgroundColor,
+          /* The line is a band of its own: as wide as the words, above them. */
+          bandWidth: l.width - w.width, bandAbove: w.top - l.bottom, actionsBelow: a.top - w.bottom,
+          spacer: css(p)!.borderTopWidth, spacerColor: css(p)!.borderTopColor,
+        };
+      }),
+    };
+  });
+  const out: string[] = [];
+  const [a, b, c] = read.posts;
+  for (const [n, post, row] of [[41, a!, read.row1], [42, b!, read.row2], [43, c!, read.row1]] as const) {
+    const got = [post.line, post.words, post.actions, post.bit];
+    if (got.some((g) => g !== row)) out.push(`post ${n}: the cells are ${got.join(' | ')}, not all ${row}`);
+    if (Math.abs(post.bandWidth) > 0.5) out.push(`post ${n}: the post line is ${post.bandWidth}px off the words' width`);
+    if (post.bandAbove < 0 || post.bandAbove > 1.5) out.push(`post ${n}: the post line is ${post.bandAbove}px above the words`);
+    if (post.actionsBelow > 1.5) out.push(`post ${n}: the actions are ${post.actionsBelow}px below the words`);
+  }
+  if (read.row1 === read.row2) out.push('the two row grays are one color');
+  if (b!.spacer !== '4px') out.push(`the spacer row is ${b!.spacer}, not 4px`);
+  if (b!.spacerColor !== read.row3) out.push(`the spacer row is ${b!.spacerColor}, not ${read.row3}`);
+  return out;
+}
+
+async function openCells(page: Page) {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/?fixture=boards&moment=01-main');
+  await expect(page.locator('#post-41')).toBeVisible();
+}
+
+test.describe('the cells', () => {
+  test.use({ bypassCSP: true });
+
+  test('a post is three cells of one color, the posts alternate, and a 4px row splits one from the next', async ({ page }) => {
+    await openCells(page);
+    expect(await cellProblems(page)).toEqual([]);
+  });
+
+  test('poison: an even post that keeps the odd gray, a words cell of another color and a 3px spacer are each named', async ({ page }) => {
+    await openCells(page);
+    await page.addStyleTag({ content: '#post-41 [data-kb-cell="words"] { background: rgb(255, 0, 0) !important } #post-42 { --kb-post-bg: var(--kb-row-1) !important } #post-42 { border-top-width: 3px !important }' });
+    const problems = await cellProblems(page);
+    expect(problems.join('\n')).toMatch(/post 41: the cells are .* not all/u);
+    expect(problems.join('\n')).toMatch(/post 42: the cells are .* not all/u);
+    expect(problems.join('\n')).toMatch(/the spacer row is 3px, not 4px/u);
+  });
+});

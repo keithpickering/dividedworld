@@ -25,6 +25,7 @@ import { micros } from '../data/log-page.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
+import { upperFirst } from '../copy-words.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
@@ -298,7 +299,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
       if (t.announced) {
         const act = data.acts.get(t.announced.act);
         const title = act ? data.titles.get(act.thread) : undefined;
-        const where: Segment = act && title ? { text: title, href: act.seq !== null ? threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) : threadHref(act.thread, 1) } : 'The System\'s board';
+        const where: Segment = act && title ? { text: title, href: act.seq !== null ? threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) : threadHref(act.thread, 1) } : 'the board';
         details.push(` Announced ${t.announced.was ? 'with its old class ' : ''}in `, where, '.');
       } else {
         details.push(' A silent Turn: no one else was told.');
@@ -634,7 +635,7 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       rows.push({
         key: `sprung:${e.play}`, kind: paid ? 'payout' : 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
         details: bySystem
-          ? [`Your ${cardName(e.card)} caught ${nameOf(caught.character)}'s ${stop(cardName(caught.payload.card))} The System paid you ${plain(paid.change)} Aura.`]
+          ? [`Your ${cardName(e.card)} caught ${nameOf(caught.character)}'s ${stop(cardName(caught.payload.card))} ${upperFirst(words.ui.copy.gameWord)} paid you ${plain(paid.change)} Aura.`]
           : [`${cardName(e.card)} caught ${nameOf(caught.character)}'s ${cardName(caught.payload.card)} on `, on, paid ? `; ${signed(paid.change)} to your wallet.` : '.'],
         aura: paid?.change ?? 0, wallet: paid?.balanceAfter ?? null, characters,
       });

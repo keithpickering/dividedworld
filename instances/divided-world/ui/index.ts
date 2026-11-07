@@ -10,6 +10,15 @@ import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
 import theme from './theme.css?url';
+import themePreview from './theme.css?preview';
+import blueSteel from './themes/blue-steel.css?url';
+import blueSteelPreview from './themes/blue-steel.css?preview';
+import midnight from './themes/midnight.css?url';
+import midnightPreview from './themes/midnight.css?preview';
+import hotRod from './themes/hot-rod.css?url';
+import hotRodPreview from './themes/hot-rod.css?preview';
+import fanSite from './themes/fan-site.css?url';
+import fanSitePreview from './themes/fan-site.css?preview';
 import coinUrl from './icon/coin.svg?url';
 import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
@@ -89,7 +98,15 @@ export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.fre
 });
 
 export const instanceUi: InstanceUi = Object.freeze({
-  themes: Object.freeze([{ key: 'house', name: 'House (black and white)', href: theme, modes: 'both' as const }]),
+  /* The house theme, then four tributes (themes/): each a stylesheet of tokens, the picker's miniature read from the same file. */
+  themes: Object.freeze([
+    { key: 'house', name: 'House', href: theme, modes: 'both' as const, preview: themePreview },
+    { key: 'blue-steel', name: 'Blue Steel', href: blueSteel, modes: 'light' as const, preview: blueSteelPreview },
+    { key: 'midnight', name: 'Midnight', href: midnight, modes: 'dark' as const, preview: midnightPreview },
+    { key: 'hot-rod', name: 'Hot Rod', href: hotRod, modes: 'dark' as const, preview: hotRodPreview },
+    // Fan Site's name is open (the board look design, Open); it ships as "Fan Site" until the owner names it.
+    { key: 'fan-site', name: 'Fan Site', href: fanSite, modes: 'dark' as const, preview: fanSitePreview },
+  ]),
   // Placeholders until the owner names them.
   quadrantLabels: Object.freeze({
     excitedNegative: 'Heat',
@@ -120,10 +137,17 @@ export const instanceUi: InstanceUi = Object.freeze({
   copy: Object.freeze({
     siteName: 'Divided World',
     siteTagline: 'dw.gripe',
+    // Who speaks for the board: the glass names no one but these (the board look design, section 7).
+    roleWord: 'The Boss',
+    staffWord: 'The staff',
+    gameWord: 'the game',
+    staffBoardTag: 'Staff post here; you react and spin',
+    // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
+    badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).
-    marquees: Object.freeze(['[MACHINE NAME]', 'AURA-MATIC 3000', 'VEND-ETTA', 'THE CARD SHARK', 'POSTCARD PALACE', 'COIN-OP KAYFABE', 'MERCH TABLE', 'CHEAP POP', 'FINISHER FRIDGE', 'GIMMICK DISPENSER', 'HEAT LAMP', 'NO FOOD, ONLY CARDS']),
+    marquees: Object.freeze(['FRESH BEEF', 'HAVE U SEEN LUIGI?', 'FAT WARIOS PLZ', 'HAHA, GACHA!', 'FORK IT OVER', 'RIZZY DRINKS', 'YOU EARNED IT', 'GO OFF, JOKER', 'NO SCALPING', 'JUST THIS ONCE', "LET 'EM HAVE IT", 'TCG-WHIZ', 'I CHOOSE YOU!', 'DO NOT SHAKE', 'LOST THE GAME', 'HAPPY TO HELP', 'JUST GLAD 2B HERE', 'WATCHIN U EAT', 'ORB FREAK', '<3 OF THE CARDS', 'YOUR BEST VEND', '[404 NOT FOUND]']),
     // The Settings board's words for Motion (docs/research/2026-10-29-two-worlds/11-settings.html).
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
     /* What the glass calls a Mod Bot where the Lens names its role (the Mod Bots design, section 9). */

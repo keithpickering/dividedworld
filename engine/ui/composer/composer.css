@@ -4,7 +4,7 @@
 }
 
 .kb-composer-as {
-  margin: 0 0 0.4em;
+  margin: 0 0 10px;
 }
 
 .kb-composer-now {
@@ -21,7 +21,6 @@
 
 .kb-toolbar-button {
   min-width: 2.2em;
-  padding: 0.1em 0.5em;
 }
 
 .kb-editor-box {
@@ -57,6 +56,79 @@
 
 .kb-composer-note {
   margin: 1em 0;
+}
+
+/* The reply box and New thread: a table's look in a form. A light band over the box (the same one a section's heading wears), the body on the row ground, the text boxes inset. */
+.kb-form {
+  padding: 12px 14px;
+  border: 1px solid var(--kb-frame);
+  background: var(--kb-row-1);
+}
+
+.kb-form > .kb-box-head {
+  margin: -12px -14px 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--kb-grid);
+  background: var(--kb-bar-bg);
+  color: var(--kb-bar-fg);
+  text-shadow: var(--kb-bar-shadow);
+  font: bold var(--kb-size-body) / 1.3 var(--kb-font-mono);
+}
+
+.kb-form .kb-editor-box,
+.kb-form .kb-input {
+  background: var(--kb-input-bg);
+  border-color: var(--kb-input-edge);
+  box-shadow: var(--kb-input-shadow);
+}
+
+.kb-new-thread .kb-field > label {
+  margin-bottom: 0.2em;
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-body);
+}
+
+.kb-form .kb-toolbar {
+  padding: 0;
+  margin: 0 0 6px;
+}
+
+.kb-new-thread .kb-new-thread-title {
+  height: 30px;
+}
+
+.kb-composer .kb-editor-box {
+  height: 150px;
+}
+
+.kb-new-thread .kb-editor-box {
+  height: 120px;
+}
+
+.kb-form .kb-editor-foot {
+  padding-top: 8px;
+  color: var(--kb-muted);
+}
+
+/*
+ * On a phone (the board look's Task 8, docs/research/2026-11-06-board-look/07-phone.html) the nine formatting buttons fit one row, tracked
+ * a little tighter than at a desk, and the box drops the keyboard hint: a phone has no Ctrl or Command key. The hint stays the box's
+ * description for assistive tech (`aria-describedby` reads a hidden element's words).
+ */
+@media (max-width: 40em) {
+  .kb-toolbar {
+    flex-wrap: nowrap;
+    gap: 3px;
+  }
+
+  .kb-toolbar .kb-toolbar-button {
+    min-width: 0;
+    padding-inline: 5px;
+    letter-spacing: 0.02em;
+  }
+
+  .kb-editor-hint {
+    display: none;
+  }
 }
 
 /* The note a banned mask's composer says (ban.ts): plain words over the box, in the same notice the composer's other notes use. */

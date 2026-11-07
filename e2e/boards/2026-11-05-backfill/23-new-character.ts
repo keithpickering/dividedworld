@@ -65,7 +65,7 @@ const manifest: BoardManifest = {
     at('with-class', 'text', 'ANNOUNCED, WITH ITS CLASS', { buildName: 'Announced, with its class.', within: 'loud', origin: 'loud', buildShift: { y: -9 } }),
     at('preview-head', 'text', 'What everyone will see', { box: 'none', type: false }),
 
-    at('foot-line', 'text', 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', { box: 'none' }),
+    at('foot-line', 'text', 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', { buildName: 'Waiting Wanda is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.', box: 'none' }),
     at('cancel', 'button', 'CANCEL', { buildName: 'Cancel', buildRole: 'link', type: false, box: 'none' }),
     at('make', 'button', 'MAKE THE CHARACTER', { buildName: 'Make the character', type: false, box: 'none' }),
   ],

@@ -5,9 +5,10 @@
  */
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { themePreviewPlugin } from './tools/theme-preview.mjs';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [themePreviewPlugin(), react()],
   test: {
     environment: 'jsdom',
     include: ['engine/ui/**/*.test.tsx', 'instances/*/ui/**/*.test.tsx', 'instances/*/cards/**/*.test.tsx', 'web/**/*.test.tsx', 'web/**/*.test.ts', 'e2e/**/*.test.ts'],

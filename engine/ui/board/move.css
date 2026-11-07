@@ -5,25 +5,59 @@
  */
 .kb-move-notice {
   position: relative;
-  box-sizing: border-box;
-  margin: 1.8em 0 0.8em;
-  padding: 1.4em 0.8% 0.5em;
-  border: 1px solid var(--kb-rule);
-  background: var(--kb-bg);
+  margin: 0 0 14px;
 }
 
-.kb-move-from {
+/* The notice is a period table (the board look's Task 10): a light band, then the Boss's words and its top reactions. */
+.kb-move-table {
   margin: 0;
 }
 
+.kb-move-from {
+  font-weight: bold;
+}
+
+.kb-table td.kb-move-words {
+  padding: 10px 12px;
+}
+
 .kb-move-reactions {
-  margin: 0.4em 0 0;
+  margin: 6px 0 0;
   padding: 0;
   list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3em;
-  font-size: var(--kb-size-fine);
+  gap: 8px;
+}
+
+/* A top reaction is a small mark tile, as the board draws the game's reactions: a skewed glass tile, the emoji and a condensed count (display only). */
+.kb-move-reactions .kb-chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 12px;
+  transform: skewX(var(--kb-glass-skew));
+  border: 2px solid var(--kb-glass-text-2);
+  background: var(--kb-glass-ground);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-move-tile {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-move-emoji {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.kb-move-tile b {
+  font: 700 22px / 1 var(--kb-glass-font-body);
+  font-variant-numeric: tabular-nums;
 }
 
 .kb-move-tag {
@@ -54,6 +88,7 @@
 }
 
 .kb-move-label {
+  text-transform: uppercase;
   padding-left: 14px;
   font-style: italic;
   font-weight: 800;
@@ -78,6 +113,37 @@
 .kb-move-way:focus-visible {
   outline: 3px solid var(--kb-focus);
   outline-offset: 2px;
+}
+
+/*
+ * On a phone each segment keeps its words whole, and Way out wraps under the label when the row is full (docs/research/2026-11-06-board-look/15-phone.html).
+ */
+@media (max-width: 40em) {
+  /* In the flow, over the frame's top edge by 14px, so a label that wraps to a second line pushes the notice down and never covers its band. */
+  .kb-move-notice > .kb-move-tag {
+    position: relative;
+    top: auto;
+    right: auto;
+    display: flex;
+    width: fit-content;
+    max-width: calc(100% - 12px);
+    margin: 0 6px -14px auto;
+    justify-content: flex-end;
+  }
+
+  .kb-move-notice .kb-table td.kb-bar {
+    padding-top: calc(0.55em + 14px);
+  }
+
+  .kb-move-label,
+  .kb-move-way {
+    white-space: nowrap;
+  }
+
+  /* No rule at Way out's start: when it wraps under the label the rule would stand at the start of a line of its own (15-phone draws none). */
+  .kb-move-way {
+    border-left: 0;
+  }
 }
 
 /* The tag standing on a post in a thread: the same tile, at the right of the post's own box. */

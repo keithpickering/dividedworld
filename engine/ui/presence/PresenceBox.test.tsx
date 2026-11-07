@@ -56,6 +56,17 @@ describe('the presence box', () => {
     expect(box).not.toHaveTextContent('other');
   });
 
+  test('its icon cell is aria-hidden, and the heading spans both columns', async () => {
+    const { seeded, show } = crowd(['Pipewrench']);
+    show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+    const box = await screen.findByRole('region', { name: HEADING });
+    const cell = box.querySelector('.kb-presence-icon') as HTMLElement;
+    expect(cell).not.toBeNull();
+    expect(cell).toHaveAttribute('aria-hidden', 'true');
+    expect(cell.querySelector('svg')).not.toBeNull();
+    expect(within(box).getByRole('heading', { name: HEADING }).closest('td')).toHaveAttribute('colspan', '2');
+  });
+
   test('past the cap it says how many others; one past says "1 other"', async () => {
     const many = crowd(['A1', 'B2', 'C3', 'D4'], { presenceNames: 2 });
     many.show(<PresenceBox place={{ kind: 'thread', thread: many.seeded.thread }} heading={HEADING} />);

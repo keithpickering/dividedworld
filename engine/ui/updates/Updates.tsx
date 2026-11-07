@@ -141,7 +141,8 @@ type State =
 
 /** Updates at /updates. */
 export function UpdatesScreen() {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
+  const roleWord = ui.copy.roleWord;
   const signedIn = useSignedIn(api);
   const { query } = useLocation();
   const navigate = useNavigate();
@@ -156,11 +157,11 @@ export function UpdatesScreen() {
     if (!admin || season === null) { setHandover(null); return undefined; }
     let live = true;
     api.adminQueue().then(
-      (q) => { const todo = q.todos.find((t) => t.season === season); if (live) setHandover({ season, draft: todo === undefined ? null : todoDraft(todo) }); },
+      (q) => { const todo = q.todos.find((t) => t.season === season); if (live) setHandover({ season, draft: todo === undefined ? null : todoDraft(todo, roleWord) }); },
       () => { if (live) setHandover({ season, draft: null, failed: true }); },
     );
     return () => { live = false; };
-  }, [api, admin, season]);
+  }, [api, admin, season, roleWord]);
 
   useEffect(() => {
     if (!signedIn) return undefined;
