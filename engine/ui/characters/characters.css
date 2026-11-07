@@ -73,7 +73,7 @@
 
 .kb-roster-layout > .kb-roster-panel {
   margin-top: 40px;
-  /* A readable measure on a wide layout, about the roster row of three cards; the phone's width is below it, so it fills. */
+  /* Under the carousel, a readable measure, about the roster row of three cards; the phone's width is below it, so it fills. (The wide roster sets the panel in its own column.) */
   max-width: 52em;
 }
 
@@ -136,35 +136,38 @@
 }
 
 /*
- * The wide roster: where the page holds the grid of three (780px), the board's 32px and a panel of 420px (the board's
- * is 500px), the roster is the Roster board's layout. The page is drawn in the board's pixels and scaled by `zoom`, and
+ * The wide roster: on the Main board's layout, where the page holds the grid of three (780px), the board's 32px and a
+ * panel of 420px (the board's is 500px), the roster is the Roster board's layout. The Phone board's layout is one
+ * column at any width (from 150% text it is a wide window's too), so it keeps the carousel. The page is drawn in the board's pixels and scaled by `zoom`, and
  * a container query reads those pixels, where a media query would read the window's. The roster is still the tablist
  * and its panel the tabpanel; only the boxes move. The tablist lays its tabs in the grid's columns (a subgrid, spanning
- * as many rows as the cards need), and New character, which stands beside the tablist and not in it, takes the slot
+ * as many rows as the tabs need), and New character, which stands beside the tablist and not in it, takes the slot
  * after the last tab, placed from the counts the carousel sets on its row. Three across never overflow, so the
  * carousel draws no count or arrows and the row needs no fade, and no room for a glow, since nothing clips it.
  */
 @container kb-characters (min-width: 1232px) {
-  .kb-roster-layout {
+  :where(:root[data-kb-layout='main']) .kb-roster-layout {
     display: grid;
     grid-template-columns: 780px minmax(0, 1fr);
+    /* The note under a full roster stands under the cards, and a panel taller than both gives its extra to the second row. */
+    grid-template-rows: auto 1fr;
     column-gap: 32px;
     align-items: start;
   }
 
-  .kb-roster-layout > .kb-roster-carousel,
-  .kb-roster-layout > .kb-characters-new {
+  :where(:root[data-kb-layout='main']) .kb-roster-layout > .kb-roster-carousel,
+  :where(:root[data-kb-layout='main']) .kb-roster-layout > .kb-characters-new {
     grid-column: 1;
   }
 
-  .kb-roster-layout > .kb-roster-panel {
+  :where(:root[data-kb-layout='main']) .kb-roster-layout > .kb-roster-panel {
     grid-column: 2;
     grid-row: 1 / span 2;
     margin-top: 0;
     max-width: none;
   }
 
-  .kb-roster-carousel .kb-class-grid {
+  :where(:root[data-kb-layout='main']) .kb-roster-carousel .kb-class-grid {
     display: grid;
     grid-template-columns: repeat(3, var(--kb-class-card-width));
     padding-inline: 0;
@@ -174,15 +177,15 @@
     mask-image: none;
   }
 
-  .kb-roster-carousel .kb-carousel-tablist {
+  :where(:root[data-kb-layout='main']) .kb-roster-carousel .kb-carousel-tablist {
     grid-column: 1 / -1;
-    grid-row: 1 / span round(up, var(--kb-carousel-count) / 3);
+    grid-row: 1 / span max(1, round(up, var(--kb-carousel-items) / 3));
     grid-template-columns: subgrid;
     grid-template-rows: subgrid;
     grid-auto-flow: row;
   }
 
-  .kb-roster-carousel .kb-roster-new {
+  :where(:root[data-kb-layout='main']) .kb-roster-carousel .kb-roster-new {
     grid-column: calc(mod(var(--kb-carousel-items), 3) + 1);
     grid-row: calc(round(down, var(--kb-carousel-items) / 3) + 1);
   }
@@ -560,15 +563,27 @@
    */
   --kb-class-fade-before: var(--kb-class-peek-before, 0px);
   --kb-class-fade-after: var(--kb-class-peek-after, 0px);
-  transition: --kb-class-fade-before 0.2s ease-out, --kb-class-fade-after 0.2s ease-out;
   mask-image: linear-gradient(90deg, transparent, currentColor var(--kb-class-fade-before), currentColor calc(100% - var(--kb-class-fade-after)), transparent);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .kb-class-grid { transition: none; }
+/* Eased once the carousel has read the row (Carousel.tsx sets `data-kb-eased` a frame after), so a card that peeks when it opens is faded from the first frame. */
+.kb-class-grid[data-kb-eased] {
+  transition: --kb-class-fade-before 0.2s ease-out, --kb-class-fade-after 0.2s ease-out;
 }
 
-:root[data-kb-motion='reduce'] .kb-class-grid { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-class-grid[data-kb-eased] { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-class-grid[data-kb-eased] { transition: none; }
+
+/*
+ * In a dialog the room is no more than the dialog's own padding: the frame clips past it anyway, and a row reaching
+ * further would make the overlay scroll sideways (on the phone, 12px of padding against the room's 32px).
+ */
+.kb-glass-dialog .kb-class-cards {
+  --kb-class-glow: min(32px, var(--kb-dialog-pad-x, 32px));
+}
 
 .kb-class-grid > .kb-class-card {
   flex: none;

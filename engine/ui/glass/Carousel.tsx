@@ -95,6 +95,12 @@ const same = (a: RowState, b: RowState) => (Object.keys(a) as (keyof RowState)[]
 export function Carousel<T extends { readonly key: string }>({ role, label, items, value, onChange, renderItem, after, id = '', className }: CarouselProps<T>) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [row, setRow] = useState<RowState>(STILL);
+  /* The fade eases only once the row has been read: a frame after it first is, so its first fade is drawn at once. */
+  const [eased, setEased] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setEased(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const update = useCallback(() => {
     const el = rowRef.current;
     if (!el) return;
@@ -181,7 +187,7 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
     <div className="kb-class-rail">
       <div
         ref={rowRef} className="kb-class-grid"
-        data-kb-peek-before={row.peekBefore > 0 || undefined} data-kb-peek-after={row.peekAfter > 0 || undefined}
+        data-kb-peek-before={row.peekBefore > 0 || undefined} data-kb-peek-after={row.peekAfter > 0 || undefined} data-kb-eased={eased || undefined}
         style={{
           '--kb-class-peek-before': `${row.peekBefore}px`, '--kb-class-peek-after': `${row.peekAfter}px`,
           /* How many items and cards the row holds, for a stylesheet that lays it as a grid and places the card that is no item in the next slot. */

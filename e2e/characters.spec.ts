@@ -87,7 +87,8 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
 
 /*
  * The selected character's panel keeps a readable measure on a wide layout: its buttons and its label/value
- * rows do not stretch across the whole content width. It is capped in em (52em) and stays full width on the phone.
+ * rows do not stretch across the whole content width. At 1440 it is the column beside the grid (the board's 500px);
+ * under the carousel it is capped in em (52em); on the phone it stays full width.
  */
 test('at 1440 the roster panel keeps a readable measure; at 390 it fills the width', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -466,6 +467,27 @@ test('the fade eases to the peek it is drawn over, and under reduced motion foll
   expect(eased.before).toBeGreaterThan(0);
   expect(eased.after).toBeGreaterThan(0);
   await expect.poll(async () => { const m = await fadeMotion(dialog); return m.fade === m.peek && m.peek > 0; }).toBe(true);
+  /* The mask is drawn over the eased length, not the measured one, and not some other. */
+  const row = classGroup(dialog).locator('.kb-class-grid');
+  expect(await row.evaluate((el) => getComputedStyle(el).maskImage)).toContain(`${(await fadeMotion(dialog)).fade}px`);
+
+  /*
+   * The peek at the end dropped to none (as when the Tweener comes whole): a transition runs on the fade's length, and
+   * halfway through it the length lies between where it was and none. (An unregistered length would not ease at all.)
+   */
+  const was = (await fadeMotion(dialog)).peek;
+  const mid = await row.evaluate((el) => {
+    el.style.setProperty('--kb-class-peek-after', '0px');
+    getComputedStyle(el).getPropertyValue('--kb-class-fade-after');
+    const t = el.getAnimations().find((a) => (a as CSSTransition).transitionProperty === '--kb-class-fade-after') as CSSTransition | undefined;
+    if (!t) return null;
+    t.pause();
+    t.currentTime = 100;
+    return parseFloat(getComputedStyle(el).getPropertyValue('--kb-class-fade-after'));
+  });
+  expect(mid).not.toBeNull();
+  expect(mid!).toBeGreaterThan(0);
+  expect(mid!).toBeLessThan(was);
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const reduced = await fadeMotion(dialog);
@@ -478,8 +500,8 @@ test('the fade eases to the peek it is drawn over, and under reduced motion foll
  * Where the page has room, the roster is the Roster board's grid of three with its panel beside it (section 3): New
  * character takes the next slot, and a row of three never overflows, so there is no count and no arrows.
  */
-test('at 1440 the roster is three across with New character in the next slot and the panel beside it', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1000 });
+for (const width of [1440, 1280]) test(`at ${width} the roster is three across with New character in the next slot and the panel beside it`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
   await page.goto('/characters');
   const tablist = page.getByRole('tablist', { name: /^Roster, /u });
   await tablist.getByRole('tab', { name: /^Pipewrench/u }).click();
@@ -491,9 +513,10 @@ test('at 1440 the roster is three across with New character in the next slot and
   expect(got.tabs.length).toBe(2);
   const [a, b] = got.tabs as [typeof got.add, typeof got.add];
   expect(b.top).toBe(a.top);
-  expect(b.left - a.left).toBe(got.add.left - b.left);
+  expect(Math.abs((b.left - a.left) - (got.add.left - b.left))).toBeLessThanOrEqual(1);
   expect(got.add.top).toBe(a.top);
-  expect(got.panel.left - got.add.right).toBeGreaterThanOrEqual(31);
+  /* 32px of the board's, drawn at the board's scale (1280 / 1440 at 1280). */
+  expect(got.panel.left - got.add.right).toBeGreaterThanOrEqual(Math.floor(32 * Math.min(1, width / 1440)) - 1);
   expect(Math.abs(got.panel.top - a.top)).toBeLessThanOrEqual(40);
   await expect(page.getByRole('button', { name: 'More characters' })).toHaveCount(0);
 });
@@ -503,6 +526,36 @@ test('on the Phone board\'s layout at 1024 the roster is still a carousel with i
   await page.goto('/characters');
   const tablist = page.getByRole('tablist', { name: /^Roster, /u });
   await tablist.getByRole('tab', { name: /^Pipewrench/u }).click();
+  const got = await page.evaluate(() => ({
+    layout: document.documentElement.dataset.kbLayout,
+    row: getComputedStyle(document.querySelector('.kb-roster-carousel .kb-class-grid')!).overflowX,
+    rowFoot: document.querySelector('.kb-roster-carousel')!.getBoundingClientRect().bottom,
+    panelTop: document.querySelector('[role="tabpanel"]')!.getBoundingClientRect().top,
+  }));
+  expect(got.layout).toBe('phone');
+  expect(got.row).toBe('auto');
+  expect(got.panelTop).toBeGreaterThan(got.rowFoot);
+});
+
+/*
+ * On a phone the row's glow room is no more than the dialog's own padding, so the Turn's overlay never scrolls sideways
+ * (the row reaching past what the dialog holds would make the overlay's scrollport wider than the window).
+ */
+test('on a phone the Turn dialog never scrolls sideways', async ({ page }) => {
+  const dialog = await openTurnAt(page, 390, 844);
+  await expect(classGroup(dialog).getByText('1–1 of 6')).toBeVisible();
+  const over = await page.locator('.kb-glass-overlay').evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(over).toBeLessThanOrEqual(0);
+});
+
+/* From 150% text the page is the Phone board's one column at any width, so the roster is the carousel there too, however wide the window. */
+test('at 150% text on a wide window the roster stays a carousel with its panel under it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/characters');
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  await page.evaluate(async () => { await (globalThis as unknown as { __kbFake: { setPreferences(p: { textSize: number }): Promise<void> } }).__kbFake.setPreferences({ textSize: 150 }); });
+  await page.goto('/characters');
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   const got = await page.evaluate(() => ({
     layout: document.documentElement.dataset.kbLayout,
     row: getComputedStyle(document.querySelector('.kb-roster-carousel .kb-class-grid')!).overflowX,
