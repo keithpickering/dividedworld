@@ -20,7 +20,8 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
+import { cardPrice } from '../../rules/packs.ts';
+import { atOrBelow, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -367,7 +368,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
-    cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
+    cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
     /* What screen_settings's economy holds (0073): the whole economy row. */
     economy: settings.economy,
   };
@@ -1159,7 +1160,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const bad = request({ action: 'buyCard', card });
     if (bad) return bad;
     const account = me()!;
-    const price = basePrice(instance.cards.find((c) => c.key === card)!, settings);
+    const price = cardPrice(instance.machine, card);
     const left = spend(account, price, 'purchase', null);
     if (typeof left !== 'number') return left;
     account.cards[card] = (account.cards[card] ?? 0) + 1;

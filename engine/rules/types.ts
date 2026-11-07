@@ -10,6 +10,7 @@
  * are epoch milliseconds.
  */
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
+import type { PackRules, SlotSeed } from './packs.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
@@ -700,4 +701,8 @@ export interface Instance {
   readonly system: SystemContent;
   /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
   readonly developer?: DeveloperPersona;
+  /** The packs the Vending Machine sells, each a list of pulls over the cards' rarities (engine/rules/packs.ts). */
+  readonly packs: readonly PackRules[];
+  /** The machine's slots in grid order: the cards and packs it sells, each at a price (hundredths of an orb) and an availability. */
+  readonly machine: readonly SlotSeed[];
 }

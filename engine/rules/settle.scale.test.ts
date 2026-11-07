@@ -26,7 +26,8 @@ const kinds = ['fire', 'tomato', 'tea', 'zzz'] as const;
 const instance: Instance = {
   key: 'busy', name: 'Busy', system: testSystem, classes: [counting], ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'b', name: 'B', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
-  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
+  packs: [], machine: [],
+  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }, { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
     { key: 'tea', emoji: '☕', quadrant: 'calmPositive' }, { key: 'zzz', emoji: '💤', quadrant: 'boredNegative' },

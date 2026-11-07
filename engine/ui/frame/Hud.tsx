@@ -107,7 +107,7 @@ export function Hud() {
   const menuWide = useRef(0);
   const drawerId = useId();
   /* Priced as the server prices them now (withCardEconomy). */
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), instance.machine), [instance, ui.cards, settings.cardEconomy]);
   const selectId = useId();
   /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */
   const hudCalm = useSurfaceStyle('hud');

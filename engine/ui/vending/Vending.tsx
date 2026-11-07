@@ -206,7 +206,7 @@ export function Vending() {
   const player = usePlayer();
   const location = useLocation();
   /* Priced as the server will charge (withCardEconomy): a price an admin has tuned is the one the machine shows. */
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), instance.machine), [instance, ui.cards, settings.cardEconomy]);
   /*
    * What the screen holds (the pick, the answer in words, the drain, the card in flight, the press
    * in progress) is kept with the account it was made for and read in render against the account

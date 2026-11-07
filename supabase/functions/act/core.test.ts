@@ -104,11 +104,11 @@ test('a purchase is the service\'s, for whoever the session is', async () => {
   assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 100, who: whoami })}`), calls.join('\n'));
 });
 
-test('a card is sold and played at the prices the settings rows hold', async () => {
-  const { dbs, calls } = pair({ instance_settings: { economy: { ...instance.settings.economy, 'whoops.price': 150, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
+test('a card is sold at the machine\'s price and played at the prices the settings rows hold', async () => {
+  const { dbs, calls } = pair({ instance_settings: { economy: { ...instance.settings.economy, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
     card_target_reach: { act: target, kind: 'post', length: 1000, body: 'x'.repeat(1000), effects: [] }, play_card: { id: 'k' } });
   await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
-  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 150, who: whoami })}`), calls.join('\n'));
+  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 100, who: whoami })}`), calls.join('\n'));
   await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
   assert.ok(calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":100')), calls.join('\n'));
 });
@@ -242,10 +242,10 @@ test('the act function\'s connections send a post once after a 504, and a read a
 // Engine test cards beside the instance's own, so a Set and a Use are decided without naming an instance's cards.
 const ok = <T>(value: T) => ({ ok: true as const, value });
 const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => ok(undefined) };
-const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, priceKey: 'whoops.price', validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
-const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
-const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, priceKey: 'whoops.price', play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
-const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
+const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
+const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
+const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
+const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
 const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
 const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 
@@ -320,7 +320,7 @@ test('a spring, and a strike\'s card, go out live as Acts of their own', async (
 
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): the engine's test card, beside the instance's.
 const sparkle = { ...instance.cards.find((c) => c.key === 'stick-around')!, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, play: 'cast' as const,
-  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, priceKey: 'stickAround.price',
+  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, 
   canApply: (t: Parameters<typeof landsOn>[1], e: Parameters<typeof landsOn>[2]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e) };
 const reaching = { ...instance, cards: [...instance.cards, sparkle] };
 

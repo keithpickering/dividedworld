@@ -101,7 +101,7 @@ export function Classes() {
 
 export function CardList() {
   const { instance, ui, settings } = useKayfa();
-  const faces = facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy));
+  const faces = facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), instance.machine);
   if (faces.length === 0) return null;
   return (
     <div className="kb-guide-table-wrap" tabIndex={0}>

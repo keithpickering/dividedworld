@@ -34,7 +34,7 @@ export const testInstance: Instance = {
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }],
   /* One salty card at 1.00, whose play costs nothing more: enough rules for a screen that prices a card (the HUD's hand, the Vending Machine). */
   cards: [{
-    key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', playPrice: () => 0,
+    key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', playPrice: () => 0,
     canApply: () => ({ ok: true, value: undefined }), validateConfig: (config) => ({ ok: true, value: config }),
   }],
   reactions: [
@@ -42,6 +42,9 @@ export const testInstance: Instance = {
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },
   ],
   settings,
+  packs: [],
+  /* The Vending Machine sells the one card at 1.00. */
+  machine: [{ item: { card: 'whoops' }, availability: 'onSale', price: 100 }],
   system: testSystem,
   boards: [
     { slug: 'general', name: 'General', description: 'Anything.' },

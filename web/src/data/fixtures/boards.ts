@@ -35,6 +35,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
 import { instance } from '../../../../instances/divided-world/index.ts';
+import { cardPrice } from '../../../../engine/rules/packs.ts';
 import { fallbackSettings } from '../settings.ts';
 
 export type Account = 'player' | 'rival' | 'reader';
@@ -297,7 +298,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
    * The Whoops! Mrs. Hooligan plays on #41, bought on Oct 20 so the card ledger holds the card it plays; then the wallet as it stood
    * before the Oct 29 settlement, seeded with no history behind it.
    */
-  seed.wallet(player, economy['whoops.price']!);
+  seed.wallet(player, cardPrice(instance.machine, 'whoops'));
   seed.buy(player, 'whoops', { at: utc(20, 19, 0) });
   seed.wallet(player, WALLET_START - SCORED_OCT_28.reduce((sum, [, , amount]) => sum + amount, 0));
   when(SETTLE_1, (at) => {

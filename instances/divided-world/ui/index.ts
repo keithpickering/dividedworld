@@ -9,6 +9,7 @@ import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types
 import { spanWords } from '../../../engine/ui/characters/format.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
+import { packsUi } from './packs.ts';
 import theme from './theme.css?url';
 import coinUrl from './icon/coin.svg?url';
 import pipFull from './pips/default-full.svg?url';
@@ -136,6 +137,7 @@ export const instanceUi: InstanceUi = Object.freeze({
   avatars: Object.freeze({ gabe }),
   glass,
   cards: cardsUi,
+  packs: packsUi,
   /* The back of a card wears the favicon's coin (the owner's word, 2026-11-07). */
   cardBack: { mark: coinUrl },
   onboarding,

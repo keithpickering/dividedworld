@@ -10,16 +10,16 @@ import type { CardUi } from './types.ts';
 
 const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'a.price': 100, 'b.price': 250 } } as unknown as Settings;
-const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', rarity: 'common', priceKey: 'a.price', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
-const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', rarity: 'common', priceKey: 'b.price', stack: 3, playPrice: (_s, t) => Math.min(200, t.reach === 'post' ? t.length : 0) };
+const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', rarity: 'common', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
+const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', rarity: 'common', stack: 3, playPrice: (_s, t) => Math.min(200, t.reach === 'post' ? t.length : 0) };
 const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', canvas: '', mark: '', tagline: 'Short.', credit: 'Test' }, summary: 'One sentence.', describe: () => 'In full.' };
 
 describe('what every screen knows of a card', () => {
   test('its price is the rules\' own, said in orbs, with a plus where playing it on a long post costs more', () => {
-    expect(faceOf(plain, undefined, settings)).toMatchObject({ price: 100, extra: 0, stack: 1, tag: 'Sweet' });
-    expect(faceOf(longer, ui, settings)).toMatchObject({ price: 250, extra: 200, stack: 3, tag: 'Salty' });
-    expect(priceOf(faceOf(plain, undefined, settings))).toBe('1.00');
-    expect(priceOf(faceOf(longer, ui, settings))).toBe('2.50+');
+    expect(faceOf(plain, undefined, settings, 100)).toMatchObject({ price: 100, extra: 0, stack: 1, tag: 'Sweet' });
+    expect(faceOf(longer, ui, settings, 250)).toMatchObject({ price: 250, extra: 200, stack: 3, tag: 'Salty' });
+    expect(priceOf(faceOf(plain, undefined, settings, 100))).toBe('1.00');
+    expect(priceOf(faceOf(longer, ui, settings, 250))).toBe('2.50+');
     expect(orbs(5)).toBe('0.05');
   });
 
@@ -34,8 +34,9 @@ describe('what every screen knows of a card', () => {
     expect(faceOf(plain, { key: 'a', art: { color: '#0f0', ink: '#000', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Whole.' }, settings).summary).toBe('Whole.');
   });
 
-  test('a rule that prices nothing is not a card the machine sells: the face throws, as the rules\' price does', () => {
-    expect(() => faceOf({ ...plain, priceKey: 'missing' }, undefined, settings)).toThrow(/missing/);
+  test('a card the machine has no slot for has no price on its face', () => {
+    expect(faceOf(plain, undefined, settings).price).toBe(0);
+    expect(facesOf([plain, longer], [], settings, [{ item: { card: 'b' }, availability: 'onSale', price: 250 }]).map((f) => f.price)).toEqual([0, 250]);
   });
 
   test('every card the instance sells, in its order, matched to its art by key', () => {
@@ -62,7 +63,6 @@ describe('the economy a screen prices with', () => {
     expect(withCardEconomy(settings, {})).toBe(settings);
     expect(withCardEconomy(settings, { 'b.price': 300 }).economy).toEqual({ 'a.price': 100, 'b.price': 300 });
     expect(withCardEconomy(settings, { 'a.price': 'cheap', 'b.price': Number.NaN, 'c.step': 5 }).economy).toEqual({ 'a.price': 100, 'b.price': 250, 'c.step': 5 });
-    expect(faceOf(longer, ui, withCardEconomy(settings, { 'b.price': 300 })).price).toBe(300);
   });
 });
 

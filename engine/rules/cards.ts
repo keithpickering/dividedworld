@@ -152,9 +152,7 @@ export interface CardRules<Config = unknown> {
   readonly lasts?: Span;
   /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
   readonly pins?: true;
-  /** The economy setting that holds what the Vending Machine sells it for. */
-  readonly priceKey: string;
-  /** The economy numbers its rules read beside its price. */
+  /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
   readonly screenReads?: readonly EconomyRead[];
@@ -195,13 +193,6 @@ export interface CardRules<Config = unknown> {
 
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;
-
-/** What the Vending Machine sells a card for, under these settings. */
-export function basePrice(rules: CardRules, settings: Settings): Hundredths {
-  const price = settings.economy[rules.priceKey];
-  if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) throw new Error(`card ${rules.key}'s price, economy "${rules.priceKey}", is ${price}`);
-  return price!;
-}
 
 /** One of the instance's economy numbers, which an instance must hold (instanceProblems). */
 export function economyOf(settings: Settings, key: string): number {

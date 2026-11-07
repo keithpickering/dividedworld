@@ -7,6 +7,8 @@ import type { Instance } from '../../engine/rules/types.ts';
 import { deepFreeze } from '../../engine/rules/instance.ts';
 import { cards } from './cards/index.ts';
 import { classes } from './classes/index.ts';
+import { machine } from './machine.ts';
+import { packs } from './packs.ts';
 import { reactions } from './reactions.ts';
 import { defaults, playtest } from './settings.ts';
 import { system } from './system/index.ts';
@@ -44,7 +46,7 @@ const pipStyles = deepFreeze([
   { key: 'default', name: 'Default', full: 'pips/default-full.svg', empty: 'pips/default-empty.svg' },
 ]);
 
-export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer });
+export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer, packs, machine });
 
 /** The same instance on the playtest's shorter season and Turn cooldown. */
 export const playtestInstance: Instance = Object.freeze({ ...instance, settings: playtest });

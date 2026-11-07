@@ -8,41 +8,46 @@ import { STROKES, whoops } from './whoops.ts';
 import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { basePrice, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
+/** What the machine sells a card for: its slot's price. */
+const priceOf = (key: string): number => instance.machine.find((m) => 'card' in m.item && m.item.card === key)!.price;
+
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
 
-test('a card\'s prices are settings: an override reaches what it sells for and what it costs to play', () => {
-  const tuned = withOverrides(settings, { economy: { 'whoops.price': 150, 'whoops.perLength': 50, 'whoops.mostInAll': 400 } });
-  assert.equal(basePrice(whoops, tuned), 150);
-  assert.equal(basePrice(stickAround, withOverrides(settings, { economy: { 'stickAround.price': 75 } })), 75);
+test('what a play adds is a setting: an override reaches what it costs to play', () => {
+  const tuned = withOverrides(settings, { economy: { 'whoops.perLength': 50, 'whoops.mostAdded': 300 } });
   assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.lengthStep': 250 } }), post(500), { color: 'red' }), 50, 'the step is a setting too');
-  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostInAll': 50 } }), post(6000), { color: 'red' }), 0, 'a cap at or below the price never makes a play pay back');
+  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostAdded': 0 } }), post(6000), { color: 'red' }), 0, 'a cap of nothing adds nothing');
   assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'whoops.lengthStep': 0 } }) }).join('\n'), /whoops\.lengthStep/);
   assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }), 100);
-  assert.equal(basePrice(whoops, tuned) + whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 400);
+  assert.equal(whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 300);
 });
 
-test('Whoops! costs 0.25 more per 500 characters of its target, at most 3.00 in all', () => {
+test('the machine sells every card, and no card carries a price of its own', () => {
+  assert.deepEqual(instance.machine.filter((m) => 'card' in m.item).map((m) => (m.item as { card: string }).card).sort(), cards.map((c) => c.key).sort());
+  assert.ok(cards.every((c) => !('priceKey' in c)));
+});
+
+test('Whoops! costs 0.25 more per 500 characters of its target, at most 2.00 added', () => {
   const config = { color: '#ff00aa' };
   assert.equal(whoops.playPrice(settings, post(499), config), 0);
   assert.equal(whoops.playPrice(settings, post(500), config), 25);
   assert.equal(whoops.playPrice(settings, post(999), config), 25);
   assert.equal(whoops.playPrice(settings, post(1000), config), 50);
-  assert.equal(whoops.playPrice(settings, post(6000), config), 200, 'twelve steps would be 3.00 on top; with the 1.00 paid, 3.00 is all');
-  assert.equal(basePrice(whoops, settings) + whoops.playPrice(settings, post(6000), config), 300);
-  assert.equal(basePrice(whoops, settings) + whoops.playPrice(settings, post(1_000_000), config), 300);
+  assert.equal(whoops.playPrice(settings, post(6000), config), 200, 'twelve steps would be 3.00 on top; 2.00 is the most a play adds');
+  assert.equal(whoops.playPrice(settings, post(1_000_000), config), 200);
 });
 
 test('Stick Around costs nothing more to play', () => {
@@ -174,7 +179,7 @@ test('Stick Around holds no state to save', () => {
 /* The card mechanic's first cards (docs/plans/2026-11-01-card-plays-plan.md, Task 8): Trap Card, Force Field and Bluff. */
 test('the instance sells Trap Card, Force Field and Bluff, each with its rarity and play, and stays whole', () => {
   const by = (key: string) => cards.find((c) => c.key === key)!;
-  assert.deepEqual(['trap-card', 'force-field', 'bluff', 'whoops', 'stick-around'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, basePrice(by(k), settings)]), [
+  assert.deepEqual(['trap-card', 'force-field', 'bluff', 'whoops', 'stick-around'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, priceOf(k)]), [
     ['trap-card', 'uncommon', 'set', 'salty', 150],
     ['force-field', 'uncommon', 'use', 'sweet', 150],
     ['bluff', 'common', 'set', 'pepperoni', 25],
@@ -206,8 +211,8 @@ test('Glitter Bomb is an uncommon Pepperoni Cast on a character, for a week; Mai
   const { mainEvent } = await import('./main-event.ts');
   assert.deepEqual([glitterBomb.rarity, glitterBomb.alignment, glitterBomb.play ?? 'cast', glitterBomb.reaches, glitterBomb.lasts], ['uncommon', 'pepperoni', 'cast', ['character'], { unit: 'day', count: 7 }]);
   assert.deepEqual([mainEvent.rarity, mainEvent.alignment, mainEvent.play ?? 'cast', mainEvent.reaches, mainEvent.lasts, mainEvent.pins], ['rare', 'sweet', 'cast', ['thread'], { unit: 'day', count: 1 }, true]);
-  assert.equal(basePrice(glitterBomb, settings), 150);
-  assert.equal(basePrice(mainEvent, settings), 300);
+  assert.equal(priceOf('glitter-bomb'), 150);
+  assert.equal(priceOf('main-event'), 300);
   const character = { reach: 'character' as const, character: 'c1' };
   assert.equal(glitterBomb.canApply(character, []).ok, true);
   assert.deepEqual(glitterBomb.canApply(post(10), []), { ok: false, why: 'this card lands on a character' });
@@ -229,8 +234,8 @@ test('the instance, with its cards beyond a post, has no problems, and its reach
 test("Feelin' Fab is a common Sweet Cast on a post, three to a post, that lasts until the post goes; it costs 0.20 and nothing more to play", async () => {
   const { feelinFab } = await import('./feelin-fab.ts');
   assert.deepEqual([feelinFab.key, feelinFab.name, feelinFab.alignment, feelinFab.rarity, feelinFab.play ?? 'cast', feelinFab.reaches, feelinFab.stack, feelinFab.lasts], ['feelin-fab', "Feelin' Fab", 'sweet', 'common', 'cast', ['post'], 3, undefined]);
-  assert.equal(basePrice(feelinFab, settings), 20);
-  assert.ok(basePrice(feelinFab, settings) < basePrice(by('bluff'), settings), 'below Bluff');
+  assert.equal(priceOf('feelin-fab'), 20);
+  assert.ok(priceOf('feelin-fab') < priceOf('bluff'), 'below Bluff');
   assert.equal(feelinFab.playPrice(settings, post(6000), {}), 0);
   assert.equal(feelinFab.playPrice(settings, post(10), {}), 0);
   assert.equal(feelinFab.validateConfig({ anything: 1 }).ok, true);
@@ -285,7 +290,7 @@ test('Autocorrect lands only where its phrase is, whole and in any case, never i
   assert.equal(decidePlay(autocorrect as CardRules, settings, on('cats'), [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` })), { phrase: 'cats', replacement: 'dogs' }, '').ok, false, 'three deep already');
 });
 
-test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 3.00 in all', () => {
+test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 2.00 added', () => {
   const price = (body: string, phrase: string) => autocorrect.playPrice(settings, on(body), { phrase, replacement: 'x' });
   assert.equal(price('cats', 'cats'), 0, '4 characters covered');
   assert.equal(price(Array(12).fill('cats').join(' '), 'cats'), 0, '48 characters covered');

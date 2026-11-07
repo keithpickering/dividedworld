@@ -37,9 +37,10 @@ export function instanceSeed(instance: Instance) {
     } as Record<string, unknown>,
     classes: instance.classes.map((c) => ({ key: c.key, name: c.name })),
     reactions: instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })),
-    // What each card's price reads beside its priceKey, by name, so screen_settings can hand the screens those numbers too (0039).
+    // `priceSetting` is a stand-in until the machine migration (booster-packs plan, Task 2) replaces card prices with the machine's slots.
+    // What each card's price reads, by name, so screen_settings can hand the screens those numbers too (0039).
     cards: instance.cards.map((c) => ({
-      key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey, stack: c.stack ?? 1, seeded: c.seeded === true,
+      key: c.key, name: c.name, alignment: c.alignment, priceSetting: `${c.key}.price`, stack: c.stack ?? 1, seeded: c.seeded === true,
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
       // How it is played and how rare it is, and a Set card's trap, a Use card's ward and time up (0054), which seed_instance
       // checks as instanceProblems does. A trap or a time up left out travels as none.

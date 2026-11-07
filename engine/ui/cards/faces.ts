@@ -10,7 +10,8 @@
  * top of it, which says whether the price reads "1.00" or "1.00+" and how much more a long post
  * can cost. A card whose rules refuse the probe is shown at its base price alone.
  */
-import { basePrice, playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
+import type { SlotSeed } from '../../rules/packs.ts';
+import { playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
 import type { Alignment, Settings } from '../../rules/types.ts';
 import type { CardArt, CardUi } from './types.ts';
 
@@ -80,15 +81,15 @@ function extraOf(rules: CardRules, settings: Settings): number {
   }
 }
 
-/** One card's face, from its rules and what the instance gave it. */
-export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Settings): CardFace {
+/** One card's face, from its rules and what the instance gave it. `price` is its slot's at the machine, 0 where the caller has none to show. */
+export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Settings, price = 0): CardFace {
   const describe = ui ? ui.describe(settings) : '';
   return {
     key: rules.key,
     name: rules.name,
     alignment: rules.alignment,
     tag: alignmentTag(rules.alignment),
-    price: basePrice(rules, settings),
+    price,
     extra: extraOf(rules, settings),
     stack: rules.stack ?? 1,
     art: ui?.art ?? PLAIN,
@@ -111,6 +112,6 @@ export function withCardEconomy(settings: Settings, cardEconomy: Readonly<Record
 }
 
 /** Every card the instance sells, in the order its rules list them. */
-export function facesOf(cards: readonly CardRules[], uis: readonly CardUi[], settings: Settings): readonly CardFace[] {
-  return cards.map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings));
+export function facesOf(cards: readonly CardRules[], uis: readonly CardUi[], settings: Settings, machine: readonly SlotSeed[] = []): readonly CardFace[] {
+  return cards.map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings, machine.find((s) => 'card' in s.item && s.item.card === rules.key)?.price ?? 0));
 }

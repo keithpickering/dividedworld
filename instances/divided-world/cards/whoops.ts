@@ -18,7 +18,7 @@
  * there can be fits the database's bound on it (effect_state, supabase/migrations/0006_cards.sql),
  * which cards.test.ts measures as Postgres writes it.
  */
-import { basePrice, color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 
 export const STROKES = { most: 200, points: 500, totalPoints: 12_000, widest: 1, deepest: 1 } as const;
 const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
@@ -32,16 +32,15 @@ export const whoops: CardRules<{ color: string }> = {
   name: 'Whoops!',
   alignment: 'salty',
   rarity: 'common',
-  priceKey: 'whoops.price',
   stack: 3,
   seeded: true,
   /** A layer counts as washed clean at this share of it, in whole percent (the effect's, read by the screens). */
   screenReads: [{ key: 'whoops.clean', whole: true, min: 1, max: 100 }],
-  reads: [{ key: 'whoops.perLength', whole: true, min: 0 }, { key: 'whoops.lengthStep', whole: true, min: 1 }, { key: 'whoops.mostInAll', whole: true, min: 1 }],
+  reads: [{ key: 'whoops.perLength', whole: true, min: 0 }, { key: 'whoops.lengthStep', whole: true, min: 1 }, { key: 'whoops.mostAdded', whole: true, min: 1 }],
   // Whoops! lands on a post alone, so a target that is none is priced nothing; landsOn refuses it first.
   playPrice: (settings, target) => target.reach !== 'post' ? 0 :
     Math.max(0, Math.min(economyOf(settings, 'whoops.perLength') * Math.floor(target.length / economyOf(settings, 'whoops.lengthStep')),
-      economyOf(settings, 'whoops.mostInAll') - basePrice(whoops, settings))),
+      economyOf(settings, 'whoops.mostAdded'))),
   canApply: (target, effects, _config, now) => landsOn(whoops, target, effects, now),
   /** The inks code falls back on when a persona's own ink fails (staffConfigOf). */
   staffConfigs: [{ color: 'red' }, { color: 'teal' }, { color: 'orange' }, { color: 'purple' }, { color: 'lime' }],

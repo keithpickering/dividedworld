@@ -16,7 +16,7 @@ import { CalloutProvider } from './Callout.tsx';
 import { MomentEffects, momentParts } from './Effects.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
-const base = { alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const rule = (key: string, name: string, extra: Partial<CardRules> = {}): CardRules => ({ ...base, key, name, canApply: (t, e, _config, now) => landsOn({ key }, t, e, now), ...extra });
 /* Smear saves state and stacks (as a wash does); Ripple stacks; Holdy is a takeover that does neither; Tagger saves nothing and stacks one. */
 const smear = rule('smear', 'Smear', { stack: 3, validateState: (s) => ok(s) });
