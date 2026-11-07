@@ -117,7 +117,9 @@ test('the Mod Bot\'s quiz has five questions, every answer one of its choices, a
     assert.equal(new Set(q.choices).size, q.choices.length, q.question);
     assert.ok(q.choices.every((c) => c === c.trim()), q.question);
   }
-  assert.ok(new Set(qs.map((q) => q.choices.indexOf(q.answer))).size >= 3, 'answers are spread over the positions');
+  const at = qs.map((q) => q.choices.indexOf(q.answer));
+  const most = Math.max(...[0, 1, 2, 3, 4, 5, 6, 7].map((i) => at.filter((a) => a === i).length));
+  assert.ok(most <= Math.ceil(qs.length / 3), `no position holds more than a third of the answers (positions ${at.join(',')})`);
 });
 
 test('every persona\'s weakness is a quiz, a bribe or a distraction the engine accepts', () => {
@@ -135,4 +137,9 @@ test('the theme names the visit mark\'s ink', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../ui/theme.css', import.meta.url), 'utf8');
   assert.ok((css.match(/--kb-visit-ink:/g) ?? []).length >= 3, 'light, device-dark and chosen-dark');
+});
+
+test('every persona\'s bands are keys of the warn bar\'s bands', async () => {
+  const { defaults } = await import('../settings.ts');
+  for (const p of system.roster) for (const b of p.strictness.bands) assert.ok(b in defaults.warnBar.bands, `${p.key}: ${b}`);
 });

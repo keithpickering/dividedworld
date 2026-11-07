@@ -22,12 +22,12 @@ export const placeholderMonitor: Persona = {
   weakness: {
     kind: 'quiz',
     questions: [
-      { question: 'What color is the orb?', choices: ['Orb-colored', 'Beige', 'Taxes'], answer: 'Orb-colored' },
-      { question: 'How many Bosses is it legal to have at once?', choices: ['Several', 'One', 'Yes'], answer: 'One' },
-      { question: 'What is the polite way to reply to a thread that has been quiet for a year?', choices: ['Start a new thread', 'Reply anyway', 'Bring a cake', 'Wait for it to apologize'], answer: 'Start a new thread' },
-      { question: 'In a Mario fan game, what do you collect 100 of for an extra life?', choices: ['Stars', 'Keys', 'Coins', 'Mushrooms'], answer: 'Coins' },
-      { question: 'What does a Hall Monitor never do in a thread?', choices: ['Run', 'Post', 'Sigh', 'Hum', 'Stamp'], answer: 'Run' },
-      { question: 'What goes on the lanyard?', choices: ['The pass', 'A snack', 'A pet rule', 'Nothing, it is for show'], answer: 'The pass' },
+      { question: 'What color is the orb?', choices: ['Beige', 'Orb-colored', 'Taxes'], answer: 'Orb-colored' },
+      { question: 'How many Bosses is it legal to have at once?', choices: ['One', 'Several', 'Yes'], answer: 'One' },
+      { question: 'What is the polite way to start a brand-new topic?', choices: ['Reply to a year-old thread', 'Shout in all caps', 'Start a new thread', 'Edit your signature'], answer: 'Start a new thread' },
+      { question: 'In a Mario fan game, what do you collect 100 of for an extra life?', choices: ['Stars', 'Keys', 'Mushrooms', 'Coins'], answer: 'Coins' },
+      { question: 'Finish the Hall Monitor\'s motto: "Walk, do not ..."', choices: ['Run', 'Post', 'Sigh', 'Hum', 'Stamp'], answer: 'Post' },
+      { question: 'What does a hall pass let you do?', choices: ['Walk in the hall', 'Skip a Boss', 'Post in all caps', 'Ignore a pet rule'], answer: 'Walk in the hall' },
     ],
   },
   voice: 'chat',
