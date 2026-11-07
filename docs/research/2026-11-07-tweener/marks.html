@@ -1,0 +1,75 @@
+<!doctype html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root{--ground:#07050d;--panel:rgba(10,6,20,.72);--text:#f1ecff;--text2:#e4def7;--hi:#fff;--over:#ff8a96;--hurt:#ff8fb1}
+body{margin:0;background:radial-gradient(ellipse at 20% 10%,rgba(140,36,250,.6),transparent 60%),radial-gradient(ellipse at 80% 90%,rgba(31,179,255,.35),transparent 60%),var(--ground);font-family:'Barlow Condensed',sans-serif;color:var(--text);padding:28px 32px}
+h1{font:800 22px 'Barlow Condensed';letter-spacing:3px;text-transform:uppercase;color:var(--text2);margin:0 0 6px}
+h2{font:800 20px 'Barlow Condensed';letter-spacing:2px;text-transform:uppercase;color:#9ef4ff;margin:26px 0 4px}
+p.note{font:600 18px 'Barlow Condensed';color:var(--text2);margin:0 0 10px;max-width:1100px}
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.card{--f:#fff;--i:#000;width:216px;min-height:300px;box-sizing:border-box;padding:18px 16px;display:flex;flex-direction:column;gap:10px;background:var(--panel);border:1px solid color-mix(in srgb,var(--f) 55%,transparent);position:relative}
+.card.chosen{background:color-mix(in srgb,var(--f) 12%,var(--panel));border:2px solid var(--f);box-shadow:0 0 30px color-mix(in srgb,var(--f) 55%,transparent)}
+.name{font:400 40px/40px Anton;text-transform:uppercase}
+.marks{display:grid;grid-template-columns:repeat(2,1.75rem);gap:4px;position:relative}
+.m{box-sizing:border-box;display:grid;place-items:center;height:1.75rem;border:1px solid rgba(255,255,255,.3);font:800 20px/1 'Barlow Condensed'}
+.earns{border:0;background:var(--f);color:var(--i)}
+.hurts{border:1.5px dashed var(--over);color:var(--over);background:var(--ground)}
+.calls{border:1.5px dotted var(--f)}
+.span2{grid-column:span 2}
+.split{border:0;background:var(--f);color:var(--i);font-size:22px}
+.bridge{position:absolute;left:calc(1.75rem - 2px);top:calc(.875rem - 3px);width:8px;height:6px;background:var(--f)}
+.half{border:1.5px solid var(--f);background:linear-gradient(90deg,transparent 50%,var(--f) 50%)}
+.half.r{background:linear-gradient(90deg,var(--f) 50%,transparent 50%)}
+.desc,.hurt{font:600 21px/1.5 'Barlow Condensed';color:var(--text2)}
+.hurt{color:var(--hurt);margin-top:2px}
+.label{font:600 15px 'Barlow Condensed';color:#9ef4ff;opacity:.85;border-top:1px dashed rgba(158,244,255,.3);padding-top:6px;margin-top:auto}
+.key{font:600 16px 'Barlow Condensed';color:var(--text2);margin-top:4px}
+</style></head><body>
+<h1>Tweener marks: mockup (Turn board class cards)</h1>
+<p class="note">Map cells, as the React picker orders them: top row Heat | Hype, bottom row Groan | Calm. The Face and the Heel are drawn as they are today, for comparison. The Tweener's magenta is a placeholder (the Lurker already has violet). The small line at each card's foot is the marks' label, which a screen reader hears; on the real card it is hidden.</p>
+<div class="row">
+ <div class="card" style="--f:#3db8ff;--i:#03141a"><div class="name">Face</div>
+  <div class="marks"><span class="m"></span><span class="m earns">+</span><span class="m hurts">−</span><span class="m"></span></div>
+  <div class="desc">The crowd's favorite. Earns from excited, positive reactions…</div><div class="hurt">Hurt by bored reactions…</div>
+  <div class="label">Earns from hype, hurt by the groan</div></div>
+ <div class="card" style="--f:#ff3d57;--i:#14030a"><div class="name">Heel</div>
+  <div class="marks"><span class="m earns">+</span><span class="m"></span><span class="m"></span><span class="m hurts">−</span></div>
+  <div class="desc">Earns heat: excited, negative reactions…</div><div class="hurt">Hurt by the polite shrug, calm and positive.</div>
+  <div class="label">Earns from heat, hurt by the calm</div></div>
+</div>
+
+<h2>A1 · a <code>splits</code> mark: the two excited cells merged into one, with ⇆</h2>
+<h2 style="display:none"></h2>
+<div class="row">
+ <div class="card chosen" style="--f:#ff4fd8;--i:#1a0316"><div class="name">Tweener</div>
+  <div class="marks"><span class="m split span2">⇆</span><span class="m hurts">−</span><span class="m hurts">−</span></div>
+  <div class="desc">Splits the room. Earns when a post or card draws hype and heat in equal measure, and when its card sets someone else's post arguing.</div>
+  <div class="hurt">Hurt by the shrug: calm or bored reactions.</div>
+  <div class="label">Earns from a room split between hype and heat, hurt by the shrug</div></div>
+ <div style="align-self:center;max-width:520px" class="key">One wide cell across Heat and Hype says "the two together, as one thing." Its look is new, so it can't be read as two separate pluses.</div>
+</div>
+
+<h2>A2 · a <code>splits</code> mark: two half-filled cells, bridged</h2>
+<div class="row">
+ <div class="card chosen" style="--f:#ff4fd8;--i:#1a0316"><div class="name">Tweener</div>
+  <div class="marks"><span class="m half"></span><span class="m half r"></span><span class="m hurts">−</span><span class="m hurts">−</span><span class="bridge"></span></div>
+  <div class="desc">Splits the room. Earns when a post or card draws hype and heat in equal measure, and when its card sets someone else's post arguing.</div>
+  <div class="hurt">Hurt by the shrug: calm or bored reactions.</div>
+  <div class="label">Earns from a room split between hype and heat, hurt by the shrug</div></div>
+ <div style="align-self:center;max-width:520px" class="key">Each excited cell is half-filled toward the other, and a bar joins them: half of each, meeting in the middle. The cells stay apart, as the Heel's and the Face's are.</div>
+</div>
+
+<h2>B · plain <code>earns</code> on both (no engine change)</h2>
+<div class="row">
+ <div class="card" style="--f:#ff4fd8;--i:#1a0316"><div class="name">Tweener</div>
+  <div class="marks"><span class="m earns">+</span><span class="m earns">+</span><span class="m hurts">−</span><span class="m hurts">−</span></div>
+  <div class="desc">Splits the room…</div><div class="hurt">Hurt by the shrug…</div>
+  <div class="label">Earns from hype and heat, hurt by the shrug</div></div>
+ <div style="align-self:center;max-width:520px" class="key">At a glance this reads as "the Face plus the Heel": a 12-hype post looks like a win, and it pays nothing.</div>
+ <div class="card" style="--f:#ff4fd8;--i:#1a0316"><div class="name">Tweener</div>
+  <div class="marks"><span class="m"></span><span class="m"></span><span class="m hurts">−</span><span class="m hurts">−</span></div>
+  <div class="desc">Splits the room…</div><div class="hurt">Hurt by the shrug…</div>
+  <div class="label">Hurt by the shrug</div></div>
+ <div style="align-self:center;max-width:260px" class="key"><b>C</b> · hurt marks only. Honest, but it's the only class whose map hides how it earns.</div>
+</div>
+</body></html>
