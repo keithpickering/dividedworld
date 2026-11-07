@@ -70,7 +70,7 @@ async function drawSmoke(browser, input) {
     await page.evaluate(async () => {
       const masked = [...document.querySelectorAll('#b > div')].slice(0, -1); /* the last is the fade */
       const urls = masked
-        .map((d) => /url\(["']?(data:[^"')]+)/.exec(getComputedStyle(d).maskImage || d.style.webkitMaskImage || '')?.[1])
+        .map((d) => /url\(["']?(data:[^"')]+)/.exec(getComputedStyle(d).getPropertyValue('mask-image') || getComputedStyle(d).getPropertyValue('-webkit-mask-image'))?.[1])
         .filter((u) => u);
       if (urls.length === 0 || urls.length !== masked.length) throw new Error(`found ${urls.length} of ${masked.length} masks to wait on`);
       await Promise.all(urls.map((u) => { const i = new Image(); i.src = u; return i.decode(); }));
