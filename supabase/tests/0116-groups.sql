@@ -28,9 +28,9 @@ create function pg_temp.groups() returns jsonb language sql as $$
     jsonb_build_object('key', 'teachersPet', 'name', 'Teacher''s Pet', 'color', '#c2408f', 'source', 'conferred', 'tone', 'favor'))
 $$;
 
--- A reveal Act for a character in a season, as the settlement writes it (kind reveal, no author, the character in the payload).
-create function pg_temp.reveal(who uuid, in_thread uuid, season integer) returns uuid language sql as $$
-  select tests.act(null, 'reveal', in_thread, jsonb_build_object('season', season, 'character', who::text, 'name', 'Someone'))
+-- Settle the open season through the real path (reveal_season, which writes one season_results row per character, 0099).
+create function pg_temp.settle() returns void language sql as $$
+  select reveal_season((select starts_at + span_interval(setting('seasonLength')) from seasons where ends_at is null))
 $$;
 
 -- ---- The ladder, read through characters_public ----
@@ -66,11 +66,10 @@ begin
   insert into acts (character, kind, thread, payload) select old, 'post', t, jsonb_build_object('body', 'o' || g) from generate_series(1, 4) g;
   perform tests.post(old, t, 'fifth');
   perform tests.post(once, t, 'only');
-  perform pg_temp.reveal(once, t, 1);
+  perform pg_temp.settle();
   select "group" into got from characters_public where id = once;
   if got is distinct from 'members' then raise exception 'one season is not old guard, got %', coalesce(got, 'null'); end if;
-  perform pg_temp.reveal(old, t, 1);
-  perform pg_temp.reveal(old, t, 2);
+  perform pg_temp.settle();
   select "group" into got from characters_public where id = old;
   if got is distinct from 'oldGuard' then raise exception '5 posts and 2 seasons is oldGuard, not %', coalesce(got, 'null'); end if;
 
@@ -163,6 +162,20 @@ begin
   if (select count(*) from group_kinds) is distinct from 5 then raise exception 'a seed without groups changed them: %', (select count(*) from group_kinds); end if;
 end $$;
 
+-- ---- An instance may reorder its rungs: a reseed with two swapped lands whole ----
+do $$
+declare
+  swapped jsonb;
+begin
+  perform seed_instance(pg_temp.payload(pg_temp.groups()));
+  select jsonb_agg(case g ->> 'key' when 'regulars' then g || '{"rung": 2}' when 'oldGuard' then g || '{"rung": 1}' else g end order by ord)
+    into swapped from jsonb_array_elements(pg_temp.groups()) with ordinality t(g, ord);
+  perform seed_instance(pg_temp.payload(swapped));
+  if (select rung from group_kinds where key = 'oldGuard') is distinct from 1 or (select rung from group_kinds where key = 'regulars') is distinct from 2 then
+    raise exception 'the swapped rungs did not land: %', (select jsonb_agg(key || ':' || rung order by rung) from group_kinds where source = 'ladder');
+  end if;
+end $$;
+
 -- ---- screen_settings carries the groups' looks and no client can read group_kinds ----
 do $$
 declare
@@ -181,7 +194,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- group_now's reads are index reads: the reveal count uses acts_reveal_character, the post count and the move probe are keyed ----
+-- ---- group_now's reads are index reads: the settled-seasons count uses season_results_by_character, the post count and the move probe are keyed ----
 -- EXPLAINed with the sequential scan off, as 0035 does: on a table this small it would be scanned whatever the indexes were, so the question is whether the index can be used.
 do $$
 declare
@@ -192,10 +205,10 @@ declare
 begin
   set local enable_seqscan = off;
   plan := '';
-  for ln in execute format('explain select count(*) from acts x where x.kind = %L and x.payload ->> %L = %L', 'reveal', 'character', a::text) loop
+  for ln in execute format('explain select count(*) from season_results x where x.character = %L', a::text) loop
     plan := plan || E'\n' || ln."QUERY PLAN";
   end loop;
-  if plan not like '%acts_reveal_character%' then raise exception 'the reveal count is not read from acts_reveal_character: %', plan; end if;
+  if plan not like '%season_results_by_character%' then raise exception 'the settled-seasons count is not read from season_results_by_character: %', plan; end if;
   plan := '';
   for ln in execute format('explain select a.payload from open_moves o join acts a on a.id = o.move_act where a.payload ->> %L = %L and a.payload #>> %L = %L', 'kind', 'conferGroup', '{params,character}', a::text) loop
     plan := plan || E'\n' || ln."QUERY PLAN";

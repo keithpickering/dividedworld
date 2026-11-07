@@ -7,8 +7,9 @@
 --
 -- `group_now(character)` is the group a character is shown in: the group of the open `conferGroup` move that names it (a move's params carry
 -- `character` and `group`), else the highest rung whose condition holds. It reads, per condition kind: the default (always), the character's post count
--- (character_post_counts, one primary-key read), the character's reveal Acts (one per settled season it played; the partial index acts_reveal_character,
--- 0032, a handful of rows), and staff (the Boss or a Mod, or the developer; a persona in the member office or benched is not staff). A kind it has no case
+-- (character_post_counts, one primary-key read), the character's season_results rows (one per settled season it played, 0099, which also backfilled the seasons
+-- revealed before it from their reveal Acts; the index season_results_by_character, a handful of rows),
+-- and staff (the Boss or a Mod, or the developer; a persona in the member office or benched is not staff). A kind it has no case
 -- for raises. A function a view calls runs with the privileges of whoever reads the view (0104's note on warn_points), so signed-in players may execute it;
 -- it answers public facts only (posts, seasons played, the staff roster, a move on the board) and the same for an id that is no character.
 --
@@ -35,14 +36,15 @@ create table group_kinds (
   check ((condition in ('posts', 'seasons')) = (at_least is not null)),
   check (source = 'ladder' or (rung is null and condition is null and at_least is null))
 );
-create unique index group_kinds_rung on group_kinds (rung) where source = 'ladder';
+-- Deferrable, so a reseed that reorders the rungs lands whole (a unique check on a deferrable constraint waits for the end of the statement); conferred groups have no rung, and nulls never collide.
+alter table group_kinds add constraint group_kinds_rung unique (rung) deferrable initially immediate;
 alter table group_kinds enable row level security;
 revoke all on group_kinds from public, anon, authenticated;
 
 -- The ladder, highest first, is what group_now walks.
 create index group_kinds_ladder on group_kinds (rung desc) where source = 'ladder';
 
--- The reveals of a character are counted through acts_reveal_character (0032).
+-- The settled seasons of a character are counted through season_results_by_character (0099).
 create function group_now(in_character uuid) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -62,7 +64,7 @@ begin
     holds := case r.condition
       when 'default' then true
       when 'posts' then coalesce((select n.posts from character_post_counts n where n.character = in_character), 0) >= r.at_least
-      when 'seasons' then (select count(*) from acts x where x.kind = 'reveal' and x.payload ->> 'character' = in_character::text) >= r.at_least
+      when 'seasons' then (select count(*) from season_results x where x.character = in_character) >= r.at_least
       when 'staff' then exists (
         select 1 from characters c left join staff_office_now o on o.staff = c.staff
         where c.id = in_character and c.staff is not null and (c.staff_kind = 'developer' or o.office in ('boss', 'mod')))
