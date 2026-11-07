@@ -3,28 +3,50 @@
  * lines for an unmask and The System's posts, "Last edited", and the History of a post.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { BbCode } from '../bbcode/render.tsx';
+import { BbCode, type QuoteOf } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
 
 import { Link } from '../router.tsx';
 import { useThread } from './context.ts';
-import { useLocated } from './locate.tsx';
+import { useCharacter, useKnownAct, useLocated } from './locate.tsx';
+import { Byline, Mini } from '../mini.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export const when = (iso: string) => new Date(iso).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
 export const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** The link a quote carries: the quoted Act's post, wherever it is. */
-export function QuoteLink({ act }: { readonly act: Id }) {
+/** A typed name's face: its letter and the name as plain text. The same look as a character's unlinked byline, with no id behind it. */
+function TypedName({ name }: { readonly name: string }) {
+  return <><Mini character={undefined} name={name} /><span className="kb-byline-name">{name}</span></>;
+}
+
+/** The head of a real quote: the Act's author, then its post. Whatever is not found yet is left out, and a quote of an Act that is not there says so. */
+function RealHead({ act }: { readonly act: Id }) {
   const { perPage } = useThread();
   const found = useLocated(act);
-  if (!found) return <>Quoted post</>;
-  return <Link to={threadHref(found.thread, pageOf(found.seq, perPage), found.seq)}>Post #{found.seq}</Link>;
+  const read = useKnownAct(act);
+  const author = useCharacter(read?.character ?? null);
+  const post = found ? <Link to={threadHref(found.thread, pageOf(found.seq, perPage), found.seq)}>Post #{found.seq}</Link> : <>Quoted post</>;
+  if (!read) return post;
+  return <><Byline character={author ?? undefined} link id={read.character} />{' '}{post}</>;
 }
-export const quoteLink = (act: Id): ReactNode => <QuoteLink act={act} />;
+
+/** The head of a counterfeit: the `user`'s character when it can be found, else the typed name; never a link. */
+function CounterfeitHead({ user, name }: { readonly user: Id | null; readonly name: string | null }) {
+  const character = useCharacter(user);
+  if (character) return <Byline character={character} link={false} id={character.id} />;
+  if (name !== null) return <TypedName name={name} />;
+  return <>{user === null ? 'Quote' : 'Someone'}</>;
+}
+
+/** The head a quote carries, by the quote's kind. */
+export function QuoteHead({ of }: { readonly of: QuoteOf }) {
+  return of.kind === 'real' ? <RealHead act={of.act} /> : <CounterfeitHead user={of.user} name={of.name} />;
+}
+export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 
 /** Every version of a post, the original first, for anyone who asks. */
 function Versions({ post }: { readonly post: Id }) {
@@ -43,7 +65,7 @@ function Versions({ post }: { readonly post: Id }) {
       {versions.map((v, i) => (
         <li key={v.id}>
           <span className="kb-small kb-muted">{i === 0 ? 'Original' : `Edit ${i}`}, {when(v.createdAt)}{i === versions.length - 1 ? ' · Current' : ''}</span>
-          <BbCode text={text(v.payload.body)} quoteLink={quoteLink} />
+          <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />
         </li>
       ))}
     </ol>
@@ -114,5 +136,5 @@ export { Debuts };
 
 /** The words of The System's own post: the tally of a settlement, or the season's reveal (engine/ui/reveal/). */
 export function SystemPost({ act }: { readonly act: Act }) {
-  return act.kind === 'reveal' ? <RevealPost act={act} quoteLink={quoteLink} /> : <TallyPost act={act} quoteLink={quoteLink} />;
+  return act.kind === 'reveal' ? <RevealPost act={act} quoteHead={quoteHead} /> : <TallyPost act={act} quoteHead={quoteHead} />;
 }

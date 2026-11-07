@@ -509,6 +509,64 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
   });
 });
 
+describe('quote heads', () => {
+  const GHOST = '33333333-3333-4333-8333-333333333333';
+
+  test('a real quote names its author and links both the profile and the post', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${w.ids[0]}]post 1[/quote]I agree.`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const head = await waitFor(() => {
+      const h = reply.querySelector('blockquote cite')!;
+      expect(within(h as HTMLElement).getByRole('link', { name: 'Spritey' })).toBeInTheDocument();
+      return h as HTMLElement;
+    });
+    expect(within(head).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);
+    expect(within(head).getByRole('link', { name: 'Post #1' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
+  });
+
+  test('a counterfeit names the character, has no link and carries the mark', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=Geno user=${w.spritey}]never said it[/quote]`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const quote = reply.querySelector('blockquote')!;
+    expect(quote).toHaveAttribute('data-kb-counterfeit');
+    await waitFor(() => expect(quote.querySelector('cite')).toHaveTextContent('Spritey'));
+    expect(quote.querySelector('cite')).not.toHaveTextContent('Geno');
+    expect(quote.querySelector('cite a')).toBeNull();
+  });
+
+  test('an unknown user and an undebuted one both fall back to the typed name, alike', async () => {
+    const w = world(2);
+    const shy = w.fake.seed.character(w.other, 'Shy', 'face', { debuted: false });
+    w.fake.seed.post(w.thread, w.pipe, `[quote=Geno user=${GHOST}]a[/quote][quote=Geno user=${shy}]b[/quote]`);
+    const read = vi.spyOn(w.fake, 'characters');
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    await waitFor(() => expect(reply.querySelectorAll('blockquote cite .kb-byline-name')).toHaveLength(2));
+    const names = [...reply.querySelectorAll('blockquote cite')].map((c) => c.innerHTML);
+    expect(names[0]).toBe(names[1]);
+    expect(names[0]).toContain('Geno');
+    expect(reply.querySelector('blockquote cite a')).toBeNull();
+    expect(reply).not.toHaveTextContent('Shy');
+  });
+
+  test('a page of ten counterfeit quotes asks for characters once', async () => {
+    const w = world(2);
+    const others = Array.from({ length: 10 }, (_, i) => w.fake.seed.character(w.other, `Extra ${i}`, 'face'));
+    for (const c of others) w.fake.seed.post(w.thread, w.pipe, `[quote=Geno user=${c}]x[/quote]`);
+    const read = vi.spyOn(w.fake, 'characters');
+    open(w);
+    await screen.findByRole('article', { name: /^Post 12 /u });
+    await waitFor(() => expect(screen.getAllByText(/^Extra \d$/u)).toHaveLength(10));
+    const asked = read.mock.calls.filter(([ids]) => ids.some((id) => others.includes(id)));
+    expect(asked).toHaveLength(1);
+  });
+});
+
 describe('quotes', () => {
   test('a quote of an Act in this thread links to its post', async () => {
     const w = world(2);

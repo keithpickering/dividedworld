@@ -123,6 +123,13 @@ export function ratio(a: string, b: string): number {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
+/** Which of black and white has the higher contrast ratio on a #rrggbb color (black on a tie). */
+export function inkOn(background: string): 'black' | 'white' {
+  const l = luminance(parseColor(background));
+  /* Black's ratio is (l + .05) / .05, white's is 1.05 / (l + .05). */
+  return (l + 0.05) / 0.05 >= 1.05 / (l + 0.05) ? 'black' : 'white';
+}
+
 /** [foreground token, background token, least ratio, what it is] */
 export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-fg', '--kb-bg', 4.5, 'body text'],

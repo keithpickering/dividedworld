@@ -7,7 +7,7 @@ import { useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { Tool } from './text.ts';
 
 interface Entry {
-  readonly tool: Tool | 'quote';
+  readonly tool: Tool | 'quote' | 'someone';
   readonly name: string;
   readonly show: ReactNode;
 }
@@ -19,6 +19,9 @@ const ENTRIES: readonly Entry[] = [
   { tool: 'strike', name: 'Strikethrough', show: <s>S</s> },
   { tool: 'link', name: 'Link', show: 'Link' },
   { tool: 'image', name: 'Image', show: 'Image' },
+  { tool: 'video', name: 'Video', show: 'Video' },
+  { tool: 'spoiler', name: 'Spoiler', show: 'Spoiler' },
+  { tool: 'someone', name: 'Quote someone…', show: 'Quote someone…' },
   { tool: 'quote', name: 'Quote the last post shown', show: 'Quote' },
   { tool: 'code', name: 'Code', show: 'Code' },
   { tool: 'list', name: 'List', show: 'List' },
@@ -28,9 +31,11 @@ export interface ToolbarProps {
   readonly onTool: (tool: Tool) => void;
   /** Absent where there is no post to quote (an edit): the tool is left out. */
   readonly onQuote?: (() => void) | undefined;
+  /** Opens the Quote someone… dialog. */
+  readonly onSomeone: () => void;
 }
 
-export function Toolbar({ onTool, onQuote }: ToolbarProps) {
+export function Toolbar({ onTool, onQuote, onSomeone }: ToolbarProps) {
   const entries = ENTRIES.filter((e) => e.tool !== 'quote' || onQuote);
   const [active, setActive] = useState(0);
   const bar = useRef<HTMLDivElement>(null);
@@ -57,7 +62,7 @@ export function Toolbar({ onTool, onQuote }: ToolbarProps) {
           aria-label={e.name}
           tabIndex={i === active ? 0 : -1}
           onFocus={() => setActive(i)}
-          onClick={() => (e.tool === 'quote' ? onQuote?.() : onTool(e.tool))}
+          onClick={() => (e.tool === 'quote' ? onQuote?.() : e.tool === 'someone' ? onSomeone() : onTool(e.tool))}
         >{e.show}</button>
       ))}
     </div>

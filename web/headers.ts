@@ -5,15 +5,20 @@
  * Netlify applies. The Content-Security-Policy allows the page itself and the Supabase origin:
  * connections to https://*.supabase.co (and wss for Realtime); images from any https host, since a
  * post's [img] may name one (the owner's choice, 2026-10-29: as on an old forum, the image's host
- * can see who loads it); and
+ * can see who loads it); frames only from the hosts a post's [video] can play from (PLAYER_HOSTS,
+ * engine/bbcode/video.ts) and files from any https host; and
  * 'wasm-unsafe-eval' in script-src for the WebAssembly WebP encoder the avatar fallback uses
  * (engine/ui/profile-edit/wasm-webp.ts). An instance on a Supabase custom domain adds that origin here.
  */
+import { PLAYER_HOSTS } from '../engine/bbcode/video.ts';
+
 export const CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self'",
   "img-src 'self' blob: data: https:",
+  `frame-src ${PLAYER_HOSTS.map((h) => `https://${h}`).join(' ')}`,
+  "media-src 'self' https:",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
   "font-src 'self'",
   "object-src 'none'",

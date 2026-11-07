@@ -101,6 +101,17 @@ function width(px: number) {
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
+describe('the counterfeit quote\'s filter', () => {
+  test('is drawn once by the frame, hidden from the reading order, for every post on the page to use', () => {
+    setup(true, undefined, <><p>post one</p><p>post two</p></>);
+    const filters = document.querySelectorAll('filter#kb-wobble');
+    expect(filters).toHaveLength(1);
+    expect(filters[0]!.closest('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(filters[0]!.querySelector('feTurbulence')).not.toBeNull();
+    expect(filters[0]!.querySelector('feDisplacementMap')).not.toBeNull();
+  });
+});
+
 describe('the vignette', () => {
   test('is one aria-hidden element in the frame, below the HUD in the tree and out of the reading order', () => {
     setup();
