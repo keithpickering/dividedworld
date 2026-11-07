@@ -6,8 +6,8 @@
  *
  * `{{setting:<path>}}` marks a number a retune would change; the engine fills it from the settings in force, so no number is typed here.
  * `rank` is an index into the instance's ranks (../index.ts), so the pips differ. Each post's counts are the ones a quiet thread holds: two
- * or three kinds, small numbers, and the crowd following the crowd: it laughs along with the Face's jab, piles onto the splat and gives
- * the Heel the most heat. A visitor's own reactions are added on their screen alone (docs/plans/2026-11-07-front-door-play-design.md).
+ * or three kinds, small numbers, and the crowd following the crowd. Snuckles gets only the groan a Jabroni earns from (crickets for the
+ * opener, facepalms once splatted), while the laughs go to the Face's jab and to the Whoops! play itself; the Heel gets the most heat. A visitor's own reactions are added on their screen alone (docs/plans/2026-11-07-front-door-play-design.md).
  * Captain Wholesome's post carries two Feelin' Fabs, from The Accountant and from Mr. Roboto sucking up, so its mark reads ×2 and the glow
  * stacks. Snuckles's second post is splatted by Mr. Roboto's Whoops!, a Salty card, which a Jabroni earns from. Its `seed` is fixed, so
  * every visitor sees the same splat.
@@ -32,7 +32,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({
       by: 'snuckles',
       body: 'This is a plain old outdated forum...or is it something more? In the game we call life, we have few opportunities to put on a mask. We are giving you that opportunity now. Will you take it, weary traveler?',
-      reactions: Object.freeze({ 'eye-roll': 2, laughing: 1 }),
+      reactions: Object.freeze({ crickets: 3 }),
     }),
     Object.freeze({
       by: 'wholesome',
@@ -46,7 +46,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({
       by: 'snuckles',
       body: 'Oh come on! I\'m just trying to be cool in front of the new person and of course you\'re being a jerk about it. Once again you\'re mad that you don\'t have what it takes to compete in the Marketplace of Ideas.',
-      reactions: Object.freeze({ laughing: 4, facepalm: 1 }),
+      reactions: Object.freeze({ facepalm: 3, yawn: 1 }),
       plays: Object.freeze([Object.freeze({ card: 'whoops', by: 'roboto', config: Object.freeze({ color: '#ff3d7f', seed: 228 }), reactions: Object.freeze({ laughing: 2 }) })]),
     }),
     Object.freeze({
