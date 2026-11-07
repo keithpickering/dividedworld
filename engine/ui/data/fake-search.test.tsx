@@ -91,7 +91,7 @@ describe('search_posts in the fake: the filters', () => {
     expect(ids(await w.fake.searchPosts(ask({ q: 'banana', board: (await w.fake.board('games'))!.id })))).toEqual([w.zelda.act]);
     const fromAt = new Date(T0 + 1 * H).toISOString();
     const toAt = new Date(T0 + 3 * H).toISOString();
-    expect(new Set(ids(await w.fake.searchPosts(ask({ fromAt, toAt }))))).toEqual(new Set([w.p2, w.p3, w.plain.act]));
+    expect(new Set(ids(await w.fake.searchPosts(ask({ fromAt, toAt }))))).toEqual(new Set([w.p2, w.p3]));
     expect(ids(await w.fake.searchPosts(ask({ q: 'banana', fromAt, toAt, author: w.boFace })))).toEqual([w.p2]);
   });
   test('no keywords is every post the filters leave; a not-yet-debuted author finds nothing, as a random id does', async () => {
@@ -188,7 +188,7 @@ describe('search_posts in the fake: sort, pool and cursor', () => {
     const page = await f.searchPosts(ask({ q: 'kiwi', sort: 'newest', perPage: 50 }));
     expect(page).toMatchObject({ count: SEARCH_COUNT_CAP + 1, more: true });
     const few = await f.searchPosts(ask({ q: 'kiwi', fromAt: new Date(T0 + 10_000).toISOString(), toAt: new Date(T0 + 20_000).toISOString(), sort: 'newest' }));
-    expect(few).toMatchObject({ count: 11, more: false });
+    expect(few).toMatchObject({ count: 10, more: false });
   });
 });
 
@@ -257,9 +257,69 @@ describe('search_suggest in the fake', () => {
     expect((await w.fake.suggest('gamma', { kinds: ['threads'], excludeSystem: true })).threads).toEqual([]);
     expect((await w.fake.suggest('the', { kinds: ['boards'], excludeSystem: true })).boards).toEqual([]);
     expect((await w.fake.suggest('pl', { kinds: ['threads'], board: (await w.fake.board('general'))!.id })).threads.map((t) => t.title)).toEqual(['Plain']);
-    await expect(w.fake.suggest('a', { kinds: ['threads'] })).rejects.toThrow(/2 to 100/);
+    await expect(w.fake.suggest('a', { kinds: ['threads'] })).rejects.toThrow(/at least 2/);
     expect((await w.fake.suggest('', { kinds: ['threads'], most: 2 })).threads).toHaveLength(2);
     await expect(w.fake.suggest('mar', { most: 11 })).rejects.toThrow(/1 to 10/);
-    await expect(w.fake.suggest('x'.repeat(101))).rejects.toThrow(/2 to 100/);
+    await expect(w.fake.suggest('x'.repeat(101))).rejects.toThrow(/at most 100/);
+  });
+});
+
+describe('the fake keeps the SQL\'s refusals and edges (0112_search.sql)', () => {
+  const good = { rank: null, at: new Date(T0).toISOString(), act: '00000000-0000-4000-8000-000000000000' };
+  test('search_posts and search_threads refuse a long q, an unknown sort, an empty range and a malformed cursor', async () => {
+    const w = world();
+    for (const search of [w.fake.searchPosts, w.fake.searchThreads]) {
+      await expect(search(ask({ q: 'x'.repeat(200) }))).resolves.toBeDefined();
+      await expect(search(ask({ q: 'x'.repeat(201) }))).rejects.toThrow(/at most 200/);
+      await expect(search(ask({ sort: 'bogus' as never }))).rejects.toThrow(/relevance, newest or oldest/);
+      const at = new Date(T0).toISOString();
+      await expect(search(ask({ fromAt: at, toAt: at }))).rejects.toThrow(/range ends before/);
+      await expect(search(ask({ fromAt: new Date(T0 + 1).toISOString(), toAt: at }))).rejects.toThrow(/range ends before/);
+      await expect(search(ask({}), good)).resolves.toBeDefined();
+      for (const bad of [{ ...good, at: 'yesterday' }, { ...good, act: 'nope' }, { ...good, rank: 'high' }, { at: good.at }] as never[]) await expect(search(ask({}), bad)).rejects.toThrow(/not a cursor/);
+    }
+  });
+  test('to_at is exclusive, from_at inclusive', async () => {
+    const w = world();
+    const at = (n: number) => new Date(T0 + n * H).toISOString();
+    expect(ids(await w.fake.searchPosts(ask({ fromAt: at(1), toAt: at(2) })))).toEqual([w.p2]);
+  });
+  test('suggest refuses kinds outside threads, characters and boards (and none), measures the prefix trimmed, and an empty one is for threads alone', async () => {
+    const w = world();
+    await expect(w.fake.suggest('mar', { kinds: [] })).rejects.toThrow(/kinds are threads, characters and boards/);
+    await expect(w.fake.suggest('mar', { kinds: ['posts'] as never })).rejects.toThrow(/kinds are/);
+    await expect(w.fake.suggest(' a')).rejects.toThrow(/at least 2/);
+    await expect(w.fake.suggest('   ', { kinds: ['threads', 'boards'] })).rejects.toThrow(/only the threads list takes an empty prefix/);
+    await expect(w.fake.suggest('')).rejects.toThrow(/only the threads list/);
+    await expect(w.fake.suggest(`${'x'.repeat(100)} `)).resolves.toBeDefined();
+    await expect(w.fake.suggest(` ${'x'.repeat(101)}`)).rejects.toThrow(/at most 100/);
+    expect((await w.fake.suggest('   ', { kinds: ['threads'] })).threads).toHaveLength(3);
+    expect((await w.fake.suggest('  mar  ')).threads.map((t) => t.title)).toEqual(['Mario Kart']);
+    expect((await w.fake.suggest('mairo', { kinds: ['characters'] })).characters).toEqual([]);
+  });
+  test('a post by a character that has not debuted is kept, its name null, as characters_public leaves a left join empty', async () => {
+    const w = world();
+    const unseen = w.fake.seed.staff('ghost', 'Ghost Bot', 'mod', { debuted: false });
+    const ghost = w.fake.seed.staffPost(unseen, w.kart.thread, 'durian secret', { at: T0 + 5 * H });
+    const hit = (await w.fake.searchPosts(ask({ q: 'durian' }))).results[0]!;
+    expect(hit).toMatchObject({ act: ghost, character: unseen, name: null });
+    expect((await w.fake.searchThreads(ask({ q: 'durian' }))).results[0]).toMatchObject({ act: ghost, name: null });
+    expect((await w.fake.searchPosts(ask({}))).count).toBe(6);
+    expect((await w.fake.searchPosts(ask({ author: unseen }))).count).toBe(0);
+  });
+  test('cards on a hit: card and spring plays that reach the post and have no card_end, in order, at most eight', async () => {
+    const f = createFake({ instance: { ...instance, cards: [{ key: 'splat', name: 'Splat', price: 10 } as never, { key: 'trap', name: 'Trap', price: 10 } as never] } });
+    const a = f.seed.account('a', { admin: true });
+    const c = f.seed.character(a, 'Cee', 'face');
+    const t = f.seed.thread('general', c, 'Zed', 'banana', { at: T0 });
+    const set = f.seed.set(c, t.act, 'trap', { at: T0 + 1000 });
+    f.seed.spring(set, { at: T0 + 2000 });
+    const ended = f.seed.card(c, t.act, 'splat', { at: T0 + 3000 });
+    f.seed.reach(c, 'character', c, 'splat', { post: t.act, at: T0 + 3500 });
+    f.seed.card(c, t.act, 'splat', { at: T0 + 4000 });
+    f.signInAs(a);
+    await f.reverseCard(ended);
+    expect((await f.searchPosts(ask({ q: 'banana' }))).results[0]!.cards).toEqual(['trap', 'splat']);
+    expect((await f.searchThreads(ask({ q: 'banana' }))).results[0]!.matches).toBe(1);
   });
 });

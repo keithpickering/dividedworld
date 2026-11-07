@@ -207,8 +207,10 @@ function toSearchPage<T>(d: unknown, hit: (r: Row) => T): SearchPage<T> {
   if (!isObject(d)) throw new Error(NOT_READ);
   return { count: num(d['count']), more: d['more'] === true, pooled: d['pooled'] === true, results: rowsOf(d['results']).map(hit), next: toSearchCursor(d['next']) };
 }
+/* A cursor's rank is a number or absent (search_cursor_ok refuses a JSON null), so a page sorted by time sends none. */
+const cursorArg = (after: SearchCursor | null | undefined) => (after ? (after.rank === null ? { at: after.at, act: after.act } : { ...after }) : null);
 const searchArgs = (q: SearchQuery, after: SearchCursor | null | undefined) => ({
-  q: q.q, author: q.author, board: q.board, from_at: q.fromAt, to_at: q.toAt, titles_only: q.titlesOnly, sort: q.sort, after: after ?? null, per_page: q.perPage,
+  q: q.q, author: q.author, board: q.board, from_at: q.fromAt, to_at: q.toAt, titles_only: q.titlesOnly, sort: q.sort, after: cursorArg(after), per_page: q.perPage,
 });
 
 function toThread(r: Row): ThreadSummary {

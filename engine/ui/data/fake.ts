@@ -1629,8 +1629,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   interface SearchRow { readonly act: Id; readonly thread: ThreadRec; readonly rec: ActRec; readonly at: number; readonly seq: number; readonly body: string; rank: number }
   function searchKeep(q: SearchQuery): { readonly rows: SearchRow[]; readonly words: string[]; readonly sort: SearchSort; readonly perPage: number } {
+    /* The SQL's refusals, in its order (search_posts, search_threads). */
     const perPage = q.perPage ?? SEARCH_PER_PAGE;
+    if ([...q.q].length > 200) throw new Error('a search is at most 200 characters');
+    if (q.sort != null && q.sort !== 'relevance' && q.sort !== 'newest' && q.sort !== 'oldest') throw new Error('sort is relevance, newest or oldest');
     if (!Number.isInteger(perPage) || perPage < 1 || perPage > SEARCH_PER_PAGE_MAX) throw new Error(`a page holds 1 to ${SEARCH_PER_PAGE_MAX} results`);
+    if (q.fromAt !== null && q.toAt !== null && Date.parse(q.fromAt) >= Date.parse(q.toAt)) throw new Error('the range ends before it begins');
     const include: string[] = [];
     const exclude: string[] = [];
     for (const token of q.q.split(/\s+/).filter(Boolean)) (token.startsWith('-') ? exclude : include).push(...wordsOf(token));
@@ -1650,8 +1654,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!thread || thread.id === updatesThreadId) continue;
       if (q.board !== null && thread.board !== q.board) continue;
       if (q.author !== null && a.character !== q.author) continue;
-      if (a.character !== null && characters.get(a.character)?.debutedAt == null) continue;
-      if (a.at < from || a.at > to) continue;
+      /* A post by a character that has not debuted is kept, its name null (the SQL left-joins characters_public). */
+      if (a.at < from || a.at >= to) continue;
       if (q.titlesOnly && a.seq !== 1) continue;
       const raw = (latest.get(a.id)?.payload ?? a.payload).body;
       const body = visibleText(parse(typeof raw === 'string' ? raw : '')).replace(/\s+/g, ' ').trim();
@@ -1676,6 +1680,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return tokens.slice(start, start + 30).join(' ').replace(/[\p{L}\p{N}]+/gu, (w) => (words.includes(foldText(w)) ? `<<${w}>>` : w));
   }
   function searchPage<T>(q: SearchQuery, after: SearchCursor | null | undefined, group: boolean, make: (row: SearchRow, matches: number, words: readonly string[]) => T): SearchPage<T> {
+    if (after != null && !(typeof after === 'object' && typeof after.at === 'string' && /^\d{4}-\d{2}-\d{2}[T ][0-9:.]+(Z|[+-][0-9:]+)?$/.test(after.at)
+      && typeof after.act === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(after.act)
+      && (after.rank == null || (typeof after.rank === 'number' && Number.isFinite(after.rank))))) throw new Error('that is not a cursor this search gave');
     const { rows, words, sort, perPage } = searchKeep(q);
     const pool = settings.searchRankPool;
     const relevant = sort === 'relevance';
@@ -1696,7 +1703,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return {
       count: Math.min(total, SEARCH_COUNT_CAP + 1), more: total > SEARCH_COUNT_CAP, pooled,
       results: shown.map((r) => make(r, per.get(r.thread.id)!.length, words)),
-      next: last && past.length > shown.length ? { rank: sort === 'relevance' ? last.rank : null, at: iso(last.at), act: last.act } : null,
+      next: last && past.length > shown.length ? { rank: sort === 'relevance' ? last.rank : 0, at: iso(last.at), act: last.act } : null,
     };
   }
   function searchHit(row: SearchRow, words: readonly string[]): PostHit {
@@ -1706,7 +1713,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       act: row.act, thread: row.thread.id, title: row.thread.title, board: board.id, boardSlug: board.slug, boardName: board.name, seq: row.seq,
       page: pageOf(row.seq, settings.postsPerPage), character: row.rec.character, name: who?.debutedAt != null ? who.name : null, createdAt: iso(row.at),
       snippet: searchSnippet(row, words),
-      cards: [...acts.values()].filter((a) => a.kind === 'card' && a.target === row.act && !reversedPlays.has(a.id) && typeof a.payload.card === 'string').slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
+      /* card and spring plays that reach the post and have no card_end, oldest first (the SQL's `cards`). */
+      cards: [...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'spring') && a.target === row.act && (a.payload.reach ?? 'post') === 'post' && typeof a.payload.card === 'string'
+        && ![...acts.values()].some((e) => e.kind === 'card_end' && e.target === a.id)).sort((x, y) => x.at - y.at || x.order - y.order).slice(0, SEARCH_CARDS_MAX).map((a) => String(a.payload.card)),
     };
   }
   /** Two same-length strings a letter apart, or two adjacent letters swapped. */
@@ -2404,10 +2413,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     suggest(prefix, o) {
       const kinds = o?.kinds ?? ['threads', 'characters', 'boards'];
       const most = o?.most ?? 5;
-      if (!Number.isInteger(most) || most < 1 || most > 10) throw new Error('suggestions are 1 to 10 of each kind');
+      /* The SQL's refusals, in its order (search_suggest); the prefix is measured trimmed. */
+      if (kinds.length === 0 || !kinds.every((k) => k === 'threads' || k === 'characters' || k === 'boards')) throw new Error('kinds are threads, characters and boards');
+      if (!Number.isInteger(most) || most < 1 || most > 10) throw new Error('a list holds 1 to 10 suggestions');
+      const length = [...prefix.trim()].length;
+      if (length > 100) throw new Error('a prefix is at most 100 characters');
+      if (length === 1) throw new Error('a prefix is at least 2 characters');
       /* An empty prefix lists the newest threads, and only where threads alone are asked (the Reveal field's empty state). */
-      const empty = prefix.trim() === '' && kinds.length === 1 && kinds[0] === 'threads';
-      if (!empty && ([...prefix].length < 2 || [...prefix].length > 100)) throw new Error('a prefix is 2 to 100 characters');
+      if (length === 0 && !(kinds.length === 1 && kinds[0] === 'threads')) throw new Error('only the threads list takes an empty prefix');
+      const empty = length === 0;
       const p = foldText(prefix.trim());
       const score = (text: string): number => (empty ? 1 : suggestMatch(text, p));
       const systemBoard = (id: Id): boolean => boards.find((b) => b.id === id)?.isSystem === true;

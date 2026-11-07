@@ -1934,6 +1934,12 @@ describe('a screen in one call', () => {
     expect(t.next).toEqual({ rank: null, at: '2026-10-01T08:00:00+00:00', act: A });
   });
 
+  it('search_posts: a cursor with no rank (a newest or oldest page) is sent without the key, which search_cursor_ok refuses as null', async () => {
+    const h = once('search_posts', { count: 0, more: false, pooled: false, results: [], next: null });
+    await h.api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: 'newest', perPage: null }, { rank: null, at: '2026-10-01T08:00:00+00:00', act: A });
+    expect((only(h, 'search_posts') as { after: unknown }).after).toEqual({ at: '2026-10-01T08:00:00+00:00', act: A });
+  });
+
   it('search_posts: a read the server refuses is thrown in the server\'s words, apart from one that never reached it', async () => {
     const q = { q: '', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: 99 } as const;
     const refused = harness((r) => (r.url.pathname.endsWith('/rpc/search_posts') ? json({ message: 'a page holds 1 to 50 results', hint: 'kayfabb.refusal', code: '22023' }, 400) : json({}, 404)));
