@@ -4,11 +4,10 @@
  * words (`CardUi`). A card the instance gives no `CardUi` still has a face here, in the glass's
  * plain tokens, so a rule without art is bought, held and played all the same.
  *
- * Prices are the rules' own, read from the settings the screen was given, the server's economy laid over the compiled one
- * (`withCardEconomy`): the base price the
- * Vending Machine sells at (`basePrice`), and what playing the card on a very long post costs on
- * top of it, which says whether the price reads "1.00" or "1.00+" and how much more a long post
- * can cost. A card whose rules refuse the probe is shown at its base price alone.
+ * A card's buy price is its slot's at the machine, given by the caller (a card with no slot to show has none). What playing
+ * the card on a very long post costs on top of it is the rules' own, read from the settings the screen was given, the
+ * server's economy laid over the compiled one (`withCardEconomy`): it says whether the price reads "1.00" or "1.00+" and how
+ * much more a long post can cost. A card whose rules refuse the probe is shown at its price alone.
  */
 import type { SlotSeed } from '../../rules/packs.ts';
 import { playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';

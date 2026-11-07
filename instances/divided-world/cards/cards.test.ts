@@ -390,3 +390,16 @@ test('every property a staffOptions schema names survives that card\'s validateC
     for (const name of Object.keys(card.staffOptions.schema.properties as object)) assert.ok(kept.includes(name), `${card.key}: "${name}" is dropped by validateConfig`);
   }
 });
+
+test('the Booster\'s hit pull gives Main Event 25% and each uncommon 25%, over the nine cards', async () => {
+  const { packOdds } = await import('../../../engine/rules/packs.ts');
+  const booster = instance.packs.find((p) => p.key === 'booster')!;
+  const hit = packOdds(booster, cards).at(-1)!;
+  const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
+  assert.equal(cards.length, 9);
+  assert.ok(Math.abs(chance.get('main-event')! - 0.25) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  const uncommons = cards.filter((c) => c.rarity === 'uncommon');
+  assert.ok(uncommons.length > 0);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.25) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + 1);
+});
