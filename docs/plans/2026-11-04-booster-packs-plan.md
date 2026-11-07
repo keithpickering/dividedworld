@@ -248,7 +248,8 @@ manifest is a `phone` export of board 01's with the reveal's screens as further 
 - **A sold-out slot** is greyed and says why in plain words: "Sold out" for an admin's choice, or the move's words from
   the design's section 6 for a Pull. A moved price shows the admin's price struck through beside the new one.
 - **Buying a pack opens the reveal**, a modal over the machine (boards 02, 03 and 04 in
-  `docs/research/2026-11-07-booster-packs/`). The torn pack sits at the top, with "N OF 5 TURNED OVER" under it.
+  `docs/research/2026-11-07-booster-packs/`). The emptied pack is parked at the top, past the screen's edge with its
+  foot in view, and "N OF 5 TURNED OVER" is under it.
   - **The cards** lie face down in a row, in pull order, at the fan's size (`PostcardBack`, `size="fan"`, the hit's with
     `hit`), and turn face up in place (`Postcard`, `size="fan"`).
   - **The spotlight:** the card last turned is shown above the row at the sheet's size (`size="sheet"`), so each card is
@@ -384,10 +385,13 @@ build uses the presets and Motion's spring.
   - `lift(feel)`: the shared layout's transition between the row and the spotlight, landing over `enter`.
   - `turn(feel)`: `rotateY` 0 to 180 over `enter` × 1.2, landing; the face and back are two sides with
     `backface-visibility: hidden`.
-  - `deal(feel, index, delays)`: from the pack's middle at 0.32 and -8deg to the slot, landing over `enter`, by
-    `stagger(feel, 5)` at three times its step.
+  - `deal(feel, index, delays)`: from the card's place in the fan above the pack's opening, at its tilt, to the slot,
+    landing over `enter`, by `stagger(feel, 5)` at three times its step. The rise out of the opening before it (E4) and
+    the pack's tear and park (E3, E5) are the reveal's own beats on the feel's tokens.
+  - The pack is drawn as two pieces, its body below the tear line and its crimped top above it, from the instance's
+    pack art (`InstanceUi.packs`); the engine gives the tear line, so any pack art tears the same way.
   - `beat(feel)`: scale 1, 1.05, 1 over `screen`, eased.
-- **The reveal** (`PackOpening.tsx`) plays the entrance E1 to E6, a turn T1 and T2, the hit's beat, Turn all and the
+- **The reveal** (`PackOpening.tsx`) plays the entrance E1 to E7, a turn T1 and T2, the hit's beat, Turn all and the
   exit as the design's amendment writes them, measuring the slot's rect and the hand link's when each beat starts.
   Each card is one element with a `layoutId` per pull. Any input during a beat completes the running beats (Motion's
   `animate` to the target at once) and goes on.

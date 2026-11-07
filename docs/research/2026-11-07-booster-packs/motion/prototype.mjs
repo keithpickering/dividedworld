@@ -14,7 +14,7 @@ const FEELS = {
   snappy: { enter: 180, exit: 140, screen: 220, stagger: 24, ease: 'cubic-bezier(0.22, 1, 0.36, 1)', distance: 24, blur: 0, scale: 1, spring: true },
 };
 
-export function write({ MACHINE, FACE_CSS, CSS, FONTS, smoke, face, back, pack, torn, faces, PACK, ESC, root, here }) {
+export function write({ MACHINE, FACE_CSS, CSS, FONTS, smoke, face, back, pack, parked, faces, PACK, ESC, root, here }) {
   /* Inline every file the faces read, so the prototype carries its art. */
   const inline = (html) => html.replace(/src="\.\.\/\.\.\/\.\.\/([^"]+)"/g, (_, rel) => {
     const file = path.join(root, rel);
@@ -78,15 +78,14 @@ ${smoke(1440, 1080, [[40, 110, 360, 640], [1060, 110, 340, 920]])}
 ${machine}
 <div id="overlay" role="dialog" aria-modal="true" aria-label="Opening a Booster">
   <div id="dim"></div>
-  <div id="pack" style="position:absolute;left:0;top:0;transform-origin:0 0">${inline(pack(180))}</div>
-  <div id="strip" style="position:absolute;left:0;top:0;width:240px;transform-origin:0 0">${torn(240)}</div>
+  <div id="cards" style="position:absolute;inset:0;z-index:1"></div>
+  <div id="pack" style="position:absolute;left:0;top:0;transform-origin:0 0;z-index:5;filter:drop-shadow(0 6px 14px rgba(7,5,13,.8))"><div id="packBody">${inline(pack(180, 'opened'))}</div><div id="packTop" style="position:absolute;left:0;top:0;transform-origin:50% 10%">${inline(pack(180, 'top'))}</div></div>
   <div id="head" style="position:absolute;left:0;right:0;top:71px;text-align:center">
     <h1 style="margin:0;font:56px/1 Anton,Impact,sans-serif;letter-spacing:1px;color:#fff">BOOSTER</h1>
     <p id="counter" role="status" style="margin:6px 0 0;font:800 22px 'Barlow Condensed',sans-serif;letter-spacing:4px;color:#c9f8ff">0 OF 5 TURNED OVER</p>
   </div>
   <p id="tag" class="raretag" style="top:164px;margin:0;z-index:4;opacity:0"><b>RARE &middot; MAIN EVENT</b></p>
   <div id="sparks"></div>
-  <div id="cards"></div>
   <div id="foot" style="position:absolute;left:0;right:0;top:924px;display:flex;flex-direction:column;align-items:center;gap:16px">
     <div class="btns" style="gap:18px" id="btns"></div>
     <p class="note" id="hint" style="font-size:20px"></p>
@@ -208,31 +207,34 @@ async function buyPack() {
   overlay.classList.add('open');
   const f = feel();
   const slot = rectOf($('[aria-label^="Buy Booster"] > span'));
-  const packAt = { x: 630, y: 260, s: 1 };
-  const pk = $('#pack'), strip = $('#strip'), head = $('#head'), foot = $('#foot');
+  const packAt = { x: 630, y: 260, s: 1 }, parkAt = { x: 630, y: 46 - 270, s: 1 };
+  const pk = $('#pack'), top = $('#packTop'), cardsBox = $('#cards'), head = $('#head'), foot = $('#foot');
   for (const el of [head, foot]) { el.style.opacity = 0; }
-  [...document.querySelectorAll('.card')].forEach((c) => { c.style.opacity = 0; c.style.transform = at({ x: packAt.x + 45, y: packAt.y + 60, s: 0.32 }, ' rotate(-8deg)'); });
-  pk.style.opacity = 1; strip.style.opacity = 1;
+  /* The five lie inside the pack, behind its body, until the tear lets them out. */
+  const inside = (i) => ({ x: packAt.x + 15 + (i - 2) * 2, y: packAt.y + 40, s: 150 / 276 });
+  [...document.querySelectorAll('.card')].forEach((c, i) => { c.style.opacity = 1; c.style.transform = at(inside(i)); });
+  cardsBox.style.zIndex = 1; top.style.transform = 'none'; top.style.opacity = 1; pk.style.opacity = 1;
   /* E1, E2: the board dims (backdrop), and the pack rises from its slot to the middle (overlay, anchored on the slot). */
   play($('#dim'), [{ opacity: 0 }, { opacity: 1 }], f ? { duration: f.enter, easing: f.ease } : {});
   const from = \`translate(\${slot.x}px, \${slot.y}px) scale(\${slot.w / 180})\`;
-  const strip0 = { x: packAt.x - 30, y: packAt.y - 8 };
-  strip.style.transform = \`translate(\${strip0.x}px, \${strip0.y}px)\`; strip.style.opacity = 0;
-  await play(pk, [{ transform: from, filter: \`blur(\${f ? f.blur : 0}px)\` }, { transform: at(packAt), filter: 'blur(0px)' }], f ? { duration: f.screen, easing: landing(f) } : {});
-  /* E3: the tear. The pack's top lifts away to the head, where it stays as the reveal's mark. */
-  strip.style.opacity = 1;
-  await play(strip, [{ transform: \`translate(\${strip0.x}px, \${strip0.y}px) rotate(0deg)\` }, { transform: 'translate(600px, 20px) rotate(-4deg)', offset: 0.6 }, { transform: 'translate(600px, 20px) rotate(0deg)' }], f ? { duration: f.enter, easing: landing(f) } : {});
-  /* E4: the deal. Five backs fly out of the pack into the row, by stagger(feel, 5), the gold hit last. */
+  await play(pk, [{ transform: from, filter: \`blur(\${f ? f.blur : 0}px) drop-shadow(0 6px 14px rgba(7,5,13,.8))\` }, { transform: at(packAt), filter: 'blur(0px) drop-shadow(0 6px 14px rgba(7,5,13,.8))' }], f ? { duration: f.screen, easing: landing(f) } : {});
+  /* E3: the tear. The crimped top rips away up and to the side and leaves the screen; it is gone for good. */
+  await play(top, [{ transform: 'translate(0, 0) rotate(0deg)', opacity: 1 }, { transform: 'translate(40px, -60px) rotate(18deg)', opacity: 1, offset: 0.4 }, { transform: 'translate(180px, -340px) rotate(40deg)', opacity: 0 }], f ? { duration: f.enter * 1.5, easing: f.ease } : {});
+  /* E4: the cards rise out of the opening, fanning a little, the gold hit last; once clear of the pack they pass in front of it. */
   const d = f ? stagger(f, 5).map((x) => x * 3) : [0, 0, 0, 0, 0];
+  const out = (i) => ({ x: packAt.x + 15 + (i - 2) * 26, y: packAt.y - 190 + Math.abs(i - 2) * 10, s: 150 / 276 });
+  await Promise.all(CARDS.map((_, i) => play(cardEl(i), [{ transform: at(inside(i)) }, { transform: at(out(i), \` rotate(\${(i - 2) * 5}deg)\`) }], f ? { duration: f.enter, delay: d[i] / 2, easing: landing(f) } : {})));
+  cardsBox.style.zIndex = 6;
+  /* E5: the deal. From the fan into the row, by stagger(feel, 5); the emptied pack slides up past the top edge and parks with its foot in view: the reveal's head. */
   const deals = CARDS.map((_, i) => play(cardEl(i), [
-    { transform: at({ x: packAt.x + 45, y: packAt.y + 60, s: 0.32 }, ' rotate(-8deg)'), opacity: 0 },
-    { transform: at(ROW(i), ' rotate(0deg)'), opacity: 1 },
+    { transform: at(out(i), \` rotate(\${(i - 2) * 5}deg)\`) },
+    { transform: at(ROW(i), ' rotate(0deg)') },
   ], f ? { duration: f.enter, delay: d[i], easing: landing(f) } : {}));
-  play(pk, [{ transform: at(packAt), opacity: 1 }, { transform: at({ ...packAt, y: packAt.y + (f ? f.distance * 3 : 0) }), opacity: 0 }], f ? { duration: f.exit, delay: d[4], easing: f.ease } : {});
-  /* E5: the head and the buttons land, as a screen's head and panels stagger (staggerItem). */
+  play(pk, [{ transform: at(packAt) }, { transform: at(parkAt) }], f ? { duration: f.screen, delay: d[2], easing: landing(f) } : {});
+  /* E6: the head and the buttons land, as a screen's head and panels stagger (staggerItem). */
   [head, foot].forEach((el, i) => play(el, [{ opacity: 0, transform: \`translateY(\${f ? f.distance / 2 : 0}px)\`, filter: \`blur(\${f ? f.blur : 0}px)\` }, { opacity: 1, transform: 'translateY(0)', filter: 'blur(0px)' }], f ? { duration: f.enter, delay: d[4] + i * f.stagger, easing: landing(f) } : {}));
   await Promise.all(deals);
-  /* E6: the first back lifts into the spotlight, waiting to be turned. */
+  /* E7: the first back lifts into the spotlight, waiting to be turned. */
   await lift(0);
 }
 
@@ -303,7 +305,9 @@ async function leave() {
   settle(); open = false;
   const f = feel();
   say('Back to the machine.');
-  for (const el of [$('#head'), $('#foot'), $('#tag'), $('#strip')]) play(el, [{ opacity: 1 }, { opacity: 0 }], f ? { duration: f.exit, easing: f.ease } : {});
+  for (const el of [$('#head'), $('#foot'), $('#tag')]) play(el, [{ opacity: 1 }, { opacity: 0 }], f ? { duration: f.exit, easing: f.ease } : {});
+  /* The parked pack slides on up and out of view, never fading where it stands. */
+  play($('#pack'), [{ transform: 'translate(630px, -224px) scale(1)' }, { transform: 'translate(630px, -300px) scale(1)' }], f ? { duration: f.exit, easing: f.ease } : {});
   for (const s of document.querySelectorAll('#sparks .spark, .halo')) play(s, [{ opacity: 1 }, { opacity: 0 }], f ? { duration: f.exit } : {});
   const d = f ? stagger(f, 5).map((x) => x * 2) : [0, 0, 0, 0, 0];
   await Promise.all(CARDS.map((_, i) => toHand(cardEl(i), i === spot ? SPOT : ROW(i), d[i])));

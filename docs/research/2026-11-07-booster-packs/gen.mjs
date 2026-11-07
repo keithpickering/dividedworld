@@ -205,11 +205,14 @@ const gem = (r) => `<span class="gem" style="--g: ${RARITY[r][1]}" data-gem="${R
  * The Booster's pack in a slot, at the card's 2:3: a foil wrapper crimped at both ends, the instance's mark, its name and its
  * count. The foil and wrapper are a placeholder; the pack's art is the owner's to give (the instance's, as a card's art is).
  */
-const pack = (w) => {
+const pack = (w, part = 'whole') => {
   const u = w / 100;
   const crimp = Array.from({ length: 11 }, (_, i) => `${i * 10}% ${i % 2 ? 0 : 3.2 * u}px`).join(',');
   const crimpB = Array.from({ length: 11 }, (_, i) => `${100 - i * 10}% calc(100% - ${i % 2 ? 0 : 3.2 * u}px)`).join(',');
-  return `<span aria-hidden="true" data-kb-art style="position: relative; display: block; width: ${w}px; height: ${w * 1.5}px; clip-path: polygon(${crimp},${crimpB}); background: linear-gradient(155deg, #ffd93d 0%, #ff3d7f 34%, #7a2bff 66%, #19e3ff 100%)">
+  /* Where the pack tears: a jagged line across its top, under the crimp. 'opened' is the pack below it, 'top' the strip above. */
+  const tear = Array.from({ length: 13 }, (_, i) => `${(i * 100) / 12}% ${(i % 2 ? 9 : 14) * u}px`);
+  const clip = part === 'opened' ? `${tear.join(',')},${crimpB}` : part === 'top' ? `${crimp},${[...tear].reverse().join(',')}` : `${crimp},${crimpB}`;
+  return `<span aria-hidden="true" data-kb-art style="position: relative; display: block; width: ${w}px; height: ${w * 1.5}px; clip-path: polygon(${clip}); background: linear-gradient(155deg, #ffd93d 0%, #ff3d7f 34%, #7a2bff 66%, #19e3ff 100%)">
       <span style="position: absolute; left: 0; right: 0; top: ${9 * u}px; height: 1.5px; background: rgba(7,5,13,.45)"></span>
       <span style="position: absolute; left: 0; right: 0; bottom: ${9 * u}px; height: 1.5px; background: rgba(7,5,13,.45)"></span>
       <span style="position: absolute; inset: ${14 * u}px ${8 * u}px ${18 * u}px; background: linear-gradient(115deg, rgba(255,255,255,.0) 30%, rgba(255,255,255,.45) 48%, rgba(255,255,255,0) 62%)"></span>
@@ -218,6 +221,9 @@ const pack = (w) => {
       <span style="position: absolute; left: 0; right: 0; top: ${116 * u}px; text-align: center; font: 800 ${8.5 * u}px/1 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: #07050d">5 CARDS</span>
     </span>`;
 };
+
+/** The emptied pack, parked at the top of the reveal: slid up past the screen's top edge, its foot in view as the reveal's head. */
+const parked = (w, show, left) => `<div aria-hidden="true" style="position: absolute; left: ${left}px; top: ${show - w * 1.5}px; filter: drop-shadow(0 6px 14px rgba(7,5,13,.8))">${pack(w, 'opened')}</div>`;
 
 /** The sample pack, in pull order: four commons-or-better, then the hit. */
 const PACK = ['whoops', 'bluff', 'feelin-fab', 'stick-around', 'main-event'];
@@ -345,8 +351,6 @@ page({
 
 /* ==== 02, 03: the reveal ==== */
 
-/** The pack's torn top, the reveal's head. */
-const torn = (w) => `<div aria-hidden="true" style="width: ${w}px; height: ${w * 0.17}px; margin: 0 auto; clip-path: polygon(0 0,100% 0,100% 60%,94% 100%,86% 55%,78% 95%,70% 50%,61% 100%,52% 58%,44% 96%,36% 52%,27% 100%,18% 60%,9% 92%,0 55%); background: linear-gradient(155deg, #ffd93d 0%, #ff3d7f 34%, #7a2bff 66%, #19e3ff 100%)"></div>`;
 
 /** The row of the pack in pull order at the fan's size: turned cards face up, the rest face down, the hit's back gold. */
 function row(turned, now) {
@@ -368,9 +372,9 @@ function reveal({ file, name, note, turned, title, counter, spot, buttons, hint 
   ${smoke(1440, 1080, [[300, 30, 840, 1020, 0.9]])}
   <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(40,16,80,.45), rgba(7,5,13,.9) 72%)"></div>
   <section role="dialog" aria-modal="true" aria-label="Opening a Booster" style="position: absolute; inset: 0">
-    <div style="position: absolute; left: 0; right: 0; top: 20px; text-align: center">
-      ${torn(240)}
-      <h1 style="margin: 10px 0 0; font: 56px/1 Anton, Impact, sans-serif; letter-spacing: 1px; color: #ffffff">${title}</h1>
+    ${parked(180, 46, 630)}
+    <div style="position: absolute; left: 0; right: 0; top: 71px; text-align: center">
+      <h1 style="margin: 0; font: 56px/1 Anton, Impact, sans-serif; letter-spacing: 1px; color: #ffffff">${title}</h1>
       <p role="status" style="margin: 6px 0 0; font: 800 22px 'Barlow Condensed', sans-serif; letter-spacing: 4px; color: #c9f8ff">${counter}</p>
     </div>
     <div style="position: absolute; left: 582px; top: 214px; width: 276px; height: 414px">
@@ -483,17 +487,18 @@ const phoneMachine = `${phoneMenu}
 /** The phone's reveal: the pack is a pile at the sheet's size, the top card turned with a tap, and a row of five counting down. */
 const phoneReveal = (turned, spot, buttons, hint, counter) => `<section role="dialog" aria-modal="true" aria-label="Opening a Booster" style="position: absolute; inset: 0">
       <div aria-hidden="true" style="position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 46%, rgba(40,16,80,.45), rgba(7,5,13,.9) 72%)"></div>
-      <div style="position: absolute; left: 0; right: 0; top: 14px; text-align: center">
+      ${parked(120, 28, 135)}
+      <div style="position: absolute; left: 0; right: 0; top: 38px; text-align: center">
         <h1 style="margin: 0; font: 44px/1 Anton, Impact, sans-serif; color: #ffffff">BOOSTER</h1>
         <p role="status" style="margin: 4px 0 0; font: 800 18px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #c9f8ff">${counter}</p>
         <div aria-hidden="true" style="display: flex; justify-content: center; gap: 8px; margin-top: 10px">${[0, 1, 2, 3, 4].map((i) => `<span style="box-sizing: border-box; width: 18px; height: 27px; border-radius: 3px; ${i < turned ? 'background: rgba(241,236,255,.3)' : `border: 1.5px solid ${i === 4 ? '#ffd93d' : 'rgba(241,236,255,.6)'}`}"></span>`).join('')}</div>
       </div>
-      <div style="position: absolute; left: 57px; top: 196px; width: 276px; height: 414px">
+      <div style="position: absolute; left: 57px; top: 214px; width: 276px; height: 414px">
         ${turned < 5 ? `<span aria-hidden="true" style="position: absolute; left: 12px; top: 10px; transform: rotate(5deg)">${back('sheet', turned === 4)}</span>` : ''}
         ${spot === 4 ? `<p class="raretag" style="top: -40px; margin: 0; z-index: 4; font-size: 18px"><b>RARE &middot; MAIN EVENT</b></p>` : ''}
         <article aria-label="${faces[PACK[spot]].name}" style="position: relative">${face(PACK[spot], 'sheet', spot === 4 ? { boxShadow: '0 0 0 2px #ffd93d, 0 0 40px rgba(255,217,61,.75)' } : {})}</article>
       </div>
-      <div style="position: absolute; left: 16px; right: 16px; top: 634px; display: flex; flex-direction: column; align-items: stretch; gap: 12px">
+      <div style="position: absolute; left: 16px; right: 16px; top: 650px; display: flex; flex-direction: column; align-items: stretch; gap: 12px">
         ${buttons}
         <p class="note" style="font-size: 17px; text-align: center">${hint}</p>
       </div>
@@ -524,6 +529,6 @@ page({
 </div>`,
 });
 
-await import('./motion/prototype.mjs').then((m) => m.write({ MACHINE, FACE_CSS, CSS, FONTS, smoke, face, back, pack, torn, faces, PACK, ESC, root, here }));
+await import('./motion/prototype.mjs').then((m) => m.write({ MACHINE, FACE_CSS, CSS, FONTS, smoke, face, back, pack, parked, faces, PACK, ESC, root, here }));
 
 console.log('wrote 01-machine, 02-reveal, 03-hit, 04-phone, 05-admin, motion/prototype.html');
