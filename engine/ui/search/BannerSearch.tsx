@@ -1,6 +1,6 @@
 /**
  * The banner's search box (docs/plans/2026-11-07-search-design.md, section 7): suggest as you type, and Enter searches posts. It stands
- * where the host line stands, on every page but `/search`, whose form has the same box in its Keywords field. Signed in only: the frame
+ * on a row of its own under the host line (the owner's amendment), on every page but `/search`, whose form has the same box in its Keywords field. Signed in only: the frame
  * does not draw it for a visitor, who reads no thread.
  */
 import { useKayfa } from '../context.tsx';
@@ -31,7 +31,7 @@ export function BannerSearch() {
           searchFor(typed);
         }}
       />
-      <button type="submit" className="kb-button">Search</button>
+      <button type="submit" className="kb-button" data-kb-size="small">Search</button>
     </form>
   );
 }

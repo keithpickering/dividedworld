@@ -80,9 +80,10 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
   /*
-   * Search (the search design, section 7): signed in, the banner's right side is the search box where the host line stood, and the boards
-   * bar ends in a Search link. On /search the page has its own keyword field, so the host line shows there. Signed out there is neither
-   * (a visitor reads no thread). The loading meter stays beside the box.
+   * Search (the search design, section 7, as amended by the owner): signed in, the banner's right side is a column, the host line with its
+   * loading meter on top and the search box on a row of its own under it (section 7 had the box take the host line's place; the host line
+   * now always shows). The boards bar ends in a Search link. On /search the page has its own keyword field, so the box is not drawn there.
+   * Signed out there is neither (a visitor reads no thread).
    */
   const onSearch = path === '/search';
   const box = session.signedIn && !onSearch;
@@ -93,8 +94,13 @@ export function Frame({ children }: { readonly children: ReactNode }) {
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-            {box ? <BannerSearch /> : <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>}
-            <Loading hostless={box} />
+            <div className="kb-banner-side">
+              <div className="kb-banner-host">
+                <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+                <Loading />
+              </div>
+              {box && <BannerSearch />}
+            </div>
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
