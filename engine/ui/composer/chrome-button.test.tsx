@@ -79,3 +79,24 @@ describe('.kb-button in base.css', () => {
     expect(block(".kb-button[data-kb-size='small']")).toMatch(/min-height:\s*1\.5rem/u);
   });
 });
+
+/* The board-look plan's Task 7: the reply box and New thread open under a light band, and draw their text box inset. */
+const composer = readFileSync('engine/ui/composer/composer.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+const rules = (text: string, selector: string): string[] => [...text.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').map((x) => x.replace(/\s+/gu, ' ').trim()).includes(selector)).map((m) => m[2]!);
+
+describe('the form look', () => {
+  test('the reply box is a form under a head that reads the light band\'s tokens', async () => {
+    openThread(threadWorld(2));
+    const form = (await replyBox()).closest('form')!;
+    expect(form).toHaveClass('kb-form');
+    expect(within(form).getByRole('heading', { name: 'Reply' })).toHaveClass('kb-box-head');
+    expect(rules(composer, '.kb-form > .kb-box-head').join(';')).toMatch(/background:\s*var\(--kb-bar-bg\)[^]*color:\s*var\(--kb-bar-fg\)[^]*text-shadow:\s*var\(--kb-bar-shadow\)/u);
+  });
+  test('the text boxes read the inset tokens', () => {
+    const own = rules(composer, '.kb-form .kb-editor-box').join(';');
+    expect(own).toMatch(/background:\s*var\(--kb-input-bg\)/u);
+    expect(own).toMatch(/border-color:\s*var\(--kb-input-edge\)/u);
+    expect(own).toMatch(/box-shadow:\s*var\(--kb-input-shadow\)/u);
+    expect(rules(composer, '.kb-form .kb-input').join(';')).toMatch(/box-shadow:\s*var\(--kb-input-shadow\)/u);
+  });
+});

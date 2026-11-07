@@ -4,7 +4,7 @@
 }
 
 .kb-composer-as {
-  margin: 0 0 0.4em;
+  margin: 0 0 10px;
 }
 
 .kb-composer-now {
@@ -56,4 +56,58 @@
 
 .kb-composer-note {
   margin: 1em 0;
+}
+
+/* The reply box and New thread: a table's look in a form. A light band over the box (the same one a section's heading wears), the body on the row ground, the text boxes inset. */
+.kb-form {
+  padding: 12px 14px;
+  border: 1px solid var(--kb-frame);
+  background: var(--kb-row-1);
+}
+
+.kb-form > .kb-box-head {
+  margin: -12px -14px 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--kb-grid);
+  background: var(--kb-bar-bg);
+  color: var(--kb-bar-fg);
+  text-shadow: var(--kb-bar-shadow);
+  font: bold var(--kb-size-body) / 1.3 var(--kb-font-mono);
+}
+
+.kb-form .kb-editor-box,
+.kb-form .kb-input {
+  background: var(--kb-input-bg);
+  border-color: var(--kb-input-edge);
+  box-shadow: var(--kb-input-shadow);
+}
+
+.kb-new-thread .kb-field > label,
+.kb-new-thread-label {
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-body);
+}
+
+.kb-form .kb-toolbar {
+  padding: 0;
+  margin: 0 0 6px;
+}
+
+.kb-new-thread .kb-new-thread-title {
+  height: 30px;
+}
+
+.kb-composer .kb-editor-box {
+  height: 150px;
+}
+
+.kb-new-thread .kb-editor-box {
+  height: 120px;
+}
+
+.kb-form .kb-editor-foot {
+  padding-top: 8px;
+}
+
+.kb-form .kb-editor-foot {
+  color: var(--kb-muted);
 }

@@ -437,6 +437,42 @@ describe('the new-thread form', () => {
     expect(window.location.href).not.toContain(listed[0]!.firstCharacter ?? 'never');
   });
 
+  test('the first post is the shared editor: the toolbar, a Preview drawn by the post\'s renderer, the count, and the hint', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    expect(within(form).getByRole('toolbar', { name: 'Formatting' })).toBeInTheDocument();
+    expect(within(form).getByText(/^0 of \d+$/u)).toBeInTheDocument();
+    expect(within(form).getByText('Ctrl+Enter or Command+Enter starts it')).toBeInTheDocument();
+    await userEvent.click(within(form).getByRole('textbox', { name: 'First post' }));
+    await userEvent.paste('Hello [b]there[/b]');
+    await userEvent.click(within(form).getByRole('button', { name: 'Preview' }));
+    const preview = within(form).getByRole('region', { name: 'Preview' });
+    expect(preview.querySelector('strong, b')?.textContent).toBe('there');
+    expect(within(form).queryAllByRole('button').filter((b) => b.hasAttribute('data-kb-primary'))).toHaveLength(1);
+  });
+
+  test.each([['Control', '{Control>}{Enter}{/Control}'], ['Meta', '{Meta>}{Enter}{/Meta}']])('%s+Enter in the first post starts the thread', async (_name, keys) => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'By keyboard');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Hello.');
+    await userEvent.keyboard(keys);
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/t\//));
+    const board = (await fake.boards()).find((b) => b.slug === 'general')!;
+    expect((await fake.threads(board.id, { offset: 0, limit: 10 })).threads.map((t) => t.title)).toEqual(['By keyboard']);
+  });
+
+  test('the form opens under a light band that names it, says who posts, and draws its boxes inset', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    expect(within(form).getByRole('heading', { name: 'Start a thread' })).toHaveClass('kb-box-head');
+    expect(form).toHaveClass('kb-form');
+    expect(within(form).getByText(/Posting as/u).textContent).toBe('Posting as Pipewrench');
+  });
+
   test('a refusal shows the server\'s words and keeps the draft', async () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     const form = await openForm();

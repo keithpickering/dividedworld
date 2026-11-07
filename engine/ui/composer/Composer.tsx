@@ -162,8 +162,8 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   };
 
   return (
-    <form className="kb-composer kb-box" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
-      <div className="kb-box-head" id={`composer-head-${thread}`}>Reply</div>
+    <form className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
+      <h2 className="kb-box-head" id={`composer-head-${thread}`}>Reply</h2>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
       <div className="kb-composer-now-region" role="status">
         {who.changed && (

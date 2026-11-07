@@ -72,7 +72,6 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
   '2026-11-05-backfill/34-vending-info': 'docs/plans/2026-11-05-card-template-plan.md (the card info, backfill Task 11)',
   '2026-11-06-board-look/03-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 8)',
-  '2026-11-06-board-look/06-new-thread': 'docs/plans/2026-11-06-board-look-plan.md (Task 7)',
   '2026-11-06-board-look/07-phone': 'docs/plans/2026-11-06-board-look-plan.md (Task 8)',
   '2026-11-06-board-look/08-profile': 'docs/plans/2026-11-06-board-look-plan.md (Task 9)',
   '2026-11-06-board-look/09-record': 'docs/plans/2026-11-06-board-look-plan.md (Task 9)',
