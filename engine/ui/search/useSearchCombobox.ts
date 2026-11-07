@@ -249,6 +249,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
       onChange: (e) => {
         setQuery(e.target.value);
         setStale(true);
+        setLiveText('');
         setDismissed(false);
         setActive(-1);
         schedule(e.target.value, debounceMs);

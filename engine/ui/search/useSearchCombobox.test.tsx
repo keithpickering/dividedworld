@@ -308,6 +308,24 @@ describe('review fixes', () => {
     expect(document.getElementById(activeId() ?? '')?.textContent).toBe('one');
   });
 
+  test('a list holding only an empty group still opens and shows its line', async () => {
+    const src = vi.fn(async () => [
+      { key: 'boards', label: 'Boards', options: [], empty: 'No board matches.' },
+    ] as readonly ComboGroup[]);
+    const { user } = setup({ trailing: undefined }, src);
+    await user.type(box(), 'wari');
+    await settle();
+    expect(box()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('empty')).toHaveTextContent('No board matches.');
+  });
+
+  test('typing clears the last count from the live line until the new reply', async () => {
+    const { user } = await opened();
+    expect(screen.getByRole('status')).toHaveTextContent(/suggestion/);
+    await user.type(box(), 'x');
+    expect(screen.getByRole('status')).toHaveTextContent(/^$/);
+  });
+
   test('Q-7: unmount with a pending timer asks nothing and warns nothing', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { source } = setup({}, vi.fn(async () => GROUPS), true);
