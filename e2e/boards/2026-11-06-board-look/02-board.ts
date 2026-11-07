@@ -1,6 +1,6 @@
 /**
  * Board 02, a board's thread list, in the Silver house theme (docs/research/2026-11-06-board-look/02-board.html, 1440 by 1000; 02-board-dark.html
- * is the same page in the dark mode and is compared on colors only, by web/contrast.test.tsx): the banner and the boards' bar with their icons,
+ * is the same page in the dark mode and is compared on colors only; its theme token pairs are held by web/contrast.test.tsx): the banner and the boards' bar with their icons,
  * the crumb, the board's name and words, Start a thread with its icon, the list with its pinned group and its four folders, the key under it,
  * Users browsing this board with its icon column, and the footer, as the story `Boards/02 Board` (engine/ui/board/Board.board.stories.tsx) draws
  * them. The HUD is drawn for place only and is 01-main's.

@@ -1,6 +1,6 @@
 /**
  * Board 17, the browser's page for a load that failed, in the Silver house theme (docs/research/2026-11-06-board-look/17-cannot-display.html, 1440 by 1000;
- * 17-cannot-display-dark.html is the same page in the dark mode and is compared on colors only, by web/contrast.test.tsx): a white sheet inside the frame
+ * 17-cannot-display-dark.html is the same page in the dark mode and is compared on colors only; the sheet's own colors, which are not theme tokens, are held by engine/ui/frame/unavailable-contrast.test.tsx): a white sheet inside the frame
  * (charcoal in dark, its own colors and not the theme's) with the CSS glyph, "The page cannot be displayed", its words, the ways out (Try again, the index, the
  * browser's Back) and the address, as the story `Boards/17 Cannot display` (engine/ui/frame/CannotDisplay.board.stories.tsx) draws them.
  */

@@ -49,10 +49,9 @@ export function CannotDisplay({ address, onRetry }: { readonly address: string; 
 export function CannotFind({ address }: { readonly address: string }) {
   return (
     <div className="kb-unavailable">
-      <table className="kb-table kb-unavailable-info">
-        <caption className="kb-visually-hidden">Information</caption>
+      <table className="kb-table kb-unavailable-info" aria-labelledby="kb-unavailable-band">
         <thead>
-          <tr><td className="kb-bar">Information</td></tr>
+          <tr><td className="kb-bar" id="kb-unavailable-band">Information</td></tr>
         </thead>
         <tbody>
           <tr>

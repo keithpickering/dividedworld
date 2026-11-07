@@ -1,6 +1,6 @@
 /**
  * Board 01, the index, in the Silver house theme (docs/research/2026-11-06-board-look/01-index.html, 1440 by 1000; 01-index-dark.html is
- * the same page in the dark mode and is compared on colors only, by web/contrast.test.tsx): the banner and the boards' bar as one block,
+ * the same page in the dark mode and is compared on colors only; its theme token pairs are held by web/contrast.test.tsx): the banner and the boards' bar as one block,
  * the period table of boards, the Who is online box and the footer, as the story `Boards/01 Index` (engine/ui/index/Index.board.stories.tsx)
  * draws them. The HUD is drawn for place only and is 01-main's.
  *

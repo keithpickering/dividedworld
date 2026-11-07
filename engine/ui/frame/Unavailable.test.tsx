@@ -80,6 +80,9 @@ describe('CannotFind', () => {
     const { container } = notFound('/t/x');
     const table = screen.getByRole('table', { name: 'Information' });
     expect(table.querySelector('td.kb-bar')?.textContent).toBe('Information');
+    /* The table is named once, by its band: no caption repeats it for a screen reader. */
+    expect(table.querySelector('caption')).toBeNull();
+    expect(table.getAttribute('aria-labelledby')).toBe(table.querySelector('td.kb-bar')?.id);
     expect(screen.getByText('If you followed a link here, it may be mistyped or out of date.')).toBeTruthy();
     const foot = container.querySelector('td.kb-unavailable-address');
     expect(foot?.textContent).toBe('Address: /t/x');
