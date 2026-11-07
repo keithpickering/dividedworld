@@ -12,5 +12,6 @@ export const hints: Readonly<Record<string, string>> = Object.freeze({
   heel: 'Being hated is a living.',
   jabroni: 'Commit to the bit. Especially when nobody laughs.',
   technician: 'Write the reply people come back to.',
+  tweener: 'Say the thing half the room will hate.',
   lurker: 'Watch first. Say less.',
 });
