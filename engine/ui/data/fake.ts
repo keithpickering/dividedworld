@@ -975,8 +975,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { t, board: boards.find((b) => b.id === t.board)! };
   }
 
-  function post(thread: Id, character: Id, body: string, quote: Id | null): Answer<Act> {
-    const bad = request({ action: 'post', thread, character, body, quote });
+  /**
+   * write_framed (0118): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
+   * is told through write_alert's rules, which skip a staff character (no owner) and the acting account's own masks. Any other id is skipped silently.
+   */
+  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec) {
+    const mine = me()?.id;
+    const lowered = body.toLowerCase();
+    for (const named of new Set((framing ?? []).slice(0, 5))) {
+      const c = characters.get(named);
+      if (!c || c.debutedAt === null || !lowered.includes(`user=${named.toLowerCase()}`)) continue;
+      if (!c.owner || c.owner === mine) continue;
+      seededAlerts.push({ account: c.owner, kind: 'framed', sub: null, act: act.id, character: named, at: act.at });
+      const live = { id: crypto.randomUUID(), kind: 'framed' as const, sub: null, act: act.id, character: named, at: iso(act.at) };
+      send(`account:${c.owner}`, 'alert', () => { for (const l of [...(accountListeners.get(c.owner) ?? [])]) l.onAlert?.(live); });
+    }
+  }
+
+  function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Answer<Act> {
+    const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -986,11 +1003,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
     sendAct(written);
+    writeFramed(body, framing, written);
     return ok(publicAct(written));
   }
 
-  function startThread(boardSlug: string, character: Id, title: string, body: string): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'startThread', board: boardSlug, character, title, body });
+  function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1001,11 +1019,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     sendThread(t);
     sendAct(written);
+    writeFramed(body, framing, written);
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
-  function spin(origin: Id, character: Id, title: string, body: string): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'spin', origin, character, title, body });
+  function spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'spin', origin, character, title, body, ...(framing ? { framing } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1017,6 +1036,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body } });
     sendThread(t);
     sendAct(written);
+    writeFramed(body, framing, written);
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
@@ -1421,7 +1441,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
-  /** The SQL's words (pronouns_hold, 0118): a set is held after it is lowercased, as set_profile and create_character store it. */
+  /** The SQL's words (pronouns_hold, 0119): a set is held after it is lowercased, as set_profile and create_character store it. */
   const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
   const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
 

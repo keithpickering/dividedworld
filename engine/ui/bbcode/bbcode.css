@@ -20,6 +20,122 @@
 .kb-bb-size-6 { font-size: 2em; }
 .kb-bb-size-7 { font-size: 2.5em; }
 
+/* Layout. Alignment and the rule are blocks; the rule is the board's own 1px. */
+.kb-bb-align-center { text-align: center; }
+.kb-bb-align-left { text-align: left; }
+.kb-bb-align-right { text-align: right; }
+
+.kb-bb-hr {
+  border: 0;
+  border-top: 1px solid var(--kb-rule);
+  margin: 0.6em 0;
+}
+
+/* Effects. A glow or a shadow is set inline in the given color, else the page's ink. */
+.kb-bb-glow,
+.kb-bb-shadow {
+  /* The shadow is drawn by the style attribute; the class names the effect. */
+  text-shadow: inherit;
+}
+
+.kb-bb-highlight {
+  padding: 0 0.15em;
+}
+
+/* Rainbow: a gradient clipped to the words, where the browser can; elsewhere the words keep their color. Each stop is a token held to 4.5:1. */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .kb-bb-rainbow {
+    background-image: linear-gradient(90deg, var(--kb-rainbow-1), var(--kb-rainbow-2), var(--kb-rainbow-3), var(--kb-rainbow-4), var(--kb-rainbow-5), var(--kb-rainbow-6));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+}
+
+/* The fill is transparent and inherited, so anything inside that paints its own color or background (a highlight, a spoiler bar, a color, a link, a layer's element) takes its own color back. */
+.kb-bb-rainbow :where(mark, button, a, code, [style*="color"], [style*="background"]) {
+  -webkit-text-fill-color: currentcolor;
+}
+
+@media (forced-colors: active) {
+  .kb-bb-rainbow {
+    background-image: none;
+    -webkit-text-fill-color: currentcolor;
+    color: inherit;
+  }
+}
+
+/* Marquee: the run is drawn across its block and starts over. It stops under the pointer or the keyboard, so it can be read. */
+.kb-bb-marquee {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.kb-bb-marquee-run {
+  display: inline-block;
+  min-width: 100%;
+  width: max-content;
+  animation: kb-bb-marquee 12s linear infinite;
+}
+
+.kb-bb-marquee:hover .kb-bb-marquee-run,
+.kb-bb-marquee:focus-within .kb-bb-marquee-run,
+.kb-bb-marquee[data-paused] .kb-bb-marquee-run {
+  animation-play-state: paused;
+}
+
+/* The Pause / Play button holds the line still from the keyboard or by touch. Nothing moves under reduced motion, so it is hidden there. */
+.kb-bb-marquee-toggle {
+  display: block;
+  font: inherit;
+  font-size: var(--kb-size-small);
+  margin: 0 0 0.2em;
+  padding: 0 0.4em;
+  cursor: pointer;
+}
+
+@keyframes kb-bb-marquee {
+  from { transform: translateX(100%); }
+  to { transform: translateX(-100%); }
+}
+
+/* Still: the device asks for less motion and the player has not chosen full motion, or the player chose reduced. The words rest where they start and wrap. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion="full"]) .kb-bb-marquee-run {
+    animation: none;
+    min-width: 0;
+    width: auto;
+  }
+
+  :root:not([data-kb-motion="full"]) .kb-bb-marquee-toggle {
+    display: none;
+  }
+
+  :root:not([data-kb-motion="full"]) .kb-bb-marquee {
+    white-space: pre-wrap;
+    overflow: visible;
+  }
+}
+
+:root[data-kb-motion="reduce"] .kb-bb-marquee-run {
+  animation: none;
+  min-width: 0;
+  width: auto;
+}
+
+:root[data-kb-motion="reduce"] .kb-bb-marquee-toggle {
+  display: none;
+}
+
+:root[data-kb-motion="reduce"] .kb-bb-marquee {
+  white-space: pre-wrap;
+  overflow: visible;
+}
+
 .kb-bb-img {
   max-width: 100%;
   height: auto;
@@ -40,9 +156,132 @@
   padding: 0.3em 2%;
 }
 
+/* A counterfeit quote: the same box, its border redrawn through the wobble filter (Wobble.tsx, mounted once by the frame). */
+.kb-quote[data-kb-counterfeit] {
+  border: 0;
+  position: relative;
+}
+
+.kb-quote[data-kb-counterfeit]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--kb-rule);
+  filter: url(#kb-wobble);
+  pointer-events: none;
+}
+
+/* Under forced colors the filter's line may be lost; a plain dashed border keeps the difference. */
+@media (forced-colors: active) {
+  .kb-quote[data-kb-counterfeit] { border: 1px dashed CanvasText; }
+  .kb-quote[data-kb-counterfeit]::before { content: none; }
+}
+
 .kb-quote-from {
   display: block;
   font-size: var(--kb-size-small);
   font-style: normal;
   color: var(--kb-muted);
+}
+
+.kb-bb-spoiler {
+  border: 1px solid var(--kb-rule);
+  margin: 0.4em 0;
+  padding: 0.3em 2%;
+}
+
+.kb-bb-spoiler > summary {
+  cursor: pointer;
+  color: var(--kb-muted);
+  font-size: var(--kb-size-small);
+}
+
+/* Shut, the bar is the ink color on the ink color, so the words are drawn and cannot be read. */
+.kb-bb-ispoiler {
+  font: inherit;
+  white-space: inherit;
+  text-align: inherit;
+  margin: 0;
+  padding: 0 0.15em;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  color: var(--kb-fg);
+  background: var(--kb-fg);
+  forced-color-adjust: none;
+}
+
+.kb-bb-ispoiler[aria-expanded="true"] {
+  color: inherit;
+  background: transparent;
+  border-bottom: 1px dotted var(--kb-rule);
+}
+
+/* A video: a 16:9 box with a Play button; the player takes the box's place. */
+.kb-bb-video {
+  margin: 0.4em 0;
+  white-space: normal;
+  max-width: 40rem;
+}
+
+.kb-bb-video-box {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-bg);
+  overflow: hidden;
+}
+
+.kb-bb-video-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kb-bb-video-face {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6em;
+  padding: 0.5em;
+  text-align: center;
+  font-size: var(--kb-size-small);
+}
+
+.kb-bb-video-face > span {
+  background: var(--kb-bg);
+  padding: 0 0.3em;
+}
+
+.kb-bb-video-play {
+  font-weight: bold;
+}
+
+.kb-bb-video-player {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--kb-rule);
+  background: var(--kb-bg);
+}
+
+.kb-bb-video-player[data-provider="soundcloud"] {
+  aspect-ratio: auto;
+  height: 166px;
+}
+
+.kb-bb-video-from {
+  margin: 0.2em 0 0;
+  font-size: var(--kb-size-small);
+  overflow-wrap: anywhere;
+}
+
+/* The video's address under its box, so a player that will not load still gives the reader where it lives; a long address breaks anywhere. */
+.kb-bb-video-link {
+  overflow-wrap: anywhere;
 }

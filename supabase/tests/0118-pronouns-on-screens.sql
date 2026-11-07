@@ -1,4 +1,4 @@
--- Pronouns on the screens' reads (supabase/migrations/0119_pronouns_on_screens.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 4; the amendment, section 5).
+-- Pronouns on the screens' reads (supabase/migrations/0120_pronouns_on_screens.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 4; the amendment, section 5).
 --
 -- 1. Every read that hands a screen a character's profile hands its `pronouns` too: thread_page, board_page, index_page, profile_page, record_page and boot each carry a she/her
 --    character's set, and no profile in any of them is without one. (A profile is any object with a `pip_style`; the check finds them wherever a read nests them.)

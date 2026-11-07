@@ -18,12 +18,12 @@ import { figure } from '../characters/format.ts';
 import { turnNamedWords } from '../characters/previews.ts';
 import { Pips } from '../postbit/Postbit.tsx';
 import { Link } from '../router.tsx';
-import { BbCode } from '../bbcode/render.tsx';
+import { BbCode, type QuoteOf } from '../bbcode/render.tsx';
 import { statements, wording } from './statements.ts';
 import './reveal.css';
 
 /** How a quote of an Act is linked: the thread knows where an Act is, so it hands the link in. */
-type QuoteLink = (act: string) => ReactNode;
+type QuoteHead = (q: QuoteOf) => ReactNode;
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 const rows = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => typeof x === 'object' && x !== null) : []);
@@ -61,14 +61,14 @@ export function Debuts({ payload }: { readonly payload: Act['payload'] }) {
 }
 
 /** A settlement's tally: The System's words, and who debuted tonight and who has Turned. */
-export function TallyPost({ act, quoteLink }: { readonly act: Act; readonly quoteLink?: QuoteLink }) {
+export function TallyPost({ act, quoteHead }: { readonly act: Act; readonly quoteHead?: QuoteHead }) {
   const payload = act.currentPayload;
   const body = text(payload.body);
   const part = whole(payload.part);
   const of = whole(payload.of);
   return (
     <section className="kb-tally-post kb-system-post" aria-label="The tally">
-      {body && <BbCode text={body} quoteLink={quoteLink} />}
+      {body && <BbCode text={body} quoteHead={quoteHead} />}
       {part !== null && of !== null && of > 1 && <p className="kb-small kb-muted">Part {part} of {of}</p>}
       <Debuts payload={payload} />
     </section>
@@ -98,7 +98,7 @@ function ClassBar({ shown }: { readonly shown: ReturnType<typeof statements> }) 
 }
 
 /** The season's reveal: its opening words, or one character's post. */
-export function RevealPost({ act, quoteLink }: { readonly act: Act; readonly quoteLink?: QuoteLink }) {
+export function RevealPost({ act, quoteHead }: { readonly act: Act; readonly quoteHead?: QuoteHead }) {
   const { instance, ui } = useKayfa();
   const className = useClassName();
   const payload = act.currentPayload;
@@ -107,7 +107,7 @@ export function RevealPost({ act, quoteLink }: { readonly act: Act; readonly quo
   if (id === null) {
     return (
       <div className="kb-reveal-post kb-system-post">
-        {body ? <BbCode text={body} quoteLink={quoteLink} /> : <p>The season’s reveal.</p>}
+        {body ? <BbCode text={body} quoteHead={quoteHead} /> : <p>The season’s reveal.</p>}
       </div>
     );
   }

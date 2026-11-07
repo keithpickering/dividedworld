@@ -1862,11 +1862,14 @@ export interface KayfaApi {
   createInvite(): Promise<Answer<{ readonly invite: number; readonly code: string }>>;
   reissueInvite(invite: number): Promise<Answer<{ readonly invite: number; readonly code: string }>>;
 
-  /* Acting, as one of the player's characters. */
-  startThread(board: string, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
-  post(thread: Id, character: Id, body: string, quote: Id | null): Promise<Answer<Act>>;
+  /*
+   * Acting, as one of the player's characters. `framing`, on a post, a thread start and a spin, is the ids the body's counterfeit quotes name
+   * (`framedIn`, composer/text.ts); each debuted character of another player that the body names is told (the `framed` alert, 0118).
+   */
+  startThread(board: string, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Promise<Answer<Act>>;
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
-  spin(origin: Id, character: Id, title: string, body: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * Buy a card from the Vending Machine at its base price, from the settled wallet only: the ghost estimate cannot be spent. The
    * price is the card's rules' (`basePrice`), never sent by the screen. Private, and nothing about it is broadcast.

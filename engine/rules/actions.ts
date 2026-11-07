@@ -63,6 +63,18 @@ const id = (r: Fields, field: string): string => {
   return v;
 };
 const optionalId = (r: Fields, field: string): string | null => (r[field] === undefined || r[field] === null ? null : id(r, field));
+/**
+ * The characters a body puts words in the mouth of (the BBCode design, "The framed alert"): a list of ids the page found in its counterfeit quotes. The first five
+ * distinct ones are sent, as write_framed looks at no more; none, or none given, is no argument at all, so a request that names no `framing` reads as before.
+ */
+const FRAMING_MOST = 5;
+const framing = (r: Fields): { framing?: string[] } => {
+  const v = r.framing;
+  if (v === undefined || v === null) return {};
+  if (!Array.isArray(v)) throw new Refused('framing', 'is not a list of ids');
+  const kept = [...new Set(v.slice(0, FRAMING_MOST).map((x) => { if (typeof x !== 'string' || !UUID.test(x)) throw new Refused('framing', 'is not a list of ids'); return x; }))];
+  return kept.length === 0 ? {} : { framing: kept };
+};
 const text = (r: Fields, field: string, most: number, { mayBeEmpty = false } = {}): string => {
   const v = r[field] ?? (mayBeEmpty ? '' : undefined);
   if (typeof v !== 'string') throw new Refused(field, 'is not text');
@@ -150,11 +162,11 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   startThread: (r, { settings }) => {
     const board = r.board;
     if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
-    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength) } };
+    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r) } };
   },
   post: (r, { settings }) => ({
     rpc: 'post',
-    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote') },
+    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote'), ...framing(r) },
   }),
   edit: (r, { settings }) => ({
     rpc: 'edit_post',
@@ -162,7 +174,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   spin: (r, { settings }) => ({
     rpc: 'spin',
-    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }) },
+    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), ...framing(r) },
   }),
   react: (r, { reactions }) => {
     const kind = r.kind;

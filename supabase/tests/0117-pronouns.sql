@@ -1,4 +1,4 @@
--- Pronouns stored, created, edited and seeded (supabase/migrations/0118_pronouns.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 2).
+-- Pronouns stored, created, edited and seeded (supabase/migrations/0119_pronouns.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 2).
 --
 -- 1. pronouns_hold holds what engine/rules/pronouns.ts's pronounProblems holds. The two lists below, one row per line, are read by engine/rules/pronouns-held.test.ts
 --    too, which asserts every poison fails pronounProblems and every good passes it, so the two sides cannot drift. Non-ASCII is written as JSON escapes so a combining
@@ -236,7 +236,7 @@ declare made uuid := tests.character(tests.account('pn-dee'), 'Pn Before');
 begin
   if exists (select 1 from character_profiles where character = made) then raise exception 'the fixture makes a character with no profile row'; end if;
   -- The migration's statement, copied as it wrote it: migrations replay into an empty database, so no character exists when the migration's own backfill runs, and
-  -- breaking that statement in 0118 is not seen here. This holds the statement's shape only.
+  -- breaking that statement in 0119 is not seen here. This holds the statement's shape only.
   insert into character_profiles (character) select c.id from characters c
   where exists (select 1 from pip_styles where key = 'default') and not exists (select 1 from character_profiles p where p.character = c.id);
   if (select pronouns from character_profiles where character = made) is distinct from

@@ -5,7 +5,7 @@
 -- Case is not held (the rule does not hold it); every writer (set_profile, create_character, the setting's fallback and the seed) stores the set lowercased, as the
 -- client does (`normalizePronouns`).
 --
--- Written here: the hold; `settings_held` (0117) holding the instance's default, `pronouns`; the column, backfilled with the it-set for every character that has no profile
+-- Written here: the hold; `settings_held` (0118) holding the instance's default, `pronouns`; the column, backfilled with the it-set for every character that has no profile
 -- row; `profile_projection` (0025) carrying it; `set_profile` (0019), a fifth argument that keeps the stored set when null; `create_character` (0067), a last argument that,
 -- when null, takes the setting and else the it-set, and a profile row made with the character; and `seed_instance` (0108), a persona's or the developer's set written to a new
 -- profile and rewritten on every seed that names it. The signatures of set_profile and create_character change, so each is dropped and made again, and its grant renewed.
@@ -126,7 +126,7 @@ end $$;
 revoke execute on function create_character(text, text, text, text, jsonb) from public, anon;
 grant execute on function create_character(text, text, text, text, jsonb) to authenticated;
 
--- settings_held (0117, which holds the two search settings), also holding `pronouns`. Everything else as 0117 wrote it.
+-- settings_held (0118, which holds the two search settings (0117) and names `framed` among the toast kinds), also holding `pronouns`. Everything else as 0118 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare
@@ -135,7 +135,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -309,7 +309,7 @@ begin
   )
   insert into character_profiles (character, title, signature, pronouns)
   select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
-  -- Each listed persona's pronouns (0118), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
+  -- Each listed persona's pronouns (0119), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
   -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
   update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
@@ -427,7 +427,7 @@ begin
     )
     insert into character_profiles (character, title, signature, pronouns)
     select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
-    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0118); its title and signature are not.
+    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0119); its title and signature are not.
     update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
     from characters c
     where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');

@@ -36,6 +36,11 @@ describe('the index', () => {
     const system = screen.getAllByRole('link', { name: 'Staff Announcements' })[0]!.closest('tr')!;
     expect(system).toHaveTextContent('Staff post here; you react and spin');
     expect(system).toHaveTextContent('The staff');
+    /* The staff's last-post cell is its name alone: no avatar, no link (the row's own board link is the only one). */
+    expect(system.querySelector('.kb-system-name')).toHaveTextContent('The staff');
+    expect(system.querySelector('.kb-board-last .kb-mini')).toBeNull();
+    expect(system.querySelector('.kb-board-last a[href^="/c/"]')).toBeNull();
+    expect(within(row).getByRole('link', { name: 'Spritey' }).closest('td')!.querySelector('.kb-mini')).toHaveAttribute('aria-hidden', 'true');
     expect(screen.queryByText('NEW')).toBeNull();
   });
 

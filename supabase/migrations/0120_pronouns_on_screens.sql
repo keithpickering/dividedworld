@@ -557,7 +557,7 @@ create or replace view updates_read as
 
 -- ------------------------------------------------------------------------------------------------ screen_settings ----
 
--- screen_settings (0117's, which shows the two search settings), also holding the instance's default pronouns (the setting `pronouns`, 0118): the New character screen starts its picker on them, and boot carries the view whole.
+-- screen_settings (0117's, which shows the two search settings), also holding the instance's default pronouns (the setting `pronouns`, 0119): the New character screen starts its picker on them, and boot carries the view whole.
 -- A setting, public. The view is as written there otherwise; its grants stay as they were.
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)

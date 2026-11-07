@@ -1,4 +1,4 @@
--- Staff pronoun tokens in stock lines (supabase/migrations/0120_pronoun_tokens.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 9; the amendment, section 1).
+-- Staff pronoun tokens in stock lines (supabase/migrations/0121_pronoun_tokens.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 9; the amendment, section 1).
 --
 -- 1. fill_tokens reads `{mod.they}`: a token may hold dots. A token with no value (a form that does not exist, a prefix nothing gave) stays as written, as it always has.
 -- 2. visit_line fills `{mod.they}` from the Mod's own set: "how they felt" for a they/them Mod, "how it felt" for an it/its one; `{mod.They} {mod.is}` reads "They are" and
