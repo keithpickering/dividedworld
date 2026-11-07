@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from './context.tsx';
-import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePrefetch, useRouterAccount, type Location } from './router.tsx';
+import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useRouterAccount, type Location } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
 
 function Where() {
@@ -800,5 +800,100 @@ describe('from the Task 11 review', () => {
     expect(calls).toHaveLength(0);
     fireEvent.pointerDown(screen.getByRole('link', { name: 'one' }), { button: 0 });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('a navigation names its source', () => {
+  beforeEach(() => { log.length = 0; });
+  function Pendings({ names }: { readonly names: readonly string[] }) {
+    return <>{names.map((n) => <Pend key={n} name={n} />)}</>;
+  }
+  function Pend({ name }: { readonly name: string }) { return <span data-testid={`pending-${name}`}>{String(usePendingFrom(name))}</span>; }
+  const flag = (name: string) => screen.getByTestId(`pending-${name}`).textContent;
+  function mountLinks(load: Route['load']) {
+    const routes: Route[] = [
+      { path: '/', render: () => <Index /> },
+      { path: '/t/:id', load, key: (p) => p.id!, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/');
+    function Shell() {
+      return <><Probe /><Link to="/t/a" source="first">first link</Link><Link to="/t/a" source="second">second link</Link><Pendings names={['first', 'second', 'x']} /><Routes routes={routes} /></>;
+    }
+    return render(<KayfaProvider value={kayfa}><RouterProvider><Shell /></RouterProvider></KayfaProvider>);
+  }
+
+  test('pressing the second of two links to one route is pending for the second\'s source only, and landing ends it', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    expect(flag('first')).toBe('false');
+    await userEvent.click(screen.getByRole('link', { name: 'second link' }));
+    expect(flag('second')).toBe('true');
+    expect(flag('first')).toBe('false');
+    expect(navigation.pending?.source).toBe('second');
+    await answer(calls[0], 'A1');
+    expect(flag('second')).toBe('false');
+    expect(flag('first')).toBe('false');
+  });
+  test('Escape ends the pending of the source that started the load', async () => {
+    const { load } = manualLoader();
+    mountLinks(load);
+    await userEvent.click(screen.getByRole('link', { name: 'second link' }));
+    expect(flag('second')).toBe('true');
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(flag('second')).toBe('false');
+    expect(flag('first')).toBe('false');
+  });
+  test('a failed load ends the pending too', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    await userEvent.click(screen.getByRole('link', { name: 'first link' }));
+    expect(flag('first')).toBe('true');
+    await act(async () => { calls[0]!.reject(new Error('down')); });
+    expect(flag('first')).toBe('false');
+  });
+  test('navigate(to, { source }) is pending for that source, and usePendingFrom(undefined) is never true', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    expect(flag('first')).toBe('false');
+    function Undef() { return <span data-testid="undef">{String(usePendingFrom(undefined))}</span>; }
+    const { unmount } = render(<KayfaProvider value={kayfa}><RouterProvider><Undef /></RouterProvider></KayfaProvider>);
+    expect(screen.getByTestId('undef').textContent).toBe('false');
+    unmount();
+    await answer(calls[0], 'A1');
+    expect(flag('x')).toBe('false');
+  });
+  test('a navigate with no source has source null, and is pending for no source', () => {
+    const { load } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a'));
+    expect(navigation.pending?.source).toBeNull();
+    expect(flag('x')).toBe('false');
+    expect(flag('first')).toBe('false');
+  });
+  test('a link given no source names its own, and two links name different ones', async () => {
+    const { load } = manualLoader();
+    const routes: Route[] = [{ path: '/', render: () => <Index /> }, { path: '/t/:id', load, key: (p) => p.id!, render: () => <p>t</p> }];
+    window.history.replaceState(null, '', '/');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Link to="/t/a">one</Link><Link to="/t/a">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await userEvent.click(screen.getByRole('link', { name: 'one' }));
+    const one = navigation.pending?.source;
+    expect(typeof one).toBe('string');
+    await userEvent.click(screen.getByRole('link', { name: 'two' }));
+    const two = navigation.pending?.source;
+    expect(typeof two).toBe('string');
+    expect(two).not.toBe(one);
+  });
+  test('a popstate\'s load has source null', () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => {
+      window.history.pushState(null, '', '/t/z');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(calls).toHaveLength(1);
+    expect(navigation.pending).not.toBeNull();
+    expect(navigation.pending?.source).toBeNull();
   });
 });
