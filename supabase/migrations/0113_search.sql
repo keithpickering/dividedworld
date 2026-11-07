@@ -694,10 +694,12 @@ begin
   if tsq is not null and author is not null and board is null then
     conds := array_replace(conds, format('p.words @@ %L::tsquery', tsq::text), format('(p.words || %L::tsvector) @@ %L::tsquery', '', tsq::text));
   end if;
-  if tsq is null or not (board is not null or author is not null or coalesce(titles_only, false)) then
+  if tsq is null or not (board is not null or coalesce(titles_only, false)) then
     -- The matches in order, off the keyset btrees (post_search_newest and its board, first-post and character siblings): the walk stops at `lim`. With no word, the filters alone, bounded by the rows it passes, which they
     -- keep to a share of the table. With a word and neither a board nor titles only, the word is a filter on that walk or the planner finds its matches through the word's index and sorts them, and either way a broad
     -- word costs what a narrow one does: a common word finds its `lim` matches at the newest rows (the page or the pool, whatever the instance holds), a rare one reads the few rows it is in (post_search_words).
+    -- With a word and an author, the word is closed to every index (above), so this walk goes down the author's keyset btree (post_search_character) and stops at `lim`: a common word reads about the page, a rare one
+    -- reads the author's posts (A) to find its few, the price of a plan that no statistics can turn toward the word's matches in every board.
     return format('select p.act, p.thread, p.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
                   array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
   end if;
@@ -705,7 +707,7 @@ begin
   -- planner for it are the ones that find the matches (the GIN indexes on the word, with the board where one is given, or its first posts), and none of them can walk a keyset btree in time order and drop rows that do not
   -- hold the word. Without this the order by ... limit offered the planner that walk, and whether it took it depended on its estimate of how common the word is: a rare word estimated common, in a board with none of it, read
   -- every post of the board to find nothing (supabase/tests/0115-search.sql, BOUND-2). Now the rows read are the filter's own matches (M) at most, whatever the statistics say: the worst case of a word found in
-  -- every post of the board is the cost of sorting M, and the page, the pool and the count all take their newest rows from that one sort. A board or titles only is what keeps M to a share of the instance; with
+  -- every post of the board is the cost of sorting M; a request asks for its page and for its count separately (search_posts, search_threads), so it sorts M twice. A board or titles only is what keeps M to a share of the instance; with
   -- neither, M is the word's matches in every board, and sorting them is the cost the walk above does not pay. The thread's title is joined after the limit, to the rows that stay.
   return format('with m as materialized (select p.act, p.thread, p.board, p."character", p.created_at, p.words from post_search p where %s) '
                 'select o.act, o.thread, o.board, t.title, o."character", o.created_at, o.words '
