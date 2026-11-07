@@ -664,15 +664,19 @@ export function repairAppeal(raw: unknown): RepairedAppeal {
 
 /** The punishment under appeal, as the hearer is told it: public facts of a public Act. */
 export interface AppealPunishment {
-  readonly kind: 'infraction' | 'ban';
-  /** The band and the points of the infraction (for a ban, of the infraction that filled the bar). */
-  readonly band: string;
-  readonly points: number;
-  /** The rule it was filed under, in words ("Rule 2: no double posting (moderate)", or the board's premise). */
-  readonly rule: string;
-  /** For a ban: how many days it runs, and when it ends. */
+  readonly kind: 'infraction' | 'ban' | 'move';
+  /** The band and the points of the infraction (for a ban, of the infraction that filled the bar). A group move has neither. */
+  readonly band?: string;
+  readonly points?: number;
+  /** The rule it was filed under, in words ("Rule 2: no double posting (moderate)", or the board's premise). A group move has none. */
+  readonly rule?: string;
+  /** For a ban or a group move: how many days it runs (a move's may be a fraction), and when it ends. A move with no end of its own has neither. */
   readonly days?: number;
   readonly until?: string;
+  /** For a group move (a punishment that puts a character in a group): the group's name, the board it bars the character from posting on, and whether an apology ends it. */
+  readonly group?: string;
+  readonly bars?: string;
+  readonly apology?: boolean;
 }
 
 export interface AppealInput extends ModPromptInput {
@@ -698,16 +702,22 @@ export function appealPrompt(i: AppealInput): { readonly system: string; readonl
   const l = i.limits;
   const p = i.punishment;
   const ban = p.kind === 'ban';
+  const move = p.kind === 'move';
+  // A group move with no end of its own (an apology or an admin ends it) has no length to halve or add to: the database writes reduced and increased as upheld.
+  const open = move && p.until === undefined;
+  const subject = move ? 'move' : ban ? 'ban' : 'infraction';
   const system = [
     modPrompt({ ...i, moves: false }),
     [
-      ban
+      move
+        ? 'A character has paid to appeal a punishment you made, a move that put them in a group and so under its restrictions. The move is a public Act, and your ruling is another, so everyone will read it. Your ruling is one of four:'
+        : ban
         ? 'A character has paid to appeal a ban to you, as the Boss. The ban is a public Act, and your ruling is another, so everyone will read it. Your ruling is one of four:'
         : `A character has paid to appeal an infraction ${i.filedByHearer ? 'you filed' : 'filed by a Mod who no longer holds that beat'}, and you rule on it now. The infraction is a public Act, and your ruling is another, so everyone will read it. Your ruling is one of four:`,
-      `- overturned: the ${ban ? 'ban' : 'infraction'} was wrong. ${ban ? 'It ends at once' : 'Its points come off in full'}, and the appellant's Aura is refunded.`,
-      `- upheld: the ${ban ? 'ban' : 'infraction'} stands as it was. The appellant's Aura is spent.`,
-      `- reduced: the ${ban ? 'ban is cut to half its length' : 'infraction loses half its points'}. The appellant's Aura is spent.`,
-      `- increased: the appeal was a mistake. ${ban ? 'The ban runs half its length longer' : 'One more infraction of the same size is filed for the same post'}. The appellant's Aura is spent.`,
+      `- overturned: the ${subject} was wrong. ${move ? 'It ends at once, and the character returns to its usual group' : ban ? 'It ends at once' : 'Its points come off in full'}, and the appellant's Aura is refunded.`,
+      `- upheld: the ${subject} stands as it was. The appellant's Aura is spent.`,
+      `- reduced: ${move ? (open ? 'the move has no end date, so this changes nothing and is recorded as upheld' : 'the move is cut to half its length, counted from when it began, and ends at once if that time has passed') : ban ? 'the ban is cut to half its length' : 'the infraction loses half its points'}. The appellant's Aura is spent.`,
+      `- increased: the appeal was a mistake. ${move ? (open ? 'The move has no end date, so this changes nothing and is recorded as upheld' : 'The move runs half its length longer, though never past the longest a move may run') : ban ? 'The ban runs half its length longer' : 'One more infraction of the same size is filed for the same post'}. The appellant's Aura is spent.`,
       `What persuades you, as you are: ${oneLine(i.persuadedBy)}`,
       `Your words are the line everyone reads beside your ruling, in your own voice, one line of at most ${FILING_LINE_MOST} characters. It may joke or bluff, as you would on the boards. The size of a reduction or an increase is not yours to choose; the ruling is.`,
     ].join('\n'),
@@ -715,13 +725,18 @@ export function appealPrompt(i: AppealInput): { readonly system: string; readonl
     'Answer only in the structure you are asked for.',
   ].join('\n\n');
   const lines = threadLines(i.thread, l);
-  const what = ban
-    ? `A ban of ${p.days ?? 0} day${p.days === 1 ? '' : 's'}${p.until ? `, to ${clip(p.until, 40)}` : ''}, which the bar filled with an infraction of the ${clip(p.band, 20)} band (${p.points} points) under ${clip(p.rule, 200)}.`
-    : `An infraction of the ${clip(p.band, 20)} band (${p.points} points) under ${clip(p.rule, 200)}.`;
+  const what = move
+    ? `A move of yours that put ${clip(i.appellant.name, 60)} in the group "${clip(p.group ?? 'a group', 80)}"${p.bars ? `, which bars them from posting on ${clip(p.bars, 80)}` : ''}. ${
+        p.until !== undefined ? `It runs ${p.days ?? 0} day${p.days === 1 ? '' : 's'} from when it landed, to ${clip(p.until, 40)}.` : 'It has no end date.'
+      }${p.apology ? ' It ends early if they apologize and the apology is accepted.' : ''}`
+    : ban
+    ? `A ban of ${p.days ?? 0} day${p.days === 1 ? '' : 's'}${p.until ? `, to ${clip(p.until, 40)}` : ''}, which the bar filled with an infraction of the ${clip(p.band ?? '', 20)} band (${p.points ?? 0} points) under ${clip(p.rule ?? '', 200)}.`
+    : `An infraction of the ${clip(p.band ?? '', 20)} band (${p.points ?? 0} points) under ${clip(p.rule ?? '', 200)}.`;
   const message = [
     `The board: ${clip(i.board.name, 80)}. ${clip(i.board.premise, 500)}`,
     ...(lines.length ? [lines.join('\n')] : []),
-    `The post it is about, by ${clip(i.post.name, 60)}: "${clip(i.post.body, l.excerptChars)}"`,
+    // A move is not about a post: only an infraction or a ban has one to quote.
+    ...(move ? [] : [`The post it is about, by ${clip(i.post.name, 60)}: "${clip(i.post.body, l.excerptChars)}"`]),
     what,
     `The appeal, from ${clip(i.appellant.name, 60)}: "${clip(i.plea, 1000)}"`,
     'Give your ruling.',

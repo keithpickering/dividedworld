@@ -518,6 +518,22 @@ test('a ban\'s appeal is told it is the Boss\'s, and the ban\'s length', () => {
   assert.match(p.message, /the premise of Games/);
 });
 
+test('a group punishment\'s appeal is told what the move did, by the group\'s name, and what each verdict does to it', () => {
+  const move = { kind: 'move', group: 'Trial Members', bars: 'Games', days: 4, until: '2026-11-10T10:00:00Z', apology: true } as const;
+  const p = appealPrompt(appeal({ punishment: move }));
+  assert.match(p.system, /appeal a punishment you made, a move that put them in a group/);
+  assert.match(p.system, /overturned: the move was wrong\. It ends at once, and the character returns to its usual group, and the appellant's Aura is refunded/);
+  assert.match(p.system, /reduced: the move is cut to half its length, counted from when it began, and ends at once if that time has passed/);
+  assert.match(p.system, /increased: .*runs half its length longer, though never past the longest a move may run/);
+  assert.match(p.message, /A move of yours that put Bob in the group "Trial Members", which bars them from posting on Games\. It runs 4 days from when it landed, to 2026-11-10T10:00:00Z\. It ends early if they apologize/);
+  assert.ok(!/The post it is about/.test(p.message), 'a move is about no post');
+  const open = appealPrompt(appeal({ punishment: { kind: 'move', group: 'Trial Members' } }));
+  assert.match(open.message, /It has no end date\./);
+  assert.match(open.system, /the move has no end date, so this changes nothing and is recorded as upheld/);
+  assert.ok(!/bars them/.test(open.message) && !/apologize/.test(open.message));
+  assert.ok(!/owner|account/i.test(p.system + p.message));
+});
+
 test('the appeal schema asks for a verdict from the list and a line, and offers no move', () => {
   const s = appealPrompt(appeal()).schema as { required: string[]; properties: Record<string, any>; additionalProperties: boolean };
   assert.deepEqual(s.required, ['verdict', 'line']);
