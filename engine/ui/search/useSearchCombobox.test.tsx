@@ -23,6 +23,7 @@ function Harness(props: Partial<UseSearchComboboxOptions> & { readonly source: U
           {view.groups.map((g) => (
             <div key={g.key} role="group" aria-labelledby={g.headingId}>
               <div id={g.headingId}>{g.label}</div>
+              {g.empty && <div data-testid="empty">{g.empty}</div>}
               {g.rows.map((r) => <div key={r.id} {...r.props}>{r.option.label}</div>)}
             </div>
           ))}
@@ -166,9 +167,9 @@ describe('the keys', () => {
     expect(activeText()).toBe('Waribob');
   });
 
-  test('Home and End go to the first and the last row', async () => {
+  test('With a row active, Home and End go to the first and the last row', async () => {
     const { user } = await opened();
-    await user.keyboard('{End}');
+    await user.keyboard('{ArrowDown}{End}');
     expect(activeText()).toBe('Search posts for “wari”');
     await user.keyboard('{Home}');
     expect(activeText()).toBe('Wario Ware tier list');
@@ -229,6 +230,129 @@ describe('the keys', () => {
     await user.keyboard('{ArrowDown}b');
     await settle();
     expect(box()).not.toHaveAttribute('aria-activedescendant');
+  });
+});
+
+describe('review fixes', () => {
+  const activeId = () => box().getAttribute('aria-activedescendant');
+  async function opened(extra: Partial<UseSearchComboboxOptions> = {}, src?: UseSearchComboboxOptions['source']) {
+    const s = setup(extra, src);
+    await s.user.type(box(), 'wari');
+    await settle();
+    return s;
+  }
+
+  test('Q-1: keys during an IME composition do nothing', async () => {
+    const { onChoose } = await opened();
+    fireEvent.keyDown(box(), { key: 'ArrowDown', isComposing: true });
+    expect(activeId()).toBeNull();
+    fireEvent.keyDown(box(), { key: 'ArrowDown' });
+    fireEvent.keyDown(box(), { key: 'Enter', isComposing: true });
+    fireEvent.keyDown(box(), { key: 'Enter', keyCode: 229 });
+    fireEvent.keyDown(box(), { key: 'Process', keyCode: 229 });
+    expect(onChoose).not.toHaveBeenCalled();
+    expect(activeId()).not.toBeNull();
+  });
+
+  test('Q-2: during the debounce the previous query\'s rows cannot be chosen', async () => {
+    const { onChoose } = setup({}, vi.fn(async () => GROUPS), true);
+    fireEvent.change(box(), { target: { value: 'wari' } });
+    await settle();
+    fireEvent.change(box(), { target: { value: 'warix' } });
+    fireEvent.keyDown(box(), { key: 'ArrowDown' });
+    fireEvent.keyDown(box(), { key: 'Enter' });
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null);
+  });
+
+  test('Q-3: a source that throws synchronously says No suggestions', async () => {
+    const { user } = setup({}, vi.fn(() => { throw new Error('sync'); }));
+    await user.type(box(), 'wari');
+    await settle();
+    expect(screen.getByRole('status')).toHaveTextContent('No suggestions');
+  });
+
+  test('Q-4: choosing a suggestion drops the old list; refocus does not reopen it', async () => {
+    const { user } = await opened();
+    await user.click(screen.getByRole('option', { name: 'Waribob' }));
+    act(() => { box().blur(); });
+    act(() => { box().focus(); });
+    expect(box()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+  });
+
+  test('Q-5: Home and End are the text box\'s own until a row is active', async () => {
+    await opened();
+    const home = fireEvent.keyDown(box(), { key: 'Home' });
+    const end = fireEvent.keyDown(box(), { key: 'End' });
+    expect(home && end).toBe(true); // not default-prevented
+    expect(activeId()).toBeNull();
+    fireEvent.keyDown(box(), { key: 'ArrowDown' });
+    expect(fireEvent.keyDown(box(), { key: 'End' })).toBe(false);
+  });
+
+  test('SPEC-2: a group with an empty text draws its head and that line, uncounted and not navigable', async () => {
+    const src = vi.fn(async () => [
+      { key: 'boards', label: 'Boards', options: [], empty: 'No board matches.' },
+      { key: 'threads', label: 'Threads', options: [{ id: 't1', label: 'one' }] },
+      { key: 'gone', label: 'Gone', options: [] },
+    ] as readonly ComboGroup[]);
+    const { user } = setup({ trailing: undefined }, src);
+    await user.type(box(), 'wari');
+    await settle();
+    expect(screen.getByRole('group', { name: 'Boards' })).toBeInTheDocument();
+    expect(screen.getByTestId('empty')).toHaveTextContent('No board matches.');
+    expect(screen.queryByRole('group', { name: 'Gone' })).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent(/^1 suggestion$/);
+    await user.keyboard('{ArrowDown}{ArrowDown}');
+    expect(document.getElementById(activeId() ?? '')?.textContent).toBe('one');
+  });
+
+  test('Q-7: unmount with a pending timer asks nothing and warns nothing', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { source } = setup({}, vi.fn(async () => GROUPS), true);
+    fireEvent.change(box(), { target: { value: 'wari' } });
+    cleanup();
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(source).not.toHaveBeenCalled();
+    expect(err).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  test('Q-7: unmount with a pending request aborts it and a late reply is silent', async () => {
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let signal: AbortSignal | undefined;
+    let reply: ((g: readonly ComboGroup[]) => void) | undefined;
+    const src = vi.fn((_q: string, s: AbortSignal) => { signal = s; return new Promise<readonly ComboGroup[]>((r) => { reply = r; }); });
+    setup({}, src, true);
+    fireEvent.change(box(), { target: { value: 'wari' } });
+    await settle();
+    expect(signal?.aborted).toBe(false);
+    cleanup();
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { reply?.(GROUPS); });
+    expect(err).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  test('Q-7: blur and Tab close the list', async () => {
+    const { user } = await opened();
+    await user.keyboard('{ArrowDown}');
+    await user.tab();
+    expect(box()).toHaveAttribute('aria-expanded', 'false');
+    expect(box()).not.toHaveAttribute('aria-activedescendant');
+  });
+
+  test('Q-7: a reply during a newer debounce window is dropped', async () => {
+    const replies: Array<(g: readonly ComboGroup[]) => void> = [];
+    const src = vi.fn(() => new Promise<readonly ComboGroup[]>((res) => { replies.push(res); }));
+    setup({}, src, true);
+    fireEvent.change(box(), { target: { value: 'wari' } });
+    await settle();
+    fireEvent.change(box(), { target: { value: 'warix' } }); // newer debounce window open
+    await act(async () => { replies[0]?.(GROUPS); });
+    expect(screen.queryAllByRole('option')).toHaveLength(0);
+    expect(screen.getByRole('status')).toHaveTextContent('');
   });
 });
 

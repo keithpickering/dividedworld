@@ -49,3 +49,9 @@
   color: var(--kb-glass-text-2);
   font-weight: 600;
 }
+
+.kb-glass-combo-empty {
+  padding: 6px 10px;
+  color: var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-label);
+}

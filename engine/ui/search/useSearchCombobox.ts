@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent } from 'react';
 
 export interface ComboOption { readonly id: string; readonly label: string; readonly detail?: string }
-export interface ComboGroup<O extends ComboOption = ComboOption> { readonly key: string; readonly label: string; readonly options: readonly O[] }
+export interface ComboGroup<O extends ComboOption = ComboOption> { readonly key: string; readonly label: string; readonly options: readonly O[]; /** Drawn under the head when there are no options; without it an empty group is dropped. */ readonly empty?: string }
 export type ComboSource<O extends ComboOption = ComboOption> = (query: string, signal: AbortSignal) => Promise<readonly ComboGroup<O>[]>;
 
 export interface UseSearchComboboxOptions<O extends ComboOption = ComboOption> {
@@ -39,7 +39,7 @@ export interface ComboRow<O extends ComboOption> {
   readonly active: boolean;
   readonly props: { readonly id: string; readonly role: 'option'; readonly 'aria-selected': boolean; readonly onClick: () => void; readonly onMouseMove: () => void };
 }
-export interface ComboViewGroup<O extends ComboOption> { readonly key: string; readonly label: string; readonly headingId: string; readonly rows: readonly ComboRow<O>[] }
+export interface ComboViewGroup<O extends ComboOption> { readonly key: string; readonly label: string; readonly headingId: string; readonly empty: string | null; readonly rows: readonly ComboRow<O>[] }
 export interface ComboView<O extends ComboOption = ComboOption> {
   readonly query: string;
   readonly open: boolean;
@@ -73,6 +73,8 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
   const [query, setQuery] = useState(initialQuery);
   const [groups, setGroups] = useState<readonly ComboGroup<O>[] | null>(null);
   const [active, setActive] = useState(-1);
+  // True from a keystroke until that query's reply: the shown groups are the previous query's and cannot be chosen.
+  const [stale, setStale] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [liveText, setLiveText] = useState('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,17 +98,21 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
     flight.current.abort?.abort();
     const abort = new AbortController();
     flight.current.abort = abort;
-    latest.current.source(q.trim(), abort.signal).then(
+    let pending: Promise<readonly ComboGroup<O>[]>;
+    try { pending = latest.current.source(q.trim(), abort.signal); } catch (err) { pending = Promise.reject(err); }
+    pending.then(
       (reply) => {
         if (flight.current.seq !== mine) return;
-        const kept = reply.filter((g) => g.options.length > 0);
+        const kept = reply.filter((g) => g.options.length > 0 || g.empty);
         setGroups(kept);
+        setStale(false);
         setActive(-1);
         setLiveText(suggestionCount(kept.reduce((n, g) => n + g.options.length, 0)));
       },
       () => {
         if (flight.current.seq !== mine) return;
         setGroups([]);
+        setStale(false);
         setActive(-1);
         setLiveText(suggestionCount(0));
       },
@@ -115,7 +121,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
 
   const schedule = useCallback((q: string, wait: number) => {
     cancel();
-    if (!eligible(q)) { setGroups(null); setActive(-1); setLiveText(''); return; }
+    if (!eligible(q)) { setGroups(null); setStale(false); setActive(-1); setLiveText(''); return; }
     if (wait <= 0) { ask(q); return; }
     timer.current = setTimeout(() => { timer.current = null; ask(q); }, wait);
   }, [cancel, eligible, ask]);
@@ -130,12 +136,12 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
   const shown = useMemo(() => (groups ?? []), [groups]);
   const flat = useMemo(() => {
     const rows: Array<{ option: O; groupKey: string | null }> = [];
-    for (const g of shown) for (const o of g.options) rows.push({ option: o, groupKey: g.key });
+    if (!stale) for (const g of shown) for (const o of g.options) rows.push({ option: o, groupKey: g.key });
     if (trailingOption && groups !== null) rows.push({ option: trailingOption, groupKey: null });
     return rows;
-  }, [shown, trailingOption, groups]);
+  }, [shown, trailingOption, groups, stale]);
 
-  const open = !dismissed && groups !== null && flat.length > 0;
+  const open = !dismissed && groups !== null && (flat.length > 0 || shown.length > 0);
   const listId = `${base}-list`;
   const rowId = (n: number) => `${base}-opt-${n}`;
 
@@ -143,13 +149,15 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
     const row = flat[n];
     if (!row) return;
     cancel();
-    if (row.groupKey !== null) setQuery(row.option.label);
+    if (row.groupKey !== null) { setQuery(row.option.label); setGroups(null); setStale(false); setLiveText(''); }
     setDismissed(true);
     setActive(-1);
     latest.current.onChoose(row.option, row.groupKey);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // An IME composition owns its keys; the Enter that commits it is not a choice.
+    if (e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229) return;
     const last = flat.length - 1;
     switch (e.key) {
       case 'ArrowDown':
@@ -165,12 +173,12 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
         setActive(active <= 0 ? last : active - 1);
         return;
       case 'Home':
-        if (!open) return;
+        if (!open || active < 0) return;
         e.preventDefault();
         setActive(0);
         return;
       case 'End':
-        if (!open) return;
+        if (!open || active < 0) return;
         e.preventDefault();
         setActive(last);
         return;
@@ -209,11 +217,20 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
   });
 
   let n = 0;
+  // Stale rows are drawn (no flicker) but inert: not in `flat`, so no index, no active, no choosing.
+  const inertRow = (option: O, k: number): ComboRow<O> => ({
+    option,
+    id: `${base}-stale-${k}`,
+    active: false,
+    props: { id: `${base}-stale-${k}`, role: 'option', 'aria-selected': false, onClick: () => {}, onMouseMove: () => {} },
+  });
+  let k = 0;
   const viewGroups: ComboViewGroup<O>[] = shown.map((g, gi) => ({
     key: g.key,
     label: g.label,
     headingId: `${base}-group-${gi}`,
-    rows: g.options.map((o) => mkRow(o, n++)),
+    empty: g.options.length === 0 ? (g.empty ?? null) : null,
+    rows: g.options.map((o) => (stale ? inertRow(o, k++) : mkRow(o, n++))),
   }));
   const trailingRow = trailingOption && groups !== null ? mkRow(trailingOption, n) : null;
 
@@ -231,6 +248,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
       'aria-activedescendant': open && active >= 0 ? rowId(active) : undefined,
       onChange: (e) => {
         setQuery(e.target.value);
+        setStale(true);
         setDismissed(false);
         setActive(-1);
         schedule(e.target.value, debounceMs);

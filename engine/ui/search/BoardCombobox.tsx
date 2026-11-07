@@ -36,6 +36,7 @@ export function BoardCombobox<O extends ComboOption = ComboOption>({ label, plac
           {view.groups.map((g) => (
             <div key={g.key} role="group" aria-labelledby={g.headingId}>
               <div id={g.headingId} className="kb-search-head">{g.label}</div>
+              {g.empty && <div className="kb-search-empty">{g.empty}</div>}
               {g.rows.map((r) => <Row key={r.id} row={r} render={render} />)}
             </div>
           ))}
