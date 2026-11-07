@@ -143,7 +143,8 @@ export function BarredNote({ character, bar }: { readonly character: { readonly 
           />
         )}
       </div>
-      {punishment && (appealed || made) && <p ref={appealedNote} tabIndex={-1} role="status">This move has been appealed. Each move is appealed once.</p>}
+      {/* Focused, not a live region: the button that had focus is gone, and focus on the note reads it once (a status region as well would read it twice). */}
+      {punishment && (appealed || made) && <p ref={appealedNote} tabIndex={-1}>This move has been appealed. Each move gets one judged appeal.</p>}
     </section>
   );
 }

@@ -2070,10 +2070,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       /* A ban's ruling names its new end (close_appeal): overturned ends it now, reduced halves it from its start, increased runs it half again. */
       let until: string | undefined;
       if (movePunishes) {
-        /* A move's length is from its landing to its own end; none has no length, so reduced and increased are upheld (close_appeal). Overturned ends it now, why overturned. */
+        /* A move's length is from its landing to its own end; none has no length, so reduced and increased are upheld (close_appeal). Increased adds half the length, never past moveExpiryMostDays from landing. Overturned ends it now, why overturned. */
         const own = typeof pun.payload['expires_at'] === 'string' ? Date.parse(pun.payload['expires_at']) : null;
         const length = own === null ? null : own - pun.at;
-        const end = verdict === 'overturned' ? now() : length === null ? null : verdict === 'reduced' ? pun.at + length / 2 : verdict === 'increased' ? own! + length / 2 : null;
+        const end = verdict === 'overturned' ? now() : length === null ? null : verdict === 'reduced' ? pun.at + length / 2 : verdict === 'increased' ? own! + Math.min(length / 2, Math.max(0, settings.moveExpiryMostDays * DAY - length)) : null;
         if (end !== null) until = iso(end);
       } else if (pun.kind === 'ban') {
         const days = Number(pun.payload.days);

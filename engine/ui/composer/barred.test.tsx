@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { shortDate } from '../postbit/dates.ts';
+import { testInstance } from '../test-world.tsx';
 import { openThread, replyBox, threadWorld } from './support.tsx';
 
 const DAY = 86_400_000;
@@ -116,13 +117,40 @@ describe('the box of a barred mask', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Appeal the move' });
     const form = await within(dialog).findByRole('form', { name: 'Appeal' });
     expect(form).toHaveTextContent(/The punishment: Pipewrench is in Trial Members, which can't post on General\. It began .+ and ends by itself .+\./u);
-    expect(form).toHaveTextContent('The Boss hears it. If it is overturned the move ends at once and your Aura is refunded. If it is upheld nothing changes. If it is reduced the move is cut to half its length, counted from when it began, and ends at once if that time has passed. If it is increased the move runs half its length longer, though never past the longest a move may run. One appeal per move, your plea is public, and an apology can still end the move: whichever comes first does.');
+    expect(form).toHaveTextContent('The one who made the move (the Boss) hears it, or the Boss if they have left the staff. If it is overturned the move ends at once and your Aura is refunded. If it is upheld nothing changes. If it is reduced the move is cut to half its length, counted from when it began, and ends at once if that time has passed. If it is increased the move runs half its length longer, though never past the longest a move may run. One judged appeal per move, your plea is public, and an apology can still end the move: whichever comes first does.');
     await userEvent.type(within(form).getByRole('textbox', { name: 'Your plea (public)' }), 'I have learned.');
     await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
     await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it and cut the move to half its length.'));
     expect(file).toHaveBeenCalledWith(w.pipe, w.move, 'I have learned.');
     expect((await w.fake.log()).appeals[0]).toMatchObject({ punishment: w.move, punishmentKind: 'move', verdict: 'reduced', character: w.pipe });
     expect(await w.fake.wallet()).toMatchObject({ balance: 450 });
+  });
+
+  test('a made appeal moves focus to the note that says so', async () => {
+    const w = barred();
+    w.fake.seed.judging({ appeal: 'upheld' });
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Appeal the move' });
+    await userEvent.type(within(dialog).getByRole('textbox', { name: 'Your plea (public)' }), 'Please.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    await waitFor(() => expect(within(dialog).getByRole('status')).toHaveTextContent('heard it'));
+    await userEvent.keyboard('{Escape}');
+    const note = await screen.findByText('This move has been appealed. Each move gets one judged appeal.');
+    await waitFor(() => expect(note).toHaveFocus());
+  });
+
+  test('an increased ruling adds half the length but never goes past the most days from landing, as the server clamps it', async () => {
+    const w = threadWorld(2, { groups: GROUPS });
+    const most = testInstance.settings.moveExpiryMostDays;
+    w.fake.seed.wallet(w.me, 500);
+    w.fake.seed.staff('director', 'The Director', 'boss');
+    const at = Date.now() - 3_600_000;
+    w.fake.seed.groupMove('director', { character: w.pipe, group: 'trialMembers', board: 'general', at, expiresAt: at + (most - 1) * DAY });
+    w.fake.seed.judging({ appeal: 'increased' });
+    const move = (await w.fake.myCharacters())[0]!.bars![0]!.move;
+    expect((await w.fake.fileAppeal(w.pipe, move, 'More.')).ok).toBe(true);
+    expect(Date.parse((await w.fake.myCharacters())[0]!.bars![0]!.expiresAt!)).toBe(at + most * DAY);
   });
 
   test('says plainly that a move with no end date cannot be shortened or lengthened', async () => {
@@ -146,7 +174,9 @@ describe('the box of a barred mask', () => {
     openThread(w, undefined, { settings: { groups: GROUPS } });
     await screen.findByRole('link', { name: 'See the move' });
     expect(screen.queryByRole('button', { name: /^Appeal to/u })).toBeNull();
-    expect(screen.getByText('This move has been appealed. Each move is appealed once.')).toBeInTheDocument();
+    const note = screen.getByText('This move has been appealed. Each move gets one judged appeal.');
+    expect(note).toBeInTheDocument();
+    expect(note, 'focused where the button was, and not also a live region: one announcement').not.toHaveAttribute('role');
   });
 
   test('is not offered for a bar a favor carries, which is no punishment', async () => {

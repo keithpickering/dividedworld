@@ -65,13 +65,13 @@ export function moveRulingWords(verdict: string): string {
   }
 }
 
-/** The terms of an appeal of a group move, in the glass's plain words: the staff member who made the move hears it (`hearer` is "The Boss" or "A Mod"). */
+/** The terms of an appeal of a group move, in the glass's plain words: the staff member who made the move hears it while on staff, else the Boss (`hearer` is "The Boss" or "A Mod"). */
 export const moveAppealTerms = (hearer: string, hasEnd: boolean): string =>
-  `${hearer} hears it. If it is overturned the move ends at once and your Aura is refunded. If it is upheld nothing changes. ${
+  `The one who made the move (${lowerFirst(hearer)}) hears it, or the Boss if they have left the staff. If it is overturned the move ends at once and your Aura is refunded. If it is upheld nothing changes. ${
     hasEnd
       ? 'If it is reduced the move is cut to half its length, counted from when it began, and ends at once if that time has passed. If it is increased the move runs half its length longer, though never past the longest a move may run. '
       : 'It has no end date, so a reduction or an increase changes nothing and is recorded as upheld. '
-  }One appeal per move, your plea is public, and an apology can still end the move: whichever comes first does.`;
+  }One judged appeal per move, your plea is public, and an apology can still end the move: whichever comes first does.`;
 
 /** What an appeal of a group move is told: the move (its Act), the character it put in the group, the group and board by name, when it began and ends (null: no end date), and who hears it. */
 export interface MoveAppealFacts {
