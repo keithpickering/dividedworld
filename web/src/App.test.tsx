@@ -431,7 +431,7 @@ for (const path of NO_MENU) {
       make(fake);
       /* The router lets a load that never answers go for 20 seconds, then draws the glass's "This screen didn't load" with its Back to the board;
          a load that fails draws it at once. The ready, empty and signed-out pages carry the link themselves. */
-      if (state === 'loading') vi.useFakeTimers({ shouldAdvanceTime: true });
+      if (state === 'loading') vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] });
       try {
         render(<App api={fake} />);
         await screen.findByRole('main');
@@ -891,8 +891,9 @@ describe('the crossing', () => {
     const bar = await screen.findByRole('navigation', { name: 'Menu' });
     await screen.findByRole('heading', { level: 1 });
     await userEvent.click(within(bar).getByRole('link', { name: 'Settings' }));
+    /* The move waits for Settings' chunk and document, so the second screen arrives a moment after the press; the first is held, inert, until its exit ends. */
+    await waitFor(() => expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(2));
     const screens = Array.from(document.querySelectorAll<HTMLElement>('.kb-glass-screen'));
-    expect(screens).toHaveLength(2);
     expect(screens[0]).toHaveAttribute('inert');
     expect(screens[0]).toHaveAttribute('aria-hidden', 'true');
     expect(screens[0]!.querySelector('h1')).not.toHaveTextContent(/Settings/u);

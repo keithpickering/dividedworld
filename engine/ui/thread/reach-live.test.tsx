@@ -43,8 +43,11 @@ async function open(withCards = false) {
   const elsewhere = fake.seed.thread('general', spritey, 'Somewhere else', 'a post over there');
   const gloombaThere = fake.seed.post(elsewhere.thread, gloomba, 'gloomba over there');
   fake.signInAs(me);
+  /* The page hears reach once its effect has subscribed, a moment after its first article is drawn: a broadcast seeded before then is heard by no one. */
+  const heard = vi.spyOn(fake, 'subscribeReach');
   renderIn(fake, <Frame><LoadedThread thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
+  await waitFor(() => expect(heard).toHaveBeenCalled());
   return { fake, me, spritey, gloomba, here, elsewhere, gloombaThere };
 }
 const postbit = (seq: number) => document.getElementById(`post-${seq}`)!.querySelector('.kb-postbit') as HTMLElement;
