@@ -12,6 +12,8 @@ export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'
 
 export async function axeViolations(element: Element, options: { readonly contrast?: boolean } = {}): Promise<axe.Result[]> {
   const result = await axe.run(element, {
+    /* A frame is checked as an element (its title); what it holds is its own page, read in a browser (the mail stories' emails: e2e/mail.spec.ts), since jsdom cannot address a frame to axe. */
+    iframes: false,
     runOnly: { type: 'tag', values: [...WCAG_TAGS] },
     rules: { 'color-contrast': { enabled: options.contrast === true } },
   });
