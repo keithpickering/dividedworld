@@ -1,21 +1,36 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; the front door names only cast
+ * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
  * members, reactions and ranks the instance has, and cards with a `CardUi`. Pure, so the self-test can plant each defect; the build runs it
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
 import type { Instance } from '../../rules/types.ts';
-import type { InstanceUi } from '../types.ts';
+import { MAP, type ClassMarks, type InstanceUi } from '../types.ts';
 import type { CardPlay, CardUi } from '../cards/types.ts';
+import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
+/** The most characters a footer badge's two words hold between them: 80 pixels of the pixel face at 8px. */
+export const BADGE_MAX = 12;
+/** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
+export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
+  /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
+  for (const t of ui.themes ?? []) {
+    const held = [t.preview?.light ? 'light' : '', t.preview?.dark ? 'dark' : ''].filter(Boolean);
+    const want = t.modes === 'both' ? ['light', 'dark'] : [t.modes];
+    if (held.join() !== want.join()) out.push(`the theme "${t.key}" says it holds ${want.join(' and ')}, and its file holds ${held.join(' and ') || 'no mode'}`);
+  }
+  for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag'] as const) {
+    const word: unknown = ui.copy?.[key];
+    if (typeof word !== 'string' || word.trim() === '') out.push(`the copy has no ${key}`);
+  }
   const marquees: unknown = ui.copy?.marquees;
   if (marquees !== undefined) {
     if (!Array.isArray(marquees) || marquees.length === 0) out.push('the copy has a marquees list with nothing in it');
@@ -23,6 +38,21 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
       marquees.forEach((m: unknown, i) => {
         if (typeof m !== 'string' || m.trim() === '') out.push(`the marquee ${i + 1} is empty`);
         else if (m.length > MARQUEE_MAX) out.push(`the marquee "${m}" is ${m.length} characters, over the ${MARQUEE_MAX} the sign holds`);
+      });
+    }
+  }
+  const badges: unknown = ui.copy?.badges;
+  if (badges !== undefined) {
+    if (!Array.isArray(badges) || badges.length === 0) out.push('the copy has a badges list with nothing in it');
+    else {
+      if (badges.length > BADGES_MAX) out.push(`the copy has ${badges.length} badges, over the ${BADGES_MAX} a footer row holds`);
+      const seen = new Map<string, number>();
+      badges.forEach((b: unknown, i) => {
+        const pair = Array.isArray(b) && b.length === 2 && b.every((w: unknown) => typeof w === 'string' && w.trim() !== '') ? (b as [string, string]) : null;
+        if (pair === null) out.push(`the badge ${i + 1} is not a pair of words`);
+        else if (seen.has(`${pair[0]} ${pair[1]}`)) out.push(`the badge ${i + 1} repeats the badge ${seen.get(`${pair[0]} ${pair[1]}`)} ("${pair[0]} ${pair[1]}")`);
+        else if (`${pair[0]} ${pair[1]}`.length > BADGE_MAX) out.push(`the badge "${pair[0]} ${pair[1]}" is ${`${pair[0]} ${pair[1]}`.length} characters, over the ${BADGE_MAX} an 80 by 15 badge holds`);
+        if (pair !== null && !seen.has(`${pair[0]} ${pair[1]}`)) seen.set(`${pair[0]} ${pair[1]}`, i + 1);
       });
     }
   }
@@ -64,7 +94,25 @@ function classLookProblems(looks: InstanceUi['classLooks'] | undefined, instance
     if (typeof look.hurtsBy !== 'function') out.push(`the class "${key}" has no hurtsBy, so its card cannot set what hurts it apart`);
     else if (look.hurtsBy(economy, span).trim() === '') out.push(`the class "${key}" has a hurtsBy with no words in it`);
     if (/\bhurt by\b/iu.test(look.description(economy, span))) out.push(`the class "${key}" has a description that still says "Hurt by"; what hurts it belongs in hurtsBy`);
+    out.push(...splitsProblems(key, look.marks));
   }
+  return out;
+}
+
+/** A class's `splits` mark: two different quadrants of the map, side by side in one row, and in none of its other marks. */
+function splitsProblems(key: string, marks: ClassMarks | undefined): string[] {
+  const splits: unknown = marks?.splits;
+  if (splits === undefined) return [];
+  if (!Array.isArray(splits) || splits.length !== 2) return [`the class "${key}" has a splits that is not a pair of quadrants`];
+  const [a, b] = splits as [Quadrant, Quadrant];
+  const known = QUADRANTS as readonly string[];
+  const unknown = (splits as string[]).filter((q) => !known.includes(q));
+  if (unknown.length > 0) return unknown.map((q) => `the class "${key}" splits "${q}", which is not a quadrant`);
+  if (a === b) return [`the class "${key}" splits ${a} with itself, and a split needs two quadrants`];
+  const out: string[] = [];
+  const [i, j] = [MAP.indexOf(a), MAP.indexOf(b)];
+  if (Math.floor(i / 2) !== Math.floor(j / 2) || Math.abs(i - j) !== 1) out.push(`the class "${key}" splits ${a} and ${b}, which do not sit side by side in one row of the map`);
+  for (const q of splits as Quadrant[]) for (const field of ['earns', 'hurts', 'calls'] as const) if (marks?.[field]?.includes(q)) out.push(`the class "${key}" splits ${q} and also ${field} it`);
   return out;
 }
 

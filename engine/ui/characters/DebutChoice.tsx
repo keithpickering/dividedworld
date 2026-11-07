@@ -51,11 +51,11 @@ export function DebutChoice({ name, pronouns, className, timing, loudness, onTim
         </label>
         <label className="kb-choice-option">
           <input type="radio" name={loud} checked={loudness === 'announced'} onChange={() => onLoudness('announced')} />
-          <span><b>Announced.</b> The System posts that {shown} debuts, never as what.</span>
+          <span><b>Announced.</b> {shown}&apos;s own Promo says {w.they} debut{w.s}, never as what.</span>
         </label>
         <label className="kb-choice-option">
           <input type="radio" name={loud} checked={loudness === 'with_class'} onChange={() => onLoudness('with_class')} />
-          <span><b>Announced, with {w.their} class.</b> The System also says what class {shown} is, and that stays public. This can&apos;t be taken back.</span>
+          <span><b>Announced, with {w.their} class.</b> {shown}&apos;s own Promo also says what class {w.they} {w.is}, and that stays public. This can&apos;t be taken back.</span>
         </label>
       </fieldset>
       <PreviewBox preview={debutPreview({ name: shown, pronouns, className, timing, loudness })} />

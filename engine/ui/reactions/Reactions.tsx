@@ -5,6 +5,10 @@
  * reacts with its kind as the HUD character, by the picker's own send (send.ts: one `useReactionSend` call for the row, whose lock
  * the picker shares); a refusal opens the picker with the server's words in its alert. The row's buttons are one tab stop,
  * moved along by the arrow keys. Only the player's own screen knows which characters are theirs, and nothing here says who reacted.
+ *
+ * On a staged page (staged.ts: the front door's sample thread) the reader needs no character: React is on every post, a press is
+ * answered on their screen alone (the kind is theirs in `mine`, its count grows by one), nothing is sent or estimated, and the
+ * words name no mask.
  */
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -13,11 +17,12 @@ import { usePlayer } from '../player.tsx';
 import { useTally, type Tallies } from '../thread/tallies.ts';
 import { useMine, type Mine } from './mine.ts';
 import { Picker } from './Picker.tsx';
-import { useReactionSend } from './send.ts';
+import { useReactionSend, type SendAnswer } from './send.ts';
 import '../cards/kit.css';
 import '../glass/meta-tile.css';
 import './reactions.css';
 import { Layers } from '../glass/layer.tsx';
+import { useStaged } from '../staged.ts';
 
 /** A reaction's name for a reader: its key made readable ("raised-hands" is "Raised hands"). */
 export const readable = (key: string): string => {
@@ -39,6 +44,17 @@ interface Props {
   readonly pickerAt?: 'row' | 'button';
 }
 
+/**
+ * A staged page's send: the kind is the reader's, its count grows by one, on this screen alone. It holds the cap and the one-of-a-kind
+ * rule itself, as the server does in play, since two presses in one tick are both decided on what the last render knew.
+ */
+const STAGED_READER = 'staged:reader';
+const stagedSend = (act: Id, tallies: Tallies, mine: Mine, cap: number) => async (kind: string): Promise<SendAnswer> => {
+  if (mine.get(act).length >= cap || !mine.add({ act, kind, character: STAGED_READER })) return 'busy';
+  tallies.merge(act, { [kind]: (tallies.get(act)[kind] ?? 0) + 1 });
+  return 'sent';
+};
+
 /** The tab stop of the React tile; a kind's is its key. */
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
@@ -55,11 +71,13 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const button = useRef<HTMLButtonElement>(null);
   const row = useRef<HTMLDivElement>(null);
   const shown = instance.reactions.filter((r) => (tally[r.key] ?? 0) > 0);
+  const staged = useStaged();
   const theirs = author !== null && player.characters.some((c) => c.id === author);
-  const as = player.hudCharacter;
-  const canReact = !theirs && as !== null;
-  /* One send for the row and its picker: one lock for the Act (send.ts). */
-  const { send, busy } = useReactionSend({ act, as, tallies, mine });
+  const as = staged ? null : player.hudCharacter;
+  const canReact = !theirs && (staged || as !== null);
+  /* One send for the row and its picker: one lock for the Act (send.ts). A staged page's is answered here, and sends nothing. */
+  const sent = useReactionSend({ act, as, tallies, mine });
+  const { send, busy } = staged ? { send: stagedSend(act, tallies, mine, settings.reactionCap), busy: false } : sent;
   /* A picker is for the character it was opened for: another character in the HUD closes it, and what was said of a reaction as the last one goes. */
   const asId = as?.id;
   useEffect(() => { setOpen(false); setSaid(''); }, [asId]);
@@ -82,7 +100,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
     /* The press was for the character it was made as: another in the HUD, or no right to react now, and its answer is dropped. */
     if (live.current.asId !== pressedAs || !live.current.canReact) return;
     setSaid('');
-    if (answer === 'sent') { setSaid(`Reacted with ${readable(key)} as ${as?.name ?? 'your character'}`); return; }
+    if (answer === 'sent') { setSaid(`Reacted with ${readable(key)}${as ? ` as ${as.name}` : ''}`); return; }
     /* The picker opens as it does from React, and gives focus back to it on Close: the modal layer returns focus to what held it as it opened. */
     button.current?.focus();
     setRefusal(answer.refusal);
@@ -130,7 +148,7 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
             }
             const name = yours ? `${readable(r.key)}, ${n}, including yours`
               : left === 0 ? `${readable(r.key)}, ${n}. You have left all ${cap} of your reactions on this post`
-                : `${readable(r.key)}, ${n}. React as ${as.name}`;
+                : `${readable(r.key)}, ${n}. React${as ? ` as ${as.name}` : ''}`;
             return (
               <li key={r.key}>
                 <button

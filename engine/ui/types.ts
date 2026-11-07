@@ -21,7 +21,16 @@ export interface ThemeOption {
   readonly name: string;
   readonly href: string;
   readonly modes: 'both' | 'light' | 'dark';
+  /**
+   * The tokens the picker's miniature draws, per mode, read from the theme's own file at build time (the instance imports it as
+   * `theme.css?preview`, tools/theme-preview.mjs), so a preview never drifts from its theme. A theme that holds one mode only fills
+   * that mode.
+   */
+  readonly preview: { readonly light?: ThemePreview; readonly dark?: ThemePreview };
 }
+
+/** A theme's tokens for one mode, resolved to literals (no `var()`), by token name: `--kb-head-bg`, `--kb-row-1` and the rest of tools/theme-preview.mjs's list. */
+export type ThemePreview = Readonly<Record<string, string>>;
 
 /** A class's look on the reveal's bar and a badge: a color, and a pattern for those who cannot tell colors apart. */
 export interface ClassLook {
@@ -48,11 +57,20 @@ export interface ClassLook {
   readonly marks?: ClassMarks;
 }
 
+/** The map's cells in the React picker's order: Heat and Hype on top, Groan and Calm below (the class cards and the guide draw it; a split must sit side by side in one row). */
+export const MAP: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
+
 export interface ClassMarks {
   readonly label: string;
   readonly earns?: readonly Quadrant[];
   readonly hurts?: readonly Quadrant[];
   readonly calls?: readonly Quadrant[];
+  /**
+   * Two quadrants the class earns from together, by their balance: drawn as two cells each half-filled
+   * toward the other and joined by a bar. The pair must sit side by side on the map (one row of
+   * `MAP` above), and neither is also in `earns`, `hurts` or `calls`.
+   */
+  readonly splits?: readonly [Quadrant, Quadrant];
 }
 
 /**
@@ -73,6 +91,17 @@ export interface UiCopy {
   /** The banner's name, and the line under it. */
   readonly siteName: string;
   readonly siteTagline: string;
+  /**
+   * Who speaks for the board, in the instance's words, so the engine names no one. `roleWord` is the role that runs the board and
+   * signs its moves ("The Boss"); `staffWord` is the staff as a whole, the name of an unsigned Act's author and of the index's
+   * last post by one ("The staff"); `gameWord` is the game in the glass's plain voice, in the middle of a sentence ("the game":
+   * "checked by the game"); `staffBoardTag` is the tag on the staff's board in the index ("Staff post here; you react and spin").
+   * Each is non-empty text; `instanceUiProblems` refuses one that is not.
+   */
+  readonly roleWord: string;
+  readonly staffWord: string;
+  readonly gameWord: string;
+  readonly staffBoardTag: string;
   /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
   /**
@@ -81,6 +110,13 @@ export interface UiCopy {
    * list, an empty entry and a long one.
    */
   readonly marquees?: readonly string[];
+  /**
+   * The footer's 80 by 15 badges, each a pair of short words (the first on the dark half, the second on the light), drawn in the
+   * instance's own pixel face (`--kb-font-badge`) and hidden from assistive tech: decoration the instance may joke in, never a claim.
+   * Absent, the footer holds the credit alone. A pair is at most 12 characters in all, which is what 80 pixels hold; `instanceUiProblems`
+   * refuses an empty list, a pair that is not two words and a pair too wide.
+   */
+  readonly badges?: readonly (readonly [string, string])[];
   /**
    * How a card's effect still happens with motion Off, in Settings' Motion sentence after "A card's
    * effect still happens: ", naming the instance's own card the way its players know it (the engine names
@@ -386,10 +422,16 @@ export interface FrontDoorPost {
   readonly by: string;
   /** BBCode; `{{setting:<path>}}` is filled from the instance's settings, as the guide's are. */
   readonly body: string;
-  /** Counts shown on the post, by reaction key. Static: nothing can be pressed. */
+  /** The counts the post starts with, by reaction key; a visitor's own reactions are added on their screen alone. */
   readonly reactions: Readonly<Record<string, number>>;
-  /** Cards played on the post, drawn by each card's `CardUi.Effect`: its key, who cast it (a cast key), and its config (a seeded card's seed included). */
-  readonly plays?: readonly { readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>> }[];
+  /**
+   * Cards played on the post, each shown by its card's mark and drawn by its `CardUi.Effect`: its key, who cast it (a cast key), its
+   * config (a seeded card's seed included), its layer where the card stacks (1 when none is given), and the counts its play starts with.
+   */
+  readonly plays?: readonly {
+    readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>>;
+    readonly layer?: number; readonly reactions?: Readonly<Record<string, number>>;
+  }[];
 }
 
 /**

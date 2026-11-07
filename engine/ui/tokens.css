@@ -32,10 +32,6 @@
   --kb-vignette-edge: 0;
   --kb-vignette-foot-color: transparent;
   --kb-vignette-foot: 0;
-  /* How much of that strength the vignette keeps where it lies over the board's own column, from 0 (none) to 1 (all of it). The default draws nothing there. */
-  --kb-vignette-column: 0;
-  /* The vignette's mask reads alpha only, so its opaque stop is black in every mode, scaled by --kb-vignette-column inside the column and a theme has no reason to set it (a transparent value would empty the mask). */
-  --kb-vignette-mask: #000;
 
   --kb-font-body: Verdana, Geneva, sans-serif;
   --kb-font-mono: "Courier New", Courier, monospace;
@@ -51,6 +47,12 @@
   --kb-size-heading: 1.171875rem;
   --kb-size-title: 1.40625rem;
   --kb-size-logo: 1.5625rem;
+  /* The name on a phone: the same as anywhere until a theme sets it. */
+  --kb-size-logo-phone: var(--kb-size-logo);
+  --kb-logo-spacing: 0.06em;
+  --kb-logo-leading: 1.2;
+  /* A mini avatar's lift beside its name (mini.css), in em so it follows the text size. */
+  --kb-who-lift: -0.145em;
   --kb-line: 1.45;
   /*
    * How wide the board's own pages may be (the banner, the index, the boards, the threads, the profile,
@@ -91,6 +93,94 @@
   --kb-meter-hi: #fff;
   --kb-meter-dark: #404040;
   --kb-meter-fill: #0a246a;
+
+  /*
+   * The period skin (docs/plans/2026-11-06-board-look-plan.md, Task 1). Each default draws the plain black-and-white board, by
+   * pointing at a token above, so the dark blocks need none of their own: a var() here follows --kb-bg and --kb-fg into dark. A
+   * theme gives the look. A background token may hold a gradient or layers of them, never a url() (tools/check-theme.mjs), and
+   * contrast.ts reads every stop of it.
+   */
+  /* The page's ground: --kb-bg unless a theme tiles it (a layered gradient, drawn from shapes). --kb-bg stays one plain color. */
+  --kb-page-bg: var(--kb-bg);
+  --kb-grid: var(--kb-rule);
+  --kb-frame: var(--kb-rule);
+  --kb-row-1: var(--kb-bg);
+  --kb-row-2: var(--kb-bg);
+  --kb-row-3: var(--kb-bg);
+  --kb-head-bg: var(--kb-bg);
+  --kb-head-fg: var(--kb-fg);
+  /* The ring on the column-title band, which has a ground of its own that the page's focus color may not stand out on. */
+  --kb-head-focus: var(--kb-focus);
+  --kb-head-shadow: none;
+  --kb-bar-bg: var(--kb-bg);
+  --kb-bar-fg: var(--kb-fg);
+  --kb-bar-shadow: none;
+  --kb-banner-bg: var(--kb-bg);
+  --kb-logo-fg: var(--kb-fg);
+  --kb-logo-shadow: none;
+  --kb-nav-bg: var(--kb-bg);
+  --kb-nav-fg: var(--kb-link);
+  --kb-nav-hover: var(--kb-nav-fg);
+  --kb-link-hover: var(--kb-link);
+  --kb-input-bg: var(--kb-bg);
+  --kb-input-edge: var(--kb-rule);
+  --kb-input-shadow: none;
+  --kb-button-bg: var(--kb-bg);
+  --kb-button-edge: var(--kb-rule);
+  --kb-button-fg: var(--kb-fg);
+  --kb-button-fg-shadow: none;
+  --kb-button-case: none;
+  /* The button's decoration: by default none (today's bordered box), a skin draws its highlight, low edge and drop shadow here. */
+  --kb-button-shadow: none;
+  --kb-button-weight: normal;
+  --kb-button-tracking: normal;
+  --kb-button-tracking-small: normal;
+  --kb-button-primary-fg-shadow: none;
+  --kb-button-primary-shadow: inset 0 0 0 1px currentColor;
+  --kb-button-pressed-shadow: inset 1px 2px 3px rgb(0 0 0 / 0.45);
+  --kb-button-radius: 0;
+  /* How much the pressed look dims the button (a filter on face and label alike); contrast.ts holds both at the dimmer value. */
+  --kb-button-pressed-brightness: 0.92;
+  --kb-button-primary-bg: var(--kb-fg);
+  --kb-button-primary-fg: var(--kb-bg);
+  /* A button under the pointer. By default today's inversion; a skin sets a lighter face of its own. A primary button already is
+     the inverse, so its default hover is its own face. */
+  --kb-button-hover-bg: var(--kb-fg);
+  --kb-button-hover-fg: var(--kb-bg);
+  --kb-button-primary-hover-bg: var(--kb-button-primary-bg);
+  --kb-button-primary-hover-fg: var(--kb-button-primary-fg);
+  /* The folder and nav icons (Task 5): black and white, following the mode. */
+  --kb-icon-ink: var(--kb-fg);
+  --kb-icon-back: var(--kb-bg);
+  --kb-icon-front: var(--kb-bg);
+  --kb-icon-new: var(--kb-fg);
+  --kb-icon-hi: var(--kb-bg);
+  --kb-icon-line: var(--kb-fg);
+  --kb-icon-hot: var(--kb-fg);
+  /* The footer's 80x15 badges. */
+  --kb-badge-a: var(--kb-fg);
+  --kb-badge-a-fg: var(--kb-bg);
+  --kb-badge-b: var(--kb-bg);
+  --kb-badge-b-fg: var(--kb-fg);
+  /* The page's scrollbar (scrollbar-color): the board's own pair, a muted thumb on the page's ground. */
+  --kb-scrollbar-thumb: var(--kb-muted);
+  --kb-scrollbar-track: var(--kb-bg);
+  /* The read-only tag beside a board's name, and the mini avatar's ground and edge: the plain board's, until a theme gives them. */
+  --kb-tag-bg: var(--kb-bg);
+  --kb-mini-bg: var(--kb-bg);
+  --kb-mini-rule: var(--kb-rule);
+  /* The footer badge's type size: a pixel face is cut for 8px, and the badge's box (frame.css) is in rem so the pair grow together with the text size. */
+  --kb-size-badge: 0.5rem;
+  /* The footer badges' pixel face: the instance serves it (its glass fonts) and names it here; until it does, the board's mono. */
+  --kb-font-badge: var(--kb-font-mono);
+
+  /* The cannot-display sheet is the browser's own page, so it takes its own colors, not the theme's (engine/ui/frame/unavailable.css). A theme has no reason to set them. */
+  --kb-sheet-bg: #fff;
+  --kb-sheet-fg: #000;
+  --kb-sheet-link: #000;
+  --kb-sheet-rule: #000;
+  --kb-sheet-muted: #555;
+  --kb-font-sheet: Verdana, Tahoma, Geneva, 'DejaVu Sans', sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -115,6 +205,11 @@
     --kb-meter-hi: #b0b0b0;
     --kb-meter-dark: #000;
     --kb-meter-fill: #7fb2ff;
+    --kb-sheet-bg: #1c1c1c;
+    --kb-sheet-fg: #e8e8e8;
+    --kb-sheet-link: #fff;
+    --kb-sheet-rule: #8a8a8a;
+    --kb-sheet-muted: #b0b0b0;
   }
 }
 
@@ -139,4 +234,9 @@
   --kb-meter-hi: #b0b0b0;
   --kb-meter-dark: #000;
   --kb-meter-fill: #7fb2ff;
+  --kb-sheet-bg: #1c1c1c;
+  --kb-sheet-fg: #e8e8e8;
+  --kb-sheet-link: #fff;
+  --kb-sheet-rule: #8a8a8a;
+  --kb-sheet-muted: #b0b0b0;
 }

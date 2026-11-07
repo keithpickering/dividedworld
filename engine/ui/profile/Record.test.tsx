@@ -19,7 +19,7 @@ function world(fake: Fake, posts = 45) {
   for (let i = 1; i < posts; i++) fake.seed.post(thread, spritey, `post number ${i + 1}`, { at: T0 + i * 60_000 });
   fake.seed.card(spritey, act, 'whoops', { at: T0 + DAY });
   fake.seed.reveal(spritey, thread, { class: 'face', at: T0 + 2 * DAY });
-  const sys = fake.seed.thread('the-system', null, 'Turns', '');
+  const sys = fake.seed.thread('announcements', null, 'Turns', '');
   fake.seed.announceTurn(spritey, sys.thread, { at: T0 + 3 * DAY });
   fake.signInAs(me);
   return { spritey, thread };
@@ -55,6 +55,18 @@ describe('the full public record', () => {
     expect(dataRows()[1]).toHaveTextContent('Revealed: Face');
     expect(dataRows()[2]).toHaveTextContent('Played Whoops!');
     expect(screen.getByText(/Page 1 of 3/u)).toBeInTheDocument();
+  });
+
+  test('its table names its roles outright, so the phone\'s block layout cannot drop them', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(fake, w.spritey);
+    const table = await screen.findByRole('table');
+    expect(table).toHaveAttribute('role', 'table');
+    expect(table.querySelectorAll('thead[role="rowgroup"], tbody[role="rowgroup"]')).toHaveLength(2);
+    expect(table.querySelectorAll('tr:not([role="row"]), th:not([role="columnheader"])')).toHaveLength(0);
+    expect(table.querySelectorAll('tbody td:not([role="cell"])')).toHaveLength(0);
+    expect(table.querySelectorAll('tbody td[role="cell"]').length).toBeGreaterThan(0);
   });
 
   test('a "Played" row links to the post the play landed on, not the thread\'s top', async () => {
@@ -115,7 +127,27 @@ describe('the full public record', () => {
     await waitFor(() => expect(dataRows()).toHaveLength(1));
     expect(dataRows()[0]).toHaveTextContent('Played Whoops!');
     expect(screen.getByRole('link', { name: 'Posts' })).not.toHaveAttribute('aria-current');
-    expect(screen.getByText('Cards', { selector: '[aria-current="true"]' })).toBeInTheDocument();
+    expect(screen.getByText('Cards', { selector: '[aria-current="page"]' })).toBeInTheDocument();
+  });
+
+  test('the kinds are small Chrome buttons, and the current one alone is pressed (aria-current)', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(fake, w.spritey, '?kind=post');
+    const nav = await screen.findByRole('navigation', { name: 'Kind of row' });
+    expect(within(nav).getAllByRole('list')).toHaveLength(1);
+    expect(within(nav).getAllByRole('listitem')).toHaveLength(6);
+    const kinds = within(nav).getAllByRole('listitem').map((li) => li.firstElementChild!);
+    expect(kinds).toHaveLength(6);
+    for (const k of kinds) {
+      expect(k).toHaveClass('kb-button');
+      expect(k).toHaveAttribute('data-kb-size', 'small');
+    }
+    const current = kinds.filter((k) => k.hasAttribute('aria-current'));
+    expect(current.map((k) => k.textContent)).toEqual(['Posts']);
+    expect(current[0]).toHaveAttribute('aria-current', 'page');
+    expect(current[0]!.tagName).not.toBe('A');
+    expect(kinds.filter((k) => k.tagName === 'A')).toHaveLength(5);
   });
 
   test('the class filter lists the reveals and announced Turns', async () => {
@@ -202,6 +234,6 @@ describe('the full public record', () => {
     const fake = buildWorld();
     world(fake);
     open(fake, 'nope');
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'The character you requested does not exist.' })).toBeInTheDocument();
   });
 });

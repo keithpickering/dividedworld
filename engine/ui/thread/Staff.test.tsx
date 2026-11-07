@@ -12,7 +12,7 @@ beforeEach(() => localStorage.clear());
 function announcements() {
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance);
-  const thread = fake.seed.thread('the-system', null, 'Announcements', 'The Director has the floor.').thread;
+  const thread = fake.seed.thread('announcements', null, 'Announcements', 'The Director has the floor.').thread;
   const say = fake.seed.staffPost(w.director, thread, 'Good morning, everyone. Toast is non-negotiable.', { at: fake.clock.now() - 5000 });
   fake.signInAs(w.me);
   return { fake, w, thread, say };
@@ -35,7 +35,7 @@ describe('the Boss on The System\'s board', () => {
     renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     const post = (await screen.findByText(/This board has been IMPROVED/u)).closest('article')!;
     expect(post).toHaveAttribute('data-kb-kind', 'move');
-    expect(within(post).getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
+    expect(within(post).getByText('The Boss renamed this board')).toBeInTheDocument();
     expect(await within(post).findByRole('group', { name: 'About The Director' })).toHaveTextContent('ADMINISTRATOR');
     /* Reactions are the Act's own, like any post's. */
     expect(await within(post).findByRole('button', { name: /^Fire, 9\./u })).toBeInTheDocument();

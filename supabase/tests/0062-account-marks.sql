@@ -25,7 +25,7 @@ begin
   -- A first call makes the row and sets the mark, leaving the other mark and the preferences alone.
   said := see_alerts(t0);
   if (said ->> 'seen')::timestamptz is distinct from t0 then raise exception 'see_alerts answers the mark: %', said; end if;
-  if (select (alerts_seen_at, settlement_seen, theme) from account_preferences) is distinct from (t0, null::timestamptz, 'system'::text) then
+  if (select (alerts_seen_at, settlement_seen, theme) from account_preferences) is distinct from (t0, null::timestamptz, 'default'::text) then
     raise exception 'a first see_alerts sets that mark alone';
   end if;
   -- Later moves it forward.

@@ -142,7 +142,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
               <p className="kb-settled-card-words">
                 {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement {pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).they} score{pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).s} as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
                 {turn.announced
-                  ? <>The System announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <Link to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</Link> : 'its board'}.</>
+                  ? <>{pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).Their} own Promo announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <Link to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</Link> : 'the board'}.</>
                   : 'It was a silent Turn: no one else was told.'}
               </p>
             </section>

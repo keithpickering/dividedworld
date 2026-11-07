@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Character } from '../data/api.ts';
+import { widthOf } from '../test-width.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { monthYear, shortDate } from './dates.ts';
 import { Postbit, Signature, type PostbitPerson } from './Postbit.tsx';
@@ -17,6 +18,29 @@ const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): 
 });
 const show = (p: PostbitPerson, layout: 'side' | 'stacked' = 'side') => renderInWorld(<Postbit person={p} layout={layout} />);
 const slot = () => document.querySelector('.kb-postbit-avatar')!;
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('the stacked postbit', () => {
+  test('drops Posts and Joined, which the profile carries a tap away', () => {
+    show(person(), 'stacked');
+    const bit = screen.getByRole('group', { name: 'About Pipewrench' });
+    expect(bit).not.toHaveTextContent(/Posts|Joined/u);
+    expect(bit).toHaveTextContent('Professional Wrench');
+  });
+
+  test('a phone stacks whatever the reader chose, so it drops them too, and a wide side by side keeps them', () => {
+    widthOf(390);
+    show(person(), 'side');
+    expect(screen.getByRole('group')).not.toHaveTextContent(/Posts|Joined/u);
+  });
+
+  test('a wide window keeps them in the side by side layout', () => {
+    widthOf(1440);
+    show(person(), 'side');
+    expect(screen.getByRole('group')).toHaveTextContent('Posts: 212');
+  });
+});
 
 describe('the postbit', () => {
   test('name, title, posts and the month joined, never the day', () => {
@@ -170,6 +194,21 @@ describe('a staff character\'s postbit', () => {
     expect(bit).toHaveTextContent('Posts: 212');
     expect(within(bit).queryByRole('img', { name: /^Rank / })).toBeNull();
     expect(bit.querySelector('.kb-postbit-rank')).toBeNull();
+  });
+
+  test('draws no pips whatever the ranks are, and shows its name, badges, title, avatar, Posts and Joined', () => {
+    widthOf(1440);
+    show(person({ standing: 650 }, { name: 'The Director', title: 'Head of Board Operations', staff: 'director', office: 'boss' }));
+    const bit = screen.getByRole('group', { name: 'About The Director' });
+    expect(bit.querySelector('.kb-pips')).toBeNull();
+    expect(bit.querySelector('.kb-pip')).toBeNull();
+    expect(bit.querySelector('.kb-postbit-rank-name')).toBeNull();
+    expect(within(bit).getByRole('link', { name: 'The Director' })).toBeInTheDocument();
+    expect(within(bit).getByText('ADMINISTRATOR')).toBeInTheDocument();
+    expect(bit).toHaveTextContent('Head of Board Operations');
+    expect(bit.querySelector('.kb-postbit-avatar')).not.toBeNull();
+    expect(bit).toHaveTextContent('Posts: 212');
+    expect(bit).toHaveTextContent('Joined Oct 2026');
   });
 
   test('a Mod Bot wears MODERATOR', () => {

@@ -5,8 +5,8 @@ const EMAIL = 'demo-player@example.test';
 const TEST_CODE = '123456';
 
 test('signs out, then signs in again with a code, by keyboard alone', async ({ page }) => {
-  await page.goto('/settings');
-  await page.getByRole('radiogroup', { name: 'The board' }).getByRole('radio', { name: 'White on black' }).focus();
+  await page.goto('/settings?section=board');
+  await page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'Dark' }).focus();
   await page.keyboard.press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
   await expect(page.getByText('Saved to your account.')).toBeVisible();
@@ -34,19 +34,19 @@ test('signs out, then signs in again with a code, by keyboard alone', async ({ p
 });
 
 test('a theme chosen in Settings is still there after a reload', async ({ page }) => {
-  await page.goto('/settings');
-  await page.getByRole('radiogroup', { name: 'The board' }).getByRole('radio', { name: 'White on black' }).focus();
+  await page.goto('/settings?section=board');
+  await page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'Dark' }).focus();
   await page.keyboard.press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
   await expect(page.getByText('Saved to your account.')).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('radiogroup', { name: 'The board' }).getByRole('radio', { name: 'White on black' })).toBeChecked();
+  await expect(page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'Dark' })).toBeChecked();
   await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
 });
 
 test('Register and Invites fit a 320px phone with no sideways scroll', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 640 });
-  for (const path of ['/register', '/invites', '/settings', '/settings?section=account']) {
+  for (const path of ['/register', '/invites', '/settings', '/settings?section=board', '/settings?section=account']) {
     await page.goto(path);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     const wide = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);

@@ -1,5 +1,6 @@
 import { lazy, useEffect } from 'react';
 import { act, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, test } from 'vitest';
 import type { EffectProps, CardUi } from '../cards/types.ts';
 import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
@@ -38,13 +39,37 @@ describe('the front door', () => {
     expect(screen.getByText('Test Talent')).toBeInTheDocument();
   });
 
-  test('the reactions are chips with readable names, never buttons', () => {
+  test('the reactions are the thread\'s meta tiles, each post with React, and nothing in the post\'s foot', () => {
     draw();
-    expect(screen.queryByRole('button', { name: /react/i })).toBeNull();
-    const chips = screen.getAllByRole('listitem').filter((li) => li.classList.contains('kb-chip'));
-    expect(chips).toHaveLength(3);
-    expect(screen.getByText('Tomato, 3')).toBeInTheDocument();
-    expect(screen.getByText('Fire, 2')).toBeInTheDocument();
+    expect(screen.queryByRole('listitem', { name: /./ })).toBeNull();
+    expect(document.querySelectorAll('.kb-chip')).toHaveLength(0);
+    expect(screen.getAllByRole('button', { name: 'React' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Tomato, 3. React' })).toHaveClass('kb-meta-tile');
+    expect(screen.getByRole('button', { name: 'Fire, 2. React' })).toBeInTheDocument();
+    expect(document.querySelector('.kb-act-foot')).toBeNull();
+  });
+
+  test('a reaction the visitor leaves lands on their screen: its count grows and it is theirs', async () => {
+    draw();
+    await userEvent.click(screen.getByRole('button', { name: 'Fire, 2. React' }));
+    expect(await screen.findByRole('button', { name: 'Fire, 3, including yours' })).toBeInTheDocument();
+    await userEvent.click(screen.getAllByRole('button', { name: 'React' })[1]!);
+    await userEvent.click(within(screen.getByRole('dialog', { name: /^React to Bo/ })).getByRole('button', { name: /^Tea, / }));
+    expect(await screen.findByRole('button', { name: 'Tea, 2, including yours' })).toBeInTheDocument();
+  });
+
+  test('a post with a play has its mark on the date row, and the mark opens the Lens with the card\'s controls, no Spin and no Go to post', async () => {
+    draw();
+    const mark = within(document.querySelector('[data-kb-seq="2"] .kb-act-meta') as HTMLElement).getByRole('button', { name: /Whoops/ });
+    expect(document.querySelectorAll('.kb-mark')).toHaveLength(1);
+    await userEvent.click(mark);
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+    expect(within(lens).getByRole('button', { name: 'Hold to scrub' })).toBeInTheDocument();
+    await userEvent.click(within(lens).getByRole('button', { name: '1 play · Ann' }));
+    expect(within(lens).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+    expect(within(lens).queryByRole('link', { name: 'Go to post' })).toBeNull();
+    expect(within(lens).queryByRole('button', { name: 'As it landed' })).toBeNull();
+    expect(within(lens).getByRole('button', { name: 'Fire, 1. React' })).toBeInTheDocument();
   });
 
   test('a post with a play of a card draws that card\'s effect around its words, once, and not on the other post', () => {
@@ -60,9 +85,9 @@ describe('the front door', () => {
     expect(seen!.nameOf(seen!.plays[0]!.caster)).toBe('Ann');
   });
 
-  test('the card\'s controls from show appear under the post', () => {
+  test('the card\'s controls are never drawn under the post', () => {
     draw();
-    expect(screen.getByRole('button', { name: 'Hold to scrub' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Hold to scrub' })).toBeNull();
   });
 
   test('save and release refuse without asking anyone', async () => {
@@ -94,7 +119,7 @@ describe('the front door', () => {
   test('the screen calls no API method of its own, now or later', async () => {
     /* Every method the backend has is wrapped and named when called; what the frame's providers call around a bare
        element is the baseline, and the front door may add none, even calls made after the first render settles. */
-    const called = async (element: React.ReactElement) => {
+    const called = async (element: React.ReactElement, use: () => Promise<void> = async () => {}) => {
       const fake = buildWorld();
       const names = new Set<string>();
       for (const [key, value] of Object.entries(fake)) {
@@ -102,11 +127,23 @@ describe('the front door', () => {
       }
       const { unmount } = renderIn(fake, element, { cards: [test_card] });
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+      await use();
+      await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
       unmount();
       return names;
     };
     const baseline = await called(<p>nothing</p>);
-    const withDoor = await called(<FrontDoor />);
+    const withDoor = await called(<FrontDoor />, async () => {
+      /* A reaction, a pick and an open Lens with a reaction to the play in it: none of them asks anyone. */
+      await userEvent.click(screen.getByRole('button', { name: 'Fire, 2. React' }));
+      await userEvent.click(screen.getAllByRole('button', { name: 'React' })[1]!);
+      await userEvent.click(within(screen.getByRole('dialog', { name: /^React to Bo/ })).getByRole('button', { name: /^Tea, / }));
+      await userEvent.click(screen.getByRole('button', { name: /Whoops/ }));
+      const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+      await userEvent.click(within(lens).getByRole('button', { name: '1 play · Ann' }));
+      await userEvent.click(within(lens).getByRole('button', { name: 'Fire, 1. React' }));
+      await within(lens).findByRole('button', { name: 'Fire, 2, including yours' });
+    });
     expect([...withDoor].filter((n) => !baseline.has(n))).toEqual([]);
   });
 

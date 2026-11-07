@@ -1,6 +1,6 @@
 /**
  * The index: the boards, each with its thread count and its latest post. The ordinary board and
- * The System's, whose note says plainly that only The System posts there. A visitor who is not
+ * the staff's, whose tag (`UiCopy.staffBoardTag`) says plainly that only the staff post there. A visitor who is not
  * signed in is asked to sign in (the API answers reads only for a session).
  *
  * There is no NEW here: a board's count of unread threads would need a read of every thread on it
@@ -9,7 +9,7 @@
 import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, IndexPage } from '../data/api.ts';
-import { Ago, Mini } from '../mini.tsx';
+import { Ago, Who } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { spanWords } from '../characters/format.ts';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
@@ -19,7 +19,7 @@ import './index.css';
 
 /** The index draws its document (the forum-load plan, Task 13): the router loaded it, so the first frame is whole. Signed out, the loader's marker is the front door. */
 export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
-  const { settings } = useKayfa();
+  const { settings, ui } = useKayfa();
   const page = isSignedOutDoc(doc) ? null : doc;
   const characters = useMemo<ReadonlyMap<Id, Character>>(() => new Map((page?.characters ?? []).map((c) => [c.id, c])), [page]);
 
@@ -45,18 +45,20 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
               <tr key={b.id} role="row" className="kb-board-row" data-kb-system={b.isSystem ? '' : undefined}>
                 <td role="cell" className="kb-board-main">
                   <Link to={`/b/${b.slug}`} className="kb-board-link"><b>{b.name}</b></Link>
-                  {b.isSystem && <> <span className="kb-readonly-tag">The System posts; you react and spin</span></>}
+                  {b.isSystem && <> <span className="kb-readonly-tag">{ui.copy.staffBoardTag}</span></>}
                   <br />
                   <span className="kb-small kb-muted">{b.description}</span>
                 </td>
                 <td role="cell" className="kb-board-threads kb-num"><span className="kb-num">{b.threadCount}</span><span className="kb-board-unit"> threads</span></td>
-                <td role="cell" className="kb-board-last kb-small">
-                  {b.lastAt === null ? <span className="kb-muted">None yet</span> : (
+                <td role="cell" className="kb-board-last">
+                  {b.lastAt === null ? <><span className="kb-board-sep" aria-hidden="true"> · </span><span>None yet</span></> : (
                     <>
+                      <span className="kb-board-sep" aria-hidden="true"> · </span>
                       <span className="kb-board-last-label">last: </span>
                       {b.lastCharacter
-                        ? <><Mini character={who} name={who?.name ?? 'A'} /><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></>
-                        : <span className="kb-system-name">The System</span>}
+                        ? <Who character={who} name={who?.name ?? 'A'}><Link to={`/c/${encodeURIComponent(b.lastCharacter)}`}>{who?.name ?? 'A character'}</Link></Who>
+                        : <span className="kb-system-name">{ui.copy.staffWord}</span>}
+                      <span className="kb-board-sep" aria-hidden="true">, </span>
                       <br />
                       {b.lastThread
                         ? <Link to={`/t/${b.lastThread}`} className="kb-muted"><Ago at={b.lastAt} /><span className="kb-visually-hidden"> — latest post in {b.name}</span></Link>

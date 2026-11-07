@@ -39,3 +39,8 @@ test('a phone row of one card and a peek shows one card, and the next after one 
 test('a viewport narrower than one card still names the card it starts in, never a range backwards', () => {
   assert.deepEqual(shownRange(0, 100, CARD, GAP, 5), { first: 1, last: 1 });
 });
+
+test('a phone row of six cards, scrolled to the fifth with fractional card widths, counts it as 5, not 6', () => {
+  // 355px viewport, cards calc(100% - 64px) = 291.375px: the fifth card starts at 4 * 305.375 = 1221.5, which the scroll reports as 1222.
+  assert.deepEqual(shownRange(1222, 355, 291.375, 14, 6), { first: 5, last: 5 });
+});

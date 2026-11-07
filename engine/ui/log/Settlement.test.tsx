@@ -25,7 +25,7 @@ function world(o: { hooTurns?: boolean } = {}) {
   const me = seed.account('me');
   const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2), pronouns: PRONOUN_PRESETS.she });
   const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3), pronouns: PRONOUN_PRESETS.they });
-  const turns = seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
+  const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
   const { thread } = seed.thread('general', pipe, 'a thread', 'Opening.', { at: at(27) });
   const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
   seed.wallet(me, 290);
@@ -99,7 +99,7 @@ describe('the settlement\'s summary', () => {
     const turn = screen.getByRole('region', { name: 'Turn' });
     expect(within(turn).getByText('Heel')).toBeInTheDocument();
     expect(within(turn).getByText('Face')).toBeInTheDocument();
-    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. The System announced it, with the old class, in Season 1: Who Turned.');
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. Her own Promo announced it, with the old class, in Season 1: Who Turned.');
   });
 
   test('a they/them character\'s Turn line agrees with the plural: "they score as", never "they scores"', async () => {

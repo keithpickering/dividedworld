@@ -15,3 +15,6 @@ export function chooseInstance(profile: string | undefined): Instance {
   if (profile === 'playtest') return playtestInstance;
   throw new Error(`KAYFABB_PROFILE is "${profile}"; the profiles are "playtest" and none`);
 }
+
+/** The deployed instance's email theme, chosen here beside the instance so the engine never imports it. */
+export { mailTheme } from '../../../instances/divided-world/mail/index.ts';

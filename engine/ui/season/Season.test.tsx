@@ -28,7 +28,7 @@ function world() {
   const bossA = seed.staff('lady-ledger', 'Lady Ledger', 'boss', { at: at(1) });
   const bossB = seed.staff('mister-spreadsheet', 'Mister Spreadsheet', 'boss', { at: at(1) });
   /* The announcements thread is The System's board's first: where a Boss speaks. */
-  const announcements = seed.thread('the-system', null, 'Announcements', 'Welcome.', { at: at(1) });
+  const announcements = seed.thread('announcements', null, 'Announcements', 'Welcome.', { at: at(1) });
   const said = seed.thread('general', spritey, 'here it is', 'Fine.', { at: at(3) });
   seed.reveal(spritey, said.thread, { at: at(3, 13), class: 'face' });
   seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });

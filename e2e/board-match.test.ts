@@ -117,6 +117,18 @@ describe('compareBoard: the rest of the rules', () => {
     expect(compareBoard(board, moved('line', { width: 30 }), across).map((m) => m.field)).toEqual(['width']);
   });
 
+  test('center compares the box\'s horizontal center and its y, so a box whose width follows its words holds its place however long the words are', () => {
+    const center = manifest(lm('line', { box: 'center' }));
+    // Same center (400), width 600 on the board and 400 in the build: x moves by 100 and no mismatch is named.
+    expect(compareBoard(board, moved('line', { x: 100, width: -200 }), center)).toEqual([]);
+    expect(compareBoard(board, moved('line', { height: 90 }), center)).toEqual([]);
+    // Poisoned: the center is 20px off.
+    const off = compareBoard(board, moved('line', { x: 20 }), center);
+    expect(off.map((m) => m.field)).toEqual(['center-x']);
+    expect(off[0]!.message).toContain('center-x is 420 in the build, 400 on the board');
+    expect(compareBoard(board, moved('line', { y: 20 }), center).map((m) => m.field)).toEqual(['y']);
+  });
+
   test('position compares x and y only; height compares y and height only; none compares no box', () => {
     const wide = moved('line', { width: 200, height: 50 });
     expect(compareBoard(board, wide, manifest(lm('line', { box: 'position' })))).toEqual([]);
@@ -345,6 +357,30 @@ describe('boardsToRun: the folder\'s boards against the manifests and the pendin
 
   test('only .html files are boards', () => {
     expect(boardsToRun(['01-main.html', 'README.md', 'notes.txt'], ['01-main'], {}).problems).toEqual([]);
+  });
+
+  describe('a colors-only board is compared by web/contrast.test.tsx and never has a manifest', () => {
+    const only = { '03-react': 'colors only' };
+    test('is neither run nor pending, and a complete list has no problem', () => {
+      expect(boardsToRun(folder, ['01-main', '02-phone'], {}, [], only)).toEqual({ run: ['01-main', '02-phone'], pending: [], problems: [] });
+    });
+    test('one that gains a manifest is a problem', () => {
+      const r = boardsToRun(folder, ['01-main', '02-phone', '03-react'], {}, [], only);
+      expect(r.problems).toHaveLength(1);
+      expect(r.problems[0]).toContain('03-react');
+      expect(r.problems[0]).toContain('colors only');
+    });
+    test('one that is also pending is a problem, and one that names no board file is too', () => {
+      expect(boardsToRun(folder, ['01-main', '02-phone'], { '03-react': 'Part 2' }, [], only).problems.some((p) => p.includes('03-react') && /both/u.test(p))).toBe(true);
+      expect(boardsToRun(folder, ['01-main', '02-phone'], { '03-react': 'Part 2' }, [], { '99-ghost': 'x' }).problems.some((p) => p.includes('99-ghost'))).toBe(true);
+    });
+    test('a board named in neither list still has to have a manifest', () => {
+      expect(boardsToRun(folder, ['01-main'], {}, [], only).problems.some((p) => p.includes('02-phone'))).toBe(true);
+    });
+    test('a screen may name a colors-only board', () => {
+      expect(screensWithoutBoards([{ name: 's', board: '03-react' }], ['01-main'], {}, only)).toEqual([]);
+      expect(screensWithoutBoards([{ name: 's', board: '03-react' }], ['01-main'], {})).toHaveLength(1);
+    });
   });
 });
 

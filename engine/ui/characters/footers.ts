@@ -20,12 +20,12 @@ export function newCharacterFooter(o: { readonly name: string; readonly classNam
   const public_ = "That stays public, and can't be taken back.";
   if (o.timing === 'now') {
     if (o.loudness === 'silent') return `${who} is on the board as soon as you make ${w.them}. Nobody is told, and ${w.their} first post is ${w.their} entrance. ${stays}`;
-    if (o.loudness === 'announced') return `${who} is on the board as soon as you make ${w.them}, and The System announces ${w.them}. ${stays}`;
-    return `${who} is on the board as soon as you make ${w.them}, and The System announces ${w.them} ${o.className ? `as ${withArticle(o.className)}` : 'with the class you choose'}. ${public_}`;
+    if (o.loudness === 'announced') return `${who} is on the board as soon as you make ${w.them}, and ${w.their} own Promo announces ${w.them}. ${stays}`;
+    return `${who} is on the board as soon as you make ${w.them}, and ${w.their} own Promo announces ${w.them} ${o.className ? `as ${withArticle(o.className)}` : 'with the class you choose'}. ${public_}`;
   }
   const waits = `${who} waits, seen by no one but you, and`;
   if (o.loudness === 'silent') return `${waits} appears at the next settlement without a word. ${stays}`;
-  if (o.loudness === 'announced') return `${waits} debuts at the next settlement, announced by The System. ${stays}`;
+  if (o.loudness === 'announced') return `${waits} debuts at the next settlement, announced in ${w.their} own Promo. ${stays}`;
   return `${waits} debuts at the next settlement, announced ${o.className ? `as ${withArticle(o.className)}` : 'with the class you choose'}. ${public_}`;
 }
 
@@ -40,6 +40,6 @@ export function debutFooter(o: { readonly name: string; readonly timing: FooterT
 }
 
 /** The Reveal modal's line. */
-export function revealFooter(): string {
-  return 'The reveal is checked by The System and posted at once.';
+export function revealFooter(gameWord: string): string {
+  return `The reveal is checked by ${gameWord} and posted at once.`;
 }

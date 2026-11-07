@@ -1,0 +1,24 @@
+{
+  "outputs": {
+    "coin.png": "3121bbfbd07c3c07b9137ddb0901c1a50f0fe3b7e85dcfae52364d67db028426",
+    "cut-button.png": "c60c041cd5ca5b94f79d124bde1d54c645431d336d8ba4f5db228f6b48f0c1c1",
+    "cut-panel.png": "fd6ca6b8c1bcc2a3858e1000fa6e15be81009064ad5a4a1943eecd8d51d4b5f1",
+    "fonts/Anton-Regular.woff2": "16961512e96b9fa147fc85c872d69443efa079a0898db864c4e7d6bd5a50d984",
+    "fonts/BarlowCondensed-Bold.woff2": "bc4900784292a634e7fc6273262f357ca0782d3799aa1a19b1c5e2afbc366b51",
+    "fonts/BarlowCondensed-Medium.woff2": "43c8ef42ec0c2174b35d5f3f1dff0299323a0a3c4ad1945076566d79c6837bf3",
+    "fonts/BarlowCondensed-SemiBold.woff2": "fcd4e2bdfe5a2a0b0f526aac29671361f24d2b4afc11fec3d49574224409c94f",
+    "smoke.jpg": "68204ddc5d2b44627bbeac16a67637a4d1fb8aca261b9b5456c0f67e671a5bca"
+  },
+  "sources": {
+    "fonts/Anton-Regular.woff2": "16961512e96b9fa147fc85c872d69443efa079a0898db864c4e7d6bd5a50d984",
+    "fonts/BarlowCondensed-Bold.woff2": "bc4900784292a634e7fc6273262f357ca0782d3799aa1a19b1c5e2afbc366b51",
+    "fonts/BarlowCondensed-Medium.woff2": "43c8ef42ec0c2174b35d5f3f1dff0299323a0a3c4ad1945076566d79c6837bf3",
+    "fonts/BarlowCondensed-SemiBold.woff2": "fcd4e2bdfe5a2a0b0f526aac29671361f24d2b4afc11fec3d49574224409c94f",
+    "glass.json#keys.standard.--kb-glass-field": "0f354b955168077e5192e1d28f9c7033db6ee71b420484983e2ddf1b95fbb8f2",
+    "glass.json#keys.standard.--kb-glass-ground": "74559cb9c58b8cf0e1ef91ed9d37d42465b6fc0431ed5e5e72ae6047df9e2a71",
+    "glass.json#keys.standard.--kb-glass-neon": "0c4ae1ed8e0bc970b2f87c5abc32a51f2b0b4569ba5a7dba0bef4f7a774c604b",
+    "glass.json#smoke.field.layers": "a59e6e6062833e403b18395d82fc220787f091d257df0fd0c6121884a7a563d5",
+    "glass.json#smoke.recipes.page": "e7a606224ea76b17d6325061b3244571b4de2c2aefd54d117a8c372d99711463",
+    "icon/coin.svg": "d5d623d59e43d92c240cc076bbf29efa0d6ff47f2747fa63ea3e0a158859be36"
+  }
+}

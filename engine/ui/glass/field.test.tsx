@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FieldLayer } from '../types.ts';
-import { createRasters, GRACE_MS, rasterize, rasterSize, type Rasterize } from './field.ts';
+import { createRasters, fieldLayerSvg, GRACE_MS, rasterize, rasterSize, type Rasterize } from './field.ts';
 
 const layer = (seed: number, travel = 100): FieldLayer => ({ alpha: [0, 0, 0, 1, 0], frequency: [0.01, 0.02], octaves: 2, seed, blur: 5, drift: { seconds: 30, travel } });
 const WIDE = [layer(1, 80), layer(2, 120), layer(3, 160)];
@@ -278,5 +278,16 @@ describe('the real rasterizer', () => {
     expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1440, 900);
     expect(url).toBe('blob:test/1');
     expect(revoked).toEqual(['blob:test/0']);
+  });
+
+  it('draws the SVG fieldLayerSvg returns, so the mail bake and the page draw a layer one way', async () => {
+    stage({ getContext: () => ({ drawImage: vi.fn() }), toBlob: (done: (b: Blob) => void) => done(new Blob()), width: 0, height: 0 });
+    const blobs: Blob[] = [];
+    vi.mocked(URL.createObjectURL).mockImplementation((b) => { blobs.push(b as Blob); return `blob:test/${blobs.length - 1}`; });
+    const l = layer(7);
+    await rasterize(l, VIEW, 1);
+    const drawn = await blobs[0]!.text();
+    expect(drawn).toContain('<feTurbulence');
+    expect(drawn).toBe(fieldLayerSvg(l, VIEW, rasterSize(VIEW, 1)));
   });
 });

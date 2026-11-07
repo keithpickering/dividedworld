@@ -39,7 +39,7 @@ const instance: Instance = {
   system: testSystem,
   boards: [
     { slug: 'general', name: 'General', description: 'Anything.' },
-    { slug: 'the-system', name: 'The System', description: 'Its words.', system: true },
+    { slug: 'announcements', name: 'The System', description: 'Its words.', system: true },
   ],
   ranks: [{ name: 'Jobber', from: 0 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
@@ -97,10 +97,10 @@ describe('refusing a post in the server\'s words', () => {
   });
   test('The System\'s board takes no post and no new thread', async () => {
     const { fake, anaFace } = world();
-    const { thread } = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
-    const words = 'only The System posts here; spin a thread from what it said';
+    const { thread } = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
+    const words = 'only the staff post here; spin a thread from what they said';
     expect(await fake.post(thread, anaFace, 'hello', null)).toEqual(refused(words));
-    expect(await fake.startThread('the-system', anaFace, 'Mine', 'hello')).toEqual(refused(words));
+    expect(await fake.startThread('announcements', anaFace, 'Mine', 'hello')).toEqual(refused(words));
   });
   test('a waiting character, a retired one, and one that is not yours', async () => {
     const { fake, ana, thread, boFace, anaFace } = world();
@@ -201,16 +201,16 @@ describe('reading a thread by seq', () => {
     const { fake } = world();
     fake.clock.advance(DAY);
     const opened = fake.clock.now();
-    const said = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
+    const said = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
     fake.seed.post(said.thread, null, 'seeded long ago', { at: opened - 10 * DAY });
-    const system = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    const system = (await fake.boards()).find((b) => b.slug === 'announcements')!;
     const listed = (await fake.threads(system.id, { offset: 0, limit: 10 })).threads.find((t) => t.id === said.thread)!;
     expect(listed.lastSeq).toBe(2);
     expect(Date.parse(listed.lastAt)).toBe(opened);
   });
   test('a spin from The System\'s board opens on the players\' board', async () => {
     const { fake, anaFace } = world();
-    const said = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
+    const said = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
     const spun = must(await fake.spin(said.act, anaFace, 'About that', ''));
     expect(spun.thread.board).toBe(await boardId(fake, 'general'));
     expect(spun.thread.originActId).toBe(said.act);
@@ -259,12 +259,12 @@ describe('reacting', () => {
   });
   test('The System\'s own Acts can be reacted to', async () => {
     const { fake, anaFace } = world();
-    const said = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
+    const said = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
     expect(await fake.react(said.act, anaFace, 'fire')).toMatchObject({ ok: true });
   });
   test('tallies are counts of kinds, and converge whatever order the live events come in', async () => {
     const { fake, anaFace, boFace, ana, bo } = world();
-    const { thread, act: opener } = fake.seed.thread('the-system', null, 'Tally', 'Settled.');
+    const { thread, act: opener } = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
     const seen: Record<string, number> = {};
     const stop = fake.subscribeThread(thread, {
       onTally: (act, tally: Tally) => {
@@ -479,7 +479,7 @@ describe('what the public reads never prove', () => {
     expect(await fake.classReveals([anaFace])).toEqual([
       { act: unmasked.id, character: anaFace, class: 'face', at: unmasked.createdAt, via: 'act', thread },
     ]);
-    const said = fake.seed.thread('the-system', null, 'Turns', '').thread;
+    const said = fake.seed.thread('announcements', null, 'Turns', '').thread;
     const tally = fake.seed.announceTurn(anaFace, said, { was: 'face', since: '2026-09-01T00:00:00.000Z' });
     const announced = fake.seed.announceTurn(anaFace, said, { was: 'heel' });
     expect(await fake.turnsAnnounced([anaFace])).toEqual([
@@ -489,8 +489,8 @@ describe('what the public reads never prove', () => {
   });
   test('an unmask is refused on The System\'s board, and past 200 characters', async () => {
     const { fake, anaFace, thread } = world();
-    const sys = fake.seed.thread('the-system', null, 'Tally', '').thread;
-    expect(await fake.unmask(anaFace, sys, '')).toEqual(refused('only The System posts here; spin a thread from what it said'));
+    const sys = fake.seed.thread('announcements', null, 'Tally', '').thread;
+    expect(await fake.unmask(anaFace, sys, '')).toEqual(refused('only the staff post here; spin a thread from what they said'));
     expect(await fake.unmask(anaFace, thread, 'x'.repeat(201))).toEqual(refused('the message is at most 200 characters', 'message'));
   });
   test('avatars are URLs, a seeded one may be a data: URL', async () => {
@@ -676,14 +676,14 @@ describe('the account', () => {
   test('preferences have defaults and are set whole or in part', async () => {
     const { fake } = world();
     const glass = { smoke: 'full', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } as const;
-    expect(await fake.preferences()).toEqual({ theme: 'system', postbit: 'side', motion: 'system', ...glass });
-    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'reduce', ...glass } });
+    expect(await fake.preferences()).toEqual({ theme: 'default', mode: 'system', postbit: 'side', motion: 'system', ...glass });
+    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: true, value: { theme: 'default', mode: 'system', postbit: 'side', motion: 'reduce', ...glass } });
     expect(await fake.setPreferences({ theme: 'Loud!' })).toEqual(refused('a theme is named in lowercase words joined by hyphens'));
   });
   test('the glass\'s three preferences are set and kept as the server keeps them, and refused in its words', async () => {
     const { fake } = world();
-    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
-    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
+    expect(await fake.setPreferences({ smoke: 'off' })).toEqual({ ok: true, value: { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'standard', textSize: 100, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
+    expect(await fake.setPreferences({ contrast: 'high', textSize: 200 })).toEqual({ ok: true, value: { theme: 'default', mode: 'system', postbit: 'side', motion: 'system', smoke: 'off', contrast: 'high', textSize: 200, tilt: 'off', cardsMet: [], alertsSeenAt: null, settlementSeen: null, toasts: null, welcomedAt: null, tips: 'on', tipsSeen: [] } });
     /* A fresh read is what the next load sees. */
     expect(await fake.preferences()).toMatchObject({ smoke: 'off', contrast: 'high', textSize: 200 });
     expect(await fake.setPreferences({ smoke: 'thick' as never })).toEqual(refused('the smoke is full, low or off'));
@@ -910,7 +910,7 @@ describe('what a list row shows', () => {
     const mine = fake.seed.post(thread, anaFace, 'Mine.');
     expect(await place(fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' } });
     const unborn = fake.seed.staff('ghost', 'Not Yet', 'mod', { debuted: false });
-    const sys = fake.seed.thread('the-system', null, 'Notice').thread;
+    const sys = fake.seed.thread('announcements', null, 'Notice').thread;
     const theirs = fake.seed.staffPost(unborn, sys, 'Hidden.');
     expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null } });
     expect(await place(fake.seed.reach(boFace, 'thread', thread, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'thread', id: thread, title: 'Hello' } });
@@ -1295,7 +1295,7 @@ describe('one board', () => {
     const { threadCount: _c, lastAt: _a, lastCharacter: _l, lastThread: _t, ...row } = general;
     expect(await fake.board('general')).toEqual(row);
     expect(await fake.board(general.id)).toEqual(row);
-    expect((await fake.board('the-system'))?.isSystem).toBe(true);
+    expect((await fake.board('announcements'))?.isSystem).toBe(true);
     expect(await fake.board('nowhere')).toBeNull();
   });
 });
@@ -1388,7 +1388,7 @@ describe('a finished season\'s results and its announcements', () => {
     expect((await fake.act(second))!.payload).toEqual({ what: 'turn', was: 'heel', class: 'face' });
     expect((await fake.thread(a.thread))?.title).toBe('Promos 1');
     expect((await fake.season())?.turnsThread).toBe(a.thread);
-    const board = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    const board = (await fake.boards()).find((b) => b.slug === 'announcements')!;
     expect((await fake.threads(board.id, { offset: 0, limit: 20 })).threads.map((t) => t.id)).toContain(a.thread);
     expect(() => fake.seed.announce(anaFace, 'debut', { was: 'face' })).toThrow('a debut has no class it was');
   });
@@ -1771,7 +1771,7 @@ describe('presence', () => {
     const { fake, anaFace, thread } = world();
     await fake.here({ kind: 'thread', thread }, anaFace);
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
-    const system = (await fake.boards()).find((b) => b.slug === 'the-system')!;
+    const system = (await fake.boards()).find((b) => b.slug === 'announcements')!;
     expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
     expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
     const online = await fake.here({ kind: 'index' }, null);

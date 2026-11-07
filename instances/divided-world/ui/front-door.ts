@@ -5,9 +5,12 @@
  * it is absent by design. The cast are made-up names with no profile behind them, drawn with their initials until they have avatars.
  *
  * `{{setting:<path>}}` marks a number a retune would change; the engine fills it from the settings in force, so no number is typed here.
- * `rank` is an index into the instance's ranks (../index.ts), so the pips differ. Each post's reactions are the ones its author's class
- * earns from (the Jabroni's groan, the Face's hype, the Technician's calm, the Heel's heat). Snuckles's second post is splatted by Mr.
- * Roboto's Whoops!, a Salty card, which a Jabroni earns from; its `seed` is fixed, so every visitor sees the same splat.
+ * `rank` is an index into the instance's ranks (../index.ts), so the pips differ. Each post's counts are the ones a quiet thread holds: two
+ * or three kinds, small numbers, and the crowd following the crowd. Snuckles gets only the groan a Jabroni earns from (crickets for the
+ * opener, facepalms once splatted), while the laughs go to the Face's jab and to the Whoops! play itself; the Heel gets the most heat. A visitor's own reactions are added on their screen alone (docs/plans/2026-11-07-front-door-play-design.md).
+ * Captain Wholesome's post carries two Feelin' Fabs, from The Accountant and from Mr. Roboto sucking up, so its mark reads ×2 and the glow
+ * stacks. Snuckles's second post is splatted by Mr. Roboto's Whoops!, a Salty card, which a Jabroni earns from. Its `seed` is fixed, so
+ * every visitor sees the same splat.
  *
  * The glass may joke where it describes the game, and it never bluffs (CLAUDE.md, "The fiction may lie; the log never does").
  */
@@ -29,28 +32,32 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({
       by: 'snuckles',
       body: 'This is a plain old outdated forum...or is it something more? In the game we call life, we have few opportunities to put on a mask. We are giving you that opportunity now. Will you take it, weary traveler?',
-      reactions: Object.freeze({ 'eye-roll': 4, facepalm: 3, yawn: 2 }),
+      reactions: Object.freeze({ crickets: 3 }),
     }),
     Object.freeze({
       by: 'wholesome',
       body: 'Do you ever stop talking?',
-      reactions: Object.freeze({ fire: 7, heart: 5, laughing: 4, 'hundred-points': 3 }),
+      reactions: Object.freeze({ laughing: 3, fire: 1 }),
+      plays: Object.freeze([
+        Object.freeze({ card: 'feelin-fab', by: 'accountant', layer: 1, config: Object.freeze({}) }),
+        Object.freeze({ card: 'feelin-fab', by: 'roboto', layer: 2, config: Object.freeze({}), reactions: Object.freeze({ 'eye-roll': 1 }) }),
+      ]),
     }),
     Object.freeze({
       by: 'snuckles',
       body: 'Oh come on! I\'m just trying to be cool in front of the new person and of course you\'re being a jerk about it. Once again you\'re mad that you don\'t have what it takes to compete in the Marketplace of Ideas.',
-      reactions: Object.freeze({ yawn: 3, crickets: 1 }),
-      plays: Object.freeze([Object.freeze({ card: 'whoops', by: 'roboto', config: Object.freeze({ color: '#ff3d7f', seed: 228 }) })]),
+      reactions: Object.freeze({ facepalm: 3, yawn: 1 }),
+      plays: Object.freeze([Object.freeze({ card: 'whoops', by: 'roboto', config: Object.freeze({ color: '#ff3d7f', seed: 228 }), reactions: Object.freeze({ laughing: 2 }) })]),
     }),
     Object.freeze({
       by: 'accountant',
       body: 'You\'re just trying to get crowd points by acting like a clown. How about we try to explain this in a way that makes sense?',
-      reactions: Object.freeze({ 'folded-hands': 4, salute: 3, 'light-bulb': 2 }),
+      reactions: Object.freeze({ 'thumbs-up': 2, 'light-bulb': 1 }),
     }),
     Object.freeze({
       by: 'roboto',
       body: 'Hey new guy! This site is honestly really cool. It\'s a convergence of human intelligence with the new AI Renaissance, and I am totally here for it.',
-      reactions: Object.freeze({ tomato: 5, 'thumbs-down': 4, vomiting: 2, cursing: 1 }),
+      reactions: Object.freeze({ tomato: 3, 'thumbs-down': 2, 'eye-roll': 1 }),
     }),
   ]),
   note: [

@@ -168,8 +168,8 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   };
 
   return (
-    <form className="kb-composer kb-box" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
-      <div className="kb-box-head" id={`composer-head-${thread}`}>Reply</div>
+    <form className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
+      <h2 className="kb-box-head" id={`composer-head-${thread}`}>Reply</h2>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
       {bannedUntil !== null && (
         <p className="kb-notice kb-composer-ban" role="status">
@@ -198,7 +198,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
         <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
-        <button type="button" className="kb-button kb-composer-reveal" onClick={() => setRevealing(true)}>Reveal…</button>
+        <button type="button" className="kb-button kb-composer-reveal" data-kb-size="small" onClick={() => setRevealing(true)}>Reveal…</button>
       </Editor>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <Layers>{revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}</Layers>

@@ -7,8 +7,10 @@ const demand = { kind: 'distinctCharactersOnBoard', params: { board, count: 12 }
 const local = (m: number, d: number) => new Date(2026, m, d, 12).toISOString();
 
 test('the long label comes from the move kind\'s catalog entry, and an unknown kind is still said plainly', () => {
-  assert.equal(moveLabel('renameBoard'), 'THE SYSTEM RENAMED THIS BOARD');
-  assert.equal(moveLabel('shout'), 'THE SYSTEM MADE A MOVE');
+  assert.equal(moveLabel('renameBoard', 'The Boss'), 'The Boss renamed this board');
+  assert.equal(moveLabel('nameSuccessor', 'The Boss'), 'The Boss named its successor');
+  assert.equal(moveLabel('renameBoard', 'The Director'), 'The Director renamed this board');
+  assert.equal(moveLabel('shout', 'The Boss'), 'The Boss made a move');
 });
 
 test('the way out says the count and what is counted, in the singular for one, and never guesses at a demand it cannot read', () => {

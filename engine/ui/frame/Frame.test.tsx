@@ -41,7 +41,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     characters: vi.fn(async (ids: readonly string[]) => ids.map((id) => pub(id, id))),
     boards: async () => {
       if (!signedIn) throw new Error('reads answer only for a session');
-      return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'the-system', name: 'The System' }];
+      return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'announcements', name: 'The System' }];
     },
     nextSettlementAt: async () => '2026-10-31T08:17:00Z',
     /* The frame holds the page's tips (engine/ui/tips/Tips.tsx), which read the account's state; these have them off. */
@@ -63,7 +63,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
     },
-    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine' }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
+    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
     settings: { walletCap: 600, registrationMode },
   } as unknown as Kayfa;
   const view = render(
@@ -117,6 +117,17 @@ describe('the banner: the board\'s own', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(screen.getByRole('main')).toHaveTextContent('page');
   });
+  test('each nav link carries its aria-hidden icon and keeps its name', async () => {
+    setup();
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await waitFor(() => expect(within(nav).getAllByRole('link')).toHaveLength(3));
+    for (const name of ['Index', 'General', 'The System']) {
+      const link = within(nav).getByRole('link', { name });
+      const icons = link.querySelectorAll('svg');
+      expect(icons).toHaveLength(1);
+      expect(icons[0]).toHaveAttribute('aria-hidden', 'true');
+    }
+  });
   test('the links are a row of their own under the name, as the Main board draws them, and the phone\'s Boards button stays in the banner', async () => {
     setup();
     const banner = screen.getByRole('banner');
@@ -140,6 +151,30 @@ describe('the banner: the board\'s own', () => {
     await userEvent.click(boards);
     expect(boards).toHaveAttribute('aria-expanded', 'true');
     expect(within(await hud()).getByRole('button', { name: 'Menu' })).not.toBe(boards);
+  });
+});
+
+describe('the footer ends every board page', () => {
+  test('says "Powered by KayfaBB", then the instance\'s badges in its own words, hidden from assistive tech, and links nothing', () => {
+    setup();
+    const foot = screen.getByRole('contentinfo');
+    expect(foot).toHaveTextContent('Powered by KayfaBB');
+    expect(foot.querySelectorAll('a')).toHaveLength(0);
+    const badges = foot.querySelector('.kb-badges')!;
+    expect(badges).toHaveAttribute('aria-hidden', 'true');
+    expect([...badges.querySelectorAll('.kb-badge')].map((b) => [...b.children].map((c) => c.textContent))).toEqual([['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']]);
+    expect(screen.getByRole('main')).not.toContainElement(foot);
+    expect(screen.getByRole('main').compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+  test('an instance with no badges has the credit alone', () => {
+    setup();
+    cleanup();
+    const copy = { siteName: 'X', siteTagline: 'x', shopName: 'S' };
+    render(
+      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
+    );
+    expect(screen.getByRole('contentinfo')).toHaveTextContent('Powered by KayfaBB');
+    expect(document.querySelector('.kb-badges')).toBeNull();
   });
 });
 

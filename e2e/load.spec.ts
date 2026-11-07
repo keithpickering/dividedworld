@@ -80,7 +80,7 @@ test('Back to the board shows it with no meter: the cache answers at once', asyn
   await expect(banner(page)).not.toContainText('Opening ');
 });
 
-test('an address with a thread that does not exist shows "The page cannot be found"', async ({ page }) => {
+test('an address with a thread that does not exist shows "The thread you requested does not exist."', async ({ page }) => {
   await page.goto('/t/00000000-0000-4000-8000-000000000000?latency=300');
-  await expect(page.getByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'The thread you requested does not exist.' })).toBeVisible();
 });

@@ -13,9 +13,9 @@ import { defaults, playtest } from './settings.ts';
 import { system } from './system/index.ts';
 
 const boards = deepFreeze([
-  { slug: 'general', name: 'General', description: 'Anything and everything. The System is watching.' },
-  // Only the staff and The System post here: the Boss's arrivals and farewells, the characters' Promos. The description is the owner's copy to give.
-  { slug: 'the-system', name: 'The System', description: 'What The System says. Reply by spinning a thread.', system: true },
+  { slug: 'general', name: 'General', description: 'Anything and everything. The staff are watching.' },
+  // Only the staff and the game post here: the Boss's arrivals and farewells, the characters' Promos (the board look design, section 7).
+  { slug: 'announcements', name: 'Staff Announcements', description: 'Where the staff post. Reply by spinning a thread.', system: true },
 ]);
 
 /** The System's words, in its own voice. */

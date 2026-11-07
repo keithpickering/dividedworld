@@ -1,13 +1,13 @@
 /**
  * Settings, on the glass, as the Settings board draws it (docs/research/2026-10-29-two-worlds/11-settings.html;
  * the glass plan, sections 7 and 8, and its choices 2, 3 and 4): the heading, a navigation of its
- * sections, Account, Accessibility and Notifications (the board's Privacy and Export my data wait
+ * sections, Account, Accessibility, The board and Notifications (the board's Privacy and Export my data wait
  * for a design), and the section beside it.
  *
- * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the board's colors (the device's, black on
- * white, white on black, then the instance's own themes) the post style and tilt, each a row of skewed
- * choices with its sentence. Each is saved to the account the moment it is chosen and applied to the
- * page at once (applyAppearance): the theme restyles the board only, the smoke, contrast and text
+ * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the post style and tilt, each a row of
+ * skewed choices with its sentence. The board (?section=board): the theme, a preview and one tile per theme, and the mode, light, dark or the device's
+ * (ThemePicker.tsx). Each is saved to the account the moment it is chosen and applied to the
+ * page at once (applyAppearance): the theme and mode restyle the board only, the smoke, contrast and text
  * size the glass and the board together. The thread reads the post style when it opens, so a change
  * shows on the next thread view with no reload. Tips has a switch, Show tips again and Replay the HUD tour, each calling its own tips function; the next board
  * page shows the result.
@@ -33,7 +33,8 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { Link, useLocation, useNavigate } from '../router.tsx';
-import { Choice, MotionRow, TextSizeRow, ThemeRow, TiltRow, type Option } from './appearanceRows.tsx';
+import { Choice, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
+import { ModeRow, ThemeRow } from './ThemePicker.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
 import { useSession } from './session.ts';
@@ -72,10 +73,11 @@ const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string
   { kind: 'seasonNews', title: 'Season news', sentence: 'The season has news: results, debuts and Turns, a new Boss.' },
 ];
 
-type Section = 'account' | 'accessibility' | 'notifications';
+type Section = 'account' | 'accessibility' | 'board' | 'notifications';
 const SECTIONS: readonly { readonly key: Section; readonly label: string }[] = [
   { key: 'account', label: 'Account' },
   { key: 'accessibility', label: 'Accessibility' },
+  { key: 'board', label: 'The board' },
   { key: 'notifications', label: 'Notifications' },
 ];
 const sectionHref = (s: Section) => (s === 'accessibility' ? '/settings' : `/settings?section=${s}`);
@@ -174,7 +176,7 @@ export function SettingsScreen() {
   const navigate = useNavigate();
   const { query } = useLocation();
   const asked = query.get('section');
-  const section: Section = asked === 'account' || asked === 'notifications' ? asked : 'accessibility';
+  const section: Section = asked === 'account' || asked === 'board' || asked === 'notifications' ? asked : 'accessibility';
   const account = session?.account ?? null;
   /* The preferences, read and saved as the welcome page's rows save them too (preferences.ts). */
   const { prefs, refusal, saved, change, changeTips, refuse } = usePreferenceSaves(account);
@@ -259,6 +261,21 @@ export function SettingsScreen() {
     );
   }
 
+  if (section === 'board') {
+    return (
+      <Frame section={section}>
+        <CalmRegion as="section" className="kb-settings-section" aria-labelledby="kb-settings-board">
+          <h2 id="kb-settings-board" className="kb-acct-section-title kb-glass-display">The board</h2>
+          {/* A theme alone and a mode alone, each its own save: choosing a theme keeps the player's mode, so the house theme returns them to it. */}
+          <ThemeRow previewed value={prefs} onChange={(theme) => change({ theme })} />
+          <ModeRow value={prefs} onChange={(mode) => change({ mode })} />
+          {said}
+          <p className="kb-acct-foot">Changes save as you make them.</p>
+        </CalmRegion>
+      </Frame>
+    );
+  }
+
   return (
     <Frame section={section}>
       <CalmRegion as="section" className="kb-settings-section" aria-labelledby="kb-settings-accessibility">
@@ -270,7 +287,6 @@ export function SettingsScreen() {
         <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
           sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
         <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
-        <ThemeRow value={prefs.theme} onChange={(v) => change({ theme: v })} />
         <TiltRow value={prefs.tilt} onChange={(v) => change({ tilt: v })} />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />

@@ -108,7 +108,7 @@ const numbers = (v: unknown): Readonly<Record<string, number>> | null =>
 function toPreferences(r: Row): Preferences {
   const d = DEFAULT_PREFERENCES;
   return {
-    theme: r['theme'] ?? d.theme, postbit: r['postbit'] ?? d.postbit, motion: r['motion'] ?? d.motion,
+    theme: r['theme'] ?? d.theme, mode: r['mode'] === 'light' || r['mode'] === 'dark' ? r['mode'] : d.mode, postbit: r['postbit'] ?? d.postbit, motion: r['motion'] ?? d.motion,
     smoke: r['smoke'] ?? d.smoke, contrast: r['contrast'] ?? d.contrast, textSize: num(r['text_size'], d.textSize) as Preferences['textSize'],
     tilt: r['tilt'] === 'on' ? 'on' : d.tilt,
     cardsMet: Array.isArray(r['cards_met']) ? r['cards_met'].filter((k): k is string => typeof k === 'string') : d.cardsMet,
@@ -1367,12 +1367,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: a.value['hidden'] === true } : a;
     },
     async preferences(): Promise<Preferences> {
-      const r = (await list(() => client.from('account_preferences').select('theme,postbit,motion,smoke,contrast,text_size,tilt,cards_met,alerts_seen_at,settlement_seen,toasts,welcomed_at,tips,tips_seen').limit(1)))[0];
+      const r = (await list(() => client.from('account_preferences').select('theme,mode,postbit,motion,smoke,contrast,text_size,tilt,cards_met,alerts_seen_at,settlement_seen,toasts,welcomed_at,tips,tips_seen').limit(1)))[0];
       return r ? toPreferences(r) : DEFAULT_PREFERENCES;
     },
     async setPreferences(p) {
       const a = await rpcWrite(() => client.rpc('set_preferences', {
-        theme: p.theme ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null,
+        theme: p.theme ?? null, mode: p.mode ?? null, postbit: p.postbit ?? null, motion: p.motion ?? null,
         smoke: p.smoke ?? null, contrast: p.contrast ?? null, text_size: p.textSize ?? null, tilt: p.tilt ?? null,
         toasts: p.toasts ?? null, toasts_default: p.toasts === null,
       }));
@@ -1590,7 +1590,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     async setProfile(character, title, signature, pipStyle, pronouns) {
-      /* A null set keeps the stored one (set_profile, 0113). */
+      /* A null set keeps the stored one (set_profile, 0117). */
       const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns ?? null }));
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },

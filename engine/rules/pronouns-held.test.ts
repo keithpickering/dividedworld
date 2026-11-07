@@ -1,6 +1,6 @@
 /**
- * The database holds a pronoun set where it is written (supabase/migrations/0113_pronouns.sql, `pronouns_hold`), and
- * supabase/tests/0115-pronouns.sql lists, one row per line, a poison at each edge of the rule and the good sets. This reads those two lists and
+ * The database holds a pronoun set where it is written (supabase/migrations/0117_pronouns.sql, `pronouns_hold`), and
+ * supabase/tests/0117-pronouns.sql lists, one row per line, a poison at each edge of the rule and the good sets. This reads those two lists and
  * sets them against pronounProblems, so the SQL's rule and the TypeScript rule cannot drift apart without one of the two failing: every poison
  * is refused here, every good is accepted here. (The SQL file asserts the same rows against `pronouns_hold`.)
  */
@@ -12,7 +12,7 @@ import { pronounProblems } from './pronouns.ts';
 
 const here = import.meta.dirname;
 const read = (rel: string) => fs.readFileSync(path.join(here, rel), 'utf8');
-const SQL_FILE = '../../supabase/tests/0115-pronouns.sql';
+const SQL_FILE = '../../supabase/tests/0117-pronouns.sql';
 
 /**
  * The values of one list in the test file, as the file writes them: `('json'),` on a line of its own, the last ending `);`. Every line of
