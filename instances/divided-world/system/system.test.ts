@@ -5,7 +5,8 @@ import { BOSS_PREMISE, MOD_BOT_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES,
 import { instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
 import { PHASE_CAPS } from '../../../engine/system/phases.ts';
-import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
+import { STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
+import { PRONOUN_FORMS } from '../../../engine/rules/pronouns.ts';
 
 test('Divided World\'s System content raises no problem', () => {
   assert.deepEqual(instanceProblems(instance).filter((p) => /Boss|bot|Bot|duty|stock|firstStaff|system/.test(p)), []);
@@ -129,7 +130,11 @@ test('every persona\'s weakness is a quiz, a bribe or a distraction the engine a
 test('the Mod Bot stock lines have at least five each, and every token is one the key allows and well formed', () => {
   for (const k of ['ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const) {
     assert.ok(system.stockLines[k].length >= 5, `${k} has several lines`);
-    for (const line of system.stockLines[k]) for (const [, t] of line.matchAll(/\{([^{}]*)\}/g)) assert.ok(STOCK_LINE_TOKENS[k].includes(t!), `${k}: {${t}}`);
+    for (const line of system.stockLines[k]) for (const [, t] of line.matchAll(/\{([^{}]*)\}/g)) {
+      const [name, form] = t!.split('.');
+      const pronoun = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) && (PRONOUN_FORMS as readonly string[]).includes(form) && t === `${name}.${form}`;
+      assert.ok(pronoun ? STOCK_LINE_TOKENS[k].includes(name!) : STOCK_LINE_TOKENS[k].includes(t!), `${k}: {${t}}`);
+    }
     for (const line of system.stockLines[k]) assert.equal(line.replace(/\{[^{}]*\}/g, ''). match(/[{}]/), null, `${k}: stray brace in ${line}`);
   }
 });
