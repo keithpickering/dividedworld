@@ -15,7 +15,7 @@
  *  - The options keep the build's words: a bold name with a period after it ("Silent."), and the board's "SILENT" is found by that. A button's measure is the
  *    glass's own (48px of the body's size, where the board's `.btn` is 52px), and the save button says the character's name ("Save how Waiting Wanda
  *    debuts") where the board's says "SAVE HOW IT DEBUTS", so Cancel and the save are compared by their places only.
- *  - The preview's words are previews.ts's, the thread's own, at the type scale (the glass polish, design section 7), so only The System's name is compared.
+ *  - The preview's words are previews.ts's, the thread's own, at the type scale (the glass polish, design section 7), so only the name of who posts (the board's The System, the build's character) is compared.
  *  - Section labels are the glass's body-size label in its quieter text where the board draws 22px in the full text; compared by their words and place.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
@@ -35,7 +35,7 @@ export function debutLandmarks(o: { readonly title: string; readonly buildTitle:
     part('announced', 'text', 'ANNOUNCED', { buildName: 'Announced.', within: 'loud', origin: 'loud', buildShift: { y: -9 } }),
     part('with-class', 'text', 'ANNOUNCED, WITH ITS CLASS', { buildName: 'Announced, with its class.', within: 'loud', origin: 'loud', buildShift: { y: -9 } }),
     part('preview-head', 'text', 'What everyone will see', { box: 'none', type: false }),
-    part('preview-by', 'text', 'The System', { box: 'none', type: false }),
+    part('preview-by', 'text', 'The System', { buildName: 'Waiting Wanda', box: 'none', type: false }),
     part('foot-line', 'text', o.foot, { box: 'none', type: false }),
     part('cancel', 'button', 'CANCEL', { buildName: 'Cancel', type: false, box: 'none' }),
     part('save', 'button', o.save, { buildName: o.buildSave, type: false, box: 'none' }),

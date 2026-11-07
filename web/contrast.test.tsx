@@ -6,7 +6,7 @@
  * The themes checked are the ones each instance's `InstanceUi.themes` list names, since that list is what a player
  * can pick (engine/ui/appearance.ts). tools/check-theme.mjs holds every href in that list to a `*.css?url` import
  * of a file in the instance's own ui/ folder, so each href is matched here to that file's text through the same
- * `?url` transform; a theme whose text cannot be found fails rather than going unchecked.
+ * `?url` transform (a theme sits in the instance's ui/ or its ui/themes/); a theme whose text cannot be found fails rather than going unchecked.
  */
 import { describe, expect, test } from 'vitest';
 import { contrastFailures, darkBlocksDisagree, tokensOf, type Mode } from '../engine/ui/contrast.ts';
@@ -14,8 +14,8 @@ import type { InstanceUi, ThemeOption } from '../engine/ui/types.ts';
 import engine from '../engine/ui/tokens.css?raw';
 
 const uis = import.meta.glob<InstanceUi>('../instances/*/ui/index.ts', { eager: true, import: 'instanceUi' });
-const raws = import.meta.glob<string>('../instances/*/ui/*.css', { eager: true, query: '?raw', import: 'default' });
-const urls = import.meta.glob<string>('../instances/*/ui/*.css', { eager: true, query: '?url', import: 'default' });
+const raws = import.meta.glob<string>(['../instances/*/ui/*.css', '../instances/*/ui/themes/*.css'], { eager: true, query: '?raw', import: 'default' });
+const urls = import.meta.glob<string>(['../instances/*/ui/*.css', '../instances/*/ui/themes/*.css'], { eager: true, query: '?url', import: 'default' });
 
 /** The modes a page can show a theme in: a theme fixed to one mode is shown only in it (appearance.ts). */
 const MODES: Record<ThemeOption['modes'], readonly Mode[]> = {
@@ -79,8 +79,8 @@ describe('the sweep reads every theme in the list, not only the first', () => {
   const text = { '../instances/x/ui/theme.css': HOUSE, '../instances/x/ui/sepia.css': ':root { --kb-fg: #c8c8c8; }' };
   const url = { '../instances/x/ui/theme.css': '/x/theme.css', '../instances/x/ui/sepia.css': '/x/sepia.css' };
   const list: ThemeOption[] = [
-    { key: 'house', name: 'House', href: '/x/theme.css', modes: 'both' },
-    { key: 'sepia', name: 'Sepia', href: '/x/sepia.css', modes: 'light' },
+    { key: 'house', name: 'House', href: '/x/theme.css', modes: 'both', preview: {} },
+    { key: 'sepia', name: 'Sepia', href: '/x/sepia.css', modes: 'light', preview: {} },
   ];
 
   test('a second theme file is found by its href and checked, and its poor contrast fails', () => {
@@ -92,7 +92,7 @@ describe('the sweep reads every theme in the list, not only the first', () => {
   });
 
   test('a theme whose href loads no stylesheet in an instance\'s ui/ folder is reported, not skipped', () => {
-    const found = themesOf(ui([...list, { key: 'gone', name: 'Gone', href: '/x/gone.css', modes: 'both' }]), text, url);
+    const found = themesOf(ui([...list, { key: 'gone', name: 'Gone', href: '/x/gone.css', modes: 'both', preview: {} }]), text, url);
     expect(found[2]!.css).toBeNull();
   });
 });

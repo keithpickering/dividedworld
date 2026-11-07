@@ -3,16 +3,20 @@
  * update form is opened with. The glass speaking plainly, out of character, and never a model: every word here is a fact the database holds
  * about the handover, put in a sentence. The announcement itself is the admin's to write.
  */
+import { lowerFirst } from '../copy-words.ts';
 import type { HandoverTodo } from '../data/api.ts';
 
-/** An office as a sentence names it. An office the log has no word for is left out rather than guessed. */
-export function officeWords(office: string | null): string | null {
+/**
+ * An office as a sentence names it. An office the log has no word for is left out rather than guessed. The top office is the instance's
+ * own word (`UiCopy.roleWord`), read mid-sentence: the engine names no instance's role.
+ */
+export function officeWords(office: string | null, role: string): string | null {
   switch (office) {
     case 'mod': return 'a Moderator';
     case 'member': return 'a member';
     case 'benched': return 'benched';
     case 'waiting': return 'waiting to debut';
-    case 'boss': return 'the Boss';
+    case 'boss': return lowerFirst(role);
     default: return null;
   }
 }
@@ -27,17 +31,17 @@ export function todoTitle(t: HandoverTodo): string {
   return `Season ${t.season} opens with ${t.bossName}`;
 }
 
-/** The handover's plain facts, one line each: the new Boss and what it was, the outgoing Boss and what it is now, and how the seat was filled. */
-export function todoFacts(t: HandoverTodo): string[] {
-  const was = officeWords(t.bossWas);
-  const now = officeWords(t.outgoingOffice);
-  const lines = [`Season ${t.season}'s Boss: ${t.bossName}${was === null ? '' : ` (was ${was})`}.`];
-  if (t.outgoing !== null && t.outgoingName !== null) lines.push(now === null ? `${t.outgoingName} left the Boss's seat.` : `${t.outgoingName} is now ${now}.`);
-  lines.push(t.how === 'nomination' ? 'The Boss was chosen by nomination.' : 'The Boss was chosen by the roster\'s rotation.');
+/** The handover's plain facts, one line each: the new holder of the role (`role` is `UiCopy.roleWord`) and what it was, the outgoing one and what it is now, and how the seat was filled. */
+export function todoFacts(t: HandoverTodo, role: string): string[] {
+  const was = officeWords(t.bossWas, role);
+  const now = officeWords(t.outgoingOffice, role);
+  const lines = [`Season ${t.season}: ${role} is ${t.bossName}${was === null ? '' : ` (was ${was})`}.`];
+  if (t.outgoing !== null && t.outgoingName !== null) lines.push(now === null ? `${t.outgoingName} left ${lowerFirst(role)}'s seat.` : `${t.outgoingName} is now ${now}.`);
+  lines.push(t.how === 'nomination' ? `${role} was chosen by nomination.` : `${role} was chosen by the roster's rotation.`);
   return lines;
 }
 
 /** What the form opens with: the title, and the facts as the words, a blank line between them, for the admin to replace. */
-export function todoDraft(t: HandoverTodo): { readonly title: string; readonly words: string } {
-  return { title: todoTitle(t), words: todoFacts(t).join('\n\n') };
+export function todoDraft(t: HandoverTodo, role: string): { readonly title: string; readonly words: string } {
+  return { title: todoTitle(t), words: todoFacts(t, role).join('\n\n') };
 }

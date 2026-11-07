@@ -6,11 +6,56 @@
 }
 
 .kb-profile-card {
-  display: flex;
+  margin: 0.6em 0;
+}
+
+/*
+ * The profile's facts (the board look's Task 9, docs/research/2026-11-06-board-look/08-profile.html): one table under a band reading "About {name}", the
+ * avatar a cell down its left, each fact a row whose label is a row header on the third row ground, right-aligned and bold, and the signature
+ * closing the card under a short rule.
+ */
+.kb-about .kb-about-avatar {
+  box-sizing: border-box;
+  width: 152px;
+  vertical-align: top;
+  padding: 14px 16px;
+}
+
+.kb-table.kb-about th.kb-about-label {
+  width: 190px;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font: bold var(--kb-size-small) / 1.3 var(--kb-font-body);
+  text-align: right;
+  vertical-align: middle;
+  color: var(--kb-fg);
+  background: var(--kb-row-3);
+  text-shadow: none;
+}
+
+.kb-about .kb-about-value {
+  vertical-align: middle;
+}
+
+.kb-about-rank {
+  display: inline-flex;
   flex-wrap: wrap;
-  gap: 1em 3%;
-  padding: 0.6em 2%;
-  border: 1px solid var(--kb-rule);
+  align-items: center;
+  gap: 0.2em 10px;
+}
+
+.kb-about-sig .kb-signature {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.kb-about-sig .kb-signature::before {
+  content: '';
+  display: block;
+  width: 120px;
+  margin-bottom: 8px;
+  border-top: 1px solid var(--kb-grid);
 }
 
 .kb-profile-avatar {
@@ -35,81 +80,318 @@
   font: bold 2.5em / 1 var(--kb-font-mono);
 }
 
-.kb-profile-facts {
-  flex: 1 1 14em;
-  min-width: 0;
-}
-
-.kb-profile-facts p {
-  margin: 0 0 0.5em;
-}
-
-.kb-profile-rank {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.2em 0.5em;
-}
-
 .kb-profile-record {
   margin-top: 1em;
+}
+
+/* See the full record, at the table's right. */
+.kb-profile-all {
+  text-align: right;
+  margin: 0.4em 0;
 }
 
 .kb-record-table {
   width: 100%;
 }
 
+/* The When column is the board's 170px, so a date stands whole and the words start where the board starts them. */
+.kb-record-table thead th:first-child {
+  box-sizing: border-box;
+  width: 170px;
+}
+
+/* The kinds: a row of small Chrome buttons (the board look's Task 9), the current one pressed (aria-current, drawn by .kb-button). */
 .kb-record-kinds {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3em 1em;
-  margin: 0.5em 0;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-record-kinds > li {
+  display: flex;
+}
+
+.kb-record-kind {
+  text-decoration: none;
 }
 
 @media (max-width: 40em) {
+  /*
+   * The record on a phone (the board look's Task 8, docs/research/2026-11-06-board-look/10-phone.html): each row's date stacks above its
+   * words, where the When column broke every date in two, and the six kinds fit one row. The table's elements are blocks, its grid the gap
+   * between rows, and the head stays for assistive tech, clipped.
+   */
+  .kb-record-table {
+    display: grid;
+    gap: 1px;
+    padding: 1px;
+    width: auto;
+  }
+
+  .kb-record-table tbody {
+    display: grid;
+    gap: 1px;
+  }
+
+  /* The heads stay for assistive tech: the exact declarations of base.css's .kb-visually-hidden, once, for the record's and the profile's heads and lead labels. */
+  .kb-record-table thead,
+  .kb-table.kb-record-table thead th,
+  .kb-table.kb-about thead th,
+  .kb-table.kb-about tr[data-kb-lead-row] > th {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .kb-record-table tbody > tr {
+    display: block;
+    padding: 8px 10px;
+    background: var(--kb-row-1);
+  }
+
+  .kb-record-table tbody > tr:nth-child(even) {
+    background: var(--kb-row-2);
+  }
+
+  .kb-table.kb-record-table tbody > tr > td {
+    display: block;
+    padding: 0;
+    background: none;
+  }
+
+  .kb-table.kb-record-table tbody > tr > td:first-child {
+    margin-bottom: 2px;
+    color: var(--kb-muted);
+  }
+
+  .kb-record-kinds {
+    flex-wrap: nowrap;
+    gap: 2px;
+  }
+
+  .kb-button.kb-record-kind[data-kb-size='small'] {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding-inline: 4px;
+    gap: 0;
+    font-size: 11.25px;
+    letter-spacing: 0;
+  }
+
   .kb-profile-avatar {
     flex-basis: 5em;
     width: 5em;
   }
+
+  /*
+   * The profile on a phone (docs/research/2026-11-06-board-look/10-phone.html, its first screen): the avatar beside the rank and the title, then each fact a
+   * label and its words in two columns, the signature under them. The table is a grid of its cells (its rows are contents, and the roles are attributes, as the
+   * record's are); the band stays for assistive tech, clipped, and the Title and Rank labels, which the board draws no label for, too. The rank stands over
+   * the title as the board draws them, whatever order the rows are in.
+   */
+  .kb-table.kb-about {
+    display: grid;
+    grid-template-columns: 112px 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 1px;
+    padding: 1px;
+    width: auto;
+  }
+
+  .kb-about thead,
+  .kb-about tbody,
+  .kb-about tr {
+    display: contents;
+  }
+
+  .kb-about .kb-about-avatar {
+    grid-column: 1;
+    grid-row: 1 / span var(--kb-about-lead);
+    box-sizing: border-box;
+    width: auto;
+    padding: 8px;
+    background: var(--kb-row-1);
+  }
+
+  .kb-about[data-kb-lead='0'] .kb-about-avatar {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .kb-about .kb-profile-avatar {
+    flex-basis: 76px;
+    width: 76px;
+    height: 152px;
+    aspect-ratio: auto;
+  }
+
+  .kb-table.kb-about tr[data-kb-lead-row] > td:not(.kb-about-avatar) {
+    grid-column: 2;
+    align-self: stretch;
+    padding: 8px;
+    background: var(--kb-row-1);
+  }
+
+  .kb-about tr[data-kb-fact='rank'] > td {
+    order: -1;
+  }
+
+  .kb-about[data-kb-lead='2'] tr[data-kb-fact='rank'] > td {
+    margin-bottom: -1px;
+  }
+
+  .kb-about tr[data-kb-fact='title'] > td {
+    color: var(--kb-muted);
+    font-size: var(--kb-size-small);
+  }
+
+  .kb-about-rank {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .kb-table.kb-about th.kb-about-label:not([data-kb-lead-row] > th) {
+    grid-column: 1;
+    display: flex;
+    align-items: center;
+    width: auto;
+    padding: 6px 8px;
+    font-size: var(--kb-size-fine);
+    text-align: left;
+  }
+
+  .kb-table.kb-about td.kb-about-value:not([data-kb-lead-row] > td) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 0.3em;
+    padding: 6px 8px;
+    font-size: var(--kb-size-small);
+  }
+
+  .kb-table.kb-about td.kb-about-sig {
+    grid-column: 1 / -1;
+  }
 }
 
-.kb-record-kind[aria-current] {
-  font-weight: bold;
-}
-
-/* A staff character's profile (Staff.tsx): the card and its moderation log side by side, one column on a phone. */
-.kb-staff-layout {
-  display: flex;
+/*
+ * A staff character's profile (Staff.tsx; docs/research/2026-11-06-board-look/14-staff.html): Task 9's card (the .kb-about table: the avatar a cell down its left, each
+ * fact a label row, the signature closing it) with the staff member's own facts, and under it the moderation log as one full-width table. The plain note stands
+ * under the signature, small and muted; a staff badge is a row's words, so its two pieces keep a 6px gap.
+ */
+.kb-staff-card .kb-staff-badge {
   flex-wrap: wrap;
-  gap: 1em 2%;
-  align-items: flex-start;
+  gap: 6px;
 }
 
-.kb-staff-card {
-  flex: 1 1 22em;
-  min-width: 0;
+.kb-about-note {
+  margin: 6px 0 0;
+}
+
+.kb-staff-card .kb-career {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .kb-staff-log {
-  flex: 1 1 22em;
-  min-width: 0;
+  margin: 0.6em 0;
 }
 
-.kb-staff-log .kb-heading {
+.kb-staff-log > .kb-heading {
   margin-top: 0;
-}
-
-.kb-staff-table th {
-  width: 8.5em;
-  text-align: left;
-  vertical-align: top;
 }
 
 .kb-modlog {
   width: 100%;
 }
 
-.kb-modlog td:first-child {
-  width: 4.5em;
-  white-space: nowrap;
+/* The When column is 110px and How it ended 220px, as the board draws them. */
+.kb-modlog thead th:first-child {
+  box-sizing: border-box;
+  width: 110px;
+}
+
+.kb-modlog thead th:last-child {
+  box-sizing: border-box;
+  width: 220px;
+}
+
+.kb-modlog-note {
+  margin: 0.4em 0 0;
+}
+
+@media (max-width: 40em) {
+  /*
+   * The moderation log on a phone (docs/research/2026-11-06-board-look/15-phone.html): the band stays, the heads are clipped for assistive tech, and each
+   * row is one block, its date over what it did and how it ended under it, muted.
+   */
+  .kb-modlog,
+  .kb-modlog thead,
+  .kb-modlog tbody,
+  .kb-modlog tr {
+    display: block;
+  }
+
+  .kb-modlog {
+    padding: 1px;
+    width: auto;
+  }
+
+  .kb-table.kb-modlog thead th {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .kb-modlog tbody > tr {
+    margin-top: 1px;
+    padding: 8px 10px;
+    background: var(--kb-row-1);
+  }
+
+  .kb-modlog tbody > tr:nth-child(even) {
+    background: var(--kb-row-2);
+  }
+
+  .kb-table.kb-modlog tbody > tr > td {
+    display: block;
+    padding: 0;
+    background: none;
+  }
+
+  .kb-table.kb-modlog tbody > tr > td:first-child {
+    margin-bottom: 2px;
+    color: var(--kb-muted);
+  }
+
+  .kb-table.kb-modlog tbody > tr > td:last-child {
+    margin-top: 2px;
+  }
+}
+
+/* At 320 the six kinds are wider than the page: they wrap to a second row, each still a whole 24px target, never a sideways scroll (e2e/phone-board.spec.ts). */
+@media (max-width: 22em) {
+  .kb-record-kinds {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
 }

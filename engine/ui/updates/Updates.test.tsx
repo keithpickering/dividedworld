@@ -320,7 +320,13 @@ describe('opened from a handover to-do', () => {
     show(handedOver().fake, '/updates?write=handover&season=2');
     const form = await screen.findByRole('form', { name: 'Write an update' });
     expect(within(form).getByLabelText('Title')).toHaveValue('Season 2 opens with Comptroller');
-    expect(within(form).getByLabelText('Words')).toHaveValue('Season 2\'s Boss: Comptroller (was a Moderator).\n\nOld Boss is now a member.\n\nThe Boss was chosen by the roster\'s rotation.');
+    expect(within(form).getByLabelText('Words')).toHaveValue('Season 2: The Boss is Comptroller (was a Moderator).\n\nOld Boss is now a member.\n\nThe Boss was chosen by the roster\'s rotation.');
+  });
+
+  test('the draft says the role in the instance\'s word', async () => {
+    renderIn(handedOver().fake, <UpdatesScreen />, { path: '/updates?write=handover&season=2', instance, avatars: AVATARS, copy: { roleWord: 'The Champ' } });
+    const form = await screen.findByRole('form', { name: 'Write an update' });
+    expect(within(form).getByLabelText('Words')).toHaveValue('Season 2: The Champ is Comptroller (was a Moderator).\n\nOld Boss is now a member.\n\nThe Champ was chosen by the roster\'s rotation.');
   });
 
   test('a season with no to-do opens the empty writer and says the to-do is already cleared', async () => {

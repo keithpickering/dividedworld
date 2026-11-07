@@ -33,7 +33,7 @@ function world() {
   const spritey = seed.character(other, 'Spritey', 'face', { at: at(1) });
   const gloomba = seed.character(other, 'Gloomba', 'heel', { at: at(1) });
   const quiet = seed.character(other, 'Quiet', 'face', { at: at(1) });
-  const system = seed.thread('the-system', null, 'Turns', 'All of them.', { at: at(1) });
+  const system = seed.thread('announcements', null, 'Turns', 'All of them.', { at: at(1) });
   const said = seed.thread('general', spritey, 'here it is', 'Fine.', { at: at(3) });
   seed.reveal(spritey, said.thread, { at: at(3, 13) });
   const gloat = seed.thread('general', gloomba, 'me too', 'Fine.', { at: at(5) });
