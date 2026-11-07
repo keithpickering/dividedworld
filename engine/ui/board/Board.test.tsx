@@ -56,7 +56,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     fake.markRead(seeded.ids[0]!, 2, null);
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
-    expect(within(row).getByText('NEW')).toBeInTheDocument();
+    expect(within(row).getByText(/^New\b/)).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-3`);
   });
 
@@ -67,7 +67,8 @@ describe('NEW comes from the player\'s own reading rows', () => {
     fake.markRead(seeded.ids[0]!, 3, null);
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
-    expect(within(row).queryByText('NEW')).toBeNull();
+    expect(within(row).getByText('No new posts')).toBeInTheDocument();
+    expect(within(row).queryByText('New')).toBeNull();
     expect(within(row).queryByRole('link', { name: /^First unread post in / })).toBeNull();
   });
 
@@ -85,7 +86,7 @@ describe('NEW comes from the player\'s own reading rows', () => {
     const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
     await screen.findByRole('link', { name: 'Thread 001' });
     const row = rowOf('Thread 001');
-    expect(within(row).getByText('NEW')).toBeInTheDocument();
+    expect(within(row).getByText('New')).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: /^First unread post in / })).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1#post-1`);
   });
 
@@ -95,6 +96,71 @@ describe('NEW comes from the player\'s own reading rows', () => {
     });
     await screen.findByRole('link', { name: 'Plain thread' });
     expect(rowOf('Plain thread')).not.toHaveTextContent(/\byou\b|\byours\b|\bmine\b/i);
+  });
+});
+
+describe('the folder icons and the legend', () => {
+  test('a row that is new and hot draws one folder with the flame and one name, and the NEW and HOT chips are gone', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f); replies(f, w.ids[0]!, w.spritey, 3, f.clock.now() - 2 * DAY); return w; },
+    });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const row = rowOf('Thread 001');
+    expect(within(row).getByText('New, hot')).toBeInTheDocument();
+    const svgs = row.querySelectorAll('.kb-thread-flags svg');
+    expect(svgs).toHaveLength(1);
+    expect(svgs[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(svgs[0]).toHaveAttribute('width', '24');
+    expect(svgs[0]).toHaveAttribute('height', '20');
+    expect(svgs[0]).toHaveAttribute('viewBox', '0 0 24 20');
+    expect(svgs[0]!.querySelector('.hot')).not.toBeNull();
+    expect(row.querySelector('.kb-flag')).toBeNull();
+  });
+
+  test('a read, quiet thread is the empty folder named "No new posts", and a hot read one is named "Hot"', async () => {
+    const { fake, seeded } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 2 }); replies(f, w.ids[1]!, w.spritey, 3, f.clock.now() - 2 * DAY); return w; },
+    });
+    fake.markRead(seeded.ids[0]!, 1, null);
+    fake.markRead(seeded.ids[1]!, 4, null);
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(within(rowOf('Thread 001')).getByText('No new posts')).toBeInTheDocument();
+    expect(rowOf('Thread 001').querySelector('svg .paper')).toBeNull();
+    expect(within(rowOf('Thread 002')).getByText('Hot')).toBeInTheDocument();
+  });
+
+  test('the legend is one row under the list, and its Hot number is the setting', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { settings: { hotReplies: 7 }, seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const legend = document.querySelector('.kb-thread-legend') as HTMLElement;
+    expect(legend).not.toBeNull();
+    expect(legend).toHaveTextContent('New posts');
+    expect(legend).toHaveTextContent('No new posts');
+    expect(legend).toHaveTextContent('Hot: 7 replies this week');
+    expect(legend.querySelectorAll('svg')).toHaveLength(3);
+  });
+
+  test('the legend says "1 reply" in the singular when the setting is 1', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { settings: { hotReplies: 1 }, seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    const legend = document.querySelector('.kb-thread-legend') as HTMLElement;
+    expect(legend).toHaveTextContent('Hot: 1 reply this week');
+    expect(legend).not.toHaveTextContent('1 replies');
+  });
+
+  test('Start a thread carries its icon, aria-hidden, and its name is unchanged', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    const button = await screen.findByRole('button', { name: 'Start a thread', expanded: false });
+    const icons = button.querySelectorAll('svg');
+    expect(icons).toHaveLength(1);
+    expect(icons[0]).toHaveAttribute('aria-hidden', 'true');
+    expect(button.textContent).toBe('Start a thread');
+  });
+
+  test('the legend names no card and no pin', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect((document.querySelector('.kb-thread-legend') as HTMLElement).textContent).not.toMatch(/pin|card/i);
   });
 });
 
@@ -114,12 +180,13 @@ describe('the row', () => {
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'Thread 002' });
     const hot = rowOf('Thread 002');
-    expect(within(hot).getByText('HOT')).toBeInTheDocument();
+    expect(within(hot).getByText('New, hot')).toBeInTheDocument();
+    expect(hot.querySelector('svg .hot')).not.toBeNull();
     expect(hot).toHaveTextContent('44');
     expect(within(hot).getByText('3', { selector: '.kb-thread-replies .kb-num' })).toBeInTheDocument();
-    expect(within(rowOf('Thread 001')).queryByText('HOT')).toBeNull();
-    expect(within(rowOf('Thread 003')).queryByText('HOT')).toBeNull();
-    expect(within(rowOf('Thread 004')).queryByText('HOT')).toBeNull();
+    expect(rowOf('Thread 001').querySelector('svg .hot')).toBeNull();
+    expect(rowOf('Thread 003').querySelector('svg .hot')).toBeNull();
+    expect(rowOf('Thread 004').querySelector('svg .hot')).toBeNull();
     const row = rowOf('Spun thread');
     expect(row).toHaveTextContent('spun from');
     expect(within(row).getByRole('link', { name: /Thread 001/ })).toHaveAttribute('href', `/t/${w.ids[0]}?page=1#post-2`);
@@ -213,18 +280,18 @@ describe('the row', () => {
   });
 });
 
-describe('The System\'s board', () => {
+describe('the staff board', () => {
   test('is read-only: no new-thread form, and a plain note says why', async () => {
-    renderInWorld(<LoadedBoard slug="the-system" />, {
-      seed: (f) => { const w = world(f); f.seed.thread('the-system', null, 'The Bulletin', 'Tonight.', { at: T0 }); return w; },
+    renderInWorld(<LoadedBoard slug="announcements" />, {
+      seed: (f) => { const w = world(f); f.seed.thread('announcements', null, 'The Bulletin', 'Tonight.', { at: T0 }); return w; },
     });
     await screen.findByRole('link', { name: 'The Bulletin' });
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Title' })).toBeNull();
-    expect(screen.getByText(/only The System posts here/i)).toBeInTheDocument();
-    expect(rowOf('The Bulletin')).toHaveTextContent('The System');
-    /* Unlike the index, the board draws The System with its "S" avatar, and never as a profile link. */
+    expect(screen.getByText(/only the staff post here/i)).toBeInTheDocument();
+    expect(rowOf('The Bulletin')).toHaveTextContent('The staff');
+    /* Unlike the index, the board draws the staff with its "S" avatar, and never as a profile link. */
     const bulletin = rowOf('The Bulletin');
     expect(bulletin.querySelectorAll('.kb-system-name')).toHaveLength(2);
     expect(bulletin.querySelectorAll('.kb-mini-none')[0]).toHaveTextContent('S');
@@ -240,6 +307,7 @@ describe('The System\'s board', () => {
     const form = await screen.findByRole('form', { name: 'Start a thread' });
     expect(button).toHaveAttribute('aria-expanded', 'true');
     expect(button).toHaveAttribute('aria-controls', form.id);
+    expect(button).toHaveClass('kb-button'); /* drawn pressed in by base.css's [aria-expanded='true'] while its form is open */
     await waitFor(() => expect(within(form).getByRole('textbox', { name: 'Title' })).toHaveFocus());
     expect(form.compareDocumentPosition(screen.getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await userEvent.click(button);
@@ -390,6 +458,42 @@ describe('the new-thread form', () => {
     await waitFor(() => expect(started).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'Framed', expect.stringContaining('Nope.'), [spritey]));
   });
 
+  test('the first post is the shared editor: the toolbar, a Preview drawn by the post\'s renderer, the count, and the hint', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    expect(within(form).getByRole('toolbar', { name: 'Formatting' })).toBeInTheDocument();
+    expect(within(form).getByText(/^0 of \d+$/u)).toBeInTheDocument();
+    expect(within(form).getByText('Ctrl+Enter or Command+Enter starts it')).toBeInTheDocument();
+    await userEvent.click(within(form).getByRole('textbox', { name: 'First post' }));
+    await userEvent.paste('Hello [b]there[/b]');
+    await userEvent.click(within(form).getByRole('button', { name: 'Preview' }));
+    const preview = within(form).getByRole('region', { name: 'Preview' });
+    expect(preview.querySelector('strong, b')?.textContent).toBe('there');
+    expect(within(form).queryAllByRole('button').filter((b) => b.hasAttribute('data-kb-primary'))).toHaveLength(1);
+  });
+
+  test.each([['Control', '{Control>}{Enter}{/Control}'], ['Meta', '{Meta>}{Enter}{/Meta}']])('%s+Enter in the first post starts the thread', async (_name, keys) => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'By keyboard');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Hello.');
+    await userEvent.keyboard(keys);
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/t\//));
+    const board = (await fake.boards()).find((b) => b.slug === 'general')!;
+    expect((await fake.threads(board.id, { offset: 0, limit: 10 })).threads.map((t) => t.title)).toEqual(['By keyboard']);
+  });
+
+  test('the form opens under a light band that names it, says who posts, and draws its boxes inset', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    expect(within(form).getByRole('heading', { name: 'Start a thread' })).toHaveClass('kb-box-head');
+    expect(form).toHaveClass('kb-form');
+    expect(within(form).getByText(/Posting as/u).textContent).toBe('Posting as Pipewrench');
+  });
+
   test('a refusal shows the server\'s words and keeps the draft', async () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
     const form = await openForm();
@@ -400,6 +504,58 @@ describe('the new-thread form', () => {
     expect(notice).toHaveAttribute('data-kb-tone', 'refusal');
     expect(notice.textContent).toBeTruthy();
     expect(within(form).getByRole('textbox', { name: 'First post' })).toHaveValue('Body without a title');
+  });
+
+  test('clicking the visible "First post" label puts the cursor in the box', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.click(within(form).getByText('First post', { selector: 'label' }));
+    expect(within(form).getByRole('textbox', { name: 'First post' })).toHaveFocus();
+  });
+
+  test('a body over the limit does not post on Ctrl+Enter', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const sent = vi.spyOn(fake, 'startThread');
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Too long');
+    await userEvent.click(within(form).getByRole('textbox', { name: 'First post' }));
+    await userEvent.paste('x'.repeat(201));
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    expect(sent).not.toHaveBeenCalled();
+    expect(window.location.pathname).not.toMatch(/^\/t\//);
+  });
+
+  test('Ctrl+Enter with an empty title shows the server\'s refusal as an alert', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const sent = vi.spyOn(fake, 'startThread');
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Body without a title');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+    const notice = await within(form).findByRole('alert');
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(notice.textContent).toBeTruthy();
+    expect(within(form).getByRole('textbox', { name: 'First post' })).toHaveValue('Body without a title');
+  });
+
+  test('Ctrl+Enter twice during a pending request posts once', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { threads: 0 }) });
+    const real = fake.startThread.bind(fake);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    const sent = vi.spyOn(fake, 'startThread').mockImplementation(async (...args) => { await gate; return real(...args); });
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Once only');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'First post' }), 'Hello.');
+    await userEvent.keyboard('{Control>}{Enter}{Enter}{/Control}');
+    expect(sent).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/t\//));
+    const board = (await fake.boards()).find((b) => b.slug === 'general')!;
+    expect((await fake.threads(board.id, { offset: 0, limit: 10 })).threads).toHaveLength(1);
   });
 
   test('with no character that can act, it says so and links to making one', async () => {
@@ -415,7 +571,7 @@ describe('a signed-out visitor', () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { signedIn: false }) });
     expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
     expect(screen.queryByText(/The board is for players\./u)).toBeNull();
-    expect(screen.queryByText('NEW')).toBeNull();
+    expect(screen.queryByText('New')).toBeNull();
     expect(screen.queryByRole('form', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
     expect(screen.queryByRole('table')).toBeNull();
@@ -424,9 +580,9 @@ describe('a signed-out visitor', () => {
 
 describe('a board that is not there', () => {
   test('is the router\'s "cannot be found" (no document), which links back to the index', async () => {
-    renderInWorld(<LoadedBoard slug="nowhere" />, { seed: (f) => world(f) });
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    renderInWorld(<LoadedBoard slug="nowhere" />, { seed: (f) => world(f), path: '/b/nowhere' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'The board you requested does not exist.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
   });
 });
 
@@ -473,9 +629,9 @@ describe('a move in force on the board', () => {
     const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: withMoves });
     expect(await screen.findByRole('heading', { level: 1, name: 'Pointless Toast Palace' })).toBeInTheDocument();
     expect(screen.getByText('Welcome to the Pointless Toast Palace. Please butter responsibly.')).toBeInTheDocument();
-    const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
-    expect(notice).toHaveTextContent('THE SYSTEM RENAMED THIS BOARD');
-    expect(within(notice).getByRole('button', { name: /^WAY OUT: 5 OF 12 POSTERS/u })).toBeInTheDocument();
+    const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
+    expect(screen.getByText('The Boss renamed this board')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^WAY OUT: 5 OF 12 POSTERS/u })).toBeInTheDocument();
     expect(within(notice).getByRole('list', { name: 'Reactions' }).querySelectorAll('li')).toHaveLength(3);
     expect(seeded.inForce).toBeTruthy();
   });
@@ -483,7 +639,7 @@ describe('a move in force on the board', () => {
   test('a board whose moves have all ended has its own name back and no notice', async () => {
     renderInWorld(<LoadedBoard slug="off-topic" />, { seed: withMoves });
     expect(await screen.findByRole('heading', { level: 1, name: 'Off Topic' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
+    expect(screen.queryByRole('table', { name: /^Announcement from/u })).toBeNull();
   });
 
   test('the old name returns the moment the move ends, and the notice goes with it', async () => {
@@ -492,7 +648,7 @@ describe('a move in force on the board', () => {
     fake.seed.endMove(w.inForce, { why: 'reversed', by: 'admin' });
     renderIn(fake, <LoadedBoard slug="general" />, { path: '/b/general' });
     expect(await screen.findByRole('heading', { level: 1, name: 'General' })).toBeInTheDocument();
-    expect(screen.queryByRole('region', { name: /^Announcement from/u })).toBeNull();
+    expect(screen.queryByRole('table', { name: /^Announcement from/u })).toBeNull();
   });
 });
 
@@ -544,6 +700,22 @@ describe('pinned threads and the banner', () => {
     const list = document.querySelector('.kb-thread-list tbody:not([data-kb-pinned])') as HTMLElement;
     expect(within(list).getAllByRole('row')).toHaveLength(20);
     expect(screen.getAllByText('Page 1 of 2').length).toBeGreaterThan(0);
+  });
+
+  test('the 4px gap under the pins is a presentation row, hidden from the reading order, and absent with no pins', async () => {
+    await open();
+    await waitFor(() => expect(pinned()).not.toBeNull());
+    const gap = pinned()!.querySelector('tr.kb-thread-gap') as HTMLElement;
+    expect(gap).not.toBeNull();
+    expect(gap).toHaveAttribute('role', 'presentation');
+    expect(gap).toHaveAttribute('aria-hidden', 'true');
+    expect(within(pinned()!).getAllByRole('row')).toHaveLength(1);
+  });
+
+  test('with no pins there is no gap row', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(document.querySelector('.kb-thread-gap')).toBeNull();
   });
 
   test('the pager\'s total is unchanged, and page 2 shows no pin, its own thread in its bump place', async () => {

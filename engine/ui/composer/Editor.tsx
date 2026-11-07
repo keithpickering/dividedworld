@@ -34,6 +34,8 @@ export interface EditorProps {
   /** A plain line beside the count, spoken when it appears; the region it lives in is always there. */
   readonly note?: ReactNode;
   readonly autoFocus?: boolean;
+  /** The box's id, for a visible `<label htmlFor>` outside the editor (which then names it in place of `label`). */
+  readonly id?: string;
   /** The buttons beside the count and the preview toggle. */
   readonly children?: ReactNode;
   readonly ref?: Ref<EditorHandle>;
@@ -66,7 +68,7 @@ const onMac = () => {
 
 const SHORTCUTS: Record<string, Tool> = { b: 'bold', i: 'italic', u: 'underline', k: 'link' };
 
-export function Editor({ label, value, onChange, max, onQuote, onSubmit, describedBy, submitVerb = 'sends', note, autoFocus, children, ref }: EditorProps) {
+export function Editor({ label, value, onChange, max, onQuote, onSubmit, describedBy, submitVerb = 'sends', note, autoFocus, id, children, ref }: EditorProps) {
   const box = useRef<HTMLTextAreaElement>(null);
   const pending = useRef<{ start: number; end: number } | null>(null);
   const [, bump] = useState(0);
@@ -202,7 +204,8 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
       <textarea
         ref={box}
         className="kb-textarea kb-editor-box"
-        aria-label={label}
+        id={id}
+        aria-label={id ? undefined : label}
         aria-describedby={[describedBy, onSubmit ? hintId : undefined].filter(Boolean).join(' ') || undefined}
         rows={5}
         value={value}
@@ -223,7 +226,7 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
         <span className={`kb-editor-count kb-small kb-num${over > 0 ? ' kb-editor-over' : ''}`}>{over > 0 ? `${n} of ${max} — ${over} over` : `${n} of ${max}`}</span>
         {onSubmit && <span id={hintId} className="kb-editor-hint kb-small kb-muted">Ctrl+Enter or Command+Enter {submitVerb}</span>}
         <span className="kb-editor-note kb-small" role="status">{note}</span>
-        <button type="button" className="kb-button" aria-pressed={preview} aria-controls={previewId} onClick={() => setPreview(!preview)}>Preview</button>
+        <button type="button" className="kb-button" data-kb-size="small" aria-pressed={preview} aria-controls={previewId} onClick={() => setPreview(!preview)}>Preview</button>
         {children}
       </div>
       {someone && <QuoteSomeone onChoose={closeSomeone} onClose={() => closeSomeone(null)} returnFocusTo={() => box.current} />}

@@ -44,10 +44,10 @@ describe('the Spin thread link', () => {
     for (const name of [/^Post 1 /u, /^Post 2 /u, /^Post 3 /u, /^Post 4 /u]) {
       expect(spinLink(await screen.findByRole('article', { name }))).toBeInTheDocument();
     }
-    const said = w.fake.seed.thread('the-system', null, 'The tally', 'Settled.');
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
     document.body.innerHTML = '';
     openThread({ ...w, thread: said.thread });
-    expect(spinLink(await screen.findByRole('article', { name: /^Post 1 by The System/u }))).toBeInTheDocument();
+    expect(spinLink(await screen.findByRole('article', { name: /^Post 1 by the staff/u }))).toBeInTheDocument();
   });
 
   test('opens a small form that names the origin and the HUD\'s character, and is off with the next press', async () => {
@@ -327,7 +327,7 @@ describe('the ORIGIN box', () => {
   test('a spin of a card Act or of The System\'s tally shows that Act in the box', async () => {
     const w = threadWorld(3);
     const card = w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' });
-    const said = w.fake.seed.thread('the-system', null, 'The tally', 'Settled in your favor.');
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled in your favor.');
     const fromCard = await spinFrom(w, card, 'About that card');
     const fromSystem = await spinFrom(w, said.act, 'About the tally');
     openSpun(w, fromCard);

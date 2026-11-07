@@ -144,6 +144,11 @@
   color: var(--kb-glass-text-2);
 }
 
+/* The tiles, five across, are as wide as Settings › The board's (122px at 1440): the letter's column is 16px narrower, so their gaps are the phone's 8px. */
+.kb-welcome-setup .kb-tp-tiles {
+  --kb-tp-gap: 8px;
+}
+
 /* The board's label column is 170px. */
 .kb-welcome-setup.kb-acct .kb-acct-row {
   grid-template-columns: 170px minmax(0, 1fr);

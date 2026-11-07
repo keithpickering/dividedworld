@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 /* The index and a board's thread list at a phone's width: one column, no horizontal scroll. */
 test.use({ viewport: { width: 320, height: 640 } });
 
-for (const path of ['/', '/b/general', '/b/the-system']) {
+for (const path of ['/', '/b/general', '/b/announcements']) {
   test(`${path} has no horizontal scroll at 320px wide`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible();
@@ -38,7 +38,11 @@ test.describe('a desktop', () => {
     const button = page.getByRole('button', { name: 'Start a thread' });
     await expect(button).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('textbox', { name: 'Title' })).toHaveCount(0);
+    /* Closed it stands out; open it is pressed in: a rendered inset shadow (the Chrome button's pressed look). */
+    const inset = () => button.evaluate((el) => /inset/u.test(getComputedStyle(el).boxShadow) && getComputedStyle(el).boxShadow.includes('0.45'));
+    expect(await inset()).toBe(false);
     await button.click();
     await expect(page.getByRole('textbox', { name: 'Title' })).toBeFocused();
+    expect(await inset()).toBe(true);
   });
 });

@@ -1,11 +1,11 @@
 /**
- * What everyone will see, said before a player chooses: the lines that will be posted, The
- * System's for a debut or a Turn and the character's own for a reveal, in the words the thread
- * draws them in (thread/lines.tsx; a test holds the two together), so a preview is a promise kept
- * and never a guess. A class is named only where the
- * player chose an option that names it ("with its class", "name the new class", "name the old
- * class"); every other option's preview carries none, and a silent one says nobody is told.
+ * What everyone will see, said before a player chooses: the lines that will be posted, the character's own in every case (an
+ * announced debut or Turn is the character's own Promo, the season end design's section 4, and a reveal its own Act), in the words
+ * the thread draws them in (thread/lines.tsx, `announceWords`; a test holds the two together), so a preview is a promise kept and
+ * never a guess. A class is named only where the player chose an option that names it ("with its class", "name the new class",
+ * "name the old class"); every other option's preview carries none, and a silent one says nobody is told.
  */
+import { announceWords } from '../thread/lines.tsx';
 
 export interface PreviewLine {
   readonly by: string;
@@ -21,8 +21,9 @@ export interface Preview {
   readonly where: string;
 }
 
-const SYSTEM = 'The System';
-const say = (text: string): PreviewLine => ({ by: SYSTEM, text });
+/** A class is previewed by the name the player sees on its card, which is the key `announceWords` is given. */
+const named = (name: string) => name;
+const own = (name: string, what: 'debut' | 'turn', was: string, to: string): PreviewLine => ({ by: name, text: `${name} ${announceWords(what, was, to, named)}` });
 
 export function debutPreview(o: { readonly name: string; readonly className: string; readonly timing: 'now' | 'tally'; readonly loudness: 'silent' | 'announced' | 'with_class' }): Preview {
   const now = o.timing === 'now';
@@ -35,18 +36,17 @@ export function debutPreview(o: { readonly name: string; readonly className: str
   }
   /* Before a class card is chosen, the preview says where the class will go rather than reading broken. */
   const cls = o.className || '(the class you choose)';
-  const lines = o.loudness === 'with_class' ? [say(`${o.name} debuts as ${cls}`), say(`${o.name} revealed: ${cls}`)] : [say(`${o.name} debuts`)];
+  const lines = [own(o.name, 'debut', '', o.loudness === 'with_class' ? cls : '')];
   return {
     lines,
     nothing: null,
-    where: now ? 'At once, in the season’s Turns thread' : 'In the tally at the next settlement, in the season’s Turns thread',
+    where: now ? 'At once, in the season’s thread' : 'At the next settlement, in the season’s thread',
   };
 }
 
 /**
- * The words naming a class adds to a Turn's tally line, which the Turn's names quote: the one
- * function the names, the preview and the tally that posts it all read, so a name never promises
- * words the post does not carry.
+ * The words naming a class adds to a Turn's old tally line (the Reveal board still draws a tally this way): the one function that
+ * screen's names read.
  */
 export function turnNamedWords(o: { readonly was: string; readonly to: string }): { readonly old: string; readonly new: string } {
   return { old: `from ${o.was}`, new: `to ${o.to}` };
@@ -56,12 +56,10 @@ export function turnPreview(o: { readonly name: string; readonly was: string; re
   if (o.loudness === 'silent') {
     return { lines: [], nothing: `Nothing is posted. Nobody is told that ${o.name} has Turned.`, where: 'At the next settlement' };
   }
-  const words = turnNamedWords(o);
-  const tally = `${o.name} has Turned${o.showFrom ? ` ${words.old}` : ''}${o.showTo ? ` ${words.new}` : ''}`;
   return {
-    lines: o.showTo ? [say(tally), say(`${o.name} revealed: ${o.to}`)] : [say(tally)],
+    lines: [own(o.name, 'turn', o.showFrom ? o.was : '', o.showTo ? o.to : '')],
     nothing: null,
-    where: 'In the tally at the next settlement, in the season’s Turns thread',
+    where: 'At the next settlement, in the season’s thread',
   };
 }
 

@@ -1,0 +1,234 @@
+<title>Glass Spinner Options</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/*
+ * A mock for the glass-load design session (2026-11-07): three spinners for the glass, each shown where the
+ * design puts one: on the menu-bar tab just pressed, and inside a skewed button whose label fades out while
+ * the spinner fades in, at the button's own width. The colors are Divided World's standard key (glass.json),
+ * the skew is the glass's -10deg (engine/ui/glass/base.css). A single dark look, as the glass is.
+ */
+:root {
+  --ground: #07050d;
+  --panel: rgba(10, 6, 20, 0.82);
+  --field: #160d2a;
+  --text: #f1ecff;
+  --text-2: #e4def7;
+  --text-hi: #ffffff;
+  --neon: #19e3ff;
+  --neon-text: #9ef4ff;
+  --ink-neon: #03141a;
+  --violet: #a78bfa;
+  --salty: #ff3d7f;
+  --display: "Anton", "Impact", "Arial Narrow", sans-serif;
+  --body: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --skew: -10deg;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background:
+    radial-gradient(1200px 600px at 15% 0%, rgba(167, 139, 250, 0.16), transparent 60%),
+    radial-gradient(900px 500px at 90% 30%, rgba(25, 227, 255, 0.10), transparent 60%),
+    var(--ground);
+  color: var(--text);
+  font: 500 18px/1.35 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 48px;
+  min-height: 100%;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 28px; }
+header h1 {
+  font: 400 52px/1 var(--display); letter-spacing: 0.01em; margin: 0; text-transform: uppercase;
+  color: var(--neon-text); text-shadow: 0 0 30px rgba(25, 227, 255, 0.35); text-wrap: balance;
+}
+header p { margin: 10px 0 0; max-width: 68ch; color: var(--text-2); font-size: 20px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.controls label { display: inline-flex; gap: 8px; align-items: center; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 16px; }
+
+.grid { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.option {
+  background: var(--panel); padding: 22px 22px 26px; display: grid; gap: 18px; align-content: start; min-width: 0;
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px));
+}
+.option h2 { margin: 0; font: 400 34px/1 var(--display); text-transform: uppercase; color: var(--text-hi); }
+.option h2 span { color: var(--neon-text); margin-right: 10px; }
+.option p { margin: 0; color: var(--text-2); }
+.label { font-size: 14px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--violet); }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+
+/* The menu bar, as the glass draws it: skewed tabs, the selected one in neon. */
+.menu { display: flex; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
+.tab {
+  transform: skewX(var(--skew)); border: 2px solid transparent; padding: 0 16px; height: 40px;
+  display: inline-flex; align-items: center; gap: 10px; color: var(--text-2); background: rgba(255,255,255,0.04);
+  font: 700 19px/1 var(--body); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
+}
+.tab > .up { display: inline-flex; align-items: center; gap: 10px; transform: skewX(calc(var(--skew) * -1)); }
+.tab[aria-current="page"] { border-color: var(--neon); color: var(--neon-text); background: rgba(25, 227, 255, 0.12); }
+.tab[data-pending] { border-color: rgba(25, 227, 255, 0.55); color: var(--text-hi); }
+.tab:focus-visible, .button:focus-visible { outline: 3px solid var(--text-hi); outline-offset: 3px; }
+.tab .spin-slot { width: 0; overflow: hidden; display: inline-flex; transition: width 160ms ease; }
+.tab[data-pending] .spin-slot { width: 22px; }
+
+/* The skewed button: the label and the spinner share one grid cell, so the button keeps the label's width. */
+.button {
+  transform: skewX(var(--skew)); height: 48px; padding: 0 22px; border: 2px solid var(--text-hi);
+  background: transparent; color: var(--text); cursor: pointer;
+  font: 700 21px/1 var(--body); letter-spacing: 0.05em; text-transform: uppercase;
+}
+.button.primary { border-color: var(--neon); background: var(--neon); color: var(--ink-neon); box-shadow: 0 0 30px rgba(25, 227, 255, 0.7); }
+.button > .up { display: inline-grid; place-items: center; transform: skewX(calc(var(--skew) * -1)); }
+.button > .up > * { grid-area: 1 / 1; transition: opacity 180ms ease; }
+.button .spinner { opacity: 0; }
+.button[aria-busy="true"] .text { opacity: 0; }
+.button[aria-busy="true"] .spinner { opacity: 1; }
+.button[aria-busy="true"] { cursor: progress; }
+
+/* ---- A. Chevrons: three skewed blocks lit in turn, the glass's own slant. ---- */
+.chev { display: inline-flex; gap: 3px; height: 16px; align-items: stretch; }
+.chev i { width: 6px; background: currentColor; transform: skewX(-20deg); opacity: 0.25; animation: chev 900ms infinite ease-in-out; }
+.chev i:nth-child(2) { animation-delay: 150ms; }
+.chev i:nth-child(3) { animation-delay: 300ms; }
+@keyframes chev { 0%, 100% { opacity: 0.25; } 35% { opacity: 1; filter: drop-shadow(0 0 6px currentColor); } }
+
+/* ---- B. Ring: a broken neon arc turning. ---- */
+.ring { width: 18px; height: 18px; border-radius: 50%; border: 3px solid color-mix(in srgb, currentColor 22%, transparent); border-top-color: currentColor; animation: ring 800ms linear infinite; filter: drop-shadow(0 0 4px currentColor); }
+@keyframes ring { to { transform: rotate(360deg); } }
+
+/* ---- C. Signal: four skewed bars rising and falling, a meter that is charging. ---- */
+.bars { display: inline-flex; gap: 3px; height: 18px; align-items: flex-end; }
+.bars i { width: 4px; height: 100%; background: currentColor; transform-origin: bottom; transform: skewX(-10deg) scaleY(0.3); animation: bars 1000ms infinite ease-in-out; }
+.bars i:nth-child(2) { animation-delay: 120ms; }
+.bars i:nth-child(3) { animation-delay: 240ms; }
+.bars i:nth-child(4) { animation-delay: 360ms; }
+@keyframes bars { 0%, 100% { transform: skewX(-10deg) scaleY(0.3); opacity: 0.5; } 40% { transform: skewX(-10deg) scaleY(1); opacity: 1; } }
+
+/* Motion Off (and the device's reduced motion): nothing moves; the spinner stands still, lit, so a wait still reads as a wait. */
+.off .chev i, .off .ring, .off .bars i { animation: none; }
+.off .chev i { opacity: 0.85; }
+.off .ring { border-top-color: currentColor; border-right-color: currentColor; }
+.off .bars i:nth-child(1) { transform: skewX(-10deg) scaleY(0.4); }
+.off .bars i:nth-child(2) { transform: skewX(-10deg) scaleY(0.6); }
+.off .bars i:nth-child(3) { transform: skewX(-10deg) scaleY(0.8); }
+.off .bars i:nth-child(4) { transform: skewX(-10deg) scaleY(1); }
+.off .tab .spin-slot, .off .button > .up > * { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .chev i, .ring, .bars i { animation: none; }
+  .tab .spin-slot, .button > .up > * { transition: none; }
+}
+
+.big { display: flex; gap: 28px; align-items: center; padding: 14px 0 4px; color: var(--neon); }
+.big > * { transform: scale(2); transform-origin: left center; }
+.big .label { transform: none; color: var(--violet); }
+.notes { background: var(--panel); padding: 20px 22px; display: grid; gap: 8px; }
+.notes h2 { margin: 0; font: 400 26px/1 var(--display); text-transform: uppercase; color: var(--text-hi); }
+.notes ul { margin: 0; padding-left: 20px; color: var(--text-2); display: grid; gap: 6px; max-width: 80ch; }
+</style>
+
+<div class="wrap" id="root">
+  <header>
+    <h1>The glass, loading</h1>
+    <p>Three spinners for the glass. Each is shown on the menu-bar tab just pressed and inside a skewed button at the button's own width, with the label fading out as the spinner fades in. Press any tab or button to play a 1.4&nbsp;second load. Switch Motion to Off to see the still version.</p>
+  </header>
+
+  <div class="controls">
+    <label><input type="checkbox" id="motion-off"> Motion Off</label>
+  </div>
+
+  <div class="grid">
+    <section class="option" data-kind="chev">
+      <h2><span>A</span>Chevrons</h2>
+      <p>Three blocks on the glass's slant, lit in turn left to right, like the skew of the tabs pointing forward.</p>
+      <div class="big"><span class="label">Close up</span></div>
+      <div class="label">Menu bar</div>
+      <div class="menu"></div>
+      <div class="label">Buttons</div>
+      <div class="row buttons"></div>
+    </section>
+
+    <section class="option" data-kind="ring">
+      <h2><span>B</span>Ring</h2>
+      <p>A broken neon arc turning, with a soft glow. The console-menu spinner everyone already reads as loading.</p>
+      <div class="big"><span class="label">Close up</span></div>
+      <div class="label">Menu bar</div>
+      <div class="menu"></div>
+      <div class="label">Buttons</div>
+      <div class="row buttons"></div>
+    </section>
+
+    <section class="option" data-kind="bars">
+      <h2><span>C</span>Signal</h2>
+      <p>Four slanted bars rising in a wave, a meter charging. Closest to the board's IE6 meter in spirit, but in neon.</p>
+      <div class="big"><span class="label">Close up</span></div>
+      <div class="label">Menu bar</div>
+      <div class="menu"></div>
+      <div class="label">Buttons</div>
+      <div class="row buttons"></div>
+    </section>
+  </div>
+
+  <div class="notes">
+    <h2>What every option does the same way</h2>
+    <ul>
+      <li>The spinner takes the color of what it sits on: neon on a tab, ink on a primary button.</li>
+      <li>A button keeps its width: label and spinner share one cell, and only their opacity changes.</li>
+      <li>The tab's spinner slides in beside its label; the tab stays where it is until the screen has landed.</li>
+      <li>With Motion Off the spinner stands still and lit, and the screen reader hears the page is busy.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+const TABS = ['Characters', 'Log', 'Season', 'Vending', 'Settings'];
+const make = {
+  chev: () => '<span class="chev" aria-hidden="true"><i></i><i></i><i></i></span>',
+  ring: () => '<span class="ring" aria-hidden="true"></span>',
+  bars: () => '<span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>',
+};
+const LOAD_MS = 1400;
+
+for (const option of document.querySelectorAll('.option')) {
+  const kind = option.dataset.kind;
+  option.querySelector('.big').insertAdjacentHTML('afterbegin', make[kind]());
+  const menu = option.querySelector('.menu');
+  TABS.forEach((name, i) => {
+    const b = document.createElement('button');
+    b.className = 'tab';
+    b.type = 'button';
+    if (i === 0) b.setAttribute('aria-current', 'page');
+    b.innerHTML = `<span class="up">${name}<span class="spin-slot">${make[kind]()}</span></span>`;
+    b.addEventListener('click', () => {
+      if (b.getAttribute('aria-current') === 'page' || menu.querySelector('[data-pending]')) return;
+      b.setAttribute('data-pending', '');
+      b.setAttribute('aria-busy', 'true');
+      setTimeout(() => {
+        b.removeAttribute('data-pending');
+        b.removeAttribute('aria-busy');
+        menu.querySelector('[aria-current]')?.removeAttribute('aria-current');
+        b.setAttribute('aria-current', 'page');
+      }, LOAD_MS);
+    });
+    menu.appendChild(b);
+  });
+  const row = option.querySelector('.buttons');
+  [['Reveal class', 'primary'], ['Report', '']].forEach(([text, cls]) => {
+    const b = document.createElement('button');
+    b.className = `button ${cls}`;
+    b.type = 'button';
+    b.innerHTML = `<span class="up"><span class="text">${text}</span><span class="spinner">${make[kind]()}</span></span>`;
+    b.addEventListener('click', () => {
+      if (b.getAttribute('aria-busy') === 'true') return;
+      b.setAttribute('aria-busy', 'true');
+      setTimeout(() => b.setAttribute('aria-busy', 'false'), LOAD_MS);
+    });
+    row.appendChild(b);
+  });
+}
+
+document.getElementById('motion-off').addEventListener('change', (e) => {
+  document.getElementById('root').classList.toggle('off', e.target.checked);
+});
+</script>

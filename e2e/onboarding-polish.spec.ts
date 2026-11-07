@@ -97,6 +97,8 @@ test.describe('1440', () => {
 test.describe('390', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
+  /* The theme row is the board look's tiles alone (docs/plans/2026-11-06-board-look-plan.md, Task 16: "the tiles alone"), with no note under
+     them (Settings › The board says it); Motion and Text size are the skewed radios, each with its note. */
   test('Before you start: each setting is a full-width block, its options whole, its note under them', async ({ page }) => {
     await page.goto('/welcome');
     const rows = page.locator('.kb-welcome-setup .kb-acct-row');
@@ -104,19 +106,24 @@ test.describe('390', () => {
     const read = await rows.evaluateAll((els) => els.map((row) => {
       const box = row.getBoundingClientRect();
       const label = row.querySelector('.kb-acct-row-legend')!.getBoundingClientRect();
-      const options = row.querySelector('.kb-acct-seg')!.getBoundingClientRect();
-      const note = row.querySelector('.kb-acct-row-sentence')!.getBoundingClientRect();
-      const faces = [...row.querySelectorAll<HTMLElement>('.kb-acct-seg-face > b')].map((b) => {
+      const options = row.querySelector('.kb-acct-seg, .kb-tp-tiles')!.getBoundingClientRect();
+      const note = row.querySelector('.kb-acct-row-sentence')?.getBoundingClientRect() ?? null;
+      const faces = [...row.querySelectorAll<HTMLElement>('.kb-acct-seg-face > b, .kb-tp-tile > b, .kb-tp-tile > span:last-child')].map((b) => {
         const lines = Math.round(b.getBoundingClientRect().height / parseFloat(getComputedStyle(b).lineHeight === 'normal' ? `${parseFloat(getComputedStyle(b).fontSize) * 1.2}` : getComputedStyle(b).lineHeight));
         return { text: b.textContent, lines, whiteSpace: getComputedStyle(b).whiteSpace };
       });
-      return { width: box.width, labelBottom: label.bottom, optionsTop: options.top, optionsLeft: options.left - box.left, optionsRight: box.right - options.right, optionsBottom: options.bottom, noteTop: note.top, noteWidth: note.width, faces };
+      return { tiles: row.querySelector('.kb-tp-tiles') !== null, width: box.width, labelBottom: label.bottom, optionsTop: options.top, optionsBottom: options.bottom, noteTop: note?.top ?? null, noteWidth: note?.width ?? null, faces };
     }));
+    expect(read.map((row) => row.tiles), 'the theme row is the tiles, and the two after it are radios').toEqual([true, false, false]);
     for (const row of read) {
       expect(row.width, 'the setting is the width of the block').toBeGreaterThan(320);
       expect(row.optionsTop, 'the options are under the label, not beside it').toBeGreaterThanOrEqual(row.labelBottom - 1);
-      expect(row.noteTop, 'the note is under the options').toBeGreaterThanOrEqual(row.optionsBottom - 1);
-      expect(row.noteWidth, 'the note runs the block\'s width').toBeGreaterThan(320);
+      if (row.tiles) {
+        expect(row.noteTop, 'the tiles stand alone, with no note').toBeNull();
+      } else {
+        expect(row.noteTop, 'the note is under the options').toBeGreaterThanOrEqual(row.optionsBottom - 1);
+        expect(row.noteWidth, 'the note runs the block\'s width').toBeGreaterThan(320);
+      }
       for (const face of row.faces) {
         expect(face.whiteSpace, `${face.text} is not broken inside its own label`).toBe('nowrap');
         expect(face.lines, `${face.text} is one line`).toBe(1);

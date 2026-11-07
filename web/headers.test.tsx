@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { PLAYER_HOSTS } from '../engine/bbcode/video.ts';
-import { ASSET_CACHE_CONTROL, SECURITY_HEADERS } from './headers.ts';
+import { ASSET_CACHE_CONTROL, MAIL_HEADERS, SECURITY_HEADERS } from './headers.ts';
 
 const toml = readFileSync(join(process.cwd(), 'netlify.toml'), 'utf8');
 const block = (path: string): string => {
@@ -19,6 +19,10 @@ describe('netlify.toml and web/headers.ts are one list', () => {
 
   test('built assets are cached as immutable', () => {
     expect(block('/assets/*')).toContain(`Cache-Control = ${JSON.stringify(ASSET_CACHE_CONTROL)}`);
+  });
+
+  test.each(Object.entries(MAIL_HEADERS))('the mail\'s files under /mail/* carry %s', (name, value) => {
+    expect(block('/mail/*')).toContain(`${name} = ${JSON.stringify(value)}`);
   });
 
   test('the build needs no install step and no environment but the public pair', () => {

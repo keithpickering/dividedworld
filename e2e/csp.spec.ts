@@ -41,9 +41,9 @@ test('the main flows run under the policy with no violation', async ({ page }) =
     await document.fonts.ready;
     return [...document.fonts].filter((f) => f.status === 'loaded').map((f) => f.family.replace(/"/gu, ''));
   });
-  await page.goto('/settings');
+  await page.goto('/settings?section=board');
   /* By keyboard: the scaled column's zoom leaves a pointer's hit test on the hidden radio to Chromium (e2e/account.spec.ts). */
-  await page.getByRole('radiogroup', { name: 'The board' }).getByRole('radio', { name: 'White on black' }).focus();
+  await page.getByRole('radiogroup', { name: 'Mode' }).getByRole('radio', { name: 'Dark' }).focus();
   await page.keyboard.press('Space');
   await expect(page.locator('html')).toHaveAttribute('data-kb-mode', 'dark');
   expect(violations).toEqual([]);

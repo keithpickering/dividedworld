@@ -99,7 +99,7 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
 }
 
 function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
-  const { api } = useKayfa();
+  const { api, ui } = useKayfa();
   const [known, setKnown] = useState<ReadonlyMap<Id, Character>>(new Map());
   const wanted = [...new Set(ids.filter((i): i is Id => i !== null))].sort().join(',');
   useEffect(() => {
@@ -108,7 +108,7 @@ function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
     api.characters(wanted.split(',')).then((cs) => { if (live) setKnown(new Map(cs.map((c) => [c.id, c]))); }, () => { /* shown as "A character" */ });
     return () => { live = false; };
   }, [api, wanted]);
-  return (id) => (id === null ? 'The System' : known.get(id)?.name ?? 'A character');
+  return (id) => (id === null ? ui.copy.staffWord : known.get(id)?.name ?? 'A character');
 }
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {

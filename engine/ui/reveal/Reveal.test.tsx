@@ -2,7 +2,6 @@ import { screen, within } from '@testing-library/react';
 import type { QuoteOf } from '../bbcode/render.tsx';
 import { describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
-import { turnPreview } from '../characters/previews.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { RevealPost, TallyPost } from './Reveal.tsx';
@@ -128,7 +127,7 @@ describe('a character\'s post in the season\'s reveal', () => {
   });
 });
 
-describe('a quote in The System\'s words', () => {
+describe('a quote in the staff\'s words', () => {
   test('a tally\'s body and the reveal\'s opening link their quotes like any post', async () => {
     const fake = buildWorld();
     const body = '[quote=00000000-0000-4000-8000-000000000abc]earlier[/quote]';
@@ -155,7 +154,7 @@ describe('the tally', () => {
     expect(within(tally).getAllByRole('link', { name: 'Pipewrench' })[0]).toHaveAttribute('href', '/c/c2');
   });
 
-  test('says of a Turn the words the Turn modal\'s preview promised, for each class named', async () => {
+  test('says of an old tally\'s Turn which classes it names, for each class named', async () => {
     const named = [[true, false], [false, true], [true, true]] as const;
     show(actOf('tally', {
       season: 1, part: 1, of: 1, body: '', debuts: [],
@@ -163,8 +162,7 @@ describe('the tally', () => {
     }));
     const tally = await screen.findByRole('region', { name: 'The tally' });
     for (const [i, [showFrom, showTo]] of named.entries()) {
-      const promised = turnPreview({ name: `Mask ${i}`, was: 'Face', to: 'Heel', loudness: 'announced', showFrom, showTo }).lines[0]!.text;
-      expect(tally).toHaveTextContent(promised);
+      expect(tally).toHaveTextContent(`Mask ${i} has Turned${showFrom ? ' from Face' : ''}${showTo ? ' to Heel' : ''}`);
     }
   });
 
@@ -174,18 +172,18 @@ describe('the tally', () => {
   });
 });
 
-describe('on a thread of The System\'s board', () => {
+describe('on a thread of the staff board', () => {
   test('a reveal post and a tally can be reacted to and spun from like any Act', async () => {
     const fake = buildWorld();
     const me = fake.seed.account('me');
     fake.seed.character(me, 'Pipewrench', 'heel');
-    const sys = fake.seed.thread('the-system', null, 'Reveal', '', { kind: 'reveal', payload: { season: 1, from: 'a', to: 'b', body: 'Over.', characters: 1 } });
+    const sys = fake.seed.thread('announcements', null, 'Reveal', '', { kind: 'reveal', payload: { season: 1, from: 'a', to: 'b', body: 'Over.', characters: 1 } });
     fake.seed.post(sys.thread, null, '', { kind: 'reveal', payload: { season: 1, character: 'c1', name: 'Pipewrench', place: 1, standing: 100, shown: [] } });
     fake.seed.post(sys.thread, null, '', { kind: 'tally', payload: { season: 1, part: 1, of: 1, debuts: [], turns: [{ character: 'c1', name: 'Pipewrench', loudness: 'announced' }] } });
     fake.signInAs(me);
     renderIn(fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
     for (const n of [2, 3]) {
-      const article = await screen.findByRole('article', { name: new RegExp(`^Post ${n} by The System`, 'u') });
+      const article = await screen.findByRole('article', { name: new RegExp(`^Post ${n} by the staff`, 'u') });
       expect(within(article).getByRole('button', { name: /React/u })).toBeInTheDocument();
       expect(within(article).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
     }

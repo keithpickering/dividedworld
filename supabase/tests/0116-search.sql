@@ -1,4 +1,4 @@
--- The search index (supabase/migrations/0113_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
+-- The search index (supabase/migrations/0116_search.sql; docs/plans/2026-11-07-search-design.md sections 2, 3, 4 and 6; its plan, Task 2).
 --
 -- 1. A post, a spin and a Mod Bot's post each get a post_search row; a card play, a tally, a reveal and an announce get none.
 -- 2. A thread's first post carries its thread's title at weight A, so a title and a post match in one index; a later post does not.
@@ -232,7 +232,8 @@ begin
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%(created_at DESC, act DESC)%') then raise exception 'no (created_at desc, act desc) index'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%character%, created_at DESC)%') then raise exception 'no (character, created_at desc) index'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%(thread, created_at DESC, act DESC)%') then raise exception 'no (thread, created_at desc, act desc) index'; end if;
-  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (board, words) WHERE first%') then raise exception 'no partial GIN index on (board, words) where first'; end if;
+  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (((board)::text), words) WHERE first%') then raise exception 'no partial GIN index on (board::text, words) where first'; end if;
+  if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (((board)::text), words)' and indexdef not like '%WHERE%') then raise exception 'no GIN index on (board::text, words)'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'post_search' and indexdef like '%gin (words) WHERE first%') then raise exception 'no partial GIN index on words where first'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'threads' and indexdef like '%gin_trgm_ops%' and indexdef like '%fold_text(title)%') then raise exception 'no trigram index on thread titles'; end if;
   if not exists (select 1 from pg_indexes where tablename = 'characters' and indexdef like '%gin_trgm_ops%' and indexdef like '%fold_text(name)%') then raise exception 'no trigram index on character names'; end if;
@@ -949,6 +950,9 @@ declare
   bounded_shapes integer := 0;
   probe_words text[] := array['common', 'zyxwv'];
   w text;
+  ok_n integer;
+  other_rows bigint;
+  walk boolean;
   plan jsonb;
   seqs text;
   stmt text;
@@ -1063,8 +1067,9 @@ begin
   --     M / d for a word in a share d of them; the planner takes the second when the word is dense (here d is a half: 20,000 rows for 10,000 matches, and which one it takes flips with the sample
   --     ANALYZE draws), so 2 * M. The 256 is what a planner rather reads whole than looks up in a second index (a rare word's 10 matches elsewhere, a board's 20 or 200 first posts): about two
   --     pages of rows, a constant that grows with nothing. What it never reads is the word's matches in every board (100,000 for the common word) or the instance's posts: the board indexes
-  --     (post_search_board_words, post_search_board_newest) and the first-post ones keep it from that, and they are not all that holds it inside 2 * M: dropping post_search_board_words alone
-  --     leaves the board's posts to post_search_board_newest, which reads at most the dense word's M / d, inside the allowance by design.
+  --     (post_search_board_words, on the board's text, which only a search with a word asks of it) and the first-post ones keep it from that. Nothing else can meet a word's board: the plain-column btrees
+  --     (post_search_board_newest) are not offered to a search with a word, whose matches are a materialized CTE found before they are ordered (search_matches_sql), so no estimate of the word can send
+  --     the plan through the board's posts, or a bitmap of its entries, to find none (the defect this was red on: a rare word in a board with none of it read 2,010 rows of 256 allowed).
   --   * for a walk, also its probes: one for each match it tests, `least(M, pool + 1)` of them, except titles only, which has none (a thread has one first post, so each match is its key). A probe
   --     starts at the match and ends at the first match of its thread in the walk's direction. The fixture's plans read that range through post_search_thread_at: alone for the common word (the next
   --     match is the next row), and for the rare word ANDed with post_search_board_words on the word, as a bitmap. Its allowance, per probe: 2 for the common word, which is in every post of its threads, so the next match is the next row (a probe that read a thread's rows, 100 here, would read
@@ -1094,6 +1099,46 @@ begin
       end loop;
     end loop;
   end loop;
+  -- The common word with no filter (BOUND-2 for the shapes that have none): the matches are the newest rows of post_search that hold the word, a page of 21 of them, the pool and one for relevance, 1,001 for the
+  -- count, and the threads walk's pool and one with its probes. A walk newest-first (or oldest-first) finds each in `n` matches, and the word is in every other post, so it reads 2 * n rows; the allowance is 4 * n + 256,
+  -- twice that for the sample ANALYZE draws (the word's density is an estimate to the planner, which can take the walk for a share of the table a little over or under a half) and the 256 the other shapes above
+  -- allow for, and the rows the earlier sections of this file left in post_search (`other_rows`: a walk by time passes the ones newer or older than the fixture that do not hold the word, 1,700 of them, a constant that
+  -- grows with nothing). What it must not do is what a plan that finds the word's matches first and sorts them does: read all 100,000 of them for every page, 200 ms at this scale, growing with the instance (the
+  -- `materialized` form that bounds a board's matches, applied here, reads 100,000 for each of these and is red on all of them). A walk adds its probes: 2 for each match tested, as for a board above.
+  other_rows := (select count(*) from post_search p where p.board not in (scale_board, board10, board1));
+  for s, ok_n, walk in select v.s, v.n, v.walk from (values
+    (search_matches_sql('common', null, null, null, null, false, true, null, null, pool + 1), pool + 1, false),
+    (search_matches_sql('common', null, null, null, null, false, true, null, null, 21), 21, false),
+    (search_matches_sql('common', null, null, null, null, false, false, null, null, 21), 21, false),
+    (search_matches_sql('common', null, null, null, null, false, true, null, null, 1001), 1001, false),
+    (search_walk_sql('common', null, null, null, null, false, true, null, null, pool), pool + 1, true),
+    (search_walk_sql('common', null, null, null, null, false, false, null, null, pool), pool + 1, true)
+  ) as v(s, n, walk) loop
+    plan := pg_temp.explain_run(s);
+    read_n := pg_temp.rows_read(plan);
+    allowed := 4 * ok_n + 256 + other_rows + case when walk then 2 * ok_n else 0 end;
+    worst := greatest(worst, read_n);
+    bounded_shapes := bounded_shapes + 1;
+    if read_n > allowed then raise exception 'an unfiltered search for the common word read % rows of post_search (% allowed): %', read_n, allowed, s; end if;
+  end loop;
+  -- An author: the author's own posts (A) bound it. Without statistics for the author's column and the words the planner took the word's index and filtered 100,000 matches down to the author's 50, so the
+  -- statistics for the two are dropped here (as a table nothing has analyzed has them) and the plan is held to 2 * A + 256: the author's index, with the word as a filter on what it finds. Analyzed again after.
+  delete from pg_statistic where starelid = 'post_search'::regclass and staattnum in (select a.attnum from pg_attribute a where a.attrelid = 'post_search'::regclass and a.attname in ('character', 'words'));
+  foreach w in array array['common', 'zyxwv'] loop
+    foreach s in array array[
+      search_matches_sql(w, a_char, null, null, null, false, true, null, null, pool + 1),
+      search_matches_sql(w, a_char, null, null, null, false, true, null, null, 21),
+      search_matches_sql(w, a_char, null, null, null, false, false, null, null, 21)
+    ] loop
+      m_rows := (select count(*) from post_search p where p."character" = a_char);
+      plan := pg_temp.explain_run(s);
+      read_n := pg_temp.rows_read(plan);
+      allowed := 2 * m_rows + 256;
+      bounded_shapes := bounded_shapes + 1;
+      if read_n > allowed then raise exception 'a search by an author read % rows of post_search, and the author has % (% allowed): %', read_n, m_rows, allowed, s; end if;
+    end loop;
+  end loop;
+  analyze post_search;
   raise notice 'scale: % filtered shapes, the most rows of post_search read by one: %', bounded_shapes, worst;
 
   -- The suggestions: threads (a prefix, none, a board, the system board left out) and characters, whose body is the definer's own string.

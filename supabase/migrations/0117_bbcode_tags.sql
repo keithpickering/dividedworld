@@ -2,7 +2,7 @@
 --
 -- ============================================================================ Task 7: search's plain words follow ====
 --
---   bbcode_plain(body)   redefined whole (0113), so that it mirrors engine/bbcode/visible.ts over engine/bbcode/parse.ts as Tasks 1 to 5 left them. What the parser now reads
+--   bbcode_plain(body)   redefined whole (0116), so that it mirrors engine/bbcode/visible.ts over engine/bbcode/parse.ts as Tasks 1 to 5 left them. What the parser now reads
 --                        and the plain words follow, tag for tag:
 --                          - [quote=...]: a name that is an Act id is a real quote (words dropped, one separator); any other name of 1 to 80 characters (UTF-16 units, after
 --                            trimming), `[quote]` bare and `[quote user=<id>]` are counterfeits, whose words are the post's own; a malformed `user=` or an empty or longer name makes the
@@ -17,12 +17,12 @@
 --                          - [hr]: one separator, no closer (a [/hr] is text). [noparse]: taken raw, its contents are the words as written, and a lone noparse can be a bare link's whole target.
 --                          - An autolink keeps its words, so it changes nothing here.
 --                        Helpers added: bbcode_plain_trim, bbcode_plain_quote_head, bbcode_plain_pct, bbcode_plain_query_v, bbcode_plain_ipv4_number, bbcode_plain_punycode_ok,
---                        bbcode_plain_host_ok, bbcode_plain_video_ok. bbcode_plain_u16len and bbcode_plain_url_ok are 0113's and stay; bbcode_plain keeps its signature and its grants.
+--                        bbcode_plain_host_ok, bbcode_plain_video_ok. bbcode_plain_u16len and bbcode_plain_url_ok are 0116's and stay; bbcode_plain keeps its signature and its grants.
 --
 --   The reindex   Every post_search row whose words change is rewritten once (a row already current is left alone), in this migration, from its post's current version by search_words_of (the same call the language rebuild makes; search_reindex() holds
 --                 the one UPDATE), so a post that
 --                 held `[spoiler]` as text before now indexes its words without the tags, and a post with a counterfeit quote now indexes its words. One statement: every post is
---                 indexed once. Its cost grows with the number of posts and their length (bbcode_plain is linear, 0117 holds it to that) and with the GIN index it maintains; on a busy
+--                 indexed once. Its cost grows with the number of posts and their length (bbcode_plain is linear, 0118 holds it to that) and with the GIN index it maintains; on a busy
 --                 instance it is minutes of one transaction that holds a row lock on each post_search row until it commits. A migration is the place for that: nothing reads a half-rebuilt
 --                 index, and the alternative, the background rebuild (search_rebuild_step, a batch a minute), would leave posts indexed by the old walk for hours. Searching is not blocked while
 --                 it runs (readers do not take row locks); writes to acts and post_search wait for the commit (the reindex takes `lock table acts, post_search in share row exclusive mode`), so no post or
@@ -316,9 +316,9 @@ $$;
 
 -- ------------------------------------------------------------------------------------------------ bbcode_plain ----
 --
--- Redefined whole from 0113. What changed: the tag lists (openers, closers, the ones that keep a count), the five tags taken raw (code, img, video, youtube, noparse; the next closer
--- of each found once from the end, as 0113 did for two), the opener rules of the new tags, the quote head, the inline spoiler's blocked tags, and a bare link whose one node is a
--- noparse. Everything else, the stack, the one output array, the unwinding and the cost, is 0113's.
+-- Redefined whole from 0116. What changed: the tag lists (openers, closers, the ones that keep a count), the five tags taken raw (code, img, video, youtube, noparse; the next closer
+-- of each found once from the end, as 0116 did for two), the opener rules of the new tags, the quote head, the inline spoiler's blocked tags, and a bare link whose one node is a
+-- noparse. Everything else, the stack, the one output array, the unwinding and the cost, is 0116's.
 
 create or replace function bbcode_plain(body text) returns text
 language plpgsql immutable parallel safe set search_path = public, pg_temp as $$
@@ -617,7 +617,7 @@ begin
 end
 $$;
 
--- The helpers and bbcode_plain are called by the index's trigger and the search reads, never by the API's anonymous or digest roles (0113 granted bbcode_plain the same way).
+-- The helpers and bbcode_plain are called by the index's trigger and the search reads, never by the API's anonymous or digest roles (0116 granted bbcode_plain the same way).
 revoke execute on function bbcode_plain(text), bbcode_plain_trim(text), bbcode_plain_quote_head(text), bbcode_plain_pct(text), bbcode_plain_query_v(text), bbcode_plain_ipv4_number(text),
   bbcode_plain_punycode_ok(text), bbcode_plain_host_ok(text), bbcode_plain_video_ok(text) from public, anon;
 grant execute on function bbcode_plain(text), bbcode_plain_trim(text), bbcode_plain_quote_head(text), bbcode_plain_pct(text), bbcode_plain_query_v(text), bbcode_plain_ipv4_number(text),
@@ -626,7 +626,7 @@ grant execute on function bbcode_plain(text), bbcode_plain_trim(text), bbcode_pl
 -- ------------------------------------------------------------------------------------------------- the reindex ----
 --
 -- Every post_search row is rewritten once from its post's current version, in the instance's search language, by one UPDATE; a row whose post search_words_of cannot read (none today)
--- keeps its words. It is a function, as search_backfill is, so that supabase/tests/0118-bbcode-tags.sql runs the very statement the migration runs; no API role may execute it.
+-- keeps its words. It is a function, as search_backfill is, so that supabase/tests/0119-bbcode-tags.sql runs the very statement the migration runs; no API role may execute it.
 create function search_reindex() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare n bigint;
@@ -663,7 +663,7 @@ select search_reindex();
 --
 -- What changed, each redefined whole from its latest definition (everything else is as that migration wrote it):
 --   - alerts_kind_check (0092) gains 'framed'. account_preferences_toasts_check (0092) gains it.
---   - set_preferences (0112) and settings_held (0113) list it among the kinds a toast choice and the toastDefaults setting may name. (settings_held does concern alerts: it validates
+--   - set_preferences (0115) and settings_held (0116) list it among the kinds a toast choice and the toastDefaults setting may name. (settings_held does concern alerts: it validates
 --     toastDefaults against the same list.)
 --   - post, start_thread and spin (all 0105) gain `framing uuid[] default '{}'` and call write_framed after the Act is written. Each is dropped and created whole, since the
 --     signature changes: with the default, a call that names no `framing` reads as before, and no overload is left beside the new one. Their grants are restated for the new signatures.
@@ -677,9 +677,9 @@ alter table account_preferences drop constraint account_preferences_toasts_check
 alter table account_preferences add constraint account_preferences_toasts_check
   check (toasts is null or toasts <@ array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed']);
 
--- set_preferences (0112), with `framed` among the kinds a toast may name. Everything else as 0112 wrote it.
+-- set_preferences (0115, which made it again with the board mode), with `framed` among the kinds a toast may name. Everything else as 0115 wrote it; the signature is 0115's, so this replaces that one.
 create or replace function set_preferences(theme text default null, postbit text default null, motion text default null,
-  smoke text default null, contrast text default null, text_size integer default null, tilt text default null,
+  smoke text default null, contrast text default null, text_size integer default null, tilt text default null, mode text default null,
   toasts text[] default null, toasts_default boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -696,6 +696,7 @@ begin
   if contrast is not null and contrast not in ('standard', 'high') then raise exception 'contrast is standard or high' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if text_size is not null and text_size not in (100, 125, 150, 200) then raise exception 'text size is 100, 125, 150 or 200 percent' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if tilt is not null and tilt not in ('off', 'on') then raise exception 'tilt is off or on' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if mode is not null and mode not in ('system', 'light', 'dark') then raise exception 'the mode follows the device, or is light or dark' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if toasts is not null and coalesce(toasts_default, false) then raise exception 'the toasts are chosen or put back to the defaults, not both' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if toasts is not null then
     select string_agg(coalesce(k, '(blank)'), ', ' order by first) into bad from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) where k is null or not k = any (known) group by k) u;
@@ -703,22 +704,22 @@ begin
     -- Repaired, not refused: the same kind named twice is the kind once, in the order it was first named.
     select coalesce(array_agg(k order by first), '{}') into once from (select k, min(n) as first from unnest(toasts) with ordinality t(k, n) group by k) d;
   end if;
-  insert into account_preferences as p (account, theme, postbit, motion, smoke, contrast, text_size, tilt, toasts)
-  values (caller, coalesce(theme, 'system'), coalesce(postbit, 'side'), coalesce(motion, 'system'),
-    coalesce(smoke, 'full'), coalesce(contrast, 'standard'), coalesce(text_size, 100), coalesce(tilt, 'off'), once)
+  insert into account_preferences as p (account, theme, postbit, motion, smoke, contrast, text_size, tilt, mode, toasts)
+  values (caller, coalesce(theme, 'default'), coalesce(postbit, 'side'), coalesce(motion, 'system'),
+    coalesce(smoke, 'full'), coalesce(contrast, 'standard'), coalesce(text_size, 100), coalesce(tilt, 'off'), coalesce(mode, 'system'), once)
   on conflict (account) do update set theme = coalesce(set_preferences.theme, p.theme), postbit = coalesce(set_preferences.postbit, p.postbit),
     motion = coalesce(set_preferences.motion, p.motion), smoke = coalesce(set_preferences.smoke, p.smoke),
     contrast = coalesce(set_preferences.contrast, p.contrast), text_size = coalesce(set_preferences.text_size, p.text_size),
-    tilt = coalesce(set_preferences.tilt, p.tilt),
+    tilt = coalesce(set_preferences.tilt, p.tilt), mode = coalesce(set_preferences.mode, p.mode),
     toasts = case when coalesce(set_preferences.toasts_default, false) then null when set_preferences.toasts is not null then once else p.toasts end
   returning * into kept;
   return preferences_answer(kept);
 end $$;
 
-revoke execute on function set_preferences(text, text, text, text, text, integer, text, text[], boolean) from public, anon;
-grant execute on function set_preferences(text, text, text, text, text, integer, text, text[], boolean) to authenticated;
+revoke execute on function set_preferences(text, text, text, text, text, integer, text, text, text[], boolean) from public, anon;
+grant execute on function set_preferences(text, text, text, text, text, integer, text, text, text[], boolean) to authenticated;
 
--- settings_held (0113), with `framed` among the kinds toastDefaults may name. Everything else as 0113 wrote it.
+-- settings_held (0116), with `framed` among the kinds toastDefaults may name. Everything else as 0116 wrote it.
 create or replace function settings_held() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare

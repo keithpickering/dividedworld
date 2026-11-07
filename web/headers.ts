@@ -1,8 +1,9 @@
 /**
  * The response headers the site is served with, in one place. netlify.toml repeats these values
  * (a TOML file cannot import them) and web/headers.test.tsx fails if the two differ; vite.config.ts
- * serves them from `vite preview`, so the end-to-end run in e2e/ is the page under the same policy
- * Netlify applies. The Content-Security-Policy allows the page itself and the Supabase origin:
+ * serves SECURITY_HEADERS from `vite preview`, so the end-to-end run in e2e/ is the page under the
+ * same policy Netlify applies. The path-scoped ones (ASSET_CACHE_CONTROL, MAIL_HEADERS) are Netlify's
+ * alone: preview's headers apply to every path. The Content-Security-Policy allows the page itself and the Supabase origin:
  * connections to https://*.supabase.co (and wss for Realtime); images from any https host, since a
  * post's [img] may name one (the owner's choice, 2026-10-29: as on an old forum, the image's host
  * can see who loads it); frames only from the hosts a post's [video] can play from (PLAYER_HOSTS,
@@ -36,3 +37,14 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 
 /** Built files carry a content hash in their names, so they never change under a name. */
 export const ASSET_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
+/**
+ * The email's fonts and images (engine/mail/, docs/plans/2026-11-07-glass-mail-design.md), under
+ * /mail/. A mail client that checks CORS before it loads a web font may, so the origin is any. The
+ * names are stable rather than hashed, since mail already sent names them, so they are cached for a
+ * day: a re-bake reaches old mail within one. Every recipient loads the same URLs (design §6).
+ */
+export const MAIL_HEADERS: Readonly<Record<string, string>> = {
+  'Access-Control-Allow-Origin': '*',
+  'Cache-Control': 'public, max-age=86400',
+};

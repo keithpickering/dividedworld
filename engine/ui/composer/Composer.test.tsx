@@ -35,9 +35,9 @@ describe('the quick reply', () => {
 
   test('is not on a thread of The System\'s board, where a plain note says replies are spins', async () => {
     const w = threadWorld();
-    const said = w.fake.seed.thread('the-system', null, 'The tally', 'Settled.');
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
     openThread({ ...w, thread: said.thread });
-    await screen.findByRole('article', { name: /^Post 1 by The System/u });
+    await screen.findByRole('article', { name: /^Post 1 by the staff/u });
     expect(screen.queryByRole('textbox', { name: 'Your reply' })).toBeNull();
     expect(screen.getByText(/Replies here are spins/u)).toBeInTheDocument();
   });
@@ -279,9 +279,9 @@ describe('quoting from a post', () => {
 
   test('is not offered where the thread has no composer', async () => {
     const w = threadWorld();
-    const said = w.fake.seed.thread('the-system', null, 'The tally', 'Settled.');
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
     openThread({ ...w, thread: said.thread });
-    const article = await screen.findByRole('article', { name: /^Post 1 by The System/u });
+    const article = await screen.findByRole('article', { name: /^Post 1 by the staff/u });
     expect(within(article).queryByRole('button', { name: 'Quote' })).toBeNull();
   });
 });

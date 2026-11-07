@@ -1,4 +1,4 @@
--- The framed alert (supabase/migrations/0114_bbcode_tags.sql, Task 8; docs/plans/2026-11-07-bbcode-tags-plan.md; design section 1, "The framed alert").
+-- The framed alert (supabase/migrations/0117_bbcode_tags.sql, Task 8; docs/plans/2026-11-07-bbcode-tags-plan.md; design section 1, "The framed alert").
 --
 -- A post, a thread start or a spin that holds a counterfeit quote naming a character (`user=<id>`) and passes that id in `framing` writes one `framed` alert for the
 -- character's owner, about the new Act. It writes none for an id that is not a debuted character, not named by the body, a staff character or the poster's own other mask,

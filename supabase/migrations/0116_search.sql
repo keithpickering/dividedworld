@@ -7,7 +7,7 @@
 --                        and separators are only a word boundary to the index, so the two are held equal after each collapses its whitespace.
 --
 -- The two walks are one list in two languages ("Two lists that must agree are one list"): engine/bbcode/plain.fixtures.ts is read by engine/bbcode/plain.test.ts against
--- visibleText(parse(body)), and tools/bbcode-plain.mjs makes supabase/tests/0116-bbcode-plain.sql from it, which asserts bbcode_plain on every fixture;
+-- visibleText(parse(body)), and tools/bbcode-plain.mjs makes supabase/tests/0117-bbcode-plain.sql from it, which asserts bbcode_plain on every fixture;
 -- tools/check-bbcode-plain.mjs holds that file to exactly what the fixtures make, and tools/test-bbcode-plain.mjs drives the check red.
 --
 -- How it differs from the parser, on purpose. The parser builds a tree and the walk reads it; this keeps an explicit stack (arrays, never recursion, so 10,000 nested tags
@@ -15,7 +15,7 @@
 -- strike, color or size tag leaves its words where they are, a quote or a link with a target cuts back to where it began and leaves one separator, a list leaves a separator before
 -- and after and one before each item, an image and code block leave a separator. A bare [url] is a link only when it closes around nothing but one good address, and otherwise
 -- its tag, its words and its closer stay as text. The pieces are joined once at the end, so no step copies what has been written so far.
--- The text is cut into tokens once (a tag is `[`, no bracket, `]`; the rest is text), so the work grows with the post (supabase/tests/0117-bbcode-plain-scale.sql holds that to a
+-- The text is cut into tokens once (a tag is `[`, no bracket, `]`; the rest is text), so the work grows with the post (supabase/tests/0118-bbcode-plain-scale.sql holds that to a
 -- ratio on adversarial posts), and the next closer of [code] and [img] is found once from the end of the post, never by a scan per opener.
 -- Lengths the parser counts in UTF-16 units (MAX_TAG, MAX_URL_LENGTH) are counted the same here (an astral character is two), by bbcode_plain_u16len.
 -- A null body gives an empty string: a post with no words has none.
@@ -446,8 +446,12 @@ grant select on post_search to authenticated;
 -- btree_gin is a contrib extension that ships with Postgres (and with Supabase): it lets a GIN index hold a plain column beside the words, so one index scan finds the board's matches.
 create extension if not exists btree_gin with schema extensions;
 create index post_search_words on post_search using gin (words);
-create index post_search_board_words on post_search using gin (board, words);
-create index post_search_first_words on post_search using gin (board, words) where first;      -- titles only in a board
+-- These two hold the board as its text, (board::text), and a search with a word asks for it in that form (search_matches_sql): the plain board column is the leading column of the keyset btrees, so a
+-- condition on it could also be met by ANDing a bitmap of the whole board's entries with the word's, and which one the planner took followed its estimate of the word. A condition on the text of the
+-- board can only be met here (or by the word's own index with the board as a filter on the word's matches), so a board's matches are found by this index and cost what they are. The keyset btrees
+-- keep the plain column for a search with no word, which walks them in time order.
+create index post_search_board_words on post_search using gin ((board::text), words);
+create index post_search_first_words on post_search using gin ((board::text), words) where first;      -- titles only in a board
 create index post_search_first_title_words on post_search using gin (words) where first;       -- titles only anywhere: a partial btree on the first posts (post_search_first_newest) has no condition of its own and is read whole as a bitmap leg, so the planner needs a cheaper way to the word's titles than ANDing that leg; (board, words) is costed high for a search with no board
 create index post_search_newest on post_search (created_at desc, act desc);
 create index post_search_board_newest on post_search (board, created_at desc, act desc);       -- the board's posts in time order: the keyset walk of a board filter
@@ -602,7 +606,7 @@ grant execute on function fold_text(text), search_lang(), search_words(text, tex
 -- So the one place a match is found, search_matches, builds its query as text with the arguments written into it as literals (search_matches_sql, which holds every condition), and runs it:
 -- the planner then sees the word and its statistics, and chooses for it, and a condition on an argument that is null is simply not written. Every value is written through format's %L (a
 -- typed literal), the tsquery is made by websearch_to_tsquery before it is written, and the limit is an integer, so nothing a caller writes is ever part of the text. The function is
--- stable and security invoker, so a search reads as the caller. The text is a function of its own so that supabase/tests/0115-search.sql can read the plan of exactly what runs.
+-- stable and security invoker, so a search reads as the caller. The text is a function of its own so that supabase/tests/0116-search.sql can read the plan of exactly what runs.
 --
 -- The cursor is {rank, at, act}: the rank (0 unless the search is by relevance), the time and the id of the last result shown. Newest and oldest page by (at, act) inside search_matches,
 -- so page 40 costs what page 1 does. Relevance takes the newest `searchRankPool` matches, ranks them by ts_rank_cd (document length normalized) and pages through that list by
@@ -683,9 +687,32 @@ begin
                              coalesce(after_act, case when dir = 'desc' then 'ffffffff-ffff-ffff-ffff-ffffffffffff' else '00000000-0000-0000-0000-000000000000' end::uuid));
   end if;
   if updates is not null then conds := conds || format('p.thread <> %L::uuid', updates); end if;
-  if board is not null then conds := conds || format('p.board = %L::uuid', board); end if;
-  return format('select p.act, p.thread, p.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
-                array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
+  -- With a word and a board the board is asked for as its text, which only post_search_board_words and post_search_first_words hold; with no word it is the column, which the keyset btrees walk.
+  if board is not null then conds := conds || case when tsq is null then format('p.board = %L::uuid', board) else format('p.board::text = %L', board::text) end; end if;
+  -- An author with no board: the author's own posts are the bound. The word's index is closed to the plan (the word is read through a concatenation, which no index holds), so the only way to the matches is the author's
+  -- index, post_search_character, whose rows are the author's own (A), and not the word's matches in every board, which the planner chose for a common word when it had no statistics for the author's column.
+  if tsq is not null and author is not null and board is null then
+    conds := array_replace(conds, format('p.words @@ %L::tsquery', tsq::text), format('(p.words || %L::tsvector) @@ %L::tsquery', '', tsq::text));
+  end if;
+  if tsq is null or not (board is not null or coalesce(titles_only, false)) then
+    -- The matches in order, off the keyset btrees (post_search_newest and its board, first-post and character siblings): the walk stops at `lim`. With no word, the filters alone, bounded by the rows it passes, which they
+    -- keep to a share of the table. With a word and neither a board nor titles only, the word is a filter on that walk or the planner finds its matches through the word's index and sorts them, and either way a broad
+    -- word costs what a narrow one does: a common word finds its `lim` matches at the newest rows (the page or the pool, whatever the instance holds), a rare one reads the few rows it is in (post_search_words).
+    -- With a word and an author, the word is closed to every index (above), so this walk goes down the author's keyset btree (post_search_character) and stops at `lim`: a common word reads about the page, a rare one
+    -- reads the author's posts (A) to find its few, the price of a plan that no statistics can turn toward the word's matches in every board.
+    return format('select p.act, p.thread, p.board, t.title, p."character", p.created_at, p.words from post_search p join threads t on t.id = p.thread where %s order by p.created_at %s, p.act %s limit %s',
+                  array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer);
+  end if;
+  -- With a word and a board, or titles only: the word's matches in that board, or in the first posts, are found first and ordered after. The matches are a `materialized` CTE with no ORDER BY, so the only plans open to the
+  -- planner for it are the ones that find the matches (the GIN indexes on the word, with the board where one is given, or its first posts), and none of them can walk a keyset btree in time order and drop rows that do not
+  -- hold the word. Without this the order by ... limit offered the planner that walk, and whether it took it depended on its estimate of how common the word is: a rare word estimated common, in a board with none of it, read
+  -- every post of the board to find nothing (supabase/tests/0116-search.sql, BOUND-2). Now the rows read are the filter's own matches (M) at most, whatever the statistics say: the worst case of a word found in
+  -- every post of the board is the cost of sorting M; a request asks for its page and for its count separately (search_posts, search_threads), so it sorts M twice. A board or titles only is what keeps M to a share of the instance; with
+  -- neither, M is the word's matches in every board, and sorting them is the cost the walk above does not pay. The thread's title is joined after the limit, to the rows that stay.
+  return format('with m as materialized (select p.act, p.thread, p.board, p."character", p.created_at, p.words from post_search p where %s) '
+                'select o.act, o.thread, o.board, t.title, o."character", o.created_at, o.words '
+                'from (select * from m order by m.created_at %s, m.act %s limit %s) o join threads t on t.id = o.thread order by o.created_at %s, o.act %s',
+                array_to_string(conds, ' and '), dir, dir, greatest(coalesce(lim, 0), 0)::integer, dir, dir);
 end $$;
 
 create function search_matches(p_q text, p_author uuid, p_board uuid, p_from_at timestamptz, p_to_at timestamptz, p_titles_only boolean, p_newest boolean, p_after_at timestamptz, p_after_act uuid, p_lim integer)
@@ -750,7 +777,7 @@ end $$;
 create index post_search_thread_at on post_search (thread, created_at desc, act desc);
 
 -- The card plays that reach a post and have not been ended, as the keys of the cards, oldest first, at most 8 (a face-down card has no key). Its own function so that a result's cost is one read of
--- acts by target, which supabase/tests/0115-search.sql reads the plan of.
+-- acts by target, which supabase/tests/0116-search.sql reads the plan of.
 create function search_post_cards(act uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp as $$
   select coalesce((
@@ -958,7 +985,7 @@ end;
 -- it, or where one of its words is near it by trigrams (word_similarity of at least 0.3, so "mairo" finds "Mario" and "mar" finds "Super Mario"), best match first, then newest.
 -- An empty prefix with kinds = {threads} lists the newest threads: the Reveal field's empty state. `most` is 1 to 10 for each kind.
 
--- The threads a prefix finds. A string body like suggest_characters's, so that supabase/tests/0115-search.sql reads its plan; it pins its search_path and carries the trigram threshold, so that
+-- The threads a prefix finds. A string body like suggest_characters's, so that supabase/tests/0116-search.sql reads its plan; it pins its search_path and carries the trigram threshold, so that
 -- called by itself it finds what the screen's read finds. $1 is the prefix, $2 the board, $3 whether to leave out the system board, $4 how many.
 create function search_suggest_threads(prefix text, board uuid, exclude_system boolean, most integer)
 returns table (id uuid, title text, board uuid)

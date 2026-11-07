@@ -24,7 +24,7 @@ begin
   -- A first choice makes the row, leaves the other preferences at their defaults, and is answered and read back.
   said := set_preferences(toasts => array['quote', 'ruling']);
   if said -> 'toasts' is distinct from '["quote", "ruling"]'::jsonb then raise exception 'set_preferences answers the choice: %', said; end if;
-  if (select toasts from account_preferences) is distinct from array['quote', 'ruling'] or (select theme from account_preferences) is distinct from 'system' then
+  if (select toasts from account_preferences) is distinct from array['quote', 'ruling'] or (select theme from account_preferences) is distinct from 'default' then
     raise exception 'the choice is read back from the row';
   end if;
 

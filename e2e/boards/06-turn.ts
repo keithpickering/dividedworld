@@ -24,6 +24,7 @@
  *    four cards in view, the Lurker peeking, the count and the two arrows on the legend's line. The
  *    arrows' glyphs are drawn in the glass's own text tokens on its ground, not the board's
  *    translucent ones, so they are compared by where they stand.
+ *  - A name quotes the whole line the post carries (from previews.ts, one source), so the tile wraps and the dialog is taller than the board's; its place is compared, not its height.
  *  - The preview's words are previews.ts's, held equal to the thread's (no board crumb line), so
  *    only The System's name is compared.
  *  - The footer's sentence says the settlement's time in the reader's zone where the board counts
@@ -39,7 +40,7 @@ const manifest: BoardManifest = {
   press: [
     { role: 'button', name: 'Turn Pipewrench' },
     { role: 'radio', name: 'Face' },
-    { role: 'checkbox', name: 'Name the old class. Adds “from Heel” to the post.' },
+    { role: 'checkbox', name: 'Name the old class. Adds “Pipewrench has Turned, leaving Heel.” to the post.' },
   ],
   landmarks: [
     /*
@@ -47,8 +48,11 @@ const manifest: BoardManifest = {
      * view and dimmed is held by e2e/characters.spec.ts.
      */
 
-    /* The modal, chamfer step 5. */
-    { id: 'dialog', role: 'dialog', name: 'Turn Pipewrench', type: false },
+    /*
+     * The modal, chamfer step 5. Its height is not compared: each name quotes the whole line the post will carry ("Pipewrench has Turned,
+     * leaving Heel.", the quality review of Task 11), which wraps in the tile where the board's third radio is one short line.
+     */
+    { id: 'dialog', role: 'dialog', name: 'Turn Pipewrench', type: false, box: 'position' },
     { id: 'kicker', role: 'text', name: 'MY CHARACTERS › TURN', buildName: 'My characters › Turn', within: 'dialog' },
     { id: 'title', role: 'heading', name: 'Turn Pipewrench', within: 'dialog' },
     /* The board's Close is an icon; the build's word is drawn off its square, so its box only. */
@@ -103,8 +107,8 @@ const manifest: BoardManifest = {
     { id: 'name-old', role: 'text', name: 'ANNOUNCED WITH OLD CLASS', buildName: 'Name the old class.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'size' },
     /* The preview's words are the type scale's (the glass polish, design section 7): 15px where the board draws 12px, so "The System" is 1.25 times as wide. */
-    { id: 'preview-by', role: 'text', name: 'The System', within: 'dialog', box: 'size', buildSize: 15, buildShift: { width: 19.8 } },
-    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned from Heel', within: 'dialog', box: 'none', buildSize: 15 },
+    { id: 'preview-by', role: 'text', name: 'The System', buildName: 'Pipewrench', buildNth: -1, within: 'dialog', box: 'size', buildSize: 15, buildShift: { width: 19.8 } },
+    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned, leaving Heel.', within: 'dialog', box: 'none', buildSize: 15 },
 
     /*
      * The foot: Cancel and Confirm Turn are GlassButtons in one ButtonRow (the glass polish, design section 2, and the owner's correction that Reveal's

@@ -8,6 +8,8 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
+import { Editor } from '../composer/Editor.tsx';
+import { Icon } from './Icons.tsx';
 import { Link, useNavigate } from '../router.tsx';
 
 export function NewThread({ board }: { readonly board: string }) {
@@ -30,9 +32,10 @@ export function NewThread({ board }: { readonly board: string }) {
 
   if (!loaded) return null;
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!hudCharacter || busy) return;
+  const over = [...body].length > settings.postMaxLength;
+  const submit = async (e?: FormEvent) => {
+    e?.preventDefault();
+    if (!hudCharacter || busy || over) return;
     setBusy(true);
     setRefusal(null);
     try {
@@ -49,8 +52,10 @@ export function NewThread({ board }: { readonly board: string }) {
 
   return (
     <div className="kb-new-thread-wrap">
-      <button type="button" className="kb-button kb-new-thread-toggle" aria-expanded={open} aria-controls={`${id}-form`} onClick={() => setOpen(!open)}>Start a thread</button>
-      <form id={`${id}-form`} ref={form} hidden={!open} className="kb-box kb-new-thread" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
+      <button type="button" className="kb-button kb-new-thread-toggle" aria-expanded={open} aria-controls={`${id}-form`} onClick={() => setOpen(!open)}>
+        <Icon name="start" />Start a thread
+      </button>
+      <form id={`${id}-form`} ref={form} hidden={!open} className="kb-box kb-form kb-new-thread" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
         <h2 className="kb-box-head" id={`${id}-head`}>Start a thread</h2>
         {!hudCharacter ? (
           <p className="kb-new-thread-none">
@@ -65,11 +70,11 @@ export function NewThread({ board }: { readonly board: string }) {
             </div>
             <div className="kb-field">
               <label htmlFor={`${id}-body`}>First post</label>
-              <textarea id={`${id}-body`} className="kb-textarea kb-new-thread-body" rows={4} value={body} maxLength={settings.postMaxLength} onChange={(e) => setBody(e.target.value)} />
-              <span className="kb-small kb-muted kb-num">{body.length} of {settings.postMaxLength}</span>
+              <Editor id={`${id}-body`} label="First post" value={body} onChange={setBody} max={settings.postMaxLength} onSubmit={() => void submit()} submitVerb="starts it">
+                <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || over}>Start thread</button>
+              </Editor>
             </div>
             {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-            <button type="submit" className="kb-button" data-kb-primary="" disabled={busy}>Start thread</button>
           </>
         )}
       </form>

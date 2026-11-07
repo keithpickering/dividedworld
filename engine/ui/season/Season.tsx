@@ -8,7 +8,7 @@
  * Everything on the News tab is read from Acts already written (`api.seasonNews()`, supabase/migrations/0063_season_news.sql) and is the
  * same for every reader: no item says whose a character is. The player's own characters are marked "yours" here, by this screen, from
  * `myCharacters`, which is asked for whatever the page holds, as Rankings marks them. The glass describes the game; it never speaks as
- * The System or a Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on The System's board.
+ * the Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on the staff's board.
  *
  * The tabs are a tablist of links, `?tab=rankings|news` naming the open one (Rankings by default): Left and Right (and Home and End)
  * move between them as a tablist does, the open tab alone is in the tab order, and the open panel is labelled by its tab.
@@ -131,17 +131,31 @@ function Names({ names, own, verb, className }: { readonly names: readonly Tally
   );
 }
 
+/** The name of the board only the staff post on, as the board has it now (a move may have renamed it), or null until it is read. */
+function useStaffBoardName(): string | null {
+  const { api } = useKayfa();
+  const [name, setName] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.boards().then((bs) => { if (live) setName(bs.find((b) => b.isSystem)?.name ?? null); }, () => { /* the words say "the board" */ });
+    return () => { live = false; };
+  }, [api]);
+  return name;
+}
+
 function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPage: number }) {
+  const { ui } = useKayfa();
+  const board = useStaffBoardName() ?? 'the board';
   const arrived = item.kind === 'bossArrived';
-  const name = item.name ?? 'The Boss';
+  const name = item.name ?? ui.copy.roleWord;
   const post = item.act !== null && item.thread !== null && item.seq !== null ? threadHref(item.thread, pageOf(item.seq, perPage), item.seq) : null;
   const words = item.quote === null ? '' : firstWords(item.quote);
   return (
     <>
       <h3>{name} has {arrived ? 'arrived' : 'left'}</h3>
       {arrived
-        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ' Its first words, on The System’s board:'}</p>
-        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ' Its last words are still on The System’s board.'}</p>}
+        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ` Its first words, on ${board}:`}</p>
+        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ` Its last words are still on ${board}.`}</p>}
       {words !== '' && <blockquote className="kb-season-quote">{'“'}{words}{'”'}</blockquote>}
       {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</Link></p>}
     </>

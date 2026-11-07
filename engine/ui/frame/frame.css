@@ -17,8 +17,11 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 0.4em 1.2em;
-  border-bottom: 1px solid var(--kb-rule);
-  padding: 12px 0;
+  /* The banner and the boards' bar are one block (the board-look design): the banner's ground, then the bar's, one frame round both. */
+  background: var(--kb-banner-bg);
+  border: 1px solid var(--kb-frame);
+  padding: 16px 18px;
+  margin-top: 18px;
 }
 
 .kb-banner,
@@ -93,35 +96,59 @@
   /*
    * The site's name is one line wherever it fits: the banner wraps what is beside it first, and a flex line breaks before it shrinks an
    * item. Only when the name alone is wider than the banner does it fold, at its spaces, as the 2003 board's folds at a large text size
-   * (the name at 1.5625rem is 50px of type at 200% text, wider than a 390px phone); `anywhere` keeps one long word from running past
+   * (the name at 1.9375rem is 62px of type at 200% text, wider than a 390px phone); `anywhere` keeps one long word from running past
    * the window.
    */
   overflow-wrap: anywhere;
-  font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
-  letter-spacing: 0.06em;
+  font: bold var(--kb-size-logo) / var(--kb-logo-leading) var(--kb-font-mono);
+  letter-spacing: var(--kb-logo-spacing);
   text-transform: uppercase;
   text-decoration: none;
-  color: var(--kb-fg);
+  color: var(--kb-logo-fg);
+  text-shadow: var(--kb-logo-shadow);
 }
 
 .kb-nav {
-  padding: 5px 0;
-  border-bottom: 1px solid var(--kb-rule);
+  padding: 8px 12px;
+  background: var(--kb-nav-bg);
+  border: 1px solid var(--kb-frame);
+  border-top: 0;
+  margin-bottom: 0.5em;
   font-size: var(--kb-size-small);
+}
+
+.kb-nav a,
+.kb-nav a:visited {
+  color: var(--kb-nav-fg);
+}
+
+/* A board link is its 16 by 14 icon (Icons.tsx), drawn in the link's ink, then its name; its item is as tall as the link, so the bar is. */
+.kb-nav li {
+  display: flex;
+}
+
+.kb-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-nav a:hover {
+  color: var(--kb-nav-hover);
+}
+
+/* The bar has its own ground, which the page's focus color may not stand out on: the ring is the bar's own ink. */
+.kb-nav a:focus-visible {
+  outline-color: var(--kb-nav-fg);
 }
 
 .kb-nav ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 0.4em;
+  gap: 0 18px;
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.kb-nav li + li::before {
-  content: "·";
-  margin-right: 0.4em;
 }
 
 /* The boards bar ends in Search, at the right as the board draws it, with a magnifier that takes the link's color. */
@@ -129,21 +156,11 @@
   margin-left: auto;
 }
 
-.kb-nav li.kb-nav-search::before {
-  content: none;
-}
-
-.kb-nav-search a {
-  display: block;
-  line-height: inherit;
-}
-
 .kb-nav-icon {
   flex: none;
   /* The magnifier is the line's own height, so the link is no taller than its words and the bar keeps the board's height. */
   width: 1em;
   height: 1em;
-  margin-right: 6px;
   vertical-align: -0.125em;
 }
 
@@ -174,6 +191,53 @@
 }
 
 /*
+ * The footer ends every board page: the credit, and the instance's 80 by 15 badges (5 by 0.9375 rem, so they grow with the text size) (Frame.tsx, `UiCopy.badges`) in a pixel face the
+ * instance serves (`--kb-font-badge`; the engine names no file). It stands in the page's column and clears the HUD at its real height,
+ * as the page used to.
+ */
+.kb-footer {
+  box-sizing: border-box;
+  width: min(96%, var(--kb-board-max));
+  margin: 18px auto 0;
+  padding: 0 0 calc(var(--kb-hud-measured, 9em) + 1.5em);
+  text-align: center;
+  font-size: var(--kb-size-fine);
+  color: var(--kb-muted);
+}
+
+.kb-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.kb-badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 5rem;
+  height: 0.9375rem;
+  border: 1px solid var(--kb-frame);
+  font: var(--kb-size-badge) / 0.8125rem var(--kb-font-badge);
+  text-transform: uppercase;
+  overflow: hidden;
+}
+
+.kb-badge > :first-child {
+  background: var(--kb-badge-a);
+  color: var(--kb-badge-a-fg);
+  padding: 0 3px;
+}
+
+.kb-badge > :last-child {
+  flex: 1;
+  background: var(--kb-badge-b);
+  color: var(--kb-badge-b-fg);
+  text-align: center;
+}
+
+/*
  * A float docked at the right (the Lens, glass/Float.tsx) takes its room from the page rather than lying over it (the owner, 2026-11-06:
  * "Dock, but move the post"): the banner, the links and the page stand in what is left, centered there, so the post the Lens is open on
  * stays whole beside it. Float.tsx says the room on the root element and takes it back when it closes.
@@ -193,38 +257,44 @@ html[data-kb-float='sheet'] .kb-frame {
   max-width: none;
   padding-left: 0;
   padding-right: 0;
-  padding-bottom: calc(var(--kb-hud-measured, 9em) + 1.5em);
+  padding-bottom: 0;
 }
 
 /*
- * The vignette (the glass-polish design's section 8, changed by the owner on 2026-11-05: "lay the vignette over the '03 board itself,
- * perhaps by pulling it back a bit so it doesn't encroach on posts too much; the idea is to bridge the HUD/settings and the '03
- * board", and behind the board it "makes more of a sandwich"): the glass's violet laid toward the edges of the window, heaviest at
- * the corners and the foot above the HUD, so the HUD's glow seems to fall onto the page. One fixed element over the whole window,
- * posts included, under the HUD (z-index 30), that takes no click. The edge is an elliptical radial gradient to the window's
- * corners, where it reaches the full edge opacity, clear until 150px short of the column's edge (half of `--kb-board-max`, or the
- * 48% of the window the column takes where the window is narrower) so over the posts it reaches only the column's outer edge, the
- * postbit cells and the line ends; the foot is a linear gradient over 220px, on phones too. A mask holds both to
- * `--kb-vignette-column` of their strength inside the column and leaves the gutters whole, so text under it keeps its contrast
- * (e2e/board-width.spec.ts measures 4.5:1 at the strongest points). High contrast draws none. Colors and opacities are the
- * instance's (engine/ui/tokens.css); the engine's defaults draw nothing.
+ * The vignette (the glass-polish design's section 8; the owner took its mask away on 2026-11-07 and had the glow lie outward instead):
+ * the glass's violet laid toward the edges of the window, heaviest at the corners and the foot above the HUD, so the HUD's glow
+ * seems to fall onto the page. One fixed element over the whole window, under the HUD (z-index 30), that takes no click.
  *
- * The mask reads alpha only, so its stops are `--kb-vignette-mask` (black: engine/ui/tokens.css) and never the page's ground, which a
- * transparent theme could empty. `48vw` includes the scrollbar's width, so the mask's edge sits slightly outside the column, which
- * is the safe side.
+ * The side glow lies in the gutters and the whole column is clear of it, at every height. It is built from pieces that each end
+ * transparent at the column's edge, so the column's own edge is never a step: a horizontal gradient from each side of the window,
+ * half the edge opacity at the window's edge and clear at the column; and, at each of the four corners, an ellipse as wide as the
+ * gutter and 40% of the window tall that deepens the corner to the full edge opacity. `--kb-gutter` is the window's half width less
+ * `--kb-column-half` (half of `--kb-board-max`, or the 48% of the window the column takes where the window is narrower) less 8px:
+ * `50vw` includes the scrollbar's width, and 8px is the safe side of a classic scrollbar's half. Where the window is too narrow to
+ * have gutters, there is next to no side glow. (The first version was one radial gradient to the farthest corner, whose clear center
+ * was an ellipse scaled to the window, so at a wide window it was shorter than the column: at 1920x1080 the column's top and bottom
+ * ~135px were tinted.) The foot is a linear gradient over 220px, on phones too, and does lie over the posts. Nothing masks. Text
+ * under it keeps its contrast (e2e/board-width.spec.ts measures 4.5:1 at the strongest points, and that the column above the foot is
+ * untouched at four window sizes). High contrast draws none. Colors and opacities are the instance's (engine/ui/tokens.css); the
+ * engine's defaults draw nothing.
  */
 .kb-vignette {
   --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
-  --kb-column-mask: color-mix(in srgb, var(--kb-vignette-mask) calc(var(--kb-vignette-column) * 100%), transparent);
+  --kb-gutter: max(1px, calc(50vw - var(--kb-column-half) - 8px));
+  --kb-vignette-full: color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent);
+  --kb-vignette-side: color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 50%), transparent);
   position: fixed;
   inset: 0;
   z-index: 20;
   pointer-events: none;
   background:
     linear-gradient(to top, color-mix(in srgb, var(--kb-vignette-foot-color) calc(var(--kb-vignette-foot) * 100%), transparent), transparent 220px),
-    radial-gradient(ellipse farthest-corner at 50% 50%, transparent max(0px, calc(var(--kb-column-half) - 150px)), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
-  -webkit-mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
-  mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 0 0, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 100% 0, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 0 100%, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 100% 100%, var(--kb-vignette-full), transparent),
+    linear-gradient(to right, var(--kb-vignette-side), transparent var(--kb-gutter)),
+    linear-gradient(to left, var(--kb-vignette-side), transparent var(--kb-gutter));
 }
 
 :root[data-kb-contrast='high'] .kb-vignette {
@@ -1600,6 +1670,11 @@ html[data-kb-float='sheet'] .kb-frame {
     padding: 6px 16px;
   }
 
+  /* The name at the phone board's size (the board-look design: 22px in the house theme). */
+  .kb-logo {
+    font-size: var(--kb-size-logo-phone);
+  }
+
   /* Boards is set in the board's words, as the Phone board draws it, not at a control's smaller size. */
   .kb-menu-button {
     display: inline-block;
@@ -1624,10 +1699,6 @@ html[data-kb-float='sheet'] .kb-frame {
   .kb-nav ul {
     flex-direction: column;
     gap: 0.3em;
-  }
-
-  .kb-nav li + li::before {
-    content: none;
   }
 
   .kb-nav li.kb-nav-search {

@@ -113,7 +113,7 @@ describe('the form', () => {
   test('the Board select lists every board, "All boards" first', async () => {
     open('/search');
     const select = await screen.findByRole('combobox', { name: 'Board' });
-    await waitFor(() => expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['All boards', 'General', 'Off Topic', 'The System']));
+    await waitFor(() => expect(within(select).getAllByRole('option').map((o) => o.textContent)).toEqual(['All boards', 'General', 'Off Topic', 'Staff Announcements']));
   });
 });
 
@@ -186,10 +186,10 @@ describe('results as posts', () => {
     expect(mark.querySelector('img')).toHaveAttribute('src', '/whoops.svg');
   });
 
-  test('a post by The System names it, and a mask not seen is "A character"', async () => {
+  test('a post by the staff names it, and a mask not seen is "A character"', async () => {
     open('/search?q=x', { posts: page([hit(1, { character: null, name: null }), hit(2, { name: null })]) });
     const table = await screen.findByRole('table');
-    expect(within(table).getByText('The System')).toBeInTheDocument();
+    expect(within(table).getByText('The staff')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'A character' })).toHaveAttribute('href', '/c/c-spritey');
   });
 });

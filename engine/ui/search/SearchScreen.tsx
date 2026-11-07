@@ -161,7 +161,8 @@ function CardMark({ card }: { readonly card: string }) {
 }
 
 function Author({ hit }: { readonly hit: PostHit | ThreadHit }) {
-  if (hit.character === null) return <span className="kb-system-name">The System</span>;
+  const { ui } = useKayfa();
+  if (hit.character === null) return <span className="kb-system-name">{ui.copy.staffWord}</span>;
   const name = hit.name ?? 'A character';
   return (
     <span className="kb-search-who">
