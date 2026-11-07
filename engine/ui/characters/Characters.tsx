@@ -95,7 +95,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   const [savingPip, setSavingPip] = useState<{ readonly id: Id; readonly style: string } | null>(null);
   const [savingHidden, setSavingHidden] = useState<{ readonly id: Id; readonly hidden: boolean } | null>(null);
   const [problem, setProblem] = useState<{ readonly id: Id; readonly text: string; readonly pip?: boolean } | null>(null);
-  const [focusRow, setFocusRow] = useState<Id | null>(null);
+  const [refocus, setRefocus] = useState<{ readonly id: Id; readonly from: MyCharactersPage } | null>(null);
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
 
   const mine = useMemo(() => [...page.characters].sort(joined), [page.characters]);
@@ -111,12 +111,16 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
     setSeen(at);
   }
 
-  /* After a withdrawal the Withdraw button is gone; focus goes to the panel's new main control. */
+  /* An action that changes what the panel's main control is (a Turn asked for or withdrawn) reads the document again in place, and the control
+     the keyboard was on is replaced when the new document lands: focus that fell to the page then goes to the panel's new main control. A focus
+     that is somewhere else by then (the player moved on) is left alone. */
   useEffect(() => {
-    if (focusRow === null) return;
-    const el = returnTo(focusRow)();
-    if (el) { el.focus(); setFocusRow(null); }
-  }, [focusRow, mine]);
+    if (refocus === null || page === refocus.from) return;
+    setRefocus(null);
+    const at = document.activeElement;
+    if (at !== null && at !== document.body) return;
+    returnTo(refocus.id)()?.focus();
+  }, [refocus, page]);
 
   const active = mine.filter((c) => c.retiredAt === null);
   const per = settings.charactersPerPlayer;
@@ -131,7 +135,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   };
   const target = dialog ? mine.find((c) => c.id === dialog.id) ?? null : null;
   /* The dialogs have saved and refreshed the HUD's rows; the page's own document is read again in place. */
-  const done = (message: string) => { setFlash(message); setDialog(null); reload(); };
+  const done = (message: string) => { setFlash(message); if (dialog) setRefocus({ id: dialog.id, from: page }); setDialog(null); reload(); };
   /* Words from an earlier action are not left standing under a new one. */
   const show = (next: Dialog) => { setFlash(''); setProblem(null); setDialog(next); };
 
@@ -145,7 +149,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       await player.refresh();
       reload();
       setFlash(`${c.name}'s Turn is withdrawn.`);
-      setFocusRow(c.id);
+      setRefocus({ id: c.id, from: page });
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.' });
     } finally {

@@ -413,9 +413,10 @@ describe('the Turn', () => {
     expect(within(r).getByText(/to Heel/u)).toBeInTheDocument();
     expect(within(r).getByText(/takes effect at the next settlement/iu)).toBeInTheDocument();
     expect(within(r).queryByRole('button', { name: 'Turn Pipewrench' })).toBeNull();
-    /* Focus is not lost to the page's top when the button it came from is replaced. */
+    /* Focus is not lost to the page's top when the button it came from is replaced: it ends on Change, where the Turn button was, once the page's
+       document has been read again in place (the dialog closes on the old button, which the new document replaces). */
+    await waitFor(() => expect(within(r).getByRole('button', { name: 'Change Pipewrench\'s Turn' })).toHaveFocus());
     expect(document.body).not.toHaveFocus();
-    expect(r.contains(document.activeElement)).toBe(true);
 
     await userEvent.click(within(r).getByRole('button', { name: 'Change Pipewrench\'s Turn' }));
     dialog = await screen.findByRole('dialog', { name: 'Change Pipewrench\'s Turn' });
@@ -432,6 +433,30 @@ describe('the Turn', () => {
     await waitFor(() => expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toBeEnabled());
     expect(within(row('Pipewrench')).queryByText(/Turn waiting/u)).toBeNull();
     expect((await w.fake.myCharacters()).find((c) => c.id === w.pipe)!.pendingTurn).toBeNull();
+  });
+
+  test('focus ends on Change when the page\'s document lands after the dialog has closed, and on Turn after a withdrawal that lands late', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    /* The document is read again in place after the Turn: held, so the dialog closes first and the new page replaces the old one under focus. */
+    let land: () => void = () => undefined;
+    const real = w.fake.myCharactersPage.bind(w.fake);
+    const hold = () => vi.spyOn(w.fake, 'myCharactersPage').mockImplementationOnce(async () => { await new Promise<void>((resolve) => { land = resolve; }); return real(); });
+    const dialog = await openTurn();
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    hold();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toHaveFocus();
+    await act(async () => { land(); });
+    await waitFor(() => expect(within(row('Pipewrench')).getByRole('button', { name: 'Change Pipewrench\'s Turn' })).toHaveFocus());
+
+    hold();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));
+    expect(await screen.findByText('Pipewrench\'s Turn is withdrawn.')).toBeInTheDocument();
+    await act(async () => { land(); });
+    await waitFor(() => expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toHaveFocus());
   });
 
   test('Confirm Turn is a busy button while the Turn is out: aria-busy, its name kept, and a second press Turns once', async () => {
