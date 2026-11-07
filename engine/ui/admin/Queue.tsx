@@ -35,9 +35,8 @@ import { demandNeeds } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { EndCardDialog } from '../cards/Lens.tsx';
-import { useBoot } from '../boot.tsx';
 import type { Answer, BoardName, BoardSummary, HandoverTodo, MoveEnded, MoveInForce, QueuedMove, QueuePage, StaffCardPlay } from '../data/api.ts';
-import { isNotAdminDoc, type NotAdminDoc } from '../glass-docs.ts';
+import { isNotAdminDoc, type NotAdminDoc, type QueuePageDoc } from '../glass-docs.ts';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
@@ -69,7 +68,7 @@ type Roster = { readonly staff: string; readonly name: string };
 type Asked = { readonly kind: 'hold'; readonly row: QueuedMove } | { readonly kind: 'reverse'; readonly row: MoveInForce };
 
 /** The queue at /admin/queue, drawn from the route's document. A caller who is not an admin (or not signed in) has no page: the line says so. */
-export function QueueScreen({ doc, now }: { readonly doc: ScreenDoc<QueuePage> | NotAdminDoc; readonly now?: number }) {
+export function QueueScreen({ doc, now }: { readonly doc: ScreenDoc<QueuePageDoc> | NotAdminDoc; readonly now?: number }) {
   if (isSignedOutDoc(doc) || isNotAdminDoc(doc)) {
     return (
       <div className="kb-queue">
@@ -81,7 +80,7 @@ export function QueueScreen({ doc, now }: { readonly doc: ScreenDoc<QueuePage> |
   return <Queue page={doc} now={now} />;
 }
 
-function Queue({ page, now }: { readonly page: QueuePage; readonly now?: number }) {
+function Queue({ page, now }: { readonly page: QueuePageDoc; readonly now?: number }) {
   const { api } = useKayfa();
   /* The page is the document's; after an action it is read again, once (`queuePage`), and the read replaces it. */
   const [read, setRead] = useState<{ readonly of: QueuePage; readonly page: QueuePage | null } | null>(null);
@@ -90,9 +89,8 @@ function Queue({ page, now }: { readonly page: QueuePage; readonly now?: number 
   const [asked, setAsked] = useState<Asked | null>(null);
   const [ending, setEnding] = useState<StaffCardPlay | null>(null);
   const clock = now ?? Date.now();
-  const boot = useBoot();
-  /* The boards (with their descriptions) are boot's; a screen with no boot reads them once. */
-  const [summaries, setSummaries] = useState<readonly BoardSummary[]>(boot?.boards ?? []);
+  /* The boards (with the descriptions they have now) are the document's, read beside the queue; a save reads them again. */
+  const [summaries, setSummaries] = useState<readonly BoardSummary[]>(page.boards);
   /* An admin who has stopped being one has no page to read again: the page as it stood is kept. */
   const shown = held ?? page;
   const { queue, boardNames: boards, bosses, contact } = shown;
@@ -106,14 +104,8 @@ function Queue({ page, now }: { readonly page: QueuePage; readonly now?: number 
       setFailed(true);
     }
   }, [api, page]);
-  useEffect(() => {
-    if (boot) { setSummaries(boot.boards); return undefined; }
-    let live = true;
-    void api.boards().then((all) => { if (live) setSummaries(all); }, () => { /* no board to describe */ });
-    return () => { live = false; };
-  }, [api, boot]);
 
-  /* A board's description changed: the boards are read again beside the queue (boot's are as the page loaded). */
+  /* A board's description changed: the boards are read again beside the queue . */
   const described = useCallback(async () => {
     await Promise.all([load(), api.boards().then(setSummaries, () => { /* the list stays as it was */ })]);
   }, [api, load]);

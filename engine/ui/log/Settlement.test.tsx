@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { hudKey } from '../player.tsx';
-import { useLocation } from '../router.tsx';
+import { useLocation, useRouterInternals } from '../router.tsx';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { LoadedLog } from '../loaded.tsx';
 import { loadLog } from '../glass-docs.ts';
@@ -210,6 +210,23 @@ describe('the summary is the log\'s document', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'My log' })).toBeInTheDocument();
     expect(page).not.toHaveBeenCalled();
     expect(estimate).not.toHaveBeenCalled();
+  });
+});
+
+describe('the summary is marked seen once per settlement', () => {
+  test('an in-place re-read of the document does not send seeSettlement again', async () => {
+    const { fake, me, pipe } = world();
+    function Again() { const { retry } = useRouterInternals(); return <button type="button" onClick={retry}>Again</button>; }
+    localStorage.setItem(hudKey(me), pipe);
+    const see = vi.spyOn(fake, 'seeSettlement');
+    const page = vi.spyOn(fake, 'logPage');
+    renderIn(fake, <><LoadedLog /><Again /></>, { path: '/log/settlement', boot: await fake.boot() });
+    await screen.findByRole('link', { name: 'Open my log' });
+    await waitFor(() => expect(see).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Again' }));
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(see).toHaveBeenCalledTimes(1);
   });
 });
 

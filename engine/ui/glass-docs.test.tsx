@@ -197,19 +197,21 @@ describe('the alerts, updates, queue and log loaders', () => {
   test('the queue answers the page for an admin and a marker of its own for anyone else, which is no "can\'t be found"', async () => {
     const page = { queue: {} };
     const queuePage = vi.fn().mockResolvedValueOnce(page).mockResolvedValueOnce(null);
-    const env = { api: apiOf({ queuePage }), signedIn: signed(true) };
-    expect(await loadQueue(env, chunk)).toBe(page);
+    const boards = vi.fn(() => Promise.resolve([{ id: 'b' }]));
+    const env = { api: apiOf({ queuePage, boards }), signedIn: signed(true) };
+    expect(await loadQueue(env, chunk)).toEqual({ ...page, boards: [{ id: 'b' }] });
     const other = await loadQueue(env, chunk);
     expect(other).toBe(NOT_ADMIN_DOC);
     expect(isNotAdminDoc(other)).toBe(true);
     expect(isNotAdminDoc(page)).toBe(false);
+    expect(boards).toHaveBeenCalledTimes(2);
     expect(queuePage).toHaveBeenCalledTimes(2);
   });
 
   test('nothing a loader reads writes: no see_*, no mark read', async () => {
     const write = vi.fn();
     const api = apiOf({
-      alertsPage: () => Promise.resolve({}), updatesPage: () => Promise.resolve({}), queuePage: () => Promise.resolve({}),
+      alertsPage: () => Promise.resolve({}), updatesPage: () => Promise.resolve({}), queuePage: () => Promise.resolve({}), boards: () => Promise.resolve([]),
       logPage: () => Promise.resolve({ acts: [] }), estimate: () => Promise.resolve({ lines: [] }),
       seeAlerts: write, seeSettlement: write, seeWelcome: write, markRead: write,
     });
@@ -260,5 +262,26 @@ describe('the alerts, updates, queue and log loaders', () => {
     gate.resolve();
     await settled();
     expect(landed).toBe(true);
+  });
+});
+
+describe('the log\'s estimate bound covers its Acts', () => {
+  test('an actsById that never answers cannot hold the page: it lands at the bound, the estimate filling in later', async () => {
+    vi.useFakeTimers();
+    try {
+      const logPage = () => Promise.resolve({ acts: [] });
+      const estimate = () => Promise.resolve({ lines: [{ act: 'a1' }] });
+      const actsById = () => new Promise<never>(() => {});
+      const landed = vi.fn();
+      const doc = loadLog({ api: apiOf({ logPage, estimate, actsById }), signedIn: signed(true) }, () => Promise.resolve()).then((d) => { landed(d); return d; });
+      await vi.advanceTimersByTimeAsync(ESTIMATE_WAIT_MS - 1);
+      expect(landed).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2);
+      const d = await doc;
+      expect(d).toMatchObject({ estimate: null });
+      expect((d as { estimateLater?: unknown }).estimateLater).toBeInstanceOf(Promise);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

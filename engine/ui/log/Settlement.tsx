@@ -183,9 +183,10 @@ export function SettlementScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {
 
   /* Seen once the summary is drawn: a write on landing, never part of the load, so a hover on the Log tab marks nothing. */
   const newest = signedOut ? undefined : data.log.settlements[0];
+  const newestEnds = newest?.endsAt;
   useEffect(() => {
-    if (newest && session.account) void api.seeSettlement(newest.endsAt).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
-  }, [api, newest, session.account]);
+    if (newestEnds && session.account) void api.seeSettlement(newestEnds).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
+  }, [api, newestEnds, session.account]);
 
   /*
    * The page owns its ways out, so every state draws Back to the board: with no menu bar here, and no Esc on a touch screen, a

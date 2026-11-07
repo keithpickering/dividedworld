@@ -59,6 +59,17 @@ describe('the persona\'s picture', () => {
 });
 
 describe('the page', () => {
+  test('the open update\'s Realtime channel is subscribed once across a re-render of the page', async () => {
+    const w = world({ updates: 22 });
+    const sub = vi.spyOn(w.fake, 'subscribeThread');
+    show(w.fake);
+    await screen.findByRole('navigation', { name: 'All updates' });
+    expect(sub).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Show earlier updates' }));
+    await waitFor(() => expect(within(screen.getByRole('navigation', { name: 'All updates' })).getAllByRole('link')).toHaveLength(25));
+    expect(sub).toHaveBeenCalledTimes(1);
+  });
+
   test('is whole in its first render, from its document: the articles, the archive, the open update\'s reactions, and nothing read', async () => {
     const w = world();
     must(await w.fake.react(w.newest, w.pipe, 'tea'));

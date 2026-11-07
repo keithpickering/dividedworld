@@ -8,7 +8,7 @@
  * Nothing here writes: a loader runs on a hover as well as a press, and a hover is not a visit.
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import type { Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, SeasonPage, UpdatesPage } from './data/api.ts';
+import type { KayfaApi, Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, SeasonPage, UpdatesPage } from './data/api.ts';
 import { SIGNED_OUT_DOC, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
 
 /** What a glass loader needs of the app: the api, and whether a player is signed in now. */
@@ -155,11 +155,16 @@ export const isNotAdminDoc = (doc: unknown): doc is NotAdminDoc => typeof doc ==
 
 export const queueKey = (): string => '/admin/queue';
 
+/** The queue's page and the boards with the descriptions they have now. */
+export type QueuePageDoc = QueuePage & { readonly boards: Awaited<ReturnType<KayfaApi['boards']>> };
+
 /** Signed out, or signed in and not an admin: the screen draws "The admin queue is for admins." */
-export function loadQueue(env: GlassEnv, preload: Preload): Promise<QueuePage | NotAdminDoc | typeof SIGNED_OUT_DOC> {
+export function loadQueue(env: GlassEnv, preload: Preload): Promise<QueuePageDoc | NotAdminDoc | typeof SIGNED_OUT_DOC> {
   return beside(preload, async () => {
     if (!(await env.signedIn())) return SIGNED_OUT_DOC;
-    return (await env.api.queuePage()) ?? NOT_ADMIN_DOC;
+    /* The boards are read beside the page (boot's are as the page loaded, and a description saved since would show stale). */
+    const [page, boards] = await Promise.all([env.api.queuePage(), env.api.boards()]);
+    return page === null ? NOT_ADMIN_DOC : { ...page, boards };
   });
 }
 
@@ -184,17 +189,22 @@ export const logKey = (): string => '/log';
 export function loadLog(env: GlassEnv, preload: Preload): Promise<ScreenDoc<LogDoc>> {
   return beside(preload, async () => {
     if (!(await env.signedIn())) return SIGNED_OUT_DOC;
-    /* The estimate is read beside the page, and only waited for a little: it fills in when it lands. */
-    const asked = Promise.resolve(env.api.estimate()).then((e): Estimate | null => e, () => null);
-    const page = await env.api.logPage(null);
+    /* The estimate is read beside the page, and only waited for a little: it fills in when it lands. Its Acts (which the page was not asked about)
+       are read with it and inside the same bound, so the first frame has their words and a hung read cannot hold the page; a read that fails leaves those lines in plain words. */
+    const paged = env.api.logPage(null);
+    const withActs = Promise.resolve(env.api.estimate()).then(
+      async (estimate): Promise<{ readonly estimate: Estimate; readonly acts: readonly Act[] } | null> => {
+        const want = estimateActIds(estimate, new Set((await paged).acts.map((a) => a.id)));
+        return { estimate, acts: want.length === 0 ? [] : await env.api.actsById(want).catch((): readonly Act[] => []) };
+      },
+      () => null,
+    ).catch(() => null);
+    const page = await paged;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const waited = await Promise.race([asked, new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), ESTIMATE_WAIT_MS); })]);
+    const waited = await Promise.race([withActs, new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), ESTIMATE_WAIT_MS); })]);
     clearTimeout(timer);
-    if (waited === 'late') return { page, estimate: null, estimateLater: asked };
+    if (waited === 'late') return { page, estimate: null, estimateLater: withActs.then((r) => r?.estimate ?? null) };
     if (waited === null) return { page, estimate: null };
-    /* The estimate's lines name Acts the page was not asked about: read with it, so the first frame has their words. A read that fails leaves those lines in plain words. */
-    const want = estimateActIds(waited, new Set(page.acts.map((a) => a.id)));
-    const estimateActs = want.length === 0 ? [] : await env.api.actsById(want).catch((): readonly Act[] => []);
-    return { page, estimate: waited, estimateActs };
+    return { page, estimate: waited.estimate, estimateActs: waited.acts };
   });
 }

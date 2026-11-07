@@ -93,6 +93,7 @@ type Own = Omit<LogData, 'log' | 'acts' | 'names' | 'titles' | 'states'>;
  */
 export function logDataOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlement: string | null, estimate: Estimate | null): LogData {
   const { page } = doc;
+  /* Turns are the document's: a Turn taken while the page is open shows on the next read. */
   const ids = new Set(mine.map((c) => c.id));
   const names = new Map<Id, string>();
   for (const c of page.people) if (!ids.has(c.id)) names.set(c.id, c.name);

@@ -196,13 +196,13 @@ describe('holding and reversing', () => {
 });
 
 describe('the page is its document', () => {
-  test('is whole in its first render, from the document, with the boards from boot: nothing is read', async () => {
+  test('is whole in its first render, from the document, with the boards beside the queue: nothing is read', async () => {
     const fake = buildWorld();
     seedMoves(fake, testInstance, { signIn: 'admin' });
     const boot = await fake.boot();
-    const doc = await fake.queuePage();
+    const doc = { ...(await fake.queuePage())!, boards: await fake.boards() };
     const read = holdReads(fake, ['session']);
-    renderIn(fake, <QueueScreen doc={doc!} now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    renderIn(fake, <QueueScreen doc={doc} now={fake.clock.now()} />, { path: '/admin/queue', boot });
     expect(screen.getByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /^In force/u })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /^Boards/u }).querySelectorAll('article').length).toBeGreaterThan(0);
@@ -235,6 +235,26 @@ describe('the page is its document', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(page).toHaveBeenCalledTimes(1);
     expect((await fake.adminQueue()).waiting).toHaveLength(0);
+  });
+});
+
+describe('the boards are read with the queue', () => {
+  test('a description saved, then leaving and coming back, shows the new description (boot\'s boards are as the page loaded)', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const boot = await fake.boot();
+    const first = renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    const boards = await group(/^Boards/u);
+    const board = (await fake.boards())[0]!;
+    const card = await within(boards).findByRole('article', { name: board.name });
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Fresh words');
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${board.name}` }));
+    await waitFor(() => expect(card).toHaveTextContent('Description: “Fresh words”'));
+    first.unmount();
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    const again = await within(await group(/^Boards/u)).findByRole('article', { name: board.name });
+    expect(again).toHaveTextContent('Description: “Fresh words”');
   });
 });
 

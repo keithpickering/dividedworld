@@ -185,7 +185,9 @@ function UpdatesView({ page }: { readonly page: UpdatesPage }) {
   const problem = asksHandover && asked.season === null ? 'The address names no season, so there is no handover to write about. Open the to-do from the admin queue.' : undefined;
   /* The reactions the document read are of the update it opened: the one asked for when it is among its updates, else the newest. */
   const opened = page.updates.find((u) => u.act === asked.update) ?? page.updates[0];
-  const seed = opened === undefined ? null : { act: opened.act, tallies: page.tallies, mine: page.mine };
+  /* One object for a document, so the open Post's subscription is made once, not at each render. */
+  const openedAct = opened?.act;
+  const seed = useMemo(() => (openedAct === undefined ? null : { act: openedAct, tallies: page.tallies, mine: page.mine }), [openedAct, page.tallies, page.mine]);
 
   const onMore = () => {
     const last = updates.at(-1);
