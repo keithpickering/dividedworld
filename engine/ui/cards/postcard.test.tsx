@@ -194,6 +194,27 @@ describe('the back', () => {
     expect(css).toMatch(/\.kb-postcard-back\s+\.kb-postcard-canvas[^{]*\{[^}]*var\(--kb-glass-field\)/u);
     expect(css).toMatch(/\.kb-postcard-back\[data-hit\][^{]*\{[^}]*var\(--kb-glass-ready\)/u);
   });
+
+  const rule = (selector: string) => new RegExp(`${selector.replace(/[.[\]]/gu, '\\$&')}\\s*\\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
+
+  test('is clouded: a gradient of tokens multiplied over the noise, with no crossed bands', () => {
+    const canvas = rule('.kb-postcard-back .kb-postcard-canvas');
+    expect(canvas).not.toMatch(/45deg/u);
+    expect(canvas).toMatch(/background-blend-mode:\s*multiply/u);
+    expect(canvas).toContain('var(--kb-back-tint)');
+    expect(rule('.kb-postcard-back')).toMatch(/--kb-back-tint:\s*linear-gradient\([^;]*var\(--kb-glass-/u);
+  });
+
+  test('draws the mark two thirds of the card wide, glowing in the back\'s glow', () => {
+    const emblem = rule('.kb-postcard-emblem');
+    expect(emblem).toMatch(/width:\s*66cqw/u);
+    expect(emblem).toMatch(/height:\s*66cqw/u);
+    expect(emblem).toMatch(/box-shadow:[^;]*var\(--kb-back-glow\)/u);
+  });
+
+  test('glows in the machine\'s gold on a hit', () => {
+    expect(rule('.kb-postcard-back[data-hit]')).toMatch(/--kb-back-glow:\s*var\(--kb-glass-ready\)/u);
+  });
 });
 
 describe('the stylesheet', () => {
