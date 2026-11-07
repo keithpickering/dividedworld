@@ -46,6 +46,8 @@ declare
                            'alerts_page(timestampwithtimezone)',
                            -- The Updates screen and the admin queue (0121).
                            'updates_page(uuid,timestampwithtimezone,integer)', 'queue_page()',
+                           -- The player's own log (0123): a page of each of its sources and what the lines name.
+                           'log_page(timestampwithtimezone)',
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
