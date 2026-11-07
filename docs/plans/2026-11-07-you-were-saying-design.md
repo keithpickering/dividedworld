@@ -79,10 +79,12 @@ Weighed: three named sizes (a coarser offer); a free amount typed in (fiddly at 
   newlines, for a slot that asks for it; every existing slot keeps cutting at the first newline.
 - **The scrubber** (the staff design's, built here in the engine for every old-voice output): a hit regenerates once.
 - **A failure refunds.** If the endpoint does not answer after its retries, or the second scrub hits, or what comes back
-  is empty, the play stays (it is an Act, and it is still a play the room may react to), the Aura paid for its length
-  above the base price, and the base price itself, come back to the caster's wallet as a `refund` wallet event, and the
-  caster's and the author's logs say so in plain words. The card is spent; the Aura is not. On a regeneration after an
-  edit, a failure keeps the tail it had, which still reads as a continuation of the words before.
+  is empty, the play stays (it is an Act, and it is still a play the room may react to), the Aura paid at the play for
+  its length comes back to the caster's wallet as a `refund` wallet event, and the card goes back to the caster's hand
+  (a `returned` card ledger row), since its base price was paid at the Vending Machine. The caster's and the author's
+  logs say so in plain words. This is the session's reading of the owner's "refund", not a choice the owner was asked.
+  A Mod Bot's play pays nothing and holds no hand, so its failure returns nothing. On a regeneration after an edit, a
+  failure keeps the tail it had, which still reads as a continuation of the words before.
 - **An instance with no completion endpoint** does not offer the card: it is not sold, not offered to the pool, and a
   play of one already held is refused in plain words. An instance that switches The System off may keep the old voice,
   since the endpoint is the instance's own.
@@ -197,7 +199,8 @@ personality core that "doesn't work quite right" (the Mod Bots design, section 1
 ## 13. The log
 
 - **The caster:** "You played You Were Saying? on post N for M tokens" (the existing play line, with the length).
-  On a failure: "The old voice didn't answer for your You Were Saying? on post N, so your 1.75 came back."
+  On a failure: "The old voice didn't answer for your You Were Saying? on post N, so your 0.75 came back, and the card
+  is back in your hand."
 - **The author:** "You Were Saying? on your post continued it", and on each edit "Your edit of post N made its You Were
   Saying? again". A clear: "You erased You Were Saying? on post N". A failure: "You Were Saying? on post N didn't take."
 
@@ -223,3 +226,7 @@ personality core that "doesn't work quite right" (the Mod Bots design, section 1
 - **Rarity and price:** common and the starting numbers in section 2, until the season review.
 - **The tear's frequency** after typing, judged on the shots.
 - **The Strategy Guide's copy** for the card is committed and approved by the owner in review.
+- **"Anything shaped like a name"** (the staff design's scrubber): emails, phone numbers and URLs have shapes a pattern
+  finds, and the plan builds those, with the instance's word list. A real person's name has no shape that a forum full of
+  handles does not also have, so the plan does not guess at one. Whether the scrubber should take a list of names (the
+  community's own, kept by admins) is left for the owner.
