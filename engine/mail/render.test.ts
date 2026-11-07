@@ -28,6 +28,9 @@ const ALLOWED = new Set<string>([
   ...Object.values(C),
   ...[0.38, 0.18, 0.07].map((a) => blend(C.neon, C.ground, a)),
   ...[0.35, 0.55].map((a) => blend(C.violet, C.ground, a)),
+  // The Gmail-only blend identity: `screen` and `difference` do nothing over black. It sits in the
+  // `u + .body` rules, which only Gmail matches, and is never painted as a color.
+  '#000',
 ].map((h) => h.toLowerCase()));
 
 const mail: Mail = {
@@ -104,7 +107,7 @@ test('every hex in the output is a theme color or a blend of two', () => {
   // every seam blend really is present
   for (const a of [0.38, 0.18, 0.07]) assert.ok(html.includes(blend(C.neon, C.ground, a)));
   // no named colors in a color/background property
-  assert.doesNotMatch(html, /(?:color|background)\s*:\s*(?:white|black|red|blue|green|gray|grey|silver)\b/i);
+  assert.doesNotMatch(html, /(?:color|background|border[\w-]*)\s*:[^;"}]*\b(?:white|black|red|blue|green|gray|grey|silver|yellow|orange|purple|pink|cyan)\b/i);
 });
 
 test('blend', () => {
@@ -118,7 +121,6 @@ test('renderText holds every block\'s words and no markup', () => {
   for (const w of ['<B>&', 'Paragraph words', '482915', 'Your code', 'Sign in: {{ .ConfirmationURL }}', 'Thread: Who <keeps> reacting', 'Rule: Rule one', '> Your post', '> Bold words & more', 'Note sentence.']) {
     assert.ok(t.includes(w), w);
   }
-  assert.ok(t.includes('<B>&'.toUpperCase()) || t.includes('<B>&'));
   assert.doesNotMatch(renderText({ ...mail, blocks: [{ type: 'paragraph', text: 'plain' }, { type: 'code', label: 'L', code: '1' }] }), /</);
 });
 
@@ -138,4 +140,57 @@ test('VML masthead, mso block, dark color-scheme, Gmail blend, one head style', 
   assert.match(html, /linear-gradient\(#07050d,#07050d\)/);
   // seam: pale row then three blended rows
   assert.ok(html.indexOf(C.pale) < html.indexOf(blend(C.neon, C.ground, 0.38)));
+});
+
+test('Gmail blend wrappers: screen outside, difference inside, over black, same classes in the CSS', () => {
+  assert.ok(html.includes('<div class="gs"><div class="gd"><p'));
+  assert.ok(html.includes('</p></div></div>'));
+  assert.match(html, /u \+ \.body \.gs\{background:#000;mix-blend-mode:screen\}/);
+  assert.match(html, /u \+ \.body \.gd\{background:#000;mix-blend-mode:difference\}/);
+  // every text run carries both wrappers: as many gs openers as gd openers, nested
+  assert.equal(count(html, 'class="gs"'), count(html, '<div class="gs"><div class="gd">'));
+});
+
+test('every way a theme can be bad throws, naming the field', () => {
+  const t = (f: (x: MailTheme) => MailTheme) => () => renderHtml(f(theme), mail, { slots });
+  assert.throws(t((x) => ({ ...x, colors: { ...x.colors, neon: 'cyan' } })), /theme color neon: not a 6-digit hex/);
+  assert.throws(t((x) => ({ ...x, assets: { ...x.assets, coin: 'http://example.test/c.png' } })), /theme coin: not an absolute https URL/);
+  assert.throws(t((x) => ({ ...x, site: 'https://example.test/a)b' })), /theme site: not an absolute https URL/);
+  assert.throws(t((x) => ({ ...x, stacks: { ...x.stacks, body: 'Bod, "Arial"' } })), /theme stack body/);
+  assert.throws(t((x) => ({ ...x, stacks: { ...x.stacks, display: 'Disp; x:y' } })), /theme stack display/);
+  assert.throws(t((x) => ({ ...x, fonts: [{ family: "Bo'd", url: 'https://example.test/a.woff2', weight: 400, style: 'normal' }] })), /theme font Bo'd: bad family/);
+  assert.throws(t((x) => ({ ...x, fonts: [{ family: 'Bod', url: 'https://example.test/a)b.woff2', weight: 400, style: 'normal' }] })), /theme font Bod: not an absolute https URL/);
+  assert.throws(t((x) => ({ ...x, assets: { ...x.assets, smoke: 'https://example.test/{x}.jpg' } })), /theme smoke: not an absolute https URL/);
+});
+
+test('a control character in an href throws even after a good scheme', () => {
+  const b = (href: string) => () => renderHtml(theme, { ...mail, blocks: [{ type: 'button', label: 'b', href }] });
+  assert.throws(b('https:\n//x.test'), /button block 1: href holds a control character/);
+  assert.throws(b('mailto:a\u0000'), /button block 1: href holds a control character/);
+});
+
+test('VML masthead geometry: the rect fills the cell once, with one set of padding', () => {
+  assert.match(html, /<v:rect [^>]*style="width:600px;height:180px;v-text-anchor:middle"/);
+  assert.ok(html.includes('<v:textbox inset="40px,0,40px,0">'));
+  assert.ok(html.includes('</v:textbox></v:rect><![endif]-->'));
+  const mast = html.match(/<td class="mast"[^>]*>/)?.[0] ?? '';
+  assert.match(mast, /padding:0"/);
+  // outside Outlook the 40px comes from a div, hidden from Outlook
+  assert.ok(html.includes('<!--[if !mso]><!--><div class="pad" style="padding:0 40px"><!--<![endif]-->'));
+});
+
+test('a stray {{ or }} in caller text throws, naming the block; a declared slot does not', () => {
+  const m = (b: Mail['blocks'][number]) => () => renderHtml(theme, { ...mail, blocks: [b] }, { slots });
+  assert.throws(m({ type: 'heading', text: 'Hello {{ name }}' }), /heading block 1: .*\{\{/);
+  assert.throws(m({ type: 'note', text: 'oops }}' }), /note block 1: .*\}\}/);
+  assert.throws(m({ type: 'quote', label: 'L', words: '{{ .Other }}' }), /quote block 1/);
+  assert.throws(() => renderHtml(theme, { ...mail, preheader: '{{ x }}' }, { slots }), /preheader/);
+  m({ type: 'code', label: 'L', code: '{{ .Token }}' })();
+});
+
+test('theme URLs are attribute-escaped', () => {
+  const t = { ...theme, assets: { ...theme.assets, coin: 'https://example.test/c.png?a=1&b=2' } };
+  const out = renderHtml(t, mail, { slots });
+  assert.ok(out.includes('src="https://example.test/c.png?a=1&amp;b=2"'));
+  assert.ok(!out.includes('a=1&b=2'));
 });
