@@ -175,6 +175,7 @@
   display: inline-block;
   width: 0;
   vertical-align: middle;
+  overflow: hidden;
   transition: width 180ms ease;
 }
 

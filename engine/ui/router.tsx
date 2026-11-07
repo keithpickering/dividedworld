@@ -231,6 +231,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const p = pendingRef.current;
     if (!p) return;
     pendingRef.current = null;
+    startedBy.current = undefined;
     p.controller.abort();
     setPending(null);
     report('cancelled');
@@ -289,6 +290,7 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
       const p = pendingRef.current;
       if (p?.id !== id || o.kind === 'aborted' || p.account !== accountRef.current) return;
       pendingRef.current = null;
+      startedBy.current = undefined;
       setPending(null);
       report(o.kind === 'doc' ? 'landed' : 'failed');
       land(req, found, o);

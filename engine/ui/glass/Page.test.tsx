@@ -162,6 +162,19 @@ describe('the page while a load is out', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Screen loaded');
   });
 
+  test('the status empties a few seconds after it lands, so it is said once', async () => {
+    const { land } = mount();
+    await screen.findByRole('navigation', { name: 'Menu' });
+    await userEvent.click(screen.getByRole('link', { name: 'Open season' }));
+    vi.useFakeTimers();
+    try {
+      await land();
+      expect(screen.getByRole('status')).toHaveTextContent('Screen loaded');
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    } finally { vi.useRealTimers(); }
+  });
+
   test('a link on the page that is pending is a claimed source: the menu bar\'s end shows no spinner beside it', async () => {
     const { container } = mount();
     await screen.findByRole('navigation', { name: 'Menu' });

@@ -380,6 +380,21 @@ describe('the router loads before it moves', () => {
     expect(screen.getByText('index screen')).toBeInTheDocument();
     expect(window.location.pathname).toBe('/');
   });
+  test('an Escape keydown that starts a load does not cancel it; a later Escape does', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    /* A page-level handler (the menu bar's Back) starts the load from the same keydown the router also hears at the window. */
+    const start = () => nav('/t/a', { source: 'back' });
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') start(); };
+    document.addEventListener('keydown', onKey);
+    act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    document.removeEventListener('keydown', onKey);
+    expect(navigation.pending?.source).toBe('back');
+    expect(calls[0]!.signal.aborted).toBe(false);
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(navigation.pending).toBeNull();
+  });
   test('Escape typed in a text field, or with a modal open, is not the router\'s', () => {
     const { load, calls } = manualLoader();
     mount(load);

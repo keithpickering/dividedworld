@@ -35,6 +35,9 @@ export interface PageProps {
   readonly children: ReactNode;
 }
 
+/** How long `Screen loaded` stays in the status region before it is emptied. */
+const LOADED_MS = 4000;
+
 export function Page({ surface, menu = true, children }: PageProps) {
   const { path, hash, popped } = useLocation();
   const main = useRef<HTMLElement>(null);
@@ -83,6 +86,12 @@ export function Page({ surface, menu = true, children }: PageProps) {
     // Per outcome: the sequence number rises with each.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outcome?.seq]);
+  /* Said once: the words are cleared a few seconds on, so the region is empty at rest. */
+  useEffect(() => {
+    if (!landed) return;
+    const t = setTimeout(() => setLanded(false), LOADED_MS);
+    return () => clearTimeout(t);
+  }, [landed]);
   const first = useRef(true);
   useEffect(() => {
     if (first.current) { first.current = false; return; }
