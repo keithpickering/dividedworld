@@ -791,7 +791,7 @@
 .kb-tp-r small {
   display: block;
   font-size: 0.91em;
-  opacity: 0.8;
+  font-weight: normal;
 }
 
 .kb-tp-f {
