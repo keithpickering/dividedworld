@@ -10,13 +10,14 @@ import { heel } from './heel.ts';
 import { lurker } from './lurker.ts';
 import { jabroni } from './jabroni.ts';
 import { technician } from './technician.ts';
+import { tweener } from './tweener.ts';
 import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
 import { estimateForOwner, settle } from '../../../engine/rules/settle.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
-  ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
+  ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing,
 } from '../../../engine/rules/types.ts';
 
 const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
@@ -32,7 +33,7 @@ const total = (rules: ClassRules, i: ClassInput, reason?: string) =>
   rules.earn(i, settings).filter((e) => !reason || e.reason === reason).reduce((s, e) => s + e.amount, 0);
 
 test('the instance holds its classes, in the order every screen draws them, and is whole', () => {
-  assert.deepEqual(classes.map((c) => c.key), ['face', 'heel', 'jabroni', 'technician', 'lurker']);
+  assert.deepEqual(classes.map((c) => c.key), ['face', 'heel', 'jabroni', 'technician', 'tweener', 'lurker']);
   assert.deepEqual(instanceProblems(instance), []);
 });
 
@@ -598,4 +599,51 @@ test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a
   assert.equal(paid(settle(cast('he', 'fire', false), pepWorld), 'he', 'heel.stoleThunder'), 0, 'cheered, it reads as Sweet: no thunder stolen');
   assert.equal(paid(settle(cast('fa', 'fire', true), pepWorld), 'fa', 'face.liftedAPost'), 1, 'cheered, it reads as Sweet, and the post\'s cheer after it lifts it for a Face');
   assert.equal(paid(settle(cast('fa', 'facepalm', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
+});
+
+/* ---- Tweener ---- */
+const lean = (q: 'excitedPositive' | 'excitedNegative', n: number, share = 1): Standing[] =>
+  Array.from({ length: n }, () => ({ ...none, [q]: share }));
+const room = (hype: number, heat: number): Standing[] => [...lean('excitedPositive', hype), ...lean('excitedNegative', heat)];
+const standing = (before: readonly Standing[], now: readonly Standing[]): ClassInput['standings'][number] =>
+  ({ act: 'a1', actKind: 'post', at: 10, before, now });
+const split = (before: readonly Standing[], now: readonly Standing[]) =>
+  total(tweener, input({ standings: [standing(before, now)] }), 'tweener.splitTheRoom');
+
+test('Tweener splits the room: pays twice the smaller side, new this window', () => {
+  assert.equal(split([], room(6, 6)), 12 * settings.vote);
+  assert.equal(split([], room(10, 2)), 4 * settings.vote);
+  assert.equal(split([], room(12, 0)), 0);
+});
+test('Tweener counts each player once: one player\'s half-and-half hedge pays nothing', () => {
+  assert.equal(split([], [{ ...none, excitedPositive: 0.5, excitedNegative: 0.5 }]), 0);
+});
+test('Tweener counts a player by net lean: 🔥🔥🍅 from one player and 🍅 from another is hype 1/3, heat 1', () => {
+  const now: Standing[] = [{ ...none, excitedPositive: 2 / 3, excitedNegative: 1 / 3 }, { ...none, excitedNegative: 1 }];
+  assert.ok(Math.abs(split([], now) - (2 / 3) * settings.vote) < 1e-9);
+});
+test('Tweener is paid only the change since the window began', () => {
+  assert.equal(split(room(6, 6), [...room(6, 6), ...lean('excitedPositive', 6)]), 0);
+  assert.equal(split([...lean('excitedPositive', 10), ...lean('excitedNegative', 2)], room(10, 6)), 8 * settings.vote);
+  assert.equal(split(room(6, 6), [...lean('excitedPositive', 7), ...lean('excitedNegative', 5)]), -2 * settings.vote);
+});
+test('Tweener\'s heat vote moving to hype takes its part back', () => {
+  assert.equal(split(room(5, 5), room(6, 4)), -2 * settings.vote);
+});
+test('Tweener shrugged off: calm-positive and bored-negative votes cost half a vote, excited costs nothing', () => {
+  assert.equal(total(tweener, input({ received: [got('calmPositive', 2), got('boredNegative', 1)] })), -1.5 * settings.vote);
+  assert.equal(total(tweener, input({ received: [got('excitedPositive', 3), got('excitedNegative', 3)] })), 0);
+});
+test('Tweener stirred the pot on another\'s post, not its own, and not with nobody drawn', () => {
+  const drawn = { at: 8, now: room(3, 3) };
+  const stir = (c: Partial<PlayedCard>) => total(tweener, input({ cardsPlayed: [card({ drawnAfter: drawn, ...c })] }), 'tweener.stirredThePot');
+  assert.equal(stir({}), 6 * settings.vote);
+  assert.equal(stir({ onOthers: false }), 0);
+  assert.equal(stir({ drawnAfter: null }), 0);
+});
+test('Tweener\'s lines scale with the vote', () => {
+  const i = input({ standings: [standing([], room(6, 6))], received: [got('calmPositive')], cardsPlayed: [card({ drawnAfter: { at: 8, now: room(3, 3) } })] });
+  const at = (vote: number) => tweener.earn(i, { ...settings, vote }).map((e) => e.amount);
+  assert.deepEqual(at(20), at(10).map((a) => a * 2));
+  assert.equal(at(10).length, 3);
 });
