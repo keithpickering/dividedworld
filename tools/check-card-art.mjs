@@ -52,10 +52,14 @@ function read(file) {
   }
 }
 
-/** Every `name=value` in a text, quoted either way or bare: [name, value] with the name's case kept. */
+/**
+ * Every `name=value` in a text, quoted either way or bare: [name, value] with the name's case kept. A name starts only
+ * where the character before it cannot be part of one, so a long run of name characters with no `=` after it (a
+ * comment, a title) is tried once, not again from each of its characters: the reading stays linear in the file.
+ */
 function attributes(text) {
   const out = [];
-  for (const m of text.matchAll(/([^\s=<>"'/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/gu)) out.push([m[1], m[2] ?? m[3] ?? m[4]]);
+  for (const m of text.matchAll(/(?<![^\s=<>"'/])([^\s=<>"'/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/gu)) out.push([m[1], m[2] ?? m[3] ?? m[4]]);
   return out;
 }
 

@@ -122,6 +122,15 @@ try {
   red('a canvas with xlink:href to a URL', art('<use xlink:href="https://example.com/a.svg#b"/>'), /art\.svg.*href/);
   red('a mark holding <script>', (f) => { f['mark.svg'] = `<svg ${NS} viewBox="0 0 1 1"><script/></svg>`; }, /mark\.svg.*<script/i);
   red('a CSS url( outside an attribute', art('<style>.a{fill:url(https://x/y)}</style>'), /art\.svg.*url\(/);
+  {
+    // The reading is linear in the file: a canvas just under its cap, one long run of text with no "=" in it (a
+    // comment, a title), is read in well under a second, not retried from every character of the run.
+    const dir = repo(art(`<!--${'a'.repeat(190 * 1024)}-->`));
+    const t0 = performance.now();
+    const faults = cardArtFaults(dir);
+    const ms = performance.now() - t0;
+    check('a canvas just under its cap, one long run of text, is read in under a second', faults.length === 0 && ms < 1000, `${Math.round(ms)} ms ${JSON.stringify(faults)}`);
+  }
   green('a fragment fill="url(#g)" passes', art('<defs><linearGradient id="g"/></defs><rect fill="url(#g)"/>'));
   green('a fragment <use href="#p"/> passes', art('<path id="p" d="M0 0"/><use href="#p"/><use xlink:href="#p"/>'));
   green('attributes that merely contain "on" later (e.g. d, stroke-linecap) pass', art('<path d="M0 0" stroke-linecap="round" font-size="3"/>'));
