@@ -43,7 +43,8 @@ function resolve(value, scope, seen = []) {
   let out = value;
   for (let guard = 0; guard < 50; guard++) {
     const m = out.match(VAR);
-    if (!m) return out;
+    /* A var() the pattern cannot read (a fallback nested past one level) is a fault, never a literal passed through. */
+    if (!m) return /var\(/i.test(out) ? null : out;
     const [whole, name, fallback] = m;
     let replacement;
     if (scope.has(name) && !seen.includes(name)) {

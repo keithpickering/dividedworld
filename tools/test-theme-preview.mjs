@@ -57,6 +57,7 @@ check('a dark-only theme (:root and both dark blocks alike) yields no light', ((
 check('a $& in a value is kept literally', previewOf(full('--kb-fg: var(--kb-nowhere, a$&b);')).light?.['--kb-fg'] === 'a$&b');
 check('a var() fallback that is itself a var() is followed', previewOf(full('--kb-fg: var(--kb-nowhere, var(--kb-bg));')).light?.['--kb-fg'] === '#123456');
 check('a var() fallback var() that resolves to nothing fires', previewOf(full('--kb-fg: var(--kb-nowhere, var(--kb-also));')).faults.some((x) => /--kb-fg resolves to nothing/.test(x)));
+check('a var() the resolver cannot read (a fallback nested past one level) fires, never passing through', previewOf(full('--kb-fg: var(--kb-nowhere, calc(1px + (2px)));')).faults.some((x) => /--kb-fg resolves to nothing/.test(x)));
 check('previewFaults reads exactly the files check-theme.mjs calls themes (so a ui/themes/ file is checked once THEME_FILE names it)', (() => {
   const bad = house.replace(/^\s*--kb-head-bg:.*$/gm, '');
   return ['instances/a/ui/theme.css', 'instances/a/ui/themes/x.css', 'instances/a/ui/deep/x/y.css', 'engine/ui/base.css'].every((f) => (previewFaults({ [f]: bad }).length > 0) === THEME_FILE.test(f));
