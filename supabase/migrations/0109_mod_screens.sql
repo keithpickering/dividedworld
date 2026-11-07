@@ -151,9 +151,10 @@ begin atomic
           || coalesce(visit_quiz(v.id), '{}'::jsonb),
         'end', (select jsonb_build_object('act', e.id, 'at', e.created_at, 'outcome', e.payload ->> 'outcome', 'by_act', e.payload -> 'by_act', 'line', e.payload -> 'line')
                 from acts_public e where e.kind = 'visit_end' and e.target_act_id = v.id limit 1),
-        'ruling', (select r.payload ->> 'verdict' from acts i
-                   join acts ap on ap.kind = 'appeal' and ap.target_act_id = i.id
-                   join acts r on r.kind = 'appeal_ruling' and r.target_act_id = ap.id
+        -- Read through acts_public as the rest of the page is (e2e/0016 holds a screen to the public projections).
+        'ruling', (select r.payload ->> 'verdict' from acts_public i
+                   join acts_public ap on ap.kind = 'appeal' and ap.target_act_id = i.id
+                   join acts_public r on r.kind = 'appeal_ruling' and r.target_act_id = ap.id
                    where i.kind = 'infraction' and i.payload ->> 'visit_act' = v.id::text limit 1)
       ) order by v.created_at, v.id), '[]'::jsonb) from vis v),
     'faces', (select coalesce(jsonb_agg(jsonb_build_object('play', f.play, 'card', f.card)), '[]'::jsonb)
