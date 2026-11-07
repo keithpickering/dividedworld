@@ -1,0 +1,51 @@
+/* The glass skin of the search combobox (GlassCombobox.tsx). Glass tokens only. */
+.kb-glass-combo {
+  position: relative;
+}
+
+.kb-glass-combo-list {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-panel-strong);
+  color: var(--kb-glass-text);
+  font-size: var(--kb-glass-size-body);
+}
+
+.kb-glass-combo-head {
+  padding: 4px 10px;
+  background: var(--kb-glass-field-2);
+  color: var(--kb-glass-neon-text);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.kb-glass-combo-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  align-items: center;
+  padding: 4px 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.kb-glass-combo-row[aria-selected='true'] {
+  outline: 2px solid var(--kb-glass-neon);
+  outline-offset: -2px;
+  background: var(--kb-glass-field);
+}
+
+.kb-glass-combo-detail {
+  flex: none;
+  color: var(--kb-glass-text-2);
+  font-weight: 600;
+}
