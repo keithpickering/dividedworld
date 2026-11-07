@@ -173,6 +173,18 @@
   border-left: 3px solid var(--kb-glass-loss);
 }
 
+/* A phone's head row is no table row (its cells never lay the table out), as the Log's: each cell is a clipped block, still read by a screen reader. */
+:where(:root[data-kb-layout='phone']) .kb-machine-table thead th {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* A phone: each slot is a plate of its own, the head row of the table kept for a screen reader. */
 :where(:root[data-kb-layout='phone']) .kb-machine-table thead {
   position: absolute;
@@ -182,15 +194,15 @@
   clip-path: inset(50%);
 }
 
+:where(:root[data-kb-layout='phone']) .kb-machine-table thead tr,
 :where(:root[data-kb-layout='phone']) .kb-machine-table,
 :where(:root[data-kb-layout='phone']) .kb-machine-table tbody {
   display: block;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-machine-table tbody tr {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: 'code item order' 'avail avail price' 'boss boss boss';
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px 10px;
   align-items: center;
   padding: 12px 0;
@@ -201,12 +213,16 @@
   padding: 0;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-machine-code { grid-area: code; }
-:where(:root[data-kb-layout='phone']) .kb-machine-item { grid-area: item; }
-:where(:root[data-kb-layout='phone']) .kb-machine-order { grid-area: order; }
-:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(4) { grid-area: avail; }
-:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(5) { grid-area: price; }
-:where(:root[data-kb-layout='phone']) .kb-machine-boss { grid-area: boss; }
+/*
+ * The slot, its name and its arrows on one line, in that order (the arrows come first in the markup); the name asks for eight of its own type sizes,
+ * so at a larger text size it takes a line to itself and the arrows wrap under it, never a sliver beside them.
+ */
+:where(:root[data-kb-layout='phone']) .kb-machine-code { order: 1; }
+:where(:root[data-kb-layout='phone']) .kb-machine-item { order: 2; flex: 1 1 8em; min-width: 0; }
+:where(:root[data-kb-layout='phone']) .kb-machine-order { order: 3; min-width: 110px; } /* as wide as the price under it, which the board's third column made it */
+:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(4) { order: 4; flex: 1 1 8em; }
+:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(5) { order: 5; }
+:where(:root[data-kb-layout='phone']) .kb-machine-boss { order: 6; flex: 0 0 100%; }
 :where(:root[data-kb-layout='phone']) .kb-machine-boss:empty { display: none; }
 
 :where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(4) .kb-machine-field { width: 100%; }
