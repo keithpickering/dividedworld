@@ -1,4 +1,4 @@
--- bbcode_plain (supabase/migrations/0116_search.sql) runs in the index trigger on every post, and an instance's post length has no upper bound, so its cost must grow
+-- bbcode_plain (supabase/migrations/0117_search.sql) runs in the index trigger on every post, and an instance's post length has no upper bound, so its cost must grow
 -- with the post and not with its square. Each adversarial body is made at n and at 4n repeats and timed: a linear walk takes about four times as long at 4n, a quadratic one
 -- sixteen, and the bound between them is 8x. Ratios, not a clock, so a slow machine does not fail it; the floor on the small run keeps timer noise out of a ratio of tiny times.
 do $test$
