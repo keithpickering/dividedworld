@@ -62,5 +62,9 @@ describe('the post line\'s date', () => {
   const now = Date.parse('2026-11-07T12:00:00Z');
   test('keeps its year at 1440', () => expect(when(at)).toMatch(/^Oct 29, 2026, \d+:14 [AP]M$/u));
   test('a phone drops this year\'s, against the clock it is given', () => expect(when(at, true, now)).toMatch(/^Oct 29, \d+:14 [AP]M$/u));
+  test('a phone keeps the year across a year boundary', () => expect(when('2025-12-31T21:14:00Z', true, Date.parse('2026-01-02T12:00:00Z'))).toMatch(/^Dec 31, 2025, \d+:14 [AP]M$/u));
+  /* vitest runs in America/Los_Angeles (vitest.config.ts): 03:00 UTC on Jan 1 is Dec 31, 7:00 PM there, so the local year is the earlier one. */
+  test('a phone compares local years, not UTC\'s: a date the evening before New Year\'s UTC keeps its year', () => expect(when('2026-01-01T03:00:00Z', true, Date.parse('2026-02-10T12:00:00Z'))).toBe('Dec 31, 2025, 7:00 PM'));
+  test('and drops the year when the clock is already UTC\'s next year but local is still this one', () => expect(when('2026-06-01T12:00:00Z', true, Date.parse('2027-01-01T03:00:00Z'))).toBe('Jun 1, 5:00 AM'));
   test('a phone keeps another year\'s', () => expect(when('2025-10-29T21:14:00Z', true, now)).toMatch(/^Oct 29, 2025, \d+:14 [AP]M$/u));
 });

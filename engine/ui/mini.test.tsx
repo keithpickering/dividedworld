@@ -13,6 +13,14 @@ test('Ago says how long ago against a clock it is given, like ago()', () => {
   expect(screen.getByText('2 min ago')).toBeInTheDocument();
 });
 
+test('ago on a phone drops the year only within the reader\'s own current year: across a year boundary, and by local year in a zone behind UTC', () => {
+  /* vitest runs in America/Los_Angeles (vitest.config.ts), where 03:00 UTC on Jan 1 is still Dec 31 the evening before. */
+  expect(ago('2025-12-20T12:00:00Z', Date.parse('2026-01-05T12:00:00Z'), true)).toBe('Dec 20, 2025');
+  expect(ago('2026-01-05T12:00:00Z', Date.parse('2026-02-10T12:00:00Z'), true)).toBe('Jan 5');
+  expect(ago('2026-01-01T03:00:00Z', Date.parse('2026-02-10T12:00:00Z'), true)).toBe('Dec 31, 2025');
+  expect(ago('2026-06-01T12:00:00Z', Date.parse('2027-01-01T03:00:00Z'), true)).toBe('Jun 1');
+});
+
 test('useSignedIn reads the player\'s session and asks the server nothing of its own', async () => {
   let sessions = 0;
   function Probe() {

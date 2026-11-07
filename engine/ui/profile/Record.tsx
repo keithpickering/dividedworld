@@ -81,14 +81,14 @@ function Rows({ id, kind, page, rows, total }: { readonly id: Id; readonly kind:
       {rows.length === 0
         ? <p>{total === 0 ? 'Nothing yet.' : 'Nothing on this page.'}</p>
         : (
-          <table className="kb-table kb-record-table">
+          <table className="kb-table kb-record-table" role="table">
             <caption className="kb-visually-hidden">Public record, newest first</caption>
-            <thead><tr><th scope="col">When</th><th scope="col">What</th></tr></thead>
-            <tbody>
+            <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What</th></tr></thead>
+            <tbody role="rowgroup">
               {rows.map((r) => (
-                <tr key={r.key}>
-                  <td className="kb-small"><Ago at={r.at} /></td>
-                  <td>{r.href ? <Link to={r.href}>{r.text}</Link> : r.text}</td>
+                <tr key={r.key} role="row">
+                  <td role="cell" className="kb-small"><Ago at={r.at} /></td>
+                  <td role="cell">{r.href ? <Link to={r.href}>{r.text}</Link> : r.text}</td>
                 </tr>
               ))}
             </tbody>

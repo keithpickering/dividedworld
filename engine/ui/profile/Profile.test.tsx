@@ -87,6 +87,19 @@ describe('the public profile', () => {
   });
 });
 
+describe('the profile\'s record table', () => {
+  test('names its roles outright, so the phone\'s block layout cannot drop them', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(w.pipe, fake);
+    const region = await screen.findByRole('region', { name: 'Public record' });
+    const table = await waitFor(() => { const t = region.querySelector('table'); expect(t).not.toBeNull(); return t!; });
+    expect(table).toHaveAttribute('role', 'table');
+    expect(table.querySelectorAll('thead[role="rowgroup"], tbody[role="rowgroup"]')).toHaveLength(2);
+    expect(table.querySelectorAll('tr:not([role="row"]), th:not([role="columnheader"]), td:not([role="cell"])')).toHaveLength(0);
+  });
+});
+
 describe('what the profile says of a class: only what its player made public', () => {
   test('a class its player never stated is nowhere on the page', async () => {
     const fake = buildWorld();

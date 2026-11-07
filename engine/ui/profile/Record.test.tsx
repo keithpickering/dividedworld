@@ -49,6 +49,18 @@ describe('the full public record', () => {
     expect(screen.getByText(/Page 1 of 3/u)).toBeInTheDocument();
   });
 
+  test('its table names its roles outright, so the phone\'s block layout cannot drop them', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(fake, w.spritey);
+    const table = await screen.findByRole('table');
+    expect(table).toHaveAttribute('role', 'table');
+    expect(table.querySelectorAll('thead[role="rowgroup"], tbody[role="rowgroup"]')).toHaveLength(2);
+    expect(table.querySelectorAll('tr:not([role="row"]), th:not([role="columnheader"])')).toHaveLength(0);
+    expect(table.querySelectorAll('tbody td:not([role="cell"])')).toHaveLength(0);
+    expect(table.querySelectorAll('tbody td[role="cell"]').length).toBeGreaterThan(0);
+  });
+
   test('a "Played" row links to the post the play landed on, not the thread\'s top', async () => {
     const fake = buildWorld();
     const w = world(fake);

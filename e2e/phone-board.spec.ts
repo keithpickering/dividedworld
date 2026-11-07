@@ -71,6 +71,16 @@ test('a record row\'s date stacks above its words, and the six kinds fit one row
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+test('the record table keeps its table, row and cell semantics in the accessibility tree at 390', async ({ page }) => {
+  await open(page, 'boards-10-record--record', '.kb-record-table td');
+  const table = page.getByRole('table');
+  await expect(table).toHaveCount(1);
+  const rows = table.getByRole('row');
+  expect(await rows.count()).toBeGreaterThan(2);
+  await expect(table.getByRole('columnheader')).toHaveCount(2);
+  expect(await table.getByRole('cell').count()).toBe(2 * (await rows.count() - 1));
+});
+
 test('poison: counts that each take a line are named as not sharing one', async ({ page }) => {
   await page.addInitScript(() => {
     document.addEventListener('DOMContentLoaded', () => {
