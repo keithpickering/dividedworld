@@ -77,7 +77,9 @@ alter table card_ledger add constraint card_ledger_pulled_is_free check (kind <>
 -- ------------------------------------------------------------------------------------------ the data migration ----
 
 -- An instance that already holds a catalog: a slot for each card in card_kinds, ordered by key, on sale, at the price its economy setting held. The
--- Booster's slot, and Main Event's hiding, come from the next seed. Then the prices leave the economy row and the cards.
+-- Booster's slot is added by the next seed, at the end of the grid after the cards. On an instance that already held cards every card is put on sale
+-- at its old price, and an admin hides any the instance's catalog hides (Main Event) on the machine's page; a seed never updates an existing slot.
+-- Then the prices leave the economy row and the cards.
 insert into machine_slots (position, card, availability, price)
 select row_number() over (order by k.key), k.key, 'onSale', (setting('economy') ->> k.price_setting)::numeric::integer
 from card_kinds k
@@ -250,7 +252,7 @@ create view my_packs with (security_invoker = true) as
 alter table pack_kinds enable row level security;
 alter table machine_slots enable row level security;
 alter table packs enable row level security;
-revoke all on pack_kinds, machine_slots, packs, machine_now, my_packs from anon, authenticated;
+revoke all on pack_kinds, machine_slots, packs, machine_now, my_packs from public, anon, authenticated;
 -- A pack's odds are the game's plain rules, shown on its slot.
 grant select on pack_kinds to anon, authenticated;
 create policy read on pack_kinds for select to anon, authenticated using (true);

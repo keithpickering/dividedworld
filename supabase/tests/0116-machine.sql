@@ -29,6 +29,7 @@ declare
   card_a text;
   s_solo uuid;
   before_held integer;
+  ann_held integer;
   ledger_rows integer;
 begin
   -- The vocabulary: cards of each rarity, a pack that pulls from them, and a slot of each availability.
@@ -139,14 +140,17 @@ begin
   if pg_temp.refusal(format('select buy_card(%L, %L, 200)', ann, s_open)) is null then raise exception 'a player called buy_card directly'; end if;
   if pg_temp.refusal(format('select buy_pack(%L, %L, 300)', ann, s_pack)) is null then raise exception 'a player called buy_pack directly'; end if;
   if pg_temp.refusal('select * from machine_slots') is null then raise exception 'a player read the slots, hidden ones with them'; end if;
-  if card_held(bob, card_a) is distinct from 0 then raise exception 'a player counted another''s hand'; end if;
+  ann_held := card_held(ann, 'mc-com-1');
+  if ann_held < 1 then raise exception 'ann still holds the card bought: %', ann_held; end if;
   perform tests.unbecome();
   perform tests.become(bob);
+  if card_held(ann, 'mc-com-1') is distinct from 0 then raise exception 'a player counted another''s hand: % of %', card_held(ann, 'mc-com-1'), ann_held; end if;
   if exists (select 1 from my_cards) or exists (select 1 from my_packs) or exists (select 1 from packs) or exists (select 1 from card_ledger) then raise exception 'another player read whose packs and cards are whose'; end if;
   perform tests.unbecome();
 
   -- machine_now is what players see: every slot but a hidden one, the same for a visitor and a player.
   perform tests.become_anon();
+  if pg_temp.refusal(format('select card_held(%L, %L)', ann, 'mc-com-1')) is null then raise exception 'a visitor called card_held'; end if;
   if (select count(*) from machine_now where slot in (s_open, s_out, s_pack)) is distinct from 3 then raise exception 'the machine shows its slots'; end if;
   if exists (select 1 from machine_now where slot in (s_hidden, s_hidden_pack)) then raise exception 'machine_now lists a hidden slot'; end if;
   if (select availability from machine_now where slot = s_out) is distinct from 'soldOut' or (select price from machine_now where slot = s_open) is distinct from 200

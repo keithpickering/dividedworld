@@ -69,6 +69,9 @@ test('the seed carries the engine\'s catalogs of moves (with whether each is str
     { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'] },
     { key: 'nameSuccessor', structural: true, shapesBoard: false, offices: ['boss'] },
     { key: 'setRule', structural: false, shapesBoard: false, offices: ['boss', 'mod'] },
+    { key: 'pullSlot', structural: false, shapesBoard: false, offices: ['boss'] },
+    { key: 'repriceSlot', structural: false, shapesBoard: false, offices: ['boss'] },
+    { key: 'flashSale', structural: false, shapesBoard: false, offices: ['boss'] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);

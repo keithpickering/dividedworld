@@ -2,7 +2,7 @@
  * An instance that already holds a catalog keeps every card's price when the machine arrives (the booster packs plan, Task 2): migrating
  * across supabase/migrations/0115_machine.sql writes a slot for each card in `card_kinds`, ordered by key, on sale, at the price its economy
  * setting held; takes the price keys out of the economy row and leaves the numbers the cards read; drops the column, the check and the trigger
- * that priced a card; and leaves a hand as it was. The next seed adds what the instance names that no slot holds, and changes no slot. On a
+ * that priced a card; and leaves a hand as it was. Every card is put on sale at its old price, and an admin hides any the instance's catalog hides (Main Event) on the machine's page; the Booster's slot is added by the next seed, at the end of the grid after the cards, and the seed changes no slot. On a
  * database of its own, made here beside the scratch one tools/test-sql.mjs made, from the migrations before 0115.
  */
 import { test } from 'node:test';
