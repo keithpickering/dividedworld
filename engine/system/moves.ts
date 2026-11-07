@@ -14,7 +14,7 @@
  * The machine's three moves (booster packs design, section 6) are small moves over the Vending Machine's slots: `pullSlot` sells a card's slot out, `repriceSlot` sets a
  * price to a percent of the admin's, `flashSale` opens a hidden slot for a window. Their numbers are the economy's `machine.*` (`machineLimits`), checked here
  * for the params, in the meeting for what the machine holds (the slot, the pulls in force, one move per slot) and again in SQL at the queue and at landing
- * (supabase/migrations/0117_machine_moves.sql). A pull and a markup punish and carry a demand; a markdown and a flash sale are favors and carry none
+ * (supabase/migrations/0119_machine_moves.sql). A pull and a markup punish and carry a demand; a markdown and a flash sale are favors and carry none
  * (`MoveKind.demand`). What the machine shows is computed from the move Acts (`machine_now`), so ending a move brings the slot back with nothing rewritten.
  *
  * A move reads to a player in plain words (the label on the glass, the line in the log), never in the Director's: the fiction
@@ -45,7 +45,7 @@ export type Office = 'boss' | 'mod';
 /**
  * The numbers the Boss's three moves on the machine are held to, from the instance's economy (`machine.*`, engine/rules/packs.ts holds the
  * starting values). A key the economy lacks is the engine's default, so a database that predates a key still has a bound. SQL holds the same
- * bounds (`machine_move_problem`, supabase/migrations/0117_machine_moves.sql) and reads them from the same row.
+ * bounds (`machine_move_problem`, supabase/migrations/0119_machine_moves.sql) and reads them from the same row.
  */
 export interface MachineLimits {
   /** The most slots pulled at once. */
@@ -197,12 +197,12 @@ export const PULL_SLOT: MoveKind = {
   structural: false,
   shapesBoard: false,
   askable: true,
-  label: 'THE SYSTEM PULLED A CARD FROM THE MACHINE',
+  label: '{role} pulled a card from the machine',
   params: { type: 'object', fields: { slot: slotField } },
   uuids: ['slot'],
   demand: () => 'required',
   plain: 'the pulling of a card from the machine',
-  template: () => 'The System pulled a card from the machine. It cannot be bought there until this ends; it can still come out of a pack.',
+  template: (_p, role) => `${role} pulled a card from the machine. It cannot be bought there until this ends; it can still come out of a pack.`,
   parts: (p, was, tense) => [tense === 'plan' ? 'Pull ' : 'Pulled ', was ?? 'a slot', ' from the machine'],
 };
 
@@ -216,7 +216,7 @@ export const REPRICE_SLOT: MoveKind = {
   structural: false,
   shapesBoard: false,
   askable: true,
-  label: 'THE SYSTEM REPRICED A SLOT AT THE MACHINE',
+  label: '{role} repriced a slot at the machine',
   params: { type: 'object', fields: { slot: slotField, percent: { type: 'number' } } },
   uuids: ['slot'],
   check: (g, limits) => {
@@ -229,7 +229,7 @@ export const REPRICE_SLOT: MoveKind = {
   },
   demand: (p) => (isNumber(p['percent']) && p['percent'] > 100 ? 'required' : 'none'),
   plain: 'the repricing of a slot at the machine',
-  template: (p) => `The System marked a price at the machine ${num(p['percent']) > 100 ? 'up' : 'down'} to ${num(p['percent'])}% of what it was.`,
+  template: (p, role) => `${role} marked a price at the machine ${num(p['percent']) > 100 ? 'up' : 'down'} to ${num(p['percent'])}% of what it was.`,
   parts: (p, was, tense) => [tense === 'plan' ? 'Reprice ' : 'Repriced ', was ?? 'a slot', ` to ${num(p['percent'])}% of its price`],
 };
 
@@ -240,7 +240,7 @@ export const FLASH_SALE: MoveKind = {
   structural: false,
   shapesBoard: false,
   askable: true,
-  label: 'THE SYSTEM OPENED A FLASH SALE AT THE MACHINE',
+  label: '{role} opened a flash sale at the machine',
   params: { type: 'object', fields: { slot: slotField, hours: { type: 'number' } } },
   uuids: ['slot'],
   check: (g, limits) => {
@@ -252,7 +252,7 @@ export const FLASH_SALE: MoveKind = {
   },
   demand: () => 'none',
   plain: 'a flash sale at the machine',
-  template: (p) => `The System opened a flash sale at the machine on a slot that was hidden. It is on sale for ${num(p['hours'])} hours, then hidden again.`,
+  template: (p, role) => `${role} opened a flash sale at the machine on a slot that was hidden. It is on sale for ${num(p['hours'])} hours, then hidden again.`,
   parts: (p, was, tense) => [tense === 'plan' ? 'Open a flash sale on ' : 'Opened a flash sale on ', was ?? 'a slot', ` for ${num(p['hours'])} hours`],
 };
 

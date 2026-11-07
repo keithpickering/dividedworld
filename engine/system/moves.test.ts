@@ -195,12 +195,12 @@ test('a pull and a markup carry a demand; a markdown and a flash sale carry none
 test('the machine\'s moves read in plain words, with nothing unfilled and the slot named when the screen knows it', () => {
   const pull = moveKind('pullSlot')!, up = moveKind('repriceSlot')!, flash = moveKind('flashSale')!;
   for (const [k, p] of [[pull, { slot }], [up, { slot, percent: 150 }], [up, { slot, percent: 50 }], [flash, { slot, hours: 24 }]] as const) {
-    assert.doesNotMatch(k.template(p), /[{}]|undefined|null/);
-    assert.ok(k.template(p).startsWith('The System '));
+    assert.doesNotMatch(k.template(p, 'The Boss'), /[{}]|undefined|null/);
+    assert.ok(k.template(p, 'The Boss').startsWith('The Boss '));
     assert.doesNotMatch(k.parts(p, null, 'plan').join(''), /[{}]|undefined|null/);
   }
-  assert.match(up.template({ slot, percent: 150 }), /up to 150%/);
-  assert.match(up.template({ slot, percent: 50 }), /down to 50%/);
+  assert.match(up.template({ slot, percent: 150 }, 'The Boss'), /up to 150%/);
+  assert.match(up.template({ slot, percent: 50 }, 'The Boss'), /down to 50%/);
   assert.deepEqual(pull.parts({ slot }, 'Whoops!', 'done'), ['Pulled ', 'Whoops!', ' from the machine']);
   assert.deepEqual(pull.parts({ slot }, 'Whoops!', 'plan'), ['Pull ', 'Whoops!', ' from the machine']);
   assert.deepEqual(pull.parts({ slot }, null, 'done'), ['Pulled ', 'a slot', ' from the machine']);

@@ -1139,7 +1139,7 @@ const spy = (key = 'quiet'): { rules: ClassRules; inputs: ClassInput[] } => {
   return { inputs, rules: { key, name: key, earn: (i) => { inputs.push(i); return []; } } };
 };
 const standingOn = (inputs: readonly ClassInput[], act: string) => inputs.flatMap((i) => i.standings).find((s) => s.act === act);
-const sugar = { key: 'sugar', name: 'Sugar', alignment: 'sweet' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+const sugar = { key: 'sugar', name: 'Sugar', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 
 test('a standing holds every other player\'s vote before the window and now, each at its weight', () => {
   const { rules, inputs } = spy('fan');
