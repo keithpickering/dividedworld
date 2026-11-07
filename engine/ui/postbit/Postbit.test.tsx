@@ -10,7 +10,7 @@ import { axeViolations, describeViolations } from '../a11y.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: 'sq.webp', avatarPortrait: 'tall.webp',
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01', ...over,
+  squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
   character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
@@ -18,9 +18,9 @@ const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): 
 const show = (p: PostbitPerson, layout: 'side' | 'stacked' = 'side') => renderInWorld(<Postbit person={p} layout={layout} />, { settings: { groups: GROUPS } });
 /* The groups the screens hold (screen_settings.groups): the ladder lowest first, then the groups a move confers. */
 const GROUPS = [
-  { key: 'members', name: 'Members', color: '#7a7a7a', stripe: false },
-  { key: 'cores', name: 'Test Cores', color: '#d4a017', stripe: false },
-  { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', stripe: true },
+  { key: 'members', name: 'Members', color: '#7a7a7a', stripe: false, staff: false },
+  { key: 'cores', name: 'Test Cores', color: '#d4a017', stripe: false, staff: true },
+  { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', stripe: true, staff: false },
 ];
 /** Whether `a` comes before `b` in the document. */
 const before = (a: Element, b: Element) => Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);

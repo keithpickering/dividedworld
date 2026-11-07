@@ -4,7 +4,8 @@
 -- is that group: a staff character's `group` names it (group_now), and the screens read its name, color and stripe from screen_settings' `groups`. So:
 --   seed_instance      as 0117 wrote it, without the insert of the `staffGroup` setting. A payload that still carries `system.staffGroup` is not read; a settings row an earlier
 --                      seed wrote stays where it is, read by no one (the view below no longer lists it), so an instance seeded before this change still boots.
---   screen_settings    as 0116 wrote it, without `staffGroup` in its list of settings.
+--   screen_settings    as 0116 wrote it, without `staffGroup` in its list of settings, and each group also saying whether it is the staff rung (`staff`, the ladder's rung whose
+--                      condition is 'staff'), so a screen names the staff group without reading any character.
 -- Masks. Public data only, as before: the staff rung's look is a group's look. Ways out. Adds no state.
 
 -- seed_instance (0117), no longer writing the `staffGroup` setting. Everything else as 0117 wrote it.
@@ -233,7 +234,7 @@ begin
 end $$;
 
 
--- screen_settings (0116), no longer carrying the `staffGroup` setting. Everything else as 0116 wrote it.
+-- screen_settings (0116), no longer carrying the `staffGroup` setting, and each group carrying `staff`. Everything else as 0116 wrote it.
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (
@@ -242,7 +243,7 @@ create or replace view screen_settings as
               where x.key = 'economy' and jsonb_typeof(x.value) = 'object'
                 and e.key in (select k.price_setting from card_kinds k union select unnest(k.reads) from card_kinds k)))
          || jsonb_build_object('groups', (
-              select coalesce(jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'color', g.color, 'stripe', g.stripe)
+              select coalesce(jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'color', g.color, 'stripe', g.stripe, 'staff', g.condition = 'staff')
                                         order by g.source = 'conferred', coalesce(g.rung, 0), g.key), '[]'::jsonb) from group_kinds g)) as settings
   from settings s
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',

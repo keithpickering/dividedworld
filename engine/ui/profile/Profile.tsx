@@ -75,7 +75,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
   const pips = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   const monthJoined = monthYear(c.joined);
   const signed = c.signature.trim() !== '';
-  const group = c.group === undefined ? undefined : settings.groups.find((g) => g.key === c.group);
+  const group = settings.groups.find((g) => g.key === c.group);
   /* Each fact is a row: its label a row header, its words and links as they were a line of a paragraph. `lead` marks the two that stand beside the avatar on a phone. */
   const facts: readonly Fact[] = [
     ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),

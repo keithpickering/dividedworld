@@ -16,10 +16,10 @@ const picture = (w: number, h: number) => `data:image/svg+xml;utf8,<svg xmlns="h
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'story-character', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: picture(100, 100), avatarPortrait: picture(100, 200),
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01', ...over,
+  squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
-  character: character({ group: 'members', ...c }), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
+  character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
 });
 
 export const SideBySide: Story = { args: { person: person(), layout: 'side' } };

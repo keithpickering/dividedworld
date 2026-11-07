@@ -199,10 +199,11 @@ begin
   perform tests.become(ann);
   select settings -> 'groups' into seen from screen_settings;
   if jsonb_array_length(seen) is distinct from 6 then raise exception 'screen_settings carries all six groups: %', seen; end if;
-  if seen -> 0 is distinct from jsonb_build_object('key', 'members', 'name', 'Members', 'color', '#7a7a7a', 'stripe', false) then
+  if seen -> 0 is distinct from jsonb_build_object('key', 'members', 'name', 'Members', 'color', '#7a7a7a', 'stripe', false, 'staff', false) then
     raise exception 'the lowest rung comes first with its look: %', seen -> 0;
   end if;
   if (seen -> 5 ->> 'key') is distinct from 'trialMembers' or (seen -> 5 -> 'stripe') is distinct from 'true'::jsonb then raise exception 'conferred groups follow the ladder, by key: %', seen; end if;
+  if (select count(*) from jsonb_array_elements(seen) g where (g ->> 'staff')::boolean) is distinct from 1 or (select g ->> 'key' from jsonb_array_elements(seen) g where (g ->> 'staff')::boolean) is distinct from 'personalityCores' then raise exception 'screen_settings marks the staff rung, and only it: %', seen; end if;
   if pg_temp.refusal($q$select * from group_kinds$q$) is null then raise exception 'a signed-in player read group_kinds'; end if;
   perform tests.unbecome();
 end $$;

@@ -603,7 +603,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
     ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
-    ...(typeof c['group'] === 'string' ? { group: c['group'] } : {}),
+    group: typeof c['group'] === 'string' ? c['group'] : '',
   });
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */

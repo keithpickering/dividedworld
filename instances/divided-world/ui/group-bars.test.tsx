@@ -25,7 +25,7 @@ describe('the group bar for each Divided World group', () => {
       const modes = tokensOf(...sheets);
       for (const g of all) for (const mode of MODES) {
         const r = reading(g.color, modes[mode], g.stripe === true);
-        expect(r.alone || r.halo >= LETTERING, `${g.key} in ${mode}`).toBe(true);
+        expect(r.alone || r.edge >= LETTERING, `${g.key} in ${mode}`).toBe(true);
       }
     });
   }

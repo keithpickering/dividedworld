@@ -168,8 +168,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--kb-group-bar-ink);
-  /* A halo, so lettering reads on a color too light for white alone. */
-  text-shadow: 0 1px 0 var(--kb-group-bar-halo), 0 0 3px var(--kb-group-bar-halo), 0 0 3px var(--kb-group-bar-halo);
+  /* A crisp 1px outline (the glyph's eight neighbors), so lettering reads on a color too light for white alone; group-bar-face.ts measures it. */
+  text-shadow:
+    -1px -1px 0 var(--kb-group-bar-halo), 0 -1px 0 var(--kb-group-bar-halo), 1px -1px 0 var(--kb-group-bar-halo),
+    -1px 0 0 var(--kb-group-bar-halo), 1px 0 0 var(--kb-group-bar-halo),
+    -1px 1px 0 var(--kb-group-bar-halo), 0 1px 0 var(--kb-group-bar-halo), 1px 1px 0 var(--kb-group-bar-halo);
 }
 
 .kb-group-bar[data-kb-stripe] {

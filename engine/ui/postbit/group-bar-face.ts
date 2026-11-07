@@ -4,9 +4,9 @@
  * stop, as `color-mix(in srgb, ...)` computes them: the glossy top, the group's own color, the dark lip under the middle, and for a
  * striped group the two stripes.
  *
- * The lettering is the `ink` token with a `halo` shadow. A face that holds the ink alone at 4.5:1 needs no help from the halo; a face
- * that does not (a light group color) is read through the halo, which draws the `halo` token right at the glyphs, so what the eye needs
- * is the ink against the halo. `reading` says which case a color is in, for the test to name.
+ * The lettering is the `ink` token with a crisp `halo` outline. A face that holds the ink alone at 4.5:1 needs no outline; a face that does not (a
+ * light group color) is read at the glyph's edge, where the ink meets the outline blended with the face (EDGE_SHARE). That measurement can fail: a weak
+ * halo color, or a face too light for the blend, drops it under 4.5. `reading` gives both, for the test to name.
  */
 import { parseColor, ratio, resolveToken, type Tokens } from '../contrast.ts';
 
@@ -14,6 +14,11 @@ import { parseColor, ratio, resolveToken, type Tokens } from '../contrast.ts';
 export const GLOSS_SHARE = 10;
 export const LIP_SHARE = 20;
 export const STRIPE_SHARE = 30;
+/**
+ * How much of the pixels around a glyph is the outline: postbit.css draws the halo as a crisp 1px outline (the glyph's eight neighbors), so a pixel at
+ * the glyph's edge is mostly halo, and the rest is face showing through antialiasing and the outline's gaps. 70% halo to 30% face is the conservative read.
+ */
+export const EDGE_SHARE = 70;
 /** The least ratio for lettering. */
 export const LETTERING = 4.5;
 
@@ -32,16 +37,20 @@ export function faceStops(color: string, tokens: Tokens, stripe: boolean): strin
 }
 
 export interface Reading {
-  /** The ink's worst ratio over the face's stops. */
+  /** The ink's worst ratio over the face's stops, with no outline. */
   readonly ink: number;
-  /** Whether the ink alone holds; false means the lettering is read through the halo. */
+  /** Whether the ink alone holds. */
   readonly alone: boolean;
-  /** The ink against the halo, which is what the glyph's edge sits on when the face does not hold it alone. */
-  readonly halo: number;
+  /** The ink's worst ratio against what surrounds a glyph: the outline blended with the face (EDGE_SHARE). */
+  readonly edge: number;
 }
 
 export function reading(color: string, tokens: Tokens, stripe: boolean): Reading {
   const ink = resolveToken(tokens, '--kb-group-bar-ink');
-  const worst = Math.min(...faceStops(color, tokens, stripe).map((s) => ratio(ink, s)));
-  return { ink: worst, alone: worst >= LETTERING, halo: ratio(ink, resolveToken(tokens, '--kb-group-bar-halo')) };
+  const halo = parseColor(resolveToken(tokens, '--kb-group-bar-halo'));
+  const stops = faceStops(color, tokens, stripe);
+  const ratios = stops.map((s) => ratio(ink, s));
+  const edges = stops.map((s) => ratio(ink, hex(mix(parseColor(s), halo, EDGE_SHARE))));
+  const worst = Math.min(...ratios);
+  return { ink: worst, alone: worst >= LETTERING, edge: Math.min(...edges) };
 }

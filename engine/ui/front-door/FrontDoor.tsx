@@ -38,9 +38,10 @@ const refuse = (): Promise<Answer<never>> => Promise.resolve({ ok: false, error:
 
 const idOf = (key: string): Id => `front-door:${key}`;
 
-const stage = (c: FrontDoorCharacter): Character => ({
+/** A made-up character is in the ladder's first rung, the one every new character starts in. */
+const stage = (c: FrontDoorCharacter, group: string): Character => ({
   id: idOf(c.key), name: c.name, title: c.title ?? '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null,
-  portraitFrame: null, pipStyle: 'default', joined: '',
+  portraitFrame: null, pipStyle: 'default', joined: '', group,
 });
 
 interface Staged { readonly act: Act; readonly post: FrontDoorPost; readonly person: PostbitPerson | undefined; readonly plays: readonly CardPlay[] }
@@ -129,7 +130,7 @@ export function FrontDoor() {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
     /* The rank's floor is a standing the postbit's rankIndex lands on that rank. */
     const standing = rankFloor(instance.ranks, rank);
-    const person: PostbitPerson = { character: stage(c), posts: c.posts, standing, revealed: c.revealed ?? null, turnedAt: null };
+    const person: PostbitPerson = { character: stage(c, settings.groups[0]?.key ?? ''), posts: c.posts, standing, revealed: c.revealed ?? null, turnedAt: null };
     return [c.key, person] as const;
   })), [door.cast, instance.ranks]);
   const nameOf = useCallback((id: Id | null) => door.cast.find((c) => idOf(c.key) === id)?.name ?? 'A character', [door.cast]);

@@ -485,8 +485,8 @@ describe('reads and their rows', () => {
     expect(h.to('characters_public')[0]?.url.searchParams.get('id')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', joined: '2026-10-01' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-09-01' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', joined: '2026-10-01', group: '' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-09-01', group: '' },
     ]);
   });
 
@@ -1834,7 +1834,7 @@ describe('Updates', () => {
 describe('a screen in one call', () => {
   const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star' };
   const CHAR = { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null };
-  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', joined: '2026-10-01' };
+  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', joined: '2026-10-01', group: '' };
   const PRESENCE = { names: [{ id: B, name: 'Bea', staff: false }], others: 1 };
   const PLAY_ROW = { ...ACT_ROW, id: SET, kind: 'card', target_act_id: A, payload: { card: 'splat' }, current_payload: { card: 'splat' } };
   const ABOVE_ROW = { play: SPRING, reach: 'thread', target: T, ends_at: '2026-10-02T10:00:00+00:00', act: { ...ACT_ROW, id: SPRING, kind: 'card', payload: { card: 'whoops' } } };

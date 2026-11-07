@@ -74,7 +74,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const { instance, ui, settings } = useKayfa();
   const { character: c } = person;
   /* The look of the group it is in; a key the settings do not list (an answer older than groups) draws no bar rather than a wrong one. */
-  const group = c.group === undefined ? undefined : settings.groups.find((g) => g.key === c.group);
+  const group = settings.groups.find((g) => g.key === c.group);
   /* A stacked postbit, chosen or forced on a phone, drops Posts and Joined: the profile carries them a tap away (the board look design, section 3). */
   const narrow = useNarrow();
   const counts = layout === 'side' && !narrow;

@@ -53,7 +53,7 @@ export function StaffProfile({ character: c }: { readonly character: Character }
   const none = <span className="kb-muted">None yet</span>;
   /* Each fact is a row, as the ordinary profile's are: its label a row header, its words as they were. `lead` marks the two that stand beside the avatar on a phone. */
   const badge = showsStaffBadge(c);
-  const group = c.group === undefined ? undefined : settings.groups.find((g) => g.key === c.group);
+  const group = settings.groups.find((g) => g.key === c.group);
   const facts: readonly Fact[] = [
     ...(badge ? [{ key: 'staff', label: 'Staff', lead: true, value: <StaffBadge character={c} /> }] : []),
     ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),

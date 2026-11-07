@@ -86,7 +86,7 @@ export interface ScreenSettings {
    * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public. The staff rung is a group like any other: a
    * staff character's `group` names it, and its name is the one the postbit's bar, the profile's Group row and the presence chip show.
    */
-  readonly groups: readonly { readonly key: string; readonly name: string; readonly color: string; readonly stripe: boolean }[];
+  readonly groups: readonly { readonly key: string; readonly name: string; readonly color: string; readonly stripe: boolean; /** True for the ladder's staff rung (`group_kinds.condition` = 'staff'), the group every staff character is in. */ readonly staff: boolean }[];
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
@@ -334,8 +334,8 @@ export interface Character {
   readonly staff?: string;
   /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
   readonly office?: Office;
-  /** The key of the group it is in now (characters_public's `group`, 0116): the look is in `ScreenSettings.groups`. Absent from an answer that predates groups, which draws no bar. */
-  readonly group?: string;
+  /** The key of the group it is in now (characters_public's `group`, 0116): the look is in `ScreenSettings.groups`. */
+  readonly group: string;
   /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
   readonly warnPoints?: number;
   /** When its ban ends (characters_public, carried by a thread's page); absent when it is not banned. A ban holds only this character, and ends by itself at that time. */

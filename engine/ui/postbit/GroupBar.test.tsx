@@ -11,7 +11,7 @@ const engine = readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8')
 const css = readFileSync(join(process.cwd(), 'engine/ui/postbit/postbit.css'), 'utf8');
 const tokens = tokensOf(engine);
 
-const look = { key: 'regulars', name: 'Regulars', color: '#2f6fb0', stripe: false };
+const look = { key: 'regulars', name: 'Regulars', color: '#2f6fb0', stripe: false, staff: false };
 
 describe('the group bar', () => {
   test('is the group name as real text, in the group color as a custom property', () => {
@@ -37,8 +37,16 @@ describe('the group bar', () => {
 });
 
 describe('the bar\'s lettering', () => {
-  test('the ink against the halo holds, in every mode, so a face the ink cannot hold alone is read through it', () => {
-    for (const mode of MODES) expect(reading('#7a7a7a', tokens[mode], false).halo).toBeGreaterThanOrEqual(LETTERING);
+  test('at the glyph edge, where the outline meets the face, the ink holds 4.5:1 in every mode, even on a very light color', () => {
+    for (const mode of MODES) for (const color of ['#7a7a7a', '#f0f0f0', '#ffff00']) expect(reading(color, tokens[mode], false).edge, `${color} in ${mode}`).toBeGreaterThanOrEqual(LETTERING);
+  });
+
+  test('poison: a weak halo (mid gray) is measured as failing at the edge, and so is a halo the stylesheet does not draw as an outline', () => {
+    const weak = { ...tokens.light, '--kb-group-bar-halo': '#888888' };
+    expect(reading('#d4a017', weak, false).edge).toBeLessThan(LETTERING);
+    const shadow = /\.kb-group-bar\s*\{[^}]*?text-shadow:([^;]*);/u.exec(css)![1]!.split(',').map((x) => x.trim().replace(/\s+/gu, ' '));
+    expect(shadow.length).toBeGreaterThanOrEqual(8);
+    for (const part of shadow) expect(part).toMatch(/^(?:0|-?1px) (?:0|-?1px) 0 var\(--kb-group-bar-halo\)$/u);
   });
 
   test('poison: a white-ish color is measured as failing alone, and a dark one as holding', () => {

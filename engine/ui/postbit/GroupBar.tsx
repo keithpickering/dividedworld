@@ -12,7 +12,7 @@ import type { CSSProperties } from 'react';
 import type { ScreenSettings } from '../data/api.ts';
 import './postbit.css';
 
-export type GroupLook = ScreenSettings['groups'][number];
+export type GroupLook = Pick<ScreenSettings['groups'][number], 'key' | 'name' | 'color' | 'stripe'>;
 
 export function GroupBar({ look }: { readonly look: GroupLook }) {
   return (
