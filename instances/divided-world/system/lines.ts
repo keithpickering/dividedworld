@@ -52,27 +52,27 @@ export const stockLines: StockLines = Object.freeze({
   // A rule landing: `{rule}` is the engine's words for it, `{board}` the board's name. DRAFT for the owner.
   ruleSet: Object.freeze([
     'New law on {board}. {rule}. The System expects compliance and will notice either way.',
-    'Be advised, {board}: {rule}. The System has written it down so nobody can say they were not told.',
-    'The System has added to the pile on {board}: {rule}. The System regrets nothing.',
-    'A staff member has had an idea about {board}, and the idea is now law: {rule}. Do not look at the staff member.',
+    'Be advised, {board}. {rule}. The System has written it down so nobody can say they were not told.',
+    'The System has added to the pile on {board}. {rule}. The System regrets nothing.',
+    'A staff member has had an idea about {board}, and the idea is now law. {rule}. Do not look at the staff member.',
     'Attention, {board}. {rule}. This was not a suggestion, though it was phrased like one in the meeting.',
-    'The rulebook for {board} grew by one: {rule}. The rulebook has never once been read all the way through.',
+    'The rulebook for {board} grew by one. {rule}. The rulebook has never once been read all the way through.',
   ]),
   // A Mod arriving on a post, and filing it. `{rule}` is the rules charged, in the engine's words. DRAFT for the owner.
   visitArrived: Object.freeze([
     '{mod} has taken an interest in this post. {rule}. {mod} will be back.',
-    'This post is now under inspection by {mod}: {rule}.',
+    'This post is now under inspection by {mod}, who suspects {rule}.',
     '{mod} is looking at this post. The charge is {rule}. {mod} takes a long time over these.',
-    '{mod} has arrived with a clipboard and no explanation. Suspected: {rule}.',
+    '{mod} has arrived with a clipboard and no explanation, and suspects {rule}.',
     'Nobody panic. {mod} is only standing next to this post and breathing. {rule}.',
-    '{mod} has opened a file on this post. Page one reads: {rule}. There is no page two yet.',
+    '{mod} has opened a file on this post. Page one reads {rule}. There is no page two yet.',
   ]),
   visitFiled: Object.freeze([
     '{mod} has finished with this post and found it in violation of {rule}.',
     'Inspection over. {mod} files this post under {rule}.',
     '{mod} found this post in violation of {rule}, and has written it down.',
-    '{mod} has stamped this post. The stamp reads {rule}. The stamp is heavy.',
-    'Case closed by {mod}: {rule}. {mod} has already forgotten how it felt about this.',
+    '{mod} has stamped this post. The stamp says {rule}, and the stamp is heavy.',
+    'Case closed by {mod}, with the finding {rule}. {mod} has already forgotten how it felt about this.',
     '{mod} came, saw and filed. The finding is {rule}, and {mod} would do it again.',
   ]),
   // A report dismissed (the Aura is spent, the Mod grumbles) and one that backfired on the reporter. DRAFT for the owner.

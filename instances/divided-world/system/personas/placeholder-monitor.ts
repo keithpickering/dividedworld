@@ -1,8 +1,7 @@
 /**
- * PLACEHOLDER MOD BOT. The first Mod Bots are written with the owner when the Bosses are (the
- * system plan, Task 5, amended 2026-10-31). Until then this one keeps `firstStaff` valid, and the
- * setting `systemEnabled` (false) keeps it from acting. Nothing a Mod Bot does is built in Part 1;
- * these fields are fixed now so the roster can be written against them.
+ * PLACEHOLDER MOD BOT. The real Mod Bots are written with the owner. This one keeps `firstStaff` valid, and the setting
+ * `systemEnabled` (false) keeps it from acting. Its beats, pet rules, strictness, quiz and what persuades it are DRAFTS
+ * for the owner (the Mod Bots plan, Task 14); the Boss fields are placeholders so every persona has every field.
  */
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { persona } from '../persona.ts';
@@ -26,7 +25,7 @@ export const placeholderMonitor: Persona = {
       { question: 'How many Bosses is it legal to have at once?', choices: ['One', 'Several', 'Yes'], answer: 'One' },
       { question: 'What is the polite way to start a brand-new topic?', choices: ['Reply to a year-old thread', 'Shout in all caps', 'Start a new thread', 'Edit your signature'], answer: 'Start a new thread' },
       { question: 'In a Mario fan game, what do you collect 100 of for an extra life?', choices: ['Stars', 'Keys', 'Mushrooms', 'Coins'], answer: 'Coins' },
-      { question: 'Finish the Hall Monitor\'s motto: "Walk, do not ..."', choices: ['Run', 'Post', 'Sigh', 'Hum', 'Stamp'], answer: 'Post' },
+      { question: 'How many days are in a week?', choices: ['Five', 'Six', 'Seven', 'Eight', 'Nine'], answer: 'Seven' },
       { question: 'What does a hall pass let you do?', choices: ['Walk in the hall', 'Skip a Boss', 'Post in all caps', 'Ignore a pet rule'], answer: 'Walk in the hall' },
     ],
   },

@@ -105,7 +105,7 @@ test('every persona\'s pet rules are known predicates, and its visit hours sit i
   assert.ok(bot.petRules.length >= 2, 'the Mod Bot lobbies for something');
 });
 
-test('the Mod Bot\'s quiz has five questions, every answer one of its choices, and the answers do not all sit in one place', () => {
+test('the Mod Bot\'s quiz has five questions, every answer is one of its choices, and no position holds a third of the answers', () => {
   const bot = system.roster.find((p) => system.firstStaff.includes(p.key))!;
   assert.equal(bot.weakness.kind, 'quiz');
   if (bot.weakness.kind !== 'quiz') return;
@@ -126,17 +126,21 @@ test('every persona\'s weakness is a quiz, a bribe or a distraction the engine a
   assert.deepEqual(instanceProblems(instance), []);
 });
 
-test('the Mod Bot stock lines: several each, and every token is one the key allows', () => {
+test('the Mod Bot stock lines have at least five each, and every token is one the key allows and well formed', () => {
   for (const k of ['ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const) {
     assert.ok(system.stockLines[k].length >= 5, `${k} has several lines`);
-    for (const line of system.stockLines[k]) for (const t of line.matchAll(/\{(\w+)\}/g)) assert.ok(STOCK_LINE_TOKENS[k].includes(t[1]!), `${k}: {${t[1]}}`);
+    for (const line of system.stockLines[k]) for (const [, t] of line.matchAll(/\{([^{}]*)\}/g)) assert.ok(STOCK_LINE_TOKENS[k].includes(t!), `${k}: {${t}}`);
+    for (const line of system.stockLines[k]) assert.equal(line.replace(/\{[^{}]*\}/g, ''). match(/[{}]/), null, `${k}: stray brace in ${line}`);
   }
 });
 
-test('the theme names the visit mark\'s ink', async () => {
+test('the theme sets the visit mark\'s ink in the light, device-dark and chosen-dark blocks', async () => {
   const { readFileSync } = await import('node:fs');
   const css = readFileSync(new URL('../ui/theme.css', import.meta.url), 'utf8');
-  assert.ok((css.match(/--kb-visit-ink:/g) ?? []).length >= 3, 'light, device-dark and chosen-dark');
+  const light = css.slice(css.indexOf(':root {'), css.indexOf('@media (prefers-color-scheme: dark)'));
+  const device = css.slice(css.indexOf('@media (prefers-color-scheme: dark)'), css.indexOf(':root[data-kb-mode="dark"]'));
+  const chosen = css.slice(css.indexOf(':root[data-kb-mode="dark"]'));
+  for (const [name, block] of [['light', light], ['device-dark', device], ['chosen-dark', chosen]] as const) assert.match(block, /--kb-visit-ink:\s*#[0-9a-f]{6}/i, name);
 });
 
 test('every persona\'s bands are keys of the warn bar\'s bands', async () => {
