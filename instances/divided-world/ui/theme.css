@@ -47,7 +47,7 @@
    * 0.45. The numbers are the owner's to tune.
    */
   --kb-vignette-color: #1e083c;
-  --kb-vignette-edge: 0.2;
+  --kb-vignette-edge: 0.32;
   --kb-vignette-foot-color: #3c1478;
   --kb-vignette-foot: 0.08;
 
@@ -135,7 +135,7 @@
     --kb-vignette-edge: 0.55;
     --kb-vignette-foot-color: #5a1fb0;
     --kb-vignette-foot: 0.45;
-  
+
     --kb-grid: #4a4a4a;
     --kb-frame: #000;
     --kb-row-1: #262626;

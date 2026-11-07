@@ -140,6 +140,38 @@ for (const scheme of ['light', 'dark'] as const) {
   }
 }
 
+/**
+ * The clear center covers the column at every height (the owner's request, 2026-11-07, and its review): the glow was an ellipse to the
+ * window's corners, so at 1920x1080 its clear center was as tall as the column is wide only in proportion to the window, and the
+ * column's top and bottom ~135px were tinted. The vignette adds nothing anywhere in the column above the foot: the same samples with
+ * the vignette shown and hidden are identical, at the top, at the middle and just above the foot's 220px, at the column's edges and
+ * its center, at four window sizes in both board modes.
+ */
+for (const scheme of ['light', 'dark'] as const) {
+  for (const [width, height] of [[1024, 768], [1440, 900], [1920, 1080], [2560, 1080]] as const) {
+    test.describe(`the vignette leaves the column clear, ${scheme}, ${width}x${height}`, () => {
+      test.use({ viewport: { width, height }, reducedMotion: 'reduce', colorScheme: scheme, bypassCSP: true });
+
+      test('adds nothing in the column from its top to the foot', async ({ page }) => {
+        await openThread(page);
+        await page.addStyleTag({ content: '.kb-hud { visibility: hidden !important; }' });
+        const W = 8;
+        const left = (width - Math.min(width * 0.96, MAX)) / 2;
+        const xs = [left, width / 2 - W / 2, width - left - W];
+        const ys = [0, 60, 135, 200, height / 2, height - 220 - W - 4];
+        const at = xs.flatMap((x) => ys.map((y) => [x, y] as const));
+        const strip = (x: number, y: number) => page.screenshot({ clip: { x, y, width: W, height: W }, animations: 'disabled' });
+        const vignette = page.locator('.kb-vignette');
+        const drawn = await Promise.all(at.map(([x, y]) => strip(x, y)));
+        await vignette.evaluate((e) => { (e as HTMLElement).style.display = 'none'; });
+        const bare = await Promise.all(at.map(([x, y]) => strip(x, y)));
+        const shift = await Promise.all(at.map((_, i) => meanShift(page, drawn[i]!, bare[i]!)));
+        at.forEach(([x, y], i) => expect(shift[i], `the column at ${x},${y} (${width}x${height})`).toBe(0));
+      });
+    });
+  }
+}
+
 /* The worst contrast found under the vignette, read by the run that reports it. */
 for (const scheme of ['light', 'dark'] as const) {
   for (const width of [1440, 800, 390]) {

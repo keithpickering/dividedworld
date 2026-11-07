@@ -218,23 +218,37 @@ html[data-kb-float='sheet'] .kb-frame {
 /*
  * The vignette (the glass-polish design's section 8; the owner took its mask away on 2026-11-07 and had the glow lie outward instead):
  * the glass's violet laid toward the edges of the window, heaviest at the corners and the foot above the HUD, so the HUD's glow
- * seems to fall onto the page. One fixed element over the whole window, under the HUD (z-index 30), that takes no click. The corner
- * glow is an elliptical radial gradient to the window's corners, clear out to the column's edge (`--kb-column-half`: half of
- * `--kb-board-max`, or the 48% of the window the column takes where the window is narrower) and fading up to the full edge opacity at
- * the corners, so it lies in the gutters and reaches the posts only where the window is too narrow to have any. The foot is a linear
- * gradient over 220px, on phones too. Nothing masks either, so there is no step anywhere; text under it keeps its contrast
- * (e2e/board-width.spec.ts measures 4.5:1 at the strongest points). High contrast draws none. Colors and opacities are the
- * instance's (engine/ui/tokens.css); the engine's defaults draw nothing. `48vw` includes the scrollbar's width, which is the safe side.
+ * seems to fall onto the page. One fixed element over the whole window, under the HUD (z-index 30), that takes no click.
+ *
+ * The side glow lies in the gutters and the whole column is clear of it, at every height. It is built from pieces that each end
+ * transparent at the column's edge (`--kb-gutter`: the window's half width less `--kb-column-half`, half of `--kb-board-max` or the
+ * 48% of the window the column takes where the window is narrower), so the column's own edge is never a step:
+ * a horizontal gradient from each side of the window, half the edge opacity at the window's edge and clear at the column; and, at each
+ * of the four corners, an ellipse as wide as the gutter and 40% of the window tall that deepens the corner to the full edge opacity.
+ * (The first version was one radial gradient to the farthest corner, whose clear center was an ellipse as tall as the column is wide
+ * only in proportion to the window: at 1920x1080 the column's top and bottom ~135px were tinted.) Where the window is too narrow
+ * to have gutters, there is next to no side glow. The foot is a linear gradient over 220px, on phones too, and does lie over the posts. Nothing
+ * masks. Text under it keeps its contrast (e2e/board-width.spec.ts measures 4.5:1 at the strongest points and that the column above
+ * the foot is untouched at four window sizes). High contrast draws none. Colors and opacities are the instance's (engine/ui/tokens.css);
+ * the engine's defaults draw nothing. `50vw` includes the scrollbar's width, so the gutter is cut by 8px, the safe side of a classic scrollbar's half.
  */
 .kb-vignette {
   --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
+  --kb-gutter: max(1px, calc(50vw - var(--kb-column-half) - 8px));
+  --kb-vignette-full: color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent);
+  --kb-vignette-side: color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 50%), transparent);
   position: fixed;
   inset: 0;
   z-index: 20;
   pointer-events: none;
   background:
     linear-gradient(to top, color-mix(in srgb, var(--kb-vignette-foot-color) calc(var(--kb-vignette-foot) * 100%), transparent), transparent 220px),
-    radial-gradient(ellipse farthest-corner at 50% 50%, transparent var(--kb-column-half), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 0 0, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 100% 0, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 0 100%, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 100% 100%, var(--kb-vignette-full), transparent),
+    linear-gradient(to right, var(--kb-vignette-side), transparent var(--kb-gutter)),
+    linear-gradient(to left, var(--kb-vignette-side), transparent var(--kb-gutter));
 }
 
 :root[data-kb-contrast='high'] .kb-vignette {
