@@ -1,11 +1,10 @@
 /**
- * The postcard template: the one set of measures a card face is drawn to, and the file an artist works from.
- * Lengths are in card units on a 600 by 900 card (2:3). 600 is a multiple of the border (30), the keep-clear
- * line (12) and the canvas's radius (15), and the outer radius (45) is 3/40 of it, so every length is a short exact
- * fraction of the card's width, and the stylesheet draws each as that fraction of the card's own width: the same
- * face is right at every size. Every size is a
- * whole-pixel 2:3 (width times 1.5 is an integer), so a card never lands on a half pixel and blurs its edge. The
- * canvas is the art's: a full-art SVG on 540 by 840.
+ * The postcard template: the one set of measures a card face is drawn to, and the file an artist works from. Lengths
+ * are in card units on a 600 by 900 card (2:3). 600 is a multiple of the border (30), the keep-clear line (12) and the
+ * canvas's radius (15), and the outer radius (45) is 3/40 of it, so every length is a short exact fraction of the
+ * card's width, and the stylesheet draws each as that fraction of the card's own width: the same face is right at every
+ * size. Every size is a whole-pixel 2:3 (width times 1.5 is an integer), so a card never lands on a half pixel and
+ * blurs its edge. The canvas is the art's: a full-art SVG on 540 by 840.
  */
 
 export const TEMPLATE = {
