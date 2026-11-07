@@ -1,8 +1,8 @@
 /**
  * Glitter Bomb on the flakes as stories for the owner's word (docs/plans/2026-11-06-shine-plan.md, Task 10): post #41 of the boards
  * fixture at the Main board's moment with a Glitter Bomb cast on its character, on the light board and the dark board, and under
- * reduced motion (every flake landed, no burst). Open them at 1440 by 1120 and scroll #41 into view: the burst fires the first time
- * 40% of the post is showing, and a mouse passing over it picks glitter up.
+ * reduced motion (every flake landed, no burst). Open them at 1440 by 1120 and scroll #41 into view: the burst fires once its burst
+ * point has stayed in the middle of the view for 300 ms, a mouse passing over it picks glitter up, and a fast scroll shakes some off.
  *
  * The story page hands e2e/shine.spec.ts the loop's probe (`window.__kbShineDraws(n)`: how many times the loop has drawn the nth
  * Glitter Bomb on the page), the way the other board stories reach their internals; the app itself exposes nothing.

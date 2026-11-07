@@ -236,3 +236,34 @@ rate" for a post whose body is bigger than its words:
 - **How it is held.** `e2e/shine.spec.ts` counts the screen area a scroll's draws change against what the words would
   change drawn on every frame (at most 1.25 times; before this, 2.29 in that spec's thread), and the rest-rate check
   holds each post to its share of thirty draws a second.
+
+## 11. Glitter Bomb's burst, seen from above (amended 2026-11-07)
+
+The owner, trying Glitter Bomb on a deployed preview, asked for five changes. Four replace parts of section 2; the fifth
+is held by section 5.
+
+- **When it goes off.** It went off when the post was barely in view. It now waits for the reader to be looking at the
+  spot: the burst point must be in the middle three fifths of the view's height and stay there 300 ms by the loop's
+  clock. A scroll that only passes it fires nothing. This replaces section 2's "comes 40% into view".
+- **Seen from above the whole time.** The flakes flew up the screen and fell down it, as if seen from the side, then were
+  pulled back over the post; the settled glitter is seen from above. Now every flake is thrown out from the burst point
+  along the post toward its resting place, fast at first and slowing, wandering a little off its line, while it rises
+  toward the reader and settles back (drawn up to about twice its size at its highest). Nothing falls down the screen.
+  It still lands inside two seconds, under the words.
+- **Its own spot each load.** The seed is now the play's and the post's ids and a draw made for the post's mount, so each
+  load bursts from its own spot and leaves its own glitter around it, and a post that leaves view and returns keeps
+  what it had. A play's moment (`still`) is still the public seed alone. This replaces section 2's "every reader sees the
+  same glitter on the same post"; nothing private enters the seed.
+- **A fast scroll shakes glitter off.** A touch reader has no pointer to pick glitter up. A scroll of the page faster than
+  2,200 CSS px a second shakes a few flakes off each post on screen (up to 8 a post a frame, 160 falling on the page).
+  They are thrown the way the page moved and fall on the page-fixed layer, outside the post's box, landing on whatever
+  post is under them or fading, as a dropped flake does. Like a mouse's pickup, a shaken flake is a copy and the post
+  keeps its own: taking it would repaint the post's whole base on every frame of a fast scroll, which multiplied the
+  pixels rastered a frame by more than ten in `e2e/shine.spec.ts`. A mouse's scroll wheel shakes too. Reduced motion
+  shakes nothing.
+- **Brighter on the dark board, inside the band.** The dark board's band ends at a luminance of 0.048 (section 5), so the
+  glitter there cannot be much brighter without breaking 4.5:1 under the words. Inside it, each ink is now taken at the
+  ceiling with its chroma pushed (a lit flake mixed toward white came out a flat gray once scaled back under the
+  ceiling), an unlit flake shows 42% of that rather than 5%, and a flake facing the light flares in its own hue, drawn
+  over it rather than added. Going brighter than the band is the owner's question, not this amendment's: section 5's
+  "held everywhere" stands until the owner says otherwise.

@@ -245,16 +245,16 @@ describe('New character\'s class cards', () => {
   });
 });
 
-/* The carousel's five classes (the Technician plan's Task 4), in an instance of the test's own, since a test in engine/ui may not import one. */
+/* The carousel's six classes (the Technician plan's Task 4, the Tweener plan's Task 6), in an instance of the test's own, since a test in engine/ui may not import one. */
 describe('New character\'s classes', () => {
   test('offers every class in the instance\'s order, in one group, nothing chosen', async () => {
-    const five: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
-    const fake = buildWorld({ charactersPerPlayer: 3 }, five);
+    const six: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Tweener', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
+    const fake = buildWorld({ charactersPerPlayer: 3 }, six);
     fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: five });
+    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: six });
     const f = await form();
     const radios = within(within(f).getByRole('group', { name: /class/iu })).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(six.classes.map((c) => c.key));
     expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
     expect(radios.filter((r) => (r as HTMLInputElement).checked)).toEqual([]);
   });
