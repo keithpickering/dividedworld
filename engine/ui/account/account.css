@@ -669,3 +669,303 @@
   background: color-mix(in srgb, var(--kb-glass-neon) 80%, var(--kb-glass-text-hi));
   box-shadow: 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 90%, transparent);
 }
+
+/* ---- Settings › The board: the theme picker (docs/research/2026-11-06-board-look/19-theme-picker.html, 21 on the phone) ---- */
+
+/* A held mode: the choices the theme does not hold are greyed, the one it holds stays at full strength. */
+.kb-acct-seg-option > input:disabled:not(:checked) + .kb-acct-seg-face {
+  opacity: 0.4;
+}
+
+.kb-acct-seg-option:has(> input:disabled) {
+  cursor: default;
+}
+
+/*
+ * The miniature draws the chosen theme's own tokens, which the picker sets on it as --tp-* (ThemePicker.tsx): the page wears the player's
+ * current theme, so nothing in here reads a --kb token. Its type is the board's.
+ */
+.kb-tp-big {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 16px 14px;
+  background: var(--tp-page);
+  color: var(--tp-fg);
+  /* The board's own type scale, at the miniature's size (0.8 of the board's small type, 11px at the root's 16): every size inside is in em from here. */
+  font-family: var(--kb-font-body);
+  font-size: calc(var(--kb-size-small) * 0.8);
+  line-height: 1.4;
+  border: 1.5px solid color-mix(in srgb, var(--kb-glass-text-hi) 70%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-neon) 30%, transparent);
+}
+
+.kb-tp-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--tp-banner);
+  border: 1px solid var(--tp-grid);
+}
+
+.kb-tp-banner > b {
+  font: bold 1.55em / 1 var(--kb-font-mono);
+  letter-spacing: 0.09em;
+  color: var(--tp-logo);
+}
+
+.kb-tp-banner > i {
+  width: 56px;
+  height: 7px;
+  background: var(--tp-logo);
+  opacity: 0.35;
+}
+
+.kb-tp-nav {
+  display: flex;
+  gap: 12px;
+  padding: 4px 10px;
+  background: var(--tp-nav);
+  color: var(--tp-navfg);
+  border: 1px solid var(--tp-grid);
+  border-top: 0;
+  text-decoration: underline;
+}
+
+.kb-tp-title {
+  margin: 8px 0 5px;
+  font: bold 1.27em var(--kb-font-mono);
+}
+
+.kb-tp-btn {
+  display: inline-block;
+  margin: 0 0 6px;
+  padding: 3px 9px;
+  font: bold 0.91em var(--kb-font-body);
+  letter-spacing: 0.05em;
+  text-transform: lowercase;
+  color: var(--tp-button-fg);
+  background: var(--tp-button);
+  border: 1px solid var(--tp-button-edge);
+  box-shadow: 1px 1px 2px color-mix(in srgb, var(--tp-fg) 35%, transparent);
+}
+
+.kb-tp-table {
+  display: grid;
+  /* One grid for the head and every row, so the columns line up and each is as wide as its words need at any text size (the board's 26, 60 and 150px are the least). */
+  grid-template-columns: minmax(26px, auto) minmax(0, 1fr) minmax(60px, auto) minmax(150px, auto);
+  gap: 1px;
+  padding: 1px;
+  background: var(--tp-grid);
+}
+
+.kb-tp-h,
+.kb-tp-r {
+  display: contents;
+}
+
+.kb-tp-h > span {
+  padding: 3px 6px;
+  font: bold 0.91em var(--kb-font-mono);
+  background: var(--tp-head);
+  color: var(--tp-headfg);
+}
+
+.kb-tp-r > span {
+  min-width: 0;
+  padding: 4px 6px;
+  background: var(--tp-row);
+}
+
+.kb-tp-r > .kb-tp-c {
+  text-align: center;
+  background: var(--tp-r3);
+}
+
+.kb-tp-r u {
+  display: block;
+  font-weight: bold;
+  color: var(--tp-link);
+}
+
+.kb-tp-r small {
+  display: block;
+  font-size: 0.91em;
+  opacity: 0.8;
+}
+
+.kb-tp-f {
+  display: block;
+  width: 16px;
+  height: 12px;
+  margin: 2px auto;
+  border: 1px solid var(--tp-fg);
+  background: var(--tp-r1);
+}
+
+.kb-tp-f-new {
+  background: var(--tp-fg);
+}
+
+.kb-tp-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.kb-tp-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 45%, transparent);
+  background: var(--kb-glass-panel-soft);
+}
+
+.kb-tp-tile > input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.kb-tp-tile:has(> input:checked) {
+  padding: 7px;
+  border: 2px solid var(--kb-glass-neon);
+  background: color-mix(in srgb, var(--kb-glass-neon) 8%, var(--kb-glass-panel-soft));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--kb-glass-neon) 35%, transparent);
+}
+
+.kb-tp-tile:has(> input:focus-visible) {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-tp-tile > b {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--kb-glass-text);
+}
+
+.kb-tp-tile > span:last-child {
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  line-height: 1.1;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-tp-thumb {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 72px;
+  padding: 4px;
+  background: var(--tp-page);
+  border: 1px solid var(--kb-glass-ground);
+}
+
+.kb-tp-thumb > i {
+  display: block;
+}
+
+.kb-tp-tb {
+  height: 11px;
+  background: var(--tp-banner);
+}
+
+.kb-tp-tn {
+  height: 5px;
+  background: var(--tp-nav);
+}
+
+.kb-tp-th {
+  height: 7px;
+  margin-top: 2px;
+  background: var(--tp-head);
+}
+
+.kb-tp-tr {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 18px;
+  gap: 1px;
+  padding: 0 1px;
+  background: var(--tp-grid);
+}
+
+.kb-tp-tr > s {
+  display: flex;
+  align-items: center;
+  padding: 0 3px;
+  text-decoration: none;
+  background: var(--tp-r1);
+}
+
+.kb-tp-tr:nth-child(odd) > s {
+  background: var(--tp-r2);
+}
+
+.kb-tp-tr > s:first-child::before {
+  content: '';
+  width: 70%;
+  height: 2px;
+  background: var(--tp-link);
+}
+
+/* On the phone the miniature drops its Last post column, the tiles are three across so every theme and the current choice show at once, and Mode's choices stack. */
+:where(:root[data-kb-layout='phone']) .kb-tp-big {
+  padding: 8px 8px 10px;
+  font-size: calc(var(--kb-size-small) * 0.65);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-banner > b {
+  font-size: 1.33em;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-table {
+  grid-template-columns: minmax(18px, auto) minmax(0, 1fr) minmax(48px, auto);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-h > span:last-child,
+:where(:root[data-kb-layout='phone']) .kb-tp-r > span:last-child {
+  display: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-tiles {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-tile {
+  padding: 6px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-tile:has(> input:checked) {
+  padding: 5px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-thumb {
+  height: 52px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-tp-tile > b,
+:where(:root[data-kb-layout='phone']) .kb-tp-tile > span:last-child {
+  font-size: var(--kb-glass-size-phone-small);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-seg-stack {
+  flex-direction: column;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-acct-seg-stack .kb-acct-seg-face {
+  display: flex;
+}
