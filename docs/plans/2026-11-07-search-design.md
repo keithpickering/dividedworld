@@ -154,7 +154,7 @@ Postgres nor reliably on Supabase.
   under 2003 group heads. A thread or a board goes there; a character opens a search of their posts (their profile is a
   click from any result). The last row is always "Search posts for '…'", and Enter goes there.
 - A full ARIA combobox: arrow keys, Home and End, Esc, a polite count of the suggestions, focus that stays in the box.
-- The box takes the banner's right side, where the host line stands; on `/search` the box is hidden, since the page
+- The box takes the banner's right side on a row of its own under the host line, which stays (the owner's amendment); on `/search` the box is hidden, since the page
   has its own keyword field, and the host line shows. A "Search" link stands at the right end of the boards bar on
   every page, and in the phone's Boards menu, where the banner holds no box; the `/search` keyword field suggests as the
   banner does.
