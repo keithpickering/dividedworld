@@ -140,7 +140,7 @@ test('the machine\'s three moves are small, askable, the Boss\'s alone, and shap
   for (const key of ['pullSlot', 'repriceSlot', 'flashSale']) {
     const k = moveKind(key)!;
     assert.deepEqual([k.structural, k.shapesBoard, k.askable, k.offices, k.uuids], [false, false, true, ['boss'], ['slot']], key);
-    assert.match(k.label, /^[A-Z ]+$/);
+    assert.match(k.label, /^\{role\} [a-z ]+$/);
   }
   assert.deepEqual(Object.keys((moveKind('pullSlot')!.params as { fields: object }).fields), ['slot']);
   assert.deepEqual(Object.keys((moveKind('repriceSlot')!.params as { fields: object }).fields), ['slot', 'percent']);
