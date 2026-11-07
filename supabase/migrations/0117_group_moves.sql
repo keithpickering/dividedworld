@@ -647,7 +647,9 @@ begin
     select o.move_act, a.payload from open_moves o join acts a on a.id = o.move_act
     where a.payload ->> 'kind' = 'conferGroup' and a.payload #> '{params,checkAt}' is not null and (o.checked_at is null or o.checked_at <= now() - check_every)
       and coalesce((o.progress ->> 'met')::boolean, false) is not true
-    order by o.checked_at nulls first, o.move_act
+      -- Only a favor whose check has come (the case keeps a malformed time from being cast: the guard refuses one, and a move written any other way must not stop the tick).
+      and case when a.payload #>> '{params,checkAt}' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' then (a.payload #>> '{params,checkAt}')::timestamptz end <= now()
+    order by o.checked_at nulls first, o.move_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     begin
@@ -761,6 +763,8 @@ begin
       if target.staff is not null then raise exception 'a group move never names a staff member' using errcode = '23514'; end if;
       select * into grp from group_kinds k where k.key = new.params ->> 'group' and k.source = 'conferred';
       if not found then raise exception 'a group move names a conferred group, and "%" is not one', coalesce(new.params ->> 'group', '') using errcode = '23514'; end if;
+      -- A Mod's group move is a punishment that bars a board of its beat: the favor is refused here, and the board and the beat by the Mod's rules below.
+      if holder = 'mod' and grp.tone <> 'punishment' then raise exception 'a Mod confers a punishment, never a favor' using errcode = '23514'; end if;
       has_board := new.params -> 'board' is not null and new.params -> 'board' <> 'null'::jsonb;
       if has_board then
         if grp.tone <> 'punishment' then raise exception 'only a punishment bars a board' using errcode = '23514'; end if;
@@ -801,8 +805,6 @@ begin
           raise exception '% has been punished % times in % days, the most staff may', target.name, cap ->> 'punishments', cap ->> 'days' using errcode = '23514';
         end if;
       end if;
-      -- A Mod's group move is a punishment that bars a board of its beat: the favor is refused here, and the board and the beat by the Mod's rules below.
-      if holder = 'mod' and grp.tone <> 'punishment' then raise exception 'a Mod confers a punishment, never a favor' using errcode = '23514'; end if;
     end if;
     if new.admin_description is not null then raise exception 'a queued move is queued without an admin''s replacement' using errcode = '23514'; end if;
     if new.kind = 'setRule' then

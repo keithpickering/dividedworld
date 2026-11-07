@@ -367,6 +367,12 @@ begin
   m_err := pg_temp.landed('gm-boss', erring, 'teachersPet', interval '3 hours', null, jsonb_build_object('kind', 'poisonKind', 'params', '{}'::jsonb), interval '2 hours', interval '2 days');
   before_n := (select count(*) from acts where kind = 'post' and payload ->> 'body' = 'Withdrawn, moving a member into "Teacher''s Pet".');
   perform system_tick();
+  -- A second tick strips nothing twice: one unmet end, one line.
+  perform system_tick();
+  if (select count(*) from acts where kind = 'move_end' and target_act_id = m_unmet) is distinct from 1::bigint then raise exception 'a second tick ended the unmet favor again'; end if;
+  if (select count(*) from acts where kind = 'post' and payload ->> 'body' = 'Withdrawn, moving a member into "Teacher''s Pet".') is distinct from before_n + 1 then
+    raise exception 'a second tick said the withdrawal again: %', (select jsonb_agg(payload ->> 'body') from acts where kind = 'post' and thread = pg_temp.announcements());
+  end if;
   if not exists (select 1 from open_moves where move_act = m_met) then raise exception 'a favor met by its check was ended'; end if;
   if exists (select 1 from open_moves where move_act = m_unmet) then raise exception 'a favor unmet at its check was kept'; end if;
   if (select payload ->> 'why' || '/' || (payload ->> 'by') from acts where kind = 'move_end' and target_act_id = m_unmet) is distinct from 'unmet/check' then
