@@ -57,26 +57,27 @@ interface RowState { readonly overflow: boolean; readonly first: number; readonl
 const STILL: RowState = { overflow: false, first: 0, last: 0, before: false, after: false, peekBefore: 0, peekAfter: 0 };
 
 /**
- * The row's cards, its card width and the step from one card's start to the next, as laid out now, in the
+ * The row's cards, its card width, the gap and the step from one card's start to the next, as laid out now, in the
  * row's own CSS pixels (the units of its `scrollLeft` and `clientWidth`). The width is the computed one,
  * never `offsetWidth`: a card's width is often a fraction (a phone's `calc(100% - 64px)` is 291.375px), and
  * a rounded width puts every card after the first off by its rounding. Nor is it a bounding box, which is
  * in viewport pixels and so is scaled by the Turn dialog's `zoom`. Where layout reports no width (a test's
  * DOM), `offsetWidth` stands in.
  */
-function measure(row: HTMLElement): { cards: HTMLElement[]; card: number; step: number } {
+function measure(row: HTMLElement): { cards: HTMLElement[]; card: number; gap: number; step: number } {
   const cards = [...row.querySelectorAll<HTMLElement>('[data-kb-item]')];
   const columnGap = parseFloat(getComputedStyle(row).columnGap);
   const laid = cards[0] ? parseFloat(getComputedStyle(cards[0]).width) : 0;
   const card = Number.isFinite(laid) ? laid : cards[0]?.offsetWidth ?? 0;
-  return { cards, card, step: card + (Number.isFinite(columnGap) ? columnGap : 0) };
+  const gap = Number.isFinite(columnGap) ? columnGap : 0;
+  return { cards, card, gap, step: card + gap };
 }
 
 function read(row: HTMLElement): RowState {
-  const { cards, card, step } = measure(row);
+  const { cards, card, gap, step } = measure(row);
   const { scrollLeft, clientWidth, scrollWidth } = row;
   if (scrollWidth <= clientWidth + 1 || card <= 0) return STILL;
-  const { first, last } = shownRange(scrollLeft, clientWidth, card, step - card, cards.length);
+  const { first, last } = shownRange(scrollLeft, clientWidth, card, gap, cards.length);
   /* What of the card before the first whole one shows (its end past the viewport's start), and of the card after the last. */
   const peekBefore = first > 1 ? Math.max(0, Math.round((first - 2) * step + card - scrollLeft)) : 0;
   const peekAfter = last < cards.length ? Math.max(0, Math.round(scrollLeft + clientWidth - last * step)) : 0;

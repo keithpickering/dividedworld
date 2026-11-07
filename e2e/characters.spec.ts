@@ -407,7 +407,7 @@ test('the fade covers only a peeking card, at its start and its end, and never a
 
 /*
  * New character's phone row has a card of calc(100% - 64px) of a 355px row, 291.375px: not a whole number of pixels,
- * which the Turn's happens to be. The count and the fade must read the real boxes, not a rounded width.
+ * where the Turn's card happens to be a whole number. The count and the fade must read the real boxes, not a rounded width.
  */
 test('on a phone, choosing the Tweener on New character counts 5–5 of 6 and fades none of it', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
