@@ -229,7 +229,7 @@ function ReplaceDescription({ id, about, saved, save, onSaved, lead }: { readonl
       {lead && <ButtonRow>{lead}</ButtonRow>}
       <div className={lead ? 'kb-queue-under' : undefined}>
         <ButtonRow>
-          <GlassButton size="s" aria-expanded={open} aria-controls={`${id}-form`} aria-label={`Replace the description of ${about}`} onClick={() => setOpen((o) => !o)}>{open ? 'CLOSE' : 'REPLACE DESCRIPTION'}</GlassButton>
+          <GlassButton size="s" aria-expanded={open} aria-controls={`${id}-form`} aria-label={`${open ? 'Close' : 'Replace description'} of ${about}`} onClick={() => setOpen((o) => !o)}>{open ? 'CLOSE' : 'REPLACE DESCRIPTION'}</GlassButton>
         </ButtonRow>
       </div>
       <div id={`${id}-form`} className="kb-queue-replace" data-open={open ? 1 : undefined}>
