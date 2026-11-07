@@ -159,6 +159,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(whoops.tag!(top, [under, top])).toBe('#101010');
     expect(whoops.tag!(under, [under])).toBe('#ffd93d');
     expect(whoops.tag!(play('c', 'not a color'), [play('c', 'not a color')])).toBeUndefined();
+    /* A Mod Bot's ink is a color's name; the tag gives the hex the splat draws, which the engine can read. */
+    expect(whoops.tag!(play('d', 'teal'), [play('d', 'teal')])).toMatch(/^#[0-9a-f]{6}$/u);
     expect(instanceUi.cards.find((c) => c.key === 'stick-around')!.tag).toBeUndefined();
   });
   test('both cards have their own mark icon, apart from the face, and Whoops! hints at the gesture', () => {
