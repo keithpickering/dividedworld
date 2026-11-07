@@ -135,7 +135,7 @@ export function Picker({ subject, as, own, send, busy, refusal: given = null, an
       aside={<span id={countId} className="kb-picker-left" role="status">{left} of {cap} left</span>}
     >
       {/* What the dialog is described by: the count, and the mask the reaction goes out under (the HUD's, which the overlay dims). */}
-      <span id={describedId} hidden>{left} of {cap} left, reacting as {as?.name ?? 'your character'}</span>
+      <span id={describedId} hidden>{left} of {cap} left{as ? `, reacting as ${as.name}` : ''}</span>
       <div className="kb-picker-body" aria-busy={busy || undefined} onKeyDown={move}>
         {left === 0 && <p className="kb-picker-none">You have left all {cap} of your reactions on this post. You cannot leave another.</p>}
         {left > 0 && (
