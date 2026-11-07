@@ -554,6 +554,15 @@ test('on a phone the Turn dialog never scrolls sideways', async ({ page }) => {
   await expect(classGroup(dialog).getByText('1–1 of 6')).toBeVisible();
   const over = await page.locator('.kb-glass-overlay').evaluate((el) => el.scrollWidth - el.clientWidth);
   expect(over).toBeLessThanOrEqual(0);
+  /* Nor does the row reach the dialog's frame: the ring is drawn inside the dialog's box, a border thick, and the row stops a border short of it. */
+  const gap = await dialog.evaluate((d) => {
+    const frame = d.closest('.kb-glass-dialog') ?? d;
+    const ring = parseFloat(getComputedStyle(frame).getPropertyValue('--kb-border')) || 0;
+    const f = frame.getBoundingClientRect();
+    const r = d.querySelector('.kb-class-grid')!.getBoundingClientRect();
+    return Math.min(r.left - f.left, f.right - r.right) - 2 * ring;
+  });
+  expect(gap).toBeGreaterThanOrEqual(-0.5);
 });
 
 /* From 150% text the page is the Phone board's one column at any width, so the roster is the carousel there too, however wide the window. */

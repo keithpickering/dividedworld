@@ -612,11 +612,12 @@
 :root[data-kb-motion='reduce'] .kb-class-grid[data-kb-eased] { transition: none; }
 
 /*
- * In a dialog the room is no more than the dialog's own padding: the frame clips past it anyway, and a row reaching
- * further would make the overlay scroll sideways (on the phone, 12px of padding against the room's 32px).
+ * In a dialog the room stops a border short of the frame's ring, which is drawn inside the dialog's padding (base.css):
+ * the frame clips past it anyway, a row reaching further would make the overlay scroll sideways (on the phone, 12px of
+ * padding against the room's 32px), and a row reaching the ring would lay a peeking card's words over it.
  */
 .kb-glass-dialog .kb-class-cards {
-  --kb-class-glow: min(32px, var(--kb-dialog-pad-x, 32px));
+  --kb-class-glow: min(32px, var(--kb-dialog-pad-x, 32px) - 2 * var(--kb-border, 0px));
 }
 
 .kb-class-grid > .kb-class-card {
