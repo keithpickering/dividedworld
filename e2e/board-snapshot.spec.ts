@@ -182,6 +182,31 @@ test('the system faces the boards name are set in one stand-in on both sides, wh
   await context.close();
 });
 
+test('the browser sets text at its outlines\' own widths, never hinted to whole pixels', async ({ page }) => {
+  /*
+   * A build sets a board's words larger than the board draws them (a manifest's buildSize), so the two widths agree only where a
+   * width scales with its size. A Chromium left to its own hinting (CI's, where nothing turns it off) rounds every glyph's advance
+   * to a whole pixel at each size: one Bold "quote" was 36px at the board's 11.25px and 42px at the build's 12.5px, where its
+   * outlines say 36.8 and 40.9, so the small Chrome buttons came out 5px apart on CI and 3px apart here. Set in one of the
+   * instance's own faces, from its own file, so no machine's fonts are in it: twice the size is twice the width.
+   */
+  await page.setContent('<body></body>');
+  const bytes = fs.readFileSync(path.join(here, '..', 'instances', 'divided-world', 'ui', 'fonts', 'BarlowCondensed-Medium.woff2')).toString('base64');
+  const [small, large] = await page.evaluate(async (b64) => {
+    const face = new FontFace('Hinting probe', Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+    document.fonts.add(await face.load());
+    const width = (px: number) => {
+      const span = document.createElement('span');
+      span.style.cssText = `font: ${px}px 'Hinting probe'; white-space: nowrap`;
+      span.textContent = 'quote spin thread history';
+      document.body.append(span);
+      return span.getBoundingClientRect().width;
+    };
+    return [width(11.25), width(22.5)];
+  }, bytes);
+  expect(Math.abs(large! - 2 * small!), `widths ${small} at 11.25px and ${large} at 22.5px`).toBeLessThan(0.1);
+});
+
 test('a missing landmark is reported as not found, with no box', async ({ page }) => {
   await page.setContent(`<button>Here</button>`);
   const { shots } = await snapshotPage(page, manifest(lm('gone')), 'board');
