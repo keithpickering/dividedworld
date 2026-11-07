@@ -270,7 +270,7 @@
 
 .kb-lens-row-head {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 0.6rem;
   align-items: center;
   margin: 0 0 0.35rem;
@@ -278,6 +278,7 @@
 
 .kb-lens-row-head .kb-lens-by {
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .kb-lens-row-avatar {
@@ -294,8 +295,8 @@
 /* The faces before the fold's words: decoration, overlapping. Their wrappers take no box, they only carry each play's ink. */
 .kb-lens-faces {
   display: inline-flex;
-  vertical-align: middle;
-  margin-inline-end: 0.5rem;
+  flex: none;
+  align-self: center;
 }
 
 .kb-lens-face-ink {
