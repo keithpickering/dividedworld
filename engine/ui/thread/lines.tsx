@@ -55,7 +55,7 @@ export function useHistory(post: Id): { readonly button: ReactNode; readonly pan
   const [open, setOpen] = useState(false);
   const id = `history-${post}`;
   return {
-    button: <button type="button" className="kb-link-button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>History</button>,
+    button: <button type="button" className="kb-button" data-kb-size="small" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>History</button>,
     panel: <div id={id}>{open && <Versions post={post} />}</div>,
   };
 }

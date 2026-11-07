@@ -121,7 +121,7 @@ export function Editor({ label, value, onChange, max, onQuote, onSubmit, describ
         <span className={`kb-editor-count kb-small kb-num${over > 0 ? ' kb-editor-over' : ''}`}>{over > 0 ? `${n} of ${max} — ${over} over` : `${n} of ${max}`}</span>
         {onSubmit && <span id={hintId} className="kb-editor-hint kb-small kb-muted">Ctrl+Enter or Command+Enter {submitVerb}</span>}
         <span className="kb-editor-note kb-small" role="status">{note}</span>
-        <button type="button" className="kb-button" aria-pressed={preview} aria-controls={previewId} onClick={() => setPreview(!preview)}>Preview</button>
+        <button type="button" className="kb-button" data-kb-size="small" aria-pressed={preview} aria-controls={previewId} onClick={() => setPreview(!preview)}>Preview</button>
         {children}
       </div>
       <div id={previewId}>

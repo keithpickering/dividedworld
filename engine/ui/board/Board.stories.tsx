@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { Fake } from '../data/fake.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { World } from '../story.tsx';
+import { userEvent, within } from 'storybook/test';
 import { LoadedBoard } from '../loaded.tsx';
 
 const meta: Meta<typeof LoadedBoard> = { title: 'Board/Thread list', component: LoadedBoard, args: { slug: 'general' } };
@@ -55,3 +56,9 @@ export const TheSystemsBoard: Story = {
   },
 };
 export const SignedOut: Story = { parameters: { world: (() => {}) satisfies World, path: '/b/general' } };
+
+/** Start a thread while its form is open: the Chrome button drawn pressed in (aria-expanded), the form's primary button beneath. */
+export const StartAThreadOpen: Story = {
+  parameters: { world: threads, path: '/b/general' },
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: 'Start a thread' })); },
+};

@@ -186,7 +186,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
         <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
-        <button type="button" className="kb-button kb-composer-reveal" onClick={() => setRevealing(true)}>Reveal…</button>
+        <button type="button" className="kb-button kb-composer-reveal" data-kb-size="small" onClick={() => setRevealing(true)}>Reveal…</button>
       </Editor>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       {revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}

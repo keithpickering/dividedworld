@@ -129,6 +129,12 @@
   --kb-button-radius: 0;
   --kb-button-primary-bg: var(--kb-fg);
   --kb-button-primary-fg: var(--kb-bg);
+  /* A button under the pointer. By default today's inversion; a skin sets a lighter face of its own. A primary button already is
+     the inverse, so its default hover is its own face. */
+  --kb-button-hover-bg: var(--kb-fg);
+  --kb-button-hover-fg: var(--kb-bg);
+  --kb-button-primary-hover-bg: var(--kb-button-primary-bg);
+  --kb-button-primary-hover-fg: var(--kb-button-primary-fg);
   /* The folder and nav icons (Task 5): black and white, following the mode. */
   --kb-icon-ink: var(--kb-fg);
   --kb-icon-back: var(--kb-bg);

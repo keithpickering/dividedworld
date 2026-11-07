@@ -118,12 +118,12 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin }
     <>
       <footer className="kb-act-foot">
         <div className="kb-act-links kb-small">
-          {quotable && <button type="button" className="kb-link-button" onClick={() => quote(act)}>Quote</button>}
+          {quotable && <button type="button" className="kb-button" data-kb-size="small" onClick={() => quote(act)}>Quote</button>}
           <button
-            ref={spinButton} type="button" className="kb-link-button" aria-expanded={spinning} aria-controls={`spin-${act.id}`}
+            ref={spinButton} type="button" className="kb-button" data-kb-size="small" aria-expanded={spinning} aria-controls={`spin-${act.id}`}
             onClick={() => setSpinOrigin(spinning ? null : { id: act.id, label: act.seq === null ? null : `post ${act.seq}`, opener: spinButton.current })}
           >Spin thread</button>
-          {mine && !editing && <button ref={editButton} type="button" className="kb-link-button" onClick={onEdit}>Edit</button>}
+          {mine && !editing && <button ref={editButton} type="button" className="kb-button" data-kb-size="small" onClick={onEdit}>Edit</button>}
           {act.kind === 'post' && history.button}
         </div>
       </footer>

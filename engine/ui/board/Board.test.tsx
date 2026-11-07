@@ -232,6 +232,7 @@ describe('The System\'s board', () => {
     const form = await screen.findByRole('form', { name: 'Start a thread' });
     expect(button).toHaveAttribute('aria-expanded', 'true');
     expect(button).toHaveAttribute('aria-controls', form.id);
+    expect(button).toHaveClass('kb-button'); /* drawn pressed in by base.css's [aria-expanded='true'] while its form is open */
     await waitFor(() => expect(within(form).getByRole('textbox', { name: 'Title' })).toHaveFocus());
     expect(form.compareDocumentPosition(screen.getByRole('table')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await userEvent.click(button);

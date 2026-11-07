@@ -246,6 +246,8 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-logo-fg', '--kb-banner-bg', 3, 'the logo on the banner (large text)'],
   ['--kb-button-fg', '--kb-button-bg', 4.5, 'a Chrome button\'s label'],
   ['--kb-button-primary-fg', '--kb-button-primary-bg', 4.5, 'a primary Chrome button\'s label'],
+  ['--kb-button-hover-fg', '--kb-button-hover-bg', 4.5, 'a Chrome button\'s label under the pointer'],
+  ['--kb-button-primary-hover-fg', '--kb-button-primary-hover-bg', 4.5, 'a primary Chrome button\'s label under the pointer'],
   ['--kb-fg', '--kb-input-bg', 4.5, 'text in a text box'],
   ['--kb-badge-a-fg', '--kb-badge-a', 3, 'the first footer badge (decorative)'],
   ['--kb-badge-b-fg', '--kb-badge-b', 3, 'the second footer badge (decorative)'],

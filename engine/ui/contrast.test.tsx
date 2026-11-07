@@ -66,6 +66,8 @@ describe('the skin tokens: gradients are read stop by stop', () => {
     bad('--kb-bar-bg: #fff; --kb-bar-fg: #ddd;', /light band/u);
     bad('--kb-button-bg: #fff; --kb-button-fg: #ddd;', /Chrome button/u);
     bad('--kb-button-primary-bg: #fff; --kb-button-primary-fg: #ddd;', /primary/u);
+    bad('--kb-button-hover-bg: #fff; --kb-button-hover-fg: #ddd;', /under the pointer/u);
+    bad('--kb-button-primary-hover-bg: #fff; --kb-button-primary-hover-fg: #ddd;', /primary Chrome button's label under/u);
     bad('--kb-input-bg: #222;', /input|text box/u);
     bad('--kb-row-2: #222;', /row/u);
   });
@@ -154,6 +156,8 @@ describe('the skin tokens: the defaults draw today\'s board', () => {
     '--kb-link-hover': '--kb-link', '--kb-input-bg': '--kb-bg', '--kb-input-edge': '--kb-rule',
     '--kb-button-bg': '--kb-bg', '--kb-button-edge': '--kb-rule', '--kb-button-fg': '--kb-fg',
     '--kb-button-primary-bg': '--kb-fg', '--kb-button-primary-fg': '--kb-bg',
+    '--kb-button-hover-bg': '--kb-fg', '--kb-button-hover-fg': '--kb-bg',
+    '--kb-button-primary-hover-bg': '--kb-fg', '--kb-button-primary-hover-fg': '--kb-bg',
     '--kb-badge-a': '--kb-fg', '--kb-badge-a-fg': '--kb-bg', '--kb-badge-b': '--kb-bg', '--kb-badge-b-fg': '--kb-fg',
     '--kb-scrollbar-thumb': '--kb-muted', '--kb-scrollbar-track': '--kb-bg',
   };
