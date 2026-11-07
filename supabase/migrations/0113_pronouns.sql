@@ -2,7 +2,8 @@
 -- pronouns are a set of five words and a plural flag, kept on its profile row. `pronouns_hold` is the rule engine/rules/pronouns.ts's `pronounProblems` states: exactly six keys,
 -- the five forms each 1 to 12 code points of letters and combining marks with an apostrophe (' or the right single quote) or a hyphen only between two letters, `plural` a boolean.
 -- The letter class is [[:alpha:]] and the combining marks are the combining blocks (U+0300-036F, U+1AB0-1AFF, U+1DC0-1DFF, U+20D0-20FF, U+FE20-FE2F), as names are folded (0010).
--- Case is not held (the rule does not hold it); the two writers store the set lowercased, as the client does (`normalizePronouns`).
+-- Case is not held (the rule does not hold it); every writer (set_profile, create_character, the setting's fallback and the seed) stores the set lowercased, as the
+-- client does (`normalizePronouns`).
 --
 -- Written here: the hold; `settings_held` (0104) holding the instance's default, `pronouns`; the column, backfilled with the it-set for every character that has no profile
 -- row; `profile_projection` (0025) carrying it; `set_profile` (0019), a fifth argument that keeps the stored set when null; `create_character` (0067), a last argument that,
@@ -11,26 +12,17 @@
 
 create function pronouns_hold(v jsonb) returns boolean
 language sql immutable set search_path = public, pg_temp as $$
-  select coalesce(
-    jsonb_typeof(v) = 'object'
-    and (select count(*) from jsonb_object_keys(v)) = 6
+  select case when jsonb_typeof(v) <> 'object' then false else coalesce(
+    (select count(*) from jsonb_object_keys(v)) = 6
     and v ?& array['subject', 'object', 'determiner', 'possessive', 'reflexive', 'plural']
     and jsonb_typeof(v -> 'plural') = 'boolean'
     and (select bool_and(jsonb_typeof(v -> k) = 'string'
            and char_length(v ->> k) between 1 and 12
            and (v ->> k) ~ U&'^[[:alpha:]][[:alpha:]\0300-\036F\1AB0-\1AFF\1DC0-\1DFF\20D0-\20FF\FE20-\FE2F]*([''\2019-][[:alpha:]][[:alpha:]\0300-\036F\1AB0-\1AFF\1DC0-\1DFF\20D0-\20FF\FE20-\FE2F]*)*$')
-         from unnest(array['subject', 'object', 'determiner', 'possessive', 'reflexive']) k), false)
+         from unnest(array['subject', 'object', 'determiner', 'possessive', 'reflexive']) k), false) end
 $$;
 -- Executable by PUBLIC: a CHECK runs its function as the writer (supabase/tests/0082-constraint-functions.sql). It reads nothing and writes nothing.
 grant execute on function pronouns_hold(jsonb) to public;
-
--- The set a new profile takes when nobody names one: the instance's `pronouns` setting, else the engine's it-set (the column's default, below).
-create function new_pronouns() returns jsonb
-language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce((select s.value from settings s where s.key = 'pronouns'),
-    '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'::jsonb)
-$$;
-revoke execute on function new_pronouns() from public, anon, authenticated;
 
 -- A set with each form lowercased, for storing; it repairs nothing else.
 create function pronouns_lowered(v jsonb) returns jsonb
@@ -38,6 +30,14 @@ language sql immutable set search_path = public, pg_temp as $$
   select jsonb_object_agg(e.key, case when jsonb_typeof(e.value) = 'string' then to_jsonb(lower(e.value #>> '{}')) else e.value end) from jsonb_each(v) e
 $$;
 revoke execute on function pronouns_lowered(jsonb) from public, anon, authenticated;
+
+-- The set a new profile takes when nobody names one: the instance's `pronouns` setting, else the engine's it-set (the column's default, below).
+create function new_pronouns() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select pronouns_lowered(s.value) from settings s where s.key = 'pronouns'),
+    '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'::jsonb)
+$$;
+revoke execute on function new_pronouns() from public, anon, authenticated;
 
 alter table character_profiles add column pronouns jsonb not null
   default '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'::jsonb
@@ -292,7 +292,7 @@ begin
   if unknown is not null then raise exception 'persona % has pronouns that are not five words of 1 to 12 letters and a plural', unknown using errcode = '22023'; end if;
   with seeded as (
     select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature,
-      e -> 'pronouns' as pronouns
+      pronouns_lowered(e -> 'pronouns') as pronouns
     from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
   ), made as (
     insert into characters (name, staff, staff_kind, debuted_at)
@@ -306,10 +306,10 @@ begin
   select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
   -- Each listed persona's pronouns (0113), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
   -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
-  update character_profiles p set pronouns = e.value -> 'pronouns'
+  update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
   where e.value ? 'pronouns' and c.staff = e.value ->> 'key' and c.staff_kind = 'persona' and p.character = c.id
-    and p.pronouns is distinct from e.value -> 'pronouns';
+    and p.pronouns is distinct from pronouns_lowered(e.value -> 'pronouns');
   select string_agg(k, ', ') into unknown from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
   where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona');
   if unknown is not null then raise exception 'firstStaff names %, which no persona in the seed''s roster is', unknown using errcode = '22023'; end if;
@@ -421,11 +421,11 @@ begin
       on conflict (staff) do nothing returning id
     )
     insert into character_profiles (character, title, signature, pronouns)
-    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(payload -> 'developer' -> 'pronouns', new_pronouns()) from made m;
+    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
     -- The developer's pronouns, when the seed names them, are rewritten on every seed (0113); its title and signature are not.
-    update character_profiles p set pronouns = payload -> 'developer' -> 'pronouns'
+    update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
     from characters c
-    where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from payload -> 'developer' -> 'pronouns';
+    where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
       insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
       on conflict (key) do update set value = excluded.value;

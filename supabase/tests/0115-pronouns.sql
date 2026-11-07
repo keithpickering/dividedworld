@@ -181,6 +181,12 @@ begin
   if (select pronouns ->> 'subject' from character_profiles where character = loud) is distinct from 'she' then raise exception 'a set is stored lowercase'; end if;
   if why is distinct from '22023: pronouns are five words of 1 to 12 letters' then raise exception 'a bad set is refused at creation: %', why; end if;
   if exists (select 1 from characters where name = 'Pn Bad') then raise exception 'a refused creation made nothing'; end if;
+  -- A setting written with capitals is stored lowercase on the character it gives its set to.
+  update settings set value = jsonb_set(they, '{subject}', '"They"') where key = 'pronouns';
+  perform tests.become(ann);
+  setting := (create_character('Pn Setting Caps', 'alpha') ->> 'id')::uuid;
+  perform tests.unbecome();
+  if (select pronouns from character_profiles where character = setting) is distinct from they then raise exception 'a capitalized setting is stored lowercase: %', (select pronouns from character_profiles where character = setting); end if;
   delete from settings where key = 'pronouns';
 end $$;
 
@@ -229,7 +235,9 @@ do $$
 declare made uuid := tests.character(tests.account('pn-dee'), 'Pn Before');
 begin
   if exists (select 1 from character_profiles where character = made) then raise exception 'the fixture makes a character with no profile row'; end if;
-  -- The migration's statement, as it wrote it.
+  -- The migration's statement, copied as it wrote it: migrations replay into an empty database, so no character exists when the migration's own backfill runs, and
+  -- breaking that statement in 0113 is not seen here. This holds the
+  -- statement's shape only.
   insert into character_profiles (character) select c.id from characters c
   where exists (select 1 from pip_styles where key = 'default') and not exists (select 1 from character_profiles p where p.character = c.id);
   if (select pronouns from character_profiles where character = made) is distinct from
