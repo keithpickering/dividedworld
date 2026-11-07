@@ -11,7 +11,7 @@
  *
  * Out of character and plain.
  */
-import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, ClassReveal, Id, ProfilePage, StandingPlace, TurnAnnounced } from '../data/api.ts';
@@ -95,13 +95,14 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
       : []),
   ];
   const lead = facts.filter((f) => f.lead).length;
+  const band = useId();
   return (
     <div className="kb-profile">
       <p className="kb-crumb"><Link to="/">Index</Link> › {c.name}</p>
       <h1 className="kb-heading kb-profile-name">{c.name}</h1>
       <section className="kb-profile-card">
-        <table className="kb-table kb-about" role="table" aria-labelledby="kb-about-band" data-kb-lead={lead} style={{ '--kb-about-lead': Math.max(1, lead) } as CSSProperties}>
-          <thead role="rowgroup"><tr role="row"><th id="kb-about-band" role="columnheader" scope="col" colSpan={3}>About {c.name}</th></tr></thead>
+        <table className="kb-table kb-about" role="table" aria-labelledby={band} data-kb-lead={lead} style={{ '--kb-about-lead': Math.max(1, lead) } as CSSProperties}>
+          <thead role="rowgroup"><tr role="row"><th id={band} role="columnheader" scope="col" colSpan={3}>About {c.name}</th></tr></thead>
           <tbody role="rowgroup">
             {facts.map((f, i) => (
               <tr key={f.key} role="row" data-kb-fact={f.key} data-kb-lead-row={f.lead ? '' : undefined}>

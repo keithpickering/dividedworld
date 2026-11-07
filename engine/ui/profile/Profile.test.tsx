@@ -64,7 +64,7 @@ describe('the public profile', () => {
     await waitFor(() => expect(facts).toHaveTextContent('Aura this season'));
     const table = facts;
     expect(within(table).getByRole('columnheader', { name: 'About Pipewrench' })).toBeInTheDocument();
-    /* One name for the card: the region's; the band names the column, with no caption beside it. */
+    /* The table is named once, by its band, with no caption beside it. */
     expect(table.querySelector('caption')).toBeNull();
     expect(table.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
     const labels = within(table).getAllByRole('rowheader').map((h) => h.textContent);
