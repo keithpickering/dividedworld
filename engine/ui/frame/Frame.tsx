@@ -23,6 +23,7 @@ import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
 import { PlayProvider } from '../cards/play.tsx';
+import { BannerSearch } from '../search/BannerSearch.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
 import { Hud } from './Hud.tsx';
 import { Loading } from './Loading.tsx';
@@ -76,6 +77,13 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
+  /*
+   * Search (the search design, section 7): signed in, the banner's right side is the search box where the host line stood, and the boards
+   * bar ends in a Search link. On /search the page has its own keyword field, so the host line shows there. Signed out there is neither
+   * (a visitor reads no thread). The loading meter stays beside the box.
+   */
+  const onSearch = path === '/search';
+  const box = session.signedIn && !onSearch;
 
   return (
     <TipsProvider>
@@ -83,8 +91,8 @@ export function Frame({ children }: { readonly children: ReactNode }) {
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-            <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
-            <Loading />
+            {box ? <BannerSearch /> : <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>}
+            <Loading hostless={box} />
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
@@ -94,6 +102,17 @@ export function Frame({ children }: { readonly children: ReactNode }) {
               {links.map((l) => (
                 <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
               ))}
+              {session.signedIn && (
+                <li className="kb-nav-search">
+                  <Link to="/search" aria-current={onSearch ? 'page' : undefined} onClick={() => setOpen(false)}>
+                    <svg className="kb-nav-icon" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" focusable="false">
+                      <circle cx="5.5" cy="5.5" r="4" fill="none" stroke="currentColor" strokeWidth="1" />
+                      <path d="M8.5,8.5 L12.5,12.5" fill="none" stroke="currentColor" strokeWidth="1" />
+                    </svg>
+                    Search
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
           <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>

@@ -124,6 +124,50 @@
   margin-right: 0.4em;
 }
 
+/* The boards bar ends in Search, at the right as the board draws it, with a magnifier that takes the link's color. */
+.kb-nav li.kb-nav-search {
+  margin-left: auto;
+}
+
+.kb-nav li.kb-nav-search::before {
+  content: none;
+}
+
+.kb-nav-search a {
+  display: block;
+  line-height: inherit;
+}
+
+.kb-nav-icon {
+  flex: none;
+  /* The magnifier is the line's own height, so the link is no taller than its words and the bar keeps the board's height. */
+  width: 1em;
+  height: 1em;
+  margin-right: 6px;
+  vertical-align: -0.125em;
+}
+
+/* The banner's search box stands where the host line stood; a phone's banner has no room for it, and its Boards menu holds the Search link. */
+.kb-banner-search {
+  position: relative; /* the suggest list hangs from this, so its right edge is the button's */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto; /* the banner's right side, with the meter after it */
+}
+
+.kb-banner-search .kb-search-combo {
+  position: static;
+}
+
+@media (max-width: 40em) {
+  .kb-banner-search {
+    display: none;
+  }
+}
+
 .kb-menu-button {
   display: none;
   margin-left: auto;
@@ -1584,6 +1628,10 @@ html[data-kb-float='sheet'] .kb-frame {
 
   .kb-nav li + li::before {
     content: none;
+  }
+
+  .kb-nav li.kb-nav-search {
+    margin-left: 0;
   }
 }
 

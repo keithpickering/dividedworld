@@ -27,7 +27,7 @@ export function shortenPath(to: string): string {
   return path.split('/').map((s) => (UUID.test(s) ? `${s.slice(0, 8)}…` : s)).join('/');
 }
 
-export function Loading({ host = globalThis.location?.host ?? '' }: { readonly host?: string }) {
+export function Loading({ host = globalThis.location?.host ?? '', hostless = false }: { readonly host?: string; /** The meter alone: the banner's search box stands where the host line does. */ readonly hostless?: boolean }) {
   const { pending, tracking, outcome } = useNavigation();
   const { path, query } = useLocation();
   const busy = pending !== null || tracking > 0;
@@ -75,7 +75,8 @@ export function Loading({ host = globalThis.location?.host ?? '' }: { readonly h
   const opening = pending ? `Opening ${host}${shortenPath(pending.to)}`.replace(/…?$/u, '…') : host;
   return (
     <span className="kb-address">
-      <span className="kb-address-text">{opening}</span>
+      {/* With the search box where the host stood, the host line is read aloud only; while a load is out, "Opening ..." shows beside the meter. */}
+      <span className={hostless && !pending ? 'kb-address-text kb-visually-hidden' : 'kb-address-text'}>{opening}</span>
       <span className="kb-meter" role="progressbar" aria-label="Loading the page" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(value)}>
         <span className="kb-meter-fill" style={{ width: `${value}%` }} />
       </span>

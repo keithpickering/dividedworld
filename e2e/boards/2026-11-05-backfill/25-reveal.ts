@@ -43,7 +43,7 @@ const manifest: BoardManifest = {
     part('close', 'button', 'Close', { type: false, box: 'size' }),
     part('sentence', 'text', "Pipewrench is a Heel. This shows everyone that, as checked by The System, as Pipewrench's own post. Anyone can react to it or spin a thread from it, and this can't be taken back.", { box: 'none', type: false }),
     part('board-label', 'text', 'BOARD', { ...UNDER, buildShift: DOWN.fields }),
-    part('board', 'combobox', '', { ...UNDER, type: false, buildName: 'Board', buildShift: DOWN.selects }),
+    part('board', 'combobox', '', { ...UNDER, type: false, buildName: 'Board (optional)', buildShift: DOWN.selects }),
     part('thread-label', 'text', 'THREAD', { ...UNDER, buildShift: DOWN.fields }),
     part('thread', 'combobox', '', { ...UNDER, type: false, buildName: 'Thread', nth: 1, buildNth: 0, buildShift: DOWN.selects }),
     part('words-label', 'text', "IN THE CHARACTER'S WORDS (OPTIONAL)", { ...UNDER, buildShift: DOWN.words }),
