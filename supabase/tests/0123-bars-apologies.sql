@@ -295,6 +295,9 @@ begin
   if (select count(*) from alerts where kind = 'framed' and act = (got::jsonb -> 'act' ->> 'id')::uuid and account = e and character = named) is distinct from 1::bigint then
     raise exception 'an apology naming another player''s character in a counterfeit quote writes one framed alert for its owner';
   end if;
+  -- Returned, so that nothing waits when section 6 counts.
+  got := pg_temp.as_val(null, format('select rule_apology(%s, %L, %L)', (select id from apologies where move_act = m), 'returned', ''));
+  if got like 'ERROR:%' then raise exception 'returning the framing apology was refused: %', got; end if;
 end $$;
 
 -- ---- 5. rule_apology ----
