@@ -1,4 +1,4 @@
-import { cleanup, screen, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
@@ -163,6 +163,25 @@ describe('Invites', () => {
     release();
     await screen.findByText(/You hold 1 of 2 open invites/u);
     expect(make).not.toHaveAttribute('aria-busy');
+  });
+
+  test('a Reissue is busy only on the one pressed: the other Reissue is held, not spinning', async () => {
+    const w = world();
+    open(w);
+    await userEvent.click(await screen.findByRole('button', { name: 'Make an invite' }));
+    await screen.findByText(/You hold 1 of 2/u);
+    await userEvent.click(screen.getByRole('button', { name: 'Make an invite' }));
+    await screen.findByText(/You hold 2 of 2/u);
+    let release!: () => void;
+    const real = w.fake.reissueInvite.bind(w.fake);
+    const reissue = vi.spyOn(w.fake, 'reissueInvite').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    const [first, second] = screen.getAllByRole('button', { name: /^Reissue invite/u });
+    await userEvent.click(first!);
+    expect(first).toHaveAttribute('aria-busy', 'true');
+    expect(second).not.toHaveAttribute('aria-busy');
+    release();
+    await waitFor(() => expect(reissue).toHaveBeenCalledTimes(1));
+    await screen.findByText(/new code/iu);
   });
 
   test('a make that gets no answer ends the wait and says so', async () => {

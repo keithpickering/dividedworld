@@ -243,7 +243,7 @@ export function AvatarEditor({ character, onSaved, io = browserIo }: AvatarEdito
       {problem && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem}</p>}
       {cutting && (
         <p className="kb-dialog-actions">
-          <button type="button" className="kb-button" onClick={() => replace(null)}>Cancel</button>
+          <GlassButton kind="secondary" onClick={() => replace(null)}>Cancel</GlassButton>
           <GlassButton kind="primary" busy={busy} disabled={shapeProblem !== null} onClick={() => void save()}>
             {cutting.kind === 'new' ? 'Save the avatar' : 'Save the new square'}
           </GlassButton>

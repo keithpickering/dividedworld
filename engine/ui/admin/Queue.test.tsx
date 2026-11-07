@@ -315,6 +315,26 @@ describe('a nomination of a successor', () => {
       await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeNull());
     });
 
+    test('Dismiss is busy only on the season pressed: another season\'s Dismiss is held, not spinning', async () => {
+      const { fake } = open({ build: (fake) => {
+        handover(fake, fake.clock.now() - 7_200_000);
+        fake.seed.staff('third', 'Third', 'mod');
+        fake.seed.handover({ outgoing: 'comptroller', boss: 'third', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
+      } });
+      let release!: () => void;
+      const real = fake.dismissHandoverTodo.bind(fake);
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo').mockImplementation((season) => new Promise((resolve) => { release = () => resolve(real(season)); }));
+      const todo = await group(/^To do/u);
+      const two = within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' });
+      const three = within(todo).getByRole('button', { name: 'Dismiss the season 3 to-do' });
+      await userEvent.click(two);
+      expect(two).toHaveAttribute('aria-busy', 'true');
+      expect(three).not.toHaveAttribute('aria-busy');
+      release();
+      await waitFor(() => expect(dismiss).toHaveBeenCalledTimes(1));
+      expect(dismiss).toHaveBeenCalledWith(2);
+    });
+
     test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
       open({ build: (fake) => handover(fake) });
       const todo = await group(/^To do/u);
