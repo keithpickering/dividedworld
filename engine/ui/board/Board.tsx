@@ -25,7 +25,7 @@ import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
-import { Ago, Who, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
+import { Ago, Byline, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
@@ -297,9 +297,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         )}
         <div className="kb-thread-meta kb-small">
           <span className="kb-thread-started">
-            <Who character={t.firstCharacter ? characters.get(t.firstCharacter) : undefined} name={starter ?? 'S'}>
-              {t.firstCharacter ? <Link to={`/c/${encodeURIComponent(t.firstCharacter)}`}>{starter ?? 'A character'}</Link> : <span className="kb-system-name">{ui.copy.staffWord}</span>}
-            </Who>
+            <Byline character={t.firstCharacter ? characters.get(t.firstCharacter) : undefined} id={t.firstCharacter} name={starter ?? undefined} link />
           </span>
           {isNew && (
             <> · <Link to={threadHref(t.id, pageOf(firstUnread, perPage), firstUnread)} aria-label={`First unread post in ${t.title}`}>first unread</Link></>
@@ -319,9 +317,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
       <td role="cell" className="kb-thread-last kb-small">
         <span className="kb-thread-sep" aria-hidden="true"> · </span>
         <span className="kb-thread-last-label">last: </span>
-        <Who character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} name={last ?? 'S'}>
-          {t.lastCharacter ? <Link to={`/c/${encodeURIComponent(t.lastCharacter)}`}>{last ?? 'A character'}</Link> : <span className="kb-system-name">{ui.copy.staffWord}</span>}
-        </Who>
+        <Byline character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} id={t.lastCharacter} name={last ?? undefined} link />
         <span className="kb-thread-sep" aria-hidden="true">, </span>
         <br />
         <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link kb-muted"><Ago at={t.lastAt} /><span className="kb-visually-hidden"> — latest post in {t.title}</span></Link>

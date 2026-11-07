@@ -5,6 +5,7 @@
  * A refusal is shown in the server's own words and the draft is kept.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { Editor } from '../composer/Editor.tsx';
@@ -38,7 +39,7 @@ export function NewThread({ board }: { readonly board: string }) {
     setBusy(true);
     setRefusal(null);
     try {
-      const answer = await api.startThread(board, hudCharacter.id, title, body);
+      const answer = await api.startThread(board, hudCharacter.id, title, body, ...framingArgs(body));
       if (!answer.ok) { setRefusal(answer.error); return; }
       void refresh();
       navigate(`/t/${answer.value.thread.id}`);

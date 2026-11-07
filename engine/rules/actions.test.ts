@@ -37,6 +37,20 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
 });
 
+test('framing passes through on a post, a thread start and a spin: the first five distinct ids, and nothing when there are none', () => {
+  const six = [id, other, '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666'];
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [other, other, id] }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null, framing: [other, id] } });
+  assert.deepEqual(decide({ action: 'startThread', board: 'general', character: id, title: 'T', body: 'B', framing: six }, instance),
+    { ok: true, rpc: 'start_thread', args: { board_slug: 'general', through: id, title: 'T', body: 'B', framing: six.slice(0, 5) } });
+  assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'S', body: '', framing: [id] }, instance),
+    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'S', body: '', framing: [id] } });
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [] }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null } });
+  assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: ['nope'] }) ?? '', /^framing:/);
+  assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: 'x' }) ?? '', /^framing:/);
+});
+
 test('a request that is not one of the actions is refused', () => {
   assert.match(refusal({ action: 'delete', act: other }) ?? '', /^action:/);
   assert.match(refusal(null) ?? '', /^action:/);
