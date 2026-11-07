@@ -294,12 +294,14 @@ describe('the preview', () => {
     await say(draft);
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }));
     const preview = await screen.findByRole('region', { name: 'Preview' });
+    // A quote's head loads its author and its post number on their own; both renders are compared once each head is whole.
+    const settled = (el: Element) => { expect(el).toHaveTextContent('Post #1'); expect(el.querySelector('cite a[href^="/c/"]')).not.toBeNull(); };
+    await waitFor(() => settled(preview));
     const previewed = preview.querySelector('.kb-bb')!.innerHTML;
     expect(previewed).toContain('<strong>bold</strong>');
-    await waitFor(() => expect(preview).toHaveTextContent('Post #1'));
     await userEvent.click(send());
     await waitFor(() => expect(post(3)).toBeInTheDocument());
-    await waitFor(() => expect(post(3)).toHaveTextContent('Post #1'));
+    await waitFor(() => settled(post(3)));
     expect(post(3).querySelector('.kb-act-main .kb-bb')!.innerHTML).toBe(previewed);
   });
 
