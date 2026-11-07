@@ -8,8 +8,7 @@
  * on the call's record), then `rule_apology` writes the ruling. **A failed judgment returns the apology** (`rule_apology(id, 'returned', '')`), so the character may apologize
  * again at once: a call that still fails after its retries, an answer rejected, a verdict that cannot be repaired, a staff key not on the roster.
  *
- * Retries: a transport failure is retried on the request itself, up to ATTEMPTS calls in all. An answer rejected is not (the model answered). A ledger row that could not be
- * written stops the run, and a database error is thrown at once: both are facts about the run, not about one apology. No owner or class is read; nothing private is told.
+ * Retries: a transport failure is retried inside models.chat; here one call is made. A transport or ledger failure stops the run (stopsTheRun), and a database error is thrown at once.
  *
  * Cost does not grow with the instance: one call per apology, at most `apologyJudgeBatch` a run, and an apology needs a punishment move in force.
  */
@@ -20,11 +19,8 @@ import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import type { Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
-import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
-import { said } from './core.ts';
-
-/** Calls made for one apology before it is returned: the first and two retries on a failure. */
-export const ATTEMPTS = 3;
+import { AnswerRejected } from '../_shared/models/index.ts';
+import { said, stopsTheRun } from './core.ts';
 
 interface Pending {
   readonly apology: number;
@@ -39,11 +35,8 @@ export type ApologyStatus = 'accepted' | 'rejected' | 'returned';
 export interface ApologyRecord { readonly apology: number; readonly staff: string; readonly status: ApologyStatus; readonly why?: string; readonly trims: readonly Trim[] }
 export type ApologyOutcome = { readonly status: 'off' } | { readonly status: 'ok'; readonly apologies: readonly ApologyRecord[] };
 
-/** The ruling's word bound. It lives under `Settings.apology` (renamed from `groups`); either spelling is read until the rename lands everywhere. */
-const rulingMaxWords = (s: Settings): number => {
-  const held = s as unknown as { apology?: { apologyRulingMaxWords: number }; groups?: { apologyRulingMaxWords: number } };
-  return (held.apology ?? held.groups)!.apologyRulingMaxWords;
-};
+/** The ruling's word bound, under `Settings.apology`. */
+const rulingMaxWords = (s: Settings): number => s.apology.apologyRulingMaxWords;
 
 /** The apology run after the filings, as the Edge Function calls it: a failure that stops the run is rethrown so the invocation answers 500 as the filings do. */
 export async function runApologiesAfterFilings(db: Db, models: Models, instance: Instance, slot: string): Promise<ApologyOutcome | { readonly status: 'failed' }> {
@@ -51,8 +44,8 @@ export async function runApologiesAfterFilings(db: Db, models: Models, instance:
     return await runApologies(db, models, instance);
   } catch (e) {
     console.error('apologies failed', slot, e instanceof Error ? e.message : 'unknown');
-    // The apologies stay pending (a database error) and the next run hears them; a ledger failure is rethrown, as the filings' is.
-    if (e instanceof LedgerWriteFailed) throw e;
+    // The apologies stay pending (a database error) and the next run hears them; a ledger or transport failure is rethrown, as the filings' is.
+    if (stopsTheRun(e)) throw e;
     return { status: 'failed' };
   }
 }
@@ -74,20 +67,16 @@ export async function runApologies(db: Db, models: Models, instance: Instance): 
     const frame = apologyPrompt(persona, p.line, p.body, maxWords);
     let failed: string | undefined;
     let repaired: ReturnType<typeof repairApology> | undefined;
-    for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
-      try {
-        const out = await models.chat({
-          duty: 'apologyJudge', tier: DUTY_SPECS.apologyJudge.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
-          schema: frame.schema, rules: APOLOGY_RULE, maxTokens: 600,
-        });
-        repaired = repairApology(out.value, maxWords);
-        failed = undefined;
-        break;
-      } catch (e) {
-        if (e instanceof LedgerWriteFailed) throw e;
-        failed = (e instanceof AnswerRejected ? 'the answer was rejected: ' : 'the call failed: ') + said(e);
-        if (e instanceof AnswerRejected) break;
-      }
+    // The call. A transport failure was retried inside models.chat; what comes back is an answer, a rejection, or a failure.
+    try {
+      const out = await models.chat({
+        duty: 'apologyJudge', tier: DUTY_SPECS.apologyJudge.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
+        schema: frame.schema, rules: APOLOGY_RULE, maxTokens: 600,
+      });
+      repaired = repairApology(out.value, maxWords);
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      failed = (e instanceof AnswerRejected ? 'the answer was rejected: ' : 'the call failed: ') + said(e);
     }
     const verdict = repaired?.verdict ?? null;
     if (!failed && verdict === null) failed = 'the answer could not be repaired';

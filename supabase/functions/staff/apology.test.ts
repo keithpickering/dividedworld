@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runApologies } from './apology.ts';
-import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance as dividedWorld } from '../_shared/instance.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
@@ -43,15 +43,22 @@ function fakeModels(reply: (r: ChatRequest, n: number) => unknown) {
 }
 const ruled = (d: ReturnType<typeof fakeDb>) => d.calls.filter((c) => c.fn === 'rule_apology').map((c) => c.args);
 
-test('a call that fails once is retried on the request, then answers: accepted, and rule_apology is called with the ruling', async () => {
+test('one call is made (models.chat retries transport itself): an answer is accepted and rule_apology is called with the ruling', async () => {
   const d = fakeDb([row(7)]);
-  const m = fakeModels((_r, n) => (n === 1 ? new Error('fetch failed') : { verdict: 'accepted', ruling: 'Fine. Go.' }));
+  const m = fakeModels(() => ({ verdict: 'accepted', ruling: 'Fine. Go.' }));
   const out = await runApologies(d.db, m.models, dividedWorld);
-  assert.equal(m.chats.length, 2);
+  assert.equal(m.chats.length, 1);
   assert.equal(m.chats[0]!.duty, 'apologyJudge');
   assert.equal(m.chats[0]!.staff, MON);
   assert.deepEqual(ruled(d), [{ in_apology: 7, verdict: 'accepted', ruling: 'Fine. Go.' }]);
+  assert.equal(d.calls.find((c) => c.fn === 'record_staff_call')!.args.record.calls, 1);
   assert.equal(out.status, 'ok');
+});
+
+test('a transport failure that models.chat gave up on stops the run, nothing ruled', async () => {
+  const d = fakeDb([row(1)]);
+  await assert.rejects(runApologies(d.db, fakeModels(() => new TransportError('down')).models, dividedWorld), TransportError);
+  assert.equal(ruled(d).length, 0);
 });
 
 test('an answer of "maybe" is rejected naming oneOf and the apology is returned', async () => {
@@ -65,10 +72,11 @@ test('an answer of "maybe" is rejected naming oneOf and the apology is returned'
   assert.equal(out.status === 'ok' && out.apologies[0]!.status, 'returned');
 });
 
-test('a call that keeps failing, and a rejected answer, return the apology', async () => {
+test('a call that fails, and a rejected answer, return the apology, one call each', async () => {
   const d = fakeDb([row(1), row(2)]);
-  const m = fakeModels((_r, n) => (n <= 3 ? new Error('fetch failed') : new AnswerRejected('ruling', 'isString')));
+  const m = fakeModels((_r, n) => (n === 1 ? new Error('boom') : new AnswerRejected('ruling', 'isString')));
   await runApologies(d.db, m.models, dividedWorld);
+  assert.equal(m.chats.length, 2);
   assert.deepEqual(ruled(d).map((r) => r.verdict), ['returned', 'returned']);
 });
 
