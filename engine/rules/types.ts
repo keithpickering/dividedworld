@@ -480,8 +480,9 @@ export interface PlayedCard {
   /**
    * The votes, at the window's end, of the players whose first reaction to the target came after this play, the caster's
    * and the target author's players left out; `at` is the latest of those reactions. Null on a play that does not hold the
-   * target for its player (their earliest play there, of any alignment, an earlier window's included), on a play beyond a
-   * post, and where no such player reacted. There is no `before`: every player it drew arrived in the window.
+   * target for its player (their earliest play there, of any alignment, an earlier window's included), and where no such
+   * player reacted. (A play beyond a post has no target post and is never a PlayedCard.) Like the standings' lists, it is
+   * ordered by the votes' own numbers, never by player. There is no `before`: every player it drew arrived in the window.
    */
   readonly drawnAfter: { readonly at: number; readonly now: readonly Standing[] } | null;
 }

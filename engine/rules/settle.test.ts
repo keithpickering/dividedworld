@@ -1169,7 +1169,7 @@ test('a player whose reactions on an Act are a fire and a tomato stands as half 
 test('a halved vote stands at its halved weight', () => {
   const { rules, inputs } = spy('fan');
   settle(base(), withClasses(rules));
-  // Bob voted on p1, then on the author\'s second Act p2, which weighs half.
+  // Bob voted on p1, then on the author's second Act p2, which weighs half.
   assert.deepEqual(standingOn(inputs, 'p2')?.now, [{ ...noVote, excitedPositive: 0.5 }]);
   assert.deepEqual(standingOn(inputs, 'p1')?.now.find((v) => v.excitedPositive === 1), { ...noVote, excitedPositive: 1 });
 });
@@ -1234,4 +1234,26 @@ test('a card nobody first reacted after draws nothing', () => {
   const b = crowd();
   settle({ ...b, reactions: b.reactions.filter((r) => r.player === 'dee' || r.player === 'cat') }, crowdWorld(rules));
   assert.equal(playOf(inputs, 'k1').drawnAfter, null);
+});
+
+test('the estimate leaves the caster\'s own later reaction out of the crowd a card drew', () => {
+  const { rules, inputs } = spy();
+  estimateForOwner(crowd(), crowdWorld(rules), 'cat');
+  const drawn = playOf(inputs, 'k1').drawnAfter;
+  // Bob's fire, Eve's tomato and Dee's tea after the play (each estimate reaction is a voter of its own); Cat's own fire at 11H is not one.
+  assert.deepEqual(bySize(drawn?.now ?? []), bySize([{ ...noVote, excitedPositive: 1 }, { ...noVote, excitedNegative: 1 }, { ...noVote, calmPositive: 1 }]));
+});
+
+test('a play held by the same player\'s earlier-window play, of any alignment, draws nothing', () => {
+  const { rules, inputs } = spy();
+  const b = crowd();
+  settle({ ...b, acts: [b.acts[0]!, { id: 'k0', character: 'cat-1', kind: 'card', at: FROM - 5 * H, thread: 't1', target: 'p1', card: 'splat' }, b.acts[1]!] }, crowdWorld(rules));
+  assert.equal(playOf(inputs, 'k1').drawnAfter, null);
+});
+
+test('the lists in a standing and a drawn crowd are in one order that names no player', () => {
+  const { rules, inputs } = spy();
+  settle(crowd(), crowdWorld(rules));
+  const drawn = playOf(inputs, 'k1').drawnAfter!.now;
+  assert.deepEqual(drawn, [{ ...noVote, excitedNegative: 1 }, { ...noVote, excitedPositive: 1 }]);
 });

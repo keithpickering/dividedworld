@@ -94,6 +94,8 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 /** Whole hundredths, half away from zero, after the floating dust of summing shares is swept. */
 const round = (x: number) => { const y = Math.round(Math.abs(x) * 1e6) / 1e6; return Math.sign(x) * Math.round(y) || 0; };
 const tidy = (x: number) => Math.round(x * 1e6) / 1e6 || 0;
+/** A list of Standings in one order that names no player: by the four quadrant numbers, in QUADRANTS order. */
+const byVote = (xs: readonly Standing[]): Standing[] => [...xs].sort((x, y) => { for (const q of QUADRANTS) if (x[q] !== y[q]) return x[q] - y[q]; return 0; });
 const byTime = <T extends { at: number; act: string }>(a: T, b: T) => a.at - b.at || cmp(a.act, b.act);
 
 /**
@@ -304,8 +306,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const asVote = (weight: number, shares: Readonly<Record<Quadrant, number>>): Standing => ({
     excitedPositive: weight * shares.excitedPositive, excitedNegative: weight * shares.excitedNegative, calmPositive: weight * shares.calmPositive, boredNegative: weight * shares.boredNegative,
   });
-  const paidBefore = group(sharedVote ? input.paid ?? [] : [], (p) => p.act);
-  const reactedBefore = sharedVote ? new Map<string, typeof reactions>() : group(reactions.filter((r) => r.at < window.from), (r) => r.act);
+  const touched = new Set(windowVotes.map((v) => v.act));
+  const paidBefore = group(sharedVote ? (input.paid ?? []).filter((p) => touched.has(p.act)) : [], (p) => p.act);
+  const reactedBefore = sharedVote ? new Map<string, typeof reactions>() : group(reactions.filter((r) => r.at < window.from && touched.has(r.act)), (r) => r.act);
   const paidNow = group(paidOnActs, (p) => p.act);
   const standings = new Map<string, ActStanding[]>();
   /** Each touched Act's votes now, by voter, which the cards below read for the players they drew. */
@@ -318,9 +321,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     for (const r of reactedBefore.get(act) ?? []) before.set(r.player, { ...zero(), [r.quadrant]: 1 });
     const now = new Map(before);
     for (const p of paidNow.get(act) ?? []) now.set(p.player, asVote(p.weight, p.shares));
-    const inOrder = (m: Map<string, Standing>) => [...m].sort((x, y) => cmp(x[0], y[0])).map(([, v]) => v);
+    const inOrder = (m: Map<string, Standing>) => byVote([...m.values()]);
     const list = standings.get(target.character) ?? [];
-    list.push({ act, actKind: target.kind, at: Math.max(...vs.map((v) => v.at)), before: inOrder(before), now: inOrder(now) });
+    list.push({ act, actKind: target.kind, at: vs.reduce((m, v) => Math.max(m, v.at), -Infinity), before: inOrder(before), now: inOrder(now) });
     standings.set(target.character, list);
     nowOn.set(act, now);
   }
@@ -400,7 +403,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         drawnAt = Math.max(drawnAt, firstAt);
       }
     }
-    const drawnAfter = drawnNow.length ? { at: drawnAt, now: drawnNow } : null;
+    const drawnAfter = drawnNow.length ? { at: drawnAt, now: byVote(drawnNow) } : null;
     list.push({ act: a.id, card: a.card!, alignment, readsAs: readsAs(a), at: a.at, target: target.id, onOthers, votes: tidy(votesOn.get(a.id) ?? 0), targetVotes: tidy(votesOn.get(target.id) ?? 0), targetAfter: after, drawnAfter });
     played.set(a.character, list);
     if (onOthers && target.character !== null) {
