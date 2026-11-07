@@ -357,7 +357,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
       details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so it was banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. It can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
       aura: 0, wallet: null, characters: [b.character],
-      ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
+      ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
     });
   }
 

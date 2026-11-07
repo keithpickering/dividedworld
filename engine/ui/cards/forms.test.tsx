@@ -283,12 +283,21 @@ describe('the appeal to the Boss of a ban (the design, section 5: "No player is 
     const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
     expect(await within(form).findByRole('form', { name: 'Appeal' })).toHaveTextContent(/The punishment: a ban of 1 day, after Rule 2: No double posting\. It ends by itself .+\./u);
     expect(form).toHaveTextContent('The Boss hears it. It is refunded if overturned. It may be upheld, cut to half of its 1 day, or lengthened by half. One appeal per ban, and your plea is public.');
-    w.fake.seed.judging({ appeal: 'reduced' });
+    w.fake.seed.judging({ appeal: 'upheld' });
     await userEvent.type(within(form).getByRole('textbox', { name: 'Your plea (public)' }), 'I have learned.');
     await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
-    await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it and reduced it to half its length.'));
-    expect((await w.fake.log()).appeals[0]).toMatchObject({ punishment: w.ban, punishmentKind: 'ban', verdict: 'reduced', character: w.pipe });
+    await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it and upheld it, so nothing changed.'));
+    expect((await w.fake.log()).appeals[0]).toMatchObject({ punishment: w.ban, punishmentKind: 'ban', verdict: 'upheld', character: w.pipe });
     expect(await w.fake.wallet()).toMatchObject({ balance: 450 });
+  });
+
+  test('an overturned appeal of the ban ends it: the ban is no longer the mask\'s, and the composer lets it post', async () => {
+    const w = banned();
+    expect(await w.fake.myBan(w.pipe)).toMatchObject({ ban: w.ban });
+    w.fake.seed.judging({ appeal: 'overturned' });
+    await w.fake.fileAppeal(w.pipe, w.ban, 'Please.');
+    expect(await w.fake.myBan(w.pipe)).toBeNull();
+    expect((await w.fake.myCharacters())[0]?.bannedUntil).toBeUndefined();
   });
 
   test('is not offered to a mask that is not banned, nor on another player\'s screen', async () => {

@@ -484,6 +484,9 @@ describe('the Mod Bots\' lines', () => {
     expect(rowsOf({ bans: [{ ...ban, until: '2000-01-02T00:00:00.000Z' }] })[0]!.appealBan).toBeUndefined();
     const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'b1', punishmentKind: 'ban', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
     expect(rowsOf({ bans: [ban], appeals: [appeal] }).find((r) => r.kind === 'ban')!.appealBan).toBeUndefined();
+    expect(rowsOf({ bans: [ban], appeals: [{ ...appeal, verdict: 'upheld' }] }).find((r) => r.kind === 'ban')!.appealBan).toBeUndefined();
+    /* An appeal that was refunded (a failed or a stale judgment) leaves the ban appealable, as its own line says. */
+    for (const refund of ['failed', 'stale', 'expired'] as const) expect(rowsOf({ bans: [ban], appeals: [{ ...appeal, refund }] }).find((r) => r.kind === 'ban')!.appealBan, refund).toBeDefined();
   });
 
   test('a ban that has ended says it ended by itself', () => {

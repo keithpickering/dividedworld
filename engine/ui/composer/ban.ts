@@ -9,13 +9,14 @@ import type { MyCharacter } from '../data/api.ts';
 /** When the character's ban ends (an ISO time), or null while it is not banned; the screen drops it at its time without a read. */
 export function useBannedUntil(character: Pick<MyCharacter, 'bannedUntil'> | null): string | null {
   const until = character?.bannedUntil ?? null;
-  const [, tick] = useState(0);
+  const [ticks, tick] = useState(0);
   useEffect(() => {
     if (until === null) return;
     const left = Date.parse(until) - Date.now();
     if (left <= 0) return;
     const timer = setTimeout(() => tick((n) => n + 1), Math.min(left, 2 ** 31 - 1));
     return () => clearTimeout(timer);
-  }, [until]);
+  /* A ban longer than one timer holds (setTimeout's cap) is waited out in as many as it takes: each firing renders again and arms the next. */
+  }, [until, ticks]);
   return until !== null && Date.parse(until) > Date.now() ? until : null;
 }

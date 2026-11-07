@@ -85,6 +85,18 @@ describe('the composer of a banned mask', () => {
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
   });
 
+  test('a ban longer than one timer can hold is waited out in as many as it takes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const w = banned(30 * 24);
+    openThread(w);
+    await replyBox();
+    await screen.findByText(/is banned until/u);
+    await act(async () => { await vi.advanceTimersByTimeAsync(26 * 86_400_000); });
+    expect(screen.queryByText(/is banned until/u)).not.toBeNull();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5 * 86_400_000); });
+    await waitFor(() => expect(screen.queryByText(/is banned until/u)).toBeNull());
+  });
+
   test('passes axe', async () => {
     const w = banned();
     openThread(w);

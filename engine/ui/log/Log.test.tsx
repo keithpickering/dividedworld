@@ -561,6 +561,17 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
     void hoo;
   });
 
+  test('a report whose judgment failed shows the refunded line, and the same for an appeal', async () => {
+    const { fake, me, pipe, glo, thread } = modded();
+    const gp = fake.seed.post(thread, glo, 'Gloomba once more.', { at: at(30, 16) });
+    fake.seed.judging({ report: 'failed' });
+    void fake.fileReport(pipe, gp, 'rude');
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    const text = bodyRows().map((r) => cells(r).join(' | ')).join('\n');
+    expect(text).toMatch(/could not hear it, so your Aura came back \(0\.25\), and you can make it again\./u);
+  });
+
   test('an appeal and its ruling are a line of their own, and the player reads only their own characters\' lines', async () => {
     const { fake, me, pipe, clerk, inf } = modded();
     void fake.fileAppeal(pipe, inf, 'It was a mistake.');
@@ -597,6 +608,16 @@ describe('My log: the way out of a ban', () => {
     await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
     await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it'));
     expect((await fake.log()).appeals[0]).toMatchObject({ punishment: ban, punishmentKind: 'ban' });
+  });
+
+  test('an appeal whose judgment failed leaves the offer, as its own line says you can appeal again', async () => {
+    const { fake, me, pipe, ban } = banned();
+    fake.seed.judging({ appeal: 'failed' });
+    void fake.fileAppeal(pipe, ban, 'Please.');
+    open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' })).toBeInTheDocument();
+    expect(document.body).toHaveTextContent('No one could hear it, so your Aura came back and you can appeal again.');
   });
 
   test('is on no one else\'s log', async () => {
