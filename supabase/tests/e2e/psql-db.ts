@@ -57,7 +57,8 @@ export function psqlDb(as?: string): Db {
         if (!type) throw new Error(`${fn} has no parameter ${k}`);
         if (type === 'jsonb' || type === 'json') return `${k} => (:'args'::jsonb -> '${k}')::${type}`;
         // A JSON array is an array parameter as PostgREST sends it (the patrol run's boards); its text is no array literal, so its elements are cast one by one.
-        if (type.endsWith('[]')) return `${k} => array(select jsonb_array_elements_text(:'args'::jsonb -> '${k}'))::${type}`;
+        // A JSON null is SQL NULL, as PostgREST passes it.
+        if (type.endsWith('[]')) return `${k} => case when jsonb_typeof(:'args'::jsonb -> '${k}') = 'array' then array(select jsonb_array_elements_text(:'args'::jsonb -> '${k}'))::${type} end`;
         return `${k} => (:'args'::jsonb ->> '${k}')::${type}`;
       });
       try {

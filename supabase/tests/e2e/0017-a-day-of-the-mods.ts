@@ -287,7 +287,7 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
   assert.equal(second.status, 'ok', JSON.stringify(second));
   const meeting2 = (second as { meeting: number }).meeting;
   const m2 = row(`select to_jsonb(m) from meetings m where m.id = ${meeting2}`);
-  assert.ok(m2.record.allowances.returned >= unspent, `the unspent allowances went back to the bank: ${JSON.stringify(m2.record.allowances)}`);
+  assert.equal(m2.record.allowances.returned, unspent, `the unspent allowances went back to the bank once: ${JSON.stringify(m2.record.allowances)}`);
   assert.ok(Math.abs(m2.bank_after - (m2.bank_before + m2.record.allowances.returned - m2.record.allowances.handed)) < 0.01, 'the bank holds what came back less what was handed');
   assert.equal(m2.record.allowances.handed, 1);
   assert.equal(sql(`select order_unspent('${MONITOR}') || ',' || order_unspent('${HYPE}')`), '1,0', 'the old orders are spent and the new one stands');
