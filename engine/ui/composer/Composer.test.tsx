@@ -295,7 +295,13 @@ describe('the preview', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Preview' }));
     const preview = await screen.findByRole('region', { name: 'Preview' });
     // A quote's head loads its author and its post number on their own; both renders are compared once each head is whole.
-    const settled = (el: Element) => { expect(el).toHaveTextContent('Post #1'); expect(el.querySelector('cite a[href^="/c/"]')).not.toBeNull(); };
+    // Settled is the author's name loaded (a character not yet loaded is linked as "A character"), and the post number located.
+    const settled = (el: Element) => {
+      expect(el).toHaveTextContent('Post #1');
+      const author = el.querySelector('cite a[href^="/c/"]');
+      expect(author).not.toBeNull();
+      expect(author).not.toHaveTextContent('A character');
+    };
     await waitFor(() => settled(preview));
     const previewed = preview.querySelector('.kb-bb')!.innerHTML;
     expect(previewed).toContain('<strong>bold</strong>');
