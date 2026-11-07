@@ -484,7 +484,7 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
             );
           })}
         </span>
-        {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
+        <span className="kb-lens-fold-words">{playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
         {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />)}

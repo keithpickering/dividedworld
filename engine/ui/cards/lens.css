@@ -292,6 +292,12 @@
   color: var(--kb-lens-ink-text);
 }
 
+/* The fold's words, an item apart from the faces: they shrink and wrap, a long name breaking where it must, as in a row's head. */
+.kb-lens-fold-words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The faces before the fold's words: decoration, overlapping. Their wrappers take no box, they only carry each play's ink. */
 .kb-lens-faces {
   display: inline-flex;
@@ -309,8 +315,9 @@
   border: 1.5px solid var(--kb-play-ink, var(--kb-glass-neon));
 }
 
+/* Overlapped by a sixth, not more: a deeper overlap lays the next face's border over this one's letter (e2e/glass-text.spec.ts reads it). */
 .kb-lens-face-ink + .kb-lens-face-ink .kb-lens-face {
-  margin-inline-start: -0.5rem;
+  margin-inline-start: -0.25rem;
 }
 
 .kb-lens-face .kb-avatar-none {
