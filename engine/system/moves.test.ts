@@ -43,8 +43,8 @@ test('an uppercase board uuid is lowercased by the repair, and is not a trim', (
 test('every move kind has plain words for a stock line\'s {move}, naming only params it has', () => {
   for (const k of MOVE_KINDS) {
     assert.ok(k.plain.trim() !== '', `${k.key} has no plain words`);
-    const fields = Object.keys((k.params as { fields: Record<string, unknown> }).fields);
-    for (const [, token] of k.plain.matchAll(/\{(\w+)\}/g)) assert.ok(fields.includes(token!), `${k.key}'s words name {${token}}, which is no param`);
+    const fields = [...Object.keys((k.params as { fields: Record<string, unknown> }).fields), ...(k.derived ?? [])];
+    for (const [, token] of k.plain.matchAll(/\{(\w+)\}/g)) assert.ok(fields.includes(token!), `${k.key}'s words name {${token}}, which is no param and no declared derived token`);
   }
 });
 
@@ -137,7 +137,8 @@ test('conferGroup is small, askable, made by the Boss or a Mod, and shapes no bo
   assert.ok(k);
   assert.deepEqual([k.structural, k.shapesBoard, k.askable, k.offices], [false, false, true, ['boss', 'mod']]);
   assert.equal(k.label, '{role} moved a member');
-  assert.equal(k.plain, 'moving a member into "{group}"');
+  assert.equal(k.plain, 'moving a member into "{groupName}"');
+  assert.deepEqual(k.derived, ['groupName']);
 });
 
 test('conferGroup params: a punishment with a board, a favor with checkAt, a non-uuid board rejected naming isUuid, a 41-character group rejected', () => {

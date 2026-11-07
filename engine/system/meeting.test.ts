@@ -93,6 +93,13 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup)'), JSON.stringify(r.trims));
 });
 
+test('a demand only the code sets is dropped when the Boss chooses it, and recorded', () => {
+  const r = repairAnswer(answer({ kind: 'apologyAccepted', params: {} }), ctx());
+  assert.ok(r.ok);
+  assert.equal(r.moves.length, 0);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].demand.kind' && t.predicate.startsWith('oneOf(postsOnBoard')), JSON.stringify(r.trims));
+});
+
 test('an inheritance answer must name a move the Boss was shown, when it was shown a list', () => {
   const shown = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
   const unseen = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';

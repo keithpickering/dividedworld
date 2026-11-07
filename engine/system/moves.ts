@@ -61,6 +61,8 @@ export interface MoveKind {
    * follows "the": it is said in the world's voice by the line and plainly by this). Travels in the seed as `systemMoveWords`.
    */
   readonly plain: string;
+  /** Fill-only tokens `plain` may name besides the params, which SQL's `system_line` derives from the instance's rows (a group's name from its key). */
+  readonly derived?: readonly string[];
   /** How the move reads in a player's log, in plain words, with the actor's role (as `label` has it). */
   readonly template: (params: Readonly<Record<string, unknown>>, role: string, names?: MoveNames) => string;
   /**
@@ -179,7 +181,8 @@ export const CONFER_GROUP: MoveKind = {
     },
   },
   uuids: ['character', 'board'],
-  plain: 'moving a member into "{group}"',
+  plain: 'moving a member into "{groupName}"',
+  derived: ['groupName'],
   template: (p, role, names) => {
     const who = names?.character ?? 'a member';
     const group = names?.group ?? text(p['group']);
