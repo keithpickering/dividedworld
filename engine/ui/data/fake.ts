@@ -585,11 +585,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   const takesEffectAt = () => (nextSettlement === null ? null : iso(nextSettlement));
 
+  /** The points of a character's infractions that have not dropped off (the seeds write no ban, so none resets the bar). */
+  const warnOf = (id: Id): number => [...acts.values()].reduce((n, a) => (a.kind === 'infraction' && a.payload.character === id && Date.parse(a.payload.expires_at as string) > Date.now() ? n + (a.payload.points as number) : n), 0);
   function publicCharacter(c: CharRec): Character {
     return {
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
+      ...(warnOf(c.id) > 0 ? { warnPoints: warnOf(c.id) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
     };
   }

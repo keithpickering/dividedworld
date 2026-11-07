@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Fake, SeedChallenge } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
+import { hudKey } from '../player.tsx';
 import { useLocation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
@@ -30,7 +31,12 @@ function useSeeded(thread: string | null, which: Which): boolean {
     void (async () => {
       const fake = api as Fake;
       const mine = await api.myCharacters();
-      const mask = mine.find((c) => c.debutedAt !== null && c.retiredAt === null);
+      /* The HUD's mask as the player loads it: the one chosen on this device, else the first that can act (player.tsx). */
+      const account = (await api.session()).account;
+      let chosen: string | null = null;
+      try { chosen = account ? localStorage.getItem(hudKey(account)) : null; } catch { chosen = null; }
+      const acting = mine.filter((c) => c.debutedAt !== null && c.retiredAt === null);
+      const mask = acting.find((c) => c.id === chosen) ?? acting[0];
       /* The author's own post is one the reader's mask wrote: the boards fixture's #41 is another character's. */
       let post = (await api.acts(thread, 41, 41))[0]?.id;
       if (which === 'filedAuthor') {

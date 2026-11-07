@@ -115,9 +115,11 @@ export function appealTerms(mod: string, infraction: Pick<VisitInfraction, 'poin
 }
 
 /** The terms of a try at talking a visit down, for the mask making it. */
-export function tryTerms(mod: string, mask: string, tailHours: number): string {
-  return `One try for ${mask}. A wrong answer, and ${mod} visits ${mask}'s next post within ${tailHours} hours.`;
+export function tryTerms(mod: string, mask: string, tailHours: number, tailPoints: number): string {
+  return `One try for ${mask}. A wrong answer, and ${mod} visits ${mask}'s next post within ${tailHours} hours, charging Obstruction (minor, ${pointsWords(tailPoints)}). There is no timer.`;
 }
+
+export const pointsPlain = (n: number): string => `${n} point${n === 1 ? '' : 's'}`;
 
 /** Whether the infraction's points are still on the bar. */
 export const stillCounts = (i: VisitInfraction, now: number): boolean => Date.parse(i.expiresAt) > now;

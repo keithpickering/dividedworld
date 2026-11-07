@@ -115,3 +115,21 @@
     stroke: ButtonText;
   }
 }
+
+/* "Talk it down" stands a line below the state's words, as the mock sets it. */
+.kb-visit-talk {
+  margin-top: 0.9rem;
+}
+
+/* The tab's body, its state and its Appeal: plain blocks that stack as the Lens's sections do. */
+.kb-visit {
+  display: block;
+}
+
+.kb-visit-state {
+  margin-top: 0;
+}
+
+.kb-visit-appeal-section {
+  margin-top: 0.7rem;
+}

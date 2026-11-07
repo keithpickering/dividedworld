@@ -965,7 +965,13 @@ describe('a visit\'s tab', () => {
   const visitLens = () => screen.getByRole('dialog', { name: /^Visit/u });
   /** Tab until the control has the focus, as a keyboard reader reaches it (the Lens's tab, its close cross, then its controls). */
   const tabTo = async (el: HTMLElement) => { for (let i = 0; i < 8 && document.activeElement !== el; i++) await userEvent.tab(); expect(el).toHaveFocus(); };
-  const press = async (w: ReturnType<typeof visited>) => { await userEvent.click(await visitMark(w.seq)); return visitLens(); };
+  /** Opens the visit's Lens and waits for its story to be read: the challenge is drawn from it. */
+  const press = async (w: ReturnType<typeof visited>) => {
+    await userEvent.click(await visitMark(w.seq));
+    const l = visitLens();
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toHaveAttribute('aria-busy'));
+    return l;
+  };
   /** The filing of the visit and what it put on its author, as the tick writes them. */
   const file = (w: ReturnType<typeof visited>, by: Id = w.spritey) => {
     w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.' });
@@ -1019,7 +1025,7 @@ describe('a visit\'s tab', () => {
       const choices = within(group).getAllByRole('button');
       expect(choices.map((c) => c.textContent)).toEqual(['Form 1-A', 'Form 0', 'Form 27-B/6']);
       for (const c of choices) expect(c).toHaveClass('kb-visit-choice');
-      expect(l).toHaveTextContent('One try for Pipewrench. A wrong answer, and The Clerk visits Pipewrench\'s next post within 24 hours.');
+      expect(l).toHaveTextContent('One try for Pipewrench. A wrong answer, and The Clerk visits Pipewrench\'s next post within 24 hours, charging Obstruction (minor, 2 warn points). There is no timer.');
       expect(within(l).getByRole('status')).toBeEmptyDOMElement();
     });
 
@@ -1060,6 +1066,29 @@ describe('a visit\'s tab', () => {
       const l = await press(w);
       await userEvent.click(within(l).getByRole('button', { name: 'Pay 0.50 Aura' }));
       await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('that costs 50, and your wallet holds 0'));
+    });
+
+    test('draws no try before its story is read, and none for a visit the story says has ended', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      /* The page was read while the visit was open; it filed before the Lens read its story. */
+      let release!: () => void;
+      const held = new Promise<void>((r) => { release = r; });
+      const real = w.fake.visitStory.bind(w.fake);
+      w.fake.visitStory = async (...a) => { await held; return real(...a); };
+      openVisit(w);
+      const mark = await visitMark(w.seq);
+      w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
+      w.fake.seed.infraction(w.visit, { points: 2 });
+      await userEvent.click(mark);
+      const l = visitLens();
+      expect(within(l).queryByRole('group')).toBeNull();
+      expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
+      release();
+      await within(l).findByRole('tab', { name: 'Filed' });
+      expect(within(l).queryByRole('group')).toBeNull();
+      expect(within(l).queryByRole('button', { name: /^Form/u })).toBeNull();
+      expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
     });
 
     test('a bribe is one button with its price, which ends the visit', async () => {
@@ -1114,7 +1143,7 @@ describe('a visit\'s tab', () => {
       const l = visitLens();
       expect(within(l).getByRole('tab', { name: 'Filed' })).toHaveAttribute('aria-selected', 'true');
       expect(within(l).getByRole('heading', { name: 'The Clerk filed its report' })).toBeInTheDocument();
-      await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 warn points; they drop off on [A-Z][a-z]{2} \d{1,2}\. The post keeps its words under the notice\./u));
+      await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 points \(2 of 10\); they drop off on [A-Z][a-z]{2} \d{1,2}\. The post keeps its words under the notice\./u));
       /* Nothing to talk down any more. */
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
     });
@@ -1139,7 +1168,7 @@ describe('a visit\'s tab', () => {
       file(w);
       openVisit(w);
       const l = await press(w);
-      await within(l).findByText(/gained 2 warn points/u);
+      await within(l).findByText(/gained 2 points/u);
       expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
     });
 
@@ -1153,7 +1182,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       await userEvent.click(await visitMark(w.seq));
       const l = visitLens();
-      await within(l).findByText(/gained 2 warn points/u);
+      await within(l).findByText(/gained 2 points/u);
       expect(within(l).queryByRole('button', { name: /^Appeal/u })).toBeNull();
     });
 

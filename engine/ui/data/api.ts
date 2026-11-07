@@ -304,6 +304,8 @@ export interface Character {
   readonly staff?: string;
   /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
   readonly office?: Office;
+  /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
+  readonly warnPoints?: number;
 }
 
 /** An office a staff character holds (0082). `waiting` is never shown on a character (a persona that has not debuted is in no public list); `developer` is the developer persona's, which holds no office. */

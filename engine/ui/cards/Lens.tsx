@@ -460,7 +460,7 @@ export interface LensProps {
   readonly moments?: boolean;
   /** The post's visit: a tab ahead of the card kinds (Visit.tsx), "On a visit" or how it ended. */
   readonly visit?: {
-    readonly visit: Visit; readonly thread: Id; readonly author: Id | null;
+    readonly visit: Visit; readonly thread: Id; readonly author: Id | null; readonly warn: number | undefined;
     readonly onSpinAct: ((act: Id, name: string, opener: HTMLElement) => void) | undefined; readonly onEnded: (end: VisitEnd) => void;
   } | undefined;
 }
@@ -582,7 +582,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       <div className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
         {onVisit && (
           <VisitPanel
-            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} tallies={tallies} mine={mine} onEnded={visit.onEnded}
+            visit={visit.visit} thread={visit.thread} author={visit.author} warn={visit.warn} nameOf={nameOf} tallies={tallies} mine={mine} onEnded={visit.onEnded}
             onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
           />
         )}

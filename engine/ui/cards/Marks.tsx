@@ -245,7 +245,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, author = null, thread, onSpinAct }: {
+export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, author = null, authorWarn, thread, onSpinAct }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
   readonly moments?: boolean;
@@ -254,6 +254,8 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
   /** The post's latest visit, with the post's author and thread (Visit.tsx): a mark ahead of the cards' and a tab in the Lens. */
   readonly visit?: Visit | undefined; readonly author?: Id | null; readonly thread?: Id;
+  /** The points on the author's warn bar now, where the page knows them: the filed visit says the bar after it. */
+  readonly authorWarn?: number | undefined;
   /** Spin a thread from one of the visit's Acts: the Lens has closed. */
   readonly onSpinAct?: (act: Id, name: string, opener: HTMLElement) => void;
 }) {
@@ -271,7 +273,7 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   return (
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod) } : undefined} />
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, warn: authorWarn, onSpinAct, onEnded: setSeen } : undefined} />}
     </span>
   );
 }

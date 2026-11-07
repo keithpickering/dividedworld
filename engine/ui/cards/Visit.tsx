@@ -23,7 +23,7 @@ import { ThreadCtx } from '../thread/context.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import {
-  VISIT_KIND, appealTerms, auraWords, chargeWords, markLabel, markText, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, topCharge, tryTerms, visitState,
+  VISIT_KIND, appealTerms, auraWords, chargeWords, markLabel, markText, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, topCharge, tryTerms, pointsPlain, visitState,
 } from './visit.ts';
 import './visit.css';
 
@@ -156,6 +156,8 @@ export interface VisitPanelProps {
   readonly thread: Id;
   /** The post's author: whose warn bar the visit's filing lands on. */
   readonly author: Id | null;
+  /** The points on the author's warn bar now, where the page knows them. */
+  readonly warn?: number | undefined;
   readonly nameOf: (character: Id | null) => string;
   readonly tallies: Tallies;
   readonly mine: Mine;
@@ -191,7 +193,7 @@ function Challenge({ visit, mod, mask, tried, onTry, busy }: {
               </button>
             ))}
           </div>
-          <p className="kb-visit-terms">{tryTerms(mod, who, hours)}</p>
+          <p className="kb-visit-terms">{tryTerms(mod, who, hours, instance.settings.warnBar.bands.minor)}</p>
         </>
       )}
       {c.kind === 'bribe' && (
@@ -210,7 +212,7 @@ function Challenge({ visit, mod, mask, tried, onTry, busy }: {
   );
 }
 
-export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpin, onEnded }: VisitPanelProps) {
+export function VisitPanel({ visit, thread, author, warn, nameOf, tallies, mine, onSpin, onEnded }: VisitPanelProps) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const know = useContext(ThreadCtx)?.know;
@@ -319,8 +321,8 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
           <p className="kb-visit-facts">
             {top ? `${top.rule ?? marked}: a ${top.band} breach. ` : ''}
             {inf
-              ? `${authorName}'s warn bar gained ${pointsWords(inf.points)}; ${stillCounts(inf, now) ? 'they drop off on' : 'they dropped off on'} ${shortDate(inf.expiresAt)}. The post keeps its words under the notice.`
-              : `${authorName}'s warn bar gained ${pointsWords(topPoints)}. The post keeps its words under the notice.`}
+              ? `${authorName}'s warn bar gained ${pointsPlain(inf.points)}${warn === undefined ? '' : ` (${warn} of ${instance.settings.warnBar.size})`}; ${stillCounts(inf, now) ? 'they drop off on' : 'they dropped off on'} ${shortDate(inf.expiresAt)}. The post keeps its words under the notice.`
+              : `${authorName}'s warn bar gained ${pointsPlain(topPoints)}${warn === undefined ? '' : ` (${warn} of ${instance.settings.warnBar.size})`}. The post keeps its words under the notice.`}
           </p>
         )}
         {state === 'intercepted' && <p className="kb-visit-facts">The visit ended on {dayAndTime(end!.at)}. Nothing landed on {authorName}.</p>}
@@ -329,7 +331,8 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
         {state === 'filed' && story?.ruling && <p className="kb-visit-facts">{mod} heard an appeal of it and {rulingWords(said(story.ruling.payload['verdict'] as string | undefined))}.</p>}
         {state === 'filed' && appealWaiting && <p className="kb-visit-facts">An appeal of it is waiting to be heard. If it cannot be heard, the fee is refunded.</p>}
       </div>
-      {state === 'open' && <Challenge visit={visit} mod={mod} mask={mask} tried={tried} onTry={(a) => void attempt(a)} busy={busy} />}
+      {/* Drawn from the story, never the page alone: a visit that ended since the page was read offers no try. */}
+      {state === 'open' && story !== null && <Challenge visit={visit} mod={mod} mask={mask} tried={tried} onTry={(a) => void attempt(a)} busy={busy} />}
       {/* One live region for the visit: the result of a try stays when the visit it ended is over, and a region that was there before it spoke is announced. */}
       <p role="status" className="kb-visit-result">{result || (state === 'open' ? earlier : '')}</p>
       {appealable && inf && (
