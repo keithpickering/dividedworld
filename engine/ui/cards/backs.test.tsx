@@ -1,9 +1,10 @@
 /**
  * Card backs, wards and catches on the screens (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a card set face down is one back,
- * named and drawn alike for a trap and a Bluff to every reader but its setter, who sees their card under it; a Set's and a Use's ghost
+ * named alike for a trap and a Bluff to every reader but its setter, and drawn alike to every reader, its setter too, whose Lens
+ * names their card (the card template design's amendment of 2026-11-07, "The mark's back"); a Set's and a Use's ghost
  * marks are offered on the reader's own posts alone; and a caught play draws no effect. The cards are the engine's test set.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
@@ -75,7 +76,7 @@ async function world() {
   return { fake, me, other, pipe, spritey, thread, trapped, bluffed, mine, set };
 }
 async function open(w: Awaited<ReturnType<typeof world>>) {
-  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, cardBack: { mark: '/coin.svg' }, settings: { postMaxLength: 1000 } });
   await screen.findByRole('article', { name: /^Post 4 /u });
 }
 const post = (seq: number) => document.getElementById(`post-${seq}`)!;
@@ -105,12 +106,32 @@ describe('a card back', () => {
     expect(said.ends).toMatch(/^Ends \w+ \d+, [\d:]+\s[AP]M, unless it springs first\.$/u);
   });
 
-  test('shows its setter their own card under it, on their screen alone', async () => {
+  test('is the face-down card itself: no picture inside, not even the instance\'s mark, and no card\'s alignment', async () => {
     const w = await world();
+    await open(w);
+    await waitFor(() => expect(back(2)).not.toBeNull());
+    expect(back(2)!.querySelectorAll('img').length).toBe(0);
+    expect(back(2)!.getAttribute('data-kb-back')).toBe('down');
+    expect(back(2)!.hasAttribute('data-kb-alignment')).toBe(false);
+  });
+
+  test('is drawn the same on its setter\'s screen, whose Lens names their card', async () => {
+    const w = await world();
+    await open(w);
+    await waitFor(() => expect(back(2)).not.toBeNull());
+    const seen = back(2)!.innerHTML;
+    cleanup();
     w.fake.signInAs(w.other);
     await open(w);
-    await waitFor(() => expect(post(2).querySelector('[data-kb-face="snare"]')).not.toBeNull());
-    expect(post(3).querySelector('[data-kb-face="bluffy"]')).not.toBeNull();
+    await waitFor(() => expect(back(2)).not.toBeNull());
+    /* The setter's own face is loaded (`my_face_down`) before the mark is compared, so a face drawn late cannot pass unseen. */
+    const user = userEvent.setup();
+    await user.click(back(2)!);
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+    await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
+    await waitFor(() => expect(lens.textContent).toContain('Yours: Snare, which nobody else can see.'));
+    expect(back(2)!.innerHTML).toBe(seen);
+    expect(post(2).querySelector('[data-kb-face]')).toBeNull();
   });
 });
 

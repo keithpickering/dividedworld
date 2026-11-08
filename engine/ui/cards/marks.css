@@ -253,30 +253,38 @@
 
 /*
  * A card set face down (the card mechanic's design, section 3): the engine's own back, the same for every card, so a trap and a
- * Bluff look alike. Its pattern is two crossed bands in the glass's text color on the field, no card's color. On the setter's own
- * screen, their card's mark sits in the back's corner, small. A sprung back shows its card in the same place.
+ * Bluff look alike. The mark is the face-down card itself (the card template design's amendment of 2026-11-07, "The mark's back"):
+ * its tile keeps its shape and a white border, and a layer under the border is filled with the postcard back's cloud, by the back's
+ * own rules in postcard.css (which load first). Nothing is drawn on it but a count; the setter's own card is named in the Lens. A
+ * hover or an open Lens brightens the cloud, since the tile's own fills would sit under it. A sprung back shows its card instead.
  */
 .kb-mark[data-kb-back='down'] {
   --kb-mark-line: var(--kb-glass-text-hi);
+}
+.kb-mark[data-kb-back='down']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* The cloud drawn larger than a card's, so a tile this small shows a few soft clouds rather than fine grain (the owner's ask);
+     the noise keeps a card's 540:840, which its SVG does not hold by itself, and the tint keeps the tile's whole size, so its colors still run corner to corner. */
+  background-size: 100% 100%, 5rem 7.8rem, 5rem 7.8rem;
+  background-position: center;
+}
+.kb-mark[data-kb-back='down']:hover:not([aria-disabled="true"])::before,
+.kb-mark[data-kb-back='down'][aria-expanded="true"]::before {
+  filter: brightness(1.3);
+}
+/* The tile's contents stand over the cloud: an icon-sized space, so a back is as wide as any mark, and a count when there is one. */
+.kb-mark[data-kb-back='down'] > .kb-meta-tile-in {
+  position: relative;
+  color: var(--kb-glass-text-hi);
+  text-shadow: 0 0 3px var(--kb-glass-field), 0 0 2px var(--kb-glass-field);
 }
 .kb-card-back {
   flex: none;
   width: 1.45rem;
   height: 1.45rem;
-  box-sizing: border-box;
-  border: 2px solid var(--kb-glass-text-hi);
-  background:
-    linear-gradient(45deg, transparent 40%, var(--kb-glass-text-hi) 40% 60%, transparent 60%),
-    linear-gradient(-45deg, transparent 40%, var(--kb-glass-text-hi) 40% 60%, transparent 60%),
-    var(--kb-glass-field);
-}
-.kb-mark-face {
-  flex: none;
-  width: 0.6rem;
-  height: 0.6rem;
-  margin-inline-start: -0.35rem;
-  align-self: flex-end;
-  object-fit: contain;
 }
 /* A caught play is spent and did nothing: its mark is drawn dim, with its name saying so. */
 .kb-mark[data-kb-caught='true'] {

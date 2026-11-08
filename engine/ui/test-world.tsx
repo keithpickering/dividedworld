@@ -125,6 +125,8 @@ export interface WorldOptions {
   readonly classLooks?: Kayfa['ui']['classLooks'];
   /** The instance's pictures for its personas, by key (`InstanceUi.avatars`); none by default. */
   readonly avatars?: Readonly<Record<string, string>>;
+  /** The instance's mark for a card's back (`InstanceUi.cardBack`), which a face-down mark is drawn without. */
+  readonly cardBack?: { readonly mark: string };
   /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
   readonly guide?: GuideUi;
   /** Copy words of the test's own, laid over the test world's (a marquee list). */
@@ -158,7 +160,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.copy ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.copy || options.cardBack ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(

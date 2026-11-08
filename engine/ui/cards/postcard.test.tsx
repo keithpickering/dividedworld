@@ -220,6 +220,17 @@ describe('the back', () => {
     expect(emblem).toMatch(/box-shadow:[^;]*var\(--kb-back-glow\)/u);
   });
 
+  test('lends its cloud to a post\'s face-down mark by the same rules, filling the whole tile', () => {
+    expect(css).toMatch(/\.kb-mark\[data-kb-back='down'\]::before,\s*\.kb-postcard-back\s+\.kb-postcard-canvas\s*\{[^}]*background-image:\s*var\(--kb-back-tint\)/u);
+    expect(css).toMatch(/\.kb-mark\[data-kb-back='down'\],\s*\.kb-postcard-back\s*\{[^}]*--kb-back-tint:/u);
+    const marks = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'marks.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const layer = /\.kb-mark\[data-kb-back='down'\]::before\s*\{([^}]*)\}/u.exec(marks)?.[1] ?? '';
+    expect(layer).toMatch(/inset:\s*0/u);
+    /* The mark may size the cloud, never paint one of its own. */
+    expect(layer).not.toMatch(/background(-image|-color)?:/u);
+    expect(layer).toMatch(/background-size:\s*100% 100%,\s*[\d.]+rem [\d.]+rem,\s*[\d.]+rem [\d.]+rem/u);
+  });
+
   test('glows in the machine\'s gold on a hit', () => {
     expect(rule('.kb-postcard-back[data-hit]')).toMatch(/--kb-back-glow:\s*var\(--kb-glass-ready\)/u);
   });
