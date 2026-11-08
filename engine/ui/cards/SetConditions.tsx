@@ -107,6 +107,7 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
   const source = useMemo(() => charactersSource(api), [api]);
   const panel = `${id}-when`;
   const [said, setSaid] = useState('');
+  const [spill, setSpill] = useState(false);
   const [picked, setPicked] = useState<'line' | 'length' | null>(null);
   /* A new box after each choice: a chosen suggestion's label fills the box, and the next one starts empty. */
   const [boxKey, setBoxKey] = useState(0);
@@ -116,7 +117,7 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
   const latest = useRef({ draft, onChange });
   latest.current = { draft, onChange };
 
-  /* A selection inside the post's view fills "They quote…", however it was made: a pointer, the keyboard or a phone's handles. */
+  /* A selection inside the post's view fills "They quote…", made by a pointer or a phone's handles (a focused, non-editable block takes no keyboard selection, so typing is the keyboard's way). One that runs past the block's edges is said so and taken from nowhere. */
   useEffect(() => {
     if (!open) return;
     const read = () => {
@@ -124,7 +125,8 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
       const selection = document.getSelection();
       if (!el || !selection || selection.rangeCount === 0 || selection.isCollapsed) return;
       const range = selection.getRangeAt(0);
-      if (!el.contains(range.commonAncestorContainer)) return;
+      if (!el.contains(range.commonAncestorContainer)) { setSpill(range.intersectsNode(el)); return; }
+      setSpill(false);
       const { text, cut } = passageOf(range.toString());
       if (text === '') return;
       setPicked(cut);
@@ -164,13 +166,15 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
   };
   /* Enter in the box is its own (it chooses a suggestion); never the form's, which would set the card. */
   const keep = (e: KeyboardEvent<HTMLFieldSetElement>) => { if (e.key === 'Enter' && !e.defaultPrevented && (e.target as HTMLElement).tagName === 'INPUT') e.preventDefault(); };
+  /* Enter in these two is never the form's: setting spends orbs, so Set is pressed deliberately. */
+  const noEnter = (e: KeyboardEvent<HTMLInputElement>) => { if (e.key === 'Enter') e.preventDefault(); };
   const saying = lockedSays !== null;
   const why = (field: Field) => `${id}-why-${field}`;
   const mark = (field: Field) => (problems[field] ? { 'aria-invalid': true as const } : {});
 
   return (
     <div className="kb-play-when" data-kb-open={open ? 'true' : undefined}>
-      <GlassButton className="kb-play-when-toggle" size="s" aria-expanded={open} aria-controls={panel} onClick={onToggle}>
+      <GlassButton className="kb-play-when-toggle" size="s" aria-expanded={open} aria-controls={open ? panel : undefined} onClick={onToggle}>
         Only when… (optional)
         {count > 0 && <span className="kb-play-when-count"> · {count} set</span>}
         <span aria-hidden="true" className="kb-play-when-mark">{open ? ' −' : ' +'}</span>
@@ -186,16 +190,16 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
               id={`${id}-says`}
               type="text"
               className="kb-play-input"
-              maxLength={SET_PHRASE_MOST}
               autoComplete="off"
               readOnly={saying}
+              onKeyDown={noEnter}
               value={saying ? lockedSays : draft.says}
               onChange={(e) => set({ says: [...e.target.value].slice(0, SET_PHRASE_MOST).join('') })}
               aria-describedby={`${saying ? `${id}-says-locked ` : ''}${why('says')}`}
               {...mark('says')}
             />
             {saying && <p id={`${id}-says-locked`} className="kb-play-fine">This card always waits for its own phrase.</p>}
-            {!saying && <p className="kb-play-fine">Words in the quoting post. Case, spaces and punctuation between words are not matched exactly.</p>}
+            {!saying && <p className="kb-play-fine">Words in the quoting post. Case, spaces and punctuation between words are not matched exactly. At most {SET_PHRASE_MOST} characters.</p>}
             <p id={why('says')} className="kb-play-why" role="status">{problems.says ?? ''}</p>
           </div>
 
@@ -205,18 +209,18 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
               id={`${id}-passage`}
               type="text"
               className="kb-play-input"
-              maxLength={SET_PHRASE_MOST}
               autoComplete="off"
+              onKeyDown={noEnter}
               value={draft.passage}
-              onChange={(e) => { setPicked(null); set({ passage: [...e.target.value].slice(0, SET_PHRASE_MOST).join('') }); }}
+              onChange={(e) => { setPicked(null); setSpill(false); set({ passage: [...e.target.value].slice(0, SET_PHRASE_MOST).join('') }); }}
               aria-describedby={`${id}-passage-hint ${why('passage')}`}
               {...mark('passage')}
             />
             <p id={`${id}-passage-hint`} className="kb-play-fine">
-              Type words from this post, or select them below.{picked === 'line' ? ' A passage is one line, so only the first line of your selection was kept.' : picked === 'length' ? ` A passage is at most ${SET_PHRASE_MOST} characters, so the rest of your selection was left out.` : ''}
+              Select words below with a pointer or by touch, or type them. At most {SET_PHRASE_MOST} characters.{spill ? ' Your selection went past the post\'s words, so nothing was taken. Select inside them.' : ''}{picked === 'line' ? ' A passage is one line, so only the first line of your selection was kept.' : picked === 'length' ? ` A passage is at most ${SET_PHRASE_MOST} characters, so the rest of your selection was left out.` : ''}
             </p>
             <p id={why('passage')} className="kb-play-why" role="status">{problems.passage ?? ''}</p>
-            {/* Read-only, and in the tab order so its scroll can be reached; a selection in it (by pointer or Shift and the arrow keys) fills the field above. */}
+            {/* Read-only, and in the tab order so its scroll can be reached; a selection in it (by pointer or touch; typing is always possible) fills the field above. */}
             <div ref={view} className="kb-play-post" data-kb-post-words role="group" aria-label="The post's words" tabIndex={0}>{words}</div>
           </div>
 

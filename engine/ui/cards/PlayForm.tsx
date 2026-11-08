@@ -83,6 +83,17 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const [draft, setDraft] = useState<ConditionsDraft>(noConditions);
   const [whenOpen, setWhenOpen] = useState(false);
   const [placed, setPlaced] = useState<{ readonly field: Field; readonly why: string } | null>(null);
+  const focusField = useRef<Field | null>(null);
+  useEffect(() => {
+    const field = focusField.current;
+    if (field === null || placed === null || !whenOpen) return;
+    focusField.current = null;
+    const group = document.getElementById(`${id}-when`);
+    const to = field === 'who'
+      ? group?.querySelector<HTMLElement>('input[role="combobox"]:not(:disabled)') ?? group?.querySelector<HTMLElement>('input[type="radio"]:checked')
+      : document.getElementById(`${id}-${field}`);
+    to?.focus();
+  }, [placed, whenOpen, id]);
   const account = player.session.account;
   /*
    * The account the screen is on now, read after every wait: an answer for another one is dropped. These checks are defense in
@@ -254,7 +265,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
         if (field !== null) {
           setPlaced({ field, why: plainRefusal(answer.error) });
           setWhenOpen(true);
-          setTimeout(() => (document.getElementById(`${id}-${field}`) ?? document.querySelector<HTMLElement>(`#${CSS.escape(`${id}-when`)} input[type="radio"]:checked`))?.focus());
+          focusField.current = field;
         } else setRefusal(settle(answer.error));
         /* The post may have changed under the play (a fourth Whoops! landed first): read its plays again so this form and the post stop offering it. */
         try { await read(); } catch { /* the refusal stands; the next read is the live one */ }

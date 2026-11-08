@@ -297,7 +297,8 @@ describe('Says, typed', () => {
     const dialog = await setBlot(user, w);
     const group = await openGroup(user, dialog);
     const says = within(group).getByRole('textbox', { name: 'They say…' });
-    expect(says).toHaveAttribute('maxlength', '100');
+    expect(says).not.toHaveAttribute('maxlength');
+    expect(group).toHaveTextContent('At most 100 characters.');
     await user.type(says, '!!');
     expect(says).toHaveAttribute('aria-invalid', 'true');
     expect(group).toHaveTextContent('What they say needs a letter or a digit.');
@@ -498,5 +499,86 @@ describe('the Who trio is skewed like the glass tabs', () => {
   test('the selected face keeps its check, and the focus ring is on the face', () => {
     expect(css).toMatch(/\.kb-play-who-row \.kb-play-choice-opt:has\(input:checked\) \.kb-glass-upright::before \{[^}]*content: /u);
     expect(css).toMatch(/\.kb-play-who-row \.kb-play-choice-opt:has\(input:focus-visible\) \.kb-play-choice-face \{[^}]*outline: /u);
+  });
+});
+
+describe('review fixes for the set form\'s group', () => {
+  test('aria-controls names the panel only while it exists', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const dialog = await setBlot(user, w);
+    expect(toggle(dialog)).not.toHaveAttribute('aria-controls');
+    const group = await openGroup(user, dialog);
+    expect(toggle(dialog).getAttribute('aria-controls')).toBe(group.id);
+    expect(document.getElementById(group.id)).toBe(group);
+  });
+
+  test('a phrase and a passage count code points: a hundred emoji fit, a hundred and twenty stop at a hundred', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    for (const name of ['They say…', 'They quote…']) {
+      const field = within(group).getByRole('textbox', { name });
+      expect(field).not.toHaveAttribute('maxlength');
+      fireEvent.change(field, { target: { value: '\u{1F600}'.repeat(120) } });
+      expect([...(field as HTMLInputElement).value]).toHaveLength(100);
+    }
+  });
+
+  test('the hint does not promise keyboard selection, and says typing is always possible', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    expect(group).not.toHaveTextContent(/Shift|arrow/u);
+    expect(group).toHaveTextContent('Select words below with a pointer or by touch, or type them.');
+  });
+
+  test('a selection that spills past the post\'s words is said so, plainly, and fills nothing', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    const view = dialog.querySelector('[data-kb-post-words]')!;
+    const range = document.createRange();
+    range.setStart(view.firstChild!, 4);
+    range.setEnd(within(group).getByText('Who', { selector: 'legend' }).firstChild!, 2);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    act(() => { document.dispatchEvent(new Event('selectionchange')); });
+    expect(within(group).getByRole('textbox', { name: 'They quote…' })).toHaveValue('');
+    expect(group).toHaveTextContent('Your selection went past the post\'s words, so nothing was taken. Select inside them.');
+  });
+
+  test('a refusal puts focus on its field even with the group closed; Who goes to the character box', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const setCard = vi.spyOn(w.fake, 'setCard');
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    await user.type(within(group).getByRole('textbox', { name: 'They quote…' }), 'punchline');
+    await user.click(toggle(dialog));
+    setCard.mockResolvedValueOnce({ ok: false, error: "that passage is not in this post's words", field: 'config' });
+    await user.click(within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' }));
+    await waitFor(() => expect(within(dialog).getByRole('textbox', { name: 'They quote…' })).toHaveFocus());
+    await user.click(within(dialog).getByRole('radio', { name: 'Only these' }));
+    await addWho(user, dialog, 'Bosh', /Boshi/u);
+    await user.click(toggle(dialog));
+    setCard.mockResolvedValueOnce({ ok: false, error: 'name at most five characters', field: 'config' });
+    await user.click(within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' }));
+    await waitFor(() => expect(within(dialog).getByRole('combobox', { name: 'Character' })).toHaveFocus());
+  });
+
+  test('Enter in They say… or They quote… does not set the card', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const setCard = vi.spyOn(w.fake, 'setCard');
+    const dialog = await setBlot(user, w);
+    const group = await openGroup(user, dialog);
+    await user.type(within(group).getByRole('textbox', { name: 'They say…' }), 'nice{Enter}');
+    await user.type(within(group).getByRole('textbox', { name: 'They quote…' }), 'punchline{Enter}');
+    expect(setCard).not.toHaveBeenCalled();
+    expect(within(group).getByRole('textbox', { name: 'They quote…' })).toHaveValue('punchline');
   });
 });
