@@ -14,7 +14,7 @@
  */
 import type { Instance } from './types.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
-import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
+import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach, type SetConditions } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -121,10 +121,32 @@ const played = (r: Fields, instance: Instance, play: 'cast' | 'use'): Fields => 
   return { card: key, through, target, config: r.config ?? {}, message: r.message ?? '', ...reached(r, instance, key, play) };
 };
 
-/** A Set's arguments: the card, the character and the post, with no message; refused for any reach but a post's. */
+/**
+ * A Set's conditions, from the request's optional `when` (quote-conditions design, section 1): `says` and `passage` are text and `who` is
+ * `{ except, characters }` with ids, none of them required. A shape that is not that is refused here; what the words and the list must
+ * satisfy is decideSet's, and whether a named character is on the board is SQL's. Anyone is no `who`.
+ */
+const conditions = (r: Fields): SetConditions | undefined => {
+  const w = r.when;
+  if (w === undefined || w === null) return undefined;
+  if (typeof w !== 'object' || Array.isArray(w)) throw new Refused('when', 'is not a set of conditions');
+  const { says, passage, who } = w as Fields;
+  const out: { says?: string; passage?: string; who?: { except: boolean; characters: string[] } } = {};
+  if (says !== undefined && says !== null) { if (typeof says !== 'string') throw new Refused('when', 'what they say is not text'); out.says = says; }
+  if (passage !== undefined && passage !== null) { if (typeof passage !== 'string') throw new Refused('when', 'the passage is not text'); out.passage = passage; }
+  if (who !== undefined && who !== null) {
+    const l = who as Fields;
+    if (typeof who !== 'object' || Array.isArray(who) || typeof l.except !== 'boolean' || !Array.isArray(l.characters)) throw new Refused('when', 'who is not a list of characters and whether they are spared');
+    out.who = { except: l.except, characters: l.characters.map((x) => { if (typeof x !== 'string' || !UUID.test(x)) throw new Refused('when', 'who is not a list of ids'); return x; }) };
+  }
+  return Object.keys(out).length === 0 ? undefined : out;
+};
+
+/** A Set's arguments: the card, the character and the post, with no message, and the conditions if it names any; refused for any reach but a post's. */
 const setArgs = (r: Fields, instance: Instance): Fields => {
   const key = card(r, instance);
-  const args = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {} };
+  const when = conditions(r);
+  const args = { card: key, through: id(r, 'character'), target: id(r, 'target'), config: r.config ?? {}, ...(when ? { conditions: when } : {}) };
   reached(r, instance, key, 'set');
   return args;
 };

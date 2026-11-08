@@ -11,6 +11,7 @@
 import type { ActKind, Alignment, EconomyRead, Hundredths, Settings, Span } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleText } from '../bbcode/visible.ts';
+import { phraseIn } from '../bbcode/phrase.ts';
 
 /**
  * Where a card can land (the card mechanic's design, section 7): a post, a character, a thread or a
@@ -254,7 +255,22 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
 /** The longest phrase a Move may be set to wait for, in characters; the server holds the same bound (supabase/migrations/0142_face_down_moves.sql, place_set), so every back's pattern there is one length. */
 export const SET_PHRASE_MOST = 100;
 
-export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string }> {
+/** The most characters a Who may name (quote-conditions design, section 4); the server holds the same bound. */
+export const SET_WHO_MOST = 5;
+
+/**
+ * The conditions a Move may be set with, each optional (quote-conditions design, section 1): `says` is a phrase in the quoting post's own
+ * words, `passage` one in the quoted excerpt, and `who` the characters (ids) the quote must, or must not, come from.
+ */
+export interface SetConditions {
+  readonly says?: string;
+  readonly passage?: string;
+  readonly who?: { readonly except: boolean; readonly characters: readonly string[] };
+}
+
+const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
+
+export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
@@ -270,10 +286,33 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
     const named = cards.find((c) => c.key === catches);
     if (!named || !castOnPost(named)) return refuse(`${rules.name} names a card that is cast on a post`);
   }
-  const phrase = rules.setPhrase?.(checked.value);
+  let phrase = rules.setPhrase?.(checked.value);
   if (phrase !== undefined && phrase.trim() === '') return refuse(`${rules.name} needs a phrase to wait for`);
   if (phrase !== undefined && [...phrase].length > SET_PHRASE_MOST) return refuse(`${rules.name} waits for a phrase of at most ${SET_PHRASE_MOST} characters`);
-  return ok({ price: 0, config: checked.value, ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }) });
+  const { says, passage, who } = conditions;
+  if (says !== undefined || passage !== undefined || who !== undefined) {
+    // A Gimmick takes none: Trap Card already names its card, and Hall Pass waits for a visit.
+    if (play === 'set') return refuse(`${rules.name} takes no conditions`);
+    // A card with its own phrase has its Says fixed to it: one back holds one phrase.
+    if (says !== undefined && phrase !== undefined) return refuse(`${rules.name} already waits for its own phrase`);
+    if (says !== undefined) {
+      if (!hasWord(says)) return refuse('what they say needs a letter or a digit');
+      if ([...says].length > SET_PHRASE_MOST) return refuse(`what they say is at most ${SET_PHRASE_MOST} characters`);
+      phrase = says;
+    }
+    if (passage !== undefined) {
+      if (!hasWord(passage)) return refuse('the passage needs a letter or a digit');
+      if ([...passage].length > SET_PHRASE_MOST) return refuse(`the passage is at most ${SET_PHRASE_MOST} characters`);
+      if (!phraseIn(target.text, passage)) return refuse("that passage is not in this post's words");
+    }
+    // Only the list's shape is held here. Whether a named character is on the board is SQL's, and nothing here reads who owns one.
+    if (who !== undefined) {
+      if (who.characters.length === 0) return refuse('name at least one character, or choose anyone');
+      if (who.characters.length > SET_WHO_MOST) return refuse(`name at most ${SET_WHO_MOST} characters`);
+      if (new Set(who.characters).size !== who.characters.length) return refuse('name each character once');
+    }
+  }
+  return ok({ price: 0, config: checked.value, ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }), ...(passage === undefined ? {} : { passage }), ...(who === undefined ? {} : { who: { except: who.except, characters: [...who.characters] } }) });
 }
 
 /** The longest a caster's message may be, in characters; play_card (supabase/migrations/0016_cards_screens.sql) holds it again. */

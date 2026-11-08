@@ -133,7 +133,7 @@ test('a decision reads its effects on the clock it is given, and hands that cloc
   assert.equal(decidePlay(plain, settings, post, [mine], {}, '', { now: after }).ok, true);
   const seen: (Date | undefined)[] = [];
   const watcher: CardRules = { ...snare, key: 'watcher', canApply: (_t, _e, _config, now) => { seen.push(now); return ok(undefined); } };
-  decideSet(watcher, settings, post, [], { card: 'inky' }, [inky], before);
+  decideSet(watcher, settings, post, [], { card: 'inky' }, [inky], {}, before);
   assert.deepEqual(seen, [before]);
 });
 
@@ -273,4 +273,58 @@ test('staffOffers: a card with staffOptions and no default is offered, and a car
   assert.equal(staffOffers(plain), true, 'a default alone offers it');
   assert.equal(staffOffers(hallway), false, 'a Gimmick that springs on a visit is never offered: a Mod Bot visits only players\' posts');
   assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a Gimmick that springs on a cast is offered with its options');
+});
+
+// Conditions on a Move's quote trigger (quote-conditions design, sections 1, 2 and 4).
+const moveable = { ...post, text: 'The punchline was funny, honestly.' } as const satisfies CardTarget;
+const who = (characters: string[], except = false) => ({ except, characters });
+const A = '11111111-1111-4111-8111-111111111111';
+const B = '22222222-2222-4222-8222-222222222222';
+const refusalOf = (v: unknown) => (v as { ok: false; why: string }).why;
+
+test('decideSet returns the conditions a Move was set with, and none it was not', () => {
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], {}), { ok: true, value: { price: 0, config: { ink: 'red' } } });
+  const all = decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { says: 'nice try', passage: 'the  punchline', who: who([A, B], true) });
+  assert.deepEqual(all, { ok: true, value: { price: 0, config: { ink: 'red' }, phrase: 'nice try', passage: 'the  punchline', who: { except: true, characters: [A, B] } } });
+  assert.equal(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { passage: 'punchline was funny' }).ok, true, 'the matcher is the loose one');
+  assert.equal(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who([A]) }).ok, true, 'naming one character, the acting one included, is accepted without a word');
+});
+
+test('decideSet refuses conditions on a Gimmick, in plain words', () => {
+  for (const c of [{ says: 'x' }, { passage: 'punchline' }, { who: who([A]) }]) {
+    assert.deepEqual(decideSet(snare, settings, moveable, [], { card: 'inky' }, [inky], c), { ok: false, why: 'Test Snare takes no conditions' });
+    assert.deepEqual(decideSet(bluff, settings, moveable, [], {}, [], c), { ok: false, why: 'Test Bluffy takes no conditions' });
+  }
+  assert.equal(decideSet(snare, settings, moveable, [], { card: 'inky' }, [inky], {}).ok, true);
+});
+
+test('a Says on a card with its own phrase is refused; its phrase stays the card\'s', () => {
+  assert.deepEqual(decideSet(glue, settings, moveable, [], { phrase: 'soon' }, [glue], { says: 'later' }), { ok: false, why: 'Test Glue already waits for its own phrase' });
+  assert.deepEqual(decideSet(glue, settings, moveable, [], { phrase: 'soon' }, [glue], {}), { ok: true, value: { price: 0, config: { phrase: 'soon' }, phrase: 'soon' } });
+  const withPassage = decideSet(glue, settings, moveable, [], { phrase: 'soon' }, [glue], { passage: 'punchline' });
+  assert.deepEqual(withPassage, { ok: true, value: { price: 0, config: { phrase: 'soon' }, phrase: 'soon', passage: 'punchline' } });
+});
+
+test('a Says or a passage that is blank, has no letter or digit, or is too long is refused', () => {
+  for (const bad of ['', '   ', '...', '?! -']) {
+    assert.match(refusalOf(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { says: bad })), /^what they say needs a letter or a digit/, JSON.stringify(bad));
+    assert.match(refusalOf(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { passage: bad })), /^the passage needs a letter or a digit/, JSON.stringify(bad));
+  }
+  const long = 'x'.repeat(SET_PHRASE_MOST + 1);
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { says: long }), { ok: false, why: `what they say is at most ${SET_PHRASE_MOST} characters` });
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { passage: long }), { ok: false, why: `the passage is at most ${SET_PHRASE_MOST} characters` });
+  assert.equal(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { says: 'é'.repeat(SET_PHRASE_MOST) }).ok, true);
+});
+
+test('a passage that is not in the post\'s words is refused', () => {
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { passage: 'the setup' }), { ok: false, why: 'that passage is not in this post\'s words' });
+  assert.deepEqual(decideSet(inky, settings, { ...moveable, text: '' }, [], { ink: 'red' }, [inky], { passage: 'punchline' }), { ok: false, why: 'that passage is not in this post\'s words' });
+});
+
+test('a Who with no characters, more than five, or one twice is refused, and none of it reads who owns a character', () => {
+  const ids = [1, 2, 3, 4, 5, 6].map((n) => `${n}${n}${n}${n}${n}${n}${n}${n}-1111-4111-8111-111111111111`);
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who([]) }), { ok: false, why: 'name at least one character, or choose anyone' });
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who(ids) }), { ok: false, why: 'name at most 5 characters' });
+  assert.equal(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who(ids.slice(0, 5)) }).ok, true);
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who([A, B, A], true) }), { ok: false, why: 'name each character once' });
 });
