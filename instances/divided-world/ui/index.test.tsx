@@ -10,7 +10,7 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
-import { faceOf } from '../../../engine/ui/cards/faces.ts';
+import { faceOf, facesOf } from '../../../engine/ui/cards/faces.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
@@ -57,6 +57,45 @@ describe('Divided World\'s Strategy Guide', () => {
     expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
+  });
+});
+
+describe('Divided World\'s cards in the guide, in the glass\'s words about setting them face down', () => {
+  const faces = facesOf(instance.cards, instanceUi.cards, instance.settings, instanceUi.copy.cardKinds);
+  const face = (key: string) => faces.find((f) => f.key === key)!;
+  const guideMd = instanceUi.guide.markdown;
+  test('the card list holds Hall Pass, and the guide fills it', () => {
+    expect(guideMd).toContain('<!-- kayfabb:cards -->');
+    expect(faces.map((f) => f.key)).toContain('hall-pass');
+  });
+  test('Trap Card names the exact card, any card cast on a post, and takes it; it pays nothing and has no rarity bound', () => {
+    const t = face('trap-card');
+    for (const text of [t.describe, t.summary]) {
+      expect(text).toMatch(/takes? it into your hand/u);
+      expect(text).not.toMatch(/uncommon or commoner|pays you|wallet|what the caster paid/u);
+    }
+    expect(t.describe).toMatch(/exact card/u);
+    expect(t.describe).toMatch(/any card cast on a post/u);
+  });
+  test('Bluff does not compare itself to Trap Card, and might be any card', () => {
+    const b = face('bluff');
+    expect(b.describe).not.toMatch(/Trap Card/u);
+    expect(b.summary).not.toMatch(/trap/iu);
+    expect(b.describe).toMatch(/might be any card/u);
+  });
+  test('each Move says what setting it does, at its own reach', () => {
+    for (const key of ['whoops', 'autocorrect', 'stick-around', 'feelin-fab', 'glitter-bomb', 'main-event']) expect(face(key).describe, key).toMatch(/Set face down on one of your own posts/u);
+    expect(face('whoops').describe).toMatch(/quoting post/u);
+    expect(face('glitter-bomb').describe).toMatch(/quoting post's character/u);
+    expect(face('main-event').describe).toMatch(/quoting post's thread/u);
+    expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
+  });
+  test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
+    expect(guideMd).toMatch(/A Move is cast on a target or set face down on your own post/iu);
+    expect(guideMd).toMatch(/a Gimmick is only set/iu);
+    expect(guideMd).toMatch(/a Ward guards your own post/iu);
+    expect(guideMd).toMatch(/every card back looks the same/u);
+    expect(guideMd).not.toMatch(/pays you what it cost/u);
   });
 });
 
