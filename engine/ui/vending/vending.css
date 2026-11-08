@@ -387,16 +387,42 @@ button.kb-vending-slot {
   border-radius: 7px;
 }
 
-.kb-vending-buy {
+/*
+ * Buy is a GlassButton, so it can be busy (aria-busy, a spinner, a press ignored) while the purchase is out, and it keeps the machine's own
+ * look: the chamfered, unskewed slab on the board, not the glass button's skewed outline. Each rule below takes back what
+ * `.kb-glass-button` (glass/parts.css) sets, with the selectors that beat its kinds, its hover and its disabled look.
+ */
+.kb-vending-buy.kb-glass-button[data-kb-kind] {
+  display: block;
+  box-sizing: border-box;
   min-height: 76px;
+  max-width: none;
   padding: 6px 0;
   border: 0;
+  font: inherit;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
   cursor: pointer;
   text-align: center;
   background: var(--kb-glass-salty);
   color: var(--kb-glass-ink-salty);
   box-shadow: 0 0 26px color-mix(in srgb, var(--kb-glass-salty) 70%, transparent);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%);
+  transform: none;
+}
+
+.kb-vending-buy.kb-glass-button[data-kb-kind]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--kb-glass-salty) 80%, var(--kb-glass-text-hi));
+  box-shadow: 0 0 40px color-mix(in srgb, var(--kb-glass-salty) 90%, transparent);
+}
+
+.kb-vending-buy.kb-glass-button[aria-busy='true'] { cursor: progress; }
+
+/* The label and the spinner share the one cell the glass button gives them; the label is the board's two blocks, upright because the slab is not skewed. */
+.kb-vending-buy.kb-glass-button.kb-glass-skew > .kb-glass-upright {
+  display: grid;
+  transform: none;
 }
 
 /* Cut by its clip-path, so its ring is drawn inside it (glass/base.css says why). */
@@ -405,11 +431,12 @@ button.kb-vending-slot {
   outline-offset: -7px;
 }
 
-.kb-vending-buy:disabled {
+.kb-vending-buy.kb-glass-button[data-kb-kind]:disabled {
   cursor: default;
   background: var(--kb-glass-field);
   color: var(--kb-glass-text-2);
   box-shadow: none;
+  border: 0;
 }
 
 .kb-vending-buy-word {
@@ -659,7 +686,7 @@ button.kb-vending-slot {
   display: none;
 }
 
-:where(:root[data-kb-layout='phone']) .kb-vending-buy {
+:where(:root[data-kb-layout='phone']) .kb-vending-buy.kb-glass-button[data-kb-kind] {
   min-height: 64px;
 }
 

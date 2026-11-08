@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from './context.tsx';
-import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePrefetch, useRouterAccount, type Location } from './router.tsx';
+import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useRouterAccount, useRouterInternals, type Location } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
 
 function Where() {
@@ -304,6 +304,7 @@ const kayfa = { ui: { copy: { siteName: 'Test Board' } } } as unknown as Kayfa;
 let nav: ReturnType<typeof useNavigate>;
 let prefetch: ReturnType<typeof usePrefetch>;
 let navigation: ReturnType<typeof useNavigation>;
+let retry: ReturnType<typeof useRouterInternals>['retry'];
 const log: string[] = [];
 let seenState: unknown;
 
@@ -311,6 +312,7 @@ function Probe() {
   nav = useNavigate();
   prefetch = usePrefetch();
   navigation = useNavigation();
+  retry = useRouterInternals().retry;
   seenState = useLocation().state;
   return null;
 }
@@ -380,6 +382,21 @@ describe('the router loads before it moves', () => {
     expect(screen.getByText('index screen')).toBeInTheDocument();
     expect(window.location.pathname).toBe('/');
   });
+  test('an Escape keydown that starts a load does not cancel it; a later Escape does', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    /* A page-level handler (the menu bar's Back) starts the load from the same keydown the router also hears at the window. */
+    const start = () => nav('/t/a', { source: 'back' });
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') start(); };
+    document.addEventListener('keydown', onKey);
+    act(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    document.removeEventListener('keydown', onKey);
+    expect(navigation.pending?.source).toBe('back');
+    expect(calls[0]!.signal.aborted).toBe(false);
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(navigation.pending).toBeNull();
+  });
   test('Escape typed in a text field, or with a modal open, is not the router\'s', () => {
     const { load, calls } = manualLoader();
     mount(load);
@@ -408,6 +425,83 @@ describe('the router loads before it moves', () => {
     expect(load).toHaveBeenCalledTimes(2);
     await answer(calls[1], 'A2');
     expect(screen.getByText('thread a: A2')).toBeInTheDocument();
+  });
+  test('two routes that share one loader and one key are one document: a move between them reads nothing', async () => {
+    const load = vi.fn(() => Promise.resolve('doc'));
+    const key = () => 'one';
+    const routes: Route[] = [
+      { path: '/a', load, key, render: (_, doc) => <p>a {String(doc)}</p> },
+      { path: '/b', load, key, render: (_, doc) => <p>b {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/a');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await screen.findByText('a doc');
+    expect(load).toHaveBeenCalledTimes(1);
+    act(() => nav('/b'));
+    expect(screen.getByText('b doc')).toBeInTheDocument();
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(window.location.pathname).toBe('/b');
+  });
+  test('an address that is the document already shown is not read ahead', async () => {
+    const load = vi.fn(() => Promise.resolve('doc'));
+    const key = () => 'one';
+    const routes: Route[] = [
+      { path: '/a', load, key, render: (_, doc) => <p>a {String(doc)}</p> },
+      { path: '/b', load, key, render: (_, doc) => <p>b {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/a');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await screen.findByText('a doc');
+    act(() => prefetch('/b'));
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+  test('a move to the sibling that shares the key while a re-read is out does not lose it: the new document is drawn', async () => {
+    const calls: Array<(d: string) => void> = [];
+    const load = vi.fn(() => new Promise<string>((resolve) => { calls.push(resolve); }));
+    const key = () => 'one';
+    const routes: Route[] = [
+      { path: '/a', load, key, render: (_, doc) => <p>a {String(doc)}</p> },
+      { path: '/b', load, key, render: (_, doc) => <p>b {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/a');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await act(async () => { calls[0]!('old'); });
+    expect(screen.getByText('a old')).toBeInTheDocument();
+    act(() => retry());
+    act(() => nav('/b'));
+    expect(screen.getByText('b old')).toBeInTheDocument();
+    await act(async () => { for (const c of calls.slice(1)) c('new'); });
+    expect(screen.getByText('b new')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/b');
+  });
+  test('a re-read that fails is the page cannot be displayed, and Try again reads it', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => retry());
+    await act(async () => { calls[1]!.reject(new Error('down')); });
+    expect(screen.getByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await answer(calls[2], 'A3');
+    expect(screen.getByText('thread a: A3')).toBeInTheDocument();
+  });
+  test('retry of a shown page reads its document again in place: the old page stays until it lands, no move is told, and Escape does not stop it', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    expect(screen.getByText('thread a: A1')).toBeInTheDocument();
+    const entries = window.history.length;
+    act(() => retry());
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('thread a: A1')).toBeInTheDocument();
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(calls[1]!.signal.aborted).toBe(false);
+    await answer(calls[1], 'A2');
+    expect(screen.getByText('thread a: A2')).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/t/a');
+    expect(window.history.length).toBe(entries);
   });
   test('a load that answers null shows the page cannot be found, and so does an address no route matches', async () => {
     const { load, calls } = manualLoader();
@@ -800,5 +894,153 @@ describe('from the Task 11 review', () => {
     expect(calls).toHaveLength(0);
     fireEvent.pointerDown(screen.getByRole('link', { name: 'one' }), { button: 0 });
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('a navigation names its source', () => {
+  beforeEach(() => { log.length = 0; });
+  function Pendings({ names }: { readonly names: readonly string[] }) {
+    return <>{names.map((n) => <Pend key={n} name={n} />)}</>;
+  }
+  function Pend({ name }: { readonly name: string }) { return <span data-testid={`pending-${name}`}>{String(usePendingFrom(name))}</span>; }
+  const flag = (name: string) => screen.getByTestId(`pending-${name}`).textContent;
+  function Undef() { return <span data-testid="undef">{String(usePendingFrom(undefined))}</span>; }
+  function mountLinks(load: Route['load']) {
+    const routes: Route[] = [
+      { path: '/', render: () => <Index /> },
+      { path: '/t/:id', load, key: (p) => p.id!, render: (p, doc) => <p>thread {p.id}: {String(doc)}</p> },
+    ];
+    window.history.replaceState(null, '', '/');
+    function Shell() {
+      return <><Probe /><Link to="/t/a" source="first">first link</Link><Link to="/t/a" source="second">second link</Link><Link to="/t/b" source="third">third link</Link><Pendings names={['first', 'second', 'third', 'x', 'y']} /><Undef /><Routes routes={routes} /></>;
+    }
+    return render(<KayfaProvider value={kayfa}><RouterProvider><Shell /></RouterProvider></KayfaProvider>);
+  }
+
+  test('pressing the second of two links to one route is pending for the second\'s source only, and landing ends it', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    expect(flag('first')).toBe('false');
+    await userEvent.click(screen.getByRole('link', { name: 'second link' }));
+    expect(flag('second')).toBe('true');
+    expect(flag('first')).toBe('false');
+    expect(navigation.pending?.source).toBe('second');
+    await answer(calls[0], 'A1');
+    expect(flag('second')).toBe('false');
+    expect(flag('first')).toBe('false');
+  });
+  test('Escape ends the pending of the source that started the load', async () => {
+    const { load } = manualLoader();
+    mountLinks(load);
+    await userEvent.click(screen.getByRole('link', { name: 'second link' }));
+    expect(flag('second')).toBe('true');
+    act(() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
+    expect(flag('second')).toBe('false');
+    expect(flag('first')).toBe('false');
+  });
+  test('a failed load ends the pending too', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    await userEvent.click(screen.getByRole('link', { name: 'first link' }));
+    expect(flag('first')).toBe('true');
+    await act(async () => { calls[0]!.reject(new Error('down')); });
+    expect(flag('first')).toBe('false');
+  });
+  test('navigate(to, { source }) is pending for that source, and usePendingFrom(undefined) is never true', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    expect(flag('first')).toBe('false');
+    await answer(calls[0], 'A1');
+    expect(flag('x')).toBe('false');
+  });
+  test('usePendingFrom(undefined) is false while a load with no source is out', () => {
+    const { load } = manualLoader();
+    mountLinks(load);
+    act(() => {
+      window.history.pushState(null, '', '/t/z');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(navigation.pending?.source).toBeNull();
+    expect(screen.getByTestId('undef').textContent).toBe('false');
+  });
+  test('a load that replaces another moves the pending to the newer source', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    await userEvent.click(screen.getByRole('link', { name: 'first link' }));
+    expect(flag('first')).toBe('true');
+    await userEvent.click(screen.getByRole('link', { name: 'third link' }));
+    expect(flag('first')).toBe('false');
+    expect(flag('third')).toBe('true');
+    await answer(calls[1], 'B1');
+    expect(flag('first')).toBe('false');
+    expect(flag('third')).toBe('false');
+  });
+  test('a cached Back that takes the place of a sourced load ends its pending', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b'));
+    await answer(calls[1], 'B1');
+    act(() => nav('/t/c', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    act(() => window.history.back());
+    await waitFor(() => expect(screen.getByText('thread a: A1')).toBeInTheDocument());
+    expect(flag('x')).toBe('false');
+    expect(navigation.pending).toBeNull();
+  });
+  test('a same-key move, or a move to a route with no loader, ends a sourced load', async () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a'));
+    await answer(calls[0], 'A1');
+    act(() => nav('/t/b', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    act(() => nav('/t/a?again', { source: 'y' }));
+    expect(flag('x')).toBe('false');
+    expect(flag('y')).toBe('false');
+    expect(navigation.pending).toBeNull();
+    act(() => nav('/t/b', { source: 'x' }));
+    expect(flag('x')).toBe('true');
+    act(() => nav('/', { source: 'y' }));
+    expect(flag('x')).toBe('false');
+    expect(flag('y')).toBe('false');
+    expect(navigation.pending).toBeNull();
+  });
+  test('a navigate with no source has source null, and is pending for no source', () => {
+    const { load } = manualLoader();
+    mountLinks(load);
+    act(() => nav('/t/a'));
+    expect(navigation.pending?.source).toBeNull();
+    expect(flag('x')).toBe('false');
+    expect(flag('first')).toBe('false');
+  });
+  test('a link given no source names its own, and two links name different ones', async () => {
+    const { load } = manualLoader();
+    const routes: Route[] = [{ path: '/', render: () => <Index /> }, { path: '/t/:id', load, key: (p) => p.id!, render: () => <p>t</p> }];
+    function Own() { const src = useNavigation().pending?.source; return <span data-testid="own">{String(usePendingFrom(src ?? undefined))}</span>; }
+    window.history.replaceState(null, '', '/');
+    render(<KayfaProvider value={kayfa}><RouterProvider><Probe /><Own /><Link to="/t/a">one</Link><Link to="/t/a">two</Link><Routes routes={routes} /></RouterProvider></KayfaProvider>);
+    await userEvent.click(screen.getByRole('link', { name: 'one' }));
+    const one = navigation.pending?.source;
+    expect(typeof one).toBe('string');
+    expect(screen.getByTestId('own').textContent).toBe('true');
+    await userEvent.click(screen.getByRole('link', { name: 'two' }));
+    const two = navigation.pending?.source;
+    expect(typeof two).toBe('string');
+    expect(two).not.toBe(one);
+  });
+  test('a popstate\'s load has source null', () => {
+    const { load, calls } = manualLoader();
+    mountLinks(load);
+    act(() => {
+      window.history.pushState(null, '', '/t/z');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    expect(calls).toHaveLength(1);
+    expect(navigation.pending).not.toBeNull();
+    expect(navigation.pending?.source).toBeNull();
   });
 });

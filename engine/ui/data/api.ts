@@ -1546,6 +1546,96 @@ export interface RecordPage {
   readonly unread: number;
 }
 
+/** The player's characters page (my_characters_page, 0115): every character, with what the Characters and Edit profile screens draw of each. */
+export interface MyCharactersPage {
+  readonly characters: Awaited<ReturnType<KayfaApi['myCharacters']>>;
+  /** The public face of each debuted character (`characters(ids)`); a character that has not debuted has none. */
+  readonly faces: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** `characterCounts(id)` of each character. */
+  readonly counts: Readonly<Record<Id, CharacterCounts>>;
+  /** `standingAmounts(ids)` of the debuted characters, hundredths. */
+  readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
+  readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly nextSettlementAt: Awaited<ReturnType<KayfaApi['nextSettlementAt']>>;
+}
+
+/** The season page (season_page, 0117): the News tab, the live standings or a finished season's final table, by `tab`. Null where the season asked for does not exist. */
+export type SeasonPage =
+  | { readonly tab: 'news'; readonly season: Awaited<ReturnType<KayfaApi['season']>>; readonly news: Awaited<ReturnType<KayfaApi['seasonNews']>> }
+  | {
+    readonly tab: 'standings';
+    readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+    readonly finished: Awaited<ReturnType<KayfaApi['finishedSeasons']>>;
+    readonly page: number;
+    readonly standings: Awaited<ReturnType<KayfaApi['standingsPage']>>;
+    /** `standingsCount()` */
+    readonly size: number;
+    readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+    readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  }
+  | {
+    readonly tab: 'results';
+    readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+    readonly finished: Awaited<ReturnType<KayfaApi['finishedSeasons']>>;
+    readonly page: number;
+    /** `resultPlace(season, character)`: the character's 0-based place in the table; null where none was asked for or it has no row. */
+    readonly place: Awaited<ReturnType<KayfaApi['resultPlace']>>;
+    readonly results: Awaited<ReturnType<KayfaApi['resultsPage']>>;
+  };
+
+/** The Alerts page (alerts_page, 0119): the newest rows and everything the words need beside them. */
+export interface AlertsPage {
+  readonly alerts: Awaited<ReturnType<KayfaApi['alerts']>>;
+  /** The account's mark (`preferences().alertsSeenAt`). */
+  readonly seenAt: string | null;
+  readonly openedAt: Awaited<ReturnType<KayfaApi['accountOpenedAt']>>;
+  /** The Acts the rows name and the ones those lead to (`actsById`). */
+  readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
+  /** The authors of those Acts (`characters(ids)`). */
+  readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** The first post of each followed thread among the rows (`openingActs`). */
+  readonly openings: Awaited<ReturnType<KayfaApi['openingActs']>>;
+  readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+}
+
+/** The Updates page (updates_page, 0121): a page of Updates, the open one's reactions, and for an admin with a handover season the queue. */
+export interface UpdatesPage {
+  readonly updates: Awaited<ReturnType<KayfaApi['updates']>>;
+  /** The tallies of the open Update (`update`, or the newest). */
+  readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
+  readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
+  readonly queue?: Awaited<ReturnType<KayfaApi['adminQueue']>>;
+}
+
+/** The admin queue page (queue_page, 0121); null for a caller who is not an admin. */
+export interface QueuePage {
+  readonly queue: Awaited<ReturnType<KayfaApi['adminQueue']>>;
+  readonly boardNames: Awaited<ReturnType<KayfaApi['boardNames']>>;
+  readonly bosses: Awaited<ReturnType<KayfaApi['bosses']>>;
+  readonly contact: Awaited<ReturnType<KayfaApi['adminContact']>>;
+}
+
+/** The player's log page (log_page, 0123): the page `log(before)` answers, and what its lines name. */
+export interface LogPage {
+  readonly log: Awaited<ReturnType<KayfaApi['log']>>;
+  /** The Acts the lines name and the ones those lead to, two rounds (`actsById`). */
+  readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
+  /** `effectStates(plays)` of the saves. */
+  readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
+  /** The other characters the lines name (`characters(ids)`). */
+  readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** The threads the announced Turns and thread-reaching plays name (`thread(id)`). */
+  readonly threads: readonly ThreadSummary[];
+  /** The boards board-reaching plays name (`board(id)`). */
+  readonly boards: readonly Board[];
+  /** `standingAmounts(ids)` of the player's characters. */
+  readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
+  /** Every announced Turn of the player's characters (`turnsAnnounced(ids)`); the log draws only each character's latest, which the screen picks with the characters it holds (the one whose announcement is dated at its `classSince`). */
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+}
+
 export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
@@ -1768,6 +1858,18 @@ export interface KayfaApi {
   beatMod(board: Id): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null>;
   /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */
   myBan(character: Id): Promise<MyBan | null>;
+  /** The player's own characters in one read, with what the Characters and Edit profile screens draw of each. */
+  myCharactersPage(): Promise<MyCharactersPage>;
+  /** The season page in one read, by `tab` ('news', else the standings or a finished `season`'s table, at `page` or around `character`); null where the season does not exist. */
+  seasonPage(tab: string | null, season: number | null, character: Id | null, page: number | null): Promise<SeasonPage | null>;
+  /** The Alerts page in one read, the rows at or before `before`. */
+  alertsPage(before: string | null): Promise<AlertsPage>;
+  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover season asks an admin's queue as well. */
+  updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
+  /** The admin queue page in one read; null for a caller who is not an admin. */
+  queuePage(): Promise<QueuePage | null>;
+  /** The log in one read, the rows at or before `before`. */
+  logPage(before: string | null): Promise<LogPage>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */

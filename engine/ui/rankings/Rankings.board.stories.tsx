@@ -8,17 +8,18 @@
  * reader's Thwompson and the crowd's four, seeded onto the fake through `fake.seed`. Two other
  * characters have said their class in public, so both ways a stranger's class shows are on the
  * page: Gloomba revealed on Oct 12, and Thwompson revealed on Oct 8 and Turned, announced, on
- * Oct 20. The page is the screen itself (`RankingsScreen`) in the glass's page shell, as the
- * route /rankings puts it (web/src/App.tsx), signed in as the player. The classes are the instance's, by their place in its list, so the story names
+ * Oct 20. The page is the screen itself (the season page's Rankings tab) in the glass's page shell, as the
+ * route /season puts it (web/src/App.tsx; /rankings opens it), signed in as the player. The classes are the instance's, by their place in its list, so the story names
  * none: the first is the player's two Faces' and the second Gloomba's.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id } from '../data/api.ts';
 import { Page } from '../glass/Page.tsx';
+import { LoadedSeason } from '../loaded.tsx';
+import { useNavigate } from '../router.tsx';
+import { seasonAt } from '../season/address.ts';
 import type { World } from '../story.tsx';
-import { RankingsScreen } from './Rankings.tsx';
 
 const utc = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 const SETTLED = utc(30, 8, 17);
@@ -100,24 +101,29 @@ const finished: World = (fake, instance) => {
 /** Season 1's final table, opened on the player's Mrs. Hooligan: the row is found by its name, as the story cannot know the id its world gives it. */
 function FinishedStory() {
   const { api } = useKayfa();
-  const [character, setCharacter] = useState<Id | null | 'missing'>(null);
+  const navigate = useNavigate();
+  const [missing, setMissing] = useState(false);
   useEffect(() => {
-    void api.resultsPage(1, 1).then((rows) => setCharacter(rows.find((r) => r.name === 'Mrs. Hooligan')?.character ?? 'missing'));
-  }, [api]);
+    void api.resultsPage(1, 1).then((rows) => {
+      const found = rows.find((r) => r.name === 'Mrs. Hooligan')?.character;
+      if (found) navigate(seasonAt('rankings', undefined, 1, found), { replace: true });
+      else setMissing(true);
+    });
+  }, [api, navigate]);
   // A world whose first page holds no Mrs. Hooligan says so, never a table quietly drawn with no row highlighted.
-  if (character === 'missing') return <Page surface="rankings"><p role="alert">Season 1's first page of final standings has no Mrs. Hooligan.</p></Page>;
-  return <Page surface="rankings">{character ? <RankingsScreen season={1} character={character} /> : <div aria-busy="true" />}</Page>;
+  if (missing) return <Page surface="rankings"><p role="alert">Season 1's first page of final standings has no Mrs. Hooligan.</p></Page>;
+  return <Page surface="rankings"><LoadedSeason /></Page>;
 }
 
-/** The screen at /rankings, in its page shell. */
+/** The Rankings tab of the season page, in its page shell: the route /season?tab=rankings (web/src/App.tsx; /rankings opens it). */
 function RankingsStory() {
-  return <Page surface="rankings"><RankingsScreen /></Page>;
+  return <Page surface="rankings"><LoadedSeason /></Page>;
 }
 
 const meta: Meta<typeof RankingsStory> = {
   title: 'Boards/13 Rankings',
   component: RankingsStory,
-  parameters: { world: season, path: '/rankings', layout: 'fullscreen' },
+  parameters: { world: season, path: '/season?tab=rankings', layout: 'fullscreen' },
 };
 export default meta;
 

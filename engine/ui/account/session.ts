@@ -1,6 +1,7 @@
 /** The session as this screen needs it: null until it is known, then whether signed in and whether an account is open. */
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { KayfaApi, Session } from '../data/api.ts';
+import { useEffect, useSyncExternalStore } from 'react';
+import type { Session } from '../data/api.ts';
+import { usePlayer } from '../player.tsx';
 
 /*
  * Why the account did not open (the server's words after a code), kept where it outlives the
@@ -17,15 +18,15 @@ export function useWhy(): string | null {
   return useSyncExternalStore((l) => { listeners.add(l); return () => { listeners.delete(l); }; }, () => why);
 }
 
-export function useSession(api: KayfaApi): Session | null {
-  const [session, setSession] = useState<Session | null>(null);
+/**
+ * The session as the player's provider holds it (engine/ui/player.tsx), which the first load read: null until it is known, so the screens that
+ * ask are drawn from it on their first frame and read nothing of their own. A reason is cleared as it always was: when the session has no
+ * sign-in, or has an account (it belongs to a sign-in with no account to open).
+ */
+export function useSession(): Session | null {
+  const { session, sessionKnown } = usePlayer();
   useEffect(() => {
-    let live = true;
-    /* A reason belongs to a session with no account; any other session has none to give. */
-    const take = (s: Session) => { if (!s.signedIn || s.account) clearWhy(); if (live) setSession(s); };
-    void api.session().then(take, () => take({ signedIn: false, account: null }));
-    const off = api.onSession(take);
-    return () => { live = false; off(); };
-  }, [api]);
-  return session;
+    if (sessionKnown && (!session.signedIn || session.account)) clearWhy();
+  }, [sessionKnown, session.signedIn, session.account]);
+  return sessionKnown ? session : null;
 }

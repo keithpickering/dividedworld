@@ -13,6 +13,7 @@ import type { Act, Refusal, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
+import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testSystem } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
@@ -2677,5 +2678,99 @@ describe('a screen in one call is what the separate calls answer', () => {
     const boot = await fake.boot();
     expect(boot).toMatchObject({ settings: await fake.settings(), preferences: await fake.preferences(), characters: await fake.myCharacters(), wallet: await fake.wallet(), boards, unread: await fake.alertsUnread() });
     expect(boot.faces.map((f) => f.name)).toEqual(['Ana Face', 'Ana Heel']);
+  });
+
+  test('logPage of the demo player is the log and what useLog reads around it', async () => {
+    const { fake, anaFace, anaHeel, boFace, opener } = world();
+    fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 30, shares: [{ act: opener, quadrant: 'excitedPositive', amount: 30 }] }, { character: anaHeel, reason: 'heel.shrugged', amount: -5 }], standings: { [anaFace]: 300 } });
+    const page = await fake.logPage(null);
+    const log = await fake.log();
+    expect(page.log).toEqual(log);
+    expect(page.log.settlements).toHaveLength(1);
+    /* What useLog's `around` computes from the same log: the own state, then the Acts the lines name and the ones those lead to. */
+    const characters = await fake.myCharacters();
+    const ids = characters.map((c) => c.id);
+    expect(page.standings).toEqual(await fake.standingAmounts(ids));
+    expect(page.season).toEqual(await fake.season());
+    const turns = (await fake.turnsAnnounced(ids)).filter((t) => characters.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
+    expect(page.turns).toEqual(await fake.turnsAnnounced(ids));
+    const acts = new Map((await fake.actsById(actsNamed(log, null, turns))).map((a) => [a.id, a]));
+    for (let round = 0; round < 2; round++) for (const a of await fake.actsById(actsFollowed(acts))) acts.set(a.id, a);
+    expect(page.acts).toEqual([...acts.values()]);
+    expect(page.acts.map((a) => a.id)).toContain(opener);
+    expect(page.people).toEqual(await fake.characters([boFace]));
+    expect(page.states).toEqual(await fake.effectStates([...new Set(log.saves.map((x) => x.play))]));
+    expect(page.threads).toEqual([]);
+    expect(page.boards).toEqual([]);
+    /* An older cursor is the log from there. */
+    expect((await fake.logPage(log.before ?? '2000-01-01T00:00:00.000Z')).log).toEqual(await fake.log(log.before ?? '2000-01-01T00:00:00.000Z'));
+  });
+
+  test('the glass pages are built of the existing calls\' answers', async () => {
+    const { fake, anaFace, anaHeel, boFace } = world();
+    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: 500 } });
+    const mine = await fake.myCharacters();
+    const characters = await fake.myCharactersPage();
+    expect(characters.characters).toEqual(mine);
+    expect(characters.faces).toEqual(await fake.characters([anaFace, anaHeel].sort((a, b) => mine.findIndex((c) => c.id === a) - mine.findIndex((c) => c.id === b))));
+    expect(characters.counts[anaFace]).toEqual(await fake.characterCounts(anaFace));
+    expect(characters.standings).toEqual(await fake.standingAmounts(mine.map((c) => c.id)));
+    expect(characters.nextSettlementAt).toEqual(await fake.nextSettlementAt());
+
+    const news = await fake.seasonPage('news', null, null, null);
+    expect(news).toEqual({ tab: 'news', season: await fake.season(), news: await fake.seasonNews(null) });
+    const standings = await fake.seasonPage(null, null, null, null);
+    expect(standings).toMatchObject({ tab: 'standings', page: 1, standings: await fake.standingsPage(0, 50), size: await fake.standingsCount(), finished: await fake.finishedSeasons() });
+    expect(await fake.seasonPage(null, 99, null, null)).toBeNull();
+
+    const alerts = await fake.alertsPage(null);
+    expect(alerts).toMatchObject({ alerts: await fake.alerts(null), seenAt: (await fake.preferences()).alertsSeenAt, openedAt: await fake.accountOpenedAt() });
+    const updates = await fake.updatesPage(null, null, null);
+    expect(updates).toMatchObject({ updates: await fake.updates(null), tallies: {}, mine: [] });
+    expect('queue' in updates).toBe(false);
+    expect(await fake.queuePage()).toBeNull();
+  });
+
+  test('alertsPage carries the Acts, people, openings and reading its rows name', async () => {
+    const { fake, ana, bo, anaFace, boFace, thread, opener } = world();
+    fake.signInAs(bo);
+    await fake.follow(thread, true);
+    fake.signInAs(ana);
+    const reply = must(await fake.post(thread, anaFace, 'a reply', opener));
+    fake.signInAs(bo);
+    const page = await fake.alertsPage(null);
+    expect(page.alerts).toEqual(await fake.alerts(null));
+    expect(page.alerts.length).toBeGreaterThan(0);
+    const named = page.alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
+    expect(named).toContain(reply.id);
+    expect(page.acts.map((a) => a.id)).toEqual(expect.arrayContaining(named));
+    expect(page.people).toEqual(await fake.characters([...new Set(page.acts.flatMap((a) => (a.character === null ? [] : [a.character])))]));
+    expect(page.people.map((c) => c.id)).toContain(anaFace);
+    const followed = [...new Set(page.alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
+    expect(page.openings).toEqual(await fake.openingActs(followed));
+    expect(page.reading).toEqual(await fake.reading(followed));
+    expect(boFace).toBeTruthy();
+  });
+
+  test('updatesPage opens the newest update when the one asked for is not on the page, as the server does', async () => {
+    const { fake, ana, anaFace } = world();
+    fake.seed.admin(ana);
+    fake.signInAs(ana);
+    const update = must(await fake.postUpdate('Traps bite', 'Two fixes.', []));
+    must(await fake.react(update.act, anaFace, 'fire'));
+    const newest = await fake.updatesPage(null, null, null);
+    expect(Object.keys(newest.tallies)).toEqual([update.act]);
+    expect(await fake.updatesPage('00000000-0000-4000-8000-000000000000', null, null)).toEqual(newest);
+  });
+
+  test('queuePage and updatesPage carry an admin\'s queue, and only an admin\'s', async () => {
+    const { fake, ana } = world();
+    fake.seed.admin(ana);
+    const queue = await fake.queuePage();
+    expect(queue).toEqual({ queue: await fake.adminQueue(), boardNames: await fake.boardNames(), bosses: await fake.bosses(), contact: await fake.adminContact() });
+    expect(await fake.updatesPage(null, null, 3)).toMatchObject({ queue: await fake.adminQueue() });
+    expect('queue' in (await fake.updatesPage(null, null, null))).toBe(false);
+    const other = world();
+    expect('queue' in (await other.fake.updatesPage(null, null, 3))).toBe(false);
   });
 });

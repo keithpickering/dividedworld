@@ -309,7 +309,7 @@ begin
   )
   insert into character_profiles (character, title, signature, pronouns)
   select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
-  -- Each listed persona's pronouns (0119), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
+  -- Each listed persona's pronouns (0124), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
   -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
   update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
@@ -427,7 +427,7 @@ begin
     )
     insert into character_profiles (character, title, signature, pronouns)
     select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
-    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0119); its title and signature are not.
+    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0124); its title and signature are not.
     update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
     from characters c
     where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');

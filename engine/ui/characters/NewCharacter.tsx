@@ -8,16 +8,17 @@
  * Cancel are its ways out. Its surface draws no class's large text (engine/ui/glass/apply.ts), so
  * the class cards name each class in the glass's text, the class's color on the card.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { useClaim } from '../glass/claims.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { FormFoot } from '../glass/FormFoot.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
-import { useNavigate } from '../router.tsx';
+import { usePendingFrom, useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { PronounPicker, pronounsHold } from './PronounPicker.tsx';
 import { words, type PronounSet } from '../../rules/pronouns.ts';
@@ -42,6 +43,10 @@ export function NewCharacter() {
   const [pronouns, setPronouns] = useState<PronounSet>(settings.pronouns);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* The create's move names this button as its source: the button stays busy through the move, and the menu bar draws no second wait. */
+  const source = useId();
+  useClaim(source);
+  const pendingFromMe = usePendingFrom(source);
 
   if (signedIn === null || (signedIn && !loaded)) return <div className="kb-new-character" aria-busy="true" />;
   if (!signedIn) return <div className="kb-new-character"><SignInPrompt /></div>;
@@ -70,7 +75,7 @@ export function NewCharacter() {
       if (!answer.ok) { setRefusal(answer.error); return; }
       await refresh();
       /* My characters opens on the new one, carried in history.state, never in the address. */
-      navigate('/characters', { state: { character: answer.value.id } });
+      navigate('/characters', { state: { character: answer.value.id }, source });
     } catch {
       setRefusal('The character could not be made. Check your connection and try again.');
     } finally {
@@ -99,7 +104,7 @@ export function NewCharacter() {
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
         <FormFoot line={newCharacterFooter({ name, pronouns, className, timing, loudness })}>
           <GlassButton to="/characters">Cancel</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns) || busy}>Make the character</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={busy || pendingFromMe} disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns)}>Make the character</GlassButton>
         </FormFoot>
       </CalmRegion>
     </div>

@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { seedMoves } from '../board/move-world.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { LoadedQueue } from '../loaded.tsx';
 import { QueueScreen } from './Queue.tsx';
 
 beforeEach(() => localStorage.clear());
@@ -12,7 +13,7 @@ function open(options: { readonly as?: 'admin' | 'player'; readonly build?: (fak
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance, { signIn: options.as === 'player' ? 'player' : 'admin' });
   options.build?.(fake, w);
-  renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue', ...(options.copy ? { copy: options.copy } : {}) });
+  renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', ...(options.copy ? { copy: options.copy } : {}) });
   return { fake, w };
 }
 
@@ -166,6 +167,23 @@ describe('holding and reversing', () => {
     expect((await fake.adminQueue()).ended.filter((e) => e.how === 'reversed')).toHaveLength(2);
   });
 
+  test('Hold it is a busy button while the hold is out: aria-busy, its name kept, and a second press holds once', async () => {
+    const { fake } = open();
+    let release!: () => void;
+    const real = fake.holdMove.bind(fake);
+    const hold = vi.spyOn(fake, 'holdMove').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    const button = within(dialog).getByRole('button', { name: 'Hold it' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Hold it' })).toBe(button);
+    await userEvent.click(button);
+    expect(hold).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   test('a refusal is shown in the server\'s words in the dialog, and the queue behind it is read again', async () => {
     const { fake } = open();
     await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
@@ -175,6 +193,69 @@ describe('holding and reversing', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Hold it' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('that move is already held');
     await waitFor(() => expect(screen.queryByText('Nothing is waiting.')).not.toBeNull());
+  });
+});
+
+describe('the page is its document', () => {
+  test('is whole in its first render, from the document, with the boards beside the queue: nothing is read', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const boot = await fake.boot();
+    const doc = { ...(await fake.queuePage())!, boards: await fake.boards() };
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <QueueScreen doc={doc} now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    expect(screen.getByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^In force/u })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Boards/u }).querySelectorAll('article').length).toBeGreaterThan(0);
+    expect(screen.getByRole('form', { name: 'How players reach you' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(read).toEqual([]);
+  });
+
+  test('the route reads queuePage once, and none of the four reads it replaced', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const page = vi.spyOn(fake, 'queuePage');
+    const own = ['adminQueue', 'boardNames', 'bosses', 'adminContact', 'isAdmin'] as const;
+    const spies = own.map((n) => vi.spyOn(fake, n));
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot: await fake.boot() });
+    await group(/^Waiting to land/u);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('an action reads queuePage once more, in place', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot: await fake.boot() });
+    const waiting = await group(/^Waiting to land/u);
+    const page = vi.spyOn(fake, 'queuePage');
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Hold/u }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^Hold/u }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(page).toHaveBeenCalledTimes(1);
+    expect((await fake.adminQueue()).waiting).toHaveLength(0);
+  });
+});
+
+describe('the boards are read with the queue', () => {
+  test('a description saved, then leaving and coming back, shows the new description (boot\'s boards are as the page loaded)', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const boot = await fake.boot();
+    const first = renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    const boards = await group(/^Boards/u);
+    const board = (await fake.boards())[0]!;
+    const card = await within(boards).findByRole('article', { name: board.name });
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Fresh words');
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${board.name}` }));
+    await waitFor(() => expect(card).toHaveTextContent('Description: “Fresh words”'));
+    first.unmount();
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    const again = await within(await group(/^Boards/u)).findByRole('article', { name: board.name });
+    expect(again).toHaveTextContent('Description: “Fresh words”');
   });
 });
 
@@ -190,10 +271,14 @@ describe('who may see it', () => {
     const fake = buildWorld();
     seedMoves(fake, testInstance, { signIn: 'player' });
     const asked = vi.spyOn(fake, 'adminQueue');
-    renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue' });
+    const page = vi.spyOn(fake, 'queuePage');
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue' });
     expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
     await new Promise((r) => setTimeout(r, 50));
     expect(asked).not.toHaveBeenCalled();
+    /* The address exists, so it is not "can't be found": the line is the page's, from one queuePage read that answered null. */
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/can.t be found/u)).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
@@ -290,6 +375,42 @@ describe('a nomination of a successor', () => {
       fake.seed.staff('comptroller', 'Comptroller', 'mod');
       fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
     };
+
+    test('Dismiss is a busy button while the dismissal is out: aria-busy, its name kept, and a second press dismisses once', async () => {
+      const { fake } = open({ build: (fake) => handover(fake) });
+      let release!: () => void;
+      const real = fake.dismissHandoverTodo.bind(fake);
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo').mockImplementation((season) => new Promise((resolve) => { release = () => resolve(real(season)); }));
+      const todo = await group(/^To do/u);
+      const button = within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' });
+      await userEvent.click(button);
+      expect(button).toHaveAttribute('aria-busy', 'true');
+      expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBe(button);
+      await userEvent.click(button);
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      release();
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeNull());
+    });
+
+    test('Dismiss is busy only on the season pressed: another season\'s Dismiss is held, not spinning', async () => {
+      const { fake } = open({ build: (fake) => {
+        handover(fake, fake.clock.now() - 7_200_000);
+        fake.seed.staff('third', 'Third', 'mod');
+        fake.seed.handover({ outgoing: 'comptroller', boss: 'third', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
+      } });
+      let release!: () => void;
+      const real = fake.dismissHandoverTodo.bind(fake);
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo').mockImplementation((season) => new Promise((resolve) => { release = () => resolve(real(season)); }));
+      const todo = await group(/^To do/u);
+      const two = within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' });
+      const three = within(todo).getByRole('button', { name: 'Dismiss the season 3 to-do' });
+      await userEvent.click(two);
+      expect(two).toHaveAttribute('aria-busy', 'true');
+      expect(three).not.toHaveAttribute('aria-busy');
+      release();
+      await waitFor(() => expect(dismiss).toHaveBeenCalledTimes(1));
+      expect(dismiss).toHaveBeenCalledWith(2);
+    });
 
     test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
       open({ build: (fake) => handover(fake) });
@@ -513,16 +634,20 @@ describe('How players reach you, on the admin screen', () => {
     expect((within(row(1)).getByLabelText('Link 1 label') as HTMLInputElement).value).toBe('');
   });
 
-  test('while a save is out, the status says Saving\u2026, and the button is held', async () => {
+  test('while a save is out, the button is busy: aria-busy, its name kept, a second press saves once, and no Saving\u2026 line', async () => {
     const { fake } = open();
     const f = await form();
     let release!: () => void;
     const real = fake.setAdminContact.bind(fake);
-    vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
+    const save = vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
     await fill(1, 'Chat', 'https://chat.example/a');
-    await userEvent.click(within(f).getByRole('button', { name: 'Save how players reach you' }));
-    expect(within(f).getByRole('status')).toHaveTextContent('Saving\u2026');
-    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBeDisabled();
+    const button = within(f).getByRole('button', { name: 'Save how players reach you' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBe(button);
+    await userEvent.click(button);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(within(f).queryByText('Saving\u2026')).toBeNull();
     release();
     await waitFor(() => expect(within(f).getByRole('status')).toHaveTextContent('Saved.'));
   });
@@ -609,7 +734,7 @@ describe('replacing a description', () => {
     const { fake } = open();
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
-    const card = within(boards).getByRole('article', { name: first.name });
+    const card = await within(boards).findByRole('article', { name: first.name });
     expect(card).toHaveTextContent(`Description: “${first.description}”`);
     await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
@@ -624,7 +749,7 @@ describe('replacing a description', () => {
     const { fake } = open();
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
-    const card = within(boards).getByRole('article', { name: first.name });
+    const card = await within(boards).findByRole('article', { name: first.name });
     await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), '   x');
     vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });

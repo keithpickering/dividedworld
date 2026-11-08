@@ -225,7 +225,12 @@ async function makeAdmin(page: Page) {
   await page.goto('/settings');
   await page.waitForFunction(() => '__kbFake' in globalThis);
   await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.seed.admin(w.__kbDemo.me, true); });
-  await expect(page.getByRole('navigation', { name: 'Menu' })).toBeVisible();
+  /* Boot (and with it the admin flag every screen and the menu take from it) was read before the flag was seeded, and is read once per account
+     (engine/ui/boot.tsx): out and back in as the same player reads it afresh, as the HUD's wallet screen does. */
+  await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(null); });
+  await expect(page.getByRole('main').getByRole('link', { name: 'Sign in' })).toBeVisible();
+  await page.evaluate(() => { const w = globalThis as E2eWindow; w.__kbFake.signInAs(w.__kbDemo.me); });
+  await expect(page.getByRole('link', { name: 'Admin' })).toBeVisible();
 }
 
 /** Opens a screen ready to read: a glass page when its menu bar shows, a board page when its HUD does, a story once rendered. */

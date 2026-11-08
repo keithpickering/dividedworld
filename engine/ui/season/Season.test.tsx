@@ -8,8 +8,17 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { addressOf, useLocation } from '../router.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { SIGNED_OUT_DOC } from '../screen-docs.ts';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { SEASON_NEWS_PAGE } from '../data/api.ts';
 import { firstWords, SeasonScreen } from './Season.tsx';
+import { LoadedSeason } from '../loaded.tsx';
+
+const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (el: Element) => { entered.calls.push(el); return { then: () => {}, stop: () => {} }; },
+}));
 
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -56,7 +65,7 @@ function Probe() {
   const l = useLocation();
   return <output data-testid="at">{addressOf(l)}</output>;
 }
-const show = (fake: ReturnType<typeof world>['fake'], path = '/season?tab=news') => renderIn(fake, <><SeasonScreen /><Probe /></>, { path });
+const show = (fake: ReturnType<typeof world>['fake'], path = '/season?tab=news') => renderIn(fake, <><LoadedSeason /><Probe /></>, { path });
 const feed = () => screen.getByRole('tabpanel').querySelector<HTMLElement>('ul.kb-season-feed')!;
 const itemOf = (heading: string | RegExp) => screen.getByRole('heading', { level: 3, name: heading }).closest('li')!;
 
@@ -117,9 +126,106 @@ describe('the tabs', () => {
     const account = fake.seed.account('x');
     for (let i = 0; i < 51; i++) fake.seed.character(account, `Name ${String(i).padStart(3, '0')}`, 'face', { at: at(1) });
     fake.signInAs(account);
-    renderIn(fake, <SeasonScreen />, { path: '/season?tab=rankings' });
+    renderIn(fake, <LoadedSeason />, { path: '/season?tab=rankings' });
     const next = await screen.findByRole('link', { name: 'Next page' });
     expect(next).toHaveAttribute('href', '/season?tab=rankings&page=2');
+  });
+});
+
+describe('the page is its document', () => {
+  const held = async (fake: ReturnType<typeof world>['fake'], tab: string | null, season: number | null, character: string | null, page: number | null) => {
+    const boot = await fake.boot();
+    const doc = (await fake.seasonPage(tab, season, character, page))!;
+    return { boot, doc, read: holdReads(fake, ['session']) };
+  };
+  const quiet = async (read: readonly string[]) => {
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
+  };
+
+  test('the Rankings tab is whole in the first render, from the document, and nothing is read for it', async () => {
+    const w = world();
+    const { boot, doc, read } = await held(w.fake, 'rankings', null, null, null);
+    renderIn(w.fake, <SeasonScreen doc={doc} />, { path: '/season?tab=rankings', boot });
+    expect(screen.getByRole('heading', { level: 1, name: 'Season 2' })).toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel', { name: 'Rankings' })).getByRole('table')).toBeInTheDocument();
+    expect(screen.getByText(/Settled /u)).toBeInTheDocument();
+    await quiet(read);
+  });
+
+  test('a finished season\'s table is whole in the first render, the linked row marked', async () => {
+    const w = world();
+    const { boot, doc, read } = await held(w.fake, 'rankings', 1, w.pipe, null);
+    renderIn(w.fake, <SeasonScreen doc={doc} />, { path: `/season?tab=rankings&season=1&character=${w.pipe}`, boot });
+    const row = screen.getByRole('row', { name: /Pipewrench/u });
+    expect(row).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByText(/Final standings/u)).toBeInTheDocument();
+    await quiet(read);
+  });
+
+  test('the News tab is whole in the first render, the player\'s own characters marked', async () => {
+    const w = world();
+    const { boot, doc, read } = await held(w.fake, 'news', null, null, null);
+    renderIn(w.fake, <SeasonScreen doc={doc} />, { path: '/season?tab=news', boot });
+    expect(itemOf('Season 1 results')).toBeInTheDocument();
+    expect(screen.getAllByText('Yours')).toHaveLength(2);
+    await quiet(read);
+  });
+
+  test('signed out, the marker is the sign-in line', () => {
+    renderIn(buildWorld(), <SeasonScreen doc={SIGNED_OUT_DOC} />, { path: '/season' });
+    expect(screen.getByText(/Sign in/u)).toBeInTheDocument();
+  });
+
+  test('a tab change is a load: one seasonPage call, the pressed tab busy while it is out, the old tab drawn until the new one lands', async () => {
+    const w = world();
+    const real = w.fake.seasonPage.bind(w.fake);
+    let release!: () => void;
+    const page = vi.spyOn(w.fake, 'seasonPage');
+    show(w.fake, '/season?tab=rankings');
+    await screen.findByRole('table');
+    page.mockClear();
+    page.mockImplementationOnce(async (...args) => { await new Promise<void>((r) => { release = r; }); return real(...args); });
+    await userEvent.click(screen.getByRole('tab', { name: 'News' }));
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(page).toHaveBeenLastCalledWith('news', null, null, null);
+    expect(screen.getByRole('tab', { name: 'News' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByTestId('at')).toHaveTextContent('/season?tab=rankings');
+    await act(async () => { release(); });
+    expect(await screen.findByRole('tabpanel', { name: 'News' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'News' })).not.toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByTestId('at')).toHaveTextContent('/season?tab=news');
+  });
+
+  test('a Rankings page is a load: the pager asks seasonPage for that page', async () => {
+    const fake = buildWorld();
+    const account = fake.seed.account('x');
+    for (let i = 0; i < 51; i++) fake.seed.character(account, `Name ${String(i).padStart(3, '0')}`, 'face', { at: at(1) });
+    fake.signInAs(account);
+    const page = vi.spyOn(fake, 'seasonPage');
+    renderIn(fake, <><LoadedSeason /><Probe /></>, { path: '/season?tab=rankings' });
+    await userEvent.click(await screen.findByRole('link', { name: 'Next page' }));
+    await waitFor(() => expect(screen.getByTestId('at')).toHaveTextContent('/season?tab=rankings&page=2'));
+    expect(page).toHaveBeenCalledTimes(2);
+    expect(page).toHaveBeenLastCalledWith('rankings', null, null, 2);
+    expect(await screen.findByText('Name 050')).toBeInTheDocument();
+  });
+
+  test('the season choice is a navigation to the finished season\'s address', async () => {
+    const w = world();
+    const page = vi.spyOn(w.fake, 'seasonPage');
+    show(w.fake, '/season?tab=rankings');
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Season' }), 'Season 1');
+    await waitFor(() => expect(screen.getByTestId('at')).toHaveTextContent('/season?tab=rankings&season=1'));
+    expect(page).toHaveBeenLastCalledWith('rankings', 1, null, null);
+  });
+
+  test('a season that does not exist is the router\'s "nothing here"', async () => {
+    const w = world();
+    show(w.fake, '/season?tab=rankings&season=999');
+    expect(await screen.findByRole('heading', { name: 'There is no page at this address.' })).toBeInTheDocument();
   });
 });
 
@@ -164,6 +270,8 @@ describe('the News tab', () => {
     const w = world();
     show(w.fake);
     const item = await waitFor(() => itemOf('Season 1 results'));
+    /* The player's own characters are the provider's (boot's, in the app). */
+    await screen.findAllByText('Yours');
     const podium = within(item).getAllByRole('listitem');
     expect(within(podium[2]!).getByText('Yours')).toBeInTheDocument();
     expect(within(podium[0]!).queryByText('Yours')).toBeNull();
@@ -180,6 +288,7 @@ describe('the News tab', () => {
     expect(await w.fake.seasonNews()).toEqual(mine);
     show(w.fake);
     await waitFor(() => itemOf('Season 1 results'));
+    await screen.findAllByText('Yours');
     const podium = within(itemOf('Season 1 results')).getAllByRole('listitem');
     expect(within(podium[0]!).getByText('Yours')).toBeInTheDocument();
     expect(within(podium[1]!).getByText('Yours')).toBeInTheDocument();
@@ -243,7 +352,8 @@ describe('the News tab', () => {
     expect(names.map((n) => within(n).getByRole('link').textContent)).toEqual(['Pipewrench', 'Gloomba']);
     expect(names[0]).toHaveTextContent('Pipewrench was a Heel');
     expect(names[1]).toHaveTextContent('Gloomba was a Face, now a Heel');
-    expect(within(names[0]!).getByText('Yours')).toBeInTheDocument();
+    /* The player's own characters are the player's, read by the provider (boot, in the app). */
+    expect(await within(names[0]!).findByText('Yours')).toBeInTheDocument();
   });
 
   test('each item is one seasonNews alert, the same for every player', async () => {
@@ -264,11 +374,37 @@ describe('a quotation', () => {
   });
 });
 
+describe('Show earlier news', () => {
+  test('is busy until its page lands, and the rows it adds enter while the ones there do not', async () => {
+    const w = world();
+    const { boot, doc } = await (async () => ({ boot: await w.fake.boot(), doc: (await w.fake.seasonPage('news', null, null, null))! }))();
+    if (doc.tab !== 'news') throw new Error('not news');
+    /* A full page, so that the button shows; each item a Boss line of its own. */
+    const item = (i: number) => ({ ...doc.news.find((n) => n.kind === 'bossArrived')!, act: `act-${i}`, at: new Date(Date.UTC(2026, 9, 28, 0, 40 - i)).toISOString() });
+    const full = { ...doc, news: Array.from({ length: SEASON_NEWS_PAGE }, (_, i) => item(i)) };
+    let land!: () => void;
+    vi.spyOn(w.fake, 'seasonNews').mockImplementation(() => new Promise((resolve) => { land = () => resolve([item(50), item(51)]); }));
+    renderIn(w.fake, <SeasonScreen doc={full} />, { path: '/season?tab=news', boot });
+    const rows = () => document.querySelectorAll('.kb-season-item');
+    expect(rows()).toHaveLength(SEASON_NEWS_PAGE);
+    entered.calls.length = 0;
+    await userEvent.click(screen.getByRole('button', { name: 'Show earlier news' }));
+    expect(screen.getByRole('button', { name: 'Show earlier news' })).toHaveAttribute('aria-busy', 'true');
+    expect(entered.calls).toHaveLength(0);
+    await act(async () => { land(); });
+    await waitFor(() => expect(rows()).toHaveLength(SEASON_NEWS_PAGE + 2));
+    await waitFor(() => expect(entered.calls).toHaveLength(2));
+    expect(entered.calls).toEqual([...rows()].slice(SEASON_NEWS_PAGE));
+    expect(screen.queryByRole('button', { name: 'Show earlier news' })).toBeNull();
+    expect(document.querySelector('[data-kb-entering]')).toBeNull();
+  });
+});
+
 describe('signed out', () => {
   test('asks to sign in and reads nothing', async () => {
     const fake = buildWorld();
     const spy = vi.spyOn(fake, 'seasonNews');
-    renderIn(fake, <SeasonScreen />, { path: '/season?tab=news' });
+    renderIn(fake, <LoadedSeason />, { path: '/season?tab=news' });
     await act(async () => { await Promise.resolve(); });
     expect(await screen.findByRole('link', { name: /sign in/iu })).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();

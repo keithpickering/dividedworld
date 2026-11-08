@@ -1,10 +1,12 @@
--- Pronouns on the screens' reads (supabase/migrations/0120_pronouns_on_screens.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 4; the amendment, section 5).
+-- Pronouns on the screens' reads (supabase/migrations/0125_pronouns_on_screens.sql; docs/plans/2026-11-07-pronouns-plan.md, Task 4; the amendment, section 5).
 --
 -- 1. Every read that hands a screen a character's profile hands its `pronouns` too: thread_page, board_page, index_page, profile_page, record_page and boot each carry a she/her
 --    character's set, and no profile in any of them is without one. (A profile is any object with a `pip_style`; the check finds them wherever a read nests them.)
 -- 1b. my_characters (the player's own, read by the client and carried by boot) says the set too.
 -- 2. Where a read hands a screen a staff member by name alone, its pronouns go beside the name: a visit's Mod in thread_page (its row in `people`), beat_mod_name, the queue's Boss
 --    and the Boss list, and an update's persona.
+-- 5. The one-read pages (alerts_page, my_characters_page and log_page) carry the set on every profile they nest; updates_page and queue_page hand the persona's and the Bosses' beside
+--    their names (season_page hands no profile and no staff name, so it carries none).
 
 create function pg_temp.profiles(doc jsonb) returns setof jsonb language sql as $$
   select jsonb_path_query(doc, 'strict $.** ? (exists(@.pip_style))')
@@ -206,4 +208,51 @@ begin
      or todo #>> '{bossPronouns,subject}' is null then
     raise exception 'the to-do does not hand the new Boss''s pronouns: %', todo;
   end if;
+end $$;
+
+-- ---- 5. The screens' one-read pages (0119 to 0123) hand a she/her character's set wherever they hand its profile or a staff member by name ----
+do $$
+declare
+  she jsonb := '{"subject": "she", "object": "her", "determiner": "her", "possessive": "hers", "reflexive": "herself", "plural": false}';
+  me uuid := tests.account('ps-cid');
+  her uuid := tests.account('ps-dot');
+  admin uuid := (select id from auth.users where email = 'ps-admin@test.invalid');
+  mine uuid := tests.character(me, 'Ps Cid', 'alpha', now() - interval '60 days');
+  dot uuid := tests.character(her, 'Ps Dot', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Pronoun pages');
+  base timestamptz := now() - interval '2 hours';
+  pp uuid; mp uuid; cplay uuid; cend uuid; onmine uuid;
+  doc jsonb;
+begin
+  insert into character_profiles (character, pronouns) values (mine, she), (dot, she);
+  -- An admin ended a card Cid played on Dot's post: the alerts page names the post's author, Dot, with her profile.
+  pp := tests.post(dot, t, 'Dot posts.', base);
+  cplay := tests.act(mine, 'card', t, '{"card": "splat"}', pp, base + interval '1 minute');
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  cend := tests.act(null::uuid, 'card_end', t, '{"why": "reversed", "by": "admin"}', cplay, base + interval '2 minutes');
+  perform set_config('kayfabb.card_end_writer', 'off', true);
+  insert into alerts (account, kind, act, character, at) values (me, 'cardEnded', cend, mine, base + interval '3 minutes');
+  -- Dot played a card on Cid's post: the log names the play's author, Dot.
+  mp := tests.post(mine, t, 'Cid posts.', base + interval '4 minutes');
+  onmine := tests.act(dot, 'card', t, '{"card": "splat"}', mp, base + interval '5 minutes');
+
+  perform tests.become(me);
+  perform pg_temp.carries('alerts_page', alerts_page(null), 'she');
+  doc := my_characters_page();
+  perform pg_temp.carries('my_characters_page', doc, 'she');
+  if not exists (select 1 from jsonb_array_elements(doc -> 'characters') x where x ->> 'id' = mine::text and x #>> '{pronouns,subject}' = 'she') then
+    raise exception 'my_characters_page''s characters do not say the pronouns: %', doc -> 'characters';
+  end if;
+  perform pg_temp.carries('log_page', log_page(null), 'she');
+  perform tests.unbecome();
+
+  -- The Updates and queue pages hand the update's persona and the Bosses beside their names, as updates(), admin_queue() and boss_roster_names() do.
+  perform tests.become(admin);
+  doc := updates_page(null, null, 1);
+  if not exists (select 1 from jsonb_array_elements(doc -> 'updates') u where u ->> 'name' = 'Pn Gabe' and u #>> '{pronouns,subject}' = 'he') then raise exception 'updates_page does not hand the persona''s pronouns: %', doc -> 'updates'; end if;
+  if not exists (select 1 from jsonb_array_elements(doc #> '{queue,roster}') r where r ->> 'staff' = 'ps-boss' and r #>> '{pronouns,subject}' = 'she') then raise exception 'updates_page''s queue does not hand pronouns: %', doc -> 'queue'; end if;
+  doc := queue_page();
+  if not exists (select 1 from jsonb_array_elements(doc -> 'bosses') r where r ->> 'staff' = 'ps-boss' and r #>> '{pronouns,subject}' = 'she') then raise exception 'queue_page''s bosses do not hand pronouns: %', doc -> 'bosses'; end if;
+  if not exists (select 1 from jsonb_array_elements(doc #> '{queue,roster}') r where r ->> 'staff' = 'ps-boss' and r #>> '{pronouns,subject}' = 'she') then raise exception 'queue_page''s queue does not hand pronouns: %', doc -> 'queue'; end if;
+  perform tests.unbecome();
 end $$;

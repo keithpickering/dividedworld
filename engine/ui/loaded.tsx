@@ -1,10 +1,10 @@
 /**
- * The board screens given the document their route would load, for the places that render a screen without a route: a screen's test and
+ * The five board screens, and the glass screens that read, given the document their route would load, for the places that render a screen without a route: a screen's test and
  * a story (the forum-load plan, Task 13). The app itself never uses these: its routes load (web/src/App.tsx), and the router draws the screen
  * from the document. Each reads what a first load reads (the session, the document, boot), draws nothing until they have landed, and
  * reads the document again when the address names another (a board's page), as a route does; a screen with no such document is "cannot find".
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BootProvider } from './boot.tsx';
 import { useKayfa } from './context.tsx';
 import type { Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage } from './data/api.ts';
@@ -19,6 +19,25 @@ import { addressOf, useLocation } from './router.tsx';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from './screen-docs.ts';
 import { SearchScreen } from './search/SearchScreen.tsx';
 import { ThreadScreen } from './thread/Thread.tsx';
+import { Characters } from './characters/Characters.tsx';
+import { NewCharacter } from './characters/NewCharacter.tsx';
+import { ProfileEdit } from './profile-edit/ProfileEdit.tsx';
+import type { PictureIo } from './profile-edit/crops.ts';
+import { SeasonScreen } from './season/Season.tsx';
+import { ContactScreen } from './contact/Contact.tsx';
+import { SettingsScreen } from './account/Settings.tsx';
+import { SignInScreen } from './account/SignIn.tsx';
+import { Vending } from './vending/Vending.tsx';
+import { GuideScreen } from './guide/Guide.tsx';
+import { WelcomeScreen } from './welcome/Welcome.tsx';
+import { AlertsScreen } from './alerts/Alerts.tsx';
+import { UpdatesScreen } from './updates/Updates.tsx';
+import { QueueScreen } from './admin/Queue.tsx';
+import { LogScreen } from './log/Log.tsx';
+import { SettlementScreen } from './log/Settlement.tsx';
+import type { GlassEnv } from './glass-docs.ts';
+import { glassRoutes, type GlassScreen, type GlassScreens } from './glass-routes.tsx';
+import { Routes, type Route } from './routes.tsx';
 
 function Loaded<T>({ keyed, load, children }: { readonly keyed: string; readonly load: (env: LoadEnv) => Promise<ScreenDoc<T> | null>; readonly children: (doc: ScreenDoc<T>) => ReactNode }) {
   const { api, ui, settings } = useKayfa();
@@ -64,6 +83,53 @@ export function LoadedRecord({ id }: { readonly id: string }) {
   const { query } = useLocation();
   return <Loaded<RecordPage> keyed={recordKey(id, query)} load={(env) => loadRecord(env, id, query)}>{(doc) => <RecordScreen id={id} doc={doc} />}</Loaded>;
 }
+
+/*
+ * The glass screens (the glass-load plan, Tasks 11 and 12) are drawn by the router from the document their route loads, so a test or a story that
+ * draws one gives it the same route: the app's own table of glass routes (glass-routes.tsx), over the screens imported directly (there is no
+ * chunk to wait for) and a router of its own. A refresh after an action (the router's retry of the shown key) is then the real one.
+ */
+function useGlassEnv(): GlassEnv {
+  const { api } = useKayfa();
+  return useMemo(() => ({ api, signedIn: async () => (await api.session()).signedIn }), [api]);
+}
+
+const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => ({ Component, preload: () => Promise.resolve() });
+
+const SCREENS: GlassScreens = {
+  signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
+  settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), log: direct(LogScreen),
+  settlement: direct(SettlementScreen),
+};
+
+/** The app's glass routes for `paths`, over a router of its own. `extras` fixes what a test fixes (the picture codec, the clock). */
+function Glass({ paths, io, now }: { readonly paths: readonly string[]; readonly io?: PictureIo; readonly now?: number }) {
+  const env = useGlassEnv();
+  const routes = useMemo<readonly Route[]>(() => glassRoutes(env, SCREENS, { io, now }).filter((r) => paths.includes(r.path)), [env, paths, io, now]);
+  return <Routes routes={routes} />;
+}
+
+const CHARACTERS = ['/characters', '/characters/edit'];
+const SEASON = ['/season'];
+const CONTACT = ['/contact'];
+const SETTINGS = ['/settings'];
+const ALERTS = ['/alerts'];
+const UPDATES = ['/updates'];
+const QUEUE = ['/admin/queue'];
+const LOG = ['/log', '/log/settlement'];
+
+/** My characters at `/characters` and Edit profile at `/characters/edit`, one document: the page opens at the address it is given. */
+export function LoadedCharacters({ io }: { readonly io?: PictureIo } = {}) { return <Glass paths={CHARACTERS} io={io} />; }
+export function LoadedSeason() { return <Glass paths={SEASON} />; }
+export function LoadedContact() { return <Glass paths={CONTACT} />; }
+export function LoadedSettings() { return <Glass paths={SETTINGS} />; }
+export function LoadedAlerts() { return <Glass paths={ALERTS} />; }
+export function LoadedUpdates() { return <Glass paths={UPDATES} />; }
+/** The admin queue; `now` fixes the clock the countdowns are read against. */
+export function LoadedQueue({ now }: { readonly now?: number } = {}) { return <Glass paths={QUEUE} now={now} />; }
+/** My log at `/log` and the settlement summary at `/log/settlement`, one document. */
+export function LoadedLog() { return <Glass paths={LOG} />; }
 
 export function LoadedSearch() {
   const { query } = useLocation();

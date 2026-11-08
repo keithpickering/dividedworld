@@ -59,7 +59,7 @@ export function DebutDialog({ character, timing, nextSettlement = null, onClose,
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <FormFoot line={debutFooter({ name: character.name, pronouns: character.pronouns, timing, until: nextSettlement ? untilWords(nextSettlement) : null })}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={busy}>{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={busy}>{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</GlassButton>
         </FormFoot>
       </form>
     </Overlay>
