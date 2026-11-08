@@ -44,7 +44,7 @@ function Avatar({ character, layout }: { readonly character: Character; readonly
     );
   }
   return (
-    <span className="kb-postbit-avatar" data-kb-slot="tall" aria-hidden="true">
+    <span className="kb-postbit-avatar" data-kb-slot="portrait" aria-hidden="true">
       <picture>
         {square && <source media="(max-width: 40em)" srcSet={square} />}
         <img src={portrait} alt="" loading="lazy" decoding="async" />
