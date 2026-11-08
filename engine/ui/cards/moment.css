@@ -3,12 +3,12 @@
  * alignment's color, as the Lens's border is (lens.css), with its glow. In the thread the ring is the post body's own edge: Moment.tsx
  * places it, inline, over the whole of `.kb-act-main` (thread.css, measured by engine/ui/cards/body.ts), bar to bar, as a card's effect
  * paints it (the owner, 2026-11-06: the frame "should extend all the way to the edges accordingly, so it can show the effect
- * accurately"). Elsewhere (the ORIGIN box, or Stick Around's view, which moves the words out of the body) the ring is the moment's own
- * box, with room inside it for the words. The ring is a layer over everything and takes no pointer, and nothing here clips: an effect
- * drawn in the moment reaches the body's corners as it did live. The tag stands at the top and the list under the words, each on room
- * of the moment's own and over any ink, so neither covers a word outside it (in a play-spun ORIGIN box, which has no Back to now,
- * words covered there would stay covered; e2e/moment.spec.ts holds it). The post's own words are not restyled. Every color is a token
- * or the play's own ink.
+ * accurately"). Elsewhere (a post-spun ORIGIN box, or Stick Around's view, which moves the words out of the body) the ring is the
+ * moment's own box, with room inside it for the words. The ring is a layer over everything and takes no pointer, and nothing here clips:
+ * an effect drawn in the moment reaches the body's corners as it did live. The tag stands at the top and the list under the words, each
+ * on room of the moment's own and over any ink, so neither covers a word outside it (e2e/moment.spec.ts holds it). A play-spun ORIGIN
+ * box, whose content the moment is, draws neither ring nor tag (`data-kb-content`, below). The post's own words are not restyled. Every
+ * color is a token or the play's own ink.
  */
 .kb-moment {
   --kb-moment-ink: var(--kb-glass-sweet);
@@ -141,6 +141,32 @@
 
 .kb-moment-body {
   position: relative;
+}
+
+/*
+ * The moment as the content (a play-spun ORIGIN box): the box's double rule and its head ("Spun from … · as it landed") frame it, so
+ * there is no ring and no tag, and the frame's words are the board's own small print under the post, left-aligned with it, on the
+ * post's ground over any ink an effect lays in the moment.
+ */
+.kb-moment[data-kb-content] {
+  margin: 0;
+  padding: 0;
+}
+
+.kb-moment[data-kb-content] .kb-moment-list {
+  align-self: stretch;
+  max-width: none;
+  margin-top: 0.4em;
+  padding: 0.3em 0 0;
+  border-top: 1px dotted var(--kb-rule);
+  background: var(--kb-post-bg);
+  color: var(--kb-muted);
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-small);
+}
+
+.kb-moment-status {
+  margin: 0 0 0.3em;
 }
 
 @media (forced-colors: active) {

@@ -577,7 +577,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
   const openWith = (w: ReturnType<typeof threadWorld>, thread: string) =>
     renderIn(w.fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: momentInstance, cards: momentCards });
 
-  test('draws the play\'s moment under its mark: the Whoops! still at its 40%, and Stick Around named', async () => {
+  test('draws the play\'s moment under its mark: the Whoops! still at its 40%, framed by the box alone, and Stick Around not named beside itself', async () => {
     const { w, spun } = await spunFromHold();
     openWith(w, spun);
     const box = await origin();
@@ -585,7 +585,10 @@ describe('the ORIGIN box of a play-spun thread', () => {
     await waitFor(() => expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washed', '0.4'));
     expect(frame.querySelector('[data-kb-washy]')).toHaveAttribute('data-kb-washy', 'still');
     expect(within(frame).getByText('post 2')).toBeInTheDocument();
-    expect(within(frame).getByText('Also on the post then: Stick Around')).toBeInTheDocument();
+    /* The play is the box's mark and its head's; the head says "as it landed", so the frame draws no ring or tag of its own. */
+    expect(within(frame).queryByText(/Also on the post then/u)).toBeNull();
+    expect(box.querySelector('.kb-origin-head-text')!.textContent).toMatch(/ · as it landed$/u);
+    expect(frame.querySelector('.kb-moment-ring, .kb-moment-tag')).toBeNull();
     expect(within(frame).queryByRole('button', { name: 'Back to now' })).toBeNull();
     /* The mark is the box's one, and its Go to post still leads to the post as it is now. */
     expect(marks(box)).toEqual(['stick-around:1']);
