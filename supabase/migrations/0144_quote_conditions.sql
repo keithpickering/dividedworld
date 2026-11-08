@@ -6,7 +6,9 @@
 --   phrase_norm(t)          engine/bbcode/phrase.ts's `normalize`, in SQL. (1) A run of characters that are neither a letter or digit (phrase_word_class) nor whitespace, with a letter or digit on each side, is removed:
 --                           "don't" is "dont", "e-mail" is "email", "U.S.A." is "USA". (2) Every other run of characters that are not letters or digits becomes one line break if it holds one, else one space.
 --                           (3) The ends are trimmed. Whitespace and line breaks are written out as sets (the same two sets engine/bbcode/phrase.ts holds, never the locale's [[:space:]]): so a non-breaking
---                           space, an ideographic space (U+3000) and a line separator read as the engine reads them, and CJK or Arabic punctuation is punctuation. Four regexp_replace passes over the word class: the removal, the runs with a line break, the other runs, and the trim.
+--                           space, an ideographic space (U+3000) and a line separator read as the engine reads them, and CJK or Arabic punctuation is punctuation. Three regexp_replace passes and a trim, each linear in the text (no pattern rescans a run from every start): the removal; every maximal run of non-word characters holding no line break becomes one space (a match always
+--                           consumes its whole run, so nothing is retried); then a run of spaces and line breaks that holds a break becomes one line break (after the second pass a run with no break is a single space, so this match
+--                           starts only where it succeeds); and btrim. The earlier lookahead that asked of each start position whether a break lay ahead in its run was quadratic in a long run.
 --   phrase_in, phrase_pattern, phrase_probe   redefined to read both the text and the phrase through phrase_norm, then fold: phrase_fold(phrase_norm(x)). Normalizing first matters: phrase_fold sets the
 --                           dotted capital I aside as a private-use character, which is not a letter, so it must not meet the removal. Everything else is 0142's as written.
 --
@@ -21,12 +23,12 @@
 create or replace function phrase_norm(t text) returns text
 language sql immutable parallel safe set search_path = public, pg_temp as $$
   select btrim(
-    regexp_replace(
       regexp_replace(
-        regexp_replace(t,
-          '(' || w.c || ')((?:(?!' || w.c || ')[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000])+)(?=' || w.c || ')', '\1', 'g'),
-        '(?=(?:(?!' || w.c || ')[^\u000a-\u000d\u0085\u2028\u2029])*[\u000a-\u000d\u0085\u2028\u2029])(?:(?!' || w.c || ').)+', E'\n', 'g'),
-      '(?:(?!' || w.c || ')[^\u000a-\u000d\u0085\u2028\u2029])+', ' ', 'g'),
+        regexp_replace(
+          regexp_replace(t,
+            '(' || w.c || ')((?:(?!' || w.c || ')[^\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000])+)(?=' || w.c || ')', '\1', 'g'),
+          '(?:(?!' || w.c || ')[^\u000a-\u000d\u0085\u2028\u2029])+', ' ', 'g'),
+        '[ \u000a-\u000d\u0085\u2028\u2029]*[\u000a-\u000d\u0085\u2028\u2029][ \u000a-\u000d\u0085\u2028\u2029]*', E'\n', 'g'),
     E' \n')
   from (select phrase_word_class() as c) w
 $$;
@@ -52,7 +54,8 @@ language sql immutable parallel safe set search_path = public, pg_temp as $$
         from (select phrase is not null and phrase ~ phrase_word_class() as real) r) x
 $$;
 
--- phrase_probe(plain, phrase, token): phrase_in's answer, by the same work whether or not there is a phrase: the text is normalized and folded and phrase_pattern is compiled and run for every back; a back with no phrase answers false.
+-- phrase_probe(plain, phrase, token): phrase_in's answer, by nearly the same work whether or not there is a phrase: the text is normalized and folded and phrase_pattern is compiled and run for every back; a back with no phrase answers false. The one difference is that a back with a phrase
+-- also normalizes and folds the phrase (phrase_pattern skips that when r.real is false), bounded by the phrase's 100 characters, so it is not text-dependent.
 create or replace function phrase_probe(plain text, phrase text, token text) returns boolean
 language sql immutable parallel safe set search_path = public, pg_temp as $$
   select case when plain is null then false else (phrase_fold(phrase_norm(plain)) ~ phrase_pattern(phrase, token)) and (phrase is not null and phrase ~ phrase_word_class()) end
