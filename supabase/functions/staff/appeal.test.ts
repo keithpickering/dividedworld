@@ -19,12 +19,16 @@ const body = { through: THROUGH, punishment: PUNISHMENT, plea: 'Rule 2 does not 
 interface World {
   open?: 'ok' | DatabaseError | TransportError;
   /** What kind of punishment open_appeal found, and who hears it. */
-  kind?: 'infraction' | 'ban';
+  kind?: 'infraction' | 'ban' | 'move';
   staff?: string;
   standing?: { office: string | null; allowance: number; order: string | null; beat: { id: string; name: string }[] };
   closedBeforeRefund?: boolean;
   failOn?: Record<string, 'always'>;
   closeSays?: Record<string, unknown>;
+  /** A group move with no end of its own. */
+  endless?: boolean;
+  /** The Boss's meeting context: absent (no season) or failing. */
+  context?: 'none' | 'fails';
 }
 
 function fakeDbs(w: World = {}) {
@@ -39,15 +43,30 @@ function fakeDbs(w: World = {}) {
         case 'open_appeal': {
           if (which !== 'player') throw new Error('open_appeal is the player\'s');
           if (w.open instanceof Error) throw w.open;
+          if (kind === 'move') {
+            return {
+              appeal: APPEAL, punishment: args.punishment_act, post: null, thread: THREAD, staff: w.staff ?? BOSS, price: 50, plea: args.plea, kind,
+              details: {
+                kind, filed_at: '2026-11-06T10:00:00Z', filed_by: BOSS, group: 'Trial Members', group_key: 'trialMembers', bars: 'Games', apology: true,
+                ...(w.endless ? { until: null, days: null } : { until: '2026-11-10T10:00:00Z', days: 4 }),
+              },
+              board: { id: GAMES, name: 'Games', premise: 'Talk about games.' }, appellant: { id: args.through, name: 'Bob' },
+            } as T;
+          }
           return {
             appeal: APPEAL, punishment: args.punishment_act, post: POST, thread: THREAD, staff: w.staff ?? (kind === 'ban' ? BOSS : MON), price: 50, plea: args.plea, kind,
             details: { kind, filed_at: '2026-11-06T10:00:00Z', band: 'moderate', points: 4, rule: 'Rule 2: no double posting (moderate)', filed_by: MON, ...(kind === 'ban' ? { days: 3, until: '2026-11-09T10:00:00Z' } : {}) },
             board: { id: GAMES, name: 'Games', premise: 'Talk about games.' }, appellant: { id: args.through, name: 'Bob' },
           } as T;
         }
+        case 'meeting_context': {
+          if (w.context === 'fails') throw new DatabaseError('meeting_context failed', '08006', 500);
+          if (w.context === 'none') return { season: null, boss: null } as T;
+          return { season: { startsAt: Date.now() - 3 * 86_400_000, endsAt: Date.now() + 60 * 86_400_000 }, boss: BOSS } as T;
+        }
         case 'instance_settings':
           return { economy: dividedWorld.settings.economy, systemEnabled: true } as T;
-        case 'mod_standing': return (w.standing ?? { office: kind === 'ban' ? 'boss' : 'mod', allowance: 2, order: 'Be fair.', beat: [{ id: GAMES, name: 'Games' }] }) as T;
+        case 'mod_standing': return (w.standing ?? { office: kind === 'ban' || kind === 'move' ? 'boss' : 'mod', allowance: 2, order: 'Be fair.', beat: [{ id: GAMES, name: 'Games' }] }) as T;
         case 'rules_in_force': return [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }] as T;
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;
         case 'staff_memory_latest': return null as T;
@@ -113,6 +132,63 @@ test('a ban\'s appeal is heard by the Boss the database names: the Boss is read 
   const persuadedBy = dividedWorld.system.roster.find((p) => p.key === BOSS)!.persuadedBy;
   assert.ok(text.includes(persuadedBy), 'the hearer\'s persuadedBy is in the prompt');
   assert.match(text, /appeal a ban to you, as the Boss/);
+});
+
+test('a group punishment\'s appeal: the prompt says what the move did by the group\'s name, the thread is not read, and the ruling is sent with the phase\'s most days', async () => {
+  const d = fakeDbs({ kind: 'move' });
+  const m = fakeModels(() => ({ verdict: 'increased', line: 'Longer.' }));
+  const out = await go(d, m);
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal(m.chats[0]!.staff, BOSS);
+  const text = JSON.stringify(m.chats[0]);
+  assert.match(text, /put Bob in the group \\"Trial Members\\", which bars them from posting on Games/);
+  assert.match(text, /runs 4 days from when it landed, to 2026-11-10T10:00:00Z/);
+  assert.match(text, /ends early if they apologize/);
+  assert.match(text, /appeal a punishment you made/);
+  assert.ok(!/The post it is about/.test(text), 'a move is about no post');
+  assert.equal(d.count('pool_thread'), 0, 'the Announcements thread is not read for a move');
+  assert.deepEqual(d.state.closed.map((c) => [c.verdict, c.line, c.staff]), [['increased', 'Longer.', BOSS]]);
+  const most = dividedWorld.settings.phases.honeymoon.moveExpiryMostDays;
+  assert.equal(d.state.closed[0].most_days, most, 'the season is three days old: the honeymoon\'s most days, passed to the database');
+});
+
+test('a group move\'s appeal with no season to read the phase from, or a context that fails, is still ruled: the database falls back to the instance\'s own most days', async () => {
+  for (const context of ['none', 'fails'] as const) {
+    const d = fakeDbs({ kind: 'move', context });
+    const out = await go(d, fakeModels(() => ({ verdict: 'reduced', line: 'Fine.' })));
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.equal(d.state.refunds, 0);
+    assert.ok(!('most_days' in d.state.closed[0]), context);
+  }
+  for (const context of ['none', 'fails'] as const) {
+    const d = fakeDbs({ kind: 'move', context });
+    const out = await go(d, fakeModels(() => ({ verdict: 'increased', line: 'More.' })));
+    assert.equal(out.status, 200, JSON.stringify(out.body));
+    assert.ok(!('most_days' in d.state.closed[0]), context);
+  }
+  for (const verdict of ['upheld', 'reduced', 'overturned']) {
+    const d = fakeDbs({ kind: 'move' });
+    await go(d, fakeModels(() => ({ verdict, line: 'x' })));
+    assert.equal(d.count('meeting_context'), 0, `${verdict} reads no phase`);
+  }
+});
+
+test('an infraction\'s and a ban\'s ruling is sent without the phase, and the Boss\'s context is never read for them', async () => {
+  for (const kind of ['infraction', 'ban'] as const) {
+    const d = fakeDbs({ kind });
+    await go(d, fakeModels(() => ({ verdict: 'increased', line: 'x' })));
+    assert.equal(d.count('meeting_context'), 0, kind);
+    assert.ok(!('most_days' in d.state.closed[0]), kind);
+  }
+});
+
+test('a group move with no end date is told so, and every verdict is still a pick from the list', async () => {
+  const d = fakeDbs({ kind: 'move', endless: true });
+  const m = fakeModels(() => ({ verdict: 'reduced', line: 'x' }));
+  const out = await go(d, m);
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.match(JSON.stringify(m.chats[0]), /It has no end date\./);
+  assert.match(JSON.stringify(m.chats[0]), /recorded as upheld/);
 });
 
 test('each of the four verdicts is sent as the Mod said it, and a blank line is sent as none', async () => {

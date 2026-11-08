@@ -29,6 +29,43 @@ Function, `MOD_MOVE_RULE` and `repairModMove` in `engine/system/judgment.ts`, an
 `Settings.modBots.cap` (Task 11); the log's `my_*` views (Task 13). Read each before the task here that names it. Where a
 task below and this paragraph disagree, the task's amended text (marked **Amended**) wins. Tasks 13 and 14 are new.
 
+**Amended 2026-11-07, aligned with `main` at `047f7d1`** (Mod Bots and the board look both merged). Where this paragraph
+and a task disagree, this paragraph wins.
+
+- *Numbers and latest definitions.* Migrations and SQL tests start at 0116. The latest definitions are:
+  `queued_moves_guard` and `apply_mod_move` in 0106; `apply_meeting` and `staff_punishments` in 0110; `meeting_context`,
+  `beat_of` and `mod_allowance` in 0103; `system_tick`, `post`, `start_thread` and `spin` in 0105; `seed_instance` in
+  0108; `characters_public` and `edit_post` in 0104; `write_staff_act`, `open_appeal`, `close_appeal` and
+  `refund_appeal` in 0109; `moves_log` in 0111. The board look is on `main`, with Silver in
+  `instances/divided-world/ui/theme.css` and four tribute themes beside it: the bar's shape tokens must read in each.
+- *Names that moved.* `acts_move_end_payload` is a check constraint on `acts` (0051), dropped and re-added with
+  `unmet` and `overturned`; `end_move`'s own `why` list and `say_move_end`'s line cases gain both. `open_moves` has no
+  `expires_at` (see Task 14). `runPatrols` is in `supabase/functions/staff/patrol.ts`, chained after filings by
+  `runPatrolsAfterFilings`; `runApologies` is chained the same way in `staff/index.ts`. `SystemBoardNote` is a function
+  in `engine/ui/composer/Composer.tsx`; `StaffGroup` is exported from `StaffBadge.tsx`. Stock line keys are
+  `STOCK_LINE_KEYS` in `engine/system/stock.ts`, their words in `instances/divided-world/system/lines.ts`. The ban
+  refusal is `not_banned(through)`; the bar's refusal follows it.
+- *What carries `group` to the screens (Task 3).* Besides `characters_public`, every function that builds a character
+  object by explicit keys gains `group`: `thread_page`, `profile_page`, `record_page`, `presence_box` and `my_characters`
+  (latest 0111), and `toCharacter` in `web/src/data/supabase.ts`.
+- *Settings.* `apologyEveryHours`, `apologyJudgeBatch` and `apologyRulingMaxWords` live under `Settings.apology` (not `groups`, which `ScreenSettings` uses for the group looks), with
+  their defaults in `instances/divided-world/settings.ts`, validated in `engine/rules/instance.ts` and in SQL's
+  `settings_held`/`setting_valid` lists, in Task 6's migration.
+- *The duty.* `apologyJudge` joins `DUTIES` and `DUTY_DEFAULTS` in `engine/system/duties.ts`; the instance assigns it
+  `filer`, which resolves to the move's staff member, the Boss's or a Mod's.
+- *New thread.* `engine/ui/board/NewThread.tsx` has no ban note today; Task 10 builds the barred box there and in the
+  reply box, and shows the ban note in New thread too, so the two composers agree.
+- *Appeals (the owner, 2026-11-07).* A group move's expiry is moved as a ban's is: the `appeal_ruling` Act carries
+  `until`, and a `move_expires_at(move)` function reads the latest ruling's `until`, else the move's own `expires_at`,
+  as `banned_until` does. The tick's expiry pass, `bars_now`, the barred box and the log read it; `open_moves` gains no
+  column. The verdicts mean what they mean on a ban: **reduced** ends at the move's landing plus half its length (it may
+  end at once); **increased** adds half its length, never past the phase's `moveExpiryMostDays` from landing. Task 14's
+  text below is superseded where it says otherwise.
+- *Renumbered on merging `main`.* The groups migrations landed as 0119–0128 (tests 0121–0129), after `main`'s
+  0116–0118 (tweener standings, search, BBCode tags); the numbers 0116–0125 in this plan name them as first written.
+  Merging `main` again moved them to 0124–0134 (tests 0125–0134), after `main`'s 0119–0123 (the glass-load pages).
+  A third merge moved the migrations to 0128–0138, after `main`'s 0124–0127 (pronouns); the tests stayed at 0125–0134.
+
 ## Task 1: groups in the engine (engine)
 
 Model: sonnet

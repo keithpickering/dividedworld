@@ -49,3 +49,9 @@ test('a move is a sentence in pieces, and a move this build has no words for is 
   assert.equal(demandNeeds(demand), 'Needs 12 different characters to post on this board.');
   assert.match(demandNeeds(null), /asks nothing/u);
 });
+
+test('a stripped, apologized and overturned move each say so plainly', () => {
+  assert.equal(endedWords({ why: 'unmet', by: 'tick', at: local(9, 31) }, null), 'Stripped: the demand was not met by its check');
+  assert.equal(endedWords({ why: 'met', by: 'tick', at: local(9, 31) }, { kind: 'apologyAccepted', params: {} }), 'Ended: an apology was accepted');
+  assert.equal(endedWords({ why: 'overturned', by: 'admin', at: local(9, 31) }, null), 'Ended: overturned on appeal');
+});

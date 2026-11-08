@@ -9,7 +9,9 @@
  * Aura is an integer count of hundredths of an orb wherever it is stored or returned. Times
  * are epoch milliseconds.
  */
+import type { GroupsContent } from './groups.ts';
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
+import type { PackRules, SlotSeed } from './packs.ts';
 import type { StockLineKey } from '../system/stock.ts';
 import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
@@ -117,6 +119,19 @@ export interface WarnBarSettings {
   readonly decay: Span;
   /** The days of a character's first ban in a season, its second, its third; the last step repeats. Whole numbers, at least 1, and at least one step. */
   readonly banDays: readonly number[];
+}
+
+/**
+ * The member groups' numbers (`Settings.apology`; the member groups design, section 5). A barred character apologizes to the move that bars it; these bound how
+ * often, how many the judge hears at once, and how long its ruling runs. Not the groups themselves, which are `Instance.groups`.
+ */
+export interface ApologySettings {
+  /** The hours a character waits between apologies to one move, once the last was accepted, rejected or is still waiting. A whole number, at least 1. */
+  readonly apologyEveryHours: number;
+  /** The most apologies one run of the apology judge hears; the rest wait for the next run. A whole number, at least 1. */
+  readonly apologyJudgeBatch: number;
+  /** The most words of a ruling on an apology; a longer one is trimmed, and the trim recorded. A whole number, at least 1. */
+  readonly apologyRulingMaxWords: number;
 }
 
 /** The settings the engine itself reads. A class's own numbers live with the class. */
@@ -258,6 +273,8 @@ export interface Settings {
   readonly modBots: ModBotSettings;
   /** The warn bar and the ban ladder: points by band, how long they last, and how long each ban in a season runs. */
   readonly warnBar: WarnBarSettings;
+  /** The apology's numbers: how often a barred character may apologize, how many the judge hears at once, how long a ruling runs. */
+  readonly apology: ApologySettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */
@@ -692,8 +709,6 @@ export interface FeedSource {
 export interface SystemContent {
   /** Every staff persona the instance seeds: Bosses, Mod Bots and any other, one shape. */
   readonly roster: readonly Persona[];
-  /** The member group every staff character is in; the engine reads its name from here. */
-  readonly staffGroup: { readonly name: string };
   /** The roster key of the first season's Boss. */
   readonly firstBoss: string;
   /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
@@ -742,6 +757,12 @@ export interface Instance {
   readonly ranks: readonly Rank[];
   readonly pipStyles: readonly PipStyle[];
   readonly system: SystemContent;
+  /** Member groups: the ladder a character climbs and the groups moves confer. */
+  readonly groups: GroupsContent;
   /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
   readonly developer?: DeveloperPersona;
+  /** The packs the Vending Machine sells, each a list of pulls over the cards' rarities (engine/rules/packs.ts). */
+  readonly packs: readonly PackRules[];
+  /** The machine's slots in grid order: the cards and packs it sells, each at a price (hundredths of an orb) and an availability. */
+  readonly machine: readonly SlotSeed[];
 }

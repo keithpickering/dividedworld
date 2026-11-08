@@ -5,13 +5,12 @@
 
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"snare.price": 100, "hook.price": 100, "glint.price": 100, "marquee.price": 100, "quake.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', '{post}', null),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', '{post}', null),
-    ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', null, '{character}', interval '7 days'),
-    ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', null, '{thread}', interval '1 day'),
-    ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', null, '{board}', interval '1 day')
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, '{post}', null),
+    ('glint', 'Glint', 'pepperoni', 'uncommon', 'cast', null, '{character}', interval '7 days'),
+    ('marquee', 'Marquee', 'sweet', 'rare', 'cast', null, '{thread}', interval '1 day'),
+    ('quake', 'Quake', 'salty', 'legendary', 'cast', null, '{board}', interval '1 day')
   on conflict (key) do nothing;
   if not exists (select 1 from settings where key = 'systemAnnouncements') then
     insert into settings (key, value) select 'systemAnnouncements', to_jsonb(tests.thread('Moments Announcements')::text);
@@ -78,7 +77,7 @@ begin
   if exists (select 1 from play_moments where play in (p, q)) then raise exception 'a post takes no moment'; end if;
 end $$;
 
--- ---- A Set, a spring, a caught play and a trap's Strike each take a moment; plays beyond a post take none ----
+-- ---- A Set, a spring, a caught play and a Move landed from a back each take a moment; plays beyond a post take none ----
 do $$
 declare
   ann uuid := tests.account('pm2-ann'); bob uuid := tests.account('pm2-bob');
@@ -94,7 +93,7 @@ begin
   perform pg_temp.hand(ann, 'snare', 'hook');
   perform pg_temp.hand(bob, 'blot', 'glint', 'marquee', 'quake');
   -- The Set: a moment like any play's, under which nothing lies yet.
-  set_cast := (set_card(ann, 'snare', a, p_cast, '{}', 0) ->> 'id')::uuid;
+  set_cast := (set_card(ann, 'snare', a, p_cast, '{"card": "blot"}', 0, 'blot') ->> 'id')::uuid;
   if (select post_version from play_moments where play = set_cast) is distinct from p_cast then raise exception 'a Set takes a moment'; end if;
   -- A cast the trap catches: the spring and the caught play each take one, the caught play's holding the set and the spring.
   caught := play_card(bob, 'blot', b, p_cast, '{}', 0, '');
@@ -111,17 +110,17 @@ begin
   -- A card back's layer carries the Set's state, which is none, and nothing in the table names the card behind it.
   if exists (select 1 from play_moment_layers where layer = set_cast and (state is not null or saved_at is not null)) then raise exception 'a card back''s layer carries no state'; end if;
 
-  -- A trap's Strike lands through spring_traps, never play_card: the struck play takes a moment all the same.
+  -- A Move lands through spring_traps, never play_card: the landed play takes a moment all the same.
   set_reply := (set_card(ann, 'hook', a, p_reply, '{"color": "green"}', 0) ->> 'id')::uuid;
   perform tests.become(bob);
-  reply := post(t, b, 'A reply.');
+  reply := post(t, b, 'A quote.', p_reply);
   perform tests.unbecome();
   struck := (reply -> 'sprung' -> 'struck' ->> 'id')::uuid;
-  if struck is null then raise exception 'the reply struck: %', reply; end if;
+  if struck is null then raise exception 'the quote sprang nothing: %', reply; end if;
   if (select post_version from play_moments where play = struck) is distinct from (reply ->> 'id')::uuid then
-    raise exception 'a Strike takes a moment, naming the post it landed on';
+    raise exception 'a landed Move takes a moment, naming the post it landed on';
   end if;
-  if (select post_version from play_moments where play = (reply -> 'sprung' ->> 'id')::uuid) is distinct from p_reply then raise exception 'the reply trap''s spring takes a moment'; end if;
+  if (select post_version from play_moments where play = (reply -> 'sprung' ->> 'id')::uuid) is distinct from p_reply then raise exception 'the Move''s spring takes a moment'; end if;
   if exists (select 1 from play_moment_layers l where l::text like '%snare%' or l::text like '%hook%') then raise exception 'the snapshot names a card behind a back'; end if;
 
   -- A character, a thread and a board play take none.
@@ -236,7 +235,7 @@ begin
   if (got -> 'version' ->> 'shown_edited_at')::timestamptz is distinct from now() - interval '30 minutes' then raise exception 'the version shows its edit as acts_public did: %', got -> 'version'; end if;
 
   -- A Set's moment, and a card back in another's moment, show no card.
-  set_p := (set_card(bob, 'snare', b, q, '{}', 0) ->> 'id')::uuid;
+  set_p := (set_card(bob, 'snare', b, q, '{"card": "blot"}', 0, 'blot') ->> 'id')::uuid;
   got := play_moment(set_p);
   if jsonb_path_query_array(got -> 'layers', '$[*].act.id') is distinct from jsonb_build_array(set_p, on_q) then raise exception 'a Set''s moment: %', got -> 'layers'; end if;
   if got::text like '%snare%' then raise exception 'a Set''s moment names its card: %', got; end if;
@@ -341,7 +340,7 @@ declare
   one_play uuid; top uuid; small bigint; big bigint; stacked bigint; aged bigint;
 begin
   perform pg_temp.cards();
-  insert into card_kinds (key, name, alignment, price_setting, play) values ('bluffy', 'Bluffy', 'pepperoni', 'sweetie.price', 'set') on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, play) values ('bluffy', 'Bluffy', 'pepperoni', 'set') on conflict (key) do nothing;
   perform pg_temp.hand(ann, 'blot', 'blot', 'blot', 'blot', 'sweetie');
   perform pg_temp.hand(bob, 'bluffy');
   perform pg_temp.fill(t, b, 2000);

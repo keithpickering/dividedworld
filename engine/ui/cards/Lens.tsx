@@ -13,6 +13,8 @@
  *    rows by layer, top first, since which layer a stroke washes is what the rows explain; every other card in billing order.
  *    Every play of the kind has its row, so each can be reacted to, spun from and gone to.
  *
+ * A card that landed from a back opens its spring's Acts for one line above its rows (sprung.ts), the one read the Lens makes when it draws.
+ *
  * It is not modal (glass/Float.tsx): it dims and blocks nothing and makes nothing inert, so the ink can be scrubbed with it
  * open; a press on the post leaves it open. It closes by Esc, its ×, its mark again, another post's Lens, or leaving the
  * page, and focus goes back to the mark. One is open on a page (`LensProvider`); a post subscribes to whether it is the
@@ -30,6 +32,7 @@ import {
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment, Visit, VisitEnd, VisitStory } from '../data/api.ts';
+import { Avatar } from '../glass/Avatar.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
 import { CloseCross, DialogBar } from '../glass/Frame.tsx';
@@ -49,6 +52,7 @@ import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase,
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
+import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
 import { PREPARED_FAILED, usePrepared, useRest } from '../glass/prepared.ts';
 import { Spinner } from '../glass/Spinner.tsx';
@@ -286,6 +290,8 @@ function Spun({ play }: { readonly play: Id }) {
 interface RowProps {
   readonly play: CardPlay;
   readonly caster: string;
+  /** The caster's square picture, or none. */
+  readonly face: string | null;
   /** The play's ink (`CardUi.tag`), drawn as the bar at the row's left edge where the card chooses one. */
   readonly ink?: string | undefined;
   readonly card: string;
@@ -415,10 +421,17 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
 const endable = (play: CardPlay, now: number): boolean =>
   !play.faceDown && play.caught === undefined && !play.reversed && !(play.ends !== undefined && Date.parse(play.ends) <= now);
 
-function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
+function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
+  const { instance } = useKayfa();
   const name = playName(caster, card);
-  const note = view.notes[play.id];
+  /* A caught play says where its card went, once the spring that caught it is read: the view's note, which claims nothing of the card, stands until then. */
+  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
+  const fate = useCaughtFate(springOfCatch);
+  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
+  const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
+  /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
+  const sprung = useSprungWords(play.spring);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
@@ -445,8 +458,12 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   }, []);
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+      {sprung && <p className="kb-lens-note">{sprung}</p>}
       {note && <p className="kb-lens-note">{note}</p>}
-      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      <div className="kb-lens-row-head">
+        <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
+        <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+      </div>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {more && <p className="kb-lens-more">More reactions than the post</p>}
       {yours && <p className="kb-lens-yours">Your play</p>}
@@ -469,23 +486,35 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
 const NAMES_SHOWN = 3;
 
 /** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
-function Who({ plays, nameOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'ink'> & {
+function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'face' | 'ink'> & {
   /** The ink of each play, as the marks draw it. */
   readonly inkOfPlay: (play: CardPlay) => string | undefined;
-  readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly unfolded: boolean; readonly onToggle: () => void;
+  readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly faceOf: (character: Id | null) => string | null; readonly unfolded: boolean; readonly onToggle: () => void;
 }) {
   const id = useId();
-  const casters = [...new Set(plays.map((p) => nameOf(p.caster)))];
-  const shown = casters.slice(0, NAMES_SHOWN).join(', ');
-  const rest = casters.length - NAMES_SHOWN;
+  /* Each caster once by id, with the first play of each, so two characters that share a name each get a face; the words dedupe by name. */
+  const firsts = plays.filter((p, i) => plays.findIndex((q) => q.caster === p.caster) === i);
+  const names = [...new Set(plays.map((p) => nameOf(p.caster)))];
+  const shown = names.slice(0, NAMES_SHOWN).join(', ');
+  const rest = names.length - NAMES_SHOWN;
   return (
     <div className="kb-lens-section kb-lens-who-section">
       <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
         <span className="kb-lens-fold-sign" aria-hidden="true" />
-        {playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}
+        <span className="kb-lens-faces" aria-hidden="true">
+          {firsts.slice(0, NAMES_SHOWN).map((p) => {
+            const ink = inkOfPlay(p);
+            return (
+              <span key={p.caster ?? 'staff'} className="kb-lens-face-ink" style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+                <Avatar className="kb-lens-face" src={faceOf(p.caster)} name={nameOf(p.caster)} />
+              </span>
+            );
+          })}
+        </span>
+        <span className="kb-lens-fold-words">{playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
-        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} />)}
+        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />)}
       </ul>
     </div>
   );
@@ -504,6 +533,8 @@ export interface LensProps {
   readonly compare: boolean;
   readonly to: string | null;
   readonly nameOf: (character: Id | null) => string;
+  /** A character's picture URL, or null for none. */
+  readonly faceOf: (character: Id | null) => string | null;
   /** The strip of marks the Lens opened from: where the mark of its kind (or the "+N" that hides it) is found again if the mark that opened it has left the page. */
   readonly strip?: () => HTMLElement | null;
   /** Spin a thread from a play: the Lens has closed. */
@@ -536,7 +567,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, faceOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -733,7 +764,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
       </div>

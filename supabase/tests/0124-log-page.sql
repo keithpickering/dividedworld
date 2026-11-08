@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the thirteen reads the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the fifteen reads (the group moves' since 0134, the packs' since 0139) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -80,14 +80,13 @@ begin
   perform set_config('kayfabb.intercept_writer', 'on', true);
   icpt := tests.act(a1, 'intercept', t, jsonb_build_object('visit_act', vpost, 'kind', 'quiz', 'succeeded', true), p2, base + interval '29 minutes');
   perform set_config('kayfabb.intercept_writer', 'off', true);
-  -- Ann's own card set face down on her post, which sprang (a setEnds row naming the spring), and another that a reply passed by (a setPasses row).
+  -- Ann's own card set face down on her post, which sprang (a setEnds row naming the spring), and another still set (in no source: a reply passes no back now, so setPasses is always empty).
   set3 := tests.act(a1, 'set', t, '{}', p1, base + interval '30 minutes');
   insert into face_down (play, account, card, post, thread, round, ends_at) values (set3, ann, 'blot', p1, t, 1, base + interval '2 hours');
   sp3 := tests.act(a1, 'spring', t, jsonb_build_object('card', 'blot', 'trigger', 'reply', 'outcome', '{}'::jsonb, 'set', set3), p1, base + interval '31 minutes');
   p1b := tests.post(a1, t, 'Ann again.', base + interval '32 minutes');
   set4 := tests.act(a1, 'set', t, '{}', p1b, base + interval '33 minutes');
   insert into face_down (play, account, card, post, thread, round, ends_at) values (set4, ann, 'blot', p1b, t, 1, now() + interval '3 days');
-  insert into face_down_reply (play, thread, passed_by, passed_at) values (set4, t, vpost, base + interval '34 minutes');
   -- A report of Ann's on Bob's post.
   perform set_config('kayfabb.report_writer', 'on', true);
   rep := tests.act(a1, 'report', t, '{"reason": "rude"}', p2, base + interval '35 minutes');
@@ -122,7 +121,7 @@ begin
   perform tests.become(ann);
   doc := log_page(null);
 
-  -- ---- The thirteen sources: each its view's rows, newest first, at most 200, the same columns ----
+  -- ---- The fifteen sources: each its view's rows, newest first, at most 200, the same columns ----
   if doc -> 'sources' -> 'ledger' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select settlement, starts_at, ends_at, character, reason, amount, shares_kept, params from my_ledger order by ends_at desc, settlement, character, reason limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'ledger') is distinct from 2 then raise exception 'ledger: %', doc -> 'sources' -> 'ledger'; end if;
@@ -130,7 +129,7 @@ begin
        select settlement, kind, change, overflow, floored, balance_after, ref, at from my_wallet_events order by at desc, settlement, kind, ref, change, overflow, floored, balance_after limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'wallet') is distinct from 200 then raise exception 'wallet: % rows', jsonb_array_length(doc -> 'sources' -> 'wallet'); end if;
   if doc -> 'sources' -> 'cards' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select card, kind, act, price, at, springs from my_card_ledger order by at desc, card, kind, act, price limit 200) r))
+       select card, kind, act, price, at, springs, pack, repriced from my_card_ledger order by at desc, card, kind, act, price, pack limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'cards') is distinct from 6 then raise exception 'cards: %', doc -> 'sources' -> 'cards'; end if;
   if doc -> 'sources' -> 'playsOnMine' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select play, post, at, reach, target_name, target_character from my_posts_played_on order by at desc, play limit 200) r))
@@ -156,7 +155,13 @@ begin
        select report, character, at, post, post_seq, thread, verdict, verdict_at, mod_name, refund from my_reports order by at desc, report limit 200) r)) then raise exception 'reports: %', doc -> 'sources' -> 'reports'; end if;
   if doc -> 'sources' -> 'appeals' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select appeal, character, at, punishment, punishment_kind, post_seq, thread, verdict, ruled_at, points_delta, hearer_name, refund from my_appeals order by at desc, appeal limit 200) r)) then raise exception 'appeals: %', doc -> 'sources' -> 'appeals'; end if;
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 13 then raise exception 'thirteen sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
+  if doc -> 'sources' -> 'groupMoves' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
+       select move, character, at, thread, seq, "group", board, board_name, expires_at, landed_until, check_at, demand, office, ended_why, ended_by, ended_at, ruling, ruled_at, ruled_until
+       from my_group_moves order by at desc, move limit 200) r)) then raise exception 'groupMoves: %', doc -> 'sources' -> 'groupMoves'; end if;
+  -- The packs (0139): this caller bought none here, so the source is the view's empty read; 0139-machine.sql holds a bought pack's row.
+  if doc -> 'sources' -> 'packs' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
+       select id, pack, price, repriced, contents, bought_at from my_packs order by bought_at desc, id limit 200) r)) then raise exception 'packs: %', doc -> 'sources' -> 'packs'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 15 then raise exception 'fifteen sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
   if doc::text like '%' || b1::text || '"%' and exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'ledger') x where x ->> 'character' = b1::text) then raise exception 'another player''s ledger line is in the page'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') x where (x ->> 'change')::integer = 9) then raise exception 'another player''s wallet event is in the page'; end if;
 
@@ -168,15 +173,15 @@ begin
   -- ---- What `around` reads for them ----
   -- The Acts the lines name: shares', cards', plays', saves', the bribe's, the Turn's; then two rounds on (the spring and the post, then what it caught and its post), not a third (W).
   ids := (select array_agg(x ->> 'id' order by x ->> 'id') from jsonb_array_elements(doc -> 'acts') x);
-  if ids is distinct from (select array_agg(u.v::text order by u.v::text) from unnest(array[p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3, p1b]) as u(v)) then
+  if ids is distinct from (select array_agg(u.v::text order by u.v::text) from unnest(array[p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3]) as u(v)) then
     raise exception 'acts: %', ids;
   end if;
-  if doc -> 'acts' is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from acts_public a where a.id in (p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3, p1b)) then raise exception 'the acts are the acts_public rows'; end if;
+  if doc -> 'acts' is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from acts_public a where a.id in (p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3)) then raise exception 'the acts are the acts_public rows'; end if;
   -- Not read: a third round (W), the older Turn's Act and what only a set or a spring's own set names.
   if exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' in (w::text, turn_old::text, set_act::text, set3::text, set2::text, sp2::text)) then raise exception 'a third round, an older Turn and a set are not named'; end if;
-  -- The sources the fixtures fill: a spring's end, a pass, a caught play, a report and an appeal, each one row.
+  -- The sources the fixtures fill: a spring's end, a caught play, a report and an appeal, each one row; and no pass (a reply passes no back).
   if jsonb_array_length(doc -> 'sources' -> 'setEnds') is distinct from 1 or doc #>> '{sources,setEnds,0,spring}' is distinct from sp3::text then raise exception 'setEnds: %', doc -> 'sources' -> 'setEnds'; end if;
-  if jsonb_array_length(doc -> 'sources' -> 'setPasses') is distinct from 1 or doc #>> '{sources,setPasses,0,post}' is distinct from p1b::text then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
+  if jsonb_array_length(doc -> 'sources' -> 'setPasses') is distinct from 0 then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
   if jsonb_array_length(doc -> 'sources' -> 'caught') is distinct from 1 or doc #>> '{sources,caught,0,play}' is distinct from z2::text then raise exception 'caught: %', doc -> 'sources' -> 'caught'; end if;
   if jsonb_array_length(doc -> 'sources' -> 'reports') is distinct from 1 or doc #>> '{sources,reports,0,report}' is distinct from rep::text then raise exception 'reports: %', doc -> 'sources' -> 'reports'; end if;
   if jsonb_array_length(doc -> 'sources' -> 'appeals') is distinct from 1 or doc #>> '{sources,appeals,0,appeal}' is distinct from apl::text then raise exception 'appeals: %', doc -> 'sources' -> 'appeals'; end if;
@@ -189,7 +194,7 @@ begin
         select to_jsonb(p) from (
           select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name, cp.id)
-      from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;
+      from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'people') x where x ?| array['warn_points', 'banned_until']) then raise exception 'a face holds the columns characters() reads and no others: %', doc -> 'people' -> 0; end if;
   -- The latest Turn's thread, and the thread a play reached; the board a play reached.
   if doc -> 'threads' is distinct from (select jsonb_agg(to_jsonb(x) order by x.created_at, x.id::text collate "C") from thread_open x where x.id in (th_turns, th_other)) or jsonb_array_length(doc -> 'threads') is distinct from 2 then raise exception 'threads: %', doc -> 'threads'; end if;
@@ -225,7 +230,7 @@ begin
   -- A signed-in caller with nothing: empty sources, no error.
   perform tests.become(nobody);
   doc := log_page(null);
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 13 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads thirteen empty sources: %', doc -> 'sources'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 15 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads fifteen empty sources: %', doc -> 'sources'; end if;
   perform tests.unbecome();
 
   -- A visitor is refused.

@@ -10,13 +10,13 @@ import { actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, ty
 import { mergeLogs } from './useLog.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
 
-const empty: Log = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z', pronouns: PronounSet = ENGINE_DEFAULT_PRONOUNS): MyCharacter =>
   ({ id, name, pronouns, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
 const words: Words = {
   instance: testInstance,
-  ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: '' } },
+  ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: '' }, packs: {} },
   postsPerPage: 20,
   economy: {},
 };
@@ -117,9 +117,11 @@ describe('cards set face down, traps and catches', () => {
     ...testInstance,
     cards: [
       ...testInstance.cards,
-      { ...testInstance.cards[0]!, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } } },
+      { ...testInstance.cards[0]!, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' },
       { ...testInstance.cards[0]!, key: 'bluffy', name: 'Bluffy', play: 'set' as const },
-      { ...testInstance.cards[0]!, key: 'hook', name: 'Hook', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'whoops' } } },
+      { ...testInstance.cards[0]!, key: 'hook', name: 'Hook', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' } as never } },
+      { ...testInstance.cards[0]!, key: 'pass', name: 'Hall Pass', rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } } },
+      { ...testInstance.cards[0]!, key: 'glitter', name: 'Glitter Bomb', reaches: ['character' as const] },
     ],
   };
   const w: Words = { ...words, instance: trapWorld };
@@ -132,46 +134,110 @@ describe('cards set face down, traps and catches', () => {
   const posts = [act('post3', 'post', 'p', { seq: 3 }), act('post4', 'post', 's', { seq: 4 })];
   const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
 
-  test('a Set is the setter\'s line, on their own post, and names its card to them alone', () => {
+  const setRow = (card: string, extra: Record<string, unknown> = {}) => {
     const set = act('set1', 'set', 'p', { targetActId: 'post3' });
-    const log = { ...empty, cards: [{ card: 'snare', kind: 'played' as const, act: 'set1', price: 0, at }] };
-    const [row] = logRows(data({ log, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null);
-    expect(row!.kind).toBe('set');
-    expect(row!.what).toBe('You set Snare face down');
-    expect(text(row!)).toBe('Snare set face down on your post #3. It springs once, or ends by itself.');
+    const log = { ...empty, cards: [{ card, kind: 'played' as const, act: 'set1', price: 0, at, ...extra }] };
+    return logRows(data({ log, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null)[0]!;
+  };
+
+  test('a Move set face down says it waits to spring on a quote, and names its card to the setter alone', () => {
+    const row = setRow('whoops', { springs: true });
+    expect(row.kind).toBe('set');
+    expect(row.what).toBe('You set Whoops! face down');
+    expect(text(row)).toBe('Whoops! set face down on your post #3. It waits to spring on a quote, and ends by itself if none comes.');
+  });
+
+  test('a Move set with a phrase says the phrase it waits for', () => {
+    expect(text(setRow('whoops', { springs: true, phrase: 'good luck' }))).toBe('Whoops! set face down on your post #3. It waits to spring on a quote that says “good luck”, and ends by itself if none comes.');
+  });
+
+  test('a Trap Card names the card it waits for; a Hall Pass waits for a Mod Bot\'s visit', () => {
+    expect(text(setRow('snare', { springs: true, catches: 'whoops' }))).toBe('Snare set face down on your post #3. It waits for a Whoops!, and ends by itself if none comes.');
+    expect(text(setRow('pass', { springs: true }))).toBe('Hall Pass set face down on your post #3. It waits for a Mod Bot\'s visit, and ends by itself if none comes.');
+  });
+
+  test('a back set before the named catch keeps the words it had', () => {
+    expect(text(setRow('snare'))).toBe('Snare set face down on your post #3. It waits for the card it names, and ends by itself if none comes.');
+    expect(text(setRow('hook'))).toBe('Hook set face down on your post #3. It springs once, or ends by itself.');
   });
 
   test('a Bluff set face down says it never springs (#136 F3)', () => {
-    const set = act('set2', 'set', 'p', { targetActId: 'post3' });
-    const log = { ...empty, cards: [{ card: 'bluffy', kind: 'played' as const, act: 'set2', price: 0, at, springs: false }] };
-    const [row] = logRows(data({ log, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names }), w, 600, null);
-    expect(row!.what).toBe('You set Bluffy face down');
-    expect(text(row!)).toBe('Bluffy set face down on your post #3. It never springs, and ends by itself.');
+    const row = setRow('bluffy', { springs: false });
+    expect(row.what).toBe('You set Bluffy face down');
+    expect(text(row)).toBe('Bluffy set face down on your post #3. It never springs, and ends by itself.');
   });
 
-  test('a reply trap a reply passed by says so, and that it ends by itself; a Bluff or a quote trap passed says nothing', () => {
-    const ends = '2026-11-06T10:00:00.000Z';
-    const log = { ...empty, setPasses: [
-      { play: 'set1', card: 'hook', post: 'post3', passedAt: later, endsAt: ends },
-      { play: 'set2', card: 'bluffy', post: 'post3', passedAt: later, endsAt: ends },
-    ] };
-    const rows = logRows(data({ log, mine, acts: new Map(posts.map((a) => [a.id, a])), names }), w, 600, null);
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.kind).toBe('passed');
-    expect(rows[0]!.at).toBe(later);
-    expect(text(rows[0]!)).toBe('A reply passed Hook by on your post #3 without springing it; it ends by itself Nov 6.');
+  test('a quote sprang a Move: what it landed on, and whose quote set it off', () => {
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post4' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'whoops', post: 'post3', spring: 'sp', endedAt: later }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(row!.kind).toBe('sprung');
+    expect(text(row!)).toBe('Whoops! on your post #3 sprang when Spritey quoted it, and landed on Spritey\'s post #4.');
+    expect([row!.aura, row!.wallet]).toEqual([0, null]);
+  });
+
+  test('a quote sprang a Move that lands beyond a post: on the quoting post\'s character', () => {
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'glitter', trigger: 'quote', did: 'landed', set: 'set1', by: 'post4' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'glitter', post: 'post3', spring: 'sp', endedAt: later }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(text(row!)).toBe('Glitter Bomb on your post #3 sprang when Spritey quoted it, and landed on Spritey.');
+  });
+
+  test('a Trap Card caught a cast: what it caught, and that the card is in the setter\'s hand', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', did: 'caught', set: 'set1', by: 'k1', caught: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(row!.kind).toBe('sprung');
+    expect(text(row!)).toBe('Snare on your post #3 sprang when Spritey cast Whoops! on it. It caught the Whoops!, which is in your hand now.');
+    expect([row!.aura, row!.wallet]).toEqual([0, null]);
+  });
+
+  test('the setter\'s ledger row for a caught card says it went to their hand, naming their character', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', did: 'caught', set: 'set1', by: 'k1', caught: 'k1' } });
+    const log = { ...empty, cards: [{ card: 'whoops', kind: 'caught' as const, act: 'sp', price: 0, at: later }] };
+    const rows = logRows(data({ log, mine, acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows.map((r) => r.kind)).toEqual(['caught']);
+    expect(rows[0]!.what).toBe('You caught Whoops!');
+    expect(text(rows[0]!)).toBe('Pipewrench\'s Snare caught Spritey\'s Whoops! on your post #3; the Whoops! went to Pipewrench\'s hand.');
+    expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([0, null]);
     expect(rows[0]!.characters).toEqual(['p']);
   });
 
-  test('a spring that paid out says what it caught and what reached the wallet', () => {
+  test('none of the face-down lines names an account, an owner or a reactor: only characters\' names', () => {
     const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
-    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 'set1', by: 'k1', caught: 'k1' } });
+    const caught = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', did: 'caught', set: 'set1', by: 'k1', caught: 'k1' } });
+    const landed = act('sq', 'spring', 'p', { targetActId: 'post3', payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set2', by: 'post4' } });
+    const log = { ...empty, cards: [{ card: 'whoops', kind: 'caught' as const, act: 'sp', price: 0, at: later }],
+      setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later }, { play: 'set2', card: 'whoops', post: 'post3', spring: 'sq', endedAt: later }] };
+    const all = logRows(data({ log, mine, acts: new Map([...posts, play, caught, landed].map((a) => [a.id, a])), names }), w, 600, null).map(text).join(' ');
+    expect(all).toContain('hand');
+    expect(all).not.toMatch(/account|player|owner|reacted/iu);
+  });
+
+  test('a Hall Pass ended a visit', () => {
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'pass', trigger: 'visit', did: 'ended', set: 'set1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'pass', post: 'post3', spring: 'sp', endedAt: later }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(row!.kind).toBe('sprung');
+    expect(text(row!)).toBe('Hall Pass on your post #3 sprang when a Mod Bot\'s visit began, and ended the visit.');
+  });
+
+  test('rows written before the face-down Moves read through their old words: a payout and a strike', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
+    const paid = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: 'set1', by: 'k1', caught: 'k1' } });
     const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later }],
       wallet: [{ settlement: null, kind: 'trap' as const, change: 75, overflow: 0, floored: 0, balanceAfter: 475, ref: 'sp', at: later }] };
-    const [row] = logRows(data({ log, mine, acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, play, paid].map((a) => [a.id, a])), names }), w, 600, null);
     expect(row!.kind).toBe('payout');
     expect(text(row!)).toBe('Snare caught Spritey\'s Whoops! on your post #3; +0.75 to your wallet.');
     expect([row!.aura, row!.wallet]).toEqual([75, 475]);
+    const strike = act('sp2', 'spring', 'p', { targetActId: 'post3', payload: { card: 'hook', trigger: 'reply', outcome: { do: 'strike', card: 'whoops' }, set: 'set2', by: 'post4' } });
+    const log2 = { ...empty, setEnds: [{ play: 'set2', card: 'hook', post: 'post3', spring: 'sp2', endedAt: later }] };
+    const [row2] = logRows(data({ log: log2, mine, acts: new Map([...posts, strike].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(row2!.kind).toBe('sprung');
+    expect(text(row2!)).toBe('Hook on your post #3 sprang on a reply, and laid Whoops! on Spritey\'s post #4.');
   });
 
   test('a staff card a trap caught is paid by the game, in plain words, and the amount reaches the wallet', () => {
@@ -195,14 +261,6 @@ describe('cards set face down, traps and catches', () => {
     expect([row!.aura, row!.wallet]).toEqual([20, 10000]);
   });
 
-  test('a strike says what it laid and where', () => {
-    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'hook', trigger: 'reply', outcome: { do: 'strike', card: 'whoops' }, set: 'set1', by: 'post4' } });
-    const log = { ...empty, setEnds: [{ play: 'set1', card: 'hook', post: 'post3', spring: 'sp', endedAt: later }] };
-    const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring].map((a) => [a.id, a])), names }), w, 600, null);
-    expect(row!.kind).toBe('sprung');
-    expect(text(row!)).toBe('Hook on your post #3 sprang on a reply, and laid Whoops! on Spritey\'s post #4.');
-  });
-
   test('a card back that ended says nothing sprang it', () => {
     const log = { ...empty, setEnds: [{ play: 'set1', card: 'bluffy', post: 'post3', spring: null, endedAt: later }] };
     const [row] = logRows(data({ log, mine, acts: new Map(posts.map((a) => [a.id, a])), names }), w, 600, null);
@@ -211,16 +269,39 @@ describe('cards set face down, traps and catches', () => {
     expect(row!.characters).toEqual(['p']);
   });
 
+  describe('a play a trap caught says where the card went only for a spring that says so', () => {
+    const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
+    const log = { ...empty,
+      cards: [{ card: 'whoops', kind: 'played' as const, act: 'k2', price: 75, at }],
+      caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, boughtPrice: 100, at }],
+      wallet: [{ settlement: null, kind: 'play' as const, change: -75, overflow: 0, floored: 0, balanceAfter: 225, ref: 'k2', at }] };
+    const read = (payload: Record<string, unknown>, staff?: Set<string>) => {
+      const spring = act('spX', 'spring', 's', { targetActId: 'post9', payload: { card: 'snare', trigger: 'cast', set: 'setX', by: 'k2', caught: 'k2', ...payload } });
+      return text(logRows(data({ log, mine, acts: new Map([...others, spring].map((a) => [a.id, a])), names, ...(staff ? { staff } : {}) }), w, 600, null)[0]!);
+    };
+    test('a spring written before: the card was spent, and its old words stand', () => {
+      expect(read({ outcome: { do: 'payout' } })).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+    });
+    test('a spring that is not read keeps the old words too', () => {
+      const rows = logRows(data({ log, mine, acts: new Map(others.map((a) => [a.id, a])), names }), w, 600, null);
+      expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+    });
+    test('a staff setter takes nothing: the card is spent', () => {
+      expect(read({ did: 'caught' }, new Set(['s']))).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and the card is spent; it cost 1.00 and 0.75, and nothing came back to you.');
+    });
+  });
+
   test('a caught play is the caster\'s line, with its whole cost, and no line of its own as a play', () => {
     const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
     const log = { ...empty,
       cards: [{ card: 'whoops', kind: 'played' as const, act: 'k2', price: 75, at }],
       caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, boughtPrice: 100, at }],
       wallet: [{ settlement: null, kind: 'play' as const, change: -75, overflow: 0, floored: 0, balanceAfter: 225, ref: 'k2', at }] };
-    const rows = logRows(data({ log, mine, acts: new Map(others.map((a) => [a.id, a])), names }), w, 600, null);
+    const spring = act('spX', 'spring', 's', { targetActId: 'post9', payload: { card: 'snare', trigger: 'cast', did: 'caught', set: 'setX', by: 'k2', caught: 'k2' } });
+    const rows = logRows(data({ log, mine, acts: new Map([...others, spring].map((a) => [a.id, a])), names }), w, 600, null);
     expect(rows.map((r) => r.kind)).toEqual(['caught']);
     expect(rows[0]!.what).toBe('Your Whoops! was caught');
-    expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+    expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and went to Spritey; it cost 1.00 and 0.75, and nothing came back to you.');
     expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([-75, 225]);
   });
 
@@ -261,12 +342,22 @@ describe('cards set face down, traps and catches', () => {
     });
   });
 
-  test('a strike on the player\'s post is their line, naming the trap that laid it', () => {
-    const spring = act('sp', 'spring', 's', { targetActId: 'post4', payload: { card: 'hook', trigger: 'reply', outcome: { do: 'strike', card: 'whoops' }, set: 'setS', by: 'post3' } });
+  test('a face-down card that struck the player\'s post is their line: the setter\'s character, and that their quote set it off', () => {
+    const spring = act('sp', 'spring', 's', { targetActId: 'post4', payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'setS', by: 'post3' } });
     const struck = act('k3', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', spring: 'sp' } });
     const log = { ...empty, playsOnMine: [{ play: 'k3', post: 'post3', at, reach: 'post' as const, targetName: null, targetCharacter: 'p' }] };
     const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring, struck].map((a) => [a.id, a])), names }), w, 600, null);
     expect(row!.kind).toBe('struck');
+    expect(row!.what).toBe('A face-down card struck your post');
+    expect(text(row!)).toBe('Spritey\'s face-down Whoops! on Spritey\'s post #4 sprang when your post #3 quoted it, and landed on your post #3.');
+  });
+
+  test('a strike written before the face-down Moves keeps its words', () => {
+    const spring = act('sp', 'spring', 's', { targetActId: 'post4', payload: { card: 'hook', trigger: 'reply', outcome: { do: 'strike', card: 'whoops' }, set: 'setS', by: 'post3' } });
+    const struck = act('k3', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', spring: 'sp' } });
+    const log = { ...empty, playsOnMine: [{ play: 'k3', post: 'post3', at, reach: 'post' as const, targetName: null, targetCharacter: 'p' }] };
+    const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring, struck].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(row!.what).toBe('A trap struck your post');
     expect(text(row!)).toBe('A Hook on Spritey\'s post #4 laid Whoops! on your post #3.');
   });
 
@@ -567,5 +658,91 @@ describe('the Mod Bots\' lines', () => {
     const rows = rowsOf({ infractions: [inf({ at: '2099-10-30T12:00:00.000Z' }), inf({ infraction: 'i2', at: '2099-10-31T12:00:00.000Z' })] });
     expect(rows.map((r) => r.key)).toEqual(['infraction:i2', 'infraction:i1']);
     for (const r of rows) expect(said(r)).not.toMatch(/react|class|heel|face/iu);
+  });
+});
+
+/**
+ * The group lines (member groups, Task 11): a staff move into a group, how it ended and an appeal's ruling on it, in plain and true words, the role word from the move's office, each
+ * linked to the move, no alert and no other member named.
+ */
+describe('the group lines', () => {
+  const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Spritey', 'heel')];
+  const move = (over: Partial<Log['groupMoves'][number]> = {}): Log['groupMoves'][number] => ({
+    move: 'm1', character: 'p', at: '2099-11-06T12:00:00.000Z', thread: 'ann', seq: 7, group: 'trialMembers', board: 'b1', boardName: 'General', expiresAt: '2099-11-13T12:00:00.000Z', landedUntil: '2099-11-13T12:00:00.000Z', checkAt: null,
+    demand: 'apologyAccepted', office: 'boss', endedWhy: null, endedBy: null, endedAt: null, ruling: null, ruledAt: null, ruledUntil: null, ...over,
+  });
+  const groupWords: Words = { ...words, instance: { ...testInstance, groups: { ...testInstance.groups, conferred: [
+    { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', color: '#c2408f', tone: 'favor' },
+  ] } } };
+  const rowsOf = (groupMoves: Log['groupMoves'], tab: string | null = null) => logRows(data({ log: { ...empty, groupMoves }, mine }), groupWords, 600, tab);
+  const said = (r: { readonly details: readonly (string | { readonly text: string })[] }) => r.details.map((d) => (typeof d === 'string' ? d : d.text)).join('');
+  const name = 'Trial Members';
+
+  test('a punishment that bars a board says who, what, where and until when, and links to the move', () => {
+    const [row] = rowsOf([move()]);
+    expect(row).toMatchObject({ kind: 'grouped', characters: ['p'], aura: 0, wallet: null, at: '2099-11-06T12:00:00.000Z' });
+    expect(said(row!)).toBe(`The Boss put Pipewrench in ${name} and barred it from posting on General until Nov 13.`);
+    expect(row!.details[1]).toEqual({ text: `put Pipewrench in ${name}`, href: '/t/ann?page=1#post-7' });
+  });
+
+  test('says no "barred" where no board is, and a Mod\'s role word where a Mod moved it', () => {
+    expect(said(rowsOf([move({ board: null, boardName: null })])[0]!)).toBe(`The Boss put Pipewrench in ${name} until Nov 13.`);
+    expect(said(rowsOf([move({ office: 'mod' })])[0]!)).toMatch(/^A Mod put Pipewrench/u);
+  });
+
+  test('names the end the move landed with, not the ruled one; the ruling line carries the change', () => {
+    const [put] = rowsOf([move({ expiresAt: '2099-11-10T12:00:00.000Z', ruling: 'reduced', ruledAt: '2099-11-07T00:00:00.000Z', ruledUntil: '2099-11-10T12:00:00.000Z' })]).filter((r) => r.key === 'grouped:m1');
+    expect(said(put!)).toContain('until Nov 13.');
+  });
+
+  test('a favor says the check it must meet to stay', () => {
+    const fav = { key: 'teachersPet', name: 'Teacher\'s Pet' };
+    expect(said(rowsOf([move({ group: fav.key, board: null, boardName: null, checkAt: '2099-11-09T00:00:00.000Z' })])[0]!)).toBe(`The Boss put Pipewrench in ${fav.name} until Nov 13. It stays if Pipewrench meets the demand by Nov 9.`);
+  });
+
+  test('each end says why the character left, at the time it ended', () => {
+    const left = (over: Partial<Log['groupMoves'][number]>) => rowsOf([move({ endedAt: '2099-11-08T00:00:00.000Z', ...over })]).find((r) => r.key === 'grouped:m1:left')!;
+    expect(said(left({ endedWhy: 'met' }))).toBe(`Pipewrench left ${name}: an apology was accepted.`);
+    expect(said(left({ endedWhy: 'expired', endedBy: 'expiry' }))).toBe(`Pipewrench left ${name}: it expired.`);
+    expect(said(left({ endedWhy: 'reversed', endedBy: 'admin' }))).toBe(`Pipewrench left ${name}: an admin reversed it.`);
+    expect(said(left({ endedWhy: 'unmet', endedBy: 'check' }))).toBe(`Pipewrench left ${name}: the demand wasn't met by its check.`);
+    expect(said(left({ endedWhy: 'overturned', endedBy: 'appeal' }))).toBe(`Pipewrench left ${name}: overturned on appeal.`);
+    expect(left({ endedWhy: 'expired' })).toMatchObject({ kind: 'grouped', at: '2099-11-08T00:00:00.000Z', characters: ['p'] });
+    expect(left({ endedWhy: 'expired' }).details[0]).toEqual({ text: `Pipewrench left ${name}`, href: '/t/ann?page=1#post-7' });
+    expect(rowsOf([move()]).map((r) => r.key)).toEqual(['grouped:m1']);
+  });
+
+  test('an appeal of a group move says what it was of, by the group\'s name and linked to the move, the ruling and the price; the lines for the move itself are Task 11\'s', () => {
+    const appeal = { appeal: 'a9', character: 'p', at: '2099-11-06T13:00:00.000Z', punishment: 'm1', punishmentKind: 'move', postSeq: null, thread: 'ann', verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
+    const paidFor = (kind: 'appeal' | 'refund', change: number): Log['wallet'][number] => ({ settlement: null, kind, change, overflow: 0, floored: 0, balanceAfter: 100, ref: 'a9', at: '2099-11-06T13:00:00.000Z' });
+    const mineRows = (appeals: Log['appeals'], wallet: Log['wallet'] = [paidFor('appeal', -50)]) => logRows(data({ log: { ...empty, groupMoves: [move()], appeals, wallet }, mine }), groupWords, 600, null).filter((r) => r.kind === 'appeal');
+    const open = mineRows([appeal])[0]!;
+    expect(open).toMatchObject({ kind: 'appeal', characters: ['p'], aura: -50 });
+    expect(said(open)).toBe(`Pipewrench appealed the move into ${name}, for 0.50 Aura. The plea is public. It has not been ruled on yet. If it cannot be, your Aura comes back by itself.`);
+    expect(open.details[1]).toEqual({ text: `the move into ${name}`, href: '/t/ann?page=1#post-7' });
+    expect(said(mineRows([{ ...appeal, verdict: 'overturned', hearer: 'The Director' }], [paidFor('appeal', -50), paidFor('refund', 50)])[0]!)).toContain('The Director overturned it, and the 0.50 Aura came back.');
+    expect(said(mineRows([{ ...appeal, verdict: 'reduced', hearer: 'The Director' }])[0]!)).toContain('The Director reduced it.');
+    expect(said(mineRows([{ ...appeal, verdict: 'upheld', hearer: 'The Director' }])[0]!)).toContain('The Director upheld it. Nothing changed.');
+    /* Not in the page of moves the log holds: the line still reads, without the group's name or a link. */
+    const lone = logRows(data({ log: { ...empty, appeals: [appeal], wallet: [paidFor('appeal', -50)] }, mine }), groupWords, 600, null).find((r) => r.kind === 'appeal')!;
+    expect(said(lone)).toMatch(/^Pipewrench appealed a group move, for 0\.50 Aura\./u);
+  });
+
+  test('each appeal ruling says what the hearer did and where the end now is', () => {
+    const ruled = (ruling: NonNullable<Log['groupMoves'][number]['ruling']>, over: Partial<Log['groupMoves'][number]> = {}) =>
+      rowsOf([move({ ruling, ruledAt: '2099-11-07T00:00:00.000Z', ...over })]).find((r) => r.key === 'grouped:m1:ruling')!;
+    expect(said(ruled('reduced', { ruledUntil: '2099-11-10T00:00:00.000Z' }))).toBe(`The Boss reduced Pipewrench's ${name} on appeal: it now ends Nov 10.`);
+    expect(said(ruled('increased', { ruledUntil: '2099-11-16T00:00:00.000Z' }))).toBe(`The Boss increased Pipewrench's ${name} on appeal: it now ends Nov 16.`);
+    expect(said(ruled('upheld'))).toBe(`The Boss upheld Pipewrench's ${name} on appeal: nothing changed.`);
+    expect(said(ruled('overturned'))).toBe(`The Boss overturned Pipewrench's ${name} on appeal: it ended.`);
+    expect(said(ruled('reduced', { ruledUntil: '2099-11-06T00:00:00.000Z' }))).toBe(`The Boss reduced Pipewrench's ${name} on appeal: it ended at once.`);
+    expect(said(ruled('upheld', { office: 'mod' }))).toMatch(/^A Mod upheld /u);
+    expect(ruled('upheld')).toMatchObject({ kind: 'grouped', at: '2099-11-07T00:00:00.000Z', aura: 0 });
+  });
+
+  test('is in its own character\'s tab and in All, and names no one else', () => {
+    expect(rowsOf([move()], 'p')).toHaveLength(1);
+    expect(rowsOf([move()], 'q')).toHaveLength(0);
+    expect(said(rowsOf([move()], null)[0]!)).not.toMatch(/Spritey|others|members of/iu);
   });
 });

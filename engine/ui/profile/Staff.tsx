@@ -20,6 +20,7 @@ import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { endedWords } from '../board/move-words.ts';
 import { monthYear, shortDate } from '../postbit/dates.ts';
+import { GroupBar } from '../postbit/GroupBar.tsx';
 import { StaffBadge, showsStaffBadge } from '../postbit/StaffBadge.tsx';
 import { Link } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -53,10 +54,12 @@ export function StaffProfile({ character: c }: { readonly character: Character }
   const signature = data?.profile?.signature.trim() || c.signature.trim();
   const none = <span className="kb-muted">None yet</span>;
   /* Each fact is a row, as the ordinary profile's are: its label a row header, its words as they were. `lead` marks the two that stand beside the avatar on a phone. */
-  const badge = showsStaffBadge(c, settings.staffGroup?.name);
+  const badge = showsStaffBadge(c);
+  const group = settings.groups.find((g) => g.key === c.group);
   const facts: readonly Fact[] = [
     ...(badge ? [{ key: 'staff', label: 'Staff', lead: true, value: <StaffBadge character={c} /> }] : []),
     ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),
+    ...(group ? [{ key: 'group', label: 'Group', value: <GroupBar look={group} /> }] : []),
     { key: 'pronouns', label: 'Pronouns', value: <span className="kb-profile-pronouns kb-muted">{pronounLabel(c.pronouns)}</span> },
     ...(data
       ? [

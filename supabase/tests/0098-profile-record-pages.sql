@@ -61,7 +61,7 @@ begin
   perform tests.become(f.viewer);
   doc := profile_page(f.pam);
   if doc is null then raise exception 'a debuted character has no profile'; end if;
-  if doc -> 'character' is distinct from (select to_jsonb(c) from (select id, name, joined, staff, office, warn_points, banned_until from characters_public where id = f.pam) c) then raise exception 'character: %', doc -> 'character'; end if;
+  if doc -> 'character' is distinct from (select to_jsonb(c) from (select id, name, joined, staff, office, warn_points, banned_until, "group" from characters_public where id = f.pam) c) then raise exception 'character: %', doc -> 'character'; end if;
   if doc -> 'counts' ->> 'posts' is distinct from '26' or doc -> 'counts' ->> 'spins' is distinct from '1' or doc -> 'counts' ->> 'cards' is distinct from '1' then raise exception 'counts: %', doc -> 'counts'; end if;
   if doc -> 'counts' is distinct from (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = f.pam) n) then raise exception 'counts differ from the view'; end if;
   if doc -> 'standing' is distinct from standing_place(f.pam) then raise exception 'standing: %', doc -> 'standing'; end if;

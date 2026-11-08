@@ -31,7 +31,7 @@ begin
   if presence_box('thread', t) is distinct from here('thread', t, a1) then raise exception 'a thread''s box differs from here()'; end if;
   if presence_box('board', gen) is distinct from here('board', gen, null) then raise exception 'a board''s box differs from here()'; end if;
   if presence_box('index', null) is distinct from here('index', null, null) then raise exception 'the index box differs from here()'; end if;
-  if (presence_box('thread', t) -> 'names') is distinct from jsonb_build_array(jsonb_build_object('id', a1, 'name', 'Box One', 'staff', false, 'banned_until', null)) then
+  if (presence_box('thread', t) -> 'names') is distinct from jsonb_build_array(jsonb_build_object('id', a1, 'name', 'Box One', 'staff', false, 'banned_until', null, 'group', null)) then
     raise exception 'the box lists the present mask: %', presence_box('thread', t); end if;
 
   -- It writes nothing (the counts are read as the table's owner; the caller cannot read presence).

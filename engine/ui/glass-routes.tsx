@@ -28,6 +28,7 @@ import type { GuideScreen } from './guide/Guide.tsx';
 import type { ContactScreen } from './contact/Contact.tsx';
 import type { WelcomeScreen } from './welcome/Welcome.tsx';
 import type { QueueScreen } from './admin/Queue.tsx';
+import type { MachineScreen } from './admin/Machine.tsx';
 import type { LogScreen } from './log/Log.tsx';
 import type { SettlementScreen } from './log/Settlement.tsx';
 
@@ -55,6 +56,7 @@ export interface GlassScreens {
   readonly contact: GlassScreen<Props<typeof ContactScreen>>;
   readonly welcome: GlassScreen<Props<typeof WelcomeScreen>>;
   readonly queue: GlassScreen<Props<typeof QueueScreen>>;
+  readonly machine: GlassScreen<Props<typeof MachineScreen>>;
   readonly log: GlassScreen<Props<typeof LogScreen>>;
   readonly settlement: GlassScreen<Props<typeof SettlementScreen>>;
 }
@@ -80,6 +82,7 @@ export function glassRoutes(env: GlassEnv, s: GlassScreens, extras: GlassExtras 
   const UpdatesC = s.updates.Component;
   const ContactC = s.contact.Component;
   const QueueC = s.queue.Component;
+  const MachineC = s.machine.Component;
   const LogC = s.log.Component;
   const SettlementC = s.settlement.Component;
   const SettingsC = s.settings.Component;
@@ -106,6 +109,7 @@ export function glassRoutes(env: GlassEnv, s: GlassScreens, extras: GlassExtras 
     { path: '/contact', load: () => loadContact(env, s.contact.preload), render: (_, doc) => <ContactC doc={doc as readonly ContactLink[]} /> },
     { path: '/welcome', ...chunk(s.welcome), render: () => <WelcomeC /> },
     { path: '/admin/queue', load: () => loadQueue(env, s.queue.preload), key: queueKey, render: (_, doc) => <QueueC doc={doc as Props<typeof QueueScreen>['doc']} now={extras.now} /> },
+    { path: '/admin/machine', ...chunk(s.machine), render: () => <MachineC /> },
     { path: '/log', load: loadLogDoc, key: logKey, render: (_, doc) => <LogC doc={doc as Props<typeof LogScreen>['doc']} /> },
     { path: '/log/settlement', load: loadLogDoc, key: logKey, render: (_, doc) => <SettlementC doc={doc as Props<typeof SettlementScreen>['doc']} /> },
     { path: '/sign-in', ...chunk(s.signIn), render: () => <SignInC mode="sign-in" /> },

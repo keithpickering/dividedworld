@@ -14,11 +14,16 @@
  *  - The log stands 26.2px lower than the board's (the card's rows are taller by their 24px targets and its gap is the profile's); the build's nav reads the renamed
  *    board's name (Pointless Toast Palace) where the board draws General, so the staff board's link stands 95.1px to the right.
  *  - The avatar is decoration and is not compared; the badges' chips are held by their words.
+ *  - The Group row (docs/plans/2026-11-06-member-groups-design.md, the member groups plan's Task 12) stands after Title, which the board, drawn before it,
+ *    does not hold: the About table is that much taller, and every fact under Title and the log stand GROUP_ROW lower.
  *  - The build has a Pronouns row after Title (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board predates, so the About table is a
  *    row (39.2px) taller, every fact after Title stands that much lower, and the log 39.2px lower than the 26.2px above. The log's middle column reads the
  *    Director's own pronouns ("What she did") where the board draws "What it did".
  */
 import type { BoardManifest } from '../../board-match.ts';
+
+/** The Group row's room in the About table at 1440, in px: its row and its grid line. */
+const GROUP_ROW = 39.5;
 
 const manifest: BoardManifest = {
   board: '2026-11-06-board-look/14-staff',
@@ -30,17 +35,17 @@ const manifest: BoardManifest = {
     { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 95.1 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'The Director', box: 'position', buildShift: { y: 35.6 } },
-    { id: 'about', role: 'table', name: 'About The Director', type: false, buildShift: { y: 38.6, height: 31.8 } },
+    { id: 'about', role: 'table', name: 'About The Director', type: false, buildShift: { y: 38.6, height: 31.8 + GROUP_ROW } },
     { id: 'about-band', role: 'columnheader', name: 'About The Director', within: 'about', origin: 'about' },
     { id: 'fact-staff', role: 'rowheader', name: 'Staff', within: 'about', origin: 'about' },
     { id: 'fact-title', role: 'rowheader', name: 'Title', within: 'about', origin: 'about' },
-    { id: 'fact-interests', role: 'rowheader', name: 'Interests', within: 'about', origin: 'about', buildShift: { y: 39 } },
-    { id: 'fact-favorites', role: 'rowheader', name: 'Favorite members', buildName: 'Favorite Members', within: 'about', origin: 'about', buildShift: { y: 39.5 } },
-    { id: 'fact-mood', role: 'rowheader', name: 'Current mood', buildName: 'Current Mood', within: 'about', origin: 'about', buildShift: { y: 40 } },
-    { id: 'fact-career', role: 'rowheader', name: 'Career', within: 'about', origin: 'about', buildShift: { y: 40.5 } },
-    { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about', buildShift: { y: 41 } },
-    { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about', buildShift: { y: 41.5 } },
-    { id: 'log', role: 'table', name: 'The Director’s moves, newest first', buildName: 'Moderation log', type: false, box: 'position', buildShift: { y: 65.4 } },
+    { id: 'fact-interests', role: 'rowheader', name: 'Interests', within: 'about', origin: 'about', buildShift: { y: 39 + GROUP_ROW } },
+    { id: 'fact-favorites', role: 'rowheader', name: 'Favorite members', buildName: 'Favorite Members', within: 'about', origin: 'about', buildShift: { y: 39.5 + GROUP_ROW } },
+    { id: 'fact-mood', role: 'rowheader', name: 'Current mood', buildName: 'Current Mood', within: 'about', origin: 'about', buildShift: { y: 40 + GROUP_ROW } },
+    { id: 'fact-career', role: 'rowheader', name: 'Career', within: 'about', origin: 'about', buildShift: { y: 40.5 + GROUP_ROW } },
+    { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about', buildShift: { y: 41 + GROUP_ROW } },
+    { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about', buildShift: { y: 41.5 + GROUP_ROW } },
+    { id: 'log', role: 'table', name: 'The Director’s moves, newest first', buildName: 'Moderation log', type: false, box: 'position', buildShift: { y: 65.4 + GROUP_ROW } },
     { id: 'log-band', role: 'heading', name: 'Moderation log', within: 'log', origin: 'log' },
     { id: 'log-when', role: 'columnheader', name: 'When', within: 'log', origin: 'log' },
     { id: 'log-did', role: 'columnheader', name: 'What it did', buildName: 'What she did', within: 'log', origin: 'log' },

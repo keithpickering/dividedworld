@@ -32,7 +32,7 @@ function HandSheet() {
   const { instance, ui } = useKayfa();
   const { cards } = usePlayer();
   const calm = useSurfaceStyle('hand');
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings, ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds]);
   const held = faces.filter((f) => (cards.find((c) => c.card === f.key)?.held ?? 0) > 0);
   const count = cards.reduce((n, c) => n + c.held, 0);
   /* The armed card is the second in the hand, as the board draws it. */

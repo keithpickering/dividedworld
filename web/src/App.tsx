@@ -59,6 +59,7 @@ const screens: GlassScreens = {
   contact: lazyScreen(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen }))),
   welcome: lazyScreen(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen }))),
   queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
+  machine: lazyScreen(() => import('../../engine/ui/admin/Machine.tsx').then((m) => ({ default: m.MachineScreen }))),
   log: lazyScreen(() => import('../../engine/ui/log/Log.tsx').then((m) => ({ default: m.LogScreen }))),
   settlement: lazyScreen(() => import('../../engine/ui/log/Settlement.tsx').then((m) => ({ default: m.SettlementScreen }))),
 };
@@ -127,6 +128,7 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */
   '/alerts': 'settings',
   '/admin/queue': 'settings',
+  '/admin/machine': 'settings',
   '/log': 'log',
   '/log/settlement': 'settlement',
 };

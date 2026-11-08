@@ -19,14 +19,15 @@ export function mergeLogs(newer: Log, older: Log): Log {
     settlements: [...newer.settlements, ...older.settlements.filter((s) => !have.has(s.id))],
     wallet: [...newer.wallet, ...older.wallet],
     cards: [...newer.cards, ...older.cards],
+    packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
-    setPasses: [...newer.setPasses, ...older.setPasses],
     caught: [...newer.caught, ...older.caught],
     ended: [...newer.ended, ...older.ended],
     infractions: [...newer.infractions, ...older.infractions],
     bans: [...newer.bans, ...older.bans],
+    groupMoves: [...newer.groupMoves, ...older.groupMoves],
     reports: [...newer.reports, ...older.reports],
     appeals: [...newer.appeals, ...older.appeals],
     before: older.before,
@@ -63,6 +64,7 @@ async function around(api: KayfaApi, log: Log, own: LogData): Promise<LogData> {
     for (const a of await api.actsById(followed)) acts.set(a.id, a);
   }
   const names = new Map(own.names);
+  const staff = new Set(own.staff ?? []);
   /* A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so only those are asked
      for: their characters' names, threads' titles and boards' names, in one pass over the card Acts. */
   const unnamed: { character: Id[]; thread: Id[]; board: Id[] } = { character: [], thread: [], board: [] };
@@ -73,7 +75,7 @@ async function around(api: KayfaApi, log: Log, own: LogData): Promise<LogData> {
     if (typeof target === 'string') unnamed[reach].push(target);
   }
   const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
-  for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
+  for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) { names.set(c.id, c.name); if (c.staff !== undefined) staff.add(c.id); }
   const titles = new Map(own.titles);
   const threads = [...new Set(own.turns.map((t) => acts.get(t.act)?.thread).concat(unnamed.thread).filter((t): t is Id => t !== undefined && !titles.has(t)))];
   for (const t of await Promise.all(threads.map((id) => orElse(api.thread(id), null)))) if (t) titles.set(t.id, t.title);
@@ -81,7 +83,7 @@ async function around(api: KayfaApi, log: Log, own: LogData): Promise<LogData> {
   for (const b of await Promise.all(boards.map((id) => orElse(api.board(id), null)))) if (b) titles.set(b.id, b.name);
   const states = new Map(own.states);
   for (const [play, s] of Object.entries(saved as Readonly<Record<Id, EffectState>>)) states.set(play, s.state);
-  return { ...own, log, acts, names, titles, states };
+  return { ...own, log, acts, names, staff, titles, states };
 }
 
 /** The fixed pieces of the log's data: what the route's document read and the player's own rows. */
@@ -97,7 +99,8 @@ export function logDataOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlem
   /* Turns are the document's: a Turn taken while the page is open shows on the next read. */
   const ids = new Set(mine.map((c) => c.id));
   const names = new Map<Id, string>();
-  for (const c of page.people) if (!ids.has(c.id)) names.set(c.id, c.name);
+  const staff = new Set<Id>();
+  for (const c of page.people) if (!ids.has(c.id)) { names.set(c.id, c.name); if (c.staff !== undefined) staff.add(c.id); }
   const titles = new Map<Id, string>();
   for (const t of page.threads) titles.set(t.id, t.title);
   for (const b of page.boards) titles.set(b.id, b.name);
@@ -106,7 +109,7 @@ export function logDataOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlem
   return {
     log: page.log, mine, estimate, standings: page.standings, season: page.season, nextSettlement,
     turns: page.turns.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at))),
-    acts: new Map([...page.acts, ...(doc.estimateActs ?? [])].map((a) => [a.id, a])), names, titles, states,
+    acts: new Map([...page.acts, ...(doc.estimateActs ?? [])].map((a) => [a.id, a])), names, staff, titles, states,
   };
 }
 
@@ -116,6 +119,8 @@ interface Held {
   readonly log: Log;
   readonly acts: ReadonlyMap<Id, Act>;
   readonly names: ReadonlyMap<Id, string>;
+  /** The staff characters among them: a Mod Bot's Trap Card takes nothing, so a line about its catch says the card is spent. */
+  readonly staff: ReadonlySet<Id>;
   readonly titles: ReadonlyMap<Id, string>;
   readonly states: ReadonlyMap<Id, unknown>;
   readonly estimate: Estimate | null;
@@ -132,7 +137,7 @@ export function useLog(api: KayfaApi, doc: LogDoc, mine: readonly MyCharacter[],
   const current = held.doc === doc ? held : heldOf(doc, mine, nextSettlement);
   if (current !== held) setHeld(current);
 
-  const data = useMemo<LogData>(() => ({ ...logDataOf(doc, mine, nextSettlement, current.estimate), log: current.log, acts: current.acts, names: current.names, titles: current.titles, states: current.states }),
+  const data = useMemo<LogData>(() => ({ ...logDataOf(doc, mine, nextSettlement, current.estimate), log: current.log, acts: current.acts, names: current.names, staff: current.staff, titles: current.titles, states: current.states }),
     [doc, mine, nextSettlement, current]);
 
   /* The estimate that was not in time fills in when it lands; the Acts its lines name, which the page did not, are read then. */
@@ -156,7 +161,7 @@ export function useLog(api: KayfaApi, doc: LogDoc, mine: readonly MyCharacter[],
     setHeld({ ...current, older: 'loading' });
     /* The read is the router's to count (the meter), and the button is busy while it is out. */
     track(api.log(current.log.before).then((page) => around(api, mergeLogs(current.log, page), data))).then(
-      (next) => setHeld((now) => (now.doc === doc ? { ...now, log: next.log, acts: next.acts, names: next.names, titles: next.titles, states: next.states, older: 'idle' } : now)),
+      (next) => setHeld((now) => (now.doc === doc ? { ...now, log: next.log, acts: next.acts, names: next.names, staff: next.staff ?? new Set<Id>(), titles: next.titles, states: next.states, older: 'idle' } : now)),
       () => setHeld((now) => (now.doc === doc ? { ...now, older: 'failed' } : now)),
     );
   }, [api, doc, current, data, track]);
@@ -166,5 +171,5 @@ export function useLog(api: KayfaApi, doc: LogDoc, mine: readonly MyCharacter[],
 
 function heldOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlement: string | null): Held {
   const d = logDataOf(doc, mine, nextSettlement, doc.estimate);
-  return { doc, log: d.log, acts: d.acts, names: d.names, titles: d.titles, states: d.states, estimate: doc.estimate, older: 'idle' };
+  return { doc, log: d.log, acts: d.acts, names: d.names, staff: d.staff ?? new Set<Id>(), titles: d.titles, states: d.states, estimate: doc.estimate, older: 'idle' };
 }

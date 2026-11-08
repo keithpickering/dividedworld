@@ -13,12 +13,12 @@
  * - **It lands** only where its phrase is in the post's own words (a quote, code or a link is not; a cast whose phrase is not there
  *   is refused in plain words), up to three deep. The replacement is never the phrase as the matcher reads it (case-folded alike).
  * - **Its price** is the base price at the machine, plus `perVolume` for each `volumeStep` characters it covers (occurrences
- *   times the phrase's length), never more than `mostInAll` in all, as Whoops!'s long-post price is. Priced against the version
+ *   times the phrase's length), never more than `mostAdded` in all, as Whoops!'s long-post price is. Priced against the version
  *   the play was decided on; play_card refuses it if the post has another (0070), and strips then follow later edits for free.
  * - **Its state** is the post author's peels, by occurrence in the post's current version (the second "Mario" stays peeled),
  *   which every reader loads, and `clean` once none is left. A reader's own peels are never saved.
  */
-import { basePrice, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from './autocorrect/match.ts';
 
 export const PHRASE = { least: 4, most: 100 } as const;
@@ -40,14 +40,14 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
   name: 'Autocorrect',
   alignment: 'pepperoni',
   rarity: 'common',
-  priceKey: 'autocorrect.price',
+  setPhrase: (config) => config.phrase,
   stack: 3,
   /** The share of a strip's peel a held key stands for, in milliseconds (the effect's, read by the screens): about as long as a drag takes. */
   screenReads: [{ key: 'autocorrect.peelMs', whole: true, min: 100, max: 5000 }],
-  reads: [{ key: 'autocorrect.perVolume', whole: true, min: 0 }, { key: 'autocorrect.volumeStep', whole: true, min: 1 }, { key: 'autocorrect.mostInAll', whole: true, min: 1 }],
+  reads: [{ key: 'autocorrect.perVolume', whole: true, min: 0 }, { key: 'autocorrect.volumeStep', whole: true, min: 1 }, { key: 'autocorrect.mostAdded', whole: true, min: 1 }],
   playPrice: (settings, target, config) => {
     if (target.reach !== 'post') return 0;
-    const room = economyOf(settings, 'autocorrect.mostInAll') - basePrice(autocorrect, settings);
+    const room = economyOf(settings, 'autocorrect.mostAdded');
     // A face asks the most a play could add, before anyone has typed a phrase (engine/ui/cards/faces.ts).
     if (typeof config?.phrase !== 'string') return Math.max(0, room);
     const volume = occurrences(target.text, config.phrase).length * characters(config.phrase);

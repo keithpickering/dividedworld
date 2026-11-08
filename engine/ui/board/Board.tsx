@@ -137,11 +137,12 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   const pager = (where: 'top' | 'bottom') => pages > 1 && <Pager slug={slug} page={page} pages={pages} where={where} />;
 
   const nameOf = (id: Id | null) => (id === null ? ui.copy.staffWord : characters.get(id)?.name ?? 'A character');
+  const faceOf = (id: Id | null) => (id === null ? null : characters.get(id)?.avatarSquare ?? null);
   return (
     <div className="kb-board" data-kb-board={board.slug}>
       <LensProvider admin={admin}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
-      <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} heading={heading} onSpin={setSpinOrigin} />
+      <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} heading={heading} onSpin={setSpinOrigin} />
       {spinOrigin && (
         <SpinForm
           key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
@@ -153,7 +154,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       {board.moveAct !== null && <MoveNotice key={board.moveAct} act={board.moveAct} />}
       {board.isSystem
         ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
-        : <NewThread key={board.slug} board={board.slug} />}
+        : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
       {threads.length === 0 && state.pins.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
       ) : (
@@ -171,7 +172,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
                 <th role="columnheader" scope="col">Last post</th>
               </tr>
             </thead>
-            <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
+            <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
             <tbody role="rowgroup">
               {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
@@ -192,8 +193,8 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
  * mechanic's design, section 7). A board card's Act sits in The System's announcements thread; its Lens offers Spin, whose form opens
  * under the banner.
  */
-function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
-  readonly board: Board; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string;
+function BoardBanner({ board, plays, tallies, mine, nameOf, faceOf, heading, onSpin }: {
+  readonly board: Board; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string; readonly faceOf: (id: Id | null) => string | null;
   readonly heading: React.RefObject<HTMLHeadingElement | null>; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const to = `/b/${board.slug}`;
@@ -203,7 +204,7 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
         <h1 ref={heading} tabIndex={-1} className="kb-heading kb-board-title">{board.name}</h1>
         {shown && <span className="kb-board-banner-marks">
           <PostMarks
-            post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
+            post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
             reachAt={{ reach: 'board', target: board.id, name: board.name, fromPost: null, thread: null, board: null, title: board.name, to, plays, know: async () => {}, focusBack: () => heading.current }}
             onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })}
           />
@@ -217,8 +218,8 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
  * (its way out). They take none of the page's slots and move none of the pager's numbers: a pinned thread is still in its bump place on
  * the page that holds it, and only moved up here when that is page 1.
  */
-function Pinned({ loaded, plays, tallies, mine, nameOf, perPage, hot, onSpin }: {
-  readonly loaded: Loaded; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string;
+function Pinned({ loaded, plays, tallies, mine, nameOf, faceOf, perPage, hot, onSpin }: {
+  readonly loaded: Loaded; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string; readonly faceOf: (id: Id | null) => string | null;
   readonly perPage: number; readonly hot: number; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const pins = useMemo(() => loaded.pins.map((p) => playOf(p.act)).filter((p) => p !== null), [loaded.pins]);
@@ -238,7 +239,7 @@ function Pinned({ loaded, plays, tallies, mine, nameOf, perPage, hot, onSpin }: 
       {shown.map((p) => (
         <ThreadRow
           key={p.thread.id} t={p.thread} loaded={loaded} perPage={perPage} hot={hot}
-          mark={<PostMarks post={p.thread.id} where="thread" plays={plays} compare={false} to={threadHref(p.thread.id, 1)} nameOf={nameOf} tallies={tallies} mine={mine} onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })} />}
+          mark={<PostMarks post={p.thread.id} where="thread" plays={plays} compare={false} to={threadHref(p.thread.id, 1)} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })} />}
         />
       ))}
       {/* A 4px row in the third gray splits the pins from the rest; it is paint, so it is out of the reading order. */}

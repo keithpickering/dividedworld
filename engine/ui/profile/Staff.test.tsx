@@ -55,14 +55,14 @@ describe('a Boss\'s profile', () => {
     expect(card).toHaveTextContent('what she says about herself, in character, and she may bluff');
   });
 
-  test('is one table under an About band: the badges, title, pronouns, interests, favorite members, mood, career, posts and joined each a label row, the signature and the plain note closing it', async () => {
+  test('is one table under an About band: the group, the office badge, title, pronouns, interests, favorite members, mood, career, posts and joined each a label row, the signature and the plain note closing it', async () => {
     open('director');
     const card = await screen.findByRole('table', { name: 'About The Director' });
     await waitFor(() => expect(card).toHaveTextContent('No office held yet.'));
     await waitFor(() => expect(card).toHaveTextContent('Joined'));
     expect(within(card).getByRole('columnheader', { name: 'About The Director' })).toBeInTheDocument();
     expect(card.querySelector('caption')).toBeNull();
-    expect(within(card).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Staff', 'Title', 'Pronouns', 'Interests', 'Favorite Members', 'Current Mood', 'Career', 'Posts', 'Joined']);
+    expect(within(card).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Staff', 'Title', 'Group', 'Pronouns', 'Interests', 'Favorite Members', 'Current Mood', 'Career', 'Posts', 'Joined']);
     expect(card.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
     const rows = within(card).getAllByRole('row');
     const last = rows[rows.length - 1]!;

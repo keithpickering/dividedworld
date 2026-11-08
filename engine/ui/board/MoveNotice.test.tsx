@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -189,5 +189,47 @@ describe('the overlay that opens from the way out', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(way).toHaveFocus());
+  });
+});
+
+describe('a group move on the notice', () => {
+  const GROUPS = [
+    { key: 'members', name: 'Members', color: '#7a7a7a', stripe: false, staff: false },
+    { key: 'trialMembers', name: 'Trial Members', badge: 'Trial Member', color: '#d2691e', stripe: true, staff: false },
+    { key: 'staff', name: 'Test Cores', color: '#d4a017', stripe: false, staff: true },
+  ];
+  function groupMove(office: 'boss' | 'mod') {
+    const fake = buildWorld({ groups: GROUPS });
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.seed.staff('director', 'The Director', office);
+    const move = fake.seed.groupMove('director', { character: pipe, group: 'trialMembers', board: 'general' });
+    renderIn(fake, <MoveNotice act={move} />, { path: '/', settings: { groups: GROUPS } });
+    return { fake, move };
+  }
+
+  test('a Mod\'s move is the Mod\'s, by its label and its detail, and the group is named by its name', async () => {
+    groupMove('mod');
+    expect(await screen.findByText('A Mod moved a member')).toBeInTheDocument();
+    await userEvent.click(await segment());
+    const detail = await screen.findByRole('dialog');
+    expect(detail).toHaveTextContent('A Mod put Pipewrench in Trial Members, barred from posting on General.');
+    expect(detail).not.toHaveTextContent('Boss');
+    expect(detail).not.toHaveTextContent('trialMembers');
+  });
+
+  test('keeps the role it landed under when the persona\'s office changes', async () => {
+    const { fake, move } = groupMove('mod');
+    fake.seed.setOffice('director', 'boss');
+    cleanup();
+    renderIn(fake, <MoveNotice act={move} />, { path: '/', settings: { groups: GROUPS } });
+    expect(await screen.findByText('A Mod moved a member')).toBeInTheDocument();
+  });
+
+  test('the Boss\'s move says the Boss', async () => {
+    groupMove('boss');
+    expect(await screen.findByText('The Boss moved a member')).toBeInTheDocument();
+    await userEvent.click(await segment());
+    expect(await screen.findByRole('dialog')).toHaveTextContent('The Boss put Pipewrench in Trial Members, barred from posting on General.');
   });
 });

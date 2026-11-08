@@ -163,6 +163,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
   const nameOf = useCallback((id: Id | null) => (id === null ? ui.copy.staffWord : people.current.get(id)?.character.name ?? 'A character'), [ui.copy.staffWord]);
+  const faceOf = useCallback((id: Id | null) => (id === null ? null : people.current.get(id)?.character.avatarSquare ?? null), []);
   const pronounsOf = useCallback((id: Id | null) => (id === null ? ENGINE_DEFAULT_PRONOUNS : people.current.get(id)?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS), []);
 
   /*
@@ -554,8 +555,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const canReply = systemBoard === false;
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, pronounsOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, pronounsOf, ensurePeople, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, faceOf, pronounsOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, faceOf, pronounsOf, ensurePeople, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 
@@ -673,7 +674,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>
-            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
+            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} board={summary.board} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
           </ThreadCtx.Provider>
         </ActIndex.Provider>
       )}

@@ -16,7 +16,6 @@ begin
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'The Devs', 'title', 'Developers', 'avatar', ''),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sp-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'sp-boss', 'name', 'Sp Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'sp-mod', 'name', 'Sp Mod', 'title', 'Mod', 'signature', 'b')),
@@ -102,7 +101,7 @@ begin
 
   -- The answer's names hold an id, a name and the flag, nothing else.
   if exists (select 1 from jsonb_array_elements(box -> 'names') e
-             where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['banned_until', 'id', 'name', 'staff']) then
-    raise exception 'a name holds id, name, staff and banned_until: %', box;
+             where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['banned_until', 'group', 'id', 'name', 'staff']) then
+    raise exception 'a name holds id, name, staff, banned_until and group: %', box;
   end if;
 end $$;
