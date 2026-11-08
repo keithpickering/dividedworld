@@ -24,15 +24,18 @@ Files: `engine/ui/tips/keys.ts`, `engine/ui/thread/Post.tsx`, `instances/divided
   "`staff`: the first staff post in view in a thread, pointing at its staff badge (docs/plans/2026-11-07-staff-tip-design.md)."
   It is not a tour key and has no action.
 - `Post.tsx`, in the `Post` component: when the post's character is staff (`person?.character.staff`), the postbit is
-  drawn (`!plain`), and the badge drew (`[data-kb-staff]` inside the article, `ref`), watch that badge with
+  drawn (`!plain`), and the badge drew (the staff character's `kb-postbit-group` inside the article, marked
+  `data-kb-staff`, below, `ref`), watch that badge with
   `watchInView(badge, onChange, { threshold: 1 })` (`engine/ui/shine/inView.ts`) and ask
   `useTip('staff', badgeRef, { when: inView })`, where `badgeRef` is a ref whose `current` is that badge element.
   Register the watch only while `useTipsStore().unseen('staff')` is true, read when the effect runs, so an account that
   has seen it, or has tips off, watches nothing. Keep `Post`'s `memo` intact: the new state lives inside `Post`, and
   nothing new is handed to `Postbit`.
-- `StaffBadge.tsx` is unchanged: `data-kb-staff` is its existing attribute and the target. If the member groups build has
-  landed on `main` first and the badge's markup moved, target whichever element draws the staff group's chip on the
-  postbit and keep it findable by `data-kb-staff`.
+- The target: the member groups build has landed, so the staff badge is the postbit's `kb-postbit-group` span
+  (`engine/ui/postbit/Postbit.tsx`, line 94): the Personality Cores `GroupBar` and, for the Boss and a Mod Bot only,
+  `StaffBadge`'s office title, whose own `data-kb-staff` span draws nothing for a member or benched Core. The span gains
+  `data-kb-staff` for a staff character, so the tip points at the whole badge at every office; `StaffBadge.tsx`'s own
+  attribute keeps its office value.
 - `onboarding.ts`: add the tip, after `'first-card'`, exactly:
 
   ```ts
@@ -79,7 +82,7 @@ Then, in `strategy-guide.md`:
    ```markdown
    ## Personality Cores
 
-   The staff here aren't players. They're **Personality Cores**: characters with no person behind them, every word written by an AI. I made them to run the board so I could spend more time on my yacht. You'll know one by the Personality Cores badge beside its name, and the title beside that says what it does:
+   The staff here aren't players. They're **Personality Cores**: characters with no person behind them, every word written by an AI. I made them to run the board so I could spend more time on my yacht. You'll know one by the Personality Cores bar under its name, and the title beside that says what it does:
 
    - **ADMINISTRATOR** is the Boss, who runs the board this season. Every season gets a new one, and the old one usually sticks around.
    - **MODERATOR** is a Mod Bot, who keeps the rules (see [Rules and visits](#rules-and-visits)).

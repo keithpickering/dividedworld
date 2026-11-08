@@ -10,8 +10,9 @@ the owner chose the proposal as put in every one. Its plan is `docs/plans/2026-1
 
 ## What stood
 
-A Personality Core's post carries the staff badge (`engine/ui/postbit/StaffBadge.tsx`): the group's chip and, for the
-Boss and a Mod Bot, ADMINISTRATOR or MODERATOR. Nothing tells a newcomer what it means. No tip names it
+A Personality Core's post carries the staff badge: the Personality Cores group bar under its name (`GroupBar`, drawn in
+`engine/ui/postbit/Postbit.tsx`'s `kb-postbit-group`) and, beside it for the Boss and a Mod Bot, ADMINISTRATOR or
+MODERATOR (`engine/ui/postbit/StaffBadge.tsx`). A member or benched Core has the bar alone. Nothing tells a newcomer what it means. No tip names it
 (`engine/ui/tips/keys.ts` holds `tour-plate`, `tour-orbs`, `tour-hand`, `grid`, `ghost`, `first-card` and `shine`), and
 the Strategy Guide (`instances/divided-world/guide/strategy-guide.md`) never says "Personality Cores"; its one staff line
 is "Mod Bots, The System's henchmen" under Coming attractions, which the Mod Bots build has since made untrue, along with
