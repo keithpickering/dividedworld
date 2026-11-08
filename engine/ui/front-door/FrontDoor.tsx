@@ -43,7 +43,7 @@ const idOf = (key: string): Id => `front-door:${key}`;
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
 const stage = (c: FrontDoorCharacter, group: string): Character => ({
-  id: idOf(c.key), name: c.name, title: c.title ?? '', signature: '', avatarSquare: c.avatarSquare, avatarPortrait: c.avatarPortrait, squareFrame: null,
+  id: idOf(c.key), name: c.name, title: c.title ?? '', signature: '', avatarSquare: c.avatarSquare ?? null, avatarPortrait: c.avatarPortrait ?? null, squareFrame: null,
   portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '', group,
 });
 

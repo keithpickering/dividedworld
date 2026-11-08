@@ -445,8 +445,9 @@ export interface FrontDoorCharacter {
    * can show one of each class through a mechanic the game has. None keeps the class hidden, as a character's is until its player reveals it.
    */
   readonly revealed?: { readonly class: string; readonly at: string };
-  readonly avatarSquare: string;
-  readonly avatarPortrait: string;
+  /** The sample character's pictures, URLs the instance's bundler gives; none keeps the initial the postbit draws where a character has no avatar. */
+  readonly avatarSquare?: string;
+  readonly avatarPortrait?: string;
 }
 
 /** A post in the front door's sample thread. */

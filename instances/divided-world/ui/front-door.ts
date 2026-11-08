@@ -15,6 +15,13 @@
  * The glass may joke where it describes the game, and it never bluffs (CLAUDE.md, "The fiction may lie; the log never does").
  */
 import type { FrontDoorUi } from '../../../engine/ui/types.ts';
+import chadPortrait from './avatars/robochad_portrait.jpg?url';
+import chadSquare from './avatars/robochad_square.jpg?url';
+import deerPortrait from './avatars/deer_portrait.jpg?url';
+import deerSquare from './avatars/deer_square.jpg?url';
+import joshPicture from './avatars/human.jpg?url';
+import dguyPortrait from './avatars/dguy_portrait.jpg?url';
+import dguySquare from './avatars/dguy_square.jpg?url';
 
 /** When the sample cast revealed their classes: a fixed day, so the postbit's dated line reads the same for every visitor. */
 const REVEALED_AT = '2026-10-03T12:00:00Z';
@@ -23,11 +30,11 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   title: 'WELCOME TO THE BEEF ZONE',
   label: 'Sample thread · made up',
   cast: Object.freeze([
-    Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/snuckles_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/snuckles_square.jpg' }),
-    Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/robochad_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/robochad_square.jpg' }),
-    Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/deer_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/deer_square.jpg' }),
-    Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/human.jpg', avatarSquare: 'instances/divided-world/ui/avatars/human.jpg' }),
-    Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/dguy_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/dguy_square.jpg' }),
+    Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: chadPortrait, avatarSquare: chadSquare }),
+    Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: deerPortrait, avatarSquare: deerSquare }),
+    Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: joshPicture, avatarSquare: joshPicture }),
+    Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }), avatarPortrait: dguyPortrait, avatarSquare: dguySquare }),
   ]),
   posts: Object.freeze([
     Object.freeze({

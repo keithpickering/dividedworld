@@ -31,10 +31,15 @@ describe('Divided World\'s onboarding words', () => {
     expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
   });
   test('the front door passes the same check, in its own words', () => {
-    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Captain Wholesome', 'The Accountant', 'Mr. Roboto']);
+    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Chadluminum', 'Serious Deer', 'Human Josh', 'D-Guy']);
     /* One of each class that posts, each through the postbit's real revealed line: the Lurker never posts, so it is absent by design. */
-    expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'face', 'technician', 'heel']);
-    expect(instanceUi.frontDoor.posts).toHaveLength(5);
+    expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'face', 'technician', 'heel', 'tweener']);
+    expect(instanceUi.frontDoor.posts).toHaveLength(6);
+    /* A picture is a URL the bundler gave (a `?url` import), never a hand-typed path: a typed one 404s and the postbit shows a broken image. Snuckles has none yet and keeps its initial. */
+    for (const c of instanceUi.frontDoor.cast.filter((x) => x.key !== 'snuckles')) {
+      expect(c.avatarSquare, `${c.name}'s square`).toMatch(/\.jpg$|^data:image\//u);
+      expect(c.avatarPortrait, `${c.name}'s portrait`).toMatch(/\.jpg$|^data:image\//u);
+    }
     expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
   test('the letter opens as Gabe\'s welcome does', () => {
