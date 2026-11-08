@@ -84,6 +84,16 @@ describe('shortQuote', () => {
   });
 });
 
+describe('shortQuote cuts whole characters', () => {
+  test('a run with no space never leaves half an emoji', () => {
+    const run = '\u{1F600}'.repeat(50);
+    const said = shortQuote(run);
+    assert.equal(said, `\u201c${'\u{1F600}'.repeat(40)}\u2026\u201d`);
+    assert.doesNotMatch(said, /[\uD800-\uDFFF]/u, 'no lone surrogate');
+    assert.equal(shortQuote('a' + '\u{1F600}'.repeat(45), 40), `\u201ca${'\u{1F600}'.repeat(39)}\u2026\u201d`);
+  });
+});
+
 describe('sprungWords with conditions', () => {
   const at = '2026-11-05T12:00:00.000Z';
   const base = { setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'quote' };

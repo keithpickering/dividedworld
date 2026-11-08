@@ -66,9 +66,11 @@ export const QUOTE_SHORT = 40;
  */
 export function shortQuote(text: string, most: number = QUOTE_SHORT): string {
   const flat = text.replace(/\s+/gu, ' ').trim();
-  if (flat.length <= most) return `\u201c${flat}\u201d`;
-  const cut = flat.slice(0, most);
-  const atBoundary = flat[most] === ' ';
+  /* Counted and cut in whole characters (code points), so an emoji is never split into a lone surrogate. */
+  const chars = Array.from(flat);
+  if (chars.length <= most) return `\u201c${flat}\u201d`;
+  const cut = chars.slice(0, most).join('');
+  const atBoundary = chars[most] === ' ';
   const at = cut.lastIndexOf(' ');
   const head = (atBoundary || at <= 0 ? cut : cut.slice(0, at)).trimEnd();
   return `\u201c${head}\u2026\u201d`;

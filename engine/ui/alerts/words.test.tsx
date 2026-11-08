@@ -147,6 +147,23 @@ describe('a trap', () => {
     expect(s.line).toBe('A face-down card struck Spritey\'s post #43');
     expect(s.detail).toBe('Your quote set it off. It laid Glitter Bomb on it.');
   });
+  test('struck by a quote with no setter readable: the passage and the phrase it said, in the struck player\'s own words', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
+    const sp = spring({ character: null, payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'gone', by: 'post43', when: { passage: 'p', says: 's' } } });
+    const s = said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), ctx([laid, sp, act('post43', { seq: 43 })]));
+    expect(s.line).toBe('A face-down Whoops! struck Spritey\'s post #43');
+    expect(s.detail).toBe('Your quote of \u201cp\u201d saying \u201cs\u201d set it off. It laid Whoops! on it.');
+  });
+  test('a spring\'s `for` id is printed in no alert or toast words', () => {
+    const FOR = 'cFOR-ID-7';
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
+    const sp = spring({ payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post43', for: FOR, when: { passage: 'p', says: 's' } } });
+    const c = ctx([laid, sp, set(), act('post43', { seq: 43 }), act('post9', { seq: 9 })], { names });
+    for (const r of [row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey', title: 'Hobbies' }), row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' })]) {
+      expect(JSON.stringify(wordsFor(r, c))).not.toContain(FOR);
+      expect(JSON.stringify(batchWords([r], c))).not.toContain(FOR);
+    }
+  });
   test('a caught caster: a trap named their exact card, and it is now the setter\'s; the setter\'s character, never an account', () => {
     const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
     const s = said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), ctx([caught, set(), act('post9', { seq: 9, character: 'cPipe' })], { names }));
