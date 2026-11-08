@@ -41,7 +41,7 @@ function scopeOf() {
   return { scope, out, send: (data: unknown) => { for (const l of listeners) l({ data }); }, unreadable: () => { for (const l of unreadable) l({ data: null }); } };
 }
 
-const LIGHT_BAND: Band = { lo: 0.59, hi: 1 };
+const LIGHT_BAND: Band = { lo: 0.59, hi: 1, board: 'light', bright: false };
 const spec = (seed = 's') => ({ seed, pattern: 'pearl' as const, palette: ['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff'], stars: 4, glint: '#ffffff' });
 const draw = (id: number, over: Partial<FoilDraw> = {}): FoilDraw =>
   ({ id, spec: spec(), key: 'light', box: { w: 90, h: 45 }, density: 2, light: { x: 0, y: 0 }, band: LIGHT_BAND, now: 100, idle: false, ...over });

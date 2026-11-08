@@ -17,7 +17,13 @@ import { MODES, ratio, type Mode, type Tokens } from '../contrast.ts';
 /** The tokens that color text inside a post: its words, links, visited links, and muted words such as a quote's byline. */
 export const POST_INK = ['--kb-fg', '--kb-link', '--kb-link-visited', '--kb-muted'] as const;
 
-export type Band = { readonly lo: number; readonly hi: number };
+/**
+ * A band's bounds, the board it was read from, and whether it is bright. A standard band keeps the shine readable; a bright
+ * band (the player's Effects setting, `data-kb-effects="bright"`, docs/plans/2026-11-08-brighter-effects-design.md) is the
+ * whole 0 to 1 and `clampInto` leaves a color in it alone. The board is its own field: with a bright band the bounds no
+ * longer say which board it is, so nothing tells the board from `lo` or `hi`.
+ */
+export type Band = { readonly lo: number; readonly hi: number; readonly board: 'light' | 'dark'; readonly bright: boolean };
 export type Rgb = [number, number, number];
 export type Light = { readonly x: number; readonly y: number };
 
@@ -74,32 +80,43 @@ export function bandOf(tokens: Tokens): Band {
     /* Dark inks on a light ground: the shine must stay light enough. */
     const lo = Math.max(...L.map((l) => 4.5 * (l + 0.05) - 0.05)) + MARGIN;
     if (lo > 1) throw new Error('shine band: no luminance is readable against inks that light on a light ground');
-    return { lo, hi: 1 };
+    return { lo, hi: 1, board: 'light', bright: false };
   }
   const hi = Math.min(...L.map((l) => (l + 0.05) / 4.5 - 0.05)) - MARGIN;
   if (hi < 0) throw new Error('shine band: no luminance is readable against inks that dark on a dark ground');
-  return { lo: 0, hi };
+  return { lo: 0, hi, board: 'dark', bright: false };
 }
+
+/** The band of a player who has chosen bright effects: the whole range, on the board it sits on. */
+export const brightBand = (board: 'light' | 'dark'): Band => ({ lo: 0, hi: 1, board, bright: true });
 
 const BAND_TOKENS = ['--kb-bg', ...POST_INK] as const;
 const cache = new Map<string, Band>();
 
-/** The band where `el` sits, from the tokens as the board resolved them (device, player's choice, instance theme). */
+/**
+ * The band where `el` sits, from the tokens as the board resolved them (device, player's choice, instance theme). When the
+ * page carries `data-kb-effects="bright"` on the root (docs/plans/2026-11-08-brighter-effects-design.md) the band is the
+ * bright one for that board; the mark is part of the cache key, so a standard band is never handed to a bright page or the
+ * reverse.
+ */
 export function bandFor(el: Element): Band {
   const style = getComputedStyle(el);
   const tokens: Record<string, string> = {};
   for (const k of BAND_TOKENS) tokens[k] = style.getPropertyValue(k).trim();
-  const key = BAND_TOKENS.map((k) => tokens[k]).join('|');
+  const bright = typeof document !== 'undefined' && document.documentElement?.getAttribute('data-kb-effects') === 'bright';
+  const key = `${bright ? 'bright' : 'standard'}|${BAND_TOKENS.map((k) => tokens[k]).join('|')}`;
   let band = cache.get(key);
   if (!band) {
-    band = bandOf(tokens);
+    const standard = bandOf(tokens);
+    band = bright ? brightBand(standard.board) : standard;
     cache.set(key, band);
   }
   return band;
 }
 
-/** Move a linear color into the band in place, keeping hue: scale down past `hi`, mix toward white under `lo`. */
+/** Move a linear color into the band in place, keeping hue (a bright band leaves it as it is): scale down past `hi`, mix toward white under `lo`. */
 export function clampInto(c: Rgb, band: Band): Rgb {
+  if (band.bright) return c;
   const L = luminanceOf(c);
   if (L > band.hi) {
     const k = band.hi / L;

@@ -319,7 +319,7 @@ export function makeFoil(opts: FoilOptions): Foil {
     const u32 = wordsOf(px);
     /* The dark board's highlights turn toward the palette's opposite stop: one stop a frame, the same for every cell. */
     const alt = palAt(seed + 0.5 + 0.3 * lx);
-    const f: Finish = { dark: band.hi < 0.5, lo: band.lo, hi: band.hi, ar: alt[0]!, ag: alt[1]!, ab: alt[2]! };
+    const f: Finish = { dark: band.board === 'dark', lo: band.lo, hi: band.hi, ar: alt[0]!, ag: alt[1]!, ab: alt[2]! };
     const row = rowOf(L);
 
     if (pattern === 'pearl') {
