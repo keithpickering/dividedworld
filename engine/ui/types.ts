@@ -102,6 +102,12 @@ export interface UiCopy {
   readonly staffWord: string;
   readonly gameWord: string;
   readonly staffBoardTag: string;
+  /**
+   * How a card's kind is said on its face and in its spoken name, in the instance's words, for each way a card is played: cast on a
+   * target (`cast`), set face down (`set`) and used on the player's own post (`use`). Absent, a face says the play capitalized
+   * ("Cast", "Set", "Use"). Each is non-empty text; `instanceUiProblems` refuses one that is not.
+   */
+  readonly cardKinds?: Readonly<Record<'cast' | 'set' | 'use', string>>;
   /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
   /**

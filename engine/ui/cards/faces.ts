@@ -42,6 +42,8 @@ export interface CardFace {
   readonly rarity: Rarity;
   /** How it is played: its word on the face ("Set"). */
   readonly play: Play;
+  /** The kind tag as the face says it, in the instance's words: `playWord` of the play. */
+  readonly kind: string;
 }
 
 /** The corner gem's shape for each rarity, so a rarity is told by its shape and its name, never by color alone. */
@@ -49,8 +51,13 @@ const GEMS: Readonly<Record<Rarity, string>> = { common: '●', uncommon: '◆',
 export const gemOf = (rarity: Rarity): string => GEMS[rarity] ?? GEMS.common;
 /** A rarity's name, as a gem's title says it: "Uncommon". */
 export const rarityName = (rarity: Rarity): string => rarity.charAt(0).toUpperCase() + rarity.slice(1);
-/** A play's word on a card's face: "Cast", "Use", "Set", "Keep". */
-export const playWord = (play: Play): string => play.charAt(0).toUpperCase() + play.slice(1);
+/** The instance's words for how a card is played (`UiCopy.cardKinds`): what its kind tag says for each play. */
+export type CardKinds = Readonly<Record<'cast' | 'set' | 'use', string>>;
+/** A play's word on a card's face: the instance's kind word where it gave one ("Move", "Gimmick", "Ward"), else the play capitalized ("Cast", "Set", "Use", "Keep"). */
+export const playWord = (play: Play, kinds?: CardKinds): string => {
+  const said = (kinds as Partial<Record<string, string>> | undefined)?.[play];
+  return said ?? play.charAt(0).toUpperCase() + play.slice(1);
+};
 
 /** Hundredths of an orb as the screens say them: 100 is "1.00". */
 export const orbs = (hundredths: number): string => (hundredths / 100).toFixed(2);
@@ -81,7 +88,7 @@ function extraOf(rules: CardRules, settings: Settings): number {
 }
 
 /** One card's face, from its rules and what the instance gave it. */
-export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Settings): CardFace {
+export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Settings, kinds?: CardKinds): CardFace {
   const describe = ui ? ui.describe(settings) : '';
   return {
     key: rules.key,
@@ -97,6 +104,7 @@ export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Setti
     describe,
     rarity: rules.rarity,
     play: playOf(rules),
+    kind: playWord(playOf(rules), kinds),
   };
 }
 
@@ -111,6 +119,6 @@ export function withCardEconomy(settings: Settings, cardEconomy: Readonly<Record
 }
 
 /** Every card the instance sells, in the order its rules list them. */
-export function facesOf(cards: readonly CardRules[], uis: readonly CardUi[], settings: Settings): readonly CardFace[] {
-  return cards.map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings));
+export function facesOf(cards: readonly CardRules[], uis: readonly CardUi[], settings: Settings, kinds?: CardKinds): readonly CardFace[] {
+  return cards.map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings, kinds));
 }

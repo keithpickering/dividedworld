@@ -108,7 +108,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [] }: PlayFor
   const struck: string | null = null;
   const configUi = struck ? ui.cards.find((c) => c.key === struck) : cardUi;
   const configRules = struck ? instance.cards.find((c) => c.key === struck) : rules;
-  const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced) : null), [rules, cardUi, priced]);
+  const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced, ui.copy.cardKinds) : null), [rules, cardUi, priced, ui.copy.cardKinds]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 

@@ -149,6 +149,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
     badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
+    // A card's kind tag: a Move is cast (or set face down), a Gimmick is only set, a Ward guards your own post.
+    cardKinds: Object.freeze({ cast: 'Move', set: 'Gimmick', use: 'Ward' }),
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).
     marquees: Object.freeze(['FRESH BEEF', 'HAVE U SEEN LUIGI?', 'FAT WARIOS PLZ', 'HAHA, GACHA!', 'FORK IT OVER', 'RIZZY DRINKS', 'YOU EARNED IT', 'GO OFF, JOKER', 'NO SCALPING', 'JUST THIS ONCE', "LET 'EM HAVE IT", 'TCG-WHIZ', 'I CHOOSE YOU!', 'DO NOT SHAKE', 'LOST THE GAME', 'HAPPY TO HELP', 'JUST GLAD 2B HERE', 'WATCHIN U EAT', 'ORB FREAK', '<3 OF THE CARDS', 'YOUR BEST VEND', '[404 NOT FOUND]']),

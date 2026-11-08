@@ -10,6 +10,7 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
+import { faceOf } from '../../../engine/ui/cards/faces.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
@@ -307,5 +308,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
     expect(boardSwitch(instanceUi.glass)).toBe(1152);
+  });
+});
+
+describe('Divided World\'s kind words', () => {
+  test('Whoops! is a Move, Bluff a Gimmick, Force Field a Ward', () => {
+    const kind = (key: string): string => faceOf(instance.cards.find((c) => c.key === key)!, instanceUi.cards.find((c) => c.key === key), instance.settings, instanceUi.copy.cardKinds).kind;
+    expect([kind('whoops'), kind('bluff'), kind('force-field')]).toEqual(['Move', 'Gimmick', 'Ward']);
   });
 });
