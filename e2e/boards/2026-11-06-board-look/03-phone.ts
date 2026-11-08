@@ -8,6 +8,9 @@
  *    the board draws 30px, is centered in that banner (2px from where the board draws it), and everything under the banner is held at +13 and the button's growth (title +16.8, the board's row +15.8).
  *  - A board's last post holds its name link and time link each at the 24px target (WCAG 2.5.8), so the row stands 12px lower than the board's line draws
  *    it, the time at +9.6; the rest is the build's own spacing (Who is online at +6, the footer +10.3).
+ *  - A board's last post also names its thread, ahead of the poster's name and on the same wrapping line, which the board does not draw: the name stands
+ *    104px to the right of where the board draws it, the time wraps to a line of its own at the left (-237px, +22.5px more than before), and Who is online and
+ *    the footer stand about 20.6px lower again.
  *  - The build's host is the page's own address, the board's "dw.gripe", so it is not compared; the dates read against the real clock, as 02-board's.
  *  - The board's screen (the second, the `also` side) is held at the offset it stands on the board page. The build's board name stands 61px lower (the card
  *    banner keeps the room of a card's mark, and the crumb sits under the banner); the description stands a line lower (Start a thread
@@ -27,10 +30,10 @@ const manifest: BoardManifest = {
     { id: 'title', role: 'heading', name: 'Index', buildShift: { y: 16.8 } },
     { id: 'general', role: 'link', name: 'General', nth: 0, buildShift: { y: 15.8 } },
     { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', box: 'position', buildShift: { y: 14.8 } },
-    { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', nth: 0, box: 'position', buildShift: { y: 12 } },
-    { id: 'last-time', role: 'link', name: 'Oct 6', buildName: 'Oct 6 — latest post in General', box: 'position', buildShift: { y: 9.6 } },
-    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 6 } },
-    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 10.3 } },
+    { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', nth: 0, box: 'position', buildShift: { x: 104.27, y: 12 } },
+    { id: 'last-time', role: 'link', name: 'Oct 6', buildName: 'Oct 6 — latest post in General', box: 'position', buildShift: { x: -237.34, y: 32.08 } },
+    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 26.56 } },
+    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 30.91 } },
   ],
   /* The second screen, a board's thread list, stands 414px to the right on the board page (the screens 24px apart): the build is the story `Boards/02 Board`, held at that offset. */
   also: [{
