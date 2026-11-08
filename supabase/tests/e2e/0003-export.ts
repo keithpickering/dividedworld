@@ -89,7 +89,7 @@ test('an instance exported and imported into a fresh database is the same instan
       a uuid := tests.character(ann, 'Exported A'); b uuid := tests.character(bob, 'Exported B');
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
-      play uuid;
+      play uuid; move_post uuid; pass_post uuid;
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
@@ -104,12 +104,22 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- A trap of the export's own (#136 F1): Ann sets a Trap Card naming Blot on her post through set_card, and Bob's Blot cast on it
       -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
-      update settings set value = value || '{"expcatch.price": 100}' where key = 'economy';
+      update settings set value = value || '{"expcatch.price": 100, "expauto.price": 100, "exppass.price": 100}' where key = 'economy';
       insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap)
       values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}}');
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
       perform set_card(ann, 'expcatch', a, p, '{"card": "blot"}', 0, 'blot');
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
+      -- A Move set face down with a phrase (0139, Autocorrect's kind): its back holds the phrase and no catch, set on a post of its own.
+      -- A Hall Pass set face down on another post (0139): a Mod Bot's visit to that post springs it, and the visit ends (0105, 0110).
+      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches)
+      values ('expauto', 'Exported Autocorrect', 'pepperoni', 'expauto.price', 'common', 'cast', null, '{post}'),
+             ('exppass', 'Exported Hall Pass', 'sweet', 'exppass.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expauto', 'bought', 0), (ann, 'exppass', 'bought', 0);
+      move_post := tests.post(a, t, 'Carried across, and phrased.');
+      perform set_card(ann, 'expauto', a, move_post, '{"phrase": "carried across"}', 0, null, 'carried across');
+      pass_post := tests.post(a, t, 'Under a Hall Pass.');
+      perform set_card(ann, 'exppass', a, pass_post, '{}', 0);
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
       insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
@@ -218,6 +228,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_orders (meeting, staff, boards, order_line, allowance) select max(id), 'exp-bot', '{}', 'Watch the boards.', 0 from meetings;
       perform write_staff_act('exp-bot', 'visit', t, p, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', gen, 'band', 'minor', 'cause', 'rule', 'about_act', p::text)),
         'ends_at', now() + interval '3 hours', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+      -- The visit to the Hall Pass's post, started as the Mod Bots start one (start_visit, 0107): its start springs the back, and the visit ends.
+      perform start_visit(pass_post, 'exp-bot', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol',
+        'about_act', pass_post, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
       -- The Mod Bots' settings (so the filing run's job exists, 0106) and one judged call's record.
       insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
         on conflict (key) do update set value = excluded.value;
@@ -286,6 +299,14 @@ test('an instance exported and imported into a fresh database is the same instan
     join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text join acts k on k.kind = 'card' and k.payload ->> 'caught' = f.play::text`);
   const [setPlay, springAct, caughtAct] = trapIds.split('|');
   assert.ok(setPlay && springAct && caughtAct, `the cast holds a set, its spring and the card it caught: "${trapIds}"`);
+  // The Move set with its phrase, the Hall Pass a visit ended and its spring, and the caught card's ledger row, each read as the seed made it (0139).
+  const moveSet = sql(`select play from face_down where card = 'expauto'`);
+  const passSet = sql(`select play from face_down where card = 'exppass'`);
+  assert.ok(moveSet && passSet, 'the Move and the Hall Pass are set face down');
+  assert.equal(sql(`select phrase || '|' || coalesce(catches, '-') from face_down where play = '${moveSet}'`), 'carried across|-', 'a Move holds its phrase and no catch');
+  assert.equal(sql(`select catches || '|' || coalesce(phrase, '-') from face_down where play = '${setPlay}'`), 'blot|-', 'a Trap Card holds its catch and no phrase');
+  assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'caught' and l.card = 'blot'`), '1', 'the caught card is in the setter\'s ledger');
+  assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${passSet}'`), 'ended', 'the Hall Pass spring says the visit ended');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -481,6 +502,15 @@ test('an instance exported and imported into a fresh database is the same instan
       (select to_jsonb(a)::text from acts a where a.id = '${springAct}' and a.kind = 'spring') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${caughtAct}' and a.kind = 'card')`);
     assert.notEqual(trapRows(fresh.toString()), '', 'the set, its spring and the caught card are in the imported instance');
     assert.equal(trapRows(fresh.toString()), trapRows(from));
+    // The Move set with its phrase, the Hall Pass and its spring, and the caught card's ledger row, each carried as it was.
+    const newRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
+      select to_jsonb(f)::text x from face_down f where f.play in ('${moveSet}', '${passSet}')
+      union all select to_jsonb(l)::text from card_ledger l where l.kind = 'caught'
+      union all select to_jsonb(s)::text from acts s where s.kind = 'spring' and s.payload ->> 'set' in ('${moveSet}', '${passSet}')) q`);
+    assert.match(newRows(from), /"phrase": "carried across"/, 'the Move\'s phrase is in the export');
+    assert.match(newRows(from), /"kind": "caught"/, 'the caught ledger row is in the export');
+    assert.match(newRows(from), /"did": "ended"/, 'the Hall Pass spring is in the export');
+    assert.equal(newRows(fresh.toString()), newRows(from), 'the Move, the Hall Pass, their springs and the caught ledger row survive the round trip');
     // The card an admin ended (0092): its card_end Act is carried as written, by its id, its target, its kind, and its payload.
     const endAct = sql(`select id from acts where kind = 'card_end' and target_act_id = '${endedPlay}'`);
     assert.ok(endAct, 'the card an admin ended holds a card_end in the exported instance');
