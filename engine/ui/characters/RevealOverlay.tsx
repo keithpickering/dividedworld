@@ -6,6 +6,7 @@
  * The rules of a reveal are reveal.ts's, shared with the board's dialog (RevealModal.tsx).
  */
 import { useEffect, useState } from 'react';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Board, MyCharacter } from '../data/api.ts';
 import { GlassButton } from '../glass/Button.tsx';
@@ -35,16 +36,21 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   const r = useReveal(character);
   const { setRefusal } = r;
   const words = revealWords(character, r.className, ui.copy.gameWord);
-  const [boards, setBoards] = useState<readonly Board[]>([]);
+  /* The boards are boot's, read once for the frame: the overlay opens with them in its first render. Only where boot is not there (a story, a screen before boot) are they read. */
+  const boot = useBoot();
+  const [read, setRead] = useState<readonly Board[]>([]);
+  const boards = (boot ? boot.boards : read).filter((x) => !x.isSystem);
   /* The optional filter: '' is All boards. The field is remounted when it changes, so a thread chosen under another filter is cleared. */
   const [board, setBoard] = useState('');
   const [chosen, setChosen] = useState<Chosen | null>(null);
 
+  const hasBoot = boot !== null;
   useEffect(() => {
+    if (hasBoot) return undefined;
     let live = true;
-    void api.boards().then((b) => { if (live) setBoards(b.filter((x) => !x.isSystem)); }, () => { if (live) setRefusal('The boards could not be loaded. Close this and try again.'); });
+    void api.boards().then((b) => { if (live) setRead(b); }, () => { if (live) setRefusal('The boards could not be loaded. Close this and try again.'); });
     return () => { live = false; };
-  }, [api, setRefusal]);
+  }, [api, hasBoot, setRefusal]);
 
   /* Empty, the newest threads; typed into, titles. The System's board is never offered, and each option names its board. */
   const source: ComboSource = async (query) => {
@@ -99,7 +105,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
         <FormFoot line={revealFooter(ui.copy.gameWord)}>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={!chosen || r.over || r.busy}>{words.button}</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={r.busy} disabled={!chosen || r.over}>{words.button}</GlassButton>
         </FormFoot>
       </form>
     </Overlay>

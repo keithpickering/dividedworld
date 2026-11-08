@@ -184,7 +184,7 @@ function warnBarRule(v: unknown): string | null {
 
 /**
  * The member groups' settings (`Settings.apology`): exactly the fields of ApologySettings, each a whole number, at least 1. Mirrors `setting_apology` in
- * supabase/migrations/0121_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ * supabase/migrations/0126_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
 function apologyRule(v: unknown): string | null {

@@ -13,14 +13,15 @@
  * made before shares were kept, so its row has no control and says why.
  *
  * Its tests wait on the owner's word on this story (the plan's Task 5); the page is the screen's own
- * `Log`, read as LogScreen reads it, in the glass's page shell.
+ * `Log`, read as the route's loader reads it, in the glass's page shell.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import { Page } from '../glass/Page.tsx';
-import { useSignedIn } from '../mini.tsx';
+import { loadLog, type LogDoc } from '../glass-docs.ts';
 import { usePlayer } from '../player.tsx';
+import { isSignedOutDoc } from '../screen-docs.ts';
 import { Log } from './Log.tsx';
 import type { LogData } from './lines.ts';
 import { useLog } from './useLog.ts';
@@ -28,34 +29,50 @@ import { useLog } from './useLog.ts';
 /** The boards' count down to the settlement: 7 h 42 min, from when the story is drawn. */
 const SETTLEMENT_IN = (7 * 60 + 42) * 60_000;
 
+/** The log's document, read as the route's loader reads it (a story has no router to do it). */
+function useDoc(): LogDoc | null {
+  const { api } = useKayfa();
+  const [doc, setDoc] = useState<LogDoc | null>(null);
+  useEffect(() => {
+    void loadLog({ api, signedIn: async () => (await api.session()).signedIn }, () => Promise.resolve()).then((d) => setDoc(isSignedOutDoc(d) ? null : d));
+  }, [api]);
+  return doc;
+}
+
 /** The log at the board's moment, the newest settlement's breakdown open until it is closed. */
 function LogOpen() {
+  const doc = useDoc();
+  return doc === null ? <div className="kb-log" aria-busy="true" /> : <LogOpenView doc={doc} />;
+}
+
+function LogOpenView({ doc }: { readonly doc: LogDoc }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session, hudCharacter } = usePlayer();
-  const { state } = useLog(api, signedIn, session.account);
+  const { hudCharacter, characters } = usePlayer();
+  const { data } = useLog(api, doc, characters, null);
   const [open, setOpen] = useState<ReadonlySet<number> | null>(null);
   const [tab, setTab] = useState<string | null | undefined>(undefined);
-  if (state.status !== 'ready') return <div className="kb-log" aria-busy="true" />;
-  const shown = open ?? new Set(state.data.log.settlements.slice(0, 1).map((s) => s.id));
+  const shown = open ?? new Set(data.log.settlements.slice(0, 1).map((s) => s.id));
   const toggle = (id: number, to?: boolean) => {
     const next = new Set(shown);
     if (to ?? !shown.has(id)) next.add(id); else next.delete(id);
     setOpen(next);
   };
-  return <Log data={state.data} tab={tab !== undefined ? tab : (hudCharacter?.id ?? null)} onTab={setTab} open={shown} onToggle={toggle} />;
+  return <Log data={data} tab={tab !== undefined ? tab : (hudCharacter?.id ?? null)} onTab={setTab} open={shown} onToggle={toggle} />;
 }
 
 /** The log a player sees before their first settlement: the moment's characters, no line of any, the next settlement 7 h 42 min off, on Mrs. Hooligan's tab. */
 function LogEmpty() {
+  const doc = useDoc();
+  return doc === null ? <div className="kb-log" aria-busy="true" /> : <LogEmptyView doc={doc} />;
+}
+
+function LogEmptyView({ doc }: { readonly doc: LogDoc }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session } = usePlayer();
-  const { state } = useLog(api, signedIn, session.account);
+  const { characters } = usePlayer();
+  const { data } = useLog(api, doc, characters, null);
   const [tab, setTab] = useState<string | null | undefined>(undefined);
-  if (state.status !== 'ready') return <div className="kb-log" aria-busy="true" />;
   const bare: LogData = {
-    ...state.data,
+    ...data,
     log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null },
     estimate: null, turns: [], nextSettlement: new Date(Date.now() + SETTLEMENT_IN).toISOString(),
   };

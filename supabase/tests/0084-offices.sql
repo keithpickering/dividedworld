@@ -76,7 +76,7 @@ begin
   if seen is distinct from 'boss' or (select office from characters_public where staff = 'of-mod') is distinct from 'mod' then raise exception 'characters_public does not show the office: %', seen; end if;
   -- The seed writes the log once, for the first staff.
   if pg_temp.rows('of-mod') is distinct from 'mod:seed' or exists (select 1 from staff_offices where staff <> 'of-mod') then raise exception 'the seed wrote % rows', (select count(*) from staff_offices); end if;
-  -- The staff group is the ladder's staff rung (0123): the seed writes no staffGroup setting, and screen_settings carries none an older seed left, so an instance seeded before it still boots.
+  -- The staff group is the ladder's staff rung (0128): the seed writes no staffGroup setting, and screen_settings carries none an older seed left, so an instance seeded before it still boots.
   if exists (select 1 from settings where key = 'staffGroup') then raise exception 'the seed wrote a staffGroup setting: %', (select value from settings where key = 'staffGroup'); end if;
   insert into settings (key, value) values ('staffGroup', '{"name": "Old Cores"}'::jsonb);
   if (select settings from screen_settings) ? 'staffGroup' then raise exception 'screen_settings still carries staffGroup'; end if;

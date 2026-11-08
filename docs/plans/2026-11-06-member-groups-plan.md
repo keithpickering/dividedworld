@@ -63,6 +63,7 @@ and a task disagree, this paragraph wins.
   text below is superseded where it says otherwise.
 - *Renumbered on merging `main`.* The groups migrations landed as 0119–0128 (tests 0121–0129), after `main`'s
   0116–0118 (tweener standings, search, BBCode tags); the numbers 0116–0125 in this plan name them as first written.
+  Merging `main` again moved them to 0124–0134 (tests 0125–0134), after `main`'s 0119–0123 (the glass-load pages).
 
 ## Task 1: groups in the engine (engine)
 

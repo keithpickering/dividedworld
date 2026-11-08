@@ -35,12 +35,14 @@ import { visibleText } from '../../bbcode/visible.ts';
 import { parse } from '../../bbcode/parse.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
+import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson, PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
+  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -383,7 +385,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
-    /* What screen_settings's groups holds (0119): the ladder lowest first, then the groups a move confers. */
+    /* What screen_settings's groups holds (0124): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
@@ -425,7 +427,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
-  /** The apologies barred characters wrote (`apologies`, 0120). */
+  /** The apologies barred characters wrote (`apologies`, 0125). */
   const apologies: { move: Id; apology: Id; character: Id; state: 'pending' | 'accepted' | 'rejected' | 'returned'; at: number }[] = [];
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
@@ -1647,7 +1649,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: (rulingOn(b.id)?.payload.until ?? b.payload.until) as string,
           infraction: b.payload.infraction_act as Id, rule: ((i) => (i ? ruleWords(i) : null))(acts.get(String(b.payload.infraction_act))), thread: b.thread,
         })),
-      /* my_group_moves (0125): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
+      /* my_group_moves (0130): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
       groupMoves: newest(all.filter((m) => m.kind === 'move' && m.payload['kind'] === 'conferGroup' && owned((m.payload['params'] as Record<string, unknown> | undefined)?.['character']) && fits(m.at)).map((m) => ({ ms: m.at, order: m.order, m })))
         .map(({ m }): LogGroupMove => {
           const params = (m.payload['params'] ?? {}) as Record<string, unknown>;
@@ -2699,6 +2701,79 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         counts: kind === 'class' || kind === 'seasons' ? { posts: 0, spins: 0, cards: 0 } : core.characterCounts(id), reveals, turns, seasons, acts, windowFrom: from,
         targets: core.actsById([...acts.flatMap((a) => (a.kind === 'card' && a.targetActId !== null ? [a.targetActId] : [])), ...turns.map((t) => t.act)]),
         unread: core.alertsUnread(),
+      };
+    },
+    myCharactersPage(): MyCharactersPage {
+      const mine = core.myCharacters();
+      const debuted = mine.filter((c) => c.debutedAt !== null).map((c) => c.id);
+      return {
+        characters: mine, faces: core.characters(debuted), counts: Object.fromEntries(mine.map((c) => [c.id, core.characterCounts(c.id)])),
+        standings: core.standingAmounts(debuted), reveals: core.classReveals(debuted), turns: core.turnsAnnounced(debuted), nextSettlementAt: core.nextSettlementAt(),
+      };
+    },
+    seasonPage(tab, season, character, page): SeasonPage | null {
+      const now = core.season();
+      const finished = core.finishedSeasons();
+      const mode = tab === 'news' ? 'news' : season === null || season === now?.number ? 'standings' : finished.some((f) => f.number === season) ? 'results' : 'missing';
+      if (mode === 'missing') return null;
+      if (mode === 'news') return { tab: 'news', season: now, news: core.seasonNews(null) };
+      const place = mode === 'results' && character !== null ? core.resultPlace(season!, character) : null;
+      const shown = page !== null ? Math.min(Math.max(page, 1), 10_000) : Math.min(Math.max(place === null ? 1 : Math.floor(place / 50) + 1, 1), 10_000);
+      if (mode === 'results') return { tab: 'results', season: now, finished, page: shown, place, results: core.resultsPage(season!, shown) };
+      const standings = core.standingsPage((shown - 1) * 50, 50);
+      const people = standings.map((x) => x.character);
+      return { tab: 'standings', season: now, finished, page: shown, standings, size: core.standingsCount(), reveals: core.classReveals(people), turns: core.turnsAnnounced(people) };
+    },
+    alertsPage(before): AlertsPage {
+      const alerts = core.alerts(before);
+      const acts = new Map<Id, Act>();
+      /* The rows' Acts, and the Acts those lead to, three links deep (alerts_page's chain). */
+      let next = alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
+      for (let depth = 0; depth < 3 && next.length; depth++) {
+        const read = core.actsById(next.filter((id) => !acts.has(id)));
+        for (const a of read) acts.set(a.id, a);
+        next = read.flatMap((a) => (a.targetActId === null ? [] : [a.targetActId]));
+      }
+      const threads = [...new Set(alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
+      return {
+        alerts, seenAt: core.preferences().alertsSeenAt, openedAt: (() => { try { return core.accountOpenedAt(); } catch { return null; } })(), acts: [...acts.values()],
+        people: core.characters([...new Set([...acts.values()].flatMap((a) => (a.character === null ? [] : [a.character])))]), openings: core.openingActs(threads), reading: core.reading(threads),
+      };
+    },
+    updatesPage(update, before, handoverSeason): UpdatesPage {
+      const updates = core.updates(before);
+      const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act ?? null;
+      return {
+        updates, tallies: core.tallies(open === null ? [] : [open]), mine: core.myReactions(open === null ? [] : [open]),
+        ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
+      };
+    },
+    queuePage(): QueuePage | null {
+      return core.isAdmin() ? { queue: core.adminQueue(), boardNames: core.boardNames(), bosses: core.bosses(), contact: core.adminContact() } : null;
+    },
+    logPage(before): LogPage {
+      const log = core.log(before);
+      const mine = core.myCharacters();
+      const ids = mine.map((c) => c.id);
+      /* Only a character's latest Turn is a line (lines.ts), so only its announcement is named. */
+      const announced = core.turnsAnnounced(ids);
+      const turns = announced.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
+      const acts = new Map<Id, Act>();
+      for (const a of core.actsById(actsNamed(log, null, turns))) acts.set(a.id, a);
+      for (let round = 0; round < 2; round++) for (const a of core.actsById(actsFollowed(acts))) acts.set(a.id, a);
+      const unnamed: { character: Id[]; thread: Id[]; board: Id[] } = { character: [], thread: [], board: [] };
+      for (const a of acts.values()) {
+        const reach = a.payload.reach;
+        if (a.kind !== 'card' || typeof a.payload.targetName === 'string' || (reach !== 'character' && reach !== 'thread' && reach !== 'board')) continue;
+        const target = a.payload[reach];
+        if (typeof target === 'string') unnamed[reach].push(target);
+      }
+      const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character).filter((c): c is Id => c !== null && !ids.includes(c)))];
+      const threads = [...new Set(turns.map((t) => acts.get(t.act)?.thread).concat(unnamed.thread).filter((t): t is Id => t !== undefined))];
+      return {
+        log, acts: [...acts.values()], states: core.effectStates([...new Set(log.saves.map((s) => s.play))]), people: core.characters(others),
+        threads: threads.flatMap((id) => core.thread(id) ?? []), boards: [...new Set(unnamed.board)].flatMap((id) => core.board(id) ?? []),
+        standings: core.standingAmounts(ids), turns: announced, season: core.season(),
       };
     },
     setPresenceHidden(character, hidden) {

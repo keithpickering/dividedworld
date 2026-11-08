@@ -1,14 +1,14 @@
 -- The staff rung replaces the staffGroup setting (docs/plans/2026-11-06-member-groups-plan.md, Task 9).
 --
--- The staff group's name was a setting, `staffGroup`, that the seed wrote and screen_settings carried to the screens. The ladder's staff rung (group_kinds, 0119) now
+-- The staff group's name was a setting, `staffGroup`, that the seed wrote and screen_settings carried to the screens. The ladder's staff rung (group_kinds, 0124) now
 -- is that group: a staff character's `group` names it (group_now), and the screens read its name, color and stripe from screen_settings' `groups`. So:
---   seed_instance      as 0120 wrote it, without the insert of the `staffGroup` setting. A payload that still carries `system.staffGroup` is not read; a settings row an earlier
+--   seed_instance      as 0125 wrote it, without the insert of the `staffGroup` setting. A payload that still carries `system.staffGroup` is not read; a settings row an earlier
 --                      seed wrote stays where it is, read by no one (the view below no longer lists it), so an instance seeded before this change still boots.
---   screen_settings    as 0119 wrote it, without `staffGroup` in its list of settings, and each group also saying whether it is the staff rung (`staff`, the ladder's rung whose
+--   screen_settings    as 0124 wrote it, without `staffGroup` in its list of settings, and each group also saying whether it is the staff rung (`staff`, the ladder's rung whose
 --                      condition is 'staff'), so a screen names the staff group without reading any character.
 -- Masks. Public data only, as before: the staff rung's look is a group's look. Ways out. Adds no state.
 
--- seed_instance (0120), no longer writing the `staffGroup` setting. Everything else as 0120 wrote it.
+-- seed_instance (0125), no longer writing the `staffGroup` setting. Everything else as 0125 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -45,7 +45,7 @@ begin
   end if;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;
-  -- Member groups (0119): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
+  -- Member groups (0124): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
   -- naming the group. A group the payload no longer lists is deleted unless a move (landed or queued) names it, so the log line that names it still can.
   if payload ? 'groups' then
     select string_agg(e ->> 'key' || ' (' || coalesce(e ->> 'condition', 'none') || ')', ', ') into unknown
@@ -234,7 +234,7 @@ begin
 end $$;
 
 
--- screen_settings (0119), no longer carrying the `staffGroup` setting, each group carrying `staff`, and a group's `badge` (0119) where it has one. Everything else as 0119 wrote it.
+-- screen_settings (0124), no longer carrying the `staffGroup` setting, each group carrying `staff`, and a group's `badge` (0124) where it has one. Everything else as 0124 wrote it.
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (

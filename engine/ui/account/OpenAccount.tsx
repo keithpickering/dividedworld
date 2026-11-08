@@ -63,13 +63,13 @@ export function OpenAccount() {
             <span className="kb-acct-row-label">Invite</span>
             <input className="kb-acct-input" value={invite} onChange={(e) => setInvite(e.target.value)} autoComplete="off" spellCheck={false} />
           </label>
-          <ButtonRow><GlassButton type="submit" kind="primary" disabled={busy}>Open the account</GlassButton></ButtonRow>
+          <ButtonRow><GlassButton type="submit" kind="primary" busy={busy}>Open the account</GlassButton></ButtonRow>
         </>
       )}
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <ButtonRow>
-        <GlassButton disabled={busy} onClick={() => void leave()}>Sign out</GlassButton>
-        <GlassButton disabled={busy} onClick={() => void leave('/sign-in')}>Use another address</GlassButton>
+        <GlassButton busy={busy} onClick={() => void leave()}>Sign out</GlassButton>
+        <GlassButton busy={busy} onClick={() => void leave('/sign-in')}>Use another address</GlassButton>
       </ButtonRow>
     </form>
   );
@@ -80,8 +80,7 @@ export function OpenAccount() {
  * (/contact), since a player stuck here is the one who most needs a way to reach an admin.
  */
 export function AccountGate({ children }: { readonly children: ReactNode }) {
-  const { api } = useKayfa();
-  const session = useSession(api);
+  const session = useSession();
   const { path } = useLocation();
   if (session?.signedIn && !session.account && path !== '/sign-in' && path !== '/register' && path !== CONTACT_PATH) {
     return <div className="kb-acct"><CalmRegion className="kb-acct-panel"><OpenAccount /></CalmRegion></div>;

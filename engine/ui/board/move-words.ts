@@ -22,7 +22,7 @@ export const moveLabel = (kind: string, role: string): string => (moveKind(kind)
 /**
  * Who made a move, in the instance's words, as a sentence begins ("The Boss", "A Mod"). `office` is the one stamped on the move's Act when it landed (`payload.office`,
  * `moveOffice`), never the persona's office now: a Mod may make some of the Boss's moves, and the persona may hold another office later. `UiCopy.roleWord` is the Boss's; a Mod's is
- * `UiCopy.modRole`, else the engine's "A Mod". A move with no stamp (made before 0128, when only the Boss and the rule-setting Mods moved) is read as the Boss's.
+ * `UiCopy.modRole`, else the engine's "A Mod". A move with no stamp (made before 0133, when only the Boss and the rule-setting Mods moved) is read as the Boss's.
  */
 export const officeRole = (copy: Pick<UiCopy, 'roleWord' | 'modRole'>, office: Office | undefined): string => (office === 'mod' ? modRole(copy) : copy.roleWord);
 

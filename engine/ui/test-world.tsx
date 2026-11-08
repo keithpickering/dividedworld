@@ -26,7 +26,7 @@ const settings: Settings = {
   postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
 };
 
-/* What screen_settings's groups holds (0119) for the test instance: the ladder lowest first, then the conferred groups. */
+/* What screen_settings's groups holds (0124) for the test instance: the ladder lowest first, then the conferred groups. */
 const screenGroups = [...testGroups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...testGroups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))];
 
 const earn = () => [];

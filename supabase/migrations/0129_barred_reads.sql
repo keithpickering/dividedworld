@@ -1,18 +1,18 @@
 -- The barred box's read (docs/plans/2026-11-06-member-groups-plan.md, Task 10).
 --
---   my_apologies(character)   the caller's own acting character's apologies (0120's `apologies`, which no client reads), newest first: the move each answers, its state
---                           (pending, accepted, rejected, returned), when it was written and when the next may be (created_at plus apologyEveryHours, as `apologize` (0121)
+--   my_apologies(character)   the caller's own acting character's apologies (0125's `apologies`, which no client reads), newest first: the move each answers, its state
+--                           (pending, accepted, rejected, returned), when it was written and when the next may be (created_at plus apologyEveryHours, as `apologize` (0126)
 --                           counts it; none for a returned one, which opens the next at once). The barred box says "Your apology is with the Boss" or the time the next may be
 --                           written from it.
 --
---   my_characters             (0119) also carries `bars` as its last column: the boards the character is barred from posting on now, each {board, move, group, expires_at}
---                           (bars_now, 0120, less a move past its expiry that the tick has not yet ended), [] while it is barred from none. The composer and New thread say so from it
+--   my_characters             (0124) also carries `bars` as its last column: the boards the character is barred from posting on now, each {board, move, group, expires_at}
+--                           (bars_now, 0125, less a move past its expiry that the tick has not yet ended), [] while it is barred from none. The composer and New thread say so from it
 --                           without a read of their own, as they say a ban from `banned_until`.
 --
 -- Masks. A bar is a public fact (the move's Act names the character, the group and the board), carried here by the caller's own characters as a ban is; it says nothing a
 -- thread's postbit does not. An apology is a public spin by the barred character, but its state (waiting, ruled) is read by its own player alone: the function returns rows only for a character the
 -- caller plays, and the same empty answer for another player's character, an id that is no one's and a null, so it proves nothing about who owns what. The bar itself
--- (`bars_now`, 0120) is public and is read as it is.
+-- (`bars_now`, 0125) is public and is read as it is.
 -- Ways out. Read-only; it adds no state.
 
 create function my_apologies(in_character uuid) returns table (move_act uuid, state text, created_at timestamptz, next_at timestamptz)
@@ -27,7 +27,7 @@ $$;
 revoke execute on function my_apologies(uuid) from public, anon;
 grant execute on function my_apologies(uuid) to authenticated;
 
--- my_characters (0119), also saying the boards each character is barred from (`bars`, its last column). Everything else as 0119 wrote it.
+-- my_characters (0124), also saying the boards each character is barred from (`bars`, its last column). Everything else as 0124 wrote it.
 create or replace view my_characters as
   select c.id, c.name, h.class_key as class, h.started_at as class_since,
          case when t.at > now() then t.at end as turn_opens_at,

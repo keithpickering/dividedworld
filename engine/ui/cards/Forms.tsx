@@ -10,11 +10,13 @@
  * "N reports left today" is asked for that mask alone, in the player's own session, and shown only to them; an appeal goes through the infraction's own character, which the tab
  * offered Appeal to only where it is the HUD's mask.
  */
-import { useContext, useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useContext, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, MyBan, Visit } from '../data/api.ts';
 import { dayAndTime } from '../characters/format.ts';
+import { GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
+import { PREPARED_FAILED, usePrepared, useRest, type Prepared } from '../glass/prepared.ts';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { usePlayer } from '../player.tsx';
 import { ThreadCtx } from '../thread/context.ts';
@@ -89,7 +91,27 @@ export interface MoveAppealFacts {
 /** The Mod's own words, quoted. */
 const quoted = (line: string) => (line.trim() === '' ? null : <span className="kb-visit-said">“{line}”</span>);
 
-export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: number }) {
+/** What the report tab reads before it shows: the mask's reports left today and who judges on this board's beat. Neither read can stop the tab; a failed one is left out. */
+export interface ReportRead {
+  readonly left: number | null;
+  readonly judge: { readonly mod: string; readonly board: string } | null;
+}
+
+/** The report tab's read, asked of the HUD's mask in this player's own session. */
+export function useReportRead(): Prepared<ReportRead> {
+  const { api } = useKayfa();
+  const maskId = usePlayer().hudCharacter?.id ?? null;
+  const board = useContext(ThreadCtx)?.summary.board ?? null;
+  return usePrepared<ReportRead>(async () => {
+    const [left, judge] = await Promise.all([
+      maskId === null ? null : Promise.resolve(api.reportsLeft(maskId)).catch(() => null),
+      board === null ? null : Promise.resolve(api.beatMod(board)).catch(() => null),
+    ]);
+    return { left, judge };
+  }, () => `${maskId ?? ''}:${board ?? ''}`);
+}
+
+export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly seq: number; readonly ready: ReportRead }) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const mask = player.hudCharacter;
@@ -97,29 +119,11 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [result, setResult] = useState<{ readonly verdict: string; readonly line: string } | null>(null);
-  const [left, setLeft] = useState<number | null>(null);
-  const [judge, setJudge] = useState<{ readonly mod: string; readonly board: string } | null>(null);
-  const board = useContext(ThreadCtx)?.summary.board ?? null;
+  const [left, setLeft] = useState<number | null>(ready.left);
+  const judge = ready.judge;
   const ids = useId();
   const price = instance.settings.modBots.reportPrice;
-  const maskId = mask?.id ?? null;
   const role = modRole(ui.copy);
-
-  /* The quota is asked for the mask the report goes through, in this player's own session. */
-  useEffect(() => {
-    if (maskId === null) { setLeft(null); return; }
-    let live = true;
-    void Promise.resolve(api.reportsLeft(maskId)).then((n) => { if (live) setLeft(n); }, () => { if (live) setLeft(null); });
-    return () => { live = false; };
-  }, [api, maskId]);
-
-  /* Who judges it: the Mod on this board's beat, a public name. */
-  useEffect(() => {
-    if (board === null) return;
-    let live = true;
-    void Promise.resolve(api.beatMod(board)).then((j) => { if (live) setJudge(j); }, () => undefined);
-    return () => { live = false; };
-  }, [api, board]);
 
   if (!mask) {
     return <div className="kb-visit"><p className="kb-visit-terms">None of your characters can report yet.</p></div>;
@@ -173,9 +177,7 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
         {over && <p role="alert" className="kb-notice" data-kb-tone="refusal">A reason is at most {REASON_MAX} characters.</p>}
       </div>
       <div className="kb-lens-section kb-visit-appeal-section">
-        <button type="submit" className="kb-kit-tile kb-visit-appeal" aria-disabled={busy || blank || over || spent ? 'true' : undefined}>
-          <span className="kb-kit-tile-label">Report · {auraWords(price)}</span>
-        </button>
+        <GlassButton type="submit" kind="secondary" className="kb-visit-appeal" busy={busy} aria-disabled={blank || over || spent ? 'true' : undefined}>Report · {auraWords(price)}</GlassButton>
         {left !== null && (
           <p className="kb-visit-terms">{mask.name} has {left} {left === 1 ? 'report' : 'reports'} left today.{spent ? ' Reports open again after midnight UTC.' : ''}</p>
         )}
@@ -190,7 +192,7 @@ export function ReportForm({ post, seq }: { readonly post: Id; readonly seq: num
 }
 
 /** The infraction's own facts, as its Act carries them. */
-interface Said {
+export interface Said {
   readonly character: Id;
   readonly band: string;
   readonly points: number;
@@ -205,16 +207,28 @@ function said(act: Act): Said | null {
   };
 }
 
-export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
+/** The appeal tab's read: the infraction's own Act, before the tab shows. An Act that is not an infraction cannot be appealed, so it is a failed read. */
+export function useAppealRead(infraction: Id): Prepared<Said> {
+  const { api } = useKayfa();
+  return usePrepared<Said>(async () => {
+    const a = await Promise.resolve(api.act(infraction));
+    const facts = a ? said(a) : null;
+    if (facts === null) throw new Error('not an infraction');
+    return facts;
+  }, () => infraction);
+}
+
+export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled, facts }: {
   readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly ban?: MyBan;
   /** Set for a group move: the form then appeals the move, with its facts and terms, and reads nothing of its own. */
   readonly move?: MoveAppealFacts;
   /** Called once an appeal was taken (paid and public), so the screen that opened the form can stop offering it. */
   readonly onFiled?: () => void;
+  /** The infraction's facts, read before the tab showed; none for a ban or a move. */
+  readonly facts?: Said;
 }) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
-  const [facts, setFacts] = useState<Said | null | 'failed'>(null);
   const [plea, setPlea] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -223,14 +237,7 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
   const price = instance.settings.modBots.appealPrice;
   const role = modRole(ui.copy);
 
-  useEffect(() => {
-    if (ban || move) return undefined;
-    let live = true;
-    void Promise.resolve(api.act(infraction)).then((a) => { if (live) setFacts(a ? said(a) ?? 'failed' : 'failed'); }, () => { if (live) setFacts('failed'); });
-    return () => { live = false; };
-  }, [api, infraction, ban, move]);
-
-  const f: Said | null = facts === 'failed' ? null : facts;
+  const f: Said | null = facts ?? null;
   const known = ban !== undefined || move !== undefined;
   const mod = ban ? 'The Boss' : move ? move.hearer : visit ? nameOf(visit.mod) : role;
   const top = visit ? topCharge(visit.charges) : null;
@@ -238,9 +245,6 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
   const over = [...plea].length > PLEA_MAX;
   const blank = plea.trim() === '';
 
-  if (!known && facts === 'failed') {
-    return <div className="kb-visit"><p role="alert" className="kb-visit-terms">This punishment could not be read. Close this and open the visit again.</p></div>;
-  }
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy || blank || over || (f === null && !known)) return;
@@ -261,7 +265,7 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
   };
 
   return (
-    <form className="kb-visit kb-mod-form" onSubmit={(e) => void submit(e)} aria-label="Appeal" aria-busy={facts === null && !known ? 'true' : undefined}>
+    <form className="kb-visit kb-mod-form" onSubmit={(e) => void submit(e)} aria-label="Appeal">
       <div className="kb-lens-section kb-visit-state">
         {move ? (
           <>
@@ -279,9 +283,7 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
         ) : (
           <>
             <p className="kb-visit-facts">
-              {f === null
-                ? 'Reading the punishment.'
-                : <>The punishment: {rule}, a {f.band} breach, {pointsPlain(f.points)} on {nameOf(f.character)}&apos;s warn bar
+              {f !== null && <>The punishment: {rule}, a {f.band} breach, {pointsPlain(f.points)} on {nameOf(f.character)}&apos;s warn bar
                   {f.expiresAt !== '' ? (Date.parse(f.expiresAt) > Date.now() ? `, dropping off ${shortDate(f.expiresAt)}` : `, dropped off ${shortDate(f.expiresAt)}`) : ''}.</>}
             </p>
             <p className="kb-visit-terms">{appealTerms(mod, { points: f === null ? 0 : f.points })}</p>
@@ -298,9 +300,7 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
         {over && <p role="alert" className="kb-notice" data-kb-tone="refusal">A plea is at most {PLEA_MAX} characters.</p>}
       </div>
       <div className="kb-lens-section kb-visit-appeal-section">
-        <button type="submit" className="kb-kit-tile kb-visit-appeal" aria-disabled={busy || blank || over || (f === null && !known) ? 'true' : undefined}>
-          <span className="kb-kit-tile-label">Appeal · {auraWords(price)}</span>
-        </button>
+        <GlassButton type="submit" kind="secondary" className="kb-visit-appeal" busy={busy} aria-disabled={blank || over || (f === null && !known) ? 'true' : undefined}>Appeal · {auraWords(price)}</GlassButton>
       </div>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <p role="status" className="kb-visit-result">
@@ -319,27 +319,29 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled }: {
  */
 export function BanAppeal({ character, ban }: { readonly character: Id; readonly ban?: MyBan }) {
   const { api, instance } = useKayfa();
-  const [open, setOpen] = useState(false);
-  const [read, setRead] = useState<MyBan | null | 'failed'>(ban ?? null);
   const opener = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open || ban) return;
-    let live = true;
-    void Promise.resolve(api.myBan(character)).then((b) => { if (live) setRead(b ?? 'failed'); }, () => { if (live) setRead('failed'); });
-    return () => { live = false; };
-  }, [api, character, open, ban]);
-  const shown = ban ?? read;
+  /* The ban is read before the overlay opens (the glass-load design, section 4); a ban the caller holds opens at once. A ban that has ended answers nothing, which is a read that failed. */
+  const prepared = usePrepared<MyBan>(async () => {
+    if (ban) return ban;
+    const b = await Promise.resolve(api.myBan(character));
+    if (!b) throw new Error('no ban');
+    return b;
+  }, () => `${character}:${ban?.ban ?? ''}`);
+  const rest = useRest(() => { if (!ban) prepared.early(); });
+  const { data: shown, busy, failed, open, cancel } = prepared;
   return (
     <>
-      <button ref={opener} type="button" className="kb-button kb-ban-appeal" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      <button
+        ref={opener} type="button" className="kb-button kb-ban-appeal" aria-haspopup="dialog" aria-busy={busy ? 'true' : undefined}
+        onClick={() => { if (!busy) void open(); }} {...rest}
+      >
         Appeal to the Boss · {auraWords(instance.settings.modBots.appealPrice)}
       </button>
+      {failed && <span role="alert" className="kb-visit-terms"> {PREPARED_FAILED}</span>}
       <Layers>
-      {open && (
-        <Overlay title="Appeal the ban" surface="log" kicker="Appeal to the Boss" onClose={() => setOpen(false)} returnFocusTo={() => opener.current}>
-          {shown === null && <p className="kb-visit-terms" aria-busy="true">Reading the ban.</p>}
-          {shown === 'failed' && <p role="alert" className="kb-visit-terms">This ban could not be read, or it has ended. Close this and try again.</p>}
-          {shown !== null && shown !== 'failed' && <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} />}
+      {shown !== null && (
+        <Overlay title="Appeal the ban" surface="log" kicker="Appeal to the Boss" onClose={cancel} returnFocusTo={() => opener.current}>
+          <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} />
         </Overlay>
       )}
       </Layers>

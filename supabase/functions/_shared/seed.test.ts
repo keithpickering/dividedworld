@@ -33,7 +33,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.equal(seed.reactions.length, 16);
 });
 
-test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0119)', () => {
+test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0124)', () => {
   const { groups } = instanceSeed(instance);
   const ladder = groups.filter((g) => g.source === 'ladder');
   assert.deepEqual(ladder.map((g) => [g.key, 'rung' in g ? g.rung : null, 'condition' in g ? g.condition : null]),

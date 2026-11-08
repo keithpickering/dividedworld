@@ -94,7 +94,7 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   set_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
-  // An apology is the spin of a move's Act (0121), and is heard as one.
+  // An apology is the spin of a move's Act (0126), and is heard as one.
   apologize: (a) => [...thread(a.thread), ...act(a.act)],
   unmask: (a) => act(a),
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).

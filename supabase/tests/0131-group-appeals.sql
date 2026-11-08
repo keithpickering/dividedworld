@@ -1,4 +1,4 @@
--- Appealing a group punishment (supabase/migrations/0126_group_appeals.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 14, as amended 2026-11-07).
+-- Appealing a group punishment (supabase/migrations/0131_group_appeals.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 14, as amended 2026-11-07).
 --
 -- 1. open_appeal accepts a landed conferGroup move whose group is a punishment, appealed only by its params->>'character', once, at appealPrice, and answers with what the
 --    judgment needs (the group, the board it bars, its length, its end, who made it, who hears it). It refuses a favor, another character's move (the same words as no move),
@@ -31,7 +31,7 @@ begin
   return r;
 end $$;
 
--- A group move that has landed (as an Act), created `ago` ago, as in 0122's and 0123's tests. expires_in null: a move with no end of its own.
+-- A group move that has landed (as an Act), created `ago` ago, as in 0126's and 0127's tests. expires_in null: a move with no end of its own.
 create function pg_temp.landed(staff text, who uuid, grp text, ago interval default interval '1 day', board uuid default null, demand jsonb default null,
                                expires_in interval default interval '4 days') returns uuid language plpgsql as $$
 declare

@@ -116,6 +116,7 @@ describe('what the adapter may request', () => {
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.searchThreads({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.suggest('ma'), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
+      api.myCharactersPage(), api.seasonPage('news', null, null, null), api.alertsPage(null), api.updatesPage(null, null, null), api.queuePage(), api.logPage(null),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
     const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
@@ -2047,6 +2048,171 @@ describe('a screen in one call', () => {
     const posts = await once('record_page', { ...answer, kind: 'post' }).api.recordPage(B, 'post', 2);
     expect(posts).toMatchObject({ kind: 'post', page: 2, windowFrom: 20 });
     expect(await once('record_page', null).api.recordPage(B, 'all', 1)).toBeNull();
+  });
+
+  const SEASON_ROW = { id: 3, number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, turns_thread: null, reveal_act: null };
+  const REVEAL_ROW = { act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T };
+  const TURN_ROW = { act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null };
+  const FINISHED_ROW = { number: 1, starts_at: '2026-07-01T00:00:00+00:00', ends_at: '2026-09-30T00:00:00+00:00', results_at: '2026-09-30T12:00:00+00:00', characters: 12 };
+
+  it('my_characters_page: sends no argument and maps characters, faces, counts, standings, reveals and Turns', async () => {
+    const mine = { id: B, name: 'Bea', class: 'face', class_since: '2026-10-01T00:00:00+00:00', debuted_at: '2026-10-01T00:00:00+00:00', presence_hidden: false };
+    const answer = {
+      characters: [
+        { ...mine, face: { ...CHAR, profile: PROFILE }, counts: { character: B, posts: 4, spins: 1, cards: 2 }, standing: 340, reveals: [REVEAL_ROW], turns: [TURN_ROW] },
+        { ...mine, id: C, name: 'Zed', face: { ...CHAR, id: C, name: 'Zed', profile: null }, counts: null, standing: null,
+          reveals: [{ ...REVEAL_ROW, act: SET, character: C, at: '2026-09-30T10:00:00+00:00' }], turns: [{ ...TURN_ROW, act: SPRING, character: C, at: '2026-10-01T10:00:00+00:00' }] },
+      ],
+      nextSettlementAt: '2026-10-31T08:17:00+00:00',
+    };
+    const h = once('my_characters_page', answer);
+    const page = await h.api.myCharactersPage();
+    expect(only(h, 'my_characters_page') ?? {}).toEqual({});
+    expect(page.characters.map((c) => [c.id, c.name, c.class])).toEqual([[B, 'Bea', 'face'], [C, 'Zed', 'face']]);
+    expect(page.faces.map((f) => f.name)).toEqual(['Bea', 'Zed']);
+    expect(page.counts).toEqual({ [B]: { posts: 4, spins: 1, cards: 2 }, [C]: { posts: 0, spins: 0, cards: 0 } });
+    expect(page.standings).toEqual({ [B]: 340, [C]: 0 });
+    /* Both lists are one list in time order across the characters, whichever is named first. */
+    expect(page.reveals.map((r) => [r.act, r.character])).toEqual([[SET, C], [A, B]]);
+    expect(page.turns.map((t) => [t.act, t.character])).toEqual([[SPRING, C], [C, B]]);
+    expect(page.nextSettlementAt).toBe('2026-10-31T08:17:00+00:00');
+  });
+
+  it('season_page: sends the tab, season, character and page by name, and maps each tab\'s document; no such season is null', async () => {
+    const news = once('season_page', { season: SEASON_ROW, news: [{ kind: 'tally', act: A, thread: T, seq: 3, at: '2026-10-02T10:00:00+00:00', season: 2, name: null, quote: null, count: 2, detail: { debuts: [{ character: B, name: 'Bea', class: null, was: null }] } }] });
+    const a = await news.api.seasonPage('news', null, null, null);
+    expect(only(news, 'season_page')).toEqual({ in_tab: 'news', in_season: null, in_character: null, in_page: null });
+    expect(a).toMatchObject({ tab: 'news', season: { number: 2 }, news: [{ kind: 'tally', act: A, debuts: [{ character: B, name: 'Bea' }] }] });
+    const live = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 2, standings: [{ character: B, name: 'Bea', standing: 300, place: 51 }], size: 61, reveals: [REVEAL_ROW], turns: [TURN_ROW] });
+    const b = await live.api.seasonPage(null, null, null, 2);
+    expect(only(live, 'season_page')).toEqual({ in_tab: null, in_season: null, in_character: null, in_page: 2 });
+    expect(b).toEqual({
+      tab: 'standings', season: expect.objectContaining({ id: 3, number: 2 }), page: 2, size: 61, standings: [{ character: B, name: 'Bea', standing: 300, place: 51 }],
+      finished: [{ number: 1, startsAt: FINISHED_ROW.starts_at, endsAt: FINISHED_ROW.ends_at, resultsAt: FINISHED_ROW.results_at, characters: 12 }],
+      reveals: [expect.objectContaining({ class: 'face' })], turns: [expect.objectContaining({ act: C })],
+    });
+    const done = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 1, place: 4, results: [{ character: B, name: 'Bea', place: 5, standing: 900, shown: [] }] });
+    const c = await done.api.seasonPage(null, 1, B, null);
+    expect(only(done, 'season_page')).toEqual({ in_tab: null, in_season: 1, in_character: B, in_page: null });
+    expect(c).toMatchObject({ tab: 'results', page: 1, place: 4, results: [{ character: B, name: 'Bea', place: 5, standing: 900, shown: [] }] });
+    expect(c).not.toHaveProperty('standings');
+    const unplaced = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 1, place: null, results: [] });
+    expect(await unplaced.api.seasonPage(null, 1, A, null)).toMatchObject({ tab: 'results', place: null, results: [] });
+    expect(await once('season_page', null).api.seasonPage(null, 9, null, null)).toBeNull();
+  });
+
+  it('alerts_page: sends the cursor and maps the rows, the Acts, the people, the openings and the reading', async () => {
+    const answer = {
+      alerts: [{ kind: 'quote', sub: null, act: A, character: B, at: '2026-10-02T10:00:00+00:00', thread: T, name: 'Bea', title: null, count: null }, { kind: 'from-the-future', at: '2026-10-02T09:00:00+00:00' }],
+      seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', acts: [ACT_ROW], people: [{ ...CHAR, profile: PROFILE }], openings: [{ ...ACT_ROW, id: C, seq: 1 }], reading: [{ thread: T, furthest_seq: 2 }],
+    };
+    const h = once('alerts_page', answer);
+    const page = await h.api.alertsPage('2026-10-03T00:00:00+00:00');
+    expect(only(h, 'alerts_page')).toEqual({ in_before: '2026-10-03T00:00:00+00:00' });
+    expect(page.alerts.map((x) => [x.kind, x.act, x.name])).toEqual([['quote', A, 'Bea']]);
+    expect(page).toMatchObject({ seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', people: [BEA], reading: { [T]: 2 } });
+    expect(page.acts).toEqual([ACT]);
+    expect(page.openings[0]).toMatchObject({ id: C, seq: 1 });
+    const first = once('alerts_page', { ...answer, seenAt: null, openedAt: null });
+    expect(await first.api.alertsPage(null)).toMatchObject({ seenAt: null, openedAt: null });
+    expect(only(first, 'alerts_page')).toEqual({ in_before: null });
+  });
+
+  it('updates_page: sends the Update, cursor and handover season by name, and maps the Updates, the open one\'s tallies and the queue', async () => {
+    const update = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Dev', avatar: null, title: 'Patch', body: 'Fixed.', changes: [{ label: 'Fix', text: 'It works' }], at: '2026-10-02T10:00:00+00:00', seq: 4 };
+    const answer = { updates: [update], tallies: [{ act: A, kind: 'fire', count: 2 }], mine: [{ act: A, kind: 'fire', character: B }], queue: { cap: 100, waiting: [], inForce: [], ended: [], staffCards: [], more: {}, roster: [], todos: [] } };
+    const h = once('updates_page', answer);
+    const page = await h.api.updatesPage(null, '2026-10-03T00:00:00+00:00', 3);
+    expect(only(h, 'updates_page')).toEqual({ in_update: null, in_before: '2026-10-03T00:00:00+00:00', in_handover_season: 3 });
+    expect(page.updates).toEqual([expect.objectContaining({ act: A, title: 'Patch', changes: [{ label: 'Fix', text: 'It works' }], seq: 4 })]);
+    expect(page.tallies).toEqual({ [A]: { fire: 2 } });
+    expect(page.mine).toEqual([{ act: A, kind: 'fire', character: B }]);
+    expect(page.queue).toMatchObject({ cap: 100, waiting: [], roster: [] });
+    const plain = once('updates_page', { updates: [], tallies: [], mine: [] });
+    const bare = await plain.api.updatesPage(C, null, null);
+    expect(only(plain, 'updates_page')).toEqual({ in_update: C, in_before: null, in_handover_season: null });
+    expect(bare).toEqual({ updates: [], tallies: {}, mine: [] });
+    expect('queue' in bare).toBe(false);
+  });
+
+  it('queue_page: sends no argument and maps the queue, the board names, the Bosses and the contact; a caller who is no admin gets null', async () => {
+    const answer = {
+      queue: { cap: 100, waiting: [], inForce: [], ended: [], staffCards: [], more: { waiting: true }, roster: [{ staff: 'the-clerk', name: 'The Clerk' }], todos: [] },
+      boardNames: [{ id: C, slug: 'general', name: 'Toast', was: 'General' }], bosses: [{ staff: 'director', name: 'The Director' }, { staff: 7 }], contact: [{ label: 'Discord', href: 'https://d.example' }, { label: 4 }],
+    };
+    const h = once('queue_page', answer);
+    const page = await h.api.queuePage();
+    expect(only(h, 'queue_page') ?? {}).toEqual({});
+    expect(page).toMatchObject({
+      queue: { cap: 100, more: { waiting: true, inForce: false }, roster: [{ staff: 'the-clerk', name: 'The Clerk' }] },
+      boardNames: [{ id: C, slug: 'general', name: 'Toast', was: 'General' }], bosses: [{ staff: 'director', name: 'The Director' }], contact: [{ label: 'Discord', href: 'https://d.example' }],
+    });
+    expect(await once('queue_page', null).api.queuePage()).toBeNull();
+  });
+
+  describe('log_page', () => {
+    const SRC = (over: Record<string, unknown[]> = {}) => ({
+      ledger: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], ...over,
+    });
+    const LEDGER_ROW = { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00', character: B, reason: 'heel.drewHeat', amount: 20, shares_kept: true, params: { n: 2 } };
+    const doc = (sources: unknown, rest: Record<string, unknown> = {}) => ({
+      sources, shares: [], acts: [], states: [], people: [], threads: [], boards: [], standings: [], turns: [], season: null, ...rest,
+    });
+
+    it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {
+      const answer = doc(SRC({
+        ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
+        saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
+        groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }],
+      }), {
+        shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
+        people: [{ ...CHAR, profile: PROFILE }], threads: [THREAD_ROW], boards: [BOARD_ROW], standings: [{ character: B, standing: 340 }], turns: [{ ...TURN_ROW, act: A, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, TURN_ROW], season: SEASON_ROW,
+      });
+      const h = once('log_page', answer);
+      const page = await h.api.logPage('2026-10-31T00:00:00+00:00');
+      expect(only(h, 'log_page')).toEqual({ in_before: '2026-10-31T00:00:00+00:00' });
+      expect(page.log.settlements).toEqual([{
+        id: 9, startsAt: LEDGER_ROW.starts_at, endsAt: LEDGER_ROW.ends_at, sharesKept: true,
+        lines: [{ character: B, reason: 'heel.drewHeat', amount: 20, params: { n: 2 }, shares: [{ act: A, quadrant: 'excitedNegative', amount: 20 }] }],
+      }]);
+      expect(page.log.wallet).toEqual([{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }]);
+      expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
+      /* The group moves (log_page, 0130), mapped as log() maps my_group_moves. */
+      expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }]);
+      expect(page.log.before).toBeNull();
+      expect(page.acts).toEqual([ACT]);
+      expect(page.states).toEqual({ [C]: { state: { n: 1 }, savedAt: '2026-10-29T23:00:00+00:00' } });
+      expect(page.people).toEqual([BEA]);
+      expect(page.threads[0]).toMatchObject({ id: T });
+      expect(page.boards).toEqual([BOARD]);
+      expect(page.standings).toEqual({ [B]: 340 });
+      /* Every announced Turn of the character, in the order sent: the screen picks the latest with the characters it holds. */
+      expect(page.turns).toEqual([{ act: A, character: B, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, { act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }]);
+      expect(page.season).toMatchObject({ number: 2 });
+    });
+
+    it('reads a page that would not move its cursor again at its one instant by the views, and never when the document moves', async () => {
+      const full = Array.from({ length: 200 }, (_, i) => ({ ...LEDGER_ROW, character: `${B.slice(0, -4)}${String(i).padStart(4, '0')}` }));
+      const stuck = harness((r) => {
+        if (r.url.pathname.endsWith('/rpc/log_page')) return json(doc(SRC({ ledger: full })));
+        const name = r.url.pathname.replace(`${REST}/`, '');
+        if (name === 'my_ledger') return rows([...full, { ...LEDGER_ROW, character: C }]);
+        if (name.startsWith('my_')) return rows([]);
+        return undefined;
+      });
+      const page = await stuck.api.logPage(LEDGER_ROW.ends_at);
+      expect(page.log.before).toBe('2026-10-30T08:16:59.999999+00:00');
+      expect(page.log.settlements.map((x) => [x.id, x.lines.length])).toEqual([[9, 201]]);
+      expect(stuck.to('rpc/log_page')).toHaveLength(1);
+      const whole = stuck.to('my_ledger');
+      expect(whole).toHaveLength(1);
+      expect(whole[0]?.url.searchParams.get('ends_at')).toBe(`eq.${LEDGER_ROW.ends_at}`);
+      for (const name of ['my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_group_moves', 'my_appeals']) expect(stuck.to(name).length, name).toBeGreaterThan(0);
+      /* A page that does move reads nothing but the document. */
+      const moves = once('log_page', doc(SRC({ ledger: [LEDGER_ROW] })));
+      await moves.api.logPage(null);
+      only(moves, 'log_page');
+    });
   });
 
   it('finished_seasons, results_page and result_place: send their names and keys, and map what they answer', async () => {

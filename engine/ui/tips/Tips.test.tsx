@@ -135,6 +135,21 @@ describe('the page shows one tip', () => {
     expect(see).not.toHaveBeenCalled();
   });
 
+  test('a session that changes to another account under the page decides that account\'s tips afresh, not with the last one\'s', async () => {
+    /* The board's frame stays mounted across a change of account (another tab signs someone else in, a device two players share), and so
+       does the provider: what it decided for the account before (a tip dropped as seen, the page's budget spent) is that account's alone. */
+    const fake = buildWorld();
+    const seasoned = fake.seed.account('seasoned');
+    const fresh = fake.seed.account('fresh');
+    fake.signInAs(seasoned);
+    await fake.seeTip('grid');
+    open(fake, <Wants tip="grid" />);
+    await settle();
+    expect(dialog(), 'seen by the first account').toBeNull();
+    act(() => { fake.signInAs(fresh); });
+    expect(await screen.findByRole('dialog', { name: 'Title of grid' })).toBeInTheDocument();
+  });
+
   test('a visitor, with no account to remember a tip on, sees none', async () => {
     const fake = buildWorld();
     open(fake, <Wants tip="grid" />);

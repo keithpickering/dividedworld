@@ -421,3 +421,13 @@
 }
 
 .kb-lens-end { width: min(100%, 560px); }
+
+/* A tab or an action that reads before it shows: its spinner stands beside its label (glass/prepared.ts). */
+.kb-lens-tab[aria-busy='true'] .kb-glass-upright,
+.kb-lens-action[aria-busy='true'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.kb-lens-tab .kb-spinner,
+.kb-lens-action .kb-spinner { height: 1em; }

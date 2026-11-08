@@ -10,7 +10,9 @@
  */
 import { animate } from 'motion/react';
 import type { TargetAndTransition, Transition } from 'motion/react';
-import { stagger, staggerItem, type ActiveFeel } from './motion.ts';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { useKayfa } from '../context.tsx';
+import { stagger, staggerItem, useFeel, type ActiveFeel } from './motion.ts';
 
 /** The most rows that enter: a window shows fewer, and a page of any length costs no more than this. */
 export const MAX_ROWS = 60;
@@ -44,10 +46,9 @@ export function delaysFor(feel: ActiveFeel, count: number): number[] {
   return stagger(feel, count);
 }
 
-/** Plays the entrance of `screen`. Returns a stop for the screen leaving first. Under Off nothing plays. */
-export function enterScreen(feel: ActiveFeel, screen: HTMLElement): () => void {
+/** Plays the entrance of `items`, each after the one before. Returns a stop. Under Off nothing plays. */
+function play(feel: ActiveFeel, items: readonly HTMLElement[]): () => void {
   if (!feel) return () => {};
-  const items = entrants(screen);
   const delays = delaysFor(feel, items.length);
   const stops: Array<() => void> = [];
   items.forEach((el, i) => {
@@ -65,4 +66,62 @@ export function enterScreen(feel: ActiveFeel, screen: HTMLElement): () => void {
     } catch { clear(); }
   });
   return () => stops.forEach((s) => s());
+}
+
+/** Plays the entrance of `screen`. Returns a stop for the screen leaving first. Under Off nothing plays. */
+export function enterScreen(feel: ActiveFeel, screen: HTMLElement): () => void {
+  if (!feel) return () => {};
+  return play(feel, entrants(screen));
+}
+
+/**
+ * Plays the entrance of the rows a press brought (an older page), and only those: staggered over their count as a screen's rows are, at most
+ * `MAX_ROWS`, and only those in the window. Returns a stop. Under Off nothing plays.
+ */
+export function enterRows(feel: ActiveFeel, rows: readonly HTMLElement[], viewport: number = window.innerHeight): () => void {
+  if (!feel) return () => {};
+  const seen: HTMLElement[] = [];
+  for (const el of rows) {
+    if (seen.length >= MAX_ROWS) break;
+    const r = el.getBoundingClientRect();
+    if (r.top > viewport) break;
+    if (r.bottom < 0) continue;
+    seen.push(el);
+  }
+  return play(feel, seen);
+}
+
+/** The mark a render puts on the rows an older page added; found by `useEnterAdded`'s layout effect and cleared after. */
+export const ENTERING = 'data-kb-entering';
+
+/**
+ * The entrance of the rows a press adds. `arm(keys)` is called at the press with the keys of the rows on the page; `entering(key)` is true in the
+ * render that adds a row not among them (put `data-kb-entering` on it); once the read has settled (`reading` false) the marked rows inside `scope`
+ * are handed to `enterRows` and the marks cleared. A row drawn while the read was out arrived another way and appears plainly.
+ */
+export function useEnterAdded(scope: RefObject<HTMLElement | null>, reading: boolean) {
+  const { ui } = useKayfa();
+  const feel = useFeel(ui.glass.motion);
+  const [before, setBefore] = useState<ReadonlySet<string> | null>(null);
+  const stop = useRef<() => void>(() => {});
+  /* Every key drawn up to the read landing: the page at the press, and whatever else arrived while it was out (a Realtime row, another tab's). */
+  const seen = useRef<Set<string>>(new Set());
+  useLayoutEffect(() => {
+    if (before === null || reading) return;
+    const rows = Array.from(scope.current?.querySelectorAll<HTMLElement>(`[${ENTERING}]`) ?? []);
+    for (const el of rows) el.removeAttribute(ENTERING);
+    setBefore(null);
+    stop.current();
+    stop.current = enterRows(feel, rows);
+  }, [before, reading, feel, scope]);
+  useEffect(() => () => stop.current(), []);
+  return {
+    arm: (keys: Iterable<string>) => { seen.current = new Set(keys); setBefore(new Set(keys)); },
+    /* While the read is out every row drawn is noted as not the read's; the render it lands in marks only the rows not drawn before. */
+    entering: (key: string): true | undefined => {
+      if (before === null) return undefined;
+      if (reading) { seen.current.add(key); return undefined; }
+      return seen.current.has(key) ? undefined : true;
+    },
+  };
 }

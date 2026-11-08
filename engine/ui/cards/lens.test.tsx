@@ -771,26 +771,40 @@ describe('As it landed', () => {
     expect(tab('Card 2')).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('a moment that does not load says so plainly, with Try again, and Back to now still works', async () => {
+  test('As it landed is a busy button while the moment is read, shows the moment whole once it lands, and "Loading the moment" is gone', async () => {
+    const { w, k1b } = await landed();
+    let release!: () => void;
+    const real = w.fake.playMoment.bind(w.fake);
+    vi.spyOn(w.fake, 'playMoment').mockImplementationOnce((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    await userEvent.click(landedButton(k1b));
+    expect(landedButton(k1b)).toHaveAttribute('aria-busy', 'true');
+    expect(landedButton(k1b)).toHaveAccessibleName('As it landed');
+    expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(screen.queryByText('Loading the moment…')).toBeNull();
+    await act(async () => { release(); });
+    const box = await frame();
+    expect(box.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(within(box).queryByText(/Loading/u)).toBeNull();
+    expect(landedButton(k1b)).not.toHaveAttribute('aria-busy');
+  });
+
+  test('a moment that does not load shows nothing in the post and says so plainly under the button, which is pressed again to ask again', async () => {
     const { w, k1b } = await landed();
     const read = vi.spyOn(w.fake, 'playMoment').mockRejectedValueOnce(new Error('offline'));
     await userEvent.click(landedButton(k1b));
-    const box = await frame();
-    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
-    await userEvent.click(within(box).getByRole('button', { name: 'Try again' }));
-    expect(await within(box).findByText('post 2')).toBeInTheDocument();
-    expect(read).toHaveBeenCalledTimes(2);
-    read.mockRejectedValueOnce(new Error('offline'));
-    await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
+    expect(await within(lens()).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(landedButton(k1b)).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(landedButton(k1b));
+    expect(await within(await frame()).findByText('post 2')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(within(lens()).queryByText('That didn\u2019t load. Try again.')).toBeNull();
   });
 
-  test('Back to now gives focus back to the play\'s As it landed, and works while the moment has not loaded', async () => {
-    const { w, k1b } = await landed();
-    vi.spyOn(w.fake, 'playMoment').mockRejectedValue(new Error('offline'));
+  test('Back to now gives focus back to the play\'s As it landed', async () => {
+    const { k1b } = await landed();
     await userEvent.click(landedButton(k1b));
     const box = await frame();
-    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
     await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
     await waitFor(() => expect(landedButton(k1b)).toHaveFocus());
@@ -960,6 +974,28 @@ describe('End this card', () => {
     expect(w.fake.broadcast.log.some((e) => e.event === 'act')).toBe(true);
   });
 
+  test('End it is a busy button while the end is out: aria-busy, its name kept, and a second press ends once', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.play('k2');
+    let release!: () => void;
+    const real = w.fake.reverseCard.bind(w.fake);
+    const reverse = vi.spyOn(w.fake, 'reverseCard').mockImplementation((play) => new Promise((resolve) => { release = () => resolve(real(play)); }));
+    open(w);
+    await openKind(2, 'Card 2');
+    await userEvent.click(endButton()!);
+    const dialog = screen.getByRole('dialog', { name: 'End this card?' });
+    const end = within(dialog).getByRole('button', { name: 'End it' });
+    await userEvent.click(end);
+    expect(end).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'End it' })).toBe(end);
+    await userEvent.click(end);
+    expect(reverse).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
+  });
+
   test('cancel leaves the play as it was, and a refusal\'s words are shown in the dialog', async () => {
     width(false);
     const w = world();
@@ -1013,6 +1049,72 @@ describe('a visit\'s tab', () => {
     w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.' });
     return w.fake.seed.infraction(w.visit, { points: 2 });
   };
+
+  test('the visit\'s tab is busy while the story is read, and its panel then enters whole: no aria-busy block, no "Reading"', async () => {
+    const w = visited();
+    openVisit(w);
+    let release!: () => void;
+    const real = w.fake.visitStory.bind(w.fake);
+    vi.spyOn(w.fake, 'visitStory').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.click(await visitMark(w.seq));
+    const l = visitLens();
+    expect(within(l).getByRole('tab', { name: /^On a visit/u })).toHaveAttribute('aria-busy', 'true');
+    expect(l.querySelector('.kb-visit')).toBeNull();
+    await act(async () => { release(); });
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    expect(l.querySelector('.kb-visit')).not.toHaveAttribute('aria-busy');
+    expect(l.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(within(l).getByRole('tab', { name: /^On a visit/u })).not.toHaveAttribute('aria-busy');
+  });
+
+  /** The Lens opened on the card's tab, the visit's tab among the others. */
+  const onCardTab = async (w: ReturnType<typeof visited>) => {
+    width(false);
+    w.play('k1');
+    openVisit(w);
+    await userEvent.click(await markOf(w.seq, 'Card 1'));
+    const l = visitLens();
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    return l;
+  };
+
+  test('a visit read that fails from another tab says so plainly and stays on that tab', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    vi.spyOn(w.fake, 'visitStory').mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    expect(await within(l).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true'));
+    expect(within(l).queryByText('That didn\u2019t load. Try again.')).toBeNull();
+  });
+
+  test('pressing another tab while the visit is read does not take the reader back when it lands', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    let release!: () => void;
+    const real = w.fake.visitStory.bind(w.fake);
+    vi.spyOn(w.fake, 'visitStory').mockImplementationOnce((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'Card 1' }));
+    await act(async () => { release(); });
+    await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).not.toHaveAttribute('aria-busy'));
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  test('the tab read again after leaving it is a fresh story, not the one drawn before', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    const read = vi.spyOn(w.fake, 'visitStory');
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    await userEvent.click(within(l).getByRole('tab', { name: 'Card 1' }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    expect(read).toHaveBeenCalledTimes(2);
+  });
 
   test('is first of the Lens\'s tabs, ahead of the card kinds, and is the one open', async () => {
     width(false);

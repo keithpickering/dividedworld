@@ -1,6 +1,6 @@
 -- The bar and the apology (docs/plans/2026-11-06-member-groups-plan.md, Task 6; the design is docs/plans/2026-11-06-member-groups-design.md, section 5).
 --
---   barred(character, board)  whether a conferGroup move in force bars that character from that board (bars_now, 0120); a move past its expiry that the tick has not yet ended
+--   barred(character, board)  whether a conferGroup move in force bars that character from that board (bars_now, 0125); a move past its expiry that the tick has not yet ended
 --                           bars nobody. not_barred(character, board) is its refusal, as not_banned (0104) is the ban's: "<name> is barred from posting on <board> until <time>",
 --                           plain and true, the time in UTC rounded up to the minute so it is never before the real end.
 --   post, start_thread, spin, edit_post   each refuse a barred character after the ban's refusal (a banned and barred character is told of its ban) and after the board is found,
@@ -11,7 +11,7 @@
 --                           skipping only the bar.
 --   setting_apology / settings_held   the `apology` setting (apologyEveryHours, apologyJudgeBatch, apologyRulingMaxWords), each a whole number, at least 1; engine/rules/instance.ts mirrors it.
 --   apologize(move, through, title, body, framing)   a barred character's way out: the spin of the move Act (onto the board it bars, if that is where the spin opens), and a `pending` row in
---                           apologies (0120). One waiting at a time per move (a unique index and a lock), and one per character and move per apologyEveryHours unless the last was `returned`.
+--                           apologies (0125). One waiting at a time per move (a unique index and a lock), and one per character and move per apologyEveryHours unless the last was `returned`.
 --   rule_apology(apology, verdict, ruling)   service role. accepted and rejected post the ruling as the move's staff character in the apology's thread, payload {ruling, apology};
 --                           returned (the judgment failed) sets the row only. An accepted row is what the apologyAccepted demand reads, so the tick ends the move `met` within about
 --                           demandCheckMinutes. A row not pending is never ruled on again.

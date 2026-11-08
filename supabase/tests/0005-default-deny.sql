@@ -39,6 +39,17 @@ declare
                            'thread_page(uuid,integer,integer,integer,text[])',
                            -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.
                            'boot()',
+                           -- The glass screens, each in one read (the glass-load plan, Tasks 5 to 9): invoker, stable, a signed-in player alone, writing nothing.
+                           -- The Characters screen (0115).
+                           'my_characters_page()',
+                           -- The Season screen, Rankings and News (0117).
+                           'season_page(text,integer,uuid,integer)',
+                           -- The Alerts screen (0119).
+                           'alerts_page(timestampwithtimezone)',
+                           -- The Updates screen and the admin queue (0121).
+                           'updates_page(uuid,timestampwithtimezone,integer)', 'queue_page()',
+                           -- The player's own log (0123): a page of each of its sources and what the lines name.
+                           'log_page(timestampwithtimezone)',
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
@@ -55,12 +66,12 @@ declare
                            'admin_contact()', 'set_admin_contact(jsonb)',
                            -- The bar and the ban (0104): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
                            'warn_points(uuid)', 'banned_until(uuid)',
-                           -- The group (0119): a column of characters_public and my_characters, whose reader executes the function; public facts, the same for any id.
+                           -- The group (0124): a column of characters_public and my_characters, whose reader executes the function; public facts, the same for any id.
                            'group_now(uuid)', 'move_expires_at(uuid)',
-                           -- The bar and the apology (0121): barred() is a public fact, from bars_now, for any character and board; apologize() is the barred character's door, which verifies the caller
+                           -- The bar and the apology (0126): barred() is a public fact, from bars_now, for any character and board; apologize() is the barred character's door, which verifies the caller
                            -- plays the character and that it is not banned. The ruling and the judge's queue are the service's.
                            'barred(uuid,uuid)', 'bars_of(uuid)', 'apologize(uuid,uuid,text,text,uuid[])',
-                           -- The barred box's read (0124): the caller's own character's apologies, empty for any other id.
+                           -- The barred box's read (0129): the caller's own character's apologies, empty for any other id.
                            'my_apologies(uuid)',
                            -- A report (0107): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
                            'open_report(uuid,uuid,text)',

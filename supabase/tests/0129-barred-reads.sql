@@ -1,4 +1,4 @@
--- The barred box's read (supabase/migrations/0124_barred_reads.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 10).
+-- The barred box's read (supabase/migrations/0129_barred_reads.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 10).
 --
 -- my_apologies(character): the caller's own acting character's apologies, each with its move, its state, when it was written and when the next one may be.
 --   * A player reads its own character's rows and nobody else's: another player calling with the same id, and the anonymous, get none, as they do for an id that is no one's.

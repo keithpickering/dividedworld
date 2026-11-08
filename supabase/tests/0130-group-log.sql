@@ -1,9 +1,9 @@
--- The log's group lines (supabase/migrations/0125_group_log.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 11).
+-- The log's group lines (supabase/migrations/0130_group_log.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 11).
 --
--- 1. my_group_moves gives a player a row for each conferGroup move on their own characters, and no one else's; a visitor reads none.
+-- 1. my_group_moves gives a player a row for each conferGroup move on their own characters, and no one else's; a visitor reads none. log_page's groupMoves holds the same rows.
 -- 2. A row carries what the line needs: the group, the board and its name, the check, the office the move landed under (its stamp), and an expiry read through move_expires_at.
 -- 3. Each end shows (met, expired, reversed, unmet, overturned) with who ended it; a move still running has none.
--- 4. An appeal's ruling on the move, through open_appeal and close_appeal (0126), shows its verdict, when and the end it set, each of the four verdicts; a move appealed twice
+-- 4. An appeal's ruling on the move, through open_appeal and close_appeal (0131), shows its verdict, when and the end it set, each of the four verdicts; a move appealed twice
 --    (the first refunded) is still one row.
 -- 5. A move of another kind is not a row, and a row never names another member of a group.
 
@@ -45,7 +45,7 @@ begin
   return r;
 end $$;
 
--- The appeal and its ruling through the real doors (0126): the player's open_appeal, the service's close_appeal. Each is an assertion that the door took it.
+-- The appeal and its ruling through the real doors (0131): the player's open_appeal, the service's close_appeal. Each is an assertion that the door took it.
 create function pg_temp.opened(c uuid, m uuid) returns uuid language plpgsql as $$
 declare r text := pg_temp.as_val(pg_temp.owner(c), format('select open_appeal(%L, %L, %L) ->> %L', c, m, 'I did nothing wrong.', 'appeal'));
 begin
@@ -143,6 +143,12 @@ begin
   if exists (select 1 from my_group_moves where move = theirs) then raise exception 'a player sees a move on another player''s character'; end if;
   if exists (select 1 from my_group_moves where character = two) then raise exception 'a player sees another player''s character in the log'; end if;
   if (select count(*) from my_group_moves where character = mask) is distinct from 4::bigint then raise exception 'the other mask''s moves are not all here'; end if;
+  -- The one-read Log (log_page, 0123 as 0130 redefines it) carries the same rows as its `groupMoves` source, newest first.
+  if log_page(null) #> '{sources,groupMoves}' is distinct from (select jsonb_agg(to_jsonb(g) order by g.at desc, g.move) from (
+       select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until
+       from my_group_moves v) g) or jsonb_array_length(log_page(null) #> '{sources,groupMoves}') is distinct from 10 then
+    raise exception 'log_page''s groupMoves is not the player''s group moves: %', log_page(null) #> '{sources,groupMoves}';
+  end if;
   perform tests.unbecome();
   perform tests.become(pg_temp.owner(two));
   select count(*) into n from my_group_moves;

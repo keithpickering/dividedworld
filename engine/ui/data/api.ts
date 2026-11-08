@@ -189,7 +189,7 @@ export interface ScreenSettings {
    */
   readonly economy: Readonly<Record<string, number>>;
   /**
-   * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0119): the key a
+   * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0124): the key a
    * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public. The staff rung is a group like any other: a
    * staff character's `group` names it, and its name is the one the postbit's bar, the profile's Group row and the presence chip show.
    */
@@ -441,7 +441,7 @@ export interface Character {
   readonly staff?: string;
   /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
   readonly office?: Office;
-  /** The key of the group it is in now (characters_public's `group`, 0119): the look is in `ScreenSettings.groups`. */
+  /** The key of the group it is in now (characters_public's `group`, 0124): the look is in `ScreenSettings.groups`. */
   readonly group: string;
   /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
   readonly warnPoints?: number;
@@ -540,7 +540,7 @@ export interface MoveNotice {
   readonly thread: Id;
   /** The Boss who made it, as a character (null if the Act somehow has none). */
   readonly character: Id | null;
-  /** The office its staff character held when it landed (`payload.office`, stamped by `write_staff_act`, 0128); absent on a move from before the stamp, which is read as the Boss's. */
+  /** The office its staff character held when it landed (`payload.office`, stamped by `write_staff_act`, 0133); absent on a move from before the stamp, which is read as the Boss's. */
   readonly office?: 'boss' | 'mod';
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
@@ -783,7 +783,7 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  */
 export interface Presence {
   /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there, or while it has an open visit in the thread, whose post's number is `visitPost` (a visit is a public Act). */
-  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; /** The key of the group it is in now (group_now, 0119): a staff name's chip is that group's name. */ readonly group?: string; readonly visitPost?: number }[];
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; /** The key of the group it is in now (group_now, 0124): a staff name's chip is that group's name. */ readonly group?: string; readonly visitPost?: number }[];
   readonly others: number;
 }
 
@@ -1247,7 +1247,7 @@ export interface MyBan {
 export type GroupMoveEndWhy = 'met' | 'expired' | 'reversed' | 'unmet' | 'overturned' | 'superseded' | 'spent';
 
 /**
- * A staff member moving one of the player's characters into a group (`my_group_moves`, 0125), with how it ended and the appeal's ruling on it. Every field is a public fact about
+ * A staff member moving one of the player's characters into a group (`my_group_moves`, 0130), with how it ended and the appeal's ruling on it. Every field is a public fact about
  * the character's own move; none names another member of a group.
  */
 export interface LogGroupMove {
@@ -1268,7 +1268,7 @@ export interface LogGroupMove {
   /** A favor's check: it stays if the demand is met by then. */
   readonly checkAt: string | null;
   readonly demand: string | null;
-  /** The office the move landed under (its stamp, 0128), for the role word ("The Boss", "A Mod"); the hearer of its appeal is the same staff member. */
+  /** The office the move landed under (its stamp, 0133), for the role word ("The Boss", "A Mod"); the hearer of its appeal is the same staff member. */
   readonly office: Office | null;
   readonly endedWhy: GroupMoveEndWhy | null;
   readonly endedBy: string | null;
@@ -1593,6 +1593,96 @@ export interface RecordPage {
   readonly unread: number;
 }
 
+/** The player's characters page (my_characters_page, 0115): every character, with what the Characters and Edit profile screens draw of each. */
+export interface MyCharactersPage {
+  readonly characters: Awaited<ReturnType<KayfaApi['myCharacters']>>;
+  /** The public face of each debuted character (`characters(ids)`); a character that has not debuted has none. */
+  readonly faces: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** `characterCounts(id)` of each character. */
+  readonly counts: Readonly<Record<Id, CharacterCounts>>;
+  /** `standingAmounts(ids)` of the debuted characters, hundredths. */
+  readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
+  readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly nextSettlementAt: Awaited<ReturnType<KayfaApi['nextSettlementAt']>>;
+}
+
+/** The season page (season_page, 0117): the News tab, the live standings or a finished season's final table, by `tab`. Null where the season asked for does not exist. */
+export type SeasonPage =
+  | { readonly tab: 'news'; readonly season: Awaited<ReturnType<KayfaApi['season']>>; readonly news: Awaited<ReturnType<KayfaApi['seasonNews']>> }
+  | {
+    readonly tab: 'standings';
+    readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+    readonly finished: Awaited<ReturnType<KayfaApi['finishedSeasons']>>;
+    readonly page: number;
+    readonly standings: Awaited<ReturnType<KayfaApi['standingsPage']>>;
+    /** `standingsCount()` */
+    readonly size: number;
+    readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+    readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  }
+  | {
+    readonly tab: 'results';
+    readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+    readonly finished: Awaited<ReturnType<KayfaApi['finishedSeasons']>>;
+    readonly page: number;
+    /** `resultPlace(season, character)`: the character's 0-based place in the table; null where none was asked for or it has no row. */
+    readonly place: Awaited<ReturnType<KayfaApi['resultPlace']>>;
+    readonly results: Awaited<ReturnType<KayfaApi['resultsPage']>>;
+  };
+
+/** The Alerts page (alerts_page, 0119): the newest rows and everything the words need beside them. */
+export interface AlertsPage {
+  readonly alerts: Awaited<ReturnType<KayfaApi['alerts']>>;
+  /** The account's mark (`preferences().alertsSeenAt`). */
+  readonly seenAt: string | null;
+  readonly openedAt: Awaited<ReturnType<KayfaApi['accountOpenedAt']>>;
+  /** The Acts the rows name and the ones those lead to (`actsById`). */
+  readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
+  /** The authors of those Acts (`characters(ids)`). */
+  readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** The first post of each followed thread among the rows (`openingActs`). */
+  readonly openings: Awaited<ReturnType<KayfaApi['openingActs']>>;
+  readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+}
+
+/** The Updates page (updates_page, 0121): a page of Updates, the open one's reactions, and for an admin with a handover season the queue. */
+export interface UpdatesPage {
+  readonly updates: Awaited<ReturnType<KayfaApi['updates']>>;
+  /** The tallies of the open Update (`update`, or the newest). */
+  readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
+  readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
+  readonly queue?: Awaited<ReturnType<KayfaApi['adminQueue']>>;
+}
+
+/** The admin queue page (queue_page, 0121); null for a caller who is not an admin. */
+export interface QueuePage {
+  readonly queue: Awaited<ReturnType<KayfaApi['adminQueue']>>;
+  readonly boardNames: Awaited<ReturnType<KayfaApi['boardNames']>>;
+  readonly bosses: Awaited<ReturnType<KayfaApi['bosses']>>;
+  readonly contact: Awaited<ReturnType<KayfaApi['adminContact']>>;
+}
+
+/** The player's log page (log_page, 0123): the page `log(before)` answers, and what its lines name. */
+export interface LogPage {
+  readonly log: Awaited<ReturnType<KayfaApi['log']>>;
+  /** The Acts the lines name and the ones those lead to, two rounds (`actsById`). */
+  readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
+  /** `effectStates(plays)` of the saves. */
+  readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
+  /** The other characters the lines name (`characters(ids)`). */
+  readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** The threads the announced Turns and thread-reaching plays name (`thread(id)`). */
+  readonly threads: readonly ThreadSummary[];
+  /** The boards board-reaching plays name (`board(id)`). */
+  readonly boards: readonly Board[];
+  /** `standingAmounts(ids)` of the player's characters. */
+  readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
+  /** Every announced Turn of the player's characters (`turnsAnnounced(ids)`); the log draws only each character's latest, which the screen picks with the characters it holds (the one whose announcement is dated at its `classSince`). */
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+}
+
 export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
@@ -1670,7 +1760,7 @@ export interface KayfaApi {
    */
   moveNotice(act: Id): Promise<MoveNotice | null>;
   /**
-   * The caller's own character's apologies, newest first (`my_apologies`, 0124): each one's move, state and when it was written, and when the next may be. Another
+   * The caller's own character's apologies, newest first (`my_apologies`, 0129): each one's move, state and when it was written, and when the next may be. Another
    * player's character, or an id that is no one's, reads none. Rejects when it cannot be read.
    */
   myApologies(character: Id): Promise<readonly Apology[]>;
@@ -1825,6 +1915,18 @@ export interface KayfaApi {
   beatMod(board: Id): Promise<{ readonly mod: string; readonly board: string } | null>;
   /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */
   myBan(character: Id): Promise<MyBan | null>;
+  /** The player's own characters in one read, with what the Characters and Edit profile screens draw of each. */
+  myCharactersPage(): Promise<MyCharactersPage>;
+  /** The season page in one read, by `tab` ('news', else the standings or a finished `season`'s table, at `page` or around `character`); null where the season does not exist. */
+  seasonPage(tab: string | null, season: number | null, character: Id | null, page: number | null): Promise<SeasonPage | null>;
+  /** The Alerts page in one read, the rows at or before `before`. */
+  alertsPage(before: string | null): Promise<AlertsPage>;
+  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover season asks an admin's queue as well. */
+  updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
+  /** The admin queue page in one read; null for a caller who is not an admin. */
+  queuePage(): Promise<QueuePage | null>;
+  /** The log in one read, the rows at or before `before`. */
+  logPage(before: string | null): Promise<LogPage>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */
@@ -1928,7 +2030,7 @@ export interface KayfaApi {
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
-   * A barred character's apology (`apologize`, 0121): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
+   * A barred character's apology (`apologize`, 0126): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
    * apology the move's staff member rules on. Refused while the character is banned, on a move that is not this character's or has ended, while one waits, and
    * within `Settings.apology.apologyEveryHours` of the last (the refusal names the time the next opens). `framing` is a spin's: the characters its counterfeit quotes name are told.
    */

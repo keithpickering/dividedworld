@@ -18,17 +18,20 @@ import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import { useEffect, useId, useMemo, useState, type ComponentProps } from 'react';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
-import type { Character, CharacterCounts, Id, MyCharacter } from '../data/api.ts';
+import type { Character, Id, MyCharacter, MyCharactersPage } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Carousel, carouselPanelId, carouselTabId } from '../glass/Carousel.tsx';
 import { Leaving } from '../glass/Held.tsx';
 import { swap, useFeel } from '../glass/motion.ts';
 import { PageHead } from '../glass/PageHead.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
 import { monthYear, shortDate } from '../postbit/dates.ts';
-import { Link, useLocation } from '../router.tsx';
+import { useLocation, useRouterInternals } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
+import { useFaces } from './faces.ts';
+import { GlassLink } from '../glass/Link.tsx';
 import { ClassChip } from './ClassChip.tsx';
 import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
@@ -64,31 +67,38 @@ const carried = (state: unknown): Id | null => {
   return typeof id === 'string' ? id : null;
 };
 
-export function Characters() {
+/** The page draws its document: whole on the first frame. Signed out, the marker is the sign-in line. */
+export function Characters({ doc }: { readonly doc: ScreenDoc<MyCharactersPage> }) {
+  if (isSignedOutDoc(doc)) return <div className="kb-characters"><SignInPrompt /></div>;
+  return <Roster page={doc} />;
+}
+
+function Roster({ page }: { readonly page: MyCharactersPage }) {
   const { api, instance, ui, settings } = useKayfa();
   const player = usePlayer();
   const location = useLocation();
-  const signedIn = useSignedIn(api);
+  const { retry: reload } = useRouterInternals();
   const rosterId = useId();
-  const [faces, setFaces] = useState<ReadonlyMap<Id, Character>>(new Map());
-  const [standings, setStandings] = useState<Readonly<Record<Id, number>>>({});
-  const [was, setWas] = useState<ReadonlyMap<Id, string>>(new Map());
-  const [counts, setCounts] = useState<{ readonly id: Id; readonly counts: CharacterCounts } | null>(null);
-  const [next, setNext] = useState<string | null>(null);
+  const { faces, setFace } = useFaces(page);
+  const standings = page.standings;
+  const next = page.nextSettlementAt;
+  /* What a character was, where its latest announced Turn said so in public. */
+  const was = useMemo(() => {
+    const latest = new Map<Id, { at: string; was: string | null }>();
+    for (const t of page.turns) if (!latest.has(t.character) || latest.get(t.character)!.at < t.at) latest.set(t.character, { at: t.at, was: t.was });
+    return new Map([...latest].flatMap(([id, t]) => (t.was ? [[id, t.was] as const] : [])));
+  }, [page.turns]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [flash, setFlash] = useState('');
-  const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<Id | null>(null);
   /* A pip style being saved: its character and the style chosen, shown while the save is out. */
   const [savingPip, setSavingPip] = useState<{ readonly id: Id; readonly style: string } | null>(null);
   const [savingHidden, setSavingHidden] = useState<{ readonly id: Id; readonly hidden: boolean } | null>(null);
   const [problem, setProblem] = useState<{ readonly id: Id; readonly text: string; readonly pip?: boolean } | null>(null);
-  const [focusRow, setFocusRow] = useState<Id | null>(null);
+  const [refocus, setRefocus] = useState<{ readonly id: Id; readonly was: MyCharactersPage } | null>(null);
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
 
-  const mine = useMemo(() => [...player.characters].sort(joined), [player.characters]);
-  const debutedIds = useMemo(() => mine.filter((c) => c.debutedAt !== null).map((c) => c.id), [mine]);
-  const key = debutedIds.join(',');
+  const mine = useMemo(() => [...page.characters].sort(joined), [page.characters]);
   const selected = mine.find((c) => c.id === picked) ?? mine.find((c) => c.id === player.hudCharacter?.id) ?? mine[0] ?? null;
 
   /* Another character chosen: the panel swaps (motion.ts `swap`), the old one leaving upward when the one chosen is after it in the roster's order, downward when before. */
@@ -101,50 +111,16 @@ export function Characters() {
     setSeen(at);
   }
 
+  /* An action that changes what the panel's main control is (a Turn asked for or withdrawn) reads the document again in place, and the control
+     the keyboard was on is replaced when the new document lands: focus that fell to the page then goes to the panel's new main control. A focus
+     that is somewhere else by then (the player moved on) is left alone. */
   useEffect(() => {
-    /* Asked once the account's characters are read, so a load asks with them and not again when they arrive. */
-    if (!signedIn || !player.loaded) return;
-    let live = true;
-    setFailed(false);
-    void (async () => {
-      const [people, stood, turns, at] = await Promise.all([
-        debutedIds.length ? api.characters(debutedIds) : [],
-        debutedIds.length ? api.standingAmounts(debutedIds) : {},
-        debutedIds.length ? api.turnsAnnounced(debutedIds) : [],
-        api.nextSettlementAt(),
-      ]);
-      if (!live) return;
-      setFaces(new Map(people.map((c) => [c.id, c])));
-      setStandings(stood);
-      /* What a character was, where its latest announced Turn said so in public. */
-      const latest = new Map<Id, { at: string; was: string | null }>();
-      for (const t of turns) if (!latest.has(t.character) || latest.get(t.character)!.at < t.at) latest.set(t.character, { at: t.at, was: t.was });
-      setWas(new Map([...latest].flatMap(([id, t]) => (t.was ? [[id, t.was] as const] : []))));
-      setNext(at);
-    })().catch(() => { if (live) setFailed(true); });
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, signedIn, player.loaded, key]);
-
-  /* The selected character's posts, read for it alone when it is chosen. */
-  const countsFor = selected && selected.debutedAt !== null ? selected.id : null;
-  useEffect(() => {
-    if (countsFor === null) return;
-    let live = true;
-    api.characterCounts(countsFor).then((c) => { if (live) setCounts({ id: countsFor, counts: c }); }).catch(() => { /* the posts line waits for the next read */ });
-    return () => { live = false; };
-  }, [api, countsFor]);
-
-  /* After a withdrawal the Withdraw button is gone; focus goes to the panel's new main control. */
-  useEffect(() => {
-    if (focusRow === null) return;
-    const el = returnTo(focusRow)();
-    if (el) { el.focus(); setFocusRow(null); }
-  }, [focusRow, mine]);
-
-  if (signedIn === null || (signedIn && !player.loaded)) return <div className="kb-characters" aria-busy="true" />;
-  if (!signedIn) return <div className="kb-characters"><SignInPrompt /></div>;
-  if (failed) return <div className="kb-characters"><CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">Your characters could not be loaded. Reload the page to try again.</CalmRegion></div>;
+    if (refocus === null || page === refocus.was) return;
+    setRefocus(null);
+    const at = document.activeElement;
+    if (at !== null && at !== document.body) return;
+    returnTo(refocus.id)()?.focus();
+  }, [refocus, page]);
 
   const active = mine.filter((c) => c.retiredAt === null);
   const per = settings.charactersPerPlayer;
@@ -158,7 +134,8 @@ export function Characters() {
     return rank ? { index, rank, standing } : null;
   };
   const target = dialog ? mine.find((c) => c.id === dialog.id) ?? null : null;
-  const done = (message: string) => { setFlash(message); setDialog(null); };
+  /* The dialogs have saved and refreshed the HUD's rows; the page's own document is read again in place. */
+  const done = (message: string) => { setFlash(message); if (dialog) setRefocus({ id: dialog.id, was: page }); setDialog(null); reload(); };
   /* Words from an earlier action are not left standing under a new one. */
   const show = (next: Dialog) => { setFlash(''); setProblem(null); setDialog(next); };
 
@@ -170,8 +147,9 @@ export function Characters() {
       const answer = await api.withdrawTurn(c.id);
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error }); return; }
       await player.refresh();
+      reload();
       setFlash(`${c.name}'s Turn is withdrawn.`);
-      setFocusRow(c.id);
+      setRefocus({ id: c.id, was: page });
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.' });
     } finally {
@@ -193,7 +171,8 @@ export function Characters() {
     try {
       const answer = await api.setProfile(face.id, face.title, face.signature, style);
       if (!answer.ok) { setProblem({ id: face.id, text: answer.error, pip: true }); return; }
-      setFaces((before) => new Map(before).set(face.id, answer.value));
+      setFace(answer.value);
+      reload();
     } catch {
       setProblem({ id: face.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
     } finally {
@@ -215,6 +194,7 @@ export function Characters() {
       const answer = await api.setPresenceHidden(c.id, hidden);
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error, pip: true }); return; }
       /* Saved: the select and the HUD's mark follow the characters read again (a read that fails keeps them, and says so). */
+      reload();
       try { await player.refresh(); } catch { setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true }); }
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
@@ -246,7 +226,7 @@ export function Characters() {
           <p className="kb-roster-line kb-turn-note">If its settlement is due, a reveal waits until it has run.</p>
           <ButtonRow>
             <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
-            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} disabled={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
+            <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} busy={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
           </ButtonRow>
           {problem?.id === c.id && !problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
         </div>
@@ -286,7 +266,7 @@ export function Characters() {
     const face = faces.get(c.id);
     const waiting = c.debutedAt === null && c.retiredAt === null;
     const live = c.debutedAt !== null && c.retiredAt === null;
-    const posts = counts?.id === c.id ? counts.counts.posts : null;
+    const posts = page.counts[c.id]?.posts ?? null;
     const before = was.get(c.id);
     return (
       <Leaving key={c.id} tag={MotionPanel} custom={dir} {...swap(feel)} id={carouselPanelId(rosterId)} role="tabpanel" className="kb-roster-panel kb-glass-cut-panel" aria-labelledby={`${carouselTabId(rosterId, c.id)}-name`} data-kb-character={c.id}>
@@ -368,7 +348,7 @@ export function Characters() {
       <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
       <div role="status" className="kb-flash">{flash && <CalmRegion as="p" className="kb-notice">{flash}</CalmRegion>}</div>
 
-      {mine.length === 0 && <CalmRegion as="p" className="kb-characters-empty">You have no characters yet. <Link to="/characters/new">Make one</Link> to start playing.</CalmRegion>}
+      {mine.length === 0 && <CalmRegion as="p" className="kb-characters-empty">You have no characters yet. <GlassLink to="/characters/new">Make one</GlassLink> to start playing.</CalmRegion>}
 
       <div className="kb-roster-layout">
           <Carousel
@@ -394,10 +374,10 @@ export function Characters() {
             }}
             after={open > 0 ? (
               <CalmRegion className="kb-roster-new">
-                <Link to="/characters/new" className="kb-roster-new-link">
+                <GlassLink to="/characters/new" className="kb-roster-new-link">
                   <svg aria-hidden="true" width="44" height="44" viewBox="0 0 44 44"><path d="M22 6 V38 M6 22 H38" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>
                   <span className="kb-glass-display">New character</span>
-                </Link>
+                </GlassLink>
                 <span className="kb-roster-slots">You have {open} open {open === 1 ? 'slot' : 'slots'}.</span>
               </CalmRegion>
             ) : undefined}
@@ -414,7 +394,7 @@ export function Characters() {
 
       <Layers>
       {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" character={target} onClose={() => setDialog(null)} onDone={setFlash} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" character={target} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       </Layers>

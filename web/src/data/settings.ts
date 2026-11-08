@@ -28,7 +28,7 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   presencePollSeconds: defaults.presencePollSeconds,
   presenceWindow: defaults.presenceWindow,
   toastDefaults: defaults.toastDefaults,
-  /* The groups' looks are the instance's too; the database holds them in group_kinds once seeded (0119 shows them to the screens). */
+  /* The groups' looks are the instance's too; the database holds them in group_kinds once seeded (0124 shows them to the screens). */
   groups: [...groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
   /* None held: every price is the compiled economy's until the view says otherwise. */
   cardEconomy: {},

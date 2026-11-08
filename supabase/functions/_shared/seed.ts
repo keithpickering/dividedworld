@@ -51,7 +51,7 @@ export function instanceSeed(instance: Instance) {
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
-    // The member groups (0119): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
+    // The member groups (0124): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
     // (engine/rules/groups.ts CONDITION_KINDS), `atLeast` its count where it has one. seed_instance upserts them into group_kinds.
     groups: [
       ...instance.groups.ladder.map((r, i) => ({ key: r.key, name: r.name, ...(r.badge !== undefined ? { badge: r.badge } : {}), color: r.color, stripe: r.stripe === true, source: 'ladder' as const, rung: i,
