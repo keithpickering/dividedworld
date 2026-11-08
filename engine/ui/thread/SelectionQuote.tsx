@@ -50,12 +50,14 @@ function bodyAt(node: Node): { readonly body: HTMLElement; readonly seq: number 
 /** The shown words of `range` inside `body`. */
 function shownWords(body: HTMLElement, range: Range): string {
   let out = '';
-  const line = () => { if (out !== '' && !out.endsWith('\n')) out += '\n'; };
+  const line = () => { out = out.replace(/[ \t]+$/u, ''); if (out !== '' && !out.endsWith('\n')) out += '\n'; };
   const walk = (n: Node) => {
     if (n.nodeType === 3) {
       if (!range.intersectsNode(n)) return;
       const data = (n as Text).data;
-      out += data.slice(n === range.startContainer ? range.startOffset : 0, n === range.endContainer ? range.endOffset : data.length);
+      const part = data.slice(n === range.startContainer ? range.startOffset : 0, n === range.endContainer ? range.endOffset : data.length);
+      /* A line starts at its first word: the space a skipped element left behind is not the line's. */
+      out += out.endsWith('\n') ? part.replace(/^[ \t]+/u, '') : part;
       return;
     }
     if (n.nodeType !== 1) return;
