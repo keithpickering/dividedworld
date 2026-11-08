@@ -1,7 +1,7 @@
 -- Face-down Moves, the schema (supabase/migrations/0139_face_down_moves.sql): a back names the card its Trap Card waits for, or the
 -- phrase its Move waits for, and only the setter reads either; a Gimmick's trap shape is a cast or a visit; a card a Trap Card took is
 -- a `caught` row in the setter's card ledger; one function, card_held, is the hand. docs/plans/2026-11-07-face-down-moves-plan.md,
--- Task 3; the design is docs/plans/2026-11-07-face-down-moves-design.md, sections 4, 5 and 9. The cards are the engine's test set,
+-- Task 3, and Task 6's springing from 'Springing (Task 6)' on; the design is docs/plans/2026-11-07-face-down-moves-design.md, sections 4, 5 and 9. The cards are the engine's test set,
 -- never an instance's.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
@@ -10,6 +10,161 @@ begin
   return null;
 exception when others then
   return sqlerrm;
+end $$;
+
+-- ---- Springing (Task 6), races first, so the rows they commit wait on nothing this file has written and not committed ----
+-- The Moves, the Gimmicks, the players and a pool persona the races share, committed. Moves are the engine's test cards (spx...), never an instance's.
+do $$
+begin
+  perform tests.commit($sql$
+    update settings set value = value || '{"spxwhoops.price": 100, "spxbomb.price": 100, "spxtrap.price": 100, "spxrare.price": 100, "spxauto.price": 100, "spxpass.price": 100, "spxbluff.price": 25, "spxthread.price": 100, "spxboard.price": 100}' where key = 'economy';
+    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
+      ('spxwhoops', 'Spx Whoops', 'salty', 'spxwhoops.price', 'common', 'cast', null, '{post}', null),
+      ('spxbomb', 'Spx Bomb', 'salty', 'spxbomb.price', 'uncommon', 'cast', null, '{character}', interval '7 days'),
+      ('spxthread', 'Spx Thread', 'salty', 'spxthread.price', 'rare', 'cast', null, '{thread}', interval '1 day'),
+      ('spxboard', 'Spx Board', 'salty', 'spxboard.price', 'legendary', 'cast', null, '{board}', interval '1 day'),
+      ('spxrare', 'Spx Rare', 'sweet', 'spxrare.price', 'rare', 'cast', null, '{post}', null),
+      ('spxauto', 'Spx Auto', 'salty', 'spxauto.price', 'common', 'cast', null, '{post}', null),
+      ('spxtrap', 'Spx Trap', 'salty', 'spxtrap.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
+      ('spxpass', 'Spx Pass', 'sweet', 'spxpass.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
+      ('spxbluff', 'Spx Bluff', 'pepperoni', 'spxbluff.price', 'common', 'set', null, '{post}', null);
+    insert into characters (id, name, staff, staff_kind, debuted_at) values ('00000000-0000-4000-8000-0000000fd001', 'Spx Race Mod', 'spx-race-mod', 'persona', now()) on conflict do nothing;
+  $sql$);
+end $$;
+
+-- Two quotes at once on one backed post spring it once: the first lays the Move, the second finds the spring (acts_one_spring) and lands its post without one.
+do $$
+declare
+  setter uuid := gen_random_uuid(); one uuid := gen_random_uuid(); two uuid := gen_random_uuid();
+  s uuid := gen_random_uuid(); a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
+  t uuid := gen_random_uuid();
+  x uuid;
+  said text[];
+  round integer;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sp-two-setter@test.invalid'), (%2$L, 'sp-two-one@test.invalid'), (%3$L, 'sp-two-two@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Sp Two Setter', now(), now()), (%5$L, %2$L, 'Sp Two One', now(), now()), (%6$L, %3$L, 'Sp Two Two', now(), now());
+    insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
+    insert into threads (id, board, title) select %7$L, b.id, 'Two quotes' from boards b where b.slug = 'general';
+    insert into card_ledger (account, card, kind, price) select %1$L, 'spxwhoops', 'bought', 0 from generate_series(1, 12);
+  $sql$, setter, one, two, s, a, b, t));
+  for round in 1 .. 10 loop
+    x := gen_random_uuid();
+    perform tests.commit(format($sql$
+      insert into acts (id, character, kind, thread, payload) values (%1$L, %2$L, 'post', %3$L, '{"body": "Backed."}');
+      do $d$ begin perform set_card(%4$L, 'spxwhoops', %2$L, %1$L, '{}', 0); end $d$;
+    $sql$, x, s, t, setter));
+    said := tests.race_as(one, format('select post(%L, %L, %L, %L)', t, a, 'Quoting it.', x), two, format('select post(%L, %L, %L, %L)', t, b, 'Quoting it too.', x));
+    if said[1] is not null or said[2] is not null then raise exception 'two quotes at once on one back, round %: %', round, said; end if;
+    if (select count(*) from acts where kind = 'post' and target_act_id = x) is distinct from 2::bigint then raise exception 'two quotes at once, round %: a quote did not land', round; end if;
+    if (select count(*) from acts where kind = 'spring' and target_act_id = x) is distinct from 1::bigint then raise exception 'two quotes at once, round %: the back sprang % times', round, (select count(*) from acts where kind = 'spring' and target_act_id = x); end if;
+    if (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'spxwhoops' and payload ? 'spring' and thread = t and target_act_id in (select id from acts where kind = 'post' and target_act_id = x)) is distinct from 1::bigint then
+      raise exception 'two quotes at once, round %: the Move did not land exactly once', round;
+    end if;
+  end loop;
+end $$;
+
+-- A quote that lands a Move on its own character, and a cast of the same card on that character at once: the character carries one, the quote is never refused, and nothing deadlocks.
+-- The quote takes the character's row (step 2b) as play_card does, then its count row; the card's stack is read under it.
+do $$
+declare
+  setter uuid := gen_random_uuid(); quoter uuid := gen_random_uuid(); caster uuid := gen_random_uuid();
+  s uuid := gen_random_uuid(); c uuid := gen_random_uuid();
+  t uuid := gen_random_uuid();
+  q uuid; qpost uuid; x uuid; qquote uuid;
+  said text[];
+  round integer;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sp-char-setter@test.invalid'), (%3$L, 'sp-char-caster@test.invalid');
+    insert into accounts (id) values (%1$L), (%3$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Sp Char Setter', now(), now()), (%5$L, %3$L, 'Sp Char Caster', now(), now());
+    insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now());
+    insert into threads (id, board, title) select %6$L, b.id, 'Character race' from boards b where b.slug = 'general';
+    insert into card_ledger (account, card, kind, price) select %1$L, 'spxbomb', 'bought', 0 from generate_series(1, 12);
+    insert into card_ledger (account, card, kind, price) select %3$L, 'spxbomb', 'bought', 0 from generate_series(1, 12);
+  $sql$, setter, quoter, caster, s, c, t));
+  for round in 1 .. 10 loop
+    q := gen_random_uuid(); qpost := gen_random_uuid(); x := gen_random_uuid(); quoter := gen_random_uuid();
+    perform tests.commit(format($sql$
+      insert into auth.users (id, email) values (%5$L, 'sp-char-quoter-' || %6$s || '@test.invalid');
+      insert into accounts (id) values (%5$L);
+      insert into characters (id, owner, name, created_at, debuted_at) values (%1$L, %5$L, 'Sp Char Quoter ' || %6$s, now(), now());
+      insert into class_history (character, class_key, started_at) values (%1$L, 'alpha', now());
+      insert into acts (id, character, kind, thread, payload) values (%2$L, %1$L, 'post', %4$L, '{"body": "Soon to be bombed."}'), (%3$L, %7$L, 'post', %4$L, '{"body": "Backed."}');
+      do $d$ begin perform set_card(%8$L, 'spxbomb', %7$L, %3$L, '{}', 0); end $d$;
+    $sql$, q, qpost, x, t, quoter, round, s, setter));
+    said := tests.race_as(quoter, format('select post(%L, %L, %L, %L)', t, q, 'Quoting it.', x),
+                          null, format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', caster, 'spxbomb', c, q, '{}', '', 'character', qpost));
+    if said[1] is not null then raise exception 'a quote that lands a Move was refused, round %: %', round, said[1]; end if;
+    if said[2] is not null and said[2] not like '%already carries that card%' then raise exception 'a cast on a character a Move lands on, round %: %', round, said[2]; end if;
+    if (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'spxbomb' and payload ->> 'reach' = 'character' and payload ->> 'character' = q::text) is distinct from 1::bigint then
+      raise exception 'a quote and a cast at once on one character, round %: the character carries % of a card that takes one', round,
+        (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'spxbomb' and payload ->> 'reach' = 'character' and payload ->> 'character' = q::text);
+    end if;
+    -- Whichever won, the other lost cleanly: a refused cast means the Move landed; a landed cast means the back is still set.
+    if (said[2] is not null) is distinct from exists (select 1 from acts where kind = 'spring' and target_act_id = x) then
+      raise exception 'a quote and a cast at once, round %: cast said %, back sprang %', round, said[2], exists (select 1 from acts where kind = 'spring' and target_act_id = x);
+    end if;
+  end loop;
+end $$;
+
+-- A pool post that quotes a trapped post takes the back's row before it writes (steps 3 to 5 ahead of its insert): while another session holds the back, it waits and has written no post;
+-- once the back is free it lands, and the Move lands on the persona's post (#233).
+do $$
+declare
+  setter uuid := gen_random_uuid(); s uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); x uuid := gen_random_uuid();
+  why text;
+  made jsonb;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sp-pool-setter@test.invalid');
+    insert into accounts (id) values (%1$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%2$L, %1$L, 'Sp Pool Setter', now(), now());
+    insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
+    insert into threads (id, board, title) select %3$L, b.id, 'Pool post' from boards b where b.slug = 'general';
+    insert into card_ledger (account, card, kind, price) values (%1$L, 'spxwhoops', 'bought', 0);
+    insert into acts (id, character, kind, thread, payload) values (%4$L, %2$L, 'post', %3$L, '{"body": "Backed for a Mod Bot."}');
+    do $d$ begin perform set_card(%1$L, 'spxwhoops', %2$L, %4$L, '{}', 0); end $d$;
+  $sql$, setter, s, t, x));
+  perform extensions.dblink_connect('sp_holder', current_setting('kayfabb.scratch_url'));
+  begin
+    perform extensions.dblink_exec('sp_holder', 'begin');
+    perform extensions.dblink_exec('sp_holder', format('do $h$ begin perform 1 from face_down where post = %L for update; end $h$', x));
+    perform set_config('lock_timeout', '300ms', true);
+    begin
+      perform write_staff_act('spx-race-mod', 'post', t, x, '{"body": "A pool post, quoting."}');
+      why := null;
+    exception when others then
+      why := sqlerrm;
+    end;
+    perform set_config('lock_timeout', '30s', true);
+    perform extensions.dblink_exec('sp_holder', 'rollback');
+  exception when others then
+    perform extensions.dblink_disconnect('sp_holder');
+    raise;
+  end;
+  perform extensions.dblink_disconnect('sp_holder');
+  if why is null or why not like '%lock timeout%' then raise exception 'a pool post did not wait for the back it quotes: %', why; end if;
+  if exists (select 1 from acts where kind = 'post' and target_act_id = x) then raise exception 'a pool post wrote before it held the back'; end if;
+  made := write_staff_act('spx-race-mod', 'post', t, x, '{"body": "A pool post, quoting."}');
+  if made -> 'sprung' is null then raise exception 'a pool post quoting a trapped post did not spring it: %', made; end if;
+  if (select count(*) from acts where kind = 'spring' and target_act_id = x) is distinct from 1::bigint then raise exception 'the back did not spring once'; end if;
+  if not exists (select 1 from acts k where k.kind = 'card' and k.character = s and k.target_act_id = (made ->> 'id')::uuid and k.payload ->> 'card' = 'spxwhoops' and k.payload ->> 'spring' = (made -> 'sprung' ->> 'id')) then
+    raise exception 'the Move did not land on the Mod Bot''s post: %', made;
+  end if;
+end $$;
+
+-- What the racers' writes queued for these players is not left for the files after this one (an alert is a row beside the Act).
+do $$
+begin
+  perform tests.commit($sql$
+    delete from alerts where account in (select id from accounts where id in (select id from auth.users where email like 'sp-%@test.invalid'));
+    delete from broadcasts_due where topic in (select 'account:' || id from auth.users where email like 'sp-%@test.invalid');
+  $sql$);
 end $$;
 
 -- ---- A back names its catch or its phrase, never both; old rows hold neither ----
@@ -294,4 +449,423 @@ begin
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L, %L, %L)', 'fdm-mod', 'fdptrap', p3, '{"card": "nosuch"}', 'nosuch'));
   if why is distinct from 'Persona Trap names a card that is cast on a post' then raise exception 'a persona''s Trap Card named no card: %', why; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---------------------------------------------------------------------------------------------------- Springing (Task 6) ----
+-- The cards are the committed ones above (spx...): Spx Whoops lands on a post, Spx Bomb on a character, Spx Thread on a thread, Spx Board on a board, Spx Auto waits for a phrase; Spx Trap is a Trap Card, Spx Pass a Hall Pass.
+
+create function pg_temp.hand(who uuid, variadic keys text[]) returns void language sql as $$
+  insert into card_ledger (account, card, kind, price) select who, k, 'bought', 0 from unnest(keys) k
+$$;
+-- A player quotes through the real post(), as the account that owns the character.
+create function pg_temp.quote(by_character uuid, in_thread uuid, body text, quoted uuid default null) returns jsonb language plpgsql as $$
+declare made jsonb;
+begin
+  perform tests.become((select owner from characters where id = by_character));
+  made := post(in_thread, by_character, body, quoted);
+  perform tests.unbecome();
+  return made;
+end $$;
+-- A player casts through the real play_card, as the service role acts for them.
+create function pg_temp.cast(by_account uuid, card text, by_character uuid, target uuid, reach text default 'post', from_post uuid default null) returns jsonb language plpgsql as $$
+declare made jsonb;
+begin
+  perform tests.become_service();
+  made := play_card(by_account, card, by_character, target, '{}', 0, '', reach, from_post);
+  perform tests.unbecome();
+  return made;
+end $$;
+create function pg_temp.sprung_of(set_act uuid) returns uuid language sql as $$
+  select s.id from acts s where s.kind = 'spring' and s.payload ->> 'set' = set_act::text
+$$;
+
+-- ---- A quote lands a set Move on the quoting post, its character, its thread and its board, by the card's first reach ----
+do $$
+declare
+  ann uuid := tests.account('sp-ann'); bob uuid := tests.account('sp-bob');
+  a1 uuid := tests.character(ann, 'Sp Ann One'); a2 uuid := tests.character(ann, 'Sp Ann Two'); a3 uuid := tests.character(ann, 'Sp Ann Three'); a4 uuid := tests.character(ann, 'Sp Ann Four');
+  b uuid := tests.character(bob, 'Sp Bob');
+  t uuid := tests.thread('Springing');
+  p1 uuid := tests.post(a1, t, 'Whoops under this.'); p2 uuid := tests.post(a2, t, 'A bomb under this.');
+  p3 uuid := tests.post(a3, t, 'A thread card under this.'); p4 uuid := tests.post(a4, t, 'A board card under this.');
+  set1 uuid; set2 uuid; set3 uuid; set4 uuid;
+  made jsonb; spring uuid; laid uuid;
+  ann_alerts bigint;
+begin
+  perform pg_temp.hand(ann, 'spxwhoops', 'spxbomb', 'spxthread', 'spxboard');
+  set1 := (set_card(ann, 'spxwhoops', a1, p1, '{}', 0) ->> 'id')::uuid;
+  set2 := (set_card(ann, 'spxbomb', a2, p2, '{}', 0) ->> 'id')::uuid;
+  set3 := (set_card(ann, 'spxthread', a3, p3, '{}', 0) ->> 'id')::uuid;
+  set4 := (set_card(ann, 'spxboard', a4, p4, '{}', 0) ->> 'id')::uuid;
+
+  -- Bob quotes the Whoops back: the card lands on his quoting post, through Ann's character, free and wordless, marked as sprung.
+  made := pg_temp.quote(b, t, 'Quoting Ann.', p1);
+  if made -> 'sprung' is null or made -> 'sprung' -> 'struck' is null then raise exception 'a quote did not report its spring and the card it landed: %', made; end if;
+  spring := (made -> 'sprung' ->> 'id')::uuid;
+  if (select s.payload from acts s where s.id = spring) is distinct from jsonb_build_object('card', 'spxwhoops', 'trigger', 'quote', 'did', 'landed', 'set', set1::text, 'by', (made ->> 'id')) then
+    raise exception 'the spring says: %', (select s.payload from acts s where s.id = spring);
+  end if;
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = spring::text;
+  if laid is null then raise exception 'the quote landed no card'; end if;
+  if (select (k.character, k.target_act_id, k.payload ->> 'card', k.payload ->> 'message', (k.payload ->> 'layer')::integer) from acts k where k.id = laid) is distinct from (a1, (made ->> 'id')::uuid, 'spxwhoops'::text, ''::text, 1) then
+    raise exception 'the landed card is %', (select to_jsonb(k) from acts k where k.id = laid);
+  end if;
+  if (select k.payload ? 'caught' from acts k where k.id = laid) then raise exception 'a landed card is marked caught'; end if;
+  if not exists (select 1 from alerts where account = bob and kind = 'trapStruck' and act = laid) then raise exception 'the struck quoter was not told'; end if;
+  if not exists (select 1 from alerts where account = ann and kind = 'trapSprang' and act = spring) then raise exception 'the setter was not told'; end if;
+  -- Nothing was paid or charged for the landing.
+  if exists (select 1 from wallet_events where ref in (spring, laid)) or exists (select 1 from card_ledger where act in (spring, laid)) then raise exception 'a spring moved money or a hand'; end if;
+  -- It springs once: another quote of the same post lands its post and no second card.
+  made := pg_temp.quote(b, t, 'Quoting Ann again.', p1);
+  if made -> 'sprung' is not null or (select count(*) from acts where kind = 'spring' and target_act_id = p1) is distinct from 1::bigint then raise exception 'a sprung back sprang again: %', made; end if;
+
+  -- The Bomb back lands on the quoting post's character, hung on the quoting post, and holds its time.
+  made := pg_temp.quote(b, t, 'Quoting the bomb.', p2);
+  spring := (made -> 'sprung' ->> 'id')::uuid;
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = spring::text;
+  if (select (k.character, k.target_act_id, k.payload ->> 'reach', k.payload ->> 'character') from acts k where k.id = laid) is distinct from (a2, (made ->> 'id')::uuid, 'character'::text, b::text) then
+    raise exception 'the Bomb landed %', (select to_jsonb(k) from acts k where k.id = laid);
+  end if;
+  if not exists (select 1 from play_reach r where r.play = laid and r.character = b and r.ends_at > now() + interval '6 days') then raise exception 'the Bomb has no reach row'; end if;
+  -- Bob's character now carries a Bomb: another Bomb back springs nothing there and stays set (the stack is one).
+  declare p5 uuid := tests.post(a1, t, 'Another bomb under this.'); set5 uuid; begin
+    perform pg_temp.hand(ann, 'spxbomb');
+    set5 := (set_card(ann, 'spxbomb', a1, p5, '{}', 0) ->> 'id')::uuid;
+    made := pg_temp.quote(b, t, 'Quoting a second bomb.', p5);
+    if made -> 'sprung' is not null or pg_temp.sprung_of(set5) is not null then raise exception 'a Bomb landed on a character that carries one: %', made; end if;
+    if not exists (select 1 from face_down f where f.play = set5 and f.ends_at > now()) then raise exception 'the back was lost'; end if;
+    -- A different character quoting it takes the Bomb.
+    made := pg_temp.quote(tests.character(bob, 'Sp Bob Two'), t, 'Quoting from another mask.', p5);
+    if made -> 'sprung' is null then raise exception 'a Bomb did not land on a free character: %', made; end if;
+  end;
+
+  -- The Thread back lands on the thread's first post; one at a time while it lasts.
+  made := pg_temp.quote(b, t, 'Quoting the thread card.', p3);
+  spring := (made -> 'sprung' ->> 'id')::uuid;
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = spring::text;
+  if (select (k.thread, k.payload ->> 'reach', k.payload ->> 'thread') from acts k where k.id = laid) is distinct from (t, 'thread'::text, t::text) or not exists (select 1 from play_reach r where r.play = laid and r.thread = t) then
+    raise exception 'the thread card landed %', (select to_jsonb(k) from acts k where k.id = laid);
+  end if;
+
+  -- The Board back lands on the quoting thread's board, written in the announcements thread, and a board holds one live card.
+  made := pg_temp.quote(b, t, 'Quoting the board card.', p4);
+  spring := (made -> 'sprung' ->> 'id')::uuid;
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = spring::text;
+  if (select (k.payload ->> 'reach', k.thread) from acts k where k.id = laid) is distinct from ('board'::text, (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'))
+     or not exists (select 1 from play_reach r where r.play = laid and r.board = (select board from threads where id = t)) then
+    raise exception 'the board card landed %', (select to_jsonb(k) from acts k where k.id = laid);
+  end if;
+  declare p6 uuid := tests.post(a4, t, 'Another board card.'); set6 uuid; begin
+    perform pg_temp.hand(ann, 'spxboard');
+    set6 := (set_card(ann, 'spxboard', a4, p6, '{}', 0) ->> 'id')::uuid;
+    made := pg_temp.quote(b, t, 'Quoting a second board card.', p6);
+    if made -> 'sprung' is not null or pg_temp.sprung_of(set6) is not null then raise exception 'a second board card landed on a board that carries one: %', made; end if;
+  end;
+end $$;
+
+-- ---- A Move that needs a phrase springs only on a quote with it, in the quoting post's own words ----
+do $$
+declare
+  ann uuid := tests.account('sp-auto-ann'); bob uuid := tests.account('sp-auto-bob');
+  a uuid := tests.character(ann, 'Sp Auto Ann'); b uuid := tests.character(bob, 'Sp Auto Bob');
+  t uuid := tests.thread('Phrases');
+  p uuid := tests.post(a, t, 'A post with a phrase under it.');
+  the_set uuid;
+  made jsonb;
+begin
+  perform pg_temp.hand(ann, 'spxauto');
+  the_set := (set_card(ann, 'spxauto', a, p, '{}', 0, null, 'heel') ->> 'id')::uuid;
+  made := pg_temp.quote(b, t, 'Nothing of the kind.', p);
+  if made -> 'sprung' is not null or pg_temp.sprung_of(the_set) is not null then raise exception 'a quote without the phrase sprang the back: %', made; end if;
+  -- The phrase in the quoted text, or inside a quote block, is not the quoting post's own.
+  made := pg_temp.quote(b, t, '[quote=' || p || ']come to heel[/quote] Nope.', p);
+  if made -> 'sprung' is not null then raise exception 'a phrase inside a quote block sprang the back'; end if;
+  if not exists (select 1 from face_down f where f.play = the_set and f.ends_at > now()) then raise exception 'the back was lost'; end if;
+  made := pg_temp.quote(b, t, 'Come to HEEL, please.', p);
+  if made -> 'sprung' is null or pg_temp.sprung_of(the_set) is null then raise exception 'a quote with the phrase did not spring the back: %', made; end if;
+  if (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'spxauto' and payload ->> 'spring' is not null and target_act_id = (made ->> 'id')::uuid) is distinct from 1::bigint then raise exception 'the phrase back landed no card'; end if;
+end $$;
+
+-- ---- A Trap Card names its catch: that card, cast on its post, is caught and taken; any other passes over and the back stays set ----
+do $$
+declare
+  ann uuid := tests.account('sp-trap-ann'); bob uuid := tests.account('sp-trap-bob');
+  a uuid := tests.character(ann, 'Sp Trap Ann'); a2 uuid := tests.character(ann, 'Sp Trap Ann Two'); b uuid := tests.character(bob, 'Sp Trap Bob');
+  t uuid := tests.thread('Catching');
+  p uuid := tests.post(a, t, 'A trap under this.'); pr uuid := tests.post(a, t, 'A rare trap under this.');
+  set1 uuid; set2 uuid; passed jsonb; caught jsonb; spring uuid;
+  before_ann integer; before_bob integer;
+begin
+  perform pg_temp.hand(ann, 'spxtrap', 'spxtrap');
+  perform pg_temp.hand(bob, 'spxwhoops', 'spxrare', 'spxwhoops', 'spxrare');
+  set1 := (set_card(ann, 'spxtrap', a, p, '{"card": "spxwhoops"}', 0, 'spxwhoops') ->> 'id')::uuid;
+  set2 := (set_card(ann, 'spxtrap', a, pr, '{"card": "spxrare"}', 0, 'spxrare') ->> 'id')::uuid;
+  before_ann := card_held(ann, 'spxwhoops'); before_bob := card_held(bob, 'spxwhoops');
+  -- Another card passes over it, lands as usual, and the back stays.
+  passed := pg_temp.cast(bob, 'spxrare', b, p);
+  if passed -> 'sprung' is not null or passed -> 'payload' ? 'caught' or pg_temp.sprung_of(set1) is not null then raise exception 'a card the trap did not name was caught: %', passed; end if;
+  -- The named card is caught: its Act shows as caught and does nothing else, and its card is Ann's.
+  caught := pg_temp.cast(bob, 'spxwhoops', b, p);
+  spring := (caught -> 'sprung' ->> 'id')::uuid;
+  if spring is null or (caught -> 'payload' ->> 'caught') is distinct from set1::text or caught -> 'payload' ? 'layer' then raise exception 'the named card was not caught: %', caught; end if;
+  if (select s.payload from acts s where s.id = spring) is distinct from jsonb_build_object('card', 'spxtrap', 'trigger', 'cast', 'did', 'caught', 'set', set1::text, 'by', caught ->> 'id', 'caught', caught ->> 'id') then
+    raise exception 'the catching spring says %', (select s.payload from acts s where s.id = spring);
+  end if;
+  if card_held(ann, 'spxwhoops') is distinct from before_ann + 1 then raise exception 'the setter did not take the caught card: % then %', before_ann, card_held(ann, 'spxwhoops'); end if;
+  if card_held(bob, 'spxwhoops') is distinct from before_bob - 1 then raise exception 'the caster kept the caught card'; end if;
+  if (select (l.account, l.card, l.kind, l.act, l.price) from card_ledger l where l.kind = 'caught' and l.act = spring) is distinct from (ann, 'spxwhoops'::text, 'caught'::text, spring, 0) then raise exception 'the setter''s ledger says %', (select jsonb_agg(l) from card_ledger l where l.act = spring); end if;
+  if not exists (select 1 from card_ledger l where l.account = bob and l.kind = 'played' and l.act = (caught ->> 'id')::uuid) then raise exception 'the caster''s play row is gone'; end if;
+  if exists (select 1 from wallet_events where ref = spring) then raise exception 'a catch paid out'; end if;
+  if not exists (select 1 from alerts where account = bob and kind = 'trapStruck' and act = (caught ->> 'id')::uuid) then raise exception 'the caught caster was not told'; end if;
+  if position(ann::text in caught::text) > 0 then raise exception 'the answer to the caster names the setter''s account: %', caught; end if;
+  -- It is a finished back: the next cast of that card lands.
+  if pg_temp.cast(bob, 'spxwhoops', b, p) -> 'sprung' is not null then raise exception 'a sprung Trap Card caught twice'; end if;
+  -- A rare card is caught when it is named.
+  caught := pg_temp.cast(bob, 'spxrare', b, pr);
+  if caught -> 'sprung' is null or card_held(ann, 'spxrare') is distinct from 1 then raise exception 'a rare card was not caught when named: %', caught; end if;
+end $$;
+
+-- ---- Casting on one's own other mask's Trap Card gives the card back to the same account, and names no account ----
+do $$
+declare
+  ann uuid := tests.account('sp-own-ann');
+  a1 uuid := tests.character(ann, 'Sp Own One'); a2 uuid := tests.character(ann, 'Sp Own Two');
+  t uuid := tests.thread('Own masks');
+  p uuid := tests.post(a1, t, 'A trap under this.');
+  caught jsonb;
+begin
+  perform pg_temp.hand(ann, 'spxtrap', 'spxwhoops');
+  perform set_card(ann, 'spxtrap', a1, p, '{"card": "spxwhoops"}', 0, 'spxwhoops');
+  caught := pg_temp.cast(ann, 'spxwhoops', a2, p);
+  if caught -> 'sprung' is null then raise exception 'a cast on one''s own mask''s Trap Card was not caught: %', caught; end if;
+  if card_held(ann, 'spxwhoops') is distinct from 1 then raise exception 'the card did not come back to the same account: %', card_held(ann, 'spxwhoops'); end if;
+  if position(ann::text in caught::text) > 0 then raise exception 'the answer names an account: %', caught; end if;
+  -- Nobody is told of their own trap catching their own card.
+  if exists (select 1 from alerts where account = ann and kind in ('trapStruck', 'trapSprang')) then raise exception 'a player was alerted to their own masks'' trap'; end if;
+end $$;
+
+-- ---- A cast on a back that holds a Move, a reaction and a plain reply spring nothing ----
+do $$
+declare
+  ann uuid := tests.account('sp-none-ann'); bob uuid := tests.account('sp-none-bob');
+  a uuid := tests.character(ann, 'Sp None Ann'); b uuid := tests.character(bob, 'Sp None Bob');
+  t uuid := tests.thread('Nothing springs');
+  p uuid := tests.post(a, t, 'A Move under this.');
+  the_set uuid; made jsonb;
+begin
+  perform pg_temp.hand(ann, 'spxwhoops');
+  perform pg_temp.hand(bob, 'spxrare');
+  the_set := (set_card(ann, 'spxwhoops', a, p, '{}', 0) ->> 'id')::uuid;
+  made := pg_temp.cast(bob, 'spxrare', b, p);
+  if made -> 'sprung' is not null or pg_temp.sprung_of(the_set) is not null then raise exception 'a cast sprang a Move: %', made; end if;
+  perform tests.become(bob);
+  made := react(p, b, 'up');
+  perform tests.unbecome();
+  if made ? 'sprung' or pg_temp.sprung_of(the_set) is not null then raise exception 'a reaction sprang a Move: %', made; end if;
+  made := pg_temp.quote(b, t, 'A plain reply, quoting nothing.');
+  if made ? 'sprung' or pg_temp.sprung_of(the_set) is not null then raise exception 'a plain reply sprang a Move: %', made; end if;
+  made := pg_temp.quote(b, t, 'Quoting another post of the thread.', (made ->> 'id')::uuid);
+  if made ? 'sprung' then raise exception 'a quote of another post sprang a Move: %', made; end if;
+  if not exists (select 1 from face_down f where f.play = the_set and f.ends_at > now()) then raise exception 'the back did not stay set'; end if;
+end $$;
+
+-- ---- A staff cast that is named is copied to the setter; a Mod Bot's Trap Card spends the card it catches and gives nobody a copy ----
+do $$
+declare
+  ann uuid := tests.account('sp-staff-ann'); bob uuid := tests.account('sp-staff-bob');
+  a uuid := tests.character(ann, 'Sp Staff Ann'); b uuid := tests.character(bob, 'Sp Staff Bob');
+  t uuid := tests.thread('Staff catches');
+  p uuid := tests.post(a, t, 'A trap under this.');
+  sp uuid := (write_staff_act('fdm-mod', 'post', t, null, '{"body": "A Mod Bot''s post to trap."}') ->> 'id')::uuid;
+  staff_char uuid := (select id from characters where staff = 'fdm-mod');
+  made jsonb; spring uuid; caught_before bigint;
+begin
+  perform pg_temp.hand(ann, 'spxtrap');
+  perform pg_temp.hand(bob, 'spxwhoops');
+  perform set_card(ann, 'spxtrap', a, p, '{"card": "spxwhoops"}', 0, 'spxwhoops');
+  -- The persona casts the named card on Ann's post: caught, and Ann holds a new copy; the persona has no hand to take from or give to.
+  perform tests.become_service();
+  made := staff_play_card('fdm-mod', 'spxwhoops', p);
+  perform tests.unbecome();
+  spring := (made -> 'sprung' ->> 'id')::uuid;
+  if spring is null or made -> 'payload' ->> 'caught' is null then raise exception 'a staff cast that was named was not caught: %', made; end if;
+  if card_held(ann, 'spxwhoops') is distinct from 1 or (select count(*) from card_ledger where kind = 'caught' and act = spring and account = ann) is distinct from 1::bigint then raise exception 'the setter did not get a copy of a staff cast'; end if;
+  if exists (select 1 from card_ledger where act = (made ->> 'id')::uuid) then raise exception 'a staff cast has a ledger row'; end if;
+
+  -- A Mod Bot's Trap Card catches a player's card, and the card is spent: no copy for anyone.
+  perform tests.become_service();
+  perform staff_set_card('fdm-mod', 'spxtrap', sp, '{"card": "spxwhoops"}', 'spxwhoops');
+  perform tests.unbecome();
+  caught_before := (select count(*) from card_ledger where kind = 'caught');
+  made := pg_temp.cast(bob, 'spxwhoops', b, sp);
+  if made -> 'sprung' is null or made -> 'payload' ->> 'caught' is null then raise exception 'a player''s named card was not caught by a Mod Bot''s Trap Card: %', made; end if;
+  if (select count(*) from card_ledger where kind = 'caught') is distinct from caught_before then raise exception 'a Mod Bot took a copy of the card it caught'; end if;
+  if card_held(bob, 'spxwhoops') is distinct from 0 then raise exception 'the caught card was not spent'; end if;
+  if (select s.character from acts s where s.id = (made -> 'sprung' ->> 'id')::uuid) is distinct from staff_char then raise exception 'the spring is not the persona''s'; end if;
+end $$;
+
+-- ---- A Mod Bot's quote springs a back like any quote (#233), and a Move landing on the persona is a card on staff ----
+do $$
+declare
+  ann uuid := tests.account('sp-pool-ann');
+  a uuid := tests.character(ann, 'Sp Pool Ann');
+  t uuid := tests.thread('Pool quotes');
+  p uuid := tests.post(a, t, 'A bomb under this.');
+  staff_char uuid := (select id from characters where staff = 'fdm-mod');
+  the_set uuid; made jsonb; laid uuid;
+begin
+  perform pg_temp.hand(ann, 'spxbomb');
+  the_set := (set_card(ann, 'spxbomb', a, p, '{}', 0) ->> 'id')::uuid;
+  made := write_staff_act('fdm-mod', 'post', t, p, '{"body": "A pool post quoting."}');
+  if made -> 'sprung' is null or pg_temp.sprung_of(the_set) is null then raise exception 'a pool post did not spring the back it quotes: %', made; end if;
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = (made -> 'sprung' ->> 'id');
+  if (select (k.character, k.payload ->> 'reach', k.payload ->> 'character') from acts k where k.id = laid) is distinct from (a, 'character'::text, staff_char::text) then
+    raise exception 'the Bomb did not land on the persona: %', (select to_jsonb(k) from acts k where k.id = laid);
+  end if;
+  -- A pool post that quotes nothing, or a back that is not there, writes as it always did.
+  made := write_staff_act('fdm-mod', 'post', t, null, '{"body": "No quote."}');
+  if made ? 'sprung' then raise exception 'a pool post with no quote sprang something'; end if;
+end $$;
+
+-- ---- A Hall Pass springs on a visit and ends it ----
+do $$
+declare
+  ann uuid := tests.account('sp-pass-ann');
+  a uuid := tests.character(ann, 'Sp Pass Ann');
+  t uuid := tests.thread('Hall pass');
+  p uuid := tests.post(a, t, 'A pass under this.');
+  staff_char uuid := (select id from characters where staff = 'fdm-mod');
+  the_set uuid; v uuid; sprung jsonb;
+begin
+  perform pg_temp.hand(ann, 'spxpass');
+  the_set := (set_card(ann, 'spxpass', a, p, '{}', 0) ->> 'id')::uuid;
+  -- A quote does not spring it.
+  if pg_temp.quote(tests.character(tests.account('sp-pass-bob'), 'Sp Pass Bob'), t, 'Quoting.', p) ? 'sprung' then raise exception 'a quote sprang a Hall Pass'; end if;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  v := tests.act(staff_char, 'visit', t, jsonb_build_object(
+    'charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p::text)),
+    'ends_at', now() + interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'), p);
+  perform set_config('kayfabb.staff_writer', '', true);
+  sprung := spring_traps('visit', p, v);
+  if sprung is null or sprung -> 'payload' ->> 'did' is distinct from 'ended' or sprung -> 'payload' ->> 'trigger' is distinct from 'visit' or sprung -> 'payload' ->> 'by' is distinct from v::text then raise exception 'a visit did not spring a Hall Pass: %', sprung; end if;
+  if sprung ? 'struck' or exists (select 1 from acts k where k.kind = 'card' and k.payload ->> 'spring' is not null and k.thread = t) then raise exception 'a Hall Pass laid a card'; end if;
+end $$;
+
+-- ---- The spring Act's payload: the new shape and the old ones are accepted, nothing else ----
+do $$
+declare
+  ann uuid := tests.account('sp-payload-ann');
+  a uuid := tests.character(ann, 'Sp Payload Ann');
+  t uuid := tests.thread('Payloads');
+  p1 uuid := tests.post(a, t, 'One.'); p2 uuid := tests.post(a, t, 'Two.'); p3 uuid := tests.post(a, t, 'Three.'); p4 uuid := tests.post(a, t, 'Four.'); p5 uuid := tests.post(a, t, 'Five.');
+  s1 uuid := tests.act(a, 'set', t, '{}', p1); s2 uuid := tests.act(a, 'set', t, '{}', p2); s3 uuid := tests.act(a, 'set', t, '{}', p3); s4 uuid := tests.act(a, 'set', t, '{}', p4); s5 uuid := tests.act(a, 'set', t, '{}', p5);
+  why text;
+begin
+  -- A spring written before this: an outcome, no did.
+  perform tests.act(a, 'spring', t, jsonb_build_object('card', 'spxtrap', 'trigger', 'reaction', 'outcome', jsonb_build_object('do', 'payout'), 'set', s1), p1);
+  -- The new one: a did that agrees with its trigger.
+  perform tests.act(a, 'spring', t, jsonb_build_object('card', 'spxwhoops', 'trigger', 'quote', 'did', 'landed', 'set', s2, 'by', p1), p2);
+  perform tests.act(a, 'spring', t, jsonb_build_object('card', 'spxtrap', 'trigger', 'cast', 'did', 'caught', 'set', s3, 'by', p1, 'caught', p1), p3);
+  -- A did that disagrees with its trigger, none at all, and both are refused.
+  why := pg_temp.refusal(format('select tests.act(%L, ''spring'', %L, %L::jsonb, %L)', a, t, jsonb_build_object('card', 'spxwhoops', 'trigger', 'quote', 'did', 'caught', 'set', s4), p4));
+  if why is null or why not like '%acts_spring_payload%' then raise exception 'a did that disagrees with its trigger was stored: %', why; end if;
+  why := pg_temp.refusal(format('select tests.act(%L, ''spring'', %L, %L::jsonb, %L)', a, t, jsonb_build_object('card', 'spxwhoops', 'trigger', 'quote', 'set', s4), p4));
+  if why is null or why not like '%acts_spring_payload%' then raise exception 'a spring that says nothing was stored: %', why; end if;
+  why := pg_temp.refusal(format('select tests.act(%L, ''spring'', %L, %L::jsonb, %L)', a, t, jsonb_build_object('card', 'spxwhoops', 'trigger', 'quote', 'did', 'landed', 'outcome', jsonb_build_object('do', 'nullify'), 'set', s4), p4));
+  if why is null or why not like '%acts_spring_payload%' then raise exception 'a spring with both shapes was stored: %', why; end if;
+  why := pg_temp.refusal(format('select tests.act(%L, ''spring'', %L, %L::jsonb, %L)', a, t, jsonb_build_object('card', 'spxwhoops', 'trigger', 'quote', 'did', 'landed', 'set', s5, 'extra', 1), p5));
+  if why is null or why not like '%acts_spring_payload%' then raise exception 'a spring with a key of its own was stored: %', why; end if;
+end $$;
+
+-- ---- The reply moment is gone, a Gimmick that waits for a cast names a card, and the setter's log says a Move set face down can spring ----
+do $$
+declare
+  ann uuid := tests.account('sp-gone-ann');
+  a uuid := tests.character(ann, 'Sp Gone Ann');
+  t uuid := tests.thread('Gone');
+  p1 uuid := tests.post(a, t, 'One.'); p2 uuid := tests.post(a, t, 'Two.'); p3 uuid := tests.post(a, t, 'Three.');
+  s_move uuid; s_bluff uuid; why text;
+begin
+  if to_regclass('face_down_reply') is not null or to_regproc('face_down_reply_once') is not null or to_regproc('face_down_reply_backfill') is not null then raise exception 'face_down_reply is still there'; end if;
+  perform pg_temp.hand(ann, 'spxwhoops', 'spxbluff', 'spxtrap');
+  s_move := (set_card(ann, 'spxwhoops', a, p1, '{}', 0) ->> 'id')::uuid;
+  s_bluff := (set_card(ann, 'spxbluff', a, p2, '{}', 0) ->> 'id')::uuid;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'spxtrap', a, p3, '{}'));
+  if why is distinct from 'Spx Trap names no card to catch' then raise exception 'a Trap Card was set naming nothing: %', why; end if;
+  perform tests.become(ann);
+  if (select springs from my_card_ledger where act = s_move) is distinct from true then raise exception 'a Move set face down does not spring, the log says'; end if;
+  if (select springs from my_card_ledger where act = s_bluff) is distinct from false then raise exception 'a Bluff set face down springs, the log says'; end if;
+  if exists (select 1 from my_face_down where passed_at is not null) then raise exception 'a back was passed by a reply'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- Every back costs the same reads before its decision: a Bluff, a Trap Card naming another card, a Move whose phrase is absent, a Move that cannot land, a retired setter's Move, and a back that springs ----
+-- What a call reads from the tables spring_facts and spring_traps decide from, and their indexes: rows fetched and index entries returned in this transaction so far, as 0077-trap-locks.sql counts them.
+create function pg_temp.reads() returns bigint language sql as $$
+  select sum(pg_stat_get_xact_tuples_fetched(r.oid) + pg_stat_get_xact_tuples_returned(r.oid))::bigint
+  from pg_class r
+  where r.oid in (select t.oid from pg_class t where t.relname in ('characters', 'card_kinds', 'acts', 'face_down', 'play_reach', 'threads', 'settings') and t.relnamespace = 'public'::regnamespace
+                  union select i.indexrelid from pg_index i join pg_class t on t.oid = i.indrelid
+                  where t.relname in ('characters', 'card_kinds', 'acts', 'face_down', 'play_reach', 'threads', 'settings') and t.relnamespace = 'public'::regnamespace)
+$$;
+do $$
+declare
+  ann uuid := tests.account('sp-even-ann'); bob uuid := tests.account('sp-even-bob');
+  bluffer uuid := tests.character(ann, 'Even Bluffer'); trapper uuid := tests.character(ann, 'Even Trapper'); phrasey uuid := tests.character(ann, 'Even Phrasey');
+  bomber uuid := tests.character(ann, 'Even Bomber'); retiree uuid := tests.character(ann, 'Even Retiree'); springer uuid := tests.character(ann, 'Even Springer');
+  q uuid := tests.character(bob, 'Even Quoter');
+  t uuid := tests.thread('Even work');
+  p_bluff uuid := tests.post(bluffer, t, 'Bluffed.'); p_trap uuid := tests.post(trapper, t, 'Trapped.'); p_phrase uuid := tests.post(phrasey, t, 'Phrased.');
+  p_bomb uuid := tests.post(bomber, t, 'Bombed.'); p_retired uuid := tests.post(retiree, t, 'Retired.'); p_spring uuid := tests.post(springer, t, 'Springing.');
+  quoting uuid := tests.post(q, t, 'Quoting everything, and saying nothing of stripes.');
+  s_bluff uuid; s_trap uuid; s_phrase uuid; s_bomb uuid; s_retired uuid; s_spring uuid;
+  fd face_down; backs uuid[]; one uuid; n integer;
+  before bigint;
+  facts_reads bigint[] := '{}'; full_reads bigint[] := '{}'; said jsonb;
+  cast_reads bigint[] := '{}'; ghost uuid := gen_random_uuid();
+begin
+  perform pg_temp.hand(ann, 'spxbluff', 'spxtrap', 'spxauto', 'spxbomb', 'spxbomb', 'spxwhoops');
+  s_bluff := (set_card(ann, 'spxbluff', bluffer, p_bluff, '{}', 0) ->> 'id')::uuid;
+  s_trap := (set_card(ann, 'spxtrap', trapper, p_trap, '{"card": "spxrare"}', 0, 'spxrare') ->> 'id')::uuid;
+  s_phrase := (set_card(ann, 'spxauto', phrasey, p_phrase, '{}', 0, null, 'zebra') ->> 'id')::uuid;
+  s_bomb := (set_card(ann, 'spxbomb', bomber, p_bomb, '{}', 0) ->> 'id')::uuid;
+  s_retired := (set_card(ann, 'spxbomb', retiree, p_retired, '{}', 0) ->> 'id')::uuid;
+  s_spring := (set_card(ann, 'spxwhoops', springer, p_spring, '{}', 0) ->> 'id')::uuid;
+  -- The quoting character already carries a Bomb, so the Bomb back cannot land; the retired setter cannot act.
+  perform tests.act(bomber, 'card', t, jsonb_build_object('card', 'spxbomb', 'message', '', 'config', '{}', 'reach', 'character', 'character', q, 'ends', now() + interval '3 days', 'targetName', 'Even Quoter'), quoting);
+  insert into play_reach (play, reach, character, ends_at) select a.id, 'character', q, now() + interval '3 days' from acts a where a.kind = 'card' and a.payload ->> 'card' = 'spxbomb' and a.payload ->> 'character' = q::text;
+  update characters set retired_at = now() where id = retiree;
+
+  backs := array[p_bluff, p_trap, p_phrase, p_bomb, p_retired, p_spring];
+  -- Warm: each statement planned, so a call's reads are its execution's alone.
+  for n in 1 .. 8 loop
+    foreach one in array backs loop
+      select * into fd from face_down f where f.post = one;
+      perform spring_facts(fd, 'quote', quoting, null);
+      perform spring_facts(fd, 'cast', ghost, 'spxrare');
+    end loop;
+  end loop;
+
+  -- The reads of the decision's facts, for each back, in a quote and in a cast: the same for all six, the one that springs included.
+  foreach one in array backs loop
+    select * into fd from face_down f where f.post = one;
+    before := pg_temp.reads(); perform spring_facts(fd, 'quote', quoting, null); facts_reads := facts_reads || (pg_temp.reads() - before);
+    before := pg_temp.reads(); perform spring_facts(fd, 'cast', ghost, 'spxrare'); cast_reads := cast_reads || (pg_temp.reads() - before);
+  end loop;
+  if (select count(distinct r) from unnest(facts_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a quote''s decision: Bluff, Trap Card, phrase, Bomb, retired, springing = %', facts_reads; end if;
+  if (select count(distinct r) from unnest(cast_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a cast''s decision: %', cast_reads; end if;
+  if facts_reads[1] < 8 then raise exception 'the reads were not counted (% rows)', facts_reads[1]; end if;
+
+  -- The whole call: the five that do not spring answer null, write nothing and read alike; the sixth springs.
+  for n in 1 .. 8 loop
+    foreach one in array backs[1:5] loop perform spring_traps('quote', one, quoting); end loop;
+  end loop;
+  foreach one in array backs[1:5] loop
+    before := pg_temp.reads(); said := spring_traps('quote', one, quoting); full_reads := full_reads || (pg_temp.reads() - before);
+    if said is not null then raise exception 'a back that cannot spring sprang: %', said; end if;
+  end loop;
+  if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that cannot spring wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
+  if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that cannot spring read differently: Bluff, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
+  said := spring_traps('quote', p_spring, quoting);
+  if said is null then raise exception 'the last back did not spring'; end if;
 end $$;

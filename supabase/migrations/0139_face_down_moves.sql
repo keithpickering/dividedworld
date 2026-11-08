@@ -32,7 +32,7 @@
 --                           returned (engine/rules/cards.ts): a Move (cast) or a Gimmick (set) is set face down, a Use is refused ("<card> is used on your own post"), and the back stores
 --                           `catches` and `phrase`. `catches` is a cast Gimmick's alone and must name a card kind that is cast on a post ("<card> names a card that is cast on a post"); `phrase` is a
 --                           Move's alone and is not blank ("<card> needs a phrase to wait for"). Both default to null, so a caller that sets a card with neither (a Bluff, a visit Gimmick, a back from before
---                           this) is unchanged, and a cast Gimmick set with no catch names none and catches nothing, as an old Trap Card does. The act function (supabase/functions/act/core.ts) passes the
+--                           this) is unchanged. A cast Gimmick set with no catch is refused ("<card> names no card to catch", Task 6: the spring reads only a named catch, so such a back could catch nothing); a back set that way before this still exists, names none and catches nothing. The act function (supabase/functions/act/core.ts) passes the
 --                           two from the card's own rules; set_card is callable by the service role alone, so a caller's request never reaches them.
 --   staff_set_card(staff_key, card, target, config, catches)   takes the named catch. A persona sets Gimmicks only ("<card> is not a Gimmick; a persona sets Gimmicks", and "<card> waits for a Mod Bot's visit; a persona sets none" for a visit Gimmick, which the pool never offers either: staffOffers), and the refusal of a trap that
 --                           pays out is gone with the payout.
@@ -43,6 +43,48 @@
 -- Masks. A refusal reads the card's own kind and the named card's, public facts, and never who owns a character. The stored catch and phrase are the setter's alone (Task 3).
 -- Ways out. A back set here springs once or ends at setLasts, as every back does.
 
+-- Section: springing (Task 6; design sections 2, 3, 4, 5 and 7).
+--
+--   spring_traps(trigger, post, by_act, incoming_card, held, actor)   A back's trigger is `quote` for a Move (a card whose play is cast, set face down) and its card's `trap.trigger.on` for a Gimmick. A quote lays the Move on the
+--                           quoting post, its character, its thread or its board, by the card's first reach (card_kinds.reaches[1]), when its phrase, if any, is in the quoting post's own words (phrase_in(bbcode_plain(body), phrase));
+--                           a cast springs when `incoming_card` is the back's `catches`: the cast is caught (its Act's `caught`, as before), the caught card is written to the setter's ledger as `caught` (act = the spring), a staff
+--                           setter takes nothing, and a staff cast is copied; a visit springs a Hall Pass, which ends the visit as every visit trap did. A cast on a back holding a Move, a reaction and a plain reply spring nothing.
+--                           It no longer pays: the outcome, the payout, the strike, the reaction and reply triggers and the price and caster arguments are gone; the old eight-argument function is dropped.
+--   spring_facts(back, trigger, by_act, incoming_card)   EVEN WORK. Every read spring_traps makes before it decides is made here, for every back it meets, whatever the back holds and whether or not it springs: (1) the setter's
+--                           character (its author, retired_at, debuted_at, owner, staff); (2) the card's kind; (3) the Act that met the back (kind, character, thread, board, words), the thread's first post and the announcements
+--                           thread; (4) the stack at the would-be target and reach: the plays of the back's own card up on the Act (a post's stack and its next layer) AND, whatever the reach, up on the Act's character, thread and
+--                           board (a play beyond a post's), counted as place_cast counts them; the reach the card takes is chosen from values already read, never by which query runs; (5) the board's live card; (6) the named
+--                           catch (a back with none reads its own card's row, so the read finds one row either way), compared with the incoming card; (7) phrase_in over the Act's words (with an empty phrase for a back with none,
+--                           which matches nothing and is asked all the same: the words are folded and scanned only for a back that has one, a cost bounded by the post's length, stated at a busy instance's scale in the phrase section).
+--                           Only then is anything decided, and only a spring writes more, and a spring is a public Act. The time a write takes is never computed from what is face down ("A response never proves a private fact");
+--                           supabase/tests/0135-face-down-moves.sql counts the reads of a Bluff, a Trap Card naming another card, a Move that cannot land, a Move whose phrase is absent and a back that springs, as 0077-trap-locks.sql does.
+--   lay_sprung(setter, card, config, target, reach, spring, from_post)   writes the card Act as place_cast would, through the setter's character: no payer, no price, no message, `payload.spring` set to the spring. It refuses nothing:
+--                           every check that could refuse was a read in spring_facts, and a failed one returned null before anything was written, leaving the back set. (A seventh argument, the quoting post, is the post a card on a
+--                           character hangs on; the plan's six had no place for it.) A sprung card does not call distract_visits (place_cast's thread reach talks down a Mod's open visit for its caster's attempt): a spring is not
+--                           the setter's attempt at the Mod, and the visit a Hall Pass ends is ended by its own spring.
+--   the spring Act's payload   acts_spring_payload now takes either shape: the old (an `outcome` object, no `did`, any of the old triggers) or the new, `did` one of landed (quote), caught (cast) and ended (visit) beside card, trigger, set,
+--                           by and, for a cast, caught. A spring written before this keeps its old payload; no row is rewritten. Readers of `payload.outcome` (engine/ui/log/lines.ts) read the new `did` in Task 7.
+--   post(), write_staff_act()   meet only the quoted post's back. post()'s reply probe, its face_down_reply reads and writes and its scan of the thread's backs are gone. write_staff_act: a pool post that quotes a post springs its back like
+--                           any quote (#233), taking steps 3 to 5 of the lock order before its insert as post() does (lock_for_quote, below); a Move that lands on a staff post or character is a card on staff like any other.
+--   react()                 springs nothing (who reacted is private, so a card can neither land on nor by it).
+--   place_cast()            passes the incoming card's key and no price or caster, and tells a caught caster with a trapStruck on the caught play. It passes its payer as `actor` (a sixth argument the plan did not list), used as
+--                           write_alert's actor alone: the player whose own other mask's back sprang is not told of it, as before (0063); spring_traps' other callers leave it to auth.uid(), and nothing is paid or priced from it.
+--   face_down_reply         dropped with its trigger functions and policies; my_face_down keeps `passed_at` as a column that is always null, so the log page's reader of it (setPasses) reads none and the screens written against it
+--                           still read. A reader of passed_at (engine/ui/log, web/src/data) goes in Task 7.
+--   my_card_ledger          `springs` is true for a Move set face down as well (it springs on a quote), still null for a row that is not a set.
+--
+-- Lock order (0075's header, steps 1 to 6; nothing here takes a later lock before an earlier one). lock_for_quote(poster, thread, quoting) takes, for post() and for write_staff_act's quote: [2b, only when the quoted post holds a live back, a
+-- public fact] the poster's `characters` row and the thread's board's row, both `for no key update`; 3, the quoted post's live unsprung back; 4, the thread row; 5, the count rows of the poster and the back's setter. Then the insert, then
+-- spring_traps (3 again, held), whose spring is neither counted nor numbered and whose landed card is written through the setter, whose count row (5) is held. Step 2b is new: a Move that lands on a character or a board is laid under it, so a
+-- play_card at the same character or board (which takes the same row, then its count row) and a second quote springing a Move there are laid one at a time, as place_cast lays them; a thread's is step 4's row, and a post's stack is the new
+-- post's alone (it is not committed). 2b comes before everything a quote takes after it, and play_card takes it before step 5 too, so the two never cross. place_cast on a post is unchanged: 1, 2, 3 (spring_traps, now also a ledger insert for the
+-- setter, which waits on nothing), 5. react takes none of 3 to 6 any more. start_visit is unchanged, and so is its order: write_staff_act's `visit` Act takes neither a seq (4) nor a count row (5), then spring_traps takes 3 and nothing after it
+-- waits. The spring's trapSprang alert is written with the quoting player (auth.uid()) as its actor, as post() did, and a cast's with its payer.
+--
+-- Masks. The spring names the card, the trigger and the setter's character, public once it springs; the setter's ledger row carries the account's own card and no answer to anyone else carries an account. No refusal reads who owns a
+-- character: a Move that cannot land returns null as a Bluff does. The reads are the same for every back (above).
+-- Ways out. A back springs once, or ends at setLasts; a Move that cannot land waits for the next quote or its time. A caught play is a finished Act; its card is the setter's, or spent where the setter is staff.
+--
 -- Section: the phrase matcher (Task 4; design section 6, "Autocorrect on a quote").
 --
 --   phrase_in(plain, phrase)   whether the phrase is in the text as a whole word, at least once, case-folded as JavaScript folds it. It MIRRORS engine/bbcode/phrase.ts
@@ -77,9 +119,8 @@ alter table face_down
 -- my_face_down (0078), with the named catch and the phrase last. The setter's own row, so the setter's log and set form may read what the back waits for.
 create or replace view my_face_down as
   select f.play, f.card, f.config, f.post, f.thread, a.created_at as set_at, f.ends_at, s.id as spring, s.created_at as sprung_at,
-    coalesce(s.created_at, case when f.ends_at <= now() then f.ends_at end) as ended_at, r.passed_at, f.catches, f.phrase
+    coalesce(s.created_at, case when f.ends_at <= now() then f.ends_at end) as ended_at, null::timestamptz as passed_at, f.catches, f.phrase
   from face_down f join acts a on a.id = f.play left join acts s on s.kind = 'spring' and (s.payload ->> 'set') = f.play::text
-    left join face_down_reply r on r.play = f.play
   where f.account = auth.uid();
 
 -- ------------------------------------------------------------------------------------------------------- the trap's shape ----
@@ -266,6 +307,10 @@ begin
   if kind_of.play is distinct from 'cast' and kind_of.play is distinct from 'set' then
     raise exception '% is %', kind_of.name, case kind_of.play when 'use' then 'used on your own post' else 'kept in the hand' end using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
+  -- A Gimmick that waits for a cast waits for a card; one set with none could catch nothing, and its setter would not know (the spring, Task 6, reads only a named catch).
+  if catches is null and kind_of.play = 'set' and kind_of.trap #>> '{trigger,on}' = 'cast' then
+    raise exception '% names no card to catch', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
   if catches is not null then
     if kind_of.play is distinct from 'set' or kind_of.trap #>> '{trigger,on}' is distinct from 'cast' then
       raise exception '% catches no card', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
@@ -292,8 +337,6 @@ begin
   begin
     insert into face_down (play, account, card, config, post, thread, round, ends_at, catches, phrase)
     values (written, payer, card, coalesce(config, '{}'), target, in_thread, rounds + 1, now() + span_interval(setting('setLasts')), place_set.catches, place_set.phrase);
-    -- Its reply moment, waiting for the first post by another character (a row for every card alike, a Bluff's too).
-    insert into face_down_reply (play, thread) values (written, in_thread);
   exception when unique_violation then
     raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
   end;
@@ -356,3 +399,556 @@ begin
 end $$;
 revoke execute on function staff_set_card(text, text, uuid, jsonb, text) from public, anon, authenticated;
 grant execute on function staff_set_card(text, text, uuid, jsonb, text) to service_role;
+
+-- ------------------------------------------------------------------------------------------------------- springing ----
+
+-- The spring Act's payload names what the spring did (`did`) where it used to carry the card's outcome (an object). A spring written before this keeps its old payload (rows are never rewritten),
+-- so the check accepts either shape: the old one with an `outcome` object and no `did`, or the new one with a `did` that agrees with its trigger.
+alter table acts drop constraint acts_spring_payload;
+alter table acts add constraint acts_spring_payload check (kind <> 'spring' or (
+  jsonb_typeof(payload -> 'card') = 'string'
+  and payload ->> 'trigger' in ('cast', 'reaction', 'reply', 'quote', 'visit')
+  and coalesce(jsonb_typeof(payload -> 'outcome') = 'object', false) <> (payload ? 'did')
+  and (not (payload ? 'did') or (payload ->> 'trigger', payload ->> 'did') in (('quote', 'landed'), ('cast', 'caught'), ('visit', 'ended')))
+  and jsonb_typeof(payload -> 'set') = 'string'
+  and coalesce(jsonb_typeof(payload -> 'by'), 'null') in ('string', 'null')
+  and coalesce(jsonb_typeof(payload -> 'caught'), 'null') in ('string', 'null')
+  and payload - array['card', 'trigger', 'outcome', 'did', 'set', 'by', 'caught'] = '{}'::jsonb) is true);
+
+-- my_card_ledger (0075), with `springs` true for a Move set face down too (it springs on a quote), and still null for a row that is not a set. Everything else as 0075 wrote it.
+create or replace view my_card_ledger as
+  select l.card, l.kind, l.act, l.price, l.at,
+         case when l.kind = 'played' and a.kind = 'set' then k.trap is not null or k.play = 'cast' end as springs
+  from card_ledger l
+  left join card_kinds k on k.key = l.card
+  left join acts a on a.id = l.act
+  where l.account = auth.uid();
+revoke all on my_card_ledger from anon, public;
+grant select on my_card_ledger to authenticated;
+
+-- ---- spring_facts: the reads every back makes, before anything is decided ----
+-- What spring_traps reads of a back it meets, for every back alike. The shape of the answer is the same whatever is face down; only its values differ.
+
+create type spring_facts as (
+  setter_character uuid, setter_owner uuid, setter_staff boolean, setter_retired timestamptz, setter_debuted timestamptz,
+  kind_play text, kind_trap jsonb, kind_stack integer, kind_seeded boolean,
+  by_kind text, by_character uuid, by_thread uuid, by_board uuid, by_body text, first_post uuid, announce_thread uuid,
+  reach text, target uuid,
+  up integer, layer integer, reach_up integer, live_board timestamptz,
+  caught boolean, phrase_hit boolean
+);
+
+create function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  f spring_facts;
+  k card_kinds%rowtype;
+  named text;
+  in_character integer;
+  in_thread integer;
+  in_board integer;
+begin
+  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
+  select a.character into f.setter_character from acts a where a.id = fd.play;
+  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
+  -- 2. The back's card kind.
+  select * into k from card_kinds x where x.key = fd.card;
+  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.reach := coalesce(k.reaches[1], 'post');
+  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
+  -- or a visit by_act is not a post, or not yet written, and these find what they find.
+  select a.kind, a.character, a.thread, a.payload ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  from acts a left join threads t on t.id = a.thread where a.id = by_act;
+  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
+  select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
+  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
+  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
+  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
+  -- for the ones of this back's card): which card is counted is chosen after the reads.
+  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1
+    into f.up, f.layer
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended
+        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board)
+    into in_character, in_thread, in_board
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended
+        from play_reach r join acts k2 on k2.id = r.play
+        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
+  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 5. A board's live card, whatever the card's reach.
+  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
+  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
+  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
+  f.caught := fd.catches is not null and fd.catches = incoming_card and named is not null;
+  -- 7. The phrase against the Act's own words (an empty phrase is in nothing, and is asked all the same).
+  f.phrase_hit := coalesce(phrase_in(bbcode_plain(f.by_body), coalesce(fd.phrase, '')), false);
+  return f;
+end $$;
+revoke execute on function spring_facts(face_down, text, uuid, text) from public, anon, authenticated, service_role;
+
+-- ---- lay_sprung: a Move lands from its back ----
+-- Writes the card Act as place_cast would, through the setter's character, with no payer, no price and no message, and marks it as sprung (`payload.spring`). It refuses nothing: every check that could
+-- have refused (the stack, the board's live card, the first post, the announcements thread) was a read in spring_facts, and a failed one returned before anything was written. Returns the card's Act.
+
+create function lay_sprung(setter uuid, card text, config jsonb, target uuid, reach text, spring uuid, from_post uuid) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  kind_of card_kinds%rowtype;
+  staff_setter boolean;
+  in_thread uuid;
+  on_post uuid;
+  layer integer;
+  ends timestamptz;
+  target_name text;
+  written uuid := gen_random_uuid();
+  flag text;
+begin
+  select * into kind_of from card_kinds k where k.key = lay_sprung.card;
+  select c.staff is not null into staff_setter from characters c where c.id = setter;
+  if reach = 'post' then
+    select a.thread into in_thread from acts a where a.id = target;
+    on_post := target;
+    select greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1 into layer
+    from acts k where k.kind = 'card' and k.target_act_id = target and k.payload ->> 'card' = card and not (k.payload ? 'caught') and coalesce(k.payload ->> 'reach', 'post') = 'post';
+  elsif reach = 'character' then
+    select c.name into target_name from characters c where c.id = target;
+    select a.thread into in_thread from acts a where a.id = from_post;
+    on_post := from_post;
+  elsif reach = 'thread' then
+    select t.title into target_name from threads t where t.id = target;
+    in_thread := target;
+    select a.id into on_post from acts a where a.thread = target and a.seq = 1;
+  else
+    select b.name into target_name from boards_now b where b.id = target;
+    select t.id into in_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+    on_post := null;
+  end if;
+  if reach <> 'post' then
+    ends := now() + least(coalesce(kind_of.lasts, span_interval(setting('reachLasts') -> reach)), span_interval(setting('reachLasts') -> reach));
+  end if;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  if staff_setter then perform set_config('kayfabb.staff_writer', 'on', true); end if;
+  insert into acts (id, character, kind, thread, target_act_id, payload)
+  values (written, setter, 'card', in_thread, on_post, jsonb_build_object('card', card, 'message', '',
+    'config', case when kind_of.seeded then coalesce(config, '{}') - 'seed' else coalesce(config, '{}') end, 'spring', spring::text)
+    || case when reach <> 'post' then jsonb_build_object('reach', reach, reach, target, 'ends', ends, 'targetName', target_name) else jsonb_build_object('layer', layer) end
+    || case when kind_of.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end);
+  if staff_setter then perform set_config('kayfabb.staff_writer', flag, true); end if;
+  if reach <> 'post' then
+    insert into play_reach (play, reach, character, thread, board, pins_board, ends_at)
+    values (written, reach, case when reach = 'character' then target end, case when reach = 'thread' then target end,
+            case when reach = 'board' then target end,
+            case when reach = 'thread' and kind_of.pins then (select t.board from threads t where t.id = target) end, ends);
+  end if;
+  return written;
+end $$;
+revoke execute on function lay_sprung(uuid, text, jsonb, uuid, text, uuid, uuid) from public, anon, authenticated, service_role;
+
+-- ---- spring_traps ----
+-- Decides on the facts spring_facts read, and only then writes.
+
+drop function spring_traps(text, uuid, uuid, text, text, uuid, integer, uuid[]);
+create function spring_traps(trigger text, post uuid, by_act uuid, incoming_card text default null, held uuid[] default null, actor uuid default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  fd face_down%rowtype;
+  f spring_facts;
+  back_trigger text;
+  springs boolean;
+  lands boolean;
+  did text;
+  sprung uuid;
+  laid uuid;
+  flag text;
+begin
+  select x.* into fd from face_down x
+  where x.post = spring_traps.post and x.ends_at > now() and (held is null or x.play = any (held))
+  order by x.round desc limit 1 for update;
+  if fd.play is null then return null; end if;
+  -- After the lock, so a spring that landed while this waited is seen.
+  if exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text) then return null; end if;
+  -- The same reads for every back, before anything is decided.
+  f := spring_facts(fd, trigger, by_act, incoming_card);
+  -- The decision, from the locals. A Move springs on a quote; a Gimmick on its own trigger, or never (a Bluff).
+  back_trigger := case f.kind_play when 'cast' then 'quote' else f.kind_trap #>> '{trigger,on}' end;
+  springs := back_trigger is not distinct from trigger
+    and case trigger when 'quote' then fd.phrase is null or f.phrase_hit when 'cast' then f.caught when 'visit' then true else false end;
+  -- A Move lands on what quoted it, at its first reach, if it can: its stack there has room, a board has no live card, the thread has its first post and a board card its thread.
+  lands := coalesce(f.by_kind = 'post' and case f.reach
+      when 'post' then f.up < f.kind_stack
+      when 'character' then f.by_character is not null and f.reach_up < f.kind_stack
+      when 'thread' then f.first_post is not null and f.reach_up < f.kind_stack
+      else f.by_board is not null and f.announce_thread is not null and f.live_board is null and f.reach_up < f.kind_stack end, false);
+  if not springs then return null; end if;
+  -- A setter's character that can no longer act (retired, until an admin restores it) springs nothing: its back stays set until its time, and the write that met it lands as if no
+  -- back were there (acts_well_formed would refuse the spring, and with it the write). A Move that cannot land leaves its back set for the next quote.
+  if f.setter_retired is not null or f.setter_debuted is null then return null; end if;
+  if back_trigger = 'quote' and not lands then return null; end if;
+  did := case back_trigger when 'quote' then 'landed' when 'cast' then 'caught' else 'ended' end;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  if f.setter_staff then perform set_config('kayfabb.staff_writer', 'on', true); end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (f.setter_character, 'spring', fd.thread, fd.post, jsonb_strip_nulls(jsonb_build_object(
+    'card', fd.card, 'trigger', trigger, 'did', did, 'set', fd.play::text, 'by', by_act::text,
+    'caught', case when trigger = 'cast' then by_act::text end))) returning id into sprung;
+  if f.setter_staff then perform set_config('kayfabb.staff_writer', flag, true); end if;
+  perform write_alert(f.setter_character, 'trapSprang', null, sprung, coalesce(actor, auth.uid()));
+  if back_trigger = 'quote' then
+    laid := lay_sprung(f.setter_character, fd.card, fd.config, f.target, f.reach, sprung, by_act);
+    perform write_alert(f.by_character, 'trapStruck', null, laid, f.setter_owner);
+    -- The landed card goes out with the spring, so it reaches readers live as the spring does.
+    return act_projection(sprung) || jsonb_build_object('struck', act_projection(laid));
+  elsif back_trigger = 'cast' and fd.account is not null then
+    -- The caught card is the setter's: one more row in their own ledger, beside the caster's `played` row. A staff setter has no hand and takes nothing.
+    insert into card_ledger (account, card, kind, act, price) values (fd.account, incoming_card, 'caught', sprung, 0);
+  end if;
+  return act_projection(sprung);
+end $$;
+revoke execute on function spring_traps(text, uuid, uuid, text, uuid[], uuid) from public, anon, authenticated, service_role;
+
+-- ---- lock_for_quote: the lock order's steps for a write that may spring a quote ----
+-- Takes, in the order 0075's header wrote, the locks a post needs before it inserts: the quoted post's live, unsprung back (a spring is public, and acts_one_spring finds it by index), then the
+-- thread the post's `seq` comes from, then the count rows of the poster and of the back's setter, each made first where it is missing. It returns the plays it locked, which spring_traps takes as
+-- `held`: only a back this write locked springs. Which rows it locks is computed from public facts alone (a live, unsprung back, the character that set it), never from the card.
+-- Before step 3 it takes two more rows, only when the quoted post holds a live back (a public fact): the poster's `characters` row and the thread's board's row, `for no key update`. A Move that
+-- lands on the quoting post's character or board is laid under them, so a play_card at the same character or board, which takes the same row and then its count row, and a second quote springing
+-- a Move there, are laid one at a time and each counts the last (the stack, and a board's one live card). They come ahead of every step 3 to 6 lock a quote takes and are held by nothing a quote
+-- waits on after them: play_card's character and board reaches take the same row and then step 5, never the other way round.
+create function lock_for_quote(poster uuid, in_thread uuid, quoting uuid) returns uuid[]
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  locked uuid[];
+  setters uuid[];
+  on_board uuid;
+begin
+  if quoting is not null and exists (select 1 from face_down f where f.post = quoting and f.ends_at > now()
+       and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)) then
+    select t.board into on_board from threads t where t.id = in_thread;
+    perform 1 from characters c where c.id = poster for no key update;
+    perform 1 from boards b where b.id = on_board for no key update;
+  end if;
+  -- Step 3: the quoted post's live, unsprung back, in `play` order, in one statement.
+  select coalesce(array_agg(b.play), '{}'), coalesce(array_agg(b.setter), '{}') into locked, setters
+  from (select f.play, a.character as setter from face_down f join acts a on a.id = f.play
+        where f.post = quoting and f.ends_at > now()
+          and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
+        order by f.play for update of f) b;
+  -- Step 4: the thread whose seq the insert takes.
+  perform 1 from threads where id = in_thread for no key update;
+  -- Step 5: the poster's count row and every setter's, by character, each made first where it is missing.
+  insert into character_post_counts (character)
+  select distinct c from unnest(setters || poster) c order by c on conflict do nothing;
+  perform 1 from character_post_counts where character = any (setters || poster) order by character for update;
+  return locked;
+end $$;
+revoke execute on function lock_for_quote(uuid, uuid, uuid) from public, anon, authenticated, service_role;
+
+-- ---- post ----
+-- post (0130), meeting only the quoted post's back: the reply probe, face_down_reply's reads and writes, and the scan of the thread's backs are gone. The locks are lock_for_quote's. Everything else as 0130 wrote it.
+CREATE OR REPLACE FUNCTION public.post(in_thread uuid, through uuid, body text, quoting uuid DEFAULT NULL::uuid, framing uuid[] DEFAULT '{}'::uuid[])
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  on_board uuid;
+  written uuid;
+  sprung jsonb;
+  locked uuid[];
+begin
+  perform acting(through);
+  perform not_banned(through);
+  perform within('body', body, 'postMaxLength');
+  select board into on_board from threads where id = in_thread;
+  if on_board is null then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform not_the_systems(on_board);
+  perform not_barred(through, on_board);
+  if quoting is not null and not exists (select 1 from acts where id = quoting) then raise exception 'there is no such Act to quote' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- Steps 3 to 5 of the lock order, for the quoted post's back (lock_for_quote).
+  locked := lock_for_quote(through, in_thread, quoting);
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id into written;
+  -- Only a back this post locked springs (spring_traps' `held`).
+  if quoting is not null then sprung := spring_traps('quote', quoting, written, held => locked); end if;
+  if quoting is not null then perform write_alert((select a.character from acts a where a.id = quoting), 'quote', null, written, auth.uid()); end if;
+  perform write_framed(body, framing, written, auth.uid());
+  perform draw_visits(written);
+  return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
+end $function$;
+
+-- ---- write_staff_act ----
+-- write_staff_act (0137), a pool post that quotes a post springs its back like any quote (#233): it takes steps 3 to 5 of the lock order before its insert, as post() does, and meets only that back.
+-- A Move that lands on a staff post or character is a card on staff like any other. Everything else as 0137 wrote it.
+create or replace function write_staff_act(staff_key text, kind text, thread uuid, target uuid, payload jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  whose text;
+  written uuid;
+  held text;
+  stamped jsonb := payload;
+  quoting boolean := kind = 'post' and target is not null;
+  locked uuid[];
+  sprung jsonb;
+begin
+  select c.id, c.staff_kind into who, whose from characters c where c.staff = staff_key;
+  if whose = 'developer' then
+    raise exception 'the developer speaks only through post_update, by an admin' using errcode = '42501';
+  end if;
+  if kind is null or kind not in ('post', 'spin', 'card', 'edit', 'move', 'move_keep', 'visit', 'visit_join', 'report_verdict', 'appeal_ruling') then
+    raise exception 'a staff character posts, spins, plays a card, edits, moves, keeps a move, visits or gives a verdict or a ruling, not %', coalesce(kind, 'nothing') using errcode = '22023';
+  end if;
+  if jsonb_typeof(payload) is distinct from 'object' then raise exception 'an Act''s payload is an object' using errcode = '22023'; end if;
+  if who is null then raise exception 'there is no staff member "%"', staff_key using errcode = 'P0002'; end if;
+  -- A persona that has not debuted writes nothing, and a benched one is silent (0082).
+  select o.office into held from staff_office_now o where o.staff = staff_key;
+  if held in ('waiting', 'benched') then
+    raise exception 'a % persona writes nothing', held using errcode = '55000';
+  end if;
+  -- A move says which office made it, as the office stood when it landed.
+  if kind = 'move' and held in ('boss', 'mod') and not (payload ? 'office') then
+    stamped := payload || jsonb_build_object('office', held);
+  end if;
+  -- A pool post that quotes: the quoted post's back, the thread and the count rows, in the lock order, before the insert.
+  if quoting then locked := lock_for_quote(who, write_staff_act.thread, target); end if;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (who, kind, write_staff_act.thread, target, stamped) returning id into written;
+  perform set_config('kayfabb.staff_writer', '', true);
+  if quoting then sprung := spring_traps('quote', target, written, held => locked); end if;
+  return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
+end $$;
+
+-- ---- place_cast ----
+-- place_cast (0108), the card's key given to spring_traps and neither a price nor a caster, since nothing pays out; and a caught caster told on the caught play. Everything else as 0108 wrote it. Create or replace
+-- keeps 0108's grants (none to an API role); the revoke is stated again.
+create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  target_kind text;
+  author uuid;
+  in_thread uuid;
+  on_post uuid := target;
+  written uuid := gen_random_uuid();
+  kind_of card_kinds%rowtype;
+  layer integer;
+  said text := coalesce(message, '');
+  warded record;
+  sprung jsonb;
+  up integer;
+  ends timestamptz;
+  live_board timestamptz;
+  where_words text;
+  target_name text;
+  staff_caster boolean;
+begin
+  select c.staff is not null into staff_caster from characters c where c.id = caster;
+  if staff_caster is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
+  -- Nobody pays for a staff character's card, and a player's is always paid for: the two must agree before anything is written.
+  if staff_caster is distinct from (payer is null) then
+    raise exception 'a staff character''s card is paid by no one, and a player''s by its player' using errcode = '22023';
+  end if;
+  if payer is null and coalesce(price, 0) <> 0 then raise exception 'a staff character''s card costs nothing' using errcode = '22023'; end if;
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  if char_length(said) > 200 then raise exception 'the message is at most 200 characters' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  if reach is null or reach not in ('post', 'character', 'thread', 'board') then
+    raise exception 'a card lands on a post, a character, a thread or a board' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  select * into kind_of from card_kinds k where k.key = place_cast.card;
+  if kind_of.key is null then raise exception 'there is no such card' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if kind_of.play = 'set' then raise exception '% is set face down on your own post' , kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if kind_of.play not in ('cast', 'use') then raise exception '% is not played on a post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if not (reach = any (kind_of.reaches)) then
+    raise exception 'this card lands on %', reach_list(kind_of.reaches) using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+
+  if reach = 'post' then
+    -- The target's row is locked, so plays on one post are laid one at a time and each counts the last.
+    select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
+    if target_kind is distinct from 'post' then raise exception 'a card lands on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if kind_of.play = 'use' and author is distinct from caster then
+      raise exception '% is used on your own post' , kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
+    end if;
+    -- A live ward on the post turns away a cast at or below its rarity, in the same words for everyone (cards.ts's wardWords).
+    if kind_of.play = 'cast' then
+      select wk.name, wk.rarity into warded from acts w join card_kinds wk on wk.key = w.payload ->> 'card'
+      where w.kind = 'card' and w.target_act_id = target and wk.ward and not (w.payload ? 'caught') and coalesce(w.payload ->> 'reach', 'post') = 'post'
+        and (w.payload ->> 'ends' is null or (w.payload ->> 'ends')::timestamptz > now()) and not card_ended(w.id)
+        and rarity_rank(kind_of.rarity) <= rarity_rank(wk.rarity)
+      order by rarity_rank(wk.rarity) desc limit 1;
+      if warded.name is not null then
+        raise exception 'this post''s % turns away cards up to %', warded.name, warded.rarity using hint = 'kayfabb.refusal', errcode = '42501';
+      end if;
+    end if;
+    -- The stack counts the plays still up: a caught play, an ended Use and a play beyond a post sitting here hold no place. The
+    -- layer goes on from the last one taken, so no layer is taken twice (acts_card_layers); a play written before layers counts as
+    -- one (0016).
+    select count(*) filter (where (k.payload ->> 'ends' is null or (k.payload ->> 'ends')::timestamptz > now()) and not card_ended(k.id)),
+           greatest(coalesce(max((k.payload ->> 'layer')::integer), 0), count(*)) + 1
+      into up, layer
+    from acts k where k.kind = 'card' and k.target_act_id = target and k.payload ->> 'card' = card and not (k.payload ? 'caught')
+      and coalesce(k.payload ->> 'reach', 'post') = 'post';
+    if up >= kind_of.stack then
+      if kind_of.stack = 1 then raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
+      raise exception 'this post already carries % of that card, the most it takes', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
+    end if;
+    if kind_of.play = 'cast' then
+      -- A cast on a post meets that post's back: a Trap Card that names this very card catches it, whatever its rarity, and takes it. Nothing pays out, so
+      -- spring_traps is given the card's key and neither a price nor a caster; the paying account goes only as the one who is not told of their own back.
+      sprung := spring_traps('cast', target, written, card, actor => payer);
+    end if;
+  else
+    -- The target's row is locked, so plays on one target are laid one at a time and each counts the last; two board cards on one
+    -- board both wait here, and the second sees the first.
+    if reach = 'character' then
+      perform 1 from characters c where c.id = target for no key update;
+      if not found then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+      select c.name into target_name from characters c where c.id = target;
+      select a.thread into in_thread from acts_public a where a.id = from_post and a.kind = 'post' and a.character = target;
+      if in_thread is null then raise exception 'a card on a character is played from one of its posts' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+      on_post := from_post;
+      if kind_of.play = 'use' and target is distinct from caster then
+        raise exception '% is used on your own character', kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
+      end if;
+    elsif reach = 'thread' then
+      perform 1 from threads t where t.id = target for no key update;
+      if not found then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+      select t.title into target_name from threads t where t.id = target;
+      in_thread := target;
+      select a.id into on_post from acts a where a.thread = target and a.seq = 1;
+      if on_post is null then raise exception 'that thread has no post yet' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+    else
+      perform 1 from boards b where b.id = target for no key update;
+      if not found then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+      select b.name into target_name from boards_now b where b.id = target;
+      select t.id into in_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+      if in_thread is null then
+        raise exception 'there is no announcements thread to play a board card in yet' using hint = 'kayfabb.refusal', errcode = '55000';
+      end if;
+      on_post := null;
+      -- One board card at a time, of any card.
+      select max(r.ends_at) into live_board from play_reach r where r.board = target and r.ends_at > now() and not card_ended(r.play);
+      if live_board is not null then
+        raise exception 'this board already carries a board card until %', refusal_time(live_board) using hint = 'kayfabb.refusal', errcode = '23505';
+      end if;
+    end if;
+    select count(*) into up from play_reach r join acts k on k.id = r.play
+    where r.ends_at > now() and not card_ended(r.play) and k.payload ->> 'card' = card
+      and case place_cast.reach when 'character' then r.character = target when 'thread' then r.thread = target else r.board = target end;
+    if up >= kind_of.stack then
+      where_words := 'this ' || reach;
+      if kind_of.stack = 1 then raise exception '% already carries that card', where_words using hint = 'kayfabb.refusal', errcode = '23505'; end if;
+      raise exception '% already carries % of that card, the most it takes', where_words, kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
+    end if;
+    ends := now() + least(coalesce(kind_of.lasts, span_interval(setting('reachLasts') -> reach)), span_interval(setting('reachLasts') -> reach));
+  end if;
+
+  begin
+    insert into acts (id, character, kind, thread, target_act_id, payload)
+    values (written, caster, 'card', in_thread, on_post, jsonb_build_object('card', card, 'message', said,
+      'config', case when kind_of.seeded then coalesce(config, '{}') - 'seed' else coalesce(config, '{}') end)
+      || case when reach <> 'post' then jsonb_build_object('reach', reach, reach, target, 'ends', ends, 'targetName', target_name)
+              when sprung is not null then jsonb_build_object('caught', sprung -> 'payload' ->> 'set') else jsonb_build_object('layer', layer) end
+      || case when kind_of.seeded then jsonb_build_object('seed', floor(random() * 2147483648)::bigint) else '{}'::jsonb end
+      || case when reach = 'post' and kind_of.play = 'use' and kind_of.lasts is not null then jsonb_build_object('ends', now() + kind_of.lasts) else '{}'::jsonb end
+      || coalesce(marker, '{}'::jsonb));
+  exception when unique_violation then
+    -- Only a writer that skipped the lock above could take the same layer.
+    raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505';
+  end;
+  if reach <> 'post' then
+    insert into play_reach (play, reach, character, thread, board, pins_board, ends_at)
+    values (written, reach, case when reach = 'character' then target end, case when reach = 'thread' then target end,
+            case when reach = 'board' then target end,
+            case when reach = 'thread' and kind_of.pins then (select t.board from threads t where t.id = target) end, ends);
+  end if;
+  -- A card Cast at thread reach talks down the open visits on the thread whose Mod a distraction moves (0108), once for each, as this caster's attempt.
+  if reach = 'thread' and not staff_caster then perform distract_visits(caster, target, written); end if;
+  if reach <> 'board' then
+    perform write_alert(case reach when 'character' then target else (select a.character from acts a where a.id = on_post) end, 'cardOnYours', null, written, payer);
+  end if;
+  -- A caught cast tells its caster, as a card landed from a back tells the struck: a trapStruck on the caught play, naming nothing but the play (the spring names the setter's
+  -- character). The setter's account is the alert's actor only so that a player's cast on their own other mask's Trap Card tells nobody; the alert reads no owner into any answer.
+  if sprung is not null then
+    perform write_alert(caster, 'trapStruck', null, written, (select f.account from face_down f where f.play = (sprung -> 'payload' ->> 'set')::uuid));
+  end if;
+  return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
+end $$;
+
+revoke execute on function place_cast(uuid, text, uuid, jsonb, text, text, uuid, uuid, integer, jsonb) from public, anon, authenticated, service_role;
+-- ---- react ----
+-- react (0104), springing nothing: who reacted is a private fact, and a card cannot land on or by it (the design, section 2). Everything else as 0104 wrote it.
+CREATE OR REPLACE FUNCTION public.react(target uuid, through uuid, reaction text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  caller uuid := auth.uid();
+  cap integer := (setting('reactionCap'))::integer;
+  target_kind text;
+  author_owner uuid;
+  held text[];
+  free_slot integer;
+begin
+  if caller is null then raise exception 'sign in to react' using hint = 'kayfabb.refusal', errcode = '28000'; end if;
+  perform played_by(through, caller);
+  perform not_banned(through);
+  if not exists (select 1 from reaction_kinds k where k.key = reaction) then
+    raise exception 'there is no reaction "%"', reaction using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- The System's own Acts (a tally, the reveal) have no author, and no author's owner to hold the
+  -- caller apart from: they are reacted to like any Act, and pay nobody (settle.ts).
+  select a.kind, c.owner into target_kind, author_owner
+  from acts a left join characters c on c.id = a.character where a.id = target;
+  if target_kind is null then
+    raise exception 'there is no such Act' using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  if target_kind = 'edit' then raise exception 'an edit is not reacted to; react to the post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  -- The author's owner now: a character changing hands is not in this slice, and the session
+  -- that adds it decides what becomes of reactions between its old and new owner's characters.
+  if author_owner = caller then
+    raise exception 'your characters cannot react to each other' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+
+  select coalesce(array_agg(r.kind order by r.slot), '{}') into held
+  from reactions r where r.act = target and r.reactor_account = caller;
+  -- The lowest free slot, so a slot given back (a reaction removed, later) is taken again rather
+  -- than colliding for ever. The slot only makes two reactions at once collide; the cap is held
+  -- by the count above, so lowering reactionCap later leaves existing reactions as they are.
+  select min(g) into free_slot from generate_series(1, cardinality(held) + 1) g
+  where not exists (select 1 from reactions r where r.act = target and r.reactor_account = caller and r.slot = g);
+  if reaction = any (held) then
+    raise exception 'you have already left that reaction here' using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  if cardinality(held) >= cap then
+    raise exception 'you have left % reactions here, the most there are', cap using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+
+  begin
+    insert into reactions (act, reactor_character, reactor_account, kind, slot)
+    values (target, through, caller, reaction, free_slot);
+  exception when unique_violation then
+    -- Another reaction of this player's landed between the read above and this write.
+    raise exception 'you reacted here twice at once; try again' using hint = 'kayfabb.refusal', errcode = '40001';
+  end;
+  insert into reaction_tallies (act, kind, count) values (target, reaction, 1)
+  on conflict (act, kind) do update set count = reaction_tallies.count + 1;
+  -- A reaction springs nothing: who reacted is a private fact, so no card lands on or by it (face-down Moves, design section 2).
+
+  return jsonb_build_object('act', target, 'thread', (select thread from acts where id = target),
+    'tally', (select coalesce(jsonb_object_agg(t.kind, t.count order by t.kind), '{}') from reaction_tallies t where t.act = target));
+end $function$;
+
+-- ---- the reply moment is gone ----
+-- face_down_reply recorded the first post by another character in a back's thread: the reply trigger it served is gone (design, section 2), and with it the table, its row-once trigger, its backfill and
+-- the policies it held. my_face_down keeps a `passed_at` column that is always null, so the readers written against it (the log page's pass lines) read none and are not broken; no instance holds a
+-- back that was passed.
+drop table face_down_reply;
+drop function face_down_reply_once();
+drop function face_down_reply_backfill();
