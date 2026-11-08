@@ -4,7 +4,7 @@ import type { Character } from '../data/api.ts';
 export function Avatar({ character }: { readonly character: Character }) {
   const src = character.avatarPortrait ?? character.avatarSquare;
   return (
-    <span className="kb-profile-avatar" aria-hidden="true">
+    <span className="kb-profile-avatar" data-kb-slot={character.avatarPortrait ? 'portrait' : undefined} aria-hidden="true">
       {src ? <img src={src} alt="" decoding="async" /> : <span className="kb-profile-none">{character.name.slice(0, 1)}</span>}
     </span>
   );
