@@ -47,7 +47,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({
       by: 'wholesome',
       body: 'Do you ever stop talking?',
-      reactions: Object.freeze({ laughing: 5, fire: 2, 'hundred-points': 1 }),
+      reactions: Object.freeze({ laughing: 3, fire: 1, 'hundred-points': 1 }),
       plays: Object.freeze([
         Object.freeze({ card: 'feelin-fab', by: 'tweener', layer: 1, config: Object.freeze({}) }),
         Object.freeze({ card: 'feelin-fab', by: 'accountant', layer: 2, config: Object.freeze({}), reactions: Object.freeze({ 'eye-roll': 1 }) }),
@@ -67,7 +67,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({
       by: 'tweener',
       body: 'This site makes me miss the Bush Administration.',
-      reactions: Object.freeze({ 'thumbs-down': 2, 'laughing': 2 }),
+      reactions: Object.freeze({ 'thumbs-down': 3, 'laughing': 3 }),
     }),
     Object.freeze({
       by: 'roboto',
