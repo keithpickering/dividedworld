@@ -62,6 +62,10 @@ export interface PlayControls {
   readonly setHandOpen: (open: boolean) => void;
   /** Arm a card, or put the armed one back (null). */
   readonly arm: (card: string | null) => void;
+  /** The armed Move is set face down rather than cast (the choice at the top of its form on one's own post); a post's ghost is named by it. Always false for a card that is not a Move, and when nothing is armed. */
+  readonly faceDown: boolean;
+  /** Choose between playing the armed card now and setting it face down. */
+  readonly choose: (faceDown: boolean) => void;
   /**
    * Open the play form for a card on a post; the hand is put away. The post is read first and the form opens once it has landed
    * (`opening` says which trigger waits); Escape cancels the wait.
@@ -91,7 +95,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const accountNow = useRef(account);
   accountNow.current = account;
   /* Each is kept with the account it was made for, and reads as nothing under another: in the commit the account changes, not after it (the clearing effect below runs after that commit, and a render between would show the other account's card; play.test.tsx pins it). */
-  const [armedHeld, setArmedHeld] = useState<{ readonly card: string; readonly for: Id | null } | null>(null);
+  const [armedHeld, setArmedHeld] = useState<{ readonly card: string; readonly for: Id | null; readonly faceDown: boolean } | null>(null);
   const [formHeld, setFormHeld] = useState<{ readonly card: string; readonly target: PlayTarget; readonly for: Id | null; readonly read: readonly Act[] } | null>(null);
   const [saidHeld, setSaidHeld] = useState<{ readonly words: string; readonly for: Id | null }>({ words: '', for: null });
   const [handOpen, setHandOpenState] = useState(false);
@@ -105,7 +109,9 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const armed = armedHeld?.for === account ? armedHeld.card : null;
   const form = formHeld?.for === account ? formHeld : null;
   const said = saidHeld.for === account ? saidHeld.words : '';
-  const setArmed = useCallback((card: string | null) => setArmedHeld(card === null ? null : { card, for: accountNow.current }), []);
+  const setArmed = useCallback((card: string | null) => setArmedHeld(card === null ? null : { card, for: accountNow.current, faceDown: false }), []);
+  const faceDown = armedHeld?.for === account && armedHeld.faceDown;
+  const choose = useCallback((down: boolean) => setArmedHeld((held) => (held ? { ...held, faceDown: down } : held)), []);
   const setSaid = useCallback((words: string) => setSaidHeld({ words, for: accountNow.current }), []);
   /* Read against the account in the commit it changes; dropped just after, so signing back in finds none of it. */
   useEffect(() => () => {
@@ -148,8 +154,8 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   useEffect(() => { if (readFailed) setSaid(PREPARED_FAILED); }, [readFailed, setSaid]);
 
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, setHandOpen, arm, openForm, readyForm, opening }),
-    [armed, handOpen, setHandOpen, arm, openForm, readyForm, opening],
+    () => ({ armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening }),
+    [armed, handOpen, setHandOpen, arm, faceDown, choose, openForm, readyForm, opening],
   );
 
   return (
@@ -162,6 +168,8 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
           card={form.card}
           target={form.target}
           seen={form.read}
+          faceDown={faceDown && armed === form.card}
+          onChoose={choose}
           onClose={() => { setFormHeld(null); prepared.cancel(); }}
           onPlayed={() => {
             if (accountNow.current !== form.for) return;

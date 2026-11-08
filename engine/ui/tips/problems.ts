@@ -31,6 +31,13 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
     const word: unknown = ui.copy?.[key];
     if (typeof word !== 'string' || word.trim() === '') out.push(`the copy has no ${key}`);
   }
+  const kinds: unknown = ui.copy?.cardKinds;
+  if (kinds !== undefined) {
+    for (const key of ['cast', 'set', 'use']) {
+      const word: unknown = (kinds as Record<string, unknown> | null)?.[key];
+      if (typeof word !== 'string' || word.trim() === '') out.push(`the copy's cardKinds has no ${key}`);
+    }
+  }
   const marquees: unknown = ui.copy?.marquees;
   if (marquees !== undefined) {
     if (!Array.isArray(marquees) || marquees.length === 0) out.push('the copy has a marquees list with nothing in it');

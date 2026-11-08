@@ -39,8 +39,8 @@ const manifest: BoardManifest = {
     { id: 'hand-head', role: 'heading', name: 'Hand · 3', within: 'hand' },
     { id: 'hand-close', role: 'button', name: 'Close the hand', within: 'hand' },
     /* The cards, each a button by its name. A card's parts are pictures and words said once by its name, so its box is compared and not its type. */
-    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: 'Stick Around, Sweet, Cast, common postcard', within: 'hand', type: false },
-    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: 'Whoops!, Salty, Cast, common postcard', within: 'hand', buildNth: 1, type: false },
+    { id: 'card-stick', role: 'button', name: 'Stick Around, Sweet postcard', buildName: 'Stick Around, Sweet, Move, common postcard', within: 'hand', type: false },
+    { id: 'card-whoops', role: 'button', name: 'Whoops!, Salty postcard', buildName: 'Whoops!, Salty, Move, common postcard', within: 'hand', buildNth: 1, type: false },
     /* (Each card's name says its play and rarity in the build, a departure the card mechanic makes: docs/plans/2026-11-01-card-plays-plan.md, Task 7.) */
     /* The link's place follows the line above it, whose words are the armed card's (cards Task 3), so only where it starts is compared. */
     /* A GlassButton in a centered ButtonRow (the glass polish, design section 2), in the parts' secondary colors, where the board draws a salty-yellow link at the sheet's left: not compared (the layout check holds it). */

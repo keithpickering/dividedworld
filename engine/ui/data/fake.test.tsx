@@ -1551,7 +1551,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1928,7 +1928,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const cast = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
-  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
   const world: Instance = { ...instance, cards: [cast, snare, shield], machine: [{ item: { card: cast.key }, availability: 'onSale' as const, price: 100 }, { item: { card: snare.key }, availability: 'onSale' as const, price: 100 }, { item: { card: shield.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
   function setup() {
@@ -1957,6 +1957,27 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     void ana;
   });
 
+  test('a Move is set face down like a Gimmick, and a Use is refused, in the card\'s words', async () => {
+    const { fake, ana, anaFace, opener } = setup();
+    fake.seed.cards(ana, { blot: 1 });
+    const set = must(await fake.setCard('blot', anaFace, opener, {}));
+    expect([set.kind, set.payload]).toEqual(['set', {}]);
+    expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'blot' });
+    const refused = await fake.setCard('shield', anaFace, opener, {});
+    expect(refused).toMatchObject({ ok: false, error: 'Shield is used on your own post' });
+  });
+
+  test('a Trap Card naming a card that is not cast on a post is refused in decideSet\'s words', async () => {
+    const trapper = { ...base, key: 'trapper', name: 'Trapper', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'shield', canApply: () => ok(undefined) };
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, trapper] } });
+    const ana = fake.seed.account('ana');
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { act } = fake.seed.thread('general', face, 'Hello', 'First post');
+    fake.seed.cards(ana, { trapper: 1 });
+    fake.signInAs(ana);
+    expect(await fake.setCard('trapper', face, act, {})).toMatchObject({ ok: false, error: 'Trapper names a card that is cast on a post' });
+  });
+
   test('a trap catches the next cast, which is spent, and the spring reveals it', async () => {
     const { fake, bo, anaFace, boFace, opener } = setup();
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
@@ -1964,9 +1985,22 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
     expect(caught.payload.caught).toBe(set.id);
     const on = await fake.cardsOn(opener, 8);
-    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', set: set.id, caught: caught.id });
+    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', trigger: 'cast', did: 'caught', set: set.id, caught: caught.id });
+    expect(on.find((a) => a.kind === 'spring')?.payload).not.toHaveProperty('outcome');
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a Trap Card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
+    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    fake.signInAs(ana);
+    expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
+    expect((await fake.log()).cards.find((e) => e.kind === 'caught')).toMatchObject({ card: 'blot', kind: 'caught', act: spring.id, price: 0 });
+    expect(caught.payload.caught).toBe(set.id);
   });
 
   test('a caught play\'s moment holds the back and the spring, written before it as the server writes them; the spring\'s holds the back', async () => {
@@ -2078,7 +2112,7 @@ describe('an admin ends a card play (reverse_card)', () => {
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
-  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 400 }, canApply: () => ok(undefined) };
   const sparkle = {
     ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 400 },

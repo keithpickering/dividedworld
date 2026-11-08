@@ -22,7 +22,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { atOrBelow, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
+import { playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -207,7 +207,7 @@ export interface Seed {
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
    * moments were snapshotted (0072): its moment is not taken.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -220,7 +220,7 @@ export interface Seed {
    */
   set(character: Id, target: Id, card: string, options?: { at?: number }): Id;
   /** The spring of a set (what `spring_traps` writes): a spring Act on its post naming the card, and `caught` where it caught a play. Returns the spring Act. */
-  spring(set: Id, options?: { trigger?: string; caught?: Id; at?: number }): Id;
+  spring(set: Id, options?: { trigger?: string; caught?: Id; by?: Id; at?: number }): Id;
   /**
    * A Mod's visit to a post, as `start_visit` writes it (the Mod Bots design, section 6): the `visit` Act, ending `endsInMs` from now (default 3 hours)
    * with `charges` (default one minor breach of Rule 2) and a `challenge`. A quiz's `answer` is the fake's alone, never carried to a reader.
@@ -1369,15 +1369,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account.cards[card]! -= 1;
     /* The layer counts every play that landed, a reversed one too (acts_card_layers refuses a reused layer); only the stack count drops it. */
     const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
-    /* A live trap on a cast that is no rarer than it catches the play (spring_traps): the spring is written first, as the server writes it. */
+    /* A live Trap Card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
-    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && atOrBelow(rules.rarity, trapRules.rarity) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
+    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && faceDown.get(trap.set)!.catches === card && ownerOf(acts.get(trap.set)!.character!) !== undefined;
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
     const playId = uuid();
     let spring: ActRec | null = null;
     if (catches) {
-      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', outcome: trapRules!.trap!.outcome, set: trap.set, by: playId, caught: playId } });
+      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
     const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
@@ -1386,8 +1386,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
     if (spring) {
+      /* The caught card is the setter's: one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
       const setter = accounts.get(faceDown.get(trap!.set)!.account);
-      if (setter && trapRules!.trap!.outcome.do === 'payout' && decided.value.price > 0) setter.wallet = Math.min(settings.walletCap, setter.wallet + decided.value.price);
+      if (setter) {
+        setter.cards[card] = (setter.cards[card] ?? 0) + 1;
+        recordCard(setter.id, spring.at, { card, kind: 'caught', act: spring.id, price: 0 });
+      }
       sendAct(spring);
     }
     return ok(publicAct(written));
@@ -1395,9 +1399,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /**
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
-   * The in-memory backend springs a cast trap on a cast; the other triggers are the server's to test.
+   * Mirrored: a Trap Card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
+   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a Ward does not stop a landing. Those are the server's to test
+   * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null }>();
+  /** The back of each card set face down: `catches` is the card a Trap Card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
     return null;
@@ -1482,7 +1489,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** set_card (0054): decided by the card's rules (decideSet), then the author, the hand and the post's one back are the database's. */
+  /** set_card (0142): a Move or a Gimmick, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
   function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Answer<Act> {
     const bad = request({ action: 'setCard', card, character, target, config });
     if (bad) return bad;
@@ -1501,10 +1508,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (short) return short;
     account.cards[card]! -= 1;
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
-    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }) });
     spend(account, decided.value.price, 'play', written.id);
-    /* As my_card_ledger (0075) says it: whether the card carries a trap, from the card kinds. */
-    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null });
+    /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a Gimmick that carries a trap, or a Move (it springs on a quote). */
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast' });
     sendAct(written);
     return ok(publicAct(written));
   }
@@ -2497,7 +2504,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */
           setEnds: [],
-          setPasses: [],
           caught: [],
           /* my_cards_ended (0092): an admin's end of a play the player cast (`cast`, its own post's too) or of one that landed on theirs
              (`onMine`); a reversal between two other players is in neither's view. */
@@ -3575,6 +3581,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.config !== undefined) payload.config = o.config;
       /* A play a trap caught names its set, and takes no layer; a Use carries its end (0054). */
       if (o?.caught !== undefined) { payload.caught = o.caught; delete payload.layer; }
+      if (o?.spring !== undefined) payload.spring = o.spring;
       if (o?.ends !== undefined) payload.ends = o.ends;
       /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */
       if (o?.paid !== undefined) {
@@ -3628,9 +3635,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const back = acts.get(set);
       if (!f || !back) throw new Error(`no such card set face down ${set}`);
       const rules = instance.cards.find((c) => c.key === f.card);
+      /* A Move springs on a quote, and a Gimmick on its own trigger (a cast, or a visit). */
+      const trigger = o?.trigger ?? (rules && kindOfPlay(rules) === 'cast' ? 'quote' : rules?.trap?.trigger.on ?? 'cast');
       const written = asAt(f.account, o?.at, () => write({
         character: back.character, kind: 'spring', thread: back.thread, target: f.post,
-        payload: { card: f.card, trigger: o?.trigger ?? rules?.trap?.trigger.on ?? 'cast', outcome: rules?.trap?.outcome ?? { do: 'nullify' }, set, ...(o?.caught ? { by: o.caught, caught: o.caught } : {}) },
+        payload: { card: f.card, trigger, did: trigger === 'quote' ? 'landed' : trigger === 'visit' ? 'ended' : 'caught', set, ...(o?.by ? { by: o.by } : {}), ...(o?.caught ? { by: o.caught, caught: o.caught } : {}) },
       }));
       f.sprung = written.id;
       return written.id;

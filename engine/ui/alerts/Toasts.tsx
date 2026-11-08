@@ -28,6 +28,7 @@ import { Link } from '../router.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
 import { useToastKinds } from './toast-kinds.ts';
 import { remember, type Arrival } from './useAlertFeed.ts';
+import { readTrapActs } from './trap-reads.ts';
 import { plainText, wordsFor, type Way, type WordsContext } from './words.ts';
 import './toasts.css';
 
@@ -58,6 +59,7 @@ export function ago(at: string, now: number = Date.now()): string {
 async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instance' | 'ui' | 'perPage'>): Promise<{ row: Alert; ctx: WordsContext }> {
   const acts = new Map<Id, Act>();
   const names = new Map<Id, string>();
+  const staff = new Set<Id>();
   let row: Alert = { kind: a.kind, sub: a.sub, act: a.act, character: a.character, at: a.at, thread: null, name: null, title: null, count: a.count ?? null };
   try {
     if (a.kind === 'update' && a.act !== null) {
@@ -87,13 +89,20 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
         a.character ? api.characters([a.character]).then((cs) => cs[0]?.name ?? null, () => null) : null,
       ]);
       row = { ...row, thread: about?.thread ?? null, title, name: who };
+      /* A face-down card that struck: its spring, its set and the setter's character (its own catch inside). */
+      if (a.kind === 'trapStruck') {
+        const got = await readTrapActs(api, [row], acts);
+        for (const [id, x] of got.acts) acts.set(id, x);
+        for (const [id, n] of got.names) names.set(id, n);
+        for (const id of got.staff) staff.add(id);
+      }
     } else if (a.kind === 'settlement') {
       /* Its row is the player's own and says all it needs. */
     } else if (a.character !== null) {
       row = { ...row, name: (await api.characters([a.character]))[0]?.name ?? null };
     }
   } catch { /* the plain words stand */ }
-  return { row, ctx: { ...base, acts, names, reading: null, startedBy: new Map(), newestSettlement: null } };
+  return { row, ctx: { ...base, acts, names, staff, reading: null, startedBy: new Map(), newestSettlement: null } };
 }
 
 export interface ToastsProps {

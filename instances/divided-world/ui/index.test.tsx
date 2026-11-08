@@ -10,6 +10,7 @@ import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
+import { faceOf, facesOf } from '../../../engine/ui/cards/faces.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
@@ -56,6 +57,44 @@ describe('Divided World\'s Strategy Guide', () => {
     expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
+  });
+});
+
+describe('Divided World\'s cards in the guide, in the glass\'s words about setting them face down', () => {
+  const faces = facesOf(instance.cards, instanceUi.cards, instance.settings, instanceUi.copy.cardKinds);
+  const face = (key: string) => faces.find((f) => f.key === key)!;
+  const guideMd = instanceUi.guide.markdown;
+  test('the card list holds Hall Pass, and the guide fills it', () => {
+    expect(guideMd).toContain('<!-- kayfabb:cards -->');
+    expect(faces.map((f) => f.key)).toContain('hall-pass');
+  });
+  test('Trap Card names the one card it catches, from the cards cast on a post, and takes it; it pays nothing and has no rarity bound', () => {
+    const t = face('trap-card');
+    expect(t.describe).toMatch(/you take it into your hand/u);
+    expect(t.summary).toMatch(/takes it into your hand/u);
+    expect(t.describe).toMatch(/the one card it catches, from the cards cast on a post, at any rarity/u);
+    for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/uncommon or commoner|pays you|what it cost|wallet|what the caster paid/u);
+  });
+  test('Bluff does not compare itself to Trap Card, and might be any card', () => {
+    const b = face('bluff');
+    expect(b.describe).not.toMatch(/Trap Card/u);
+    expect(b.summary).not.toMatch(/trap/iu);
+    expect(b.describe).toMatch(/might be any card/u);
+  });
+  test('each Move says what setting it does, landing at its own reach and no other', () => {
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    for (const [key, reach] of Object.entries(lands)) {
+      expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
+    }
+    expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
+  });
+  test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
+    expect(guideMd).toMatch(/- \*\*Move, Gimmick, Ward\.\*\*/u);
+    expect(guideMd).toMatch(/A Move is cast on a target or set face down on your own post/u);
+    expect(guideMd).toMatch(/A Gimmick is only set face down, and springs on its own trigger/u);
+    expect(guideMd).toMatch(/A Ward is used on your own post to guard it/u);
+    expect(guideMd).toMatch(/every card back looks the same/u);
+    expect(guideMd).not.toMatch(/pays you|what it cost/u);
   });
 });
 
@@ -198,7 +237,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const post = act('post1', 'post', 'me', { seq: 1, payload: { body: 'Mario wins.' }, currentPayload: { body: 'Mario wins again.' }, editedAt: '2026-10-31T10:00:00.000Z' });
     const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'autocorrect', config: { phrase: 'Mario', replacement: 'Luigi' } } });
     const edit = act('e1', 'edit', 'me', { targetActId: 'post1', createdAt: '2026-10-31T10:00:00.000Z', payload: { body: 'Mario wins again.' } });
-    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+    const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({
       log, mine, estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map([post, play, edit].map((a) => [a.id, a])),
@@ -309,12 +348,19 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
 });
 
+describe('Divided World\'s kind words', () => {
+  test('Whoops! is a Move, Bluff a Gimmick, Force Field a Ward', () => {
+    const kind = (key: string): string => faceOf(instance.cards.find((c) => c.key === key)!, instanceUi.cards.find((c) => c.key === key), instance.settings, instanceUi.copy.cardKinds).kind;
+    expect([kind('whoops'), kind('bluff'), kind('force-field')]).toEqual(['Move', 'Gimmick', 'Ward']);
+  });
+});
+
 describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const at = '2026-11-07T10:00:00.000000+00:00';
   const contents = ['whoops', 'bluff', 'feelin-fab', 'stick-around', 'trap-card'];
   const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
-    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null, ...over },
+    log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], before: null, ...over },
     mine: [], estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts: new Map(), names: new Map(), titles: new Map(), states: new Map(),
   }, { instance, ui: instanceUi, postsPerPage: 20, economy: {} }, 600, null);
   const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');

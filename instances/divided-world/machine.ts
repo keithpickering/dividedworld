@@ -14,6 +14,7 @@ export const machine: readonly SlotSeed[] = deepFreeze<SlotSeed[]>([
   { item: { card: 'bluff' }, availability: 'onSale', price: 25 },
   { item: { card: 'feelin-fab' }, availability: 'onSale', price: 20 },
   { item: { card: 'trap-card' }, availability: 'onSale', price: 150 },
+  { item: { card: 'hall-pass' }, availability: 'onSale', price: 150 },
   { item: { card: 'force-field' }, availability: 'onSale', price: 150 },
   { item: { card: 'glitter-bomb' }, availability: 'onSale', price: 150 },
   { item: { card: 'main-event' }, availability: 'hidden', price: 300 },

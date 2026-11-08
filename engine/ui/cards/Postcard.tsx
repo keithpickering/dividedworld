@@ -13,7 +13,7 @@
  * reduced.
  */
 import type { CSSProperties, ElementType, HTMLAttributes, Ref } from 'react';
-import { gemOf, playWord, priceOf, rarityName, type CardFace } from './faces.ts';
+import { gemOf, priceOf, rarityName, type CardFace } from './faces.ts';
 import { templateVars, type PostcardSize } from './template.ts';
 import './postcard.css';
 
@@ -44,7 +44,7 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
 export function cardLabel(face: CardFace, size: PostcardSize): string {
   /* The play's word is drawn after the tag, and the gem's rarity is its title: both said in words, after what is drawn before them. */
   if (face.unknown) return face.name;
-  const said = `${face.name}, ${face.tag}, ${playWord(face.play)}`;
+  const said = `${face.name}, ${face.tag}, ${face.kind}`;
   const shown = size === 'fan' && face.tagline ? `${said}. ${face.tagline}` : said;
   return `${shown}, ${face.rarity} postcard`;
 }
@@ -80,7 +80,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
           <span className="kb-postcard-badges" aria-hidden="true" data-kb-art>
             <span className="kb-postcard-tag">{face.tag}</span>
             {' '}
-            <span className="kb-postcard-play">{playWord(face.play)}</span>
+            <span className="kb-postcard-play">{face.kind}</span>
           </span>
           {' '}
         </>

@@ -46,7 +46,7 @@ import { animate, motion } from 'motion/react';
 import type { PackRules } from '../../rules/packs.ts';
 import { motionReduced } from '../appearance.ts';
 import { Postcard, PostcardBack } from '../cards/Postcard.tsx';
-import { facesOf, orbs, plainRefusal, playWord, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
+import { facesOf, orbs, plainRefusal, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { useMachine } from '../cards/machine.ts';
 import type { CardArt } from '../cards/types.ts';
 import { signInHref } from '../account/next.ts';
@@ -105,7 +105,7 @@ interface Item {
 }
 
 /** What a button says of what the slot sells, after its price: "common Cast", "a pack of 5 postcards". */
-const whatOf = (it: Item) => (it.pack ? `a pack of ${it.pack.pulls.length} postcards` : `${it.face!.rarity} ${playWord(it.face!.play)}`);
+const whatOf = (it: Item) => (it.pack ? `a pack of ${it.pack.pulls.length} postcards` : `${it.face!.rarity} ${it.face!.kind}`);
 
 /** The slot's accessible name: what it sells, its price, and (where the Boss changed it) how; a sold out slot says why instead. */
 function nameOf(it: Item, selected: boolean): string {
@@ -124,7 +124,7 @@ interface Outcome {
 /** A card the pack gave that this instance does not know (the log says "a card" too): shown plainly, on the plain face (no gem, tag or play word: it claims no rarity or alignment, and is said as its name alone), and counted. */
 const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
   key, name: 'A card this machine no longer has', alignment: 'sweet', tag: '', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
-  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set', unknown: true,
+  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set', kind: '', unknown: true,
 });
 
 /** A card bought on its own, on its way to the hand: its place in the order bought and its card. */
@@ -364,7 +364,7 @@ export function Vending() {
    * has tuned is the one shown and a Boss's move is already in the slot's availability and price. A hidden slot is not in the machine.
    */
   const { slots, status, look } = useMachine();
-  const cardFaces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
+  const cardFaces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds, settings.cardEconomy]);
   const items = useMemo(() => (slots ?? []).flatMap((slot): Omit<Item, 'code'>[] => {
     const sold = slot.availability === 'soldOut';
     const was = slot.move?.kind === 'repriceSlot' ? slot.move.was : null;

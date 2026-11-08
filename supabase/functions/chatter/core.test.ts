@@ -8,6 +8,7 @@ import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
+import { staffOffers } from '../../../engine/rules/cards.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
 
 // A Wednesday: the week's 20 posts over its five days left give an allowance of 4, so three posts and one card slot.
@@ -646,10 +647,10 @@ test('a wrongly typed option costs neither the post nor the card: the ink falls 
 });
 
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
-  // No Divided World card with options is a Set (the trap-card's outcome is a payout, which the pool does not set), so the instance
-  // here carries a Set trap that strikes Whoops!, with Whoops!'s options: the persona's ink is checked by the struck card.
+  // The only Divided World Gimmick with options is Trap Card, whose option is the card it names; so the instance here carries a Gimmick on a cast
+  // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
-  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'whoops' } } };
+  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
   const tuned: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, snare] };
   const d = fakeDb(oneReply);
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'snare', on: 'own', config: { snare: { color: '#12ab34' } } } }));
@@ -659,6 +660,7 @@ test('a Set with options reads its own new post as the target, after it is writt
   assert.ok(set, 'the Set was made');
   assert.equal(set.card, 'snare');
   assert.deepEqual(set.config, { color: '#12ab34' });
+  assert.equal(set.catches, 'whoops', 'the card\'s own named catch goes to staff_set_card');
   const post = d.state.acts.find((a) => a.id === set.target)!;
   assert.equal(post.kind, 'post', 'the target is the persona\'s own new post');
   const reads = d.calls.filter((c) => c.fn === 'card_target_reach' && c.args.target === set.target);
@@ -667,4 +669,23 @@ test('a Set with options reads its own new post as the target, after it is writt
   const read = d.calls.findIndex((c) => c.fn === 'card_target_reach' && c.args.target === set.target);
   const setAt = d.calls.findIndex((c) => c.fn === 'staff_set_card');
   assert.ok(wrote >= 0 && wrote < read && read < setAt, 'written, then read, then set');
+});
+
+test('a persona\'s Trap Card is offered with its options and stores the card it names; Hall Pass is never offered', async () => {
+  const hall = dividedWorld.cards.find((c) => c.key === 'hall-pass')!;
+  const trap = dividedWorld.cards.find((c) => c.key === 'trap-card')!;
+  assert.equal(staffOffers(hall), false, 'a Mod Bot visits only players\' posts');
+  assert.equal(staffOffers(trap), true);
+  // Divided World's pool plays commons; an instance that lets it play uncommons offers the Trap Card.
+  const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'trap-card', on: 'own', config: { 'trap-card': { card: 'whoops' } } } }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const set = d.of('staff_set_card')[0]!;
+  assert.ok(set, 'the Trap Card was set: ' + JSON.stringify(out.picks));
+  assert.deepEqual({ card: set.card, config: set.config, catches: set.catches }, { card: 'trap-card', config: { card: 'whoops' }, catches: 'whoops' });
+  const hallModels = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'hall-pass', on: 'own' } }));
+  const d2 = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
+  await run(d2, hallModels);
+  assert.equal(d2.count('staff_set_card'), 0, 'a Hall Pass the model names is not set');
 });

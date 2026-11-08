@@ -14,7 +14,7 @@ const row = (o: Partial<Alert> & Pick<Alert, 'kind'>): Alert => ({ sub: null, ac
 
 function ctx(acts: readonly Act[] = [], o: Partial<WordsContext> = {}): WordsContext {
   return {
-    instance: { cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'glitter', name: 'Glitter Bomb' }, { key: 'main', name: 'Main Event' }] } as unknown as WordsContext['instance'],
+    instance: { cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'trap', name: 'Trap Card' }, { key: 'pass', name: 'Hall Pass' }, { key: 'glitter', name: 'Glitter Bomb' }, { key: 'main', name: 'Main Event' }] } as unknown as WordsContext['instance'],
     ui: { copy: { siteName: 'T', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'S', reducedMotionCard: 'x' } },
     acts: new Map(acts.map((a) => [a.id, a])),
     reading: null,
@@ -106,14 +106,76 @@ describe('a card on yours', () => {
 });
 
 describe('a trap', () => {
-  test('struck: the post and the card that struck it, no setter', () => {
-    const struck = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'glitter', spring: 'sp' } });
-    const s = said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([struck, act('post43', { seq: 43 })]));
-    expect(s).toEqual({ line: 'A trap struck Pipewrench\'s post #43', detail: 'It laid Glitter Bomb on it. In Hobbies.', ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Pipewrench' });
+  const DAY = 86_400_000;
+  const set = (o: Partial<Act> = {}) => act('set1', { kind: 'set', character: 'cPipe', targetActId: 'post9', seq: null, createdAt: '2026-10-31T09:41:00.000Z', ...o });
+  const spring = (o: Partial<Act> = {}) => act('sp', { kind: 'spring', character: 'cPipe', targetActId: 'post9', seq: null, createdAt: '2026-11-02T09:41:00.000Z', payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post43' }, ...o });
+  const names = new Map([['cPipe', 'Pipewrench']]);
+
+  test('struck by a quote: the setter\'s character, the face-down card, how long before, and that the quote set it off', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp', reach: 'post' } });
+    const s = said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey', title: 'Hobbies' }), ctx([laid, spring(), set(), act('post43', { seq: 43 }), act('post9', { seq: 9 })], { names }));
+    expect(s).toEqual({
+      line: 'Pipewrench\'s face-down Whoops! struck Spritey\'s post #43',
+      detail: 'Pipewrench set it face down two days before your quote set it off. It laid Whoops! on it. In Hobbies.',
+      ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Spritey',
+    });
   });
-  test('sprang: your trap and the post it sprang on', () => {
-    const spring = act('sp', { kind: 'card', targetActId: 'post9', payload: { card: 'whoops', trigger: 'cast' } });
-    const s = said(row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([spring, act('post9', { seq: 9 })]));
+  test('struck by a quote, without what could not be read: the card and the span fall away, never a bluff', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'glitter', spring: 'sp' } });
+    const s = said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), ctx([laid, act('post43', { seq: 43 })]));
+    expect(s.line).toBe('A face-down card struck Spritey\'s post #43');
+    expect(s.detail).toBe('Your quote set it off. It laid Glitter Bomb on it.');
+  });
+  test('a caught caster: a trap named their exact card, and it is now the setter\'s; the setter\'s character, never an account', () => {
+    const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
+    const s = said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), ctx([caught, set(), act('post9', { seq: 9, character: 'cPipe' })], { names }));
+    expect(s).toEqual({
+      line: 'Pipewrench\'s face-down trap caught your Whoops!',
+      detail: 'Pipewrench set it face down two days before you cast it, and it named Whoops! exactly. Your Whoops! is now Pipewrench\'s. In Hobbies.',
+      ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Spritey',
+    });
+    expect(JSON.stringify(s)).not.toMatch(/account|owner|player/iu);
+  });
+  test('a staff setter takes nothing: the caught card is spent, never "now theirs"', () => {
+    const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
+    const c = ctx([caught, set(), act('post9', { seq: 9, character: 'cPipe' })], { names, staff: new Set(['cPipe']) });
+    const s = said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), c);
+    expect(s.detail).toBe('Pipewrench set it face down two days before you cast it, and it named Whoops! exactly. Your Whoops! is spent. In Hobbies.');
+    expect(s.detail).not.toMatch(/now Pipewrench/u);
+  });
+  test('the instance may give either a voice; it is handed the facts and nothing private', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
+    const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
+    const seen: unknown[] = [];
+    const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+    const c = ctx([laid, caught, spring(), set(), act('post43', { seq: 43 })], { names, ui });
+    expect(said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), c)).toMatchObject({ line: 'L', detail: 'D' });
+    expect(said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey' }), c)).toMatchObject({ line: 'L', detail: 'D' });
+    expect(seen).toEqual([
+      { how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days', setterStaff: false },
+      { how: 'caught', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: 'two days', setterStaff: false },
+    ]);
+  });
+  test('how long is said in words: minutes, hours, days', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
+    const at = (ms: number) => said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }),
+      ctx([laid, spring({ createdAt: new Date(Date.parse(set().createdAt) + ms).toISOString() }), set(), act('post43', { seq: 43 })], { names })).detail;
+    expect(at(30_000)).toContain('less than a minute before');
+    expect(at(90 * 60_000)).toContain('an hour before');
+    expect(at(5 * 3_600_000)).toContain('five hours before');
+    expect(at(DAY)).toContain('a day before');
+    expect(at(12 * DAY)).toContain('12 days before');
+  });
+  test('sprang (yours): a face-down card landed, caught or ended a visit', () => {
+    const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+    const post = act('post9', { seq: 9 });
+    expect(said(r, ctx([spring(), post]))).toEqual({ line: 'Your face-down Whoops! sprang', detail: 'A quote set it off, and it landed. In Hobbies.', ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Pipewrench' });
+    expect(said(r, ctx([spring({ payload: { card: 'trap', trigger: 'cast', did: 'caught', set: 'set1', by: 'k', caught: 'k' } }), post])).detail).toBe('A cast of the card it named set it off, and the card is now in your hand. In Hobbies.');
+    expect(said(r, ctx([spring({ payload: { card: 'pass', trigger: 'visit', did: 'ended', set: 'set1' } }), post])).detail).toBe('A Mod Bot\'s visit set it off, and it ended the visit. In Hobbies.');
+  });
+  test('sprang, as it was written before: the old words', () => {
+    const old = act('sp', { kind: 'card', targetActId: 'post9', payload: { card: 'whoops', trigger: 'cast' } });
+    const s = said(row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([old, act('post9', { seq: 9 })]));
     expect(s).toEqual({ line: 'Your trap sprang', detail: 'The trap was Whoops!, in Hobbies.', ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Pipewrench' });
   });
 });

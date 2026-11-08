@@ -12,7 +12,7 @@ import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
-import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
+import { BEYOND_POST, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
 
@@ -359,7 +359,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
-    out.push(...playProblems(c, instance.cards), ...reachProblems(c, instance.settings));
+    out.push(...playProblems(c), ...reachProblems(c, instance.settings));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -426,7 +426,7 @@ export function instanceProblems(instance: Instance): string[] {
  * A card's rarity, play, trap and ward, each refused naming the card (the card mechanic's design,
  * sections 1 to 5). seed_instance (supabase/migrations/0054_card_plays.sql) holds the same pairings.
  */
-function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
+function playProblems(c: CardRules): string[] {
   const out: string[] = [];
   const who = `card "${c.key}"`;
   if (c.rarity === undefined) out.push(`${who} has no rarity; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
@@ -434,28 +434,20 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
   const play = c.play ?? 'cast';
   if (!PLAYS.includes(play)) out.push(`${who} is played ${JSON.stringify(play)}; a card is cast, used, set or kept`);
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
-  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Set card does`);
+  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Gimmick does`);
   if (c.ward !== undefined && play !== 'use') out.push(`${who} is a ward, and only a Use card is`);
   if (c.ward !== undefined && c.ward !== true) out.push(`${who} is a ward of ${JSON.stringify(c.ward)}; a ward is true or left out`);
   if (c.ward === true && play === 'use' && c.lasts === undefined) out.push(`${who} is a ward with no time up (lasts); a ward ends at its time`);
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
   if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a Use card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
-  const trap = c.trap;
-  if (trap !== undefined) {
-    const on = (trap.trigger as { on?: unknown } | undefined)?.on;
-    if (!TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a trap springs on ${TRIGGERS.join(', ')}`);
-    else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of ${JSON.stringify((trap.trigger as { quadrant?: unknown }).quadrant)}, which is no quadrant; it names one of ${QUADRANTS.join(', ')}`);
-    const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
-    if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
-    else if (outcome!.do === 'payout' && on !== 'cast' && TRIGGERS.includes(on as never)) out.push(`${who} pays out on a ${String(on)}; it pays out only on a cast, since only a cast is paid for`);
-    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction' || on === 'visit')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
-    else if (outcome!.do === 'strike') {
-      const struck = cards.find((k) => k.key === outcome!.card);
-      if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);
-      else if (RARITIES.includes(struck.rarity) && RARITIES.includes(c.rarity) && !atOrBelow(struck.rarity, c.rarity)) out.push(`${who} strikes with "${struck.key}", which is ${struck.rarity}, rarer than the trap (${c.rarity})`);
-    }
-  }
+  const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
+  if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a Gimmick springs on ${TRIGGERS.join(' or ')}`);
+  if (c.trap !== undefined && c.catches === undefined && on === 'cast') out.push(`${who} springs on a cast and names no card to catch (catches)`);
+  if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
+  else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a Gimmick that springs on a cast does`);
+  if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
+  else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a Move does`);
   return out;
 }
 

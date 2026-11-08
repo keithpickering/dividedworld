@@ -103,7 +103,7 @@ export function Classes() {
 
 export function CardList() {
   const { instance, ui, settings } = useKayfa();
-  const faces = facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy));
+  const faces = facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   /* A price is the card's on-sale slot's, as the machine shows it now; a card the machine is not selling has none. */
   const machine = useMachine();
   if (faces.length === 0) return null;
@@ -118,7 +118,7 @@ export function CardList() {
             <tr key={f.key}>
               <th scope="row">{f.name}</th>
               <td data-kb-label="Kind">{`${f.tag} ${rarityName(f.rarity)}`}</td>
-              <td data-kb-label="Played">{f.play.charAt(0).toUpperCase() + f.play.slice(1)}</td>
+              <td data-kb-label="Played">{f.kind}</td>
               <td className="kb-num" data-kb-label="Price in orbs">{priceWords(machine, f.key, f.extra)}</td>
               <td data-kb-label="What it does">
                 {f.tagline !== '' && <i className="kb-guide-flavor">{f.tagline}</i>}

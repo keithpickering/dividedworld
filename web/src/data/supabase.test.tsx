@@ -1371,9 +1371,9 @@ describe('the log', () => {
           : rows([{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', target_name: null, target_character: B }]);
       }
       if (name === 'my_face_down') {
-        return r.url.searchParams.get('select')?.includes('passed_at')
-          ? rows([{ play: SET, card: 'hook', post: A, ends_at: '2026-11-05T20:00:00+00:00', passed_at: '2026-10-29T18:00:00+00:00' }])
-          : rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
+        /* The setter's own back, asked for by the sets in the ledger (what a Trap Card waits for); the ended views are the other read. */
+        if (r.url.searchParams.get('select') === 'play,catches,phrase') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
+        return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
       if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
@@ -1400,7 +1400,7 @@ describe('the log', () => {
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
       /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
-      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
         /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
         { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
         { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
@@ -1408,7 +1408,6 @@ describe('the log', () => {
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
-      setPasses: [{ play: SET, card: 'hook', post: A, passedAt: '2026-10-29T18:00:00+00:00', endsAt: '2026-11-05T20:00:00+00:00' }],
       caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
       ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
       infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null }],
@@ -1434,9 +1433,8 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('order')).toBe('at.desc');
     expect(saves?.url.searchParams.get('order')).toBe('saved_at.desc');
     expect(saves?.url.searchParams.get('saved_at')).toBe('not.is.null');
-    const [ends, passes] = h.to('my_face_down');
+    const [ends] = h.to('my_face_down');
     expect([ends?.url.searchParams.get('order'), ends?.url.searchParams.get('ended_at'), ends?.url.searchParams.get('limit')]).toEqual(['ended_at.desc', 'not.is.null', '200']);
-    expect([passes?.url.searchParams.get('order'), passes?.url.searchParams.get('passed_at'), passes?.url.searchParams.get('spring'), passes?.url.searchParams.get('limit')]).toEqual(['passed_at.desc', 'not.is.null', 'is.null', '200']);
     const [caught] = h.to('my_caught');
     expect([caught?.url.searchParams.get('order'), caught?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     const [ended] = h.to('my_cards_ended');
@@ -1461,7 +1459,6 @@ describe('the log', () => {
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_face_down')[0]?.url.searchParams.getAll('ended_at')).toEqual(['not.is.null', `lte.${before}`]);
-    expect(h.to('my_face_down')[1]?.url.searchParams.getAll('passed_at')).toEqual(['not.is.null', `lte.${before}`]);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
@@ -2263,7 +2260,7 @@ describe('a screen in one call', () => {
 
   describe('log_page', () => {
     const SRC = (over: Record<string, unknown[]> = {}) => ({
-      ledger: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], ...over,
+      ledger: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], ...over,
     });
     const LEDGER_ROW = { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00', character: B, reason: 'heel.drewHeat', amount: 20, shares_kept: true, params: { n: 2 } };
     const doc = (sources: unknown, rest: Record<string, unknown> = {}) => ({
