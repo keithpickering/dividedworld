@@ -9,11 +9,17 @@
  * The list is JSON after the marker line below, so tools/bbcode-plain.mjs can read it without a
  * TypeScript loader; add a fixture by adding an object, then run `node tools/bbcode-plain.mjs`.
  * Whitespace is collapsed on both sides because a separator is only a word boundary to the index.
+ * A fixture that names an `excerptOf` and an `excerpt` is also held to the excerpt of the quotes of that Act
+ * (`excerptText` in engine/bbcode/visible.ts, and `bbcode_walk` in the database).
  */
 export interface PlainFixture {
   readonly name: string;
   readonly body: string;
   readonly plain: string;
+  /** An Act id: the excerpt of the quotes of that Act is held to `excerpt` (`excerptText(parse(body), excerptOf)`, and the database's `bbcode_walk(body, excerptOf)`). */
+  readonly excerptOf?: string;
+  /** The excerpt's words, whitespace collapsed; set with `excerptOf`, and '' for a body none of whose quotes count. */
+  readonly excerpt?: string;
 }
 
 /** Each run of whitespace (tab to carriage return, and space) becomes one space, and the ends are trimmed. */
@@ -1654,5 +1660,117 @@ export const PLAIN_FIXTURES: readonly PlainFixture[] = [
     "name": "an address after a layout tag",
     "body": "[center]http://a.example/x[/center]",
     "plain": "http://a.example/x"
+  },
+  {
+    "name": "the excerpt: one quote of the act",
+    "body": "before[quote=0f8fad5b-d9cb-469f-a165-70867728950e]cats in a quote[/quote]after",
+    "plain": "before after",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "cats in a quote"
+  },
+  {
+    "name": "the excerpt: two quotes of the act are joined by a break",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]one[/quote] mid [quote=0f8fad5b-d9cb-469f-a165-70867728950e]two[/quote]",
+    "plain": "mid",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "one two"
+  },
+  {
+    "name": "the excerpt: the name of the act is matched in any case",
+    "body": "[quote=0F8FAD5B-D9CB-469F-A165-70867728950E]shouting[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "shouting"
+  },
+  {
+    "name": "the excerpt: a quote of another act is empty",
+    "body": "x[quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]other[/quote]y",
+    "plain": "x y",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": ""
+  },
+  {
+    "name": "the excerpt: the act's quote nested in another's is empty",
+    "body": "[quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]x[quote=0f8fad5b-d9cb-469f-a165-70867728950e]inner[/quote]y[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": ""
+  },
+  {
+    "name": "the excerpt: another's quote nested in the act's is cut out",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]before[quote=6ba7b810-9dad-41d1-80b4-00c04fd430c8]cut[/quote]after[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "before after"
+  },
+  {
+    "name": "the excerpt: the act's quote nested in its own is cut out",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]before[quote=0f8fad5b-d9cb-469f-a165-70867728950e]cut[/quote]after[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "before after"
+  },
+  {
+    "name": "the excerpt: a counterfeit quote naming the id is the post's own words",
+    "body": "[quote=Superman user=0f8fad5b-d9cb-469f-a165-70867728950e]mine[/quote]",
+    "plain": "mine",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": ""
+  },
+  {
+    "name": "the excerpt: a name padded with blanks is still the act's",
+    "body": "[quote=\"0f8fad5b-d9cb-469f-a165-70867728950e \"]mine[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "mine"
+  },
+  {
+    "name": "the excerpt: a quote of the act inside a counterfeit counts",
+    "body": "[quote=Superman]said [quote=0f8fad5b-d9cb-469f-a165-70867728950e]real[/quote] twice[/quote]",
+    "plain": "said twice",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "real"
+  },
+  {
+    "name": "the excerpt: an unclosed quote closes at the end",
+    "body": "x[quote=0f8fad5b-d9cb-469f-a165-70867728950e]words left open",
+    "plain": "x",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "words left open"
+  },
+  {
+    "name": "the excerpt: formatting is kept, a link and code are cut back",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e]a [b]bold[/b]x[url=https://a.example]link[/url]y[code]z[/code]w[url]https://a.example[/url]v[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "a boldx y w v"
+  },
+  {
+    "name": "the excerpt: a quote inside a link is not found",
+    "body": "[url=https://a.example]l[quote=0f8fad5b-d9cb-469f-a165-70867728950e]q[/quote][/url]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": ""
+  },
+  {
+    "name": "the excerpt: a quote inside formatting and a list is found",
+    "body": "[b][quote=0f8fad5b-d9cb-469f-a165-70867728950e]one[/quote][/b][list][*]a[quote=0f8fad5b-d9cb-469f-a165-70867728950e]two[/quote][/list]",
+    "plain": "a",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "one two"
+  },
+  {
+    "name": "the excerpt: an empty quote still takes its place among the others",
+    "body": "[quote=0f8fad5b-d9cb-469f-a165-70867728950e][/quote][quote=0f8fad5b-d9cb-469f-a165-70867728950e]two[/quote]",
+    "plain": "",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": "two"
+  },
+  {
+    "name": "the excerpt: no quote of the act, no excerpt",
+    "body": "just words",
+    "plain": "just words",
+    "excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",
+    "excerpt": ""
   }
 ];
