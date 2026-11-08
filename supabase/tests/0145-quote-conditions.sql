@@ -109,6 +109,8 @@ begin
   if why is distinct from 'Cond Bluff takes no conditions' then raise exception 'a Gimmick took a Who: %', why; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqmove', a, p8, '{}', '   '));
   if why is null then raise exception 'a blank passage was accepted'; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqmove', a, p8, '{}', '!!!'));
+  if why is distinct from 'the passage needs a letter or a digit' then raise exception 'a passage with no letter or digit gave: %', why; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, passage => %L)', ann, 'fdqmove', a, p8, '{}', repeat('the punchline ', 8)));
   if why is null then raise exception 'a passage over 100 characters was accepted'; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, named => %L)', ann, 'fdqmove', a, p8, '{}', array[b]));
