@@ -67,15 +67,16 @@ export function Page({ surface, menu = true, children }: PageProps) {
    * the move to the route's own key at the address the window opened at is the same screen settling, not a change.
    */
   const address = addressOf(shown.location);
-  const [now, setNow] = useState({ key: resolved, path, address, ready: shown.ready, n: 0 });
+  const [now, setNow] = useState({ key: resolved, body: resolved, path, address, ready: shown.ready, n: 0 });
   if (now.key !== resolved || now.path !== path || now.ready !== shown.ready) {
     const settling = !now.ready && shown.ready && now.address === address;
     /* A screen is a path: a change of key within one path (a section, a page number) is the same screen, swapped in place by its ScreenBody. */
     const changed = now.path !== path && now.key !== resolved && !settling;
-    setNow({ key: resolved, path, address, ready: shown.ready, n: now.n + (changed ? 1 : 0) });
+    /* The body's key (ScreenBody.tsx) holds through the settling too, so the first page landing does not swap it. */
+    setNow({ key: resolved, body: settling ? now.body : resolved, path, address, ready: shown.ready, n: now.n + (changed ? 1 : 0) });
   }
   const screenKey = now.n;
-  const screenValue = useMemo(() => ({ key: resolved, popped }), [resolved, popped]);
+  const screenValue = useMemo(() => ({ key: now.body, popped }), [now.body, popped]);
   /* The wait: `main` is busy while a load is out, and a hidden status says so when one lands (nothing at rest). */
   const { pending, outcome } = useNavigation();
   const waited = useRef(false);

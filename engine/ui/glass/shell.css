@@ -338,6 +338,17 @@
   pointer-events: none;
 }
 
+/* A screen body (ScreenBody.tsx) swaps in place: the one leaving stands where it was, out of the flow, so the one arriving is where it will stay. */
+.kb-screen-body {
+  position: relative;
+}
+
+.kb-screen-body > [data-kb-exiting] {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+}
+
 /* ---- the overlay ---- */
 
 /* Over a glass page it starts under the menu bar's foot (Overlay.tsx sets the line), so the bar stays in view. */
