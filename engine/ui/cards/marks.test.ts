@@ -52,9 +52,10 @@ describe('a card back, a ward and a caught play, in words', () => {
   });
 
   test('a caught play says what caught it', () => {
-    assert.equal(caughtWords('Trap Card'), 'Caught by a Trap Card. It did nothing, and its card is spent.');
+    assert.equal(caughtWords('Trap Card'), 'Caught by a Trap Card. It did nothing.');
+    assert.equal(caughtWords('Trap Card', {}), 'Caught by a Trap Card. It did nothing, and its card is spent.');
     assert.equal(caughtWords('Trap Card', { taken: 'Pipewrench' }), 'Caught by a Trap Card. It did nothing, and its card went to Pipewrench.');
-    assert.equal(caughtWords(null), 'Caught by a trap. It did nothing, and its card is spent.');
+    assert.equal(caughtWords(null), 'Caught by a trap. It did nothing.');
     assert.deepEqual(wordsProblems('state', CAUGHT_STATE), []);
     assert.equal(CAUGHT_STATE, 'Caught, did nothing');
   });

@@ -93,8 +93,9 @@ export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
  * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says
  * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff Trap Card caught, were spent.
  */
+/** Where the card went is said only once the spring is read (`readCaughtFate`): `{ taken }` went to a player's hand, `{}` is spent; unread, nothing is claimed. */
 export const caughtWords = (trap: string | null, fate?: { readonly taken?: string }): string =>
-  `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card ${fate?.taken ? `went to ${fate.taken}` : 'is spent'}.`;
+  `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing${fate === undefined ? '' : `, and its card ${fate.taken ? `went to ${fate.taken}` : 'is spent'}`}.`;
 
 /** The Lens's state for a play an admin ended: plain words, never in character. Its layer is off for everyone and nothing was refunded. */
 export const endedWords = (): string => 'Ended by an admin';
