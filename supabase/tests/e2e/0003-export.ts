@@ -118,6 +118,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_ledger (account, card, kind, price) values (ann, 'expauto', 'bought', 0), (ann, 'exppass', 'bought', 0);
       move_post := tests.post(a, t, 'Carried across, and phrased.');
       perform set_card(ann, 'expauto', a, move_post, '{"phrase": "carried across"}', 0, null, 'carried across');
+      -- Bob quotes the post through the real post(), with the phrase in his own words: the quote springs the Move onto his post (spring_traps, 0139).
+      perform tests.become((select owner from characters where id = b));
+      perform post(t, b, 'Carried across, quoted back.', move_post);
+      perform tests.unbecome();
       pass_post := tests.post(a, t, 'Under a Hall Pass.');
       perform set_card(ann, 'exppass', a, pass_post, '{}', 0);
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
@@ -307,6 +311,8 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select catches || '|' || coalesce(phrase, '-') from face_down where play = '${setPlay}'`), 'blot|-', 'a Trap Card holds its catch and no phrase');
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'caught' and l.card = 'blot'`), '1', 'the caught card is in the setter\'s ledger');
   assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${passSet}'`), 'ended', 'the Hall Pass spring says the visit ended');
+  assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${moveSet}'`), 'landed', 'the quote springs the Move');
+  assert.equal(sql(`select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expauto' and payload ->> 'spring' is not null`), '1', 'the Move lands as a card Act marked as its spring');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -503,14 +509,17 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.notEqual(trapRows(fresh.toString()), '', 'the set, its spring and the caught card are in the imported instance');
     assert.equal(trapRows(fresh.toString()), trapRows(from));
     // The Move set with its phrase, the Hall Pass and its spring, and the caught card's ledger row, each carried as it was.
-    const newRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
+    const faceDownRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
       select to_jsonb(f)::text x from face_down f where f.play in ('${moveSet}', '${passSet}')
       union all select to_jsonb(l)::text from card_ledger l where l.kind = 'caught'
-      union all select to_jsonb(s)::text from acts s where s.kind = 'spring' and s.payload ->> 'set' in ('${moveSet}', '${passSet}')) q`);
-    assert.match(newRows(from), /"phrase": "carried across"/, 'the Move\'s phrase is in the export');
-    assert.match(newRows(from), /"kind": "caught"/, 'the caught ledger row is in the export');
-    assert.match(newRows(from), /"did": "ended"/, 'the Hall Pass spring is in the export');
-    assert.equal(newRows(fresh.toString()), newRows(from), 'the Move, the Hall Pass, their springs and the caught ledger row survive the round trip');
+      union all select to_jsonb(s)::text from acts s where s.kind = 'spring' and s.payload ->> 'set' in ('${moveSet}', '${passSet}')
+      union all select to_jsonb(k)::text from acts k where k.kind = 'card' and k.payload ->> 'card' = 'expauto') q`);
+    assert.match(faceDownRows(from), /"phrase": "carried across"/, 'the Move\'s phrase is in the export');
+    assert.match(faceDownRows(from), /"kind": "caught"/, 'the caught ledger row is in the export');
+    assert.match(faceDownRows(from), /"did": "ended"/, 'the Hall Pass spring is in the export');
+    assert.match(faceDownRows(from), /"did": "landed"/, 'the quote\'s spring is in the export');
+    assert.match(faceDownRows(from), /"spring": "/, 'the Move\'s card Act is in the export, marked as its spring');
+    assert.equal(faceDownRows(fresh.toString()), faceDownRows(from), 'the Move, the Hall Pass, their springs, the card and the caught ledger row survive the round trip');
     // The card an admin ended (0092): its card_end Act is carried as written, by its id, its target, its kind, and its payload.
     const endAct = sql(`select id from acts where kind = 'card_end' and target_act_id = '${endedPlay}'`);
     assert.ok(endAct, 'the card an admin ended holds a card_end in the exported instance');
