@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide } from './actions.ts';
 import type { Instance } from './types.ts';
-import { systemSettings, testSystem } from './test-system.ts';
+import { systemSettings, testSystem, testGroups } from './test-system.ts';
 
 const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
@@ -15,7 +15,7 @@ const instance: Instance = {
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
     postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
-  ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
+  ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
 };
 const id = '11111111-1111-4111-8111-111111111111';
@@ -33,11 +33,13 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'edit_post', args: { target: other, through: id, body: 'Fixed.' } });
   assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '' }, instance),
     { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'Spun', body: '' } });
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'I was wrong.' }, instance),
+    { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
 });
 
-test('framing passes through on a post, a thread start and a spin: the first five distinct ids, and nothing when there are none', () => {
+test('framing passes through on a post, a thread start, a spin and an apology: the first five distinct ids, and nothing when there are none', () => {
   const six = [id, other, '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666'];
   assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [other, other, id] }, instance),
     { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null, framing: [other, id] } });
@@ -45,6 +47,8 @@ test('framing passes through on a post, a thread start and a spin: the first fiv
     { ok: true, rpc: 'start_thread', args: { board_slug: 'general', through: id, title: 'T', body: 'B', framing: six.slice(0, 5) } });
   assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'S', body: '', framing: [id] }, instance),
     { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'S', body: '', framing: [id] } });
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', framing: [id, id] }, instance),
+    { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'B', framing: [id] } });
   assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [] }, instance),
     { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null } });
   assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: ['nope'] }) ?? '', /^framing:/);
@@ -84,6 +88,16 @@ test('a title is something, and no longer than the instance allows', () => {
 test('a spin\'s own words may be empty, and are bounded like a post\'s', () => {
   assert.equal(refusal({ action: 'spin', origin: other, character: id, title: 'Spun' }), null);
   assert.match(refusal({ action: 'spin', origin: other, character: id, title: 'Spun', body: 'x'.repeat(51) }) ?? '', /^body:/);
+});
+
+test('an apology names a move, and has a title and words of its own, bounded like a spin\'s', () => {
+  assert.equal(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'x' }), null);
+  assert.match(refusal({ action: 'apologize', character: id, title: 'Sorry', body: 'x' }) ?? '', /^move:/);
+  assert.match(refusal({ action: 'apologize', move: 'nope', character: id, title: 'Sorry', body: 'x' }) ?? '', /^move:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: ' ', body: 'x' }) ?? '', /^title:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'x'.repeat(11), body: 'x' }) ?? '', /^title:.*10/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: '' }) ?? '', /^body:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'x'.repeat(51) }) ?? '', /^body:/);
 });
 
 test('a reaction the instance does not have is refused', () => {

@@ -192,10 +192,11 @@ export interface ScreenSettings {
    */
   readonly economy: Readonly<Record<string, number>>;
   /**
-   * The staff group's name, which the instance names ("Personality Cores"; `SystemContent.staffGroup`, seeded as the setting
-   * `staffGroup`): drawn beside every staff character's name, on the postbit, the profile and the presence boxes. Public.
+   * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0128): the key a
+   * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public. The staff rung is a group like any other: a
+   * staff character's `group` names it, and its name is the one the postbit's bar, the profile's Group row and the presence chip show.
    */
-  readonly staffGroup: { readonly name: string };
+  readonly groups: readonly { readonly key: string; readonly name: string; /** What the rank bar says, singular; absent where the group has none and the bar says `name`. */ readonly badge?: string; readonly color: string; readonly stripe: boolean; /** True for the ladder's staff rung (`group_kinds.condition` = 'staff'), the group every staff character is in. */ readonly staff: boolean }[];
   /** The alert kinds that toast for a player who has not chosen (`Settings.toastDefaults`). */
   readonly toastDefaults: readonly AlertKind[];
   /** How long a toast stays, in milliseconds, where a world sets it (the boards fixture holds its toasts); absent, the HUD's six seconds. */
@@ -445,6 +446,8 @@ export interface Character {
   readonly staff?: string;
   /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
   readonly office?: Office;
+  /** The key of the group it is in now (characters_public's `group`, 0128): the look is in `ScreenSettings.groups`. */
+  readonly group: string;
   /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
   readonly warnPoints?: number;
   /** When its ban ends (characters_public, carried by a thread's page); absent when it is not banned. A ban holds only this character, and ends by itself at that time. */
@@ -542,6 +545,8 @@ export interface MoveNotice {
   readonly thread: Id;
   /** The Boss who made it, as a character (null if the Act somehow has none). */
   readonly character: Id | null;
+  /** The office its staff character held when it landed (`payload.office`, stamped by `write_staff_act`, 0137); absent on a move from before the stamp, which is read as the Boss's. */
+  readonly office?: 'boss' | 'mod';
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   /** Null for a move that asks nothing. */
@@ -556,12 +561,29 @@ export interface MoveNotice {
   readonly reactions: readonly { readonly kind: string; readonly count: number }[];
 }
 
+/** A board a character is barred from posting on (`bars_now`, carried by `my_characters.bars`): the move that bars it, the group that move put it in, and when the bar ends if nothing ends it sooner (null: no end is set). */
+export interface Bar {
+  readonly board: Id;
+  readonly move: Id;
+  readonly group: string;
+  readonly expiresAt: string | null;
+}
+
+/** One apology a character wrote to a move (`my_apologies`): `pending` until the move's staff member rules, then `accepted` or `rejected`; `returned` when the judgment failed and the next may be written at once. */
+export interface Apology {
+  readonly move: Id;
+  readonly state: 'pending' | 'accepted' | 'rejected' | 'returned';
+  readonly at: string;
+  /** When the next apology to this move may be written (an ISO time); null for a returned one. */
+  readonly nextAt: string | null;
+}
+
 /** The most reactions a move's notice shows. */
 export const NOTICE_REACTIONS = 3;
 
 /** How a landed move ended (moves_log). */
 export interface MoveEnd {
-  readonly why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent';
+  readonly why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'unmet' | 'overturned';
   /** `tick`, `admin`, `boss` (the new Boss's review), `inheritance` (the review never came) or `handover`. */
   readonly by: string;
   readonly at: string;
@@ -658,7 +680,7 @@ export interface MoveInForce {
 
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
 export interface MoveEnded {
-  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'held' | 'refused';
+  readonly how: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned' | 'held' | 'refused';
   readonly by: string | null;
   readonly at: string;
   /** Null for a held move, which was never an Act. */
@@ -761,6 +783,8 @@ export interface MyCharacter {
   readonly presenceHidden: boolean;
   /** When its ban ends (`my_characters.banned_until`, a public fact about it); absent while it is not banned. The composer says so; it ends by itself at that time. */
   readonly bannedUntil?: string;
+  /** The boards it is barred from posting on (`my_characters.bars`, from `bars_now`, a public fact about it); absent while it is barred from none. The composer and New thread say so, and each bar ends by itself at its time. */
+  readonly bars?: readonly Bar[];
 }
 
 /** Where a presence box is: a thread, a board (its page and every thread on it) or the index ("Who is online"). */
@@ -773,7 +797,7 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  */
 export interface Presence {
   /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there, or while it has an open visit in the thread, whose post's number is `visitPost` (a visit is a public Act). */
-  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; readonly visitPost?: number }[];
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; /** The key of the group it is in now (group_now, 0128): a staff name's chip is that group's name. */ readonly group?: string; readonly visitPost?: number }[];
   readonly others: number;
 }
 
@@ -1235,6 +1259,42 @@ export interface MyBan {
   readonly rule: string | null;
 }
 
+/** How a group move ended (`move_end`): its demand met, its expiry, an admin's reversal, a favor not met at its check, an appeal overturning it, or the handover. */
+export type GroupMoveEndWhy = 'met' | 'expired' | 'reversed' | 'unmet' | 'overturned' | 'superseded' | 'spent';
+
+/**
+ * A staff member moving one of the player's characters into a group (`my_group_moves`, 0134), with how it ended and the appeal's ruling on it. Every field is a public fact about
+ * the character's own move; none names another member of a group.
+ */
+export interface LogGroupMove {
+  readonly move: Id;
+  readonly character: Id;
+  readonly at: string;
+  /** The announcements thread the move was made in, and its place there: what the line links to. */
+  readonly thread: Id;
+  readonly seq: number | null;
+  /** The group's key (its name is the instance's content). */
+  readonly group: string;
+  readonly board: Id | null;
+  readonly boardName: string | null;
+  /** When it ends now (`move_expires_at`: an appeal's ruling read in place of the move's own end); null for a move with no end of its own. */
+  readonly expiresAt: string | null;
+  /** The end the move's own Act set when it landed; the line that says it landed names this one, and the ruling's line carries any change. */
+  readonly landedUntil: string | null;
+  /** A favor's check: it stays if the demand is met by then. */
+  readonly checkAt: string | null;
+  readonly demand: string | null;
+  /** The office the move landed under (its stamp, 0137), for the role word ("The Boss", "A Mod"); the hearer of its appeal is the same staff member. */
+  readonly office: Office | null;
+  readonly endedWhy: GroupMoveEndWhy | null;
+  readonly endedBy: string | null;
+  readonly endedAt: string | null;
+  readonly ruling: AppealVerdict | null;
+  readonly ruledAt: string | null;
+  /** The end an appeal's ruling set. */
+  readonly ruledUntil: string | null;
+}
+
 /** A report one of the player's characters made. */
 export interface LogReport {
   readonly report: Id;
@@ -1257,7 +1317,8 @@ export interface LogAppeal {
   readonly character: Id;
   readonly at: string;
   readonly punishment: Id;
-  readonly punishmentKind: 'infraction' | 'ban';
+  /** What was appealed: warn points, a ban, or a group move that punishes (`my_appeals.punishment_kind`; a move has no post number). */
+  readonly punishmentKind: 'infraction' | 'ban' | 'move';
   readonly postSeq: number | null;
   readonly thread: Id;
   readonly verdict: AppealVerdict | null;
@@ -1277,6 +1338,8 @@ export interface Log {
   readonly infractions: readonly LogInfraction[];
   /** The bans laid on the player's characters, by when each began (`my_bans`). */
   readonly bans: readonly LogBan[];
+  /** The staff moves of the player's characters into groups, by when each landed (`my_group_moves`). */
+  readonly groupMoves: readonly LogGroupMove[];
   /** The reports the player's characters made, by when each was made (`my_reports`). */
   readonly reports: readonly LogReport[];
   /** The appeals the player's characters made, by when each was made (`my_appeals`). */
@@ -1712,6 +1775,16 @@ export interface KayfaApi {
    * `move_progress`, a public read: it counts characters, posts and public tallies and never players.
    */
   moveNotice(act: Id): Promise<MoveNotice | null>;
+  /**
+   * The caller's own character's apologies, newest first (`my_apologies`, 0133): each one's move, state and when it was written, and when the next may be. Another
+   * player's character, or an id that is no one's, reads none. Rejects when it cannot be read.
+   */
+  myApologies(character: Id): Promise<readonly Apology[]>;
+  /**
+   * The group moves of one of the player's characters that an appeal was made on and not refunded for a failed judgment (`my_appeals`): each is appealed once, so the barred box stops
+   * offering Appeal on them. A character that is not the player's, or an id that is no one's, reads none. Rejects when it cannot be read.
+   */
+  appealedMoves(character: Id): Promise<readonly Id[]>;
   /** A page of a staff member's moves, newest first, `MOVES_LOG_PAGE` to a page; pass the last page's `older` for the next. */
   movesLog(staff: string, before?: MovesCursor | null): Promise<MovesLog>;
   /** A staff member's latest in-character profile, or null before it has one (a Mod Bot has none until it is asked to write one). */
@@ -1972,6 +2045,12 @@ export interface KayfaApi {
   post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Promise<Answer<Act>>;
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /**
+   * A barred character's apology (`apologize`, 0130): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
+   * apology the move's staff member rules on. Refused while the character is banned, on a move that is not this character's or has ended, while one waits, and
+   * within `Settings.apology.apologyEveryHours` of the last (the refusal names the time the next opens). `framing` is a spin's: the characters its counterfeit quotes name are told.
+   */
+  apologize(move: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * Buy a card from the Vending Machine at its base price, from the settled wallet only: the ghost estimate cannot be spent. The
    * price is the card's rules' (`basePrice`), never sent by the screen. Private, and nothing about it is broadcast.

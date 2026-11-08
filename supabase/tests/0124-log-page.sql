@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the thirteen reads the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the fourteen reads (the group moves' since 0134) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -156,7 +156,10 @@ begin
        select report, character, at, post, post_seq, thread, verdict, verdict_at, mod_name, refund from my_reports order by at desc, report limit 200) r)) then raise exception 'reports: %', doc -> 'sources' -> 'reports'; end if;
   if doc -> 'sources' -> 'appeals' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select appeal, character, at, punishment, punishment_kind, post_seq, thread, verdict, ruled_at, points_delta, hearer_name, refund from my_appeals order by at desc, appeal limit 200) r)) then raise exception 'appeals: %', doc -> 'sources' -> 'appeals'; end if;
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 13 then raise exception 'thirteen sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
+  if doc -> 'sources' -> 'groupMoves' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
+       select move, character, at, thread, seq, "group", board, board_name, expires_at, landed_until, check_at, demand, office, ended_why, ended_by, ended_at, ruling, ruled_at, ruled_until
+       from my_group_moves order by at desc, move limit 200) r)) then raise exception 'groupMoves: %', doc -> 'sources' -> 'groupMoves'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 14 then raise exception 'fourteen sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
   if doc::text like '%' || b1::text || '"%' and exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'ledger') x where x ->> 'character' = b1::text) then raise exception 'another player''s ledger line is in the page'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'wallet') x where (x ->> 'change')::integer = 9) then raise exception 'another player''s wallet event is in the page'; end if;
 
@@ -189,7 +192,7 @@ begin
         select to_jsonb(p) from (
           select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name, cp.id)
-      from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;
+      from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'people') x where x ?| array['warn_points', 'banned_until']) then raise exception 'a face holds the columns characters() reads and no others: %', doc -> 'people' -> 0; end if;
   -- The latest Turn's thread, and the thread a play reached; the board a play reached.
   if doc -> 'threads' is distinct from (select jsonb_agg(to_jsonb(x) order by x.created_at, x.id::text collate "C") from thread_open x where x.id in (th_turns, th_other)) or jsonb_array_length(doc -> 'threads') is distinct from 2 then raise exception 'threads: %', doc -> 'threads'; end if;
@@ -225,7 +228,7 @@ begin
   -- A signed-in caller with nothing: empty sources, no error.
   perform tests.become(nobody);
   doc := log_page(null);
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 13 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads thirteen empty sources: %', doc -> 'sources'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 14 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads fourteen empty sources: %', doc -> 'sources'; end if;
   perform tests.unbecome();
 
   -- A visitor is refused.

@@ -14,7 +14,7 @@ import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
-import { systemSettings, testSystem } from '../../rules/test-system.ts';
+import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 const settings: Settings = {
@@ -44,6 +44,7 @@ const instance: Instance = {
   ],
   ranks: [{ name: 'Jobber', from: 0 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
+  groups: testGroups,
 };
 
 const DAY = 86_400_000;
@@ -1480,7 +1481,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], settings: { ...settings, economy: { 'splat.price': 100 } } };
-  const empty = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1500,6 +1501,20 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(await fake.log()).toEqual(empty);
     fake.signInAs(null);
     expect(await fake.log()).toEqual(empty);
+  });
+
+  test('the staff moves of the account\'s own characters into groups are its log\'s group rows, with their end and the appeal\'s ruling, and no one else\'s', async () => {
+    const { fake, anaFace, boFace } = logWorld();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const m = fake.seed.groupMove('boss', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: fake.clock.now() + 3 * 86_400_000 });
+    fake.seed.groupMove('boss', { character: boFace, group: 'trialMembers' });
+    expect((await fake.log()).groupMoves).toMatchObject([{ move: m, character: anaFace, group: 'trialMembers', boardName: 'General', office: 'boss', endedWhy: null, ruling: null }]);
+    const appeal = fake.seed.appeal(anaFace, m, 'I did nothing wrong.');
+    const until = fake.clock.now() + 86_400_000;
+    fake.seed.ruling(appeal, fake.seed.staff('boss2', 'The Second', 'boss'), 'reduced', { until });
+    fake.seed.endMove(m, { why: 'expired' });
+    const [row] = (await fake.log()).groupMoves;
+    expect(row).toMatchObject({ ruling: 'reduced', endedWhy: 'expired', ruledUntil: new Date(until).toISOString(), expiresAt: new Date(until).toISOString() });
   });
 
   test('a settlement\'s lines read with their shares, its window, and the wallet\'s credit with what the cap held back', async () => {
@@ -1776,7 +1791,7 @@ describe('presence', () => {
     expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
     expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
     const online = await fake.here({ kind: 'index' }, null);
-    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false }], others: 0 });
+    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false, group: 'members' }], others: 0 });
   });
   test('a hidden mask is written nowhere and omitted for another account; my characters say it is hidden', async () => {
     const { fake, bo, anaFace, boFace, thread } = world();
@@ -2385,6 +2400,13 @@ describe('framed alerts', () => {
     must(await w.fake.startThread('general', w.anaFace, 'Fresh', w.named(w.boFace), [w.boFace]));
     must(await w.fake.spin(w.opener, w.anaFace, 'Spun', w.named(w.boFace), [w.boFace]));
     expect(await w.framedFor(w.bo)).toHaveLength(2);
+  });
+  test('an apology writes them as the spin it is', async () => {
+    const w = framedWorld();
+    const at = Date.now() - 3_600_000;
+    const move = w.fake.seed.groupMove('boss', { character: w.anaFace, group: 'trialMembers', board: 'general', at, expiresAt: at + 86_400_000 });
+    must(await w.fake.apologize(move, w.anaFace, 'Sorry', w.named(w.boFace), [w.boFace]));
+    expect(await w.framedFor(w.bo)).toHaveLength(1);
   });
   test('none for an undebuted, unknown, unnamed-in-the-body, staff or own-mask target, and the answer is the same ok', async () => {
     const w = framedWorld();

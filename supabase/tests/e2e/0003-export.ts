@@ -195,6 +195,11 @@ test('an instance exported and imported into a fresh database is the same instan
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
       insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
+      -- A move kind whose words SQL fills with a derived token (0129), so the column is carried across.
+      insert into move_kinds (key, structural, derived) values ('conferGroup', false, '{groupName}') on conflict (key) do update set derived = excluded.derived;
+      -- The member groups (0128): a rung and a conferred group, carried across with the rest of the instance's catalogs.
+      insert into group_kinds (key, name, color, source, rung, condition, at_least) values ('expPosts', 'Exported Posts', '#7a7a7a', 'ladder', 98, 'posts', 1) on conflict (key) do nothing;
+      insert into group_kinds (key, name, color, stripe, source, tone) values ('expTrial', 'Exported Trial', '#d2691e', true, 'conferred', 'punishment') on conflict (key) do nothing;
       moved := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Old Palace', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
       ended := (end_move(moved, 'expired', 'tick') ->> 'act')::uuid;
@@ -205,6 +210,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p from meetings m;
+      -- An apology to the move in force (0129), carried across with the Acts it names.
+      insert into apologies (move_act, apology_act, character, state) values (kept, p, b, 'pending');
       -- A Mod's order from that meeting (0103), and a visit by the Mod on the post with its open row (0105), one failed attempt to draw a visit and one to file it, so the
       -- tables the Mod Bots add are carried across with the Acts that name them. The order hands out nothing: an
       -- allowance left unspent here would be returned to the Boss's bank by e2e/0011's meeting, which counts the bank.
@@ -269,7 +276,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -459,7 +466,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');

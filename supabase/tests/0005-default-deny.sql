@@ -16,10 +16,10 @@ declare
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
                            'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
-                           'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
+                           'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
-                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left',
+                           'my_infractions', 'my_bans', 'my_reports', 'my_appeals', 'my_reports_left', 'my_group_moves',
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[])', 'post(uuid,uuid,text,uuid,uuid[])',
@@ -66,6 +66,13 @@ declare
                            'admin_contact()', 'set_admin_contact(jsonb)',
                            -- The bar and the ban (0104): columns of characters_public, whose reader executes the functions that compute them; public facts, the same for any id.
                            'warn_points(uuid)', 'banned_until(uuid)',
+                           -- The group (0128): a column of characters_public and my_characters, whose reader executes the function; public facts, the same for any id.
+                           'group_now(uuid)', 'move_expires_at(uuid)',
+                           -- The bar and the apology (0130): barred() is a public fact, from bars_now, for any character and board; apologize() is the barred character's door, which verifies the caller
+                           -- plays the character and that it is not banned. The ruling and the judge's queue are the service's.
+                           'barred(uuid,uuid)', 'bars_of(uuid)', 'apologize(uuid,uuid,text,text,uuid[])',
+                           -- The barred box's read (0133): the caller's own character's apologies, empty for any other id.
+                           'my_apologies(uuid)',
                            -- A report (0107): the player's door, which verifies the caller plays the character and is not banned. Its closing, its refund and its budget are the service's.
                            'open_report(uuid,uuid,text)',
                            -- An interception (0108): the player's door, which verifies the caller plays the character, that it is not banned and its own wallet. And the question a quiz visit asks,
@@ -104,7 +111,7 @@ begin
   loop bad := bad || format(E'\n  sequence %s', r.relname); end loop;
   for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
            where n.nspname = 'public' and c.relkind in ('r', 'v', 'm', 'p')
-             and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log')
+             and (has_table_privilege('anon', c.oid, 'select,insert,update,delete,truncate,references,trigger') and not c.relname in ('screen_settings', 'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now')
                   -- screen_settings (0030) is a view a visitor reads: the sign-up page must know whether the instance asks for an invite.
                   -- staff_now (0043) is the other, and staff_office_now (0082) its source: the staff are known to be staff, signed in or not.
                   -- staff_profile_now (0044) is the third: a Boss's in-character profile is a public page.

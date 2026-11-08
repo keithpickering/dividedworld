@@ -23,6 +23,7 @@ import { ThreadCtx } from '../thread/context.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
 import { auraWords, appealTerms, modRole, pointsPlain, rulingWords, shortDate, topCharge, markedAs } from './visit.ts';
 import { Layers } from '../glass/layer.tsx';
+import { lowerFirst } from '../copy-words.ts';
 import './visit.css';
 import './forms.css';
 
@@ -55,6 +56,38 @@ export function banRulingWords(verdict: string): string {
 /** The terms of an appeal of a ban, in the glass's plain words: the Boss hears it. */
 export const banAppealTerms = (days: number): string =>
   `The Boss hears it. It is refunded if overturned. It may be upheld, cut to half of its ${days === 1 ? '1 day' : `${days} days`}, or lengthened by half. One appeal per ban, and your plea is public.`;
+
+/** A group move's ruling in a plain clause: overturned ends it, reduced halves its length from its start, increased adds half again (never past the phase's most days). */
+export function moveRulingWords(verdict: string): string {
+  switch (verdict) {
+    case 'overturned': return 'overturned it, so the move has ended';
+    case 'upheld': return 'upheld it, so nothing changed';
+    case 'reduced': return 'cut the move to half its length';
+    case 'increased': return 'increased it, so the move runs half its length longer';
+    default: return 'ruled on it';
+  }
+}
+
+/** The terms of an appeal of a group move, in the glass's plain words: the staff member who made the move hears it while on staff, else the Boss (`hearer` is "The Boss" or "A Mod"). */
+export const moveAppealTerms = (hearer: string, hasEnd: boolean): string =>
+  `The one who made the move (${lowerFirst(hearer)}) hears it, or the Boss if they have left the staff. If it is overturned the move ends at once and your Aura is refunded. If it is upheld nothing changes. ${
+    hasEnd
+      ? 'If it is reduced the move is cut to half its length, counted from when it began, and ends at once if that time has passed. If it is increased the move runs half its length longer, though never past the longest a move may run. '
+      : 'It has no end date, so a reduction or an increase changes nothing and is recorded as upheld. '
+  }One judged appeal per move, your plea is public, and an apology can still end the move: whichever comes first does.`;
+
+/** What an appeal of a group move is told: the move (its Act), the character it put in the group, the group and board by name, when it began and ends (null: no end date), and who hears it. */
+export interface MoveAppealFacts {
+  readonly move: Id;
+  readonly character: Id;
+  readonly name: string;
+  readonly group: string;
+  readonly board: string | null;
+  readonly began: string | null;
+  readonly until: string | null;
+  /** "The Boss" or "A Mod": the office the move landed under, which is who hears the appeal. */
+  readonly hearer: string;
+}
 
 /** The Mod's own words, quoted. */
 const quoted = (line: string) => (line.trim() === '' ? null : <span className="kb-visit-said">“{line}”</span>);
@@ -186,7 +219,15 @@ export function useAppealRead(infraction: Id): Prepared<Said> {
   }, () => infraction);
 }
 
-export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban, facts }: { readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly modPronouns?: PronounSet | null; readonly ban?: MyBan; /** The infraction's facts, read before the tab showed; none for a ban. */ readonly facts?: Said }) {
+export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban, move, onFiled, facts }: {
+  readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly modPronouns?: PronounSet | null; readonly ban?: MyBan;
+  /** Set for a group move: the form then appeals the move, with its facts and terms, and reads nothing of its own. */
+  readonly move?: MoveAppealFacts;
+  /** Called once an appeal was taken (paid and public), so the screen that opened the form can stop offering it. */
+  readonly onFiled?: () => void;
+  /** The infraction's facts, read before the tab showed; none for a ban or a move. */
+  readonly facts?: Said;
+}) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const [plea, setPlea] = useState('');
@@ -198,7 +239,8 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
   const role = modRole(ui.copy);
 
   const f: Said | null = facts ?? null;
-  const mod = ban ? 'The Boss' : visit ? nameOf(visit.mod) : role;
+  const known = ban !== undefined || move !== undefined;
+  const mod = ban ? 'The Boss' : move ? move.hearer : visit ? nameOf(visit.mod) : role;
   const top = visit ? topCharge(visit.charges) : null;
   const rule = top ? top.rule ?? markedAs(top) : f !== null && f.ruleNumber !== null ? `Rule ${f.ruleNumber}` : 'a rule';
   const over = [...plea].length > PLEA_MAX;
@@ -206,15 +248,16 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || blank || over || (f === null && !ban)) return;
+    if (busy || blank || over || (f === null && !known)) return;
     setBusy(true);
     setRefusal(null);
     try {
-      const a = await api.fileAppeal(ban ? ban.character : f!.character, ban ? ban.ban : infraction, plea);
+      const a = await api.fileAppeal(ban ? ban.character : move ? move.character : f!.character, ban ? ban.ban : move ? move.move : infraction, plea);
       if (!a.ok) { setRefusal(a.error); return; }
       setResult({ verdict: a.value.verdict, line: a.value.line });
       setPlea('');
       void player.refresh();
+      onFiled?.();
     } catch {
       setRefusal('That could not be sent. Check your connection and look at the thread before you appeal again.');
     } finally {
@@ -225,7 +268,15 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
   return (
     <form className="kb-visit kb-mod-form" onSubmit={(e) => void submit(e)} aria-label="Appeal">
       <div className="kb-lens-section kb-visit-state">
-        {ban ? (
+        {move ? (
+          <>
+            <p className="kb-visit-facts">
+              The punishment: {move.name} is in {move.group}{move.board !== null ? `, which can't post on ${move.board}` : ''}.
+              {move.began !== null && move.until !== null ? ` It began ${shortDate(move.began)} and ends by itself ${dayAndTime(move.until)}.` : move.began !== null ? ` It began ${shortDate(move.began)}.` : ''}
+            </p>
+            <p className="kb-visit-terms">{moveAppealTerms(move.hearer, move.until !== null)}</p>
+          </>
+        ) : ban ? (
           <>
             <p className="kb-visit-facts">The punishment: a ban of {ban.days === 1 ? '1 day' : `${ban.days} days`}{ban.rule ? `, after ${ban.rule}` : ''}. It ends by itself {dayAndTime(ban.until)}.</p>
             <p className="kb-visit-terms">{banAppealTerms(ban.days)}</p>
@@ -250,13 +301,13 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
         {over && <p role="alert" className="kb-notice" data-kb-tone="refusal">A plea is at most {PLEA_MAX} characters.</p>}
       </div>
       <div className="kb-lens-section kb-visit-appeal-section">
-        <GlassButton type="submit" kind="secondary" className="kb-visit-appeal" busy={busy} aria-disabled={blank || over || (f === null && !ban) ? 'true' : undefined}>Appeal · {auraWords(price)}</GlassButton>
+        <GlassButton type="submit" kind="secondary" className="kb-visit-appeal" busy={busy} aria-disabled={blank || over || (f === null && !known) ? 'true' : undefined}>Appeal · {auraWords(price)}</GlassButton>
       </div>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <p role="status" className="kb-visit-result">
         {result !== null && (result.verdict === null
           ? <>Your appeal was made, and it is public. Its ruling will be in the thread.</>
-          : <>{mod} heard it and {ban ? banRulingWords(result.verdict) : rulingWords(result.verdict)}.{result.line.trim() !== '' && <> {mod} said: {quoted(result.line)}</>}</>)}
+          : <>{mod} heard it and {ban ? banRulingWords(result.verdict) : move ? moveRulingWords(result.verdict) : rulingWords(result.verdict)}.{result.line.trim() !== '' && <> {mod} said: {quoted(result.line)}</>}</>)}
       </p>
     </form>
   );
@@ -292,6 +343,33 @@ export function BanAppeal({ character, ban }: { readonly character: Id; readonly
       {shown !== null && (
         <Overlay title="Appeal the ban" surface="log" kicker="Appeal to the Boss" onClose={cancel} returnFocusTo={() => opener.current}>
           <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} />
+        </Overlay>
+      )}
+      </Layers>
+    </>
+  );
+}
+
+/**
+ * "Appeal to the Boss · 0.50 Aura" for a barred character: the barred box's way out beside the apology (BarredNote.tsx). It opens the appeal form over the page on the move, the
+ * facts of which the box already holds; the staff member who made the move hears it. `onUsed` is called when the form is closed after an appeal was taken, so the box can say the move
+ * has been appealed (one appeal per move) instead of offering it again.
+ */
+export function MoveAppeal({ move, onUsed }: { readonly move: MoveAppealFacts; readonly onUsed: () => void }) {
+  const { instance } = useKayfa();
+  const [open, setOpen] = useState(false);
+  const made = useRef(false);
+  const opener = useRef<HTMLButtonElement>(null);
+  const close = () => { setOpen(false); if (made.current) onUsed(); };
+  return (
+    <>
+      <button ref={opener} type="button" className="kb-button" data-kb-size="small" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+        Appeal to {lowerFirst(move.hearer)} · {auraWords(instance.settings.modBots.appealPrice)}
+      </button>
+      <Layers>
+      {open && (
+        <Overlay title="Appeal the move" surface="log" kicker={`Appeal to ${lowerFirst(move.hearer)}`} onClose={close} returnFocusTo={() => opener.current}>
+          <AppealForm infraction={move.move} visit={undefined} nameOf={() => ''} move={move} onFiled={() => { made.current = true; }} />
         </Overlay>
       )}
       </Layers>

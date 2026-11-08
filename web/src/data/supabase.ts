@@ -39,12 +39,12 @@ import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
-  AdminQueue, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
+  AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -313,7 +313,7 @@ function toBoardSummary(r: Row): BoardSummary {
 function toPresence(v: Row): Presence {
   const names = (Array.isArray(v['names']) ? v['names'] : []).flatMap((n: Row) =>
     typeof n?.['id'] === 'string' && typeof n?.['name'] === 'string'
-      ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true, ...(typeof n['visit_post'] === 'number' ? { visitPost: n['visit_post'] } : {}) }] : []);
+      ? [{ id: n['id'], name: n['name'], staff: n['staff'] === true, ...(typeof n['group'] === 'string' ? { group: n['group'] } : {}), ...(typeof n['visit_post'] === 'number' ? { visitPost: n['visit_post'] } : {}) }] : []);
   return { names, others: num(v['others']) };
 }
 
@@ -339,6 +339,8 @@ const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'ta
 const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed'];
 const VERDICTS: readonly ReportVerdict[] = ['visit', 'dismissed', 'backfire'];
 const RULINGS: readonly AppealVerdict[] = ['overturned', 'upheld', 'reduced', 'increased'];
+const OFFICES: readonly Office[] = ['boss', 'mod', 'member', 'benched', 'waiting', 'developer'];
+const MOVE_END_WHYS: readonly GroupMoveEndWhy[] = ['met', 'expired', 'reversed', 'unmet', 'overturned', 'superseded', 'spent'];
 
 /** A charge as a visit's Act carries it: a band it does not name is the lightest, a cause it does not name the rule's. */
 function toCharge(c: Row): VisitCharge {
@@ -455,7 +457,14 @@ function toMyCharacter(r: Row): MyCharacter {
     pendingTurn: pending,
     presenceHidden: r['presence_hidden'] === true,
     ...(typeof r['banned_until'] === 'string' && Date.parse(r['banned_until']) > Date.now() ? { bannedUntil: r['banned_until'] } : {}),
+    ...(toBars(r['bars']).length > 0 ? { bars: toBars(r['bars']) } : {}),
   };
+}
+
+/** The bars `my_characters.bars` carries: each board, the move, the group and when it ends; a malformed entry is left out. */
+function toBars(v: unknown): Bar[] {
+  return (Array.isArray(v) ? v : []).filter((b): b is Row => isObject(b) && typeof b['board'] === 'string' && typeof b['move'] === 'string')
+    .map((b): Bar => ({ board: b['board'], move: b['move'], group: typeof b['group'] === 'string' ? b['group'] : '', expiresAt: orNull(b['expires_at']) }));
 }
 
 /** One row of `finished_seasons`; a row with no number is no row. */
@@ -492,7 +501,7 @@ function toAdminQueue(v: unknown): AdminQueue {
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -528,12 +537,19 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOn
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
     })),
     bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
+    groupMoves: src['groupMoves'].map((r): LogGroupMove => ({
+      move: r['move'], character: r['character'], at: r['at'], thread: r['thread'], seq: typeof r['seq'] === 'number' ? r['seq'] : null, group: String(r['group'] ?? ''),
+      board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), landedUntil: str(r['landed_until']), checkAt: str(r['check_at']), demand: str(r['demand']),
+      office: OFFICES.find((o) => o === r['office']) ?? null,
+      endedWhy: MOVE_END_WHYS.find((w) => w === r['ended_why']) ?? null, endedBy: str(r['ended_by']), endedAt: str(r['ended_at']),
+      ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']),
+    })),
     reports: src['reports'].map((r): LogReport => ({
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
       verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
     })),
     appeals: src['appeals'].map((r): LogAppeal => ({
-      appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : 'infraction',
+      appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : r['punishment_kind'] === 'move' ? 'move' : 'infraction',
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
       pointsDelta: typeof r['points_delta'] === 'number' ? r['points_delta'] : null, hearer: str(r['hearer_name']),
       refund: r['refund'] === 'failed' || r['refund'] === 'stale' || r['refund'] === 'expired' ? r['refund'] : null,
@@ -741,6 +757,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
     ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
+    group: typeof c['group'] === 'string' ? c['group'] : '',
   });
 
   /** A character a document carries with its profile nested (`profile` null where it has none). */
@@ -749,7 +766,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
-      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office').in('id', part))),
+      byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
       byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style,pronouns').in('character', part))),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
@@ -764,11 +781,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   async function profileCharacter(p: Row): Promise<Character> {
     let found: Row | undefined;
     try {
-      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,office').eq('id', p['character']).limit(1)))[0];
+      found = (await list(() => client.from('characters_public').select('id,name,joined,staff,office,group').eq('id', p['character']).limit(1)))[0];
     } catch {
       found = undefined;
     }
-    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], office: found?.['office'] }, p);
+    return toCharacter({ id: p['character'], name: found?.['name'] ?? '', joined: found?.['joined'] ?? '', staff: found?.['staff'], office: found?.['office'], group: found?.['group'] }, p);
   }
 
   /* -------------------------------------------------------------------- live ---- */
@@ -868,7 +885,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, reportRows, appealRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -885,6 +902,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
       rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
       rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
+      /* The staff moves of the player's characters into groups (0134): each with how it ended and the appeal's ruling on it. */
+      rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
     ]);
@@ -897,7 +916,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, setPasses: passRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, reports: reportRows, appeals: appealRows }, shareRows);
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, setPasses: passRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows);
   };
 
   const api: KayfaApi = {
@@ -986,6 +1005,19 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const tally: Record<string, number> = {};
       for (const r of counts) tally[r['kind']] = num(r['count']);
       return buildMoveNotice(toAct(a), tally, progress);
+    },
+    async myApologies(character) {
+      if (!idOk(character)) return [];
+      const rows = await list(() => client.rpc('my_apologies', { in_character: character }));
+      return rows.map((r): Apology => ({
+        move: r['move_act'], state: r['state'] === 'accepted' || r['state'] === 'rejected' || r['state'] === 'returned' ? r['state'] : 'pending', at: String(r['created_at'] ?? ''), nextAt: orNull(r['next_at']),
+      }));
+    },
+    async appealedMoves(character) {
+      if (!idOk(character)) return [];
+      /* my_appeals (0111) is the caller's own characters' appeals; one refunded for a failed or stale judgment leaves the move appealable again (appeal_blocks). */
+      const rows = await list(() => client.from('my_appeals').select('punishment,refund').eq('character', character).eq('punishment_kind', 'move'));
+      return rows.filter((r) => r['refund'] !== 'failed' && r['refund'] !== 'stale').map((r): Id => r['punishment']);
     },
     async movesLog(staff, before): Promise<MovesLog> {
       /* Newest first by (at, id), a page and one more row to know whether older ones remain; the keyset is the last row's, so a page turn reads a page. */
@@ -1701,7 +1733,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const first = toLogRead({
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), playsOnMine: rowsOf(sources['playsOnMine']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), setPasses: rowsOf(sources['setPasses']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
-        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
+        infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
       }, rowsOf(d['shares']));
       const log = await readLogPage((range) => ('at' in range ? readLogViews(range) : first), before ?? null);
       return {
@@ -1741,6 +1773,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     post: (thread, character, body, quote, framing) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing) }, toAct),
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body, framing) => act({ action: 'spin', origin, character, title, body, ...framed(framing) }, withThread),
+    async apologize(move, character, title, body, framing) {
+      if (!idOk(move) || !idOk(character)) return refusal('that move could not be found');
+      const a = await rpcWrite(() => client.rpc('apologize', { in_move: move, through: character, title, body, ...framed(framing) }));
+      return a.ok ? { ok: true, value: withThread(a.value) } : a;
+    },
     react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),

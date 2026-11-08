@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
+import { userEvent, within } from 'storybook/test';
 import { useKayfa } from '../context.tsx';
+import { hudKey } from '../player.tsx';
 import type { World } from '../story.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
@@ -36,3 +38,35 @@ const world: World = (fake, instance) => {
 
 /** The reply box at the foot, with its toolbar and preview toggle. */
 export const QuickReply: Story = { parameters: { world } };
+
+/**
+ * Pipewrench barred from General by the Boss's move: the barred box where the reply box would be, with the way out. The same player's other mask, Mrs. Hooligan, posts freely
+ * (swap in the HUD). `state` is where Pipewrench's apology stands.
+ */
+const barred = (state: 'none' | 'waiting' | 'rejected'): World => (fake, instance) => {
+  const me = fake.seed.account('story-player');
+  const mine = fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
+  fake.seed.character(me, 'Mrs. Hooligan', (instance.classes[1] ?? instance.classes[0]!).key);
+  const other = fake.seed.character(fake.seed.account('story-other'), 'Spritey', instance.classes[0]!.key);
+  const general = instance.boards.find((b) => !b.system)!.slug;
+  fake.seed.thread(general, other, 'Reply here', 'A post to answer.');
+  fake.seed.staff('story-boss', 'The Director', 'boss');
+  const group = instance.groups.conferred.find((g) => g.tone === 'punishment')!.key;
+  const move = fake.seed.groupMove('story-boss', { character: mine, group, board: general, at: Date.now() - 3_600_000, expiresAt: Date.now() + 3 * 86_400_000 });
+  if (state === 'waiting') fake.seed.apology(mine, move, 'pending');
+  if (state === 'rejected') fake.seed.apology(mine, move, 'rejected', { at: Date.now() - 3_600_000 });
+  fake.seed.wallet(me, 500);
+  fake.signInAs(me);
+  /* The HUD starts on the first of the player's characters by name (Mrs. Hooligan); the story is about Pipewrench, so the HUD is set to it as a player's choice is kept. */
+  try { globalThis.localStorage?.setItem(hudKey(me), mine); } catch { /* the default holds */ }
+};
+
+export const BarredBox: Story = { parameters: { world: barred('none') } };
+export const BarredApologyWaiting: Story = { parameters: { world: barred('waiting') } };
+export const BarredApologyRejected: Story = { parameters: { world: barred('rejected') } };
+
+/** The barred box's Appeal opened: the appeal form on the move, with the staff member who hears it, the price, and what each ruling does. */
+export const BarredAppealForm: Story = {
+  parameters: { world: barred('none') },
+  play: async ({ canvasElement }) => { await userEvent.click(await within(canvasElement).findByRole('button', { name: /^Appeal to the Boss/u })); },
+};

@@ -150,6 +150,9 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'edit', post: id, character: id, body: 'y' }, { edit_post: { id: 'e', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'e', thread } }]],
     [{ action: 'spin', origin: id, character: id, title: 't', body: '' }, { spin: { thread: { id: thread, board }, act: { id: 's', thread } } },
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 's', thread } }]],
+    // An apology is a spin of the move's Act: heard as a spin is.
+    [{ action: 'apologize', move: id, character: id, title: 't', body: 'b' }, { apologize: { thread: { id: thread, board }, act: { id: 'p', thread } } },
+      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'p', thread } }]],
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
       { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
@@ -225,7 +228,7 @@ test('a refused or failed action sends nothing live', async () => {
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
   for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
-  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'withdraw_turn', 'buy_card', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
 
 test('a write whose answer was lost says plainly it may have gone through', async () => {

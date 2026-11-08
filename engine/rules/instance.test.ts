@@ -6,6 +6,7 @@ import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
+import { testGroups } from './test-system.ts';
 import { PRONOUN_PRESETS } from './pronouns.ts';
 
 const settings: Settings = {
@@ -56,6 +57,7 @@ const settings: Settings = {
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
+  apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -80,10 +82,9 @@ const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signa
 
 const system: SystemContent = {
   roster: [boss, bot],
-  staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -106,6 +107,7 @@ const good: Instance = {
   boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'announcements', name: 'The System', description: 'Its own.', system: true }],
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
+  groups: testGroups,
   copy: { announcementsThreadTitle: 'Season {season}: Promos' },
   system,
 };
@@ -187,6 +189,11 @@ test('ranks start at 0 and rise, each named', () => {
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 100 }, { name: 'C', from: 100 }] }).join('\n'), /rank "C" is from 100, not above the rank before it/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: ' ', from: 10 }] }).join('\n'), /a rank has no name/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 1.5 }] }).join('\n'), /rank "B" is from 1.5/);
+});
+
+test('groups with a problem make the instance have one, in words', () => {
+  const noDefault = { ...good.groups, ladder: good.groups.ladder.filter((r) => r.when.kind !== 'default') };
+  assert.match(instanceProblems({ ...good, groups: noDefault }).join('\n'), /0 default rungs/);
 });
 
 test('pip styles hold a default, each with a key, a name and a full and an empty', () => {
@@ -376,7 +383,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 9);
+  assert.equal(DUTIES.length, 10);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -433,11 +440,8 @@ test('a persona with no weakness is reported (poison: today a Boss with none pas
   assert.match(said(withSystem({ roster: [rest as unknown as Persona, bot] })), /persona "boss-a" has no weakness/);
 });
 
-test('the staff group is named, one to 40 characters', () => {
-  assert.match(said(withSystem({ staffGroup: { name: '' } })), /staffGroup.name.*1 to 40/);
-  assert.match(said(withSystem({ staffGroup: { name: 'x'.repeat(41) } })), /staffGroup.name.*1 to 40/);
-  assert.match(said(withSystem({ staffGroup: undefined } as unknown as Partial<SystemContent>)), /staffGroup.name.*1 to 40/);
-  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: 'x'.repeat(40) } })), []);
+test('the staff group is the ladder\'s staff rung, so the system content names none (a leftover staffGroup is not read)', () => {
+  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: '' } } as unknown as Partial<SystemContent>)), []);
 });
 
 test('a quiz needs a question, and each question\'s answer must be one of its choices', () => {
@@ -570,6 +574,16 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('warnBar', { ...wb, banDays: [1, 0] }), /warnBar.*banDays/);
   assert.match(bad('warnBar', { ...wb, decay: { unit: 'year', count: 1 } }), /warnBar.*decay/);
   assert.deepEqual(settingsProblems({ ...settings, warnBar: { ...wb, bands: { ...wb.bands, severe: wb.size }, decay: { unit: 'minute', count: 1 } } }), [], 'a band may fill the bar, and a decay may be minutes');
+  // The apology's numbers: each a whole number, at least 1, and nothing else in the object.
+  const gs = settings.apology;
+  for (const k of ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const) {
+    for (const v of [0, -1, 1.5, '24', null]) assert.match(bad('apology', { ...gs, [k]: v }), new RegExp(`apology.*"${k}" is not`), `${k} = ${String(v)}`);
+    assert.deepEqual(settingsProblems({ ...settings, apology: { ...gs, [k]: 1 } }), [], `${k} may be 1`);
+  }
+  assert.match(bad('apology', { ...gs, other: 1 }), /apology.*"other" is not one of its fields/);
+  assert.match(bad('apology', { apologyEveryHours: 24, apologyJudgeBatch: 10 }), /apology.*"apologyRulingMaxWords" is not/);
+  assert.match(bad('apology', 'x'), /apology/);
+  assert.match(bad('apology', null), /apology/);
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
 });
 

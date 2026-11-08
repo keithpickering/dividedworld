@@ -17,7 +17,6 @@ begin
     'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Ps Gabe', 'title', 'Made this.', 'avatar', 'gabe'),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ps-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'ps-boss', 'name', 'Ps Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'ps-mod', 'name', 'Ps Mod', 'title', 'Mod', 'signature', 'b'),

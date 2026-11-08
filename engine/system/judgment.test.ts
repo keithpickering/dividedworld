@@ -66,7 +66,7 @@ test('a kind the Mod\'s office may not make is dropped, naming why', () => {
   const unknown = repairModMove({ ...good, kind: 'burnItDown' }, ctx);
   assert.equal(unknown.move, null);
   assert.equal(unknown.dropped?.path, 'move.kind');
-  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule\)$/);
+  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule, conferGroup\)$/);
 });
 
 test('a board off the beat, or no board at all, is dropped', () => {
@@ -99,6 +99,66 @@ test('an expiry past the most days a Mod\'s rule lasts is clamped with a trim, a
   const part = repairModMove({ ...good, expires_in_hours: 36.6 }, ctx);
   assert.equal(part.move?.expires_in_hours, 37, 'hours are whole');
   assert.deepEqual(part.trims, []);
+});
+
+/* ---- a Mod's conferGroup (member groups plan, Task 13) ---- */
+
+const WHO = '33333333-3333-4333-8333-333333333333';
+const HELD = '44444444-4444-4444-8444-444444444444';
+const CAPPED = '55555555-5555-4555-8555-555555555555';
+const groupCtx: ModMoveContext = {
+  ...ctx,
+  groups: { conferred: new Map([['trial', 'punishment'], ['vip', 'favor']]), capped: new Set([CAPPED]), held: new Set([HELD]) },
+};
+const conferral = { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.' };
+
+test('a Mod\'s conferGroup passes, with the demand set to the apology whatever the model wrote', () => {
+  const out = repairModMove({ ...conferral, params: { ...conferral.params, character: WHO.toUpperCase(), board: GAMES.toUpperCase(), checkAt: null } }, groupCtx);
+  assert.equal(out.dropped, null);
+  assert.deepEqual(out.move, { ...conferral, demand: { kind: 'apologyAccepted', params: {} } });
+  assert.deepEqual(out.trims, [{ path: 'move.demand', predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 }]);
+  const wrote = repairModMove({ ...conferral, demand: { kind: 'postsOnBoard', params: { board: GAMES, posts: 9 } } }, groupCtx);
+  assert.deepEqual(wrote.move?.demand, { kind: 'apologyAccepted', params: {} });
+  const right = repairModMove({ ...conferral, demand: { kind: 'apologyAccepted', params: {} } }, groupCtx);
+  assert.deepEqual(right.trims, [], 'a demand already the apology costs no trim');
+});
+
+test('a Mod\'s conferGroup is dropped for a key outside the catalog, a favor, no board, a board off the beat', () => {
+  const at = (params: Record<string, unknown>, c: ModMoveContext = groupCtx) => repairModMove({ ...conferral, params: { ...conferral.params, ...params } }, c);
+  assert.deepEqual(at({ group: 'nonesuch' }).dropped, { path: 'move.params.group', predicate: 'conferredGroup' });
+  assert.deepEqual(at({ group: 'vip' }).dropped, { path: 'move.params.group', predicate: 'punishmentOnly' });
+  assert.deepEqual(at({ board: undefined }).dropped, { path: 'move.params.board', predicate: 'required' });
+  assert.deepEqual(at({ board: OTHER }).dropped, { path: 'move.params.board', predicate: 'onBeat' });
+  assert.deepEqual(at({}, ctx).dropped, { path: 'move.params.group', predicate: 'conferredGroup' }, 'a call that was told no catalog confers nothing');
+  assert.equal(at({ board: OTHER }).move, null);
+});
+
+test('a Mod\'s conferGroup is dropped for a capped or a held character, and a check it was given is cut', () => {
+  const at = (character: string) => repairModMove({ ...conferral, params: { ...conferral.params, character } }, groupCtx);
+  assert.deepEqual(at(CAPPED).dropped, { path: 'move.params.character', predicate: 'underPunishmentCap' });
+  assert.deepEqual(at(HELD.toUpperCase()).dropped, { path: 'move.params.character', predicate: 'inNoGroupMove' });
+  const checked = repairModMove({ ...conferral, params: { ...conferral.params, checkAt: '2030-01-01T00:00:00Z' } }, groupCtx);
+  assert.equal(checked.dropped, null);
+  assert.equal('checkAt' in (checked.move?.params ?? {}), false);
+  assert.ok(checked.trims.some((t) => t.predicate === 'punishmentHasNoCheck'));
+});
+
+test('a Mod with no allowance has a conferGroup dropped for the allowance', () => {
+  assert.deepEqual(repairModMove(conferral, { ...groupCtx, allowance: 0 }).dropped, { path: 'move', predicate: 'allowance' });
+});
+
+test('the Mod\'s prompt lists the conferred punishments by key and name, with the rule, and the schema offers them', () => {
+  const conferred = [{ key: 'trial', name: 'Trial Members', tone: 'punishment' as const }, { key: 'vip', name: 'VIPs', tone: 'favor' as const }];
+  const text = filingPrompt(filing({ conferred })).system;
+  assert.match(text, /trial \(Trial Members\)/);
+  assert.ok(!text.includes('VIPs'), 'a favor is not a Mod\'s to confer, so it is not listed');
+  assert.match(text, /one board, on your beat, and an apology you will judge/);
+  assert.ok(!modPrompt(base).includes('conferGroup'), 'no catalog, no conferGroup in the prompt');
+  const schema = filingPrompt(filing({ conferred })).schema as any;
+  assert.deepEqual(schema.properties.move.properties.params.properties.group.enum, ['trial']);
+  assert.deepEqual(schema.properties.move.properties.kind.enum, ['setRule', 'conferGroup']);
+  const plain = filingPrompt(filing()).schema as any;
+  assert.deepEqual(plain.properties.move.properties.kind.enum, ['setRule']);
 });
 
 test('an expiry given as digits is read as a number, with a recorded trim', () => {
@@ -479,6 +539,22 @@ test('a ban\'s appeal is told it is the Boss\'s, and the ban\'s length', () => {
   assert.match(p.system, /appeal a ban to you, as the Boss/);
   assert.match(p.message, /A ban of 3 days/);
   assert.match(p.message, /the premise of Games/);
+});
+
+test('a group punishment\'s appeal is told what the move did, by the group\'s name, and what each verdict does to it', () => {
+  const move = { kind: 'move', group: 'Trial Members', bars: 'Games', days: 4, until: '2026-11-10T10:00:00Z', apology: true } as const;
+  const p = appealPrompt(appeal({ punishment: move }));
+  assert.match(p.system, /appeal a punishment you made, a move that put them in a group/);
+  assert.match(p.system, /overturned: the move was wrong\. It ends at once, and the character returns to its usual group, and the appellant's Aura is refunded/);
+  assert.match(p.system, /reduced: the move is cut to half its length, counted from when it began, and ends at once if that time has passed/);
+  assert.match(p.system, /increased: .*runs half its length longer, though never past the longest a move may run/);
+  assert.match(p.message, /A move of yours that put Bob in the group "Trial Members", which bars them from posting on Games\. It runs 4 days from when it landed, to 2026-11-10T10:00:00Z\. It ends early if they apologize/);
+  assert.ok(!/The post it is about/.test(p.message), 'a move is about no post');
+  const open = appealPrompt(appeal({ punishment: { kind: 'move', group: 'Trial Members' } }));
+  assert.match(open.message, /It has no end date\./);
+  assert.match(open.system, /the move has no end date, so this changes nothing and is recorded as upheld/);
+  assert.ok(!/bars them/.test(open.message) && !/apologize/.test(open.message));
+  assert.ok(!/owner|account/i.test(p.system + p.message));
 });
 
 test('the appeal schema asks for a verdict from the list and a line, and offers no move', () => {

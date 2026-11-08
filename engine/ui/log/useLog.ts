@@ -27,6 +27,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     ended: [...newer.ended, ...older.ended],
     infractions: [...newer.infractions, ...older.infractions],
     bans: [...newer.bans, ...older.bans],
+    groupMoves: [...newer.groupMoves, ...older.groupMoves],
     reports: [...newer.reports, ...older.reports],
     appeals: [...newer.appeals, ...older.appeals],
     before: older.before,

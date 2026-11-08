@@ -33,7 +33,7 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { instanceSet, learnMod, postFor, pronounsOfCharacter, said, threadFor, type ThreadRead } from './core.ts';
+import { instanceSet, learnMod, postFor, pronounsOfCharacter, readModGroups, said, threadFor, type ThreadRead } from './core.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type ReportAnswer = DoorAnswer;
@@ -116,8 +116,13 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
   const fallback = instanceSet(settings);
   const post = postFor(read, opened.post, fallback, { name: 'a character' });
-  const context = { allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules };
+  const groups = await readModGroups(db, standing);
+  const context = {
+    allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules,
+    ...(groups ? { groups: groups.facts } : {}),
+  };
   const frame = reportPrompt({
+    ...(groups ? { conferred: groups.conferred } : {}),
     persona: mod.persona, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
     ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
     board: opened.board, thread: threadFor(read, fallback), post,

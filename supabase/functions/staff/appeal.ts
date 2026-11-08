@@ -28,6 +28,7 @@
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { APPEAL_RULE, appealPrompt, repairAppeal, type AppealPunishment, type RuleLine } from '../../../engine/system/judgment.ts';
+import { phaseAt, type SeasonSpan } from '../../../engine/system/phases.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
@@ -45,13 +46,18 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 interface Opened {
   readonly appeal: string;
   readonly punishment: string;
-  readonly post: string;
+  /** The post the punishment is about; null for a group move, which is about none. */
+  readonly post: string | null;
   readonly thread: string;
   /** Who hears it: the staff member the database names now. */
   readonly staff: string;
   readonly plea: string;
-  readonly kind: 'infraction' | 'ban';
-  readonly details: { readonly band: string; readonly points: number; readonly rule: string; readonly filed_by: string; readonly days?: number; readonly until?: string };
+  readonly kind: 'infraction' | 'ban' | 'move';
+  /** An infraction or ban: its band, points and rule. A group move: the group by name, the board it bars (null: none), its length in days and end (null: none), and whether an apology ends it. */
+  readonly details: {
+    readonly band?: string; readonly points?: number; readonly rule?: string; readonly filed_by: string; readonly days?: number | null; readonly until?: string | null;
+    readonly group?: string; readonly bars?: string | null; readonly apology?: boolean;
+  };
   readonly board: { readonly id: string; readonly name: string; readonly premise: string };
   readonly appellant: { readonly id: string; readonly name: string };
 }
@@ -122,12 +128,16 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   const standing = hearer.standing;
 
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
-  const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
+  // A group move is announced in the Announcements thread and is about no post: there is nothing there for the hearer to read.
+  const read: ThreadRead = opened.post === null ? { title: '', posts: [] } : await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
   const fallback = instanceSet(settings);
   const post = postFor(read, opened.post, fallback, { name: opened.appellant.name });
+  const d = opened.details;
   const punishment: AppealPunishment = {
-    kind: opened.kind, band: opened.details.band, points: opened.details.points, rule: opened.details.rule,
-    ...(opened.details.days !== undefined ? { days: opened.details.days } : {}), ...(opened.details.until !== undefined ? { until: opened.details.until } : {}),
+    kind: opened.kind,
+    ...(d.band !== undefined ? { band: d.band } : {}), ...(d.points !== undefined ? { points: d.points } : {}), ...(d.rule !== undefined ? { rule: d.rule } : {}),
+    ...(d.days != null ? { days: d.days } : {}), ...(d.until != null ? { until: d.until } : {}),
+    ...(opened.kind === 'move' ? { group: d.group ?? 'a group', ...(d.bars != null ? { bars: d.bars } : {}), apology: d.apology === true } : {}),
   };
   const frame = appealPrompt({
     persona: hearer.persona, pronouns: hearer.pronouns, persuadedBy: hearer.persona.persuadedBy, order: standing.order, career: hearer.career, memory: hearer.memory, notes: hearer.notes, rules,
@@ -163,7 +173,9 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   if (failed || repaired === undefined || verdict === null) throw new Error(failed ?? 'no verdict');
 
   // Only the verdict and the line go to the database: what a ruling does is bounded there.
-  const closed = await db.rpc<Closed>('close_appeal', { appeal_act: opened.appeal, verdict, line: repaired.line, staff: opened.staff });
+  // A group move's increase (only an increase) is bounded by the phase's most days from its landing: the phase is the engine's (the season, the Boss's overrides), so it is computed here and passed.
+  const mostDays = opened.kind === 'move' && verdict === 'increased' ? await phaseMostDays(db, tuned.system.roster, settings) : undefined;
+  const closed = await db.rpc<Closed>('close_appeal', { appeal_act: opened.appeal, verdict, line: repaired.line, staff: opened.staff, ...(mostDays !== undefined ? { most_days: mostDays } : {}) });
   // The punishment ran out while the appeal waited: the database ruled on nothing and gave the price back, and says so plainly.
   if (!closed.closed && closed.refunded && closed.expired) return answer(409, { appeal: opened.appeal, expired: true, error: closed.reason ?? 'That punishment had already run out, so nothing was ruled and your Aura is back.' });
   if (!closed.closed && closed.refunded) return answer(409, { appeal: opened.appeal, error: 'This appeal was refunded before it was ruled on. Appeal again if you still want it heard.' });
@@ -171,6 +183,22 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
     appeal: opened.appeal, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, points_delta: closed.points_delta ?? 0,
     ...(closed.refunded_amount ? { refunded: closed.refunded_amount } : {}), ...(closed.until ? { until: closed.until } : {}),
   });
+}
+
+/**
+ * The phase's `moveExpiryMostDays` now, as the Boss's meeting reads it (the season's phase, with the Boss's own overrides), or undefined where there is no season or Boss to read it
+ * from: the database then uses the instance's own most days. Read-only; a failure to read it is no reason to fail a paid ruling.
+ */
+async function phaseMostDays(db: Db, roster: Instance['system']['roster'], settings: Instance['settings']): Promise<number | undefined> {
+  try {
+    const context = await db.rpc<{ season: SeasonSpan | null; boss: string | null }>('meeting_context', {});
+    if (!context.season || !context.boss) return undefined;
+    const boss = roster.find((b) => b.key === context.boss);
+    return phaseAt(context.season, Date.now(), settings, boss).numbers.moveExpiryMostDays;
+  } catch (e) {
+    console.error('the phase could not be read for an appeal', e instanceof Error ? e.message : 'unknown');
+    return undefined;
+  }
 }
 
 /** An appeal is a plea of 1000 characters (a few thousand bytes), ids and a little more. */
