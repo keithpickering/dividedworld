@@ -217,6 +217,6 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     /* As the Trap Card's and Bluff's: the same words, so none can be told from another. */
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
-      `A Sweet card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next time a Mod Bot's visit to that post starts, the visit ends there and then, and the Mod Bot does nothing to the post. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} if no visit comes. It costs ${orbs(settings.economy['hallPass.price'] ?? 0)} to buy, and nothing more to set.`,
+      `A Sweet card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next time a Mod Bot's visit to that post starts, the visit ends there and then, before the Mod Bot does anything to the post; the visit's own posts stay. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} if no visit comes. It costs ${orbs(settings.economy['hallPass.price'] ?? 0)} to buy, and nothing more to set.`,
   },
 ] satisfies CardUi[]);
