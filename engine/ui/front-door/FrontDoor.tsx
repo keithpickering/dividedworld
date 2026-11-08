@@ -143,6 +143,7 @@ export function FrontDoor() {
         </StagedCtx.Provider>
         <section className="kb-glass kb-glass-cut-dialog kb-front-door-note" aria-labelledby={noteTitle}>
           <h2 id={noteTitle} className="kb-visually-hidden">A note from {persona.name}</h2>
+          <div className="kb-front-door-prose"><Blocks blocks={note} fill={noteFill} demote={2} /></div>
           <div className="kb-updates-by">
             <PersonaMark name={persona.name} picture={picture} />
             <div>
@@ -150,7 +151,6 @@ export function FrontDoor() {
               {persona.tagline !== '' && <span className="kb-updates-tagline">{persona.tagline}</span>}
             </div>
           </div>
-          <div className="kb-front-door-prose"><Blocks blocks={note} fill={noteFill} demote={2} /></div>
         </section>
       </section>
     </div>
