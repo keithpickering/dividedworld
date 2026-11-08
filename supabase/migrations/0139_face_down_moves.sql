@@ -62,6 +62,9 @@
 -- Sharp s is not "ss" on either side (simple folding keeps ß, and folds ẞ to it), so nothing is needed for it. Letters added to Unicode after the Postgres in use was built
 -- (lower() does not know them) are folded by neither side and so can differ from Node's table until Postgres is rebuilt; none of them is in a living script's everyday text.
 -- "A letter or a digit" is JavaScript's \p{L}\p{N}, written out as a class (phrase_word_class), never the locale's [[:alnum:]], which counts combining marks as letters.
+-- Cost. The pattern is built per phrase around the whole word class, and Postgres keeps only its last 32 compiled patterns, so a phrase it has not just seen costs
+-- about 0.7 ms to compile and one it has about 0.03 ms (measured on 2000 calls). A quote meets one back, the quoted post's, so a write asks phrase_in at most once, whatever
+-- the instance's size; nothing scans every live back for it.
 
 -- ------------------------------------------------------------------------------------------------------- face_down ----
 
