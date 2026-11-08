@@ -59,6 +59,10 @@
 .dw-glitter-over {
   z-index: 2;
 }
+/* Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md, section 1): the flakes are free of the band, so the words keep the board's ink with a firmer halo in the board's ground. */
+:root[data-kb-effects="bright"] .dw-glitter-words {
+  text-shadow: 0 0 1px var(--kb-bg), 0 0 2px var(--kb-bg), 0 0 3px var(--kb-bg), 0 0 6px var(--kb-bg), 0 0 10px var(--kb-bg);
+}
 .dw-glitter[data-kb-bleed] > .dw-glitter-surface > :is(.dw-glitter-under, .dw-glitter-flash) {
   z-index: -1;
 }

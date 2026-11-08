@@ -118,6 +118,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
   document.documentElement.setAttribute('data-kb-motion', 'full');
   document.documentElement.removeAttribute('data-kb-mode');
+  document.documentElement.removeAttribute('data-kb-effects');
   vi.mocked(bandFor).mockReset();
   vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1, board: 'light', bright: false }));
   for (const f of [makeFlakes, burst, drawBurst, release, landAll, dropLoose, flakesModule.stepBurst as ReturnType<typeof vi.fn>]) f.mockClear();
@@ -131,6 +132,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   document.documentElement.removeAttribute('data-kb-motion');
   document.documentElement.removeAttribute('data-kb-mode');
+  document.documentElement.removeAttribute('data-kb-effects');
 });
 
 const lastFlakes = () => makeFlakes.mock.results.at(-1)!.value as flakesModule.Flakes;
@@ -377,6 +379,46 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     frames(10, 1000);
     expect(vi.mocked(bandFor).mock.calls.length).toBe(before + 1);
     expect(probe.draws(box())).toBeGreaterThan(draws);
+  });
+
+  /* Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md): the mark on the root makes the band bright, and a change of it redraws. */
+  const brightMock = () => vi.mocked(bandFor).mockImplementation(() => (document.documentElement.getAttribute('data-kb-effects') === 'bright' ? { lo: 0, hi: 1, board: 'light', bright: true } : { lo: 0.59, hi: 1, board: 'light', bright: false }));
+  const effectsChange = (on: boolean) => act(async () => { if (on) document.documentElement.setAttribute('data-kb-effects', 'bright'); else document.documentElement.removeAttribute('data-kb-effects'); await Promise.resolve(); });
+
+  test('marked, the flakes are drawn with a bright band; when the mark changes the post is read again and redrawn with the other band', async () => {
+    brightMock();
+    const real = await vi.importActual<typeof import('../../../../engine/ui/shine/flakes.ts')>('../../../../engine/ui/shine/flakes.ts');
+    const lit: ReturnType<typeof vi.fn>[] = [];
+    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); lit.push(vi.spyOn(f, 'drawLit')); return f; });
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(10);
+    expect(lit.at(-1)!.mock.calls.at(-1)![2]).toMatchObject({ bright: true });
+    const reads = vi.mocked(bandFor).mock.calls.length;
+    await effectsChange(false);
+    frames(10, 1000);
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(reads + 1);
+    expect(lit.at(-1)!.mock.calls.at(-1)![2]).toMatchObject({ bright: false });
+    await effectsChange(true);
+    frames(10, 2000);
+    expect(lit.at(-1)!.mock.calls.at(-1)![2]).toMatchObject({ bright: true });
+  });
+
+  test('the mark is watched beside the board\'s mode, and an unrelated root change reads no band', async () => {
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    render(<GlitterBombEffect {...props()} />);
+    const mine = observe.mock.calls.find(([, o]) => (o as MutationObserverInit | undefined)?.attributeFilter?.includes('data-kb-mode'));
+    expect((mine![1] as MutationObserverInit).attributeFilter).toEqual(['data-kb-mode', 'data-kb-effects']);
+    see(1); frames(3);
+    const reads = vi.mocked(bandFor).mock.calls.length;
+    await act(async () => { document.documentElement.setAttribute('data-kb-text', '2'); await Promise.resolve(); });
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(reads);
+    document.documentElement.removeAttribute('data-kb-text');
+  });
+
+  test('the stylesheet gives the words the firmer halo only under the mark', () => {
+    const css = read('glitter.css').replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).toMatch(/:root\[data-kb-effects="bright"\]\s+\.dw-glitter-words\s*\{[^}]*text-shadow:\s*0 0 1px var\(--kb-bg\),\s*0 0 2px var\(--kb-bg\),\s*0 0 3px var\(--kb-bg\),\s*0 0 6px var\(--kb-bg\),\s*0 0 10px var\(--kb-bg\)/u);
   });
 
   test('a band that could not be read is tried again at the board change, not on every draw, and nothing is drawn meanwhile', async () => {

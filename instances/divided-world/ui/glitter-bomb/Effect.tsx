@@ -24,7 +24,7 @@
  * from its own spot and leaves its own glitter, and two posts of one character differ; the mount keeps it, so a post that leaves
  * view and returns shows the same glitter. A play's moment (`still`) is the public seed alone, the same on every device. Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post
  * only while it is in view. The band is read from the tokens the board resolves for this post, after mount, and held: they change
- * only with `data-kb-mode` on the root or the device's color scheme, so it is read in setup (mount and resize) and when either
+ * only with `data-kb-mode` or `data-kb-effects` (Brighter effects: a bright band, free of the readable band, docs/plans/2026-11-08-brighter-effects-design.md) on the root or the device's color scheme, so it is read in setup (mount and resize) and when any
  * changes, never per draw (a getComputedStyle and a few property reads, ~30 times a second per post). A board that cannot be read
  * draws nothing and leaves the words bare, and is read again at the next setup or board change. That change also asks for one
  * more draw by itself, since a board can change while the loop sleeps.
@@ -268,10 +268,10 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       }, { rootMargin: ORIGIN_ZONE });
     }
 
-    /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
+    /* The board or Brighter effects switched (the player's choices on the root, or the device's color scheme) while nothing was drawing. */
     const boardChanged = (): void => { band = readBand(); redraw(); };
     const mode = typeof MutationObserver === 'function' ? new MutationObserver(boardChanged) : null;
-    mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode'] });
+    mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode', 'data-kb-effects'] });
     const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
     scheme?.addEventListener?.('change', boardChanged);
 

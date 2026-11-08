@@ -76,3 +76,12 @@ export function placeLayer(layer: HTMLElement, box: BodyBox): void {
   layer.style.width = `${box.w}px`;
   layer.style.height = `${box.h}px`;
 }
+
+/**
+ * Asks for (or gives up) the bright ink on a post body (docs/plans/2026-11-08-brighter-effects-design.md, section 2): an effect that
+ * draws a bright look under the words marks the body, and engine/ui/thread/thread.css reads the mark, with the instance's two custom
+ * properties `--kb-bright-ink` and `--kb-bright-outline`. A null body (an effect painting only its host) is nothing to mark.
+ */
+export function markBrightInk(body: HTMLElement | null, on: boolean): void {
+  body?.toggleAttribute('data-kb-bright-ink', on);
+}

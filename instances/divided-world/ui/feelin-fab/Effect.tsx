@@ -8,12 +8,15 @@
  * nothing here needs to prove a palette's contrast at run time (the engine's check does, over the foil itself).
  *
  * The palettes are the two the board has, pastels for the light board and deep colors for the dark one, chosen per post by the
- * band: the board is dark where its band tops out under 0.5. FAB_STOPS stays in TypeScript as the one list. The band is read from
- * the tokens the board resolves for this post, after mount (it needs the element in the document), and kept: the tokens change only
- * with `data-kb-mode` on the root or the device's color scheme, so the band is read again in setup (mount and resize) and when
- * either changes, never per draw (a draw is ~30 a second per post, a read is a getComputedStyle and a few property reads). A board
+ * band's board (`band.board`); under Brighter effects (`data-kb-effects="bright"` on the root, docs/plans/2026-11-08-brighter-effects-design.md
+ * section 1) the band is bright and the foil is FAB_BRIGHT on both boards, free of the band, while the post body is marked for the bright
+ * ink (engine/ui/cards/body.ts `markBrightInk`, read by thread.css and fab.css: white words, black outline). The palette is in the foil's
+ * key, so a standard and a bright foil are never shared, on the page or in the worker. FAB_STOPS and FAB_BRIGHT stay in TypeScript as the
+ * lists. The band is read from the tokens the board resolves for this post, after mount (it needs the element in the document), and
+ * kept: the tokens change only with `data-kb-mode` or `data-kb-effects` on the root or the device's color scheme, so the band is read
+ * again in setup (mount and resize) and when any changes, never per draw (a draw is ~30 a second per post, a read is a getComputedStyle and a few property reads). A board
  * that cannot be read draws nothing and leaves the words bare, and is read again at the next setup or board change.
- * Because a board can change while the loop sleeps (reduced motion, a post out of view), a change of `data-kb-mode` on the root or of
+ * Because a board can change while the loop sleeps (reduced motion, a post out of view), a change of `data-kb-mode` or `data-kb-effects` on the root or of
  * the device's color scheme asks for one more draw by itself.
  *
  * The page's one loop (engine/ui/shine/loop.ts) serves the post: it draws only while the post is in view, when the light moved, and
@@ -59,7 +62,7 @@ import { bandFor, type Band } from '../../../../engine/ui/shine/band.ts';
 import { makeFoil, type Foil, type FoilPattern } from '../../../../engine/ui/shine/foil.ts';
 import { adoptFoil, isTransferred, offscreenFoils, type FoilHandle } from '../../../../engine/ui/shine/foilClient.ts';
 import type { FoilSpec } from '../../../../engine/ui/shine/foilProtocol.ts';
-import { bodyBox, bodyOf, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, markBrightInk, paintScale, paintShare, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, type Span } from '../../../../engine/ui/shine/loop.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -70,6 +73,11 @@ export const FAB_STOPS: { readonly light: readonly string[]; readonly dark: read
   light: Object.freeze(['#ffb9be', '#ffc09f', '#fff2a0', '#a8e6a1', '#9fd3ff', '#d8c0ff']),
   dark: Object.freeze(['#7f0c1e', '#682d06', '#4a3d00', '#0d471e', '#133b84', '#522191']),
 });
+/**
+ * The bright rainbow (Brighter effects, docs/plans/2026-11-08-brighter-effects-design.md, section 1), full saturation, red to violet,
+ * the same on both boards: drawn free of the readable band under white words with a black outline (fab.css).
+ */
+export const FAB_BRIGHT: readonly string[] = Object.freeze(['#ff1f2d', '#ff8a00', '#ffe600', '#19d43c', '#1a8cff', '#9a2bff']);
 /** The starbursts' highlight, in every grade on both boards (the engine names no color; this is Divided World's). It only lightens, inside the band. */
 export const FAB_GLINT = '#ffffff';
 /** The foil's cell in CSS px on a box no bigger than the words (engine/ui/shine/foil.ts's default). */
@@ -80,7 +88,10 @@ const TWINKLES = [0, 4, 8, 10] as const;
 const MOST = 3;
 const PATTERN: readonly (FoilPattern | '')[] = ['', 'pearl', 'bands', 'prism'];
 
-type Board = 'light' | 'dark';
+/** Which palette a band calls for: a bright band has the one rainbow whatever the board, a standard band the board's own. */
+type PaletteKey = 'bright' | 'light' | 'dark';
+const paletteOf = (band: Band): PaletteKey => (band.bright ? 'bright' : band.board);
+const PALETTES: Record<PaletteKey, readonly string[]> = { bright: FAB_BRIGHT, light: FAB_STOPS.light, dark: FAB_STOPS.dark };
 
 export function FeelinFabEffect({ post, plays, place, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -101,7 +112,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
         if (isTransferred(cv)) return;
       }
     }
-    /* By board and cell (`${board}:${cell}`): a board change or a resize that coarsens the cell makes the foil afresh. */
+    /* By palette and cell (`${palette}:${cell}`, the palette being bright, light or dark): a board or setting change or a resize that coarsens the cell makes the foil afresh. */
     const specs = new Map<string, FoilSpec>();
     const foils = new Map<string, Foil>();
     const release = (): void => { for (const f of foils.values()) f.release(); };
@@ -111,7 +122,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     let box = { w: 0, h: 0 };
     let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
     let density = 1;
-    /* The board and cell whose foil is in use; the others are let go once, when this changes, and their references dropped. */
+    /* The palette and cell whose foil is in use; the others are let go once, when this changes, and their references dropped. */
     let current: string | null = null;
     /* True while the backing store is freed (out of view); the next draw sizes it again. */
     let freed = false;
@@ -124,12 +135,17 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     };
     /* The band as last read; null until read, and again after a board that could not be read. Draws use it and never read. */
     let band: Band | null = null;
+    /* The body this paints, found again at each measure (a takeover moves the words), and watched for its size as the host is. */
+    let body: HTMLElement | null = null;
+    /* The bright ink is asked of the body while the band is bright and the post paints its body; given up otherwise (no band, a standard band). */
+    const ink = (): void => markBrightInk(body, band?.bright === true);
     /* In the worker: the draw is posted, with the band read here (a null band clears the canvas there). */
     const post = (handle: FoilHandle, light: Light, now: number, idle: boolean, span: Span | null): void => {
-      const board: Board = band && band.hi < 0.5 ? 'dark' : 'light';
-      const key = `${board}:${cell}`;
+      /* A null band clears the canvas in the worker, which reads no key; the palette key is in the key, so a standard and a bright spec are never shared. */
+      const palette: PaletteKey = band ? paletteOf(band) : 'light';
+      const key = `${palette}:${cell}`;
       let spec = specs.get(key);
-      if (!spec) { spec = { seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }; specs.set(key, spec); }
+      if (!spec) { spec = { seed, pattern, palette: PALETTES[palette], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }; specs.set(key, spec); }
       handle.draw(spec, key, box, density, light, band, now, idle, span);
     };
     /* `span`: the rows on screen to redraw (the loop's), or null for all of them. */
@@ -139,15 +155,15 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       if (!ctx) return;
       /* Cleared, the foils go too, so the next draw is whole and no span paints rows over the cleared canvas (foil.ts). */
       if (!band) { ctx.clearRect(0, 0, cv.width, cv.height); release(); return; }
-      const board: Board = band.hi < 0.5 ? 'dark' : 'light';
-      const key = `${board}:${cell}`;
+      const palette = paletteOf(band);
+      const key = `${palette}:${cell}`;
       /* A board or cell change lets the other foils go, once: only the one in use holds buffers. */
       if (key !== current) {
         for (const [k, f] of [...foils]) if (k !== key) { f.release(); foils.delete(k); }
         current = key;
       }
       let foil = foils.get(key);
-      if (!foil) { foil = makeFoil({ seed, pattern, palette: FAB_STOPS[board], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }); foils.set(key, foil); }
+      if (!foil) { foil = makeFoil({ seed, pattern, palette: PALETTES[palette], stars: TWINKLES[level]!, glint: FAB_GLINT, cell }); foils.set(key, foil); }
       foil.draw(ctx, box, density, light, band, now, idle, span);
     };
     const size = (): void => {
@@ -160,14 +176,13 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       if (remote) remote.free(); else { release(); cv.width = cv.height = 0; }
       freed = true;
     };
-    /* The body this paints, found again at each measure (a takeover moves the words), and watched for its size as the host is. */
-    let body: HTMLElement | null = null;
     const measure = (): BodyBox => {
       const now = bodyOf(el, place);
       if (now !== body) {
-        if (body) resize?.unobserve(body);
+        if (body) { resize?.unobserve(body); markBrightInk(body, false); }
         if (now) resize?.observe(now);
         body = now;
+        ink();
         el.toggleAttribute('data-kb-bleed', body !== null);
       }
       return bodyBox(el, body);
@@ -175,6 +190,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     const setup = (): void => {
       band = readBand();
       placed = measure();
+      ink();
       box = { w: placed.w, h: placed.h };
       placeLayer(cv, placed);
       /* The body is drawn at the share of the density that costs what the words' own box did (engine/ui/cards/body.ts `paintScale`). */
@@ -211,10 +227,10 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
     resize?.observe(el);
     setup();
 
-    /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
-    const boardChanged = (): void => { band = readBand(); if (still) paint(REST, 0, false); else wake(el); };
+    /* The board or Brighter effects switched (the player's choices on the root, or the device's color scheme) while nothing was drawing. */
+    const boardChanged = (): void => { band = readBand(); ink(); if (still) paint(REST, 0, false); else wake(el); };
     const mode = typeof MutationObserver === 'function' ? new MutationObserver(boardChanged) : null;
-    mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode'] });
+    mode?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode', 'data-kb-effects'] });
     const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
     scheme?.addEventListener?.('change', boardChanged);
 
@@ -225,6 +241,7 @@ export function FeelinFabEffect({ post, plays, place, still, children }: EffectP
       if (!still) unregister(el);
       remote?.drop();
       release();
+      markBrightInk(body, false);
       el.removeAttribute('data-kb-bleed');
     };
   }, [level, seed, still, place]);
