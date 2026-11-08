@@ -396,7 +396,9 @@ test('Trap Card catches the card it names, and Hall Pass is a Gimmick on a visit
   for (const card of ['', 'x'.repeat(65), 7, null, undefined]) assert.equal(trap.validateConfig({ card }).ok, false, String(card));
   assert.equal(trap.validateConfig(null).ok, false);
   const options = trap.staffOptions as unknown as { schema: { properties: { card: { enum: string[] } } } };
-  assert.deepEqual(options.schema.properties.card.enum, cards.map((c) => c.key));
+  // A persona is offered only the cards a Trap Card can name, so no pick is one decideSet refuses.
+  assert.deepEqual(options.schema.properties.card.enum, cards.filter((c) => (c.play ?? 'cast') === 'cast' && (c.reaches ?? ['post']).includes('post')).map((c) => c.key));
+  for (const card of options.schema.properties.card.enum) assert.equal(decideSet(trap, settings, on('a post'), [], { card }, cards).ok, true, card);
   const pass = by('hall-pass');
   assert.deepEqual([pass.alignment, pass.rarity, pass.play, pass.priceKey, basePrice(pass, settings)], ['sweet', 'uncommon', 'set', 'hallPass.price', 150]);
   assert.deepEqual(pass.trap, { trigger: { on: 'visit' } });

@@ -273,7 +273,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (rules.catches) {
     catches = rules.catches(checked.value);
     const named = cards.find((c) => c.key === catches);
-    if (!named || playOf(named) !== 'cast' || !reachesOf(named).includes('post')) return refuse(`${rules.name} names a card that is cast on a post`);
+    if (!named || !castOnPost(named)) return refuse(`${rules.name} names a card that is cast on a post`);
   }
   const phrase = rules.setPhrase?.(checked.value);
   if (phrase !== undefined && phrase.trim() === '') return refuse(`${rules.name} needs a phrase to wait for`);
@@ -301,6 +301,9 @@ export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_0
 
 /** The reaches a card lists, a post unless it says. */
 export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
+
+/** Whether a card is cast on a post: the cards a cast Gimmick may name, since a caught card is one a caster played there. */
+export const castOnPost = (rules: Pick<CardRules, 'play' | 'reaches'>): boolean => playOf(rules) === 'cast' && reachesOf(rules).includes('post');
 
 /** The live effects on each target above a post: its board's, its thread's and its author's (effects_above, 0055_card_reach.sql). */
 export interface EffectsAbove {
