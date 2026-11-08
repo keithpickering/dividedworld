@@ -41,6 +41,7 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
   alignment: 'pepperoni',
   rarity: 'common',
   priceKey: 'autocorrect.price',
+  setPhrase: (config) => config.phrase,
   stack: 3,
   /** The share of a strip's peel a held key stands for, in milliseconds (the effect's, read by the screens): about as long as a drag takes. */
   screenReads: [{ key: 'autocorrect.peelMs', whole: true, min: 100, max: 5000 }],

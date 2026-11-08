@@ -173,6 +173,7 @@ export const defaults: Settings = deepFreeze<Settings>({
     'stickAround.price': 100,
     /** The card mechanic's first plays, at starting numbers the season review replaces: a Trap Card and a Force Field 1.50, a Bluff 0.25. */
     'trapCard.price': 150,
+    'hallPass.price': 150,
     'forceField.price': 150,
     'bluff.price': 25,
     'glitterBomb.price': 150,

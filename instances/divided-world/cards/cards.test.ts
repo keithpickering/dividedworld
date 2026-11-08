@@ -18,7 +18,7 @@ import type { CardTarget } from '../../../engine/rules/cards.ts';
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -196,8 +196,7 @@ test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, 
   assert.deepEqual({ ...trap, args: { ...trap.args, card: null } }, { ...bluff, args: { ...bluff.args, card: null } });
   assert.equal(trap.ok && trap.asService, true, 'written by the service, so the key reaches SQL and no client');
   const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10, text: '' };
-  // Trap Card also names its catch (a stopgap until its configuration does; the face-down Moves plan, Task 2).
-  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), { ok: true, value: { ...(decideSet(by('bluff'), settings, target, [], {}, cards) as { value: object }).value, catches: 'whoops' } });
+  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], { card: 'whoops' }, cards), { ok: true, value: { ...(decideSet(by('bluff'), settings, target, [], {}, cards) as { value: object }).value, config: { card: 'whoops' }, catches: 'whoops' } });
 });
 const by = (key: string) => cards.find((c) => c.key === key)!;
 
@@ -349,11 +348,12 @@ const answers: Record<string, Record<string, unknown>> = {
   whoops: { color: '#12ab9f' },
   autocorrect: { phrase: 'the same old', replacement: 'something new' },
   'stick-around': { sentence: 'I have read every word of this' },
+  'trap-card': { card: 'whoops' },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['autocorrect', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['autocorrect', 'stick-around', 'trap-card', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -385,4 +385,27 @@ test('every property a staffOptions schema names survives that card\'s validateC
     const kept = Object.keys(result.value as object);
     for (const name of Object.keys(card.staffOptions.schema.properties as object)) assert.ok(kept.includes(name), `${card.key}: "${name}" is dropped by validateConfig`);
   }
+});
+
+/* Face-down Moves (docs/plans/2026-11-07-face-down-moves-design.md, section 4), Task 2. */
+test('Trap Card catches the card it names, and Hall Pass is a Gimmick on a visit', () => {
+  const trap = by('trap-card') as CardRules<{ card: string }>;
+  assert.deepEqual(trap.trap, { trigger: { on: 'cast' } });
+  assert.equal(trap.catches?.({ card: 'autocorrect' }), 'autocorrect');
+  assert.deepEqual(trap.validateConfig({ card: 'whoops' }), { ok: true, value: { card: 'whoops' } });
+  for (const card of ['', 'x'.repeat(65), 7, null, undefined]) assert.equal(trap.validateConfig({ card }).ok, false, String(card));
+  assert.equal(trap.validateConfig(null).ok, false);
+  const options = trap.staffOptions as unknown as { schema: { properties: { card: { enum: string[] } } } };
+  assert.deepEqual(options.schema.properties.card.enum, cards.map((c) => c.key));
+  const pass = by('hall-pass');
+  assert.deepEqual([pass.alignment, pass.rarity, pass.play, pass.priceKey, basePrice(pass, settings)], ['sweet', 'uncommon', 'set', 'hallPass.price', 150]);
+  assert.deepEqual(pass.trap, { trigger: { on: 'visit' } });
+  assert.equal(pass.catches, undefined, 'a visit Gimmick names no card');
+  assert.equal(pass.playPrice(settings, post(10), {}), 0);
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Autocorrect\'s phrase is its set phrase', () => {
+  assert.equal(autocorrect.setPhrase?.({ phrase: 'Mario', replacement: 'Wario' }), 'Mario');
+  assert.equal(by('bluff').setPhrase, undefined);
 });
