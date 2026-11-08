@@ -165,13 +165,15 @@ test('a signed-in page load mounts its screen once: each of its reads is asked o
 test('another account signing in takes the last account\'s look off the page, and keeps the device\'s if its own cannot be read', async () => {
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  await fake.setPreferences({ textSize: 200, contrast: 'high' });
+  await fake.setPreferences({ textSize: 200, contrast: 'high', effects: 'bright' });
   render(<App api={fake} />);
   await waitFor(() => expect(document.documentElement).toHaveAttribute('data-kb-text-size', '200'));
+  expect(document.documentElement).toHaveAttribute('data-kb-effects', 'bright');
   fake.preferences = () => Promise.reject(new Error('no answer came back'));
   fake.signInAs(fake.seed.account('next'));
   await waitFor(() => expect(document.documentElement).not.toHaveAttribute('data-kb-text-size'));
   expect(document.documentElement).not.toHaveAttribute('data-kb-contrast');
+  expect(document.documentElement).not.toHaveAttribute('data-kb-effects');
 }, 15_000);
 
 test('the instance\'s glass is on the page: its standard key on the root, and its fonts in the font set', async () => {
@@ -532,7 +534,7 @@ describe('the welcome', () => {
     await screen.findByRole('heading', { level: 2, name: 'You are signed in, with no account yet' });
     await fake.openAccount(code);
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
+    await userEvent.click(await within(await within(before).findByRole('radiogroup', { name: 'Motion' })).findByRole('radio', { name: 'Off' }));
     await waitFor(async () => expect((await fake.preferences()).motion).toBe('reduce'));
     await userEvent.click(screen.getByRole('link', { name: 'Make your first character' }));
     expect(await screen.findByRole('textbox', { name: /name/iu })).toBeInTheDocument();
