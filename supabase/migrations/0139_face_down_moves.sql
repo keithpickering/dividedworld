@@ -6,13 +6,14 @@
 --   face_down.catches / face_down.phrase   the card a Trap Card waits for (a key of card_kinds), or the phrase a Move's landing needs in the quoting post's own words. A row holds at most one
 --                           of them (face_down_one_of); a back set before this holds neither, and no row is updated to hold one (face_down's append-only triggers stay). A phrase is not empty.
 --   card_kinds_trap_shape   a trap is {trigger: {on}} with `on` a cast or a visit: a Gimmick's alone. A Move's trigger is the engine's (a quote), never a card's; reaction, reply, outcomes,
---                           payouts and strikes are gone. NOT VALID because the only rows with the old shape are test cards (no instance is deployed); validating would stop this migration on a database that holds one, while every write to a card_kinds row, the seed's upsert included, is checked.
+--                           payouts and strikes are gone. NOT VALID because the only rows with the old shape are test cards (no instance is deployed); validating would stop this migration on a database that holds one, while old card_kinds rows are never rechecked, only a row written again (the seed's upsert included) is checked.
 --   card_kinds_problem      holds engine/rules/instance.ts's rules again, in its words: "has a trap, and only a Gimmick does" and "springs on <on>; a Gimmick springs on cast or visit". That a cast Gimmick
 --                           names a catch, and that a set phrase is a Move's, are functions of the engine's CardRules, so they stay with instanceProblems. seed_instance (0132) already writes
 --                           `trap` as the instance gave it, so it is not replaced.
 --   card_ledger.kind        gains `caught`: a card a Trap Card took, in the setter's own ledger; `act` is the spring, and it costs nothing, as a bought row has no Act and a played row has its card's.
---   card_held(account, card)   the one hand count: bought plus caught less played. play_card and set_card (0104) call it where they counted inline; so does my_cards. The booster packs plan
---                           (docs/plans/2026-11-04-booster-packs-plan.md) also gives the hand one function: whichever lands second adds its kind to the other's.
+--   card_held(account, card)   is the one hand count: bought plus caught less played. It is security invoker, so a signed-in caller counts their own rows (card_ledger's `own` policy) and reads 0 for
+--                           any other account's, while play_card, set_card and buy_card (definer) get the true count of the account they act for. play_card and set_card (0104) call it where they
+--                           counted inline; so does my_cards. The booster packs plan (docs/plans/2026-11-04-booster-packs-plan.md) also gives the hand one function: whichever lands second adds its kind to the other's.
 --   my_cards                reads the hand through card_held, still security_invoker and the caller's own rows.
 --   my_face_down            returns `catches` and `phrase` (last) to the setter. my_card_ledger (0075) already returns every kind the caller's account holds, so a `caught` row reaches the log with
 --                           no change to it.
@@ -21,7 +22,7 @@
 -- (0075's header, steps 1 to 6) included: step 1 (the player's accounts row) is still taken before the count; card_held takes no lock. card_kinds_problem from 0108_interception.sql, my_face_down
 -- from 0078_reply_passes.sql, my_cards from 0006_cards.sql. buy_card is 0006's, its reported `held` now from card_held; no inline count of a hand is left.
 -- Masks. A back's catch and phrase are the setter's alone: face_down is read through its `own` policy and my_face_down through the caller's account, and neither is in an Act, a projection or
--- card_target. card_held answers a signed-in caller for their own account alone (any other account's count reads 0, a constant) and the definer functions that spend a card for the account they act for; no anon role executes it.
+-- card_target. card_held answers a signed-in caller for their own account alone (row security: any other account's count reads 0) and the definer functions that spend a card for the account they act for; no anon role executes it.
 -- Ways out. Unchanged and none added by the schema: a back springs once or ends at setLasts; a caught card is a card in the setter's hand like any other.
 -- Append-only. Nothing here updates a face_down or card_ledger row. A caught card is one more ledger row beside the caster's `played` row.
 --
@@ -109,14 +110,14 @@ alter table card_ledger add constraint card_ledger_kind_check check (kind in ('b
 alter table card_ledger drop constraint card_ledger_check;
 alter table card_ledger add constraint card_ledger_check check ((kind in ('played', 'caught')) = (act is not null));
 
--- The cards an account holds of one kind: bought and caught, less played. The one count every reader of a hand uses. The definer functions that spend
--- a card (play_card, set_card) call it for the account they act for, with no session of a player's own (auth.uid() is null), and read the count. A view's
--- function is run as the signed-in caller, not as the view's owner, so my_cards needs the caller to be able to execute this; a signed-in caller therefore
--- meets the same count for their own account and a constant 0 for any other, which says nothing of whose hand is whose.
+-- The cards an account holds of one kind: bought and caught, less played. The one count every reader of a hand uses. It is security invoker: a signed-in caller
+-- runs it under card_ledger's `own` policy, so they count their own rows and read 0 for another account's, a constant that says nothing of whose hand is whose; the definer
+-- functions that spend a card (play_card, set_card, buy_card, and later spring_traps inside post(), where auth.uid() is the quoting player and not the setter) run it as the
+-- function's owner and get the true count of the account they act for.
 create function card_held(who uuid, of_card text) returns integer
-language sql stable security definer set search_path = public, pg_temp as $$
+language sql stable set search_path = public, pg_temp as $$
   select (count(*) filter (where l.kind in ('bought', 'caught')) - count(*) filter (where l.kind = 'played'))::integer
-  from card_ledger l where l.account = who and l.card = of_card and (auth.uid() is null or who = auth.uid())
+  from card_ledger l where l.account = who and l.card = of_card
 $$;
 revoke execute on function card_held(uuid, text) from public, anon;
 grant execute on function card_held(uuid, text) to authenticated, service_role;

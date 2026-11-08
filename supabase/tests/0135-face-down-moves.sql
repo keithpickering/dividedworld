@@ -130,7 +130,8 @@ begin
   if card_held(ann, 'sweetie') is distinct from 3 then raise exception 'a caught card is a card held: %', card_held(ann, 'sweetie'); end if;
   insert into card_ledger (account, card, kind, act, price) values (ann, 'sweetie', 'played', tests.act(a, 'card', t, '{"card": "sweetie"}', p), 0);
   if card_held(ann, 'sweetie') is distinct from 2 then raise exception 'a played card is spent: %', card_held(ann, 'sweetie'); end if;
-  if card_held(ann, 'blot') is distinct from 0 or card_held(bob, 'sweetie') is distinct from 0 then raise exception 'a hand is one account''s, one card''s'; end if;
+  insert into card_ledger (account, card, kind, price) values (bob, 'sweetie', 'bought', 0), (bob, 'sweetie', 'bought', 0), (bob, 'sweetie', 'bought', 0);
+  if card_held(ann, 'blot') is distinct from 0 or card_held(bob, 'sweetie') is distinct from 3 then raise exception 'a hand is one account''s, one card''s'; end if;
 
   -- A caught row is the spring's, and costs nothing; a bought one is neither.
   why := pg_temp.refusal(format('insert into card_ledger (account, card, kind, price) values (%L, %L, %L, 0)', ann, 'sweetie', 'caught'));
@@ -143,13 +144,11 @@ begin
   if (select held from my_cards where card = 'sweetie') is distinct from 2 then raise exception 'my_cards: %', (select jsonb_agg(m) from my_cards m); end if;
   if (select count(*) from my_card_ledger where kind = 'caught' and card = 'sweetie' and act = spring) is distinct from 1::bigint then raise exception 'my_card_ledger shows the caught row'; end if;
   if (select springs from my_card_ledger where kind = 'caught') is not null then raise exception 'a caught row is not a set'; end if;
-  -- A player calling the count reads their own hand, and another account's as a constant 0, never its real count.
+  -- A player calling the count reads their own hand, and another account's as 0 (row security keeps them to their own rows), never its real count of 3.
   if card_held(ann, 'sweetie') is distinct from 2 then raise exception 'a player cannot count their own hand'; end if;
-  if card_held(bob, 'sweetie') is distinct from 0 then raise exception 'a player counted another account''s hand'; end if;
+  if card_held(bob, 'sweetie') is distinct from 0 then raise exception 'a player counted another account''s hand, which holds 3'; end if;
   perform tests.unbecome();
-  insert into card_ledger (account, card, kind, price) values (bob, 'sweetie', 'bought', 0), (bob, 'sweetie', 'bought', 0), (bob, 'sweetie', 'bought', 0);
   perform tests.become(ann);
-  if card_held(bob, 'sweetie') is distinct from 0 then raise exception 'a player counted another account''s hand, now that it holds some'; end if;
   perform tests.unbecome();
   perform tests.become_anon();
   why := pg_temp.refusal(format('select card_held(%L, %L)', ann, 'sweetie'));
@@ -158,4 +157,29 @@ begin
   perform tests.become(bob);
   if (select held from my_cards where card = 'sweetie') is distinct from 3 or exists (select 1 from my_card_ledger where kind <> 'bought') then raise exception 'another account read a hand'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- A hand of only a caught card can be played, and the spender counts the true hand whoever is signed in ----
+do $$
+declare
+  carol uuid := tests.account('fdm-play-carol');
+  dave uuid := tests.account('fdm-play-dave');
+  c uuid := tests.character(carol, 'Play Carol');
+  t uuid := tests.thread('Played');
+  p uuid := tests.post(c, t);
+  the_set uuid := tests.act(c, 'set', t, '{}', p);
+  spring uuid := tests.act(c, 'spring', t, jsonb_build_object('card', 'sweetie', 'trigger', 'cast', 'outcome', jsonb_build_object('do', 'nullify'), 'set', the_set), p);
+  q uuid := tests.post(c, t);
+  played jsonb;
+begin
+  insert into card_ledger (account, card, kind, act, price) values (carol, 'sweetie', 'caught', spring, 0);
+  insert into wallets (account, balance) values (carol, 100);
+  -- The service role acts for Carol while the request's claims name Dave: the count is Carol's true hand, not what Dave could see.
+  perform tests.become_service();
+  perform set_config('request.jwt.claims', jsonb_build_object('sub', dave, 'role', 'service_role')::text, true);
+  played := play_card(carol, 'sweetie', c, q, '{}', 0);
+  if played is null then raise exception 'a caught card was not played'; end if;
+  perform tests.unbecome();
+  if card_held(carol, 'sweetie') is distinct from 0 then raise exception 'the caught card was spent once: %', card_held(carol, 'sweetie'); end if;
+  if (select count(*) from card_ledger where account = carol and kind = 'played') is distinct from 1::bigint then raise exception 'the play was not recorded'; end if;
 end $$;
