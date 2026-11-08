@@ -270,7 +270,8 @@ begin
   update settings set value = value || '{"fdpmove.price": 100, "fdptrap.price": 100}' where key = 'economy';
   insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
     ('fdpmove', 'Persona Move', 'salty', 'fdpmove.price', 'common', 'cast', null),
-    ('fdptrap', 'Persona Trap', 'salty', 'fdptrap.price', 'common', 'set', '{"trigger": {"on": "cast"}}');
+    ('fdptrap', 'Persona Trap', 'salty', 'fdptrap.price', 'common', 'set', '{"trigger": {"on": "cast"}}'),
+    ('fdpvisit', 'Persona Visit', 'sweet', 'fdptrap.price', 'common', 'set', '{"trigger": {"on": "visit"}}');
 end $$;
 create function pg_temp.staff_post(k text, in_thread uuid, body text) returns uuid language sql as $$
   select (write_staff_act(k, 'post', in_thread, null, jsonb_build_object('body', body)) ->> 'id')::uuid
@@ -288,6 +289,8 @@ begin
   if (select account from face_down where play = (placed ->> 'id')::uuid) is not null then raise exception 'a persona''s back has an account'; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpmove', p2));
   if why is distinct from 'Persona Move is not a Gimmick; a persona sets Gimmicks' then raise exception 'a persona set a Move: %', why; end if;
+  why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpvisit', p3));
+  if why is distinct from 'Persona Visit waits for a Mod Bot''s visit; a persona sets none' then raise exception 'a persona set a visit Gimmick: %', why; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L, %L, %L)', 'fdm-mod', 'fdptrap', p3, '{"card": "nosuch"}', 'nosuch'));
   if why is distinct from 'Persona Trap names a card that is cast on a post' then raise exception 'a persona''s Trap Card named no card: %', why; end if;
   perform tests.unbecome();

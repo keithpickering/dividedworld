@@ -34,12 +34,12 @@
 --                           Move's alone and is not blank ("<card> needs a phrase to wait for"). Both default to null, so a caller that sets a card with neither (a Bluff, a visit Gimmick, a back from before
 --                           this) is unchanged, and a cast Gimmick set with no catch names none and catches nothing, as an old Trap Card does. The act function (supabase/functions/act/core.ts) passes the
 --                           two from the card's own rules; set_card is callable by the service role alone, so a caller's request never reaches them.
---   staff_set_card(staff_key, card, target, config, catches)   takes the named catch. A persona sets Gimmicks only ("<card> is a Move; a persona sets Gimmicks"), and the refusal of a trap that
+--   staff_set_card(staff_key, card, target, config, catches)   takes the named catch. A persona sets Gimmicks only ("<card> is not a Gimmick; a persona sets Gimmicks", and "<card> waits for a Mod Bot's visit; a persona sets none" for a visit Gimmick, which the pool never offers either: staffOffers), and the refusal of a trap that
 --                           pays out is gone with the payout.
 --
 -- Copied from their latest definitions: set_card from 0104_warn_bar.sql (its hand counted by card_held, Task 3), place_set and staff_set_card from 0086_staff_cards.sql. Everything they do that is not named
 -- above stays as written, the lock order included (0075's header, steps 1 to 6): set_card takes the player's accounts row (1), place_set the target post's acts row (2), and nothing here takes a later lock before
--- an earlier one. The new reads (card_kinds) take no lock.
+-- an earlier one. The new reads (card_kinds) take no lock. place_set refuses in its own order, which differs from decideSet's (the act function always runs decideSet first, so a player meets decideSet's words).
 -- Masks. A refusal reads the card's own kind and the named card's, public facts, and never who owns a character. The stored catch and phrase are the setter's alone (Task 3).
 -- Ways out. A back set here springs once or ends at setLasts, as every back does.
 
@@ -279,7 +279,6 @@ begin
     if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   end if;
-  if catches is not null and phrase is not null then raise exception 'a back waits for a card or a phrase, never both' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
   if target_kind is distinct from 'post' then raise exception 'a card is set face down on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if author is distinct from setter then raise exception 'a card is set face down on a post of your own character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
@@ -348,6 +347,7 @@ begin
     raise exception '% is above the rarity the pool plays', kind_of.name using errcode = '55000';
   end if;
   if kind_of.play is distinct from 'set' then raise exception '% is not a Gimmick; a persona sets Gimmicks', kind_of.name using errcode = '55000'; end if;
+  if kind_of.trap #>> '{trigger,on}' = 'visit' then raise exception '% waits for a Mod Bot''s visit; a persona sets none', kind_of.name using errcode = '55000'; end if;
   flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
   perform set_config('kayfabb.staff_writer', 'on', true);
   placed := place_set(who, card, target, coalesce(config, '{}'), null, 0, staff_set_card.catches, null);

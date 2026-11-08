@@ -1897,6 +1897,17 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(refused).toMatchObject({ ok: false, error: 'Shield is used on your own post' });
   });
 
+  test('a Trap Card naming a card that is not cast on a post is refused in decideSet\'s words', async () => {
+    const trapper = { ...base, key: 'trapper', name: 'Trapper', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'shield', canApply: () => ok(undefined) };
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, trapper] } });
+    const ana = fake.seed.account('ana');
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { act } = fake.seed.thread('general', face, 'Hello', 'First post');
+    fake.seed.cards(ana, { trapper: 1 });
+    fake.signInAs(ana);
+    expect(await fake.setCard('trapper', face, act, {})).toMatchObject({ ok: false, error: 'Trapper names a card that is cast on a post' });
+  });
+
   test('a trap catches the next cast, which is spent, and the spring reveals it', async () => {
     const { fake, bo, anaFace, boFace, opener } = setup();
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
