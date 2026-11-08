@@ -149,13 +149,17 @@ create function pg_temp.hand(who uuid, variadic keys text[]) returns void langua
 $$;
 
 -- What a call to spring_traps reads from the tables it decides from, and their indexes: rows fetched and index entries returned in
--- this transaction so far. Taken before and after a call, the difference is the call's own reads.
-create function pg_temp.reads() returns bigint language sql as $$
-  select sum(pg_stat_get_xact_tuples_fetched(r.oid) + pg_stat_get_xact_tuples_returned(r.oid))::bigint
-  from pg_class r
-  where r.oid in (select t.oid from pg_class t where t.relname in ('characters', 'card_kinds', 'acts', 'face_down') and t.relnamespace = 'public'::regnamespace
-                  union select i.indexrelid from pg_index i join pg_class t on t.oid = i.indrelid
-                  where t.relname in ('characters', 'card_kinds', 'acts', 'face_down') and t.relnamespace = 'public'::regnamespace)
+-- this transaction so far, for each table (with its indexes) in name order. Taken before and after a call, the difference is the
+-- call's own reads, compared as vectors, so a read moved from one table to another is a difference a sum would hide.
+create function pg_temp.reads() returns bigint[] language sql as $$
+  select array_agg(x.n order by x.relname) from (
+    select t.relname, sum(pg_stat_get_xact_tuples_fetched(o.oid) + pg_stat_get_xact_tuples_returned(o.oid))::bigint as n
+    from pg_class t cross join lateral (select t.oid union all select i.indexrelid from pg_index i where i.indrelid = t.oid) o(oid)
+    where t.relname in ('characters', 'card_kinds', 'acts', 'face_down') and t.relnamespace = 'public'::regnamespace
+    group by t.relname) x
+$$;
+create function pg_temp.since(before bigint[]) returns text language sql as $$
+  select array_agg(n.v - before[n.i] order by n.i)::text from unnest(pg_temp.reads()) with ordinality n(v, i)
 $$;
 
 -- A Bluff, a matching Move whose setter is retired, and a matching Move whose landing post already carries its card: each answers null and
@@ -175,11 +179,17 @@ declare
   p_retired uuid := tests.post(retiree, t, 'Retired.');
   p_full uuid := tests.post(striker, t, 'Full.');
   r uuid := tests.post(replier, t, 'A quote.');
-  before bigint;
-  bluff_reads bigint; retired_reads bigint; full_reads bigint;
+  before bigint[];
+  bluff_reads text; retired_reads text; full_reads text;
   said jsonb;
   i integer;
 begin
+  -- The small tables (card_kinds, characters) are read in order by a sequential scan that stops at the first match, so the rows it reads say where a row sits in the table and not what
+  -- the statement does; key lookups through the indexes read the same rows for every key, and are the statements being counted. (A busy instance's tables are read through them.)
+  -- Without this, Postgres 17 in CI counted 54 for the retired setter's Move and 51 for the Bluff: the retiree's rewritten row sits last in characters, and a scan from the top reads
+  -- past more rows to reach it (forced to sequential scans here, characters alone reads 43 for the retiree and 40 for the Bluff's setter).
+  perform set_config('enable_seqscan', 'off', true);
+  discard plans;
   perform pg_temp.hand(ann, 'tlbluff', 'tlhook', 'tlhook');
   perform set_card(ann, 'tlbluff', bluffer, p_bluff, '{}', 0);
   perform set_card(ann, 'tlhook', retiree, p_retired, '{}', 0);
@@ -187,23 +197,27 @@ begin
   -- The quoting post already carries the Move's card, which takes one to a post.
   perform tests.act(replier, 'card', t, jsonb_build_object('card', 'tlhook', 'layer', 1, 'message', '', 'config', '{}'), r);
   update characters set retired_at = now() where id = retiree;
+  -- Every setter's row has been rewritten once, as the retiree's was (a rewritten row is a longer chain to read, which says nothing of the statement).
+  update characters set debuted_at = debuted_at where id in (bluffer, striker);
   -- Warm: each statement planned, so a call's reads are its execution's alone.
   for i in 1 .. 8 loop perform spring_traps('quote', p_bluff, r); end loop;
 
-  before := pg_temp.reads(); said := spring_traps('quote', p_bluff, r); bluff_reads := pg_temp.reads() - before;
+  before := pg_temp.reads(); said := spring_traps('quote', p_bluff, r); bluff_reads := pg_temp.since(before);
   if said is not null then raise exception 'a Bluff sprang: %', said; end if;
-  before := pg_temp.reads(); said := spring_traps('quote', p_retired, r); retired_reads := pg_temp.reads() - before;
+  before := pg_temp.reads(); said := spring_traps('quote', p_retired, r); retired_reads := pg_temp.since(before);
   if said is not null then raise exception 'a retired setter''s Move sprang: %', said; end if;
-  before := pg_temp.reads(); said := spring_traps('quote', p_full, r); full_reads := pg_temp.reads() - before;
+  before := pg_temp.reads(); said := spring_traps('quote', p_full, r); full_reads := pg_temp.since(before);
   if said is not null then raise exception 'a Move onto a full stack sprang: %', said; end if;
   if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_bluff, p_retired, p_full)) then raise exception 'a back that cannot spring wrote a spring'; end if;
 
   if retired_reads is distinct from bluff_reads then
-    raise exception 'a retired setter''s Move read % rows and a Bluff %: the work before the decision differs with the card', retired_reads, bluff_reads;
+    raise exception 'a retired setter''s Move read % and a Bluff % (acts, card_kinds, characters, face_down): the work before the decision differs with the card', retired_reads, bluff_reads;
   end if;
   if full_reads is distinct from bluff_reads then
-    raise exception 'a Move onto a full stack read % rows and a Bluff %: the work before the decision differs with the card', full_reads, bluff_reads;
+    raise exception 'a Move onto a full stack read % and a Bluff % (acts, card_kinds, characters, face_down): the work before the decision differs with the card', full_reads, bluff_reads;
   end if;
+  if (select sum(v) from unnest(bluff_reads::bigint[]) v) < 4 then raise exception 'the reads were not counted (%)', bluff_reads; end if;
+  perform set_config('enable_seqscan', 'on', true);
 end $$;
 
 -- ---- my_card_ledger says whether a set card can spring ----
