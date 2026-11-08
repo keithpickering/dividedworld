@@ -962,11 +962,12 @@ export interface WalletEvent {
   readonly at: string;
 }
 
-/** A card the player bought or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event. */
+/** A card the player bought, played or caught (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event. */
 export interface CardEvent {
   readonly card: string;
-  readonly kind: 'bought' | 'played';
-  /** The play's Act; null for a purchase. */
+  /** `caught`: a card a Trap Card of the player's took (0139); its `act` is the spring, and it cost nothing. */
+  readonly kind: 'bought' | 'played' | 'caught';
+  /** The play's Act, or the spring for a caught card; null for a purchase. */
   readonly act: Id | null;
   readonly price: number;
   readonly at: string;

@@ -1858,7 +1858,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const cast = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
-  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
   const world: Instance = { ...instance, cards: [cast, snare, shield], settings: { ...settings, economy: { 'x.price': 100 } } };
   function setup() {
@@ -1915,9 +1915,22 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
     expect(caught.payload.caught).toBe(set.id);
     const on = await fake.cardsOn(opener, 8);
-    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', set: set.id, caught: caught.id });
+    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', trigger: 'cast', did: 'caught', set: set.id, caught: caught.id });
+    expect(on.find((a) => a.kind === 'spring')?.payload).not.toHaveProperty('outcome');
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
+  });
+
+  test('a Trap Card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener } = setup();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    fake.signInAs(bo);
+    const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
+    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    fake.signInAs(ana);
+    expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
+    expect((await fake.log()).cards.find((e) => e.kind === 'caught')).toMatchObject({ card: 'blot', kind: 'caught', act: spring.id, price: 0 });
+    expect(caught.payload.caught).toBe(set.id);
   });
 
   test('a caught play\'s moment holds the back and the spring, written before it as the server writes them; the spring\'s holds the back', async () => {
@@ -2029,7 +2042,7 @@ describe('an admin ends a card play (reverse_card)', () => {
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
-  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } }, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
   const shield = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 400 }, canApply: () => ok(undefined) };
   const sparkle = {
     ...base, key: 'sparkle', name: 'Sparkle', alignment: 'pepperoni' as const, rarity: 'uncommon' as const, priceKey: 'x.price', reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 400 },
