@@ -67,7 +67,7 @@ function Versions({ post }: { readonly post: Id }) {
   if (versions === null) return <p className="kb-muted kb-small" aria-busy="true">Loading the history…</p>;
   if (versions.length < 2) return <p className="kb-muted kb-small">This post has not been edited.</p>;
   return (
-    <ol className="kb-post-history" aria-label="Versions of this post, oldest first">
+    <ol className="kb-post-history" data-kb-quotable="hidden" aria-label="Versions of this post, oldest first">
       {versions.map((v, i) => (
         <li key={v.id}>
           <span className="kb-small kb-muted">{i === 0 ? 'Original' : `Edit ${i}`}, {when(v.createdAt)}{i === versions.length - 1 ? ' · Current' : ''}</span>

@@ -22,7 +22,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
+import { playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -1404,7 +1404,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
   /** The back of each card set face down: `catches` is the card a Trap Card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string }>();
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
     return null;
@@ -1490,15 +1490,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** set_card (0142): a Move or a Gimmick, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
-  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Answer<Act> {
-    const bad = request({ action: 'setCard', card, character, target, config });
+  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
+    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
     if (bad) return bad;
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, new Date(now()));
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
+    /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
+    const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);
+    if (unknown >= 0) return refuse(`${unknown + 1} is not a character on the board`, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (on.character !== character) return refuse('a card is set face down on a post of your own character\'s');
@@ -1508,10 +1511,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (short) return short;
     account.cards[card]! -= 1;
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
-    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }) });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     spend(account, decided.value.price, 'play', written.id);
     /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a Gimmick that carries a trap, or a Move (it springs on a quote). */
-    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast' });
+    recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast', ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     sendAct(written);
     return ok(publicAct(written));
   }

@@ -409,3 +409,10 @@
   border: 1px solid var(--kb-fg);
   font-style: italic;
 }
+
+/* Highlight-to-quote: the board's plain Quote button, drawn by .kb-button, standing beside the end of a selection inside one post (SelectionQuote.tsx). */
+.kb-selection-quote {
+  position: absolute;
+  z-index: 30;
+  white-space: nowrap;
+}

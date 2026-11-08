@@ -14,7 +14,7 @@
  */
 import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
-import { casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
+import { casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 import { DatabaseError, TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
@@ -172,9 +172,11 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
         // The card's own rules decide the configuration, the card a Trap Card names and the phrase a Move waits for; none of them is read from the request but the configuration.
-        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards);
+        const { conditions, ...rest } = args as { conditions?: SetConditions };
+        const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, conditions);
         if (!set.ok) return refused('config', set.why);
-        args = { ...args, config: set.value.config, price: set.value.price, catches: set.value.catches ?? null, phrase: set.value.phrase ?? null };
+        // The ids a Who names go as `named`, since `who` is already the account on this call (set_card's first argument).
+        args = { ...rest, config: set.value.config, price: set.value.price, catches: set.value.catches ?? null, phrase: set.value.phrase ?? null, passage: set.value.passage ?? null, named: set.value.who?.characters ?? null, who_except: set.value.who?.except ?? null };
       } else {
         const said = casterMessage(decision.args.message);
         if (!said.ok) return refused('message', said.why);

@@ -1372,7 +1372,7 @@ describe('the log', () => {
       }
       if (name === 'my_face_down') {
         /* The setter's own back, asked for by the sets in the ledger (what a Trap Card waits for); the ended views are the other read. */
-        if (r.url.searchParams.get('select') === 'play,catches,phrase') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
+        if (r.url.searchParams.get('select') === 'play,catches,phrase,passage,who,who_except') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
         return rows([{ play: SET, card: 'bluffy', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00' }]);
       }
       if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);

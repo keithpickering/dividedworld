@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_DEPTH, parse, type BbNode } from './parse.ts';
-import { visibleText, visibleWalk } from './visible.ts';
+import { excerptText, visibleText, visibleWalk } from './visible.ts';
 
 const ACT = '0f8fad5b-d9cb-469f-a165-70867728950e';
 const seen = (input: string) => visibleText(parse(input));
@@ -89,4 +89,16 @@ test('an autolink\'s words are the post\'s own, with an offset of their own', ()
   assert.equal(offsets.get(link), 4);
   assert.equal(offsets.size, 3);
   assert.equal(seen('[ispoiler]https://x.example[/ispoiler] https://y.example'), 'https://x.example https://y.example');
+});
+
+test('the excerpt is the words of the quotes of one Act, in order, joined by a separator', () => {
+  const OTHER = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
+  const ex = (input: string, act = ACT) => excerptText(parse(input), act);
+  assert.equal(ex(`a[quote=${ACT}]one[/quote]b[quote=${ACT}]two[/quote]`), 'one\ntwo');
+  assert.equal(ex(`[quote=${OTHER}]x[/quote]`), '');
+  assert.equal(ex(`[quote=${ACT}]a[quote=${OTHER}]cut[/quote]b[/quote]`), 'a\nb');
+  assert.equal(ex(`[quote=${OTHER}]x[quote=${ACT}]in[/quote][/quote]`), '');
+  assert.equal(ex(`[quote=${ACT.toUpperCase()}]up[/quote]`), 'up');
+  assert.equal(ex(`[quote=${ACT}]a[/quote]`, ACT.toUpperCase()), 'a');
+  assert.equal(ex('no quotes'), '');
 });

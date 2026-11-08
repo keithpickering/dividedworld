@@ -38,3 +38,13 @@ test('case folding is the matcher\'s simple one: ß is not SS, and an occurrence
   assert.deepEqual(words('STRASSE and straße', 'straße'), ['straße']);
   assert.deepEqual(occurrences('𝒜 cats', 'cats'), [{ from: 3, to: 7 }]);
 });
+
+test('the looser matcher: a strip covers the original text from its first letter to its last, punctuation inside and all', () => {
+  const text = "Say Don't! now";
+  assert.deepEqual(occurrences(text, 'dont'), [{ from: 4, to: 9 }]);
+  assert.deepEqual(words(text, 'dont'), ["Don't"]);
+  assert.deepEqual(words('the U.S.A. wins', 'usa'), ['U.S.A']);
+  assert.deepEqual(words('Nice...   try!', 'nice try'), ['Nice...   try']);
+  assert.deepEqual(occurrences('𝒜 dont', "don't"), [{ from: 3, to: 7 }], 'offsets stay in the string\'s units after an astral character');
+  assert.deepEqual(words('I don\'t, dont and DON\'T', 'dont'), ["don't", 'dont', "DON'T"]);
+});

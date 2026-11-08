@@ -276,6 +276,8 @@ test('Autocorrect\'s replacement is one line of 1 to 100 characters of plain tex
   assert.equal(config('Mario', 'y'.repeat(100)).ok, true);
   assert.match((config('Mario', 'y'.repeat(101)) as { why: string }).why, /at most 100 characters/);
   assert.match((config('Mario', 'MARIO') as { why: string }).why, /not the phrase itself/);
+  assert.match((config('dont stop', "Don't stop!") as { why: string }).why, /not the phrase itself/, 'a replacement the matcher reads as the phrase is the phrase');
+  assert.match((config("don't", 'dont') as { why: string }).why, /not the phrase itself/);
   assert.match((config('Mario', 'two\nlines') as { why: string }).why, /one line/);
   assert.deepEqual(config('Mario', '[b]Luigi[/b]'), { ok: true, value: { phrase: 'Mario', replacement: '[b]Luigi[/b]' } }, 'BBCode is kept as the text it is');
 });

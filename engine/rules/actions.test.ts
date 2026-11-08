@@ -129,6 +129,18 @@ test('a play names the card, the character, the post and the caster\'s configura
   assert.match(refusal({ action: 'playCard', card: 'splat', character: id, target: 'x' }) ?? '', /^target:/);
 });
 
+test('a Set reads an optional `when` into its conditions, and refuses a shape that is not one', () => {
+  const who = { except: true, characters: [id, other] };
+  const base = { action: 'setCard', card: 'splat', character: id, target: other };
+  assert.deepEqual(decide({ ...base, when: { says: 'nice try', passage: 'the punchline', who } }, instance),
+    { ok: true, rpc: 'set_card', args: { card: 'splat', through: id, target: other, config: {}, conditions: { says: 'nice try', passage: 'the punchline', who } }, asService: true, needsTarget: true, play: 'set' });
+  assert.deepEqual((decide({ ...base, when: { passage: 'x', who: null } }, instance) as unknown as { args: { conditions: unknown } }).args.conditions, { passage: 'x' });
+  for (const empty of [undefined, null, {}]) assert.equal('conditions' in (decide({ ...base, when: empty }, instance) as unknown as { args: object }).args, false, JSON.stringify(empty));
+  for (const bad of ['says', 3, ['x'], { says: 3 }, { passage: [] }, { who: 'me' }, { who: { characters: [id] } }, { who: { except: 'no', characters: [id] } }, { who: { except: false, characters: 'x' } }, { who: { except: false, characters: ['nope'] } }, { who: { except: false, characters: [3] } }]) {
+    assert.match(refusal({ ...base, when: bad }) ?? '', /^when:/, JSON.stringify(bad));
+  }
+});
+
 test('a Set names the card, the character, the post and the configuration, and carries no message; a Use is a play on the caller\'s own post', () => {
   assert.deepEqual(decide({ action: 'setCard', card: 'splat', character: id, target: other, config: { ink: 'red' } }, instance),
     { ok: true, rpc: 'set_card', args: { card: 'splat', through: id, target: other, config: { ink: 'red' } }, asService: true, needsTarget: true, play: 'set' });

@@ -9,6 +9,8 @@ import type { Instance } from '../../rules/types.ts';
 import type { InstanceUi } from '../types.ts';
 import { FOLLOWED_COUNT_CAP } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
+import { shortQuote, springConditions } from '../cards/lens-words.ts';
+import { upperFirst } from '../copy-words.ts';
 
 /** A run of words: plain, or a title set in italics, as the board draws it. */
 export type Part = string | { readonly em: string };
@@ -176,12 +178,16 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const card = cardName(spring?.payload.card, ctx);
   const on = cardOn(row, ctx);
   const place: Part[] = on ? on.place : [ownPost(row.name)];
-  const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'quote', setter, card, laid, span, setterStaff });
+  const matched = springConditions(spring?.payload ?? {});
+  const passage = matched.passage ? shortQuote(matched.passage) : null;
+  const says = matched.says ? shortQuote(matched.says) : null;
+  const yourQuote = `your quote${passage ? ` of ${passage}` : ''}${says ? ` saying ${says}` : ''}`;
+  const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'quote', setter, card, laid, span, setterStaff, passage, says });
   const subject = setter ? `${setter}'s face-down ${card ?? 'card'}` : card ? `A face-down ${card}` : 'A face-down card';
   return {
     line: own ? [own.line] : [`${subject} struck `, ...place],
     detail: own ? [own.detail] : sentences(
-      [`${setter ? `${setter} set it face down${span ? ` ${span} before` : ' before'} your quote set it off.` : `${span ? `It was set face down ${span} before your quote set it off.` : 'Your quote set it off.'}`}`],
+      [`${setter ? `${setter} set it face down${span ? ` ${span} before` : ' before'} ${yourQuote} set it off.` : `${span ? `It was set face down ${span} before ${yourQuote} set it off.` : `${upperFirst(yourQuote)} set it off.`}`}`],
       laid ? [`It laid ${laid} on it.`] : [], inTitle(row)),
     ways: on ? on.ways : threadWay(row), who,
   };
@@ -225,7 +231,9 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       /* A spring written before the face-down Moves has no `did`: its words stay as they were. */
       const did = act?.kind === 'spring' ? act.payload.did : undefined;
       if (did === 'landed' || did === 'caught' || did === 'ended') {
-        const set = did === 'landed' ? 'A quote set it off, and it landed.' : did === 'caught' ? 'A cast of the card it named set it off, and the card is now in your hand.' : 'A Mod Bot\'s visit set it off, and it ended the visit.';
+        const m = springConditions(act?.payload ?? {});
+        const quote = `A quote${m.passage ? ` of ${shortQuote(m.passage)}` : ''}${m.says ? ` saying ${shortQuote(m.says)}` : ''}`;
+        const set = did === 'landed' ? `${quote} set it off, and it landed.` : did === 'caught' ? 'A cast of the card it named set it off, and the card is now in your hand.' : 'A Mod Bot\'s visit set it off, and it ended the visit.';
         return { line: [card ? `Your face-down ${card} sprang` : 'Your face-down card sprang'], detail: sentences([set], inTitle(row)), ways: postWay(post, row, ctx), who };
       }
       return { line: ['Your trap sprang'], detail: sentences(card ? [`The trap was ${card}, in `, ...(row.title ? [{ em: row.title }] : ['a thread']), '.'] : inTitle(row)), ways: postWay(post ?? act, row, ctx), who };

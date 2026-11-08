@@ -62,3 +62,39 @@ export function visibleWalk(nodes: readonly BbNode[]): { text: string; offsets: 
 
 /** The post's visible text alone. */
 export const visibleText = (nodes: readonly BbNode[]): string => visibleWalk(nodes).text;
+
+/**
+ * The excerpt of an Act in a post: the visible text of the children of every real quote of that Act that no other real quote encloses,
+ * joined with `SEPARATOR` (an empty quote still takes its place). A quote of the Act inside a quote of another Act is that other Act's
+ * words and does not count, a quote of the Act inside its own is cut back to a separator as `visibleText` cuts any quote, and nothing is
+ * found where `visibleWalk` does not look: not in a link, code, or a quote. The database's `bbcode_walk` (supabase/migrations/0144_quote_conditions.sql)
+ * gives the same words, held to the same fixtures (plain.fixtures.ts). Written as `visibleWalk` is, with its own stack.
+ */
+export function excerptText(nodes: readonly BbNode[], act: string): string {
+  const want = act.toLowerCase();
+  const parts: string[] = [];
+  const stack: BbNode[] = [];
+  const pushAll = (list: readonly BbNode[]) => { for (let i = list.length - 1; i >= 0; i--) stack.push(list[i]!); };
+  pushAll(nodes);
+  while (stack.length) {
+    const n = stack.pop()!;
+    switch (n.type) {
+      case 'quote':
+        if (n.act === want) parts.push(visibleText(n.children));
+        break;
+      case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size': case 'counterfeit': case 'spoiler': case 'ispoiler':
+      case 'align': case 'sub': case 'sup': case 'font': case 'marquee': case 'glow': case 'shadow': case 'rainbow': case 'highlight':
+        pushAll(n.children);
+        break;
+      case 'list': {
+        const flat: BbNode[] = [];
+        for (const item of n.items) for (const node of item) flat.push(node);
+        pushAll(flat);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return parts.join(SEPARATOR);
+}

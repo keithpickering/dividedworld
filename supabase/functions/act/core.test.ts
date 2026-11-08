@@ -322,6 +322,40 @@ test('an Autocorrect set sends its own phrase', async () => {
   assert.ok(sent[0]!.includes('"phrase":"Heel Turn"') && sent[0]!.includes('"catches":null') && !sent[0]!.includes('smuggled'), sent[0]);
 });
 
+const sentArgs = (calls: string[]) => JSON.parse(setCalls(calls)[0]!.replace(/^service:set_card:/, '')) as Record<string, unknown>;
+const postOf = { reach: 'post', act: target, kind: 'post', length: 30, body: 'The punchline was funny, honestly.', effects: [] };
+
+test('a Move set with conditions sends phrase, passage, the named ids and who_except to set_card, and keeps the account in who', async () => {
+  const { dbs, calls } = pair({ ...onPost, card_target_reach: postOf });
+  const when = { says: 'nice try', passage: 'the punchline', who: { except: true, characters: [target] } };
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'whoops', character: id, target, config: { color: 'red' }, when });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const a = sentArgs(calls);
+  assert.deepEqual({ phrase: a.phrase, passage: a.passage, named: a.named, who_except: a.who_except, conditions: a.conditions }, { phrase: 'nice try', passage: 'the punchline', named: [target], who_except: true, conditions: undefined });
+  assert.equal(a.who, whoami, 'who stays the account');
+});
+
+test('a set with no conditions sends nulls for all four', async () => {
+  const { dbs, calls } = pair(onPost);
+  await runAction(dbs, instance, { action: 'setCard', card: 'whoops', character: id, target, config: { color: 'red' } });
+  const a = sentArgs(calls);
+  assert.deepEqual([a.passage, a.named, a.who_except], [null, null, null]);
+});
+
+test('a condition the rules refuse is refused before SQL, in their words', async () => {
+  const { dbs, calls } = pair({ ...onPost, card_target_reach: postOf });
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'whoops', character: id, target, config: { color: 'red' }, when: { passage: 'the setup' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: "that passage is not in this post's words" } });
+  assert.equal(setCalls(calls).length, 0);
+});
+
+test('Autocorrect takes no Says of its own and keeps its phrase', async () => {
+  const { dbs, calls } = pair(onPost);
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'autocorrect', character: id, target, config: { phrase: 'Heel Turn', replacement: 'Face Turn' }, when: { says: 'other' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Autocorrect already waits for its own phrase' } });
+  assert.equal(setCalls(calls).length, 0);
+});
+
 test('a Use is refused by the act function when it is set', async () => {
   const { dbs, calls } = pair(onPost);
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-shield', character: id, target, config: {} });

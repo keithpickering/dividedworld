@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, KayfaApi } from '../data/api.ts';
-import { readCaughtFate, sprungWords } from './lens-words.ts';
+import { readCaughtFate, springConditions, sprungWords } from './lens-words.ts';
 import { onceFor } from './once.ts';
 
 const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v : null);
@@ -20,10 +20,12 @@ export async function readSprungWords(api: Pick<KayfaApi, 'actsById' | 'characte
   const set = read.find((a) => a.id === sprang.payload.set);
   const by = read.find((a) => a.id === sprang.payload.by);
   const trigger = text(sprang.payload.trigger);
-  const named = [sprang.character, trigger === 'reaction' ? null : by?.character ?? null].filter((c): c is Id => c !== null);
+  /* `for` is the quoting character where the Who was Only these: public as the quote's author, the fallback where the quoting post could not be read. */
+  const quoterId = by?.character ?? text(sprang.payload.for);
+  const named = [sprang.character, trigger === 'reaction' ? null : quoterId].filter((c): c is Id => c !== null);
   const faces = named.length === 0 ? [] : await api.characters([...new Set(named)]);
   const nameOf = (id: Id | null | undefined) => (id ? faces.find((c) => c.id === id)?.name ?? null : null);
-  return sprungWords({ setter: nameOf(sprang.character), setAt: set?.createdAt ?? null, quoter: trigger === 'reaction' ? null : nameOf(by?.character), trigger });
+  return sprungWords({ setter: nameOf(sprang.character), setAt: set?.createdAt ?? null, quoter: trigger === 'reaction' ? null : nameOf(quoterId), trigger, ...springConditions(sprang.payload) });
 }
 
 /** The fate of a caught play's card, by the spring that caught it; undefined while it is unread or when the spring is unknown. */

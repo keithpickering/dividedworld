@@ -31,7 +31,7 @@ check('the poisons have a fixture row to work on', row > 0);
   check('a fixture dropped from the SQL test fires', plainFaults(fixturesText, dropped).length > 0);
 }
 {
-  const changed = [...rows.slice(0, row), rows[row].replace(/\$f\$\)(,?)$/, ' changed$f$)$1'), ...rows.slice(row + 1)].join('\n');
+  const changed = [...rows.slice(0, row), rows[row].replace(/\$f\$, null, null\)(,?)$/, ' changed$f$, null, null)$1'), ...rows.slice(row + 1)].join('\n');
   check('the poison for a changed plain really changed the row', changed !== sqlText);
   check('a fixture\'s plain words changed in the SQL test only fires', plainFaults(fixturesText, changed).length > 0);
 }
@@ -47,6 +47,24 @@ check('the poisons have a fixture row to work on', row > 0);
   const edited = [...rows.slice(0, first), '  -- an edit by hand', ...rows.slice(first)].join('\n');
   check('a line edited by hand that is not an assertion fires', plainFaults(fixturesText, edited).length > 0);
   check('a lost last line fires', plainFaults(fixturesText, rows.slice(0, -3).join('\n')).length > 0);
+}
+{
+  // The excerpt lines: one fixture row that holds an excerpt, changed in the SQL test only, dropped to none, or made of an Act id that is not one.
+  const exRow = rows.findIndex((l) => /^ {4}\(\$f\$the excerpt: one quote of the act\$f\$/.test(l));
+  check('the poisons have an excerpt row to work on', exRow > 0 && /\$f\$cats in a quote\$f\$\),?$/.test(rows[exRow]), rows[exRow]);
+  const wrongWords = [...rows.slice(0, exRow), rows[exRow].replace(/\$f\$cats in a quote\$f\$\)(,?)$/, '$f$cats in a quote and more$f$)$1'), ...rows.slice(exRow + 1)].join('\n');
+  check('the poison for a changed excerpt really changed the row', wrongWords !== sqlText);
+  check('an excerpt changed in the SQL test only fires', plainFaults(fixturesText, wrongWords).length > 0);
+  const noExcerpt = [...rows.slice(0, exRow), rows[exRow].replace(/, \$f\$[^$]*\$f\$, \$f\$cats in a quote\$f\$\)(,?)$/, ', null, null)$1'), ...rows.slice(exRow + 1)].join('\n');
+  check('the poison for a dropped excerpt really dropped it', noExcerpt !== sqlText);
+  check('an excerpt dropped from the SQL test only fires', plainFaults(fixturesText, noExcerpt).length > 0);
+  const list = readFixtures(fixturesText);
+  check('the SQL test asserts bbcode_walk\'s excerpt', sqlText.includes('bbcode_walk(f.body, f.excerptof::uuid)') && sqlText.includes('f.excerpt'));
+  const lone = fixturesText.replace(/"excerpt": "cats in a quote"/, '"note": "cats in a quote"');
+  check('a fixture with an excerptOf and no excerpt is a sentence, never a throw', (() => { try { const fs = plainFaults(lone, sqlText); return fs.length === 1 && /excerpt/.test(fs[0]); } catch { return false; } })());
+  const notAnId = fixturesText.replace(/"excerptOf": "0f8fad5b-d9cb-469f-a165-70867728950e",\n    "excerpt": "cats in a quote"/, '"excerptOf": "nope",\n    "excerpt": "cats in a quote"');
+  check('an excerptOf that is not an Act id is a sentence, never a throw', (() => { try { const fs = plainFaults(notAnId, sqlText); return fs.length === 1 && /excerptOf/.test(fs[0]); } catch { return false; } })());
+  check('the real list has fixtures with an excerpt', list.filter((f) => f.excerptOf !== undefined).length >= 12);
 }
 check('a fixtures module out of shape is a sentence, never a throw', (() => { try { return plainFaults(fixturesText.replace('PLAIN_FIXTURES', 'OTHER'), sqlText).length === 1; } catch { return false; } })());
 check('a fixture the SQL cannot carry is a sentence, never a throw', (() => { try { return plainFaults(fixturesText.replace(/"name": "plain text"/, '"name": "x$f$y"'), sqlText).length === 1; } catch { return false; } })());

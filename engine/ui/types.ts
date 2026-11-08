@@ -170,6 +170,10 @@ export interface TrapStruckFacts {
   readonly span: string | null;
   /** Whether the setter is a staff character (a public fact of a character): a staff Trap Card takes nothing, so the caught card is spent. */
   readonly setterStaff: boolean;
+  /** For a quote that met conditions: the passage the quoted excerpt held, already shortened and in quotation marks; null where none was set. Never an Anyone-but list. */
+  readonly passage?: string | null;
+  /** For a quote that met conditions: the phrase the quoting post said, already shortened and in quotation marks; null where none was set. */
+  readonly says?: string | null;
 }
 
 /**

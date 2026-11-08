@@ -32,8 +32,8 @@ import { framingArgs, quoteText } from './text.ts';
 import { Layers } from '../glass/layer.tsx';
 
 export interface ComposerHandle {
-  /** Append a quote of an Act to the draft and move focus to the box. */
-  quote(act: Id, body: string): void;
+  /** Append a quote of an Act to the draft and move focus to the box. `selected`: `body` is a stretch of the post's shown words, kept as typed. */
+  quote(act: Id, body: string, selected?: boolean): void;
 }
 
 export interface ComposerProps {
@@ -104,9 +104,9 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   const max = settings.postMaxLength;
   const textRef = useRef(text);
   textRef.current = text;
-  const quote = useCallback((act: Id, body: string) => {
+  const quote = useCallback((act: Id, body: string, selected = false) => {
     const was = textRef.current;
-    const next = quoteText(was, act, body);
+    const next = quoteText(was, act, body, selected);
     if ([...was].length <= max && [...next].length > max) setQuoted(true);
     editor.current?.set(next);
   }, [max]);

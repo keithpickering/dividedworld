@@ -51,6 +51,51 @@ export interface SprungFacts {
   readonly quoter: string | null;
   /** What set it off: the spring's trigger (`quote`, or one written before the face-down Moves: `reply`, `reaction`). */
   readonly trigger: string | null;
+  /** The passage the quoted excerpt held, where the back set one and it matched (the spring's `when.passage`); shown in full. */
+  readonly passage?: string | null;
+  /** The phrase the quoting post said, where the back set one and it matched (the spring's `when.says`); shown in full. */
+  readonly says?: string | null;
+}
+
+/** The longest a condition runs in an alert, a toast or a log line; the Lens shows it whole. */
+export const QUOTE_SHORT = 40;
+
+/**
+ * The text in quotation marks, cut at the last word boundary within `most` characters, with "…" inside the marks when it was cut. `Infinity` keeps it whole.
+ * The marks are the curly pair the rest of the game's copy uses for a phrase.
+ */
+export function shortQuote(text: string, most: number = QUOTE_SHORT): string {
+  const flat = text.replace(/\s+/gu, ' ').trim();
+  /* Counted and cut in whole characters (code points), so an emoji is never split into a lone surrogate. */
+  const chars = Array.from(flat);
+  if (chars.length <= most) return `\u201c${flat}\u201d`;
+  const cut = chars.slice(0, most).join('');
+  const atBoundary = chars[most] === ' ';
+  const at = cut.lastIndexOf(' ');
+  const head = (atBoundary || at <= 0 ? cut : cut.slice(0, at)).trimEnd();
+  return `\u201c${head}\u2026\u201d`;
+}
+
+/** Who a quote must come from, in words: "Spritey or Boshi", "Spritey, Boshi or Pipewrench"; with `except`, "anyone but" them. Null for no one (anyone). */
+export function whoWords(ids: readonly Id[], except: boolean, nameOf: (id: Id) => string): string | null {
+  const listed = ids.map(nameOf);
+  if (listed.length === 0) return null;
+  const list = listed.length < 2 ? listed.join('') : `${listed.slice(0, -1).join(', ')} or ${listed[listed.length - 1]}`;
+  return except ? `anyone but ${list}` : list;
+}
+
+const textOf = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+
+/** The conditions a spring Act matched (its payload's `when`; never an Anyone-but list), each text unquoted and unshortened. Absent ones are null. */
+export function springConditions(payload: Readonly<Record<string, unknown>>): { readonly says: string | null; readonly passage: string | null } {
+  const when = payload.when;
+  const w = typeof when === 'object' && when !== null ? when as Record<string, unknown> : {};
+  return { says: textOf(w.says), passage: textOf(w.passage) };
+}
+
+/** What a quote "quoted", as the matched conditions say it: `it`, or the passage; then ` saying “phrase”`. `most` shortens each; Infinity is whole. */
+export function quotedWords(c: { readonly passage?: string | null; readonly says?: string | null }, most: number = QUOTE_SHORT): string {
+  return `${c.passage ? shortQuote(c.passage, most) : 'it'}${c.says ? ` saying ${shortQuote(c.says, most)}` : ''}`;
 }
 
 /**
@@ -62,7 +107,7 @@ export function sprungWords(f: SprungFacts, zone?: string): string {
   const day = f.setAt === null ? null : new Date(f.setAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', ...(zone ? { timeZone: zone } : {}) });
   const set = `Set face down by ${f.setter ?? 'someone'}${day ? ` on ${day}` : ''}`;
   const by = f.quoter ?? 'a post';
-  const did = f.trigger === 'quote' ? `sprang when ${by} quoted it` : f.trigger === 'reply' ? `sprang when ${by} replied to it` : f.trigger === 'reaction' ? 'sprang on a reaction' : 'sprang';
+  const did = f.trigger === 'quote' ? `sprang when ${by} quoted ${quotedWords(f, Infinity)}` : f.trigger === 'reply' ? `sprang when ${by} replied to it` : f.trigger === 'reaction' ? 'sprang on a reaction' : 'sprang';
   return `${set}; ${did}.`;
 }
 

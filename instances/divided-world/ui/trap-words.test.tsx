@@ -9,6 +9,13 @@ describe('the trapStruck voice', () => {
     expect(trapStruckWords({ how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days', setterStaff: false }))
       .toEqual({ line: 'Pipewrench saw this coming.', detail: 'Their face-down Whoops! sprang when you quoted their post, two days after they set it.' });
   });
+  test('a quote that met a condition: it says what matched, and gloats only truthfully', () => {
+    const said = trapStruckWords({ how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days', setterStaff: false, passage: '“the punchline”', says: '“nice try”' })!;
+    expect(said.line).toBe('Pipewrench was waiting for exactly that.');
+    expect(said.detail).toBe('Their face-down Whoops! sprang when you quoted “the punchline” saying “nice try”, two days after they set it.');
+    expect(trapStruckWords({ how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: null, setterStaff: false, passage: null, says: '“nice try”' })!.detail)
+      .toBe('Their face-down Whoops! sprang when you quoted their post saying “nice try”.');
+  });
   test('a caught cast: a Trap Card named the exact card, and it is the setter\'s now', () => {
     expect(trapStruckWords({ how: 'caught', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: 'an hour', setterStaff: false }))
       .toEqual({ line: 'Pipewrench had a Trap Card waiting.', detail: 'It named your Whoops! exactly, and it had been face down for an hour when you cast it. Whoops! is Pipewrench\'s now.' });

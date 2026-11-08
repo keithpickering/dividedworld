@@ -138,14 +138,14 @@ function StripButton({ strip, covered, peelMs, onPeel, onMeet }: StripProps) {
   if (long) {
     return (
       <span ref={ref as React.RefObject<HTMLSpanElement>} role="button" tabIndex={0} {...shared}>
-        <span className="dw-ac-said" aria-hidden="true">{strip.replacement}</span>
+        <span className="dw-ac-said" aria-hidden="true" data-kb-quotable="shown">{strip.replacement}</span>
       </span>
     );
   }
   return (
     <button ref={ref as React.RefObject<HTMLButtonElement>} type="button" {...shared}>
-      <span className="dw-ac-covered" aria-hidden="true">{covered}</span>
-      <span className="dw-ac-said" aria-hidden="true">{strip.replacement}</span>
+      <span className="dw-ac-covered" aria-hidden="true" data-kb-quotable="hidden">{covered}</span>
+      <span className="dw-ac-said" aria-hidden="true" data-kb-quotable="shown">{strip.replacement}</span>
     </button>
   );
 }

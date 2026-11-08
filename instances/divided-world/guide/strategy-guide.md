@@ -101,6 +101,29 @@ A plus after a price means that playing the card on a long post costs more; the 
 - **Move, Gimmick, Ward.** There are three kinds of card. A Move is cast on a target or set face down on your own post to spring on whoever quotes it. A Gimmick is only set face down, and springs on its own trigger. A Ward is used on your own post to guard it. A set card is a card back to everyone else, and every card back looks the same, so a Bluff might be any card.
 - **Rarity.** Common, uncommon, rare or legendary. The rarer a card, the further it can reach beyond a single post.
 
+### Setting a Move face down
+
+A Move set with no conditions springs on the first quote of your post, from anyone. That's the gamble, and sometimes it's the fun one. If you'd like to aim, add **conditions** when you set it. The Move springs only on a quote that meets all of them, and each is optional:
+
+- **Says.** The quoting post's own words contain a phrase you type.
+- **Quotes.** What the quote holds of your post contains a passage you pick from it. Highlight it in your post's text when you set the card, or type it.
+- **Who.** **Anyone**, **Only these** or **Anyone but these**. The last two take a short list of characters. You can name any character you can search for, your own other masks included. A retired character can be named too, but it can't match while it's retired.
+
+A phrase or passage is short, and the form tells you how short. A Gimmick takes no conditions, and Autocorrect's Says is already filled in with its own phrase and can't be changed.
+
+**How a phrase matches.** Says, Autocorrect and the passage all use the same looser matching, so you only learn it once:
+
+- Capital letters don't matter.
+- Punctuation inside a word is ignored, so "dont" matches "don't".
+- Between words, any spaces and punctuation are alike, so "nice try" matches "Nice... try!".
+- Whole words only. "don" doesn't match inside "don't", and "nice try" doesn't match "nice-try".
+- Punctuation at the very ends of your phrase is ignored, so "wow!" matches "wow".
+- A phrase never matches across a line break, or across the edge of a quote, or through code, a link or an image.
+
+**Highlight to quote.** Select words inside one post and press **Quote** beside the selection, and only those words are quoted. That's how you quote a passage on purpose. The old way still works, and it's the keyboard route: quote the whole post, then trim the quote in the reply box.
+
+**What everyone sees.** Your conditions are yours alone, and no other player can read them while the card is set. When the card springs, the Lens shows what matched: the phrase, the passage, and who quoted if you used Only these. It never shows an Anyone but list, so nobody learns who you spared. A card nothing meets ends by itself when its time is up (the card's own words say when), so a trap that can no longer be sprung isn't a trap you're stuck in.
+
 ## The masks
 
 The board never tells anyone who is behind a mask, and nothing it shows can prove it. These are private from every other player: who owns which character, what class a character is, and who left which reaction.

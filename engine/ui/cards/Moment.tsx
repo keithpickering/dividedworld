@@ -78,7 +78,7 @@ export function MomentFrame({ play, place, at, read, back, own = null, named, wo
   return (
     <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
       {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
-      <div className="kb-moment-body">{children}</div>
+      <div className="kb-moment-body" data-kb-quotable="hidden">{children}</div>
       {!content && <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />}
       {!content && (
         <p ref={ring.tag} className="kb-moment-tag">

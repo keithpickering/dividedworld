@@ -559,6 +559,8 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       /* What a card set face down waits for: the setter's own back (`my_face_down`), read beside the ledger. */
       ...(typeof backs.get(r['act'])?.['catches'] === 'string' ? { catches: backs.get(r['act'])!['catches'] } : {}),
       ...(typeof backs.get(r['act'])?.['phrase'] === 'string' ? { phrase: backs.get(r['act'])!['phrase'] } : {}),
+      ...(typeof backs.get(r['act'])?.['passage'] === 'string' ? { passage: backs.get(r['act'])!['passage'] } : {}),
+      ...(Array.isArray(backs.get(r['act'])?.['who']) ? { who: backs.get(r['act'])!['who'], whoExcept: backs.get(r['act'])!['who_except'] === true } : {}),
       ...(typeof r['pack'] === 'string' ? { pack: r['pack'] } : {}),
       ...(r['kind'] === 'bought' && r['repriced'] === true ? { repriced: true } : {}),
     })),
@@ -918,14 +920,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   };
 
   /*
-   * What each card set face down waits for (`my_face_down.catches` and `.phrase`, the setter's own row, 0142), by set: the ledger row of a set carries `springs` and
+   * What each card set face down waits for (`my_face_down.catches`, `.phrase`, `.passage`, `.who` and `.who_except`, the setter's own row, 0142 and 0144), by set: the ledger row of a set carries `springs` and
    * names neither. Only the ledger rows of a set are asked for; a read that fails leaves the log's line to say "the card it names", never an unread page.
    */
   const readBacks = async (cards: readonly Row[]): Promise<ReadonlyMap<string, Row>> => {
     const sets = cards.filter((r) => typeof r['springs'] === 'boolean' && typeof r['act'] === 'string').map((r) => r['act'] as string);
     if (sets.length === 0) return new Map();
     try {
-      return new Map((await byChunks(sets, (part) => list(() => client.from('my_face_down').select('play,catches,phrase').in('play', part)))).map((r) => [r['play'] as string, r]));
+      return new Map((await byChunks(sets, (part) => list(() => client.from('my_face_down').select('play,catches,phrase,passage,who,who_except').in('play', part)))).map((r) => [r['play'] as string, r]));
     } catch { return new Map(); }
   };
 
@@ -1314,7 +1316,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     buyCard: (slot) => act({ action: 'buyCard', slot: slot.id, price: slot.price }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
     buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
     playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
-    setCard: (card, character, target, config) => act({ action: 'setCard', card, character, target, config }, toAct),
+    setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     async myFaceDown(sets) {
       if (sets.length === 0) return {};

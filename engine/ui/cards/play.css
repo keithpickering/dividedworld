@@ -210,6 +210,303 @@
   color: var(--kb-glass-text);
 }
 
+/* ---- Only when (a Move set face down; SetConditions.tsx) ---- */
+
+.kb-play-when {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The closed row: the glass's skewed control, the width of the form, its label at the start and the count and the mark at the end. */
+.kb-play-when-toggle {
+  align-self: stretch;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.kb-play-when-toggle[aria-expanded='true'] {
+  border-color: var(--kb-glass-neon);
+}
+
+.kb-play-when-count {
+  color: var(--kb-glass-ready-text);
+}
+
+/* The "+" or "−" at the row's end: dimmer than the count, so the count (gold) is what reads first. */
+.kb-play-when-mark {
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
+  color: var(--kb-glass-text-2);
+  font-weight: 800;
+}
+
+/* "N of 5" under the Who list: a small condensed muted line. */
+.kb-play .kb-play-who-count {
+  font-family: var(--kb-glass-font-display);
+  font-stretch: condensed;
+  font-size: var(--kb-glass-size-body);
+  letter-spacing: 0.04em;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-play-when-group {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.kb-play-when-field {
+  min-width: 0;
+  margin: 0;
+}
+
+.kb-play-when-field > .kb-play-fine {
+  margin-top: 4px;
+}
+
+/* A refusal beside its field: plain words in the card's text color, never by color alone (the field also carries aria-invalid and the words). */
+.kb-play .kb-play-why {
+  margin-top: 4px;
+  font-weight: 800;
+  color: var(--kb-glass-salty-text);
+}
+
+.kb-play .kb-play-why:empty {
+  display: none;
+}
+
+.kb-play-input[aria-invalid='true'] {
+  border-color: var(--kb-glass-salty);
+  box-shadow: inset 0 0 0 1px var(--kb-glass-salty);
+}
+
+.kb-play-input[readonly] {
+  border-style: dashed;
+  color: var(--kb-glass-text-2);
+}
+
+/* The post's own words, read-only, a chamfered block of about eight lines that scrolls past them; the same on a phone and a desktop.
+   The frame is the glass's cut panel (engine/ui/glass/base.css): its 1px edge runs along the diagonal too, and the words scroll inside it. */
+.kb-play-post-frame {
+  --kb-cut: 14px;
+  --kb-border: 1px;
+  margin-top: 10px;
+  background: color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+.kb-play-post-frame::after {
+  background: var(--kb-glass-field-2);
+}
+
+.kb-play-post {
+  box-sizing: border-box;
+  margin: var(--kb-border);
+  max-height: calc(8 * 1.4em + 20px);
+  overflow-y: auto;
+  padding: 10px 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--kb-glass-text);
+  cursor: text;
+  user-select: text;
+}
+
+.kb-play-post:focus-visible {
+  outline: 3px solid var(--kb-glass-ready-text);
+  outline-offset: -3px;
+}
+
+.kb-play-post::selection {
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+}
+
+/* Who: the same three-way choice as How to play it, drawn as the glass's skewed tiles: each face skews by the glass token and its words
+   (the inner kb-glass-upright) take the opposite, so they stand straight. Cyan when chosen, with the check and the inset ring as well,
+   and the words may wrap. The gap and the side margin leave room for the skew, so nothing leaves the row at a phone's width. */
+.kb-play-who-row {
+  gap: 8px;
+  margin-inline: 6px;
+}
+
+.kb-play-who-row .kb-play-choice-opt {
+  display: flex;
+}
+
+.kb-play-who-row .kb-play-choice-opt + .kb-play-choice-opt .kb-play-choice-face {
+  border-inline-start-width: 1px;
+}
+
+.kb-play-who-row .kb-play-choice-face {
+  flex: 1;
+  min-height: 48px;
+  padding-inline: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: skewX(var(--kb-glass-skew));
+}
+
+.kb-play-who-row .kb-glass-upright {
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
+  line-height: 1.2;
+  color: inherit;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+/* Chosen is the glass's cyan (neon), as the glass's selected tabs are, whichever card is being set. */
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-play-choice-face {
+  border-color: var(--kb-glass-neon);
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+  box-shadow: inset 0 0 0 2px var(--kb-glass-ink-neon);
+}
+
+.kb-play-who-row .kb-play-choice-opt:hover .kb-play-choice-face {
+  border-color: var(--kb-glass-neon-text);
+}
+
+/* The check belongs to the words, not to the skewed face, and the face is the one that shows the ring. */
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-play-choice-face::before {
+  content: none;
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-glass-upright::before {
+  content: '\2713\00a0' / '';
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-glass-upright {
+  background: none;
+  box-shadow: none;
+  border: 0;
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:focus-visible) .kb-play-choice-face {
+  outline: 3px solid var(--kb-glass-ready-text);
+  outline-offset: 2px;
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:focus-visible) .kb-glass-upright {
+  outline: none;
+}
+
+@media (forced-colors: active) {
+  .kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-play-choice-face {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+    box-shadow: inset 0 0 0 2px HighlightText;
+  }
+
+  .kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-glass-upright {
+    background: none;
+    box-shadow: none;
+    border: 0;
+    color: HighlightText;
+  }
+}
+
+.kb-play-who {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.kb-play-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A chip: a chamfered panel with a cyan border (glass/base.css draws the cut and the edge), its remove button at its end. */
+.kb-play-chip {
+  --kb-cut: 10px;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-text-hi);
+  font-weight: 800;
+}
+
+.kb-play-chip::after {
+  background: var(--kb-glass-field);
+}
+
+.kb-play-chip-name {
+  min-width: 0;
+  padding: 7px 4px 7px 12px;
+  overflow-wrap: anywhere;
+}
+
+.kb-play-chip-remove {
+  min-width: 44px;
+  min-height: 44px;
+  margin: -6px 0 -6px 0;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 1.3em;
+  line-height: 1;
+  color: var(--kb-glass-neon-text);
+  cursor: pointer;
+}
+
+.kb-play-chip-remove:hover {
+  background: var(--kb-glass-neon);
+  color: var(--kb-glass-ink-neon);
+}
+
+.kb-play-who-box {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-play-who-box:disabled {
+  opacity: 0.55;
+}
+
+.kb-play .kb-play-who-said:empty {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kb-play-when-group {
+    animation: kb-play-when-open 160ms ease-out;
+  }
+}
+
+@keyframes kb-play-when-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (forced-colors: active) {
+  .kb-play-chip {
+    border: 1px solid CanvasText;
+    clip-path: none;
+  }
+}
+
 /* ---- what it costs ---- */
 
 .kb-play-sum {

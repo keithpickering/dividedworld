@@ -73,10 +73,10 @@ export const PHRASE_FIXTURES: readonly PhraseFixture[] = [
     "found": true
   },
   {
-    "name": "only ever next to punctuation inside a word",
+    "name": "punctuation inside a word no longer splits it",
     "body": "don't cat_alog",
     "phrase": "cat",
-    "found": true
+    "found": false
   },
   {
     "name": "a phrase with spaces",
@@ -104,7 +104,7 @@ export const PHRASE_FIXTURES: readonly PhraseFixture[] = [
   },
   {
     "name": "a phrase ending on a symbol, beside more symbols",
-    "body": "c+++x",
+    "body": "c+++ x",
     "phrase": "c++",
     "found": true
   },
@@ -115,10 +115,10 @@ export const PHRASE_FIXTURES: readonly PhraseFixture[] = [
     "found": true
   },
   {
-    "name": "brackets do not match their letter alone",
+    "name": "brackets around a phrase are ignored",
     "body": "see a here",
     "phrase": "[a]",
-    "found": false
+    "found": true
   },
   {
     "name": "a backslash is not an escape",
@@ -379,10 +379,10 @@ export const PHRASE_FIXTURES: readonly PhraseFixture[] = [
     "found": false
   },
   {
-    "name": "an underscore is not a letter",
+    "name": "an underscore inside a word is ignored, so the word is one",
     "body": "the_cat",
     "phrase": "cat",
-    "found": true
+    "found": false
   },
   {
     "name": "dotless i does not fold to i",
@@ -472,6 +472,156 @@ export const PHRASE_FIXTURES: readonly PhraseFixture[] = [
     "name": "an astral letter",
     "body": "a 𐐀 b",
     "phrase": "𐐨",
+    "found": true
+  },
+  {
+    "name": "looser: an apostrophe inside a word is ignored, \"dont\" finds \"don't\"",
+    "body": "Don't do that",
+    "phrase": "dont",
+    "found": true
+  },
+  {
+    "name": "looser: and \"don't\" finds \"dont\"",
+    "body": "I dont know",
+    "phrase": "don't",
+    "found": true
+  },
+  {
+    "name": "looser: a curly apostrophe is ignored too",
+    "body": "I don’t know",
+    "phrase": "dont",
+    "found": true
+  },
+  {
+    "name": "looser: \"e-mail\" finds \"email\"",
+    "body": "send an email",
+    "phrase": "e-mail",
+    "found": true
+  },
+  {
+    "name": "looser: \"email\" finds \"e-mail\"",
+    "body": "send an e-mail",
+    "phrase": "email",
+    "found": true
+  },
+  {
+    "name": "looser: \"U.S.A.\" finds \"USA\"",
+    "body": "the USA wins",
+    "phrase": "U.S.A.",
+    "found": true
+  },
+  {
+    "name": "looser: \"usa\" finds \"U.S.A.\"",
+    "body": "the U.S.A. wins",
+    "phrase": "usa",
+    "found": true
+  },
+  {
+    "name": "looser: punctuation between words is any other punctuation, \"nice try\" finds \"Nice... try!\"",
+    "body": "Nice... try!",
+    "phrase": "nice try",
+    "found": true
+  },
+  {
+    "name": "looser: \"nice try\" does not find \"nice-try\", which reads as one word",
+    "body": "what a nice-try",
+    "phrase": "nice try",
+    "found": false
+  },
+  {
+    "name": "looser: \"don\" does not find \"don't\"",
+    "body": "I don't know",
+    "phrase": "don",
+    "found": false
+  },
+  {
+    "name": "looser: \"dont\" does not find \"don\"",
+    "body": "I don know",
+    "phrase": "dont",
+    "found": false
+  },
+  {
+    "name": "looser: a phrase is not found across a line break",
+    "body": "nice\ntry",
+    "phrase": "nice try",
+    "found": false
+  },
+  {
+    "name": "looser: a phrase is not found across a quote's separator",
+    "body": "nice [quote=0f8fad5b-d9cb-469f-a165-70867728950e]x[/quote] try",
+    "phrase": "nice try",
+    "found": false
+  },
+  {
+    "name": "looser: punctuation at the phrase's end is ignored, \"wow!\" finds \"wow, that\"",
+    "body": "wow, that is something",
+    "phrase": "wow!",
+    "found": true
+  },
+  {
+    "name": "looser: and \"wow\" finds \"wow!\"",
+    "body": "wow!",
+    "phrase": "wow",
+    "found": true
+  },
+  {
+    "name": "looser: punctuation at the phrase's start is ignored",
+    "body": "say (hello) now",
+    "phrase": "(hello)",
+    "found": true
+  },
+  {
+    "name": "looser: a phrase that normalizes to nothing matches nothing",
+    "body": "?! ... ?!",
+    "phrase": "?! ...",
+    "found": false
+  },
+  {
+    "name": "looser: a non-breaking space is a space",
+    "body": "nice try",
+    "phrase": "nice try",
+    "found": true
+  },
+  {
+    "name": "looser: an ideographic space is a space",
+    "body": "你好　世界",
+    "phrase": "你好 世界",
+    "found": true
+  },
+  {
+    "name": "looser: CJK punctuation inside a word is ignored",
+    "body": "你好，世界",
+    "phrase": "你好世界",
+    "found": true
+  },
+  {
+    "name": "looser: and CJK punctuation does not make a space the phrase has",
+    "body": "你好，世界",
+    "phrase": "你好 世界",
+    "found": false
+  },
+  {
+    "name": "looser: CJK punctuation before a space is one space",
+    "body": "你好。 世界",
+    "phrase": "你好 世界",
+    "found": true
+  },
+  {
+    "name": "looser: an Arabic comma before a space is one space",
+    "body": "مرحبا، بالعالم",
+    "phrase": "مرحبا بالعالم",
+    "found": true
+  },
+  {
+    "name": "looser: an Arabic comma inside a word is ignored",
+    "body": "مرحبا،بالعالم",
+    "phrase": "مرحبابالعالم",
+    "found": true
+  },
+  {
+    "name": "looser: a phrase's many spaces are one",
+    "body": "nice   try",
+    "phrase": "nice try",
     "found": true
   }
 ];

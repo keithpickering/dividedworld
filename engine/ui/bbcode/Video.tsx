@@ -56,7 +56,7 @@ export function Video({ video }: { readonly video: VideoData }) {
             tabIndex={-1}
           />
         )}
-        <p className="kb-bb-video-from">{link}</p>
+        <p className="kb-bb-video-from" data-kb-quotable="hidden">{link}</p>
       </div>
     );
   }
@@ -66,14 +66,14 @@ export function Video({ video }: { readonly video: VideoData }) {
         {video.provider === 'youtube' && (
           <img className="kb-bb-video-thumb" src={`https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`} alt="" loading="lazy" referrerPolicy="no-referrer" />
         )}
-        <div className="kb-bb-video-face">
+        <div className="kb-bb-video-face" data-kb-quotable="hidden">
           {video.provider !== 'youtube' && <span>▶ {name} video: {labelOf(video.url)}</span>}
           <button type="button" className="kb-button kb-bb-video-play" aria-label={`Play ${name} video`} onClick={() => setPlaying(true)}>
             Play
           </button>
         </div>
       </div>
-      <p className="kb-bb-video-from">{link}</p>
+      <p className="kb-bb-video-from" data-kb-quotable="hidden">{link}</p>
     </div>
   );
 }

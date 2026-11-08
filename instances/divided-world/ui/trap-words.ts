@@ -8,9 +8,12 @@ import type { TrapStruckFacts } from '../../../engine/ui/types.ts';
 export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; readonly detail: string } | undefined {
   if (f.setter === null || f.card === null) return undefined;
   if (f.how === 'quote') {
+    /* The engine hands the matched conditions already shortened and quoted; each is a fact of the spring, so the voice may gloat about it and says no more. */
+    const matched = Boolean(f.passage || f.says);
+    const quoted = f.passage ? `quoted ${f.passage}` : 'quoted their post';
     return {
-      line: `${f.setter} saw this coming.`,
-      detail: `Their face-down ${f.card} sprang when you quoted their post${f.span ? `, ${f.span} after they set it` : ''}.`,
+      line: matched ? `${f.setter} was waiting for exactly that.` : `${f.setter} saw this coming.`,
+      detail: `Their face-down ${f.card} sprang when you ${quoted}${f.says ? ` saying ${f.says}` : ''}${f.span ? `, ${f.span} after they set it` : ''}.`,
     };
   }
   return {

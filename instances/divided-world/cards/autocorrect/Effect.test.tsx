@@ -16,6 +16,7 @@ import { BbCode } from '../../../../engine/ui/bbcode/render.tsx';
 import { ratio } from '../../../../engine/ui/contrast.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { AutocorrectEffect, TAPE } from './Effect.tsx';
+import { readRange } from '../../../../engine/ui/thread/SelectionQuote.tsx';
 import { dropStrip, fallFrames } from './fall.ts';
 
 const read = (p: string) => fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), p), 'utf8');
@@ -293,5 +294,36 @@ describe('the fall', () => {
     } finally {
       proto.animate = was;
     }
+  });
+});
+
+describe('Autocorrect and highlight-to-quote', () => {
+  /** What selecting the whole post body would quote, with the render's container moved into the article a body lives in. */
+  function quoted() {
+    const article = document.createElement('article');
+    article.className = 'kb-act';
+    article.dataset.kbSeq = '3';
+    article.append(...document.body.children);
+    document.body.append(article);
+    const body = article.querySelector('.kb-bb')!;
+    const r = document.createRange();
+    r.setStart(body, 0);
+    r.setEnd(body, body.childNodes.length);
+    return readRange(r)?.text;
+  }
+
+  test('a quote holds the replacement the strip shows, never the words under it', () => {
+    mount({ body: 'I said MARIO today' });
+    expect(quoted()).toBe('I said Luigi today');
+  });
+
+  test('a long strip (tape that breaks across lines) quotes its replacement too', () => {
+    mount({ body: 'I said MARIO today', plays: [playOf(1, 'mario', 'a replacement of more than twenty-eight characters')] });
+    expect(quoted()).toBe('I said a replacement of more than twenty-eight characters today');
+  });
+
+  test('a peeled strip quotes the author\'s words again', () => {
+    mount({ body: 'I said MARIO today', states: { k1: { state: { peeled: [0] } } as unknown as EffectState } });
+    expect(quoted()).toBe('I said MARIO today');
   });
 });
