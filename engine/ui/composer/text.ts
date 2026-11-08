@@ -93,10 +93,23 @@ export function framedIn(draft: string): string[] {
 /** The trailing `framing` argument of a send: the draft's framed characters, or no argument at all when it frames none. */
 export const framingArgs = (draft: string): [readonly string[]] | [] => { const f = framedIn(draft); return f.length > 0 ? [f] : []; };
 
-/** The draft with a quote of an Act appended on a line of its own: the whole post, by its Act. */
-export function quoteText(draft: string, act: string, body: string): string {
+/**
+ * A selection's words as the quote keeps them: as typed. Words that would read as a tag (`[b]`, `[/quote]`, `[url=...]`) go in `[noparse]`, so the quote holds
+ * no markup the post did not show. The cover ends at the first `[/noparse]`, so one inside the words is cut in two there (its `]` goes to a cover of its own),
+ * which reads back as the same characters and can never end the cover early.
+ */
+function asTyped(words: string): string {
+  if (!/\[\/?[a-z*]/iu.test(words)) return words;
+  return `[noparse]${words.replace(/\[\/noparse\]/giu, (closer) => `${closer.slice(0, -1)}[/noparse][noparse]]`)}[/noparse]`;
+}
+
+/**
+ * The draft with a quote of an Act appended on a line of its own: the whole post by its Act, whose markup stays live as written,
+ * or, with `selected`, a stretch of its shown words, kept as typed.
+ */
+export function quoteText(draft: string, act: string, body: string, selected = false): string {
   const lead = draft === '' || draft.endsWith('\n') ? draft : `${draft}\n`;
-  return `${lead}[quote=${act}]${body}[/quote]\n`;
+  return `${lead}[quote=${act}]${selected ? asTyped(body) : body}[/quote]\n`;
 }
 
 /**

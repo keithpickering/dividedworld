@@ -55,6 +55,7 @@ import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { FollowControl } from './Follow.tsx';
 import { ActArticle, ThreadHead } from './Post.tsx';
+import { SelectionQuote } from './SelectionQuote.tsx';
 import { ThreadCtx, type ThreadContext } from './context.ts';
 import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
@@ -551,6 +552,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     return a && a.seq !== null ? { thread: a.thread, seq: a.seq } : undefined;
   }, []);
   const quote = useCallback((a: Act) => composer.current?.quote(a.id, text(a.currentPayload.body)), []);
+  /* Highlight-to-quote: a selection's words go in as typed, and the post is found by the number its article carries. */
+  const quoteSelected = useCallback((a: Act, words: string) => composer.current?.quote(a.id, words, true), []);
   const changed = useCallback((a: Act) => dispatch({ type: 'live', act: a }), []);
   const canReply = systemBoard === false;
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -559,6 +562,10 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, faceOf, pronounsOf, ensurePeople, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
+  const quotableAt = useCallback((seq: number) => {
+    const a = shown.find((x) => x.seq === seq);
+    return a && (a.kind === 'post' || a.kind === 'spin') ? a : undefined;
+  }, [shown]);
 
   /* The last post shown, to quote from the toolbar (the thread's latest only when its tail is on screen). */
   const latest = useMemo(() => {
@@ -657,6 +664,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           </CalloutProvider>
         </ThreadCtx.Provider>
       </ActIndex.Provider>
+      {canReply && <SelectionQuote actOf={quotableAt} quote={quoteSelected} />}
       <div ref={endRef} className="kb-thread-end" data-kb-end="" aria-hidden="true" />
       {!feed.tailLoaded && (
         <p className="kb-thread-continue">
