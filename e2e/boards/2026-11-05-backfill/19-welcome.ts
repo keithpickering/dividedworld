@@ -17,6 +17,8 @@
  *  - The Theme row is the board look's tiles (engine/ui/account/ThemePicker.tsx, the board look design's section 9: "the tiles alone" on this page) where the board
  *    draws three radios and a sentence: the sentence is not on this page (Settings › The board says it, held by board 19 of the board look), and the tile row is
  *    taller than the radios' row by the 79px every row under it stands lower (`TILES`).
+ *  - Before you start has a fourth row the board does not draw, Brighter effects after Text size (docs/plans/2026-11-08-brighter-effects-design.md:
+ *    the owner wanted a new player to meet the choice here), so the two calls to action under it stand lower again by that row's height (`EFFECTS`).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -24,6 +26,8 @@ import type { BoardManifest } from '../../board-match.ts';
 const PROSE = { y: 28 } as const;
 /** Under the theme row: the PROSE shift and the tile row's own height over the three radios' (79px, as the first run measured). */
 const TILES = { y: 107.2 } as const;
+/** Under the Brighter effects row: the TILES shift and that row's own height (178px, as the first run measured). */
+const EFFECTS = { y: 285.2 } as const;
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/19-welcome',
@@ -46,8 +50,8 @@ const manifest: BoardManifest = {
     { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
     { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...TILES, height: -6 }, origin: 'headline', originEdge: 'bottom' },
-    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...TILES, height: -6 }, origin: 'headline', originEdge: 'bottom' },
+    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...EFFECTS, height: -6 }, origin: 'headline', originEdge: 'bottom' },
+    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...EFFECTS, height: -6 }, origin: 'headline', originEdge: 'bottom' },
   ],
 };
 

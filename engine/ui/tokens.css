@@ -18,6 +18,15 @@
   --kb-muted: #555;
   --kb-link: #000;
   --kb-link-visited: #333;
+  /*
+   * The board's four post inks, kept as they resolve on the root (docs/plans/2026-11-08-brighter-effects-design.md, section 1). A post
+   * body that wears a bright ink overrides --kb-fg and the rest for everything inside it (thread.css); what inside has a ground of its
+   * own reads these copies instead, which that override cannot reach, and which follow the board's mode because they resolve here.
+   */
+  --kb-board-fg: var(--kb-fg);
+  --kb-board-link: var(--kb-link);
+  --kb-board-link-visited: var(--kb-link-visited);
+  --kb-board-muted: var(--kb-muted);
   --kb-focus: #000;
   --kb-selection-fg: #fff;
   --kb-selection-bg: #000;

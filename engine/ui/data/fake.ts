@@ -2978,6 +2978,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (p.textSize !== undefined && ![100, 125, 150, 200].includes(p.textSize)) return refuse('text size is 100, 125, 150 or 200 percent');
       if (p.mode !== undefined && p.mode !== 'system' && p.mode !== 'light' && p.mode !== 'dark') return refuse('the mode follows the device, or is light or dark');
       if (p.tilt !== undefined && p.tilt !== 'off' && p.tilt !== 'on') return refuse('tilt is off or on');
+      if (p.effects !== undefined && p.effects !== 'standard' && p.effects !== 'bright') return refuse('effects are standard or bright');
       /* As set_preferences (0064) keeps the toasts: the kinds of alert there are, each once in the order first named, null for the defaults. */
       let toasts = account.prefs.toasts;
       if (p.toasts === null) toasts = null;

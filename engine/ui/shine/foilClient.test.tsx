@@ -34,7 +34,7 @@ const supported = () => {
   vi.stubGlobal('OffscreenCanvas', FakeOffscreen);
   proto.transferControlToOffscreen = function (this: HTMLCanvasElement) { transfers++; return new FakeOffscreen(this); };
 };
-const BAND: Band = { lo: 0.59, hi: 1 };
+const BAND: Band = { lo: 0.59, hi: 1, board: 'light', bright: false };
 const spec = { seed: 's', pattern: 'pearl' as const, palette: ['#000000', '#111111', '#222222', '#333333', '#444444', '#555555'], stars: 4, glint: '#ffffff' };
 const drawArgs = (t = 16) => [spec, 'light', { w: 90, h: 45 }, 2, { x: 0.1, y: -0.2 }, BAND, t, false] as const;
 const flushMicrotasks = () => Promise.resolve().then(() => undefined);

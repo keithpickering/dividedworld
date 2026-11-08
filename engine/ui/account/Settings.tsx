@@ -4,7 +4,7 @@
  * sections, Account, Accessibility, The board and Notifications (the board's Privacy and Export my data wait
  * for a design), and the section beside it.
  *
- * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the post style and tilt, each a row of
+ * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, Brighter effects, the post style and tilt, each a row of
  * skewed choices with its sentence. The board (?section=board): the theme, a preview and one tile per theme, and the mode, light, dark or the device's
  * (ThemePicker.tsx). Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme and mode restyle the board only, the smoke, contrast and text
@@ -37,7 +37,7 @@ import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { settingsSection, type AccountDoc } from '../glass-docs.ts';
 import { useBoot } from '../boot.tsx';
 import { GlassLink } from '../glass/Link.tsx';
-import { Choice, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
+import { Choice, EffectsRow, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { ModeRow, ThemeRow } from './ThemePicker.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
@@ -285,6 +285,7 @@ export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<AccountDoc> }
         <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
           sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
         <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
+        <EffectsRow value={prefs.effects} onChange={(v) => change({ effects: v })} />
         <TiltRow value={prefs.tilt} onChange={(v) => change({ tilt: v })} />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />

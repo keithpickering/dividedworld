@@ -9,8 +9,8 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
-import { bandOf, luminanceOf, toLinear } from './band.ts';
-import { drawLoose, GLINT_MIN, landAll, loose, makeFlakes, type Flake, type Flakes } from './flakes.ts';
+import { bandOf, brightBand, luminanceOf, toLinear, toHex, type Rgb } from './band.ts';
+import { BRIGHT_FLOOR, drawLoose, glintsAreFew, GLINT_MIN, landAll, loose, makeFlakes, sampleCling, sampleFlakes, type Flake, type Flakes } from './flakes.ts';
 
 /** A stand-in canvas: a sprite drawn on it remembers the colors of its gradient's stops. */
 class FakeCanvas {
@@ -58,11 +58,11 @@ function recorder() {
 /** The color a sprite was made in: its first stop, without the alpha. */
 const colorOf = (s: FakeCanvas): string => s.stops[0]!.slice(0, 7);
 /** A post with every flake landed, and one flake of it (plain, not winking, unless `holo`) left alone on it to aim the light at. */
-function post(holo = false): { f: Flakes; aim: Flake } {
+function post(holo = false, ink?: number): { f: Flakes; aim: Flake } {
   const f = makeFlakes({ seed: 'glint', box: { w: 400, h: 200 }, inks: GLITTER, holo: HOLO, density: 70, glint: '#ffffff' });
   landAll(f);
   const inner = f as unknown as { settled: Flake[] };
-  const aim = inner.settled.find((k) => (holo ? k.ink >= HOLO : k.ink < HOLO) && !k.tw)!;
+  const aim = inner.settled.find((k) => (ink !== undefined ? k.ink === ink : holo ? k.ink >= HOLO : k.ink < HOLO) && !k.tw)!;
   inner.settled = [aim];
   return { f, aim };
 }
@@ -152,5 +152,113 @@ describe('the dark board glints', () => {
     f.draw(r.ctx, { x: aim.nx, y: aim.ny }, light, 0, false);
     assert.equal(r.images.length, 1);
     assert.ok(r.images[0]!.op === 'lighter' && colorOf(r.images[0]!.sprite) === '#ffffff');
+  });
+});
+
+describe('the bright band: glitter in full color', () => {
+  const brightDark = brightBand('dark'), brightLight = brightBand('light');
+  const hexOfLin = (c: Rgb): string => toHex(c);
+  /** The one flake's fill at a light: far from it (unlit) or on it (lit). */
+  const fillAt = (board: 'dark' | 'light', ink: number, lit: boolean): { fill: string; r: ReturnType<typeof recorder>; aim: Flake } => {
+    const { f, aim } = post(false, ink);
+    const r = recorder();
+    f.draw(r.ctx, lit ? { x: aim.nx, y: aim.ny } : { x: aim.nx + 5, y: aim.ny }, board === 'dark' ? brightDark : brightLight, 0, false);
+    return { fill: r.fills[0]!, r, aim };
+  };
+  const BLUE = 5;
+  const near = (a: string, b: string) => {
+    const x = toLinear(a), y = toLinear(b);
+    for (let i = 0; i < 3; i++) assert.ok(Math.abs(x[i]! - y[i]!) < 0.004, `${a} is ${b}`);
+  };
+
+  test('the floors are named: 0.5 on the dark board, 0.85 on the light', () => {
+    assert.deepEqual({ ...BRIGHT_FLOOR }, { dark: 0.5, light: 0.85 });
+  });
+
+  test('an unlit flake on the dark board is its ink at 0.5', () => {
+    const { fill } = fillAt('dark', BLUE, false);
+    const ink = toLinear(GLITTER[BLUE]!);
+    near(fill, hexOfLin(ink.map((v) => v * BRIGHT_FLOOR.dark) as Rgb));
+  });
+
+  test('an unlit flake on the light board is its ink mixed toward white, keeping 0.85 of it', () => {
+    const { fill } = fillAt('light', BLUE, false);
+    const ink = toLinear(GLITTER[BLUE]!);
+    near(fill, hexOfLin(ink.map((v) => 1 + (v - 1) * BRIGHT_FLOOR.light) as Rgb));
+  });
+
+  test('a lit flake is its full ink, past the standard band on either board', () => {
+    const d = fillAt('dark', BLUE, true), l = fillAt('light', BLUE, true);
+    near(d.fill, GLITTER[BLUE]!); near(l.fill, GLITTER[BLUE]!);
+    assert.ok(L(d.fill) > dark.hi, `${d.fill} is past the dark ceiling ${dark.hi}`);
+    assert.ok(L(l.fill) < light.lo, `${l.fill} is under the light floor ${light.lo}`);
+  });
+
+  test('a flake lit past GLINT_MIN glints on the light board too: the hue and its heart, added', () => {
+    const { r } = fillAt('light', BLUE, true);
+    assert.equal(r.images.length, 2);
+    assert.ok(r.images.every((i) => i.op === 'lighter'));
+    assert.equal(colorOf(r.images[1]!.sprite), '#ffffff');
+    assert.ok(Math.max(...toLinear(colorOf(r.images[0]!.sprite))) > 0.99, 'as bright as its hue goes');
+  });
+
+  test('under reduced motion a lit flake still glints, on either board', () => {
+    motion = 'reduce';
+    try {
+      for (const board of ['dark', 'light'] as const) {
+        const { r } = fillAt(board, BLUE, true);
+        assert.equal(r.images.length, 2, board);
+        assert.ok(r.images.every((i) => i.op === 'lighter'), board);
+      }
+    } finally { motion = 'full'; }
+  });
+
+  test('a flake lit only up to GLINT_MIN does not glint', () => {
+    const { f, aim } = post(false, BLUE);
+    const r = recorder();
+    f.draw(r.ctx, { x: aim.nx + Math.sqrt(-0.03 * Math.log(GLINT_MIN)) * 1.02, y: aim.ny }, brightLight, 0, false);
+    assert.equal(r.images.length, 0);
+  });
+
+  test('loose glitter takes the free colors but does not glint', () => {
+    const { aim } = post(false, BLUE);
+    const host = {};
+    loose(host).push({ ...aim });
+    const r = recorder();
+    drawLoose(host, r.ctx, { x: aim.nx, y: aim.ny }, brightDark, 0, false);
+    assert.equal(r.images.length, 1);
+    assert.equal(r.images[0]!.op, 'source-over');
+    near(r.fills[0]!, GLITTER[BLUE]!);
+    near(colorOf(r.images[0]!.sprite), GLITTER[BLUE]!);
+  });
+
+  test('a loose flare keeps the flake\'s own hue, not a hue moved to a ceiling', () => {
+    for (const board of [brightDark, brightLight]) {
+      for (const ink of [0, 3, 5, 6]) {
+        const { aim } = post(false, ink);
+        const host = {};
+        loose(host).push({ ...aim });
+        const r = recorder();
+        drawLoose(host, r.ctx, { x: aim.nx, y: aim.ny }, board, 0, false);
+        near(colorOf(r.images[0]!.sprite), GLITTER[ink]!);
+      }
+    }
+  });
+
+  test('cling takes the floors: its darkest color is the ink at 0.5 on the dark board, 0.85 of it on the light', () => {
+    const { f } = post(false, BLUE);
+    const ink = toLinear(GLITTER[BLUE]!);
+    const dk = sampleCling(f, brightDark), lt = sampleCling(f, brightLight);
+    const has = (set: Set<string>, want: string) => [...set].some((c) => { try { near(c, want); return true; } catch { return false; } });
+    assert.ok(has(dk, hexOfLin(ink.map((v) => v * BRIGHT_FLOOR.dark) as Rgb)), 'dark trough');
+    assert.ok(has(lt, hexOfLin(ink.map((v) => 1 + (v - 1) * BRIGHT_FLOOR.light) as Rgb)), 'light trough');
+    assert.ok(has(dk, GLITTER[BLUE]!) && has(lt, GLITTER[BLUE]!), 'full ink at the peak');
+  });
+
+  test('the standard checks are not applied to a bright band: glintsAreFew takes no band, and the sampled colors leave the standard one', () => {
+    assert.equal(glintsAreFew.length, 2);
+    const { f } = post(false, BLUE);
+    const seen = sampleFlakes(f, { x: 0, y: 0 }, brightDark, 0);
+    assert.ok([...seen].some((c) => L(c) > dark.hi), 'a bright band is not a readable one');
   });
 });

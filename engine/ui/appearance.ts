@@ -15,6 +15,10 @@
  * the board and the glass is in rem or a glass size token, which is rem, so all of it follows; and
  * from 150 up useBoard folds the glass to the Phone board's one column). Given the instance's glass,
  * high contrast also puts its `high` key on the root, and anything else its standard key.
+ *
+ * Brighter effects is not a glass preference but the board's: `data-kb-effects` (bright) tells the
+ * shine (engine/ui/shine/band.ts) to leave the readable band, so a card's effects use their full
+ * colors (docs/plans/2026-11-08-brighter-effects-design.md).
  */
 import { useSyncExternalStore } from 'react';
 import { applyGlass } from './glass/apply.ts';
@@ -30,6 +34,7 @@ export interface AppearancePreference {
   readonly smoke?: 'full' | 'low' | 'off';
   readonly contrast?: 'standard' | 'high';
   readonly textSize?: 100 | 125 | 150 | 200;
+  readonly effects?: 'standard' | 'bright';
 }
 
 export interface Appearance {
@@ -81,6 +86,7 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   const size = pref.textSize === 125 || pref.textSize === 150 || pref.textSize === 200 ? pref.textSize : null;
   mark(root, 'data-kb-smoke-level', smoke);
   mark(root, 'data-kb-contrast', high ? 'high' : null);
+  mark(root, 'data-kb-effects', pref.effects === 'bright' ? 'bright' : null);
   mark(root, 'data-kb-text-size', size === null ? null : String(size));
   if (glass) applyGlass(root, glass, high ? 'high' : 'standard');
   return a;

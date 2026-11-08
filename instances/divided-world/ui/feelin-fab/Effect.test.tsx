@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ratio, tokensOf } from '../../../../engine/ui/contrast.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
-import { bandOf, POST_INK } from '../../../../engine/ui/shine/band.ts';
+import { bandFor, bandOf, POST_INK } from '../../../../engine/ui/shine/band.ts';
 import { light as pageLight, REST } from '../../../../engine/ui/shine/light.ts';
 import { probe, SPAN_MARGIN } from '../../../../engine/ui/shine/loop.ts';
 import { foilProbe, IDLE_MS, setFoilWorker } from '../../../../engine/ui/shine/foilClient.ts';
@@ -36,11 +36,13 @@ vi.mock('../../../../engine/ui/shine/band.ts', async (importOriginal) => {
     bandFor: vi.fn((el: Element) => {
       window.getComputedStyle(el); /* the real bandFor reads the tokens through getComputedStyle; the spy counts that cost */
       if (bandState.throws) throw new Error('shine band: not a hex color');
-      return document.documentElement.getAttribute('data-kb-mode') === 'dark' ? { lo: 0, hi: 0.048 } : { lo: 0.59, hi: 1 };
+      const board = document.documentElement.getAttribute('data-kb-mode') === 'dark' ? 'dark' : 'light';
+      if (document.documentElement.getAttribute('data-kb-effects') === 'bright') return { lo: 0, hi: 1, board, bright: true };
+      return board === 'dark' ? { lo: 0, hi: 0.048, board, bright: false } : { lo: 0.59, hi: 1, board, bright: false };
     }),
   };
 });
-import { FAB_GLINT, FAB_STOPS, FeelinFabEffect } from './Effect.tsx';
+import { FAB_BRIGHT, FAB_GLINT, FAB_STOPS, FeelinFabEffect } from './Effect.tsx';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
@@ -95,6 +97,7 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
   document.documentElement.setAttribute('data-kb-motion', 'full');
   document.documentElement.removeAttribute('data-kb-mode');
+  document.documentElement.removeAttribute('data-kb-effects');
 });
 afterEach(() => {
   cleanup();
@@ -103,6 +106,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   document.documentElement.removeAttribute('data-kb-motion');
   document.documentElement.removeAttribute('data-kb-mode');
+  document.documentElement.removeAttribute('data-kb-effects');
 });
 
 describe("Feelin' Fab", () => {
@@ -181,7 +185,7 @@ describe("Feelin' Fab", () => {
     expect(c).toBe(ctx);
     expect(boxArg).toEqual({ w: 300, h: 120 });
     expect(density).toBe(1.5);
-    expect(band).toEqual({ lo: 0.59, hi: 1 });
+    expect(band).toEqual({ lo: 0.59, hi: 1, board: 'light', bright: false });
   });
 
   test('the canvas is sized to the box at the density the loop returns, and its CSS size is the box, placed inline (engine/ui/cards/body.ts)', () => {
@@ -252,7 +256,7 @@ describe("Feelin' Fab", () => {
     const call = made[0]!.draw.mock.calls.at(-1)!;
     expect(call[1]).toEqual({ w: 200, h: 80 });
     expect(call[3]).toEqual(lastLight);
-    expect(call[4]).toEqual({ lo: 0.59, hi: 1 });
+    expect(call[4]).toEqual({ lo: 0.59, hi: 1, board: 'light', bright: false });
   });
 
   test('a resize before anything was drawn has no light to repaint with, and waits for the loop', () => {
@@ -433,7 +437,7 @@ describe("Feelin' Fab", () => {
     expect(draws()).toBe(settled + 1);
     const dark = made.find((f) => f.opts.palette === FAB_STOPS.dark);
     expect(dark).toBeDefined();
-    expect(dark!.draw.mock.calls.at(-1)![4]).toEqual({ lo: 0, hi: 0.048 });
+    expect(dark!.draw.mock.calls.at(-1)![4]).toEqual({ lo: 0, hi: 0.048, board: 'dark', bright: false });
     expect(made.find((f) => f.opts.palette === FAB_STOPS.light)!.release).toHaveBeenCalled();
     expect(probe.running()).toBe(false);
   });
@@ -492,13 +496,154 @@ describe("Feelin' Fab", () => {
     expect(rule('.dw-fab-foil')).toMatch(/z-index:\s*0/u);
     expect(rule('.dw-fab-words')).toMatch(/z-index:\s*1/u);
     expect(rule('.dw-fab-words')).toMatch(/text-shadow:/u);
-    expect(css).not.toMatch(/gradient|@keyframes|animation|data-kb-running|#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/iu);
+    /* The one place a color is named: the bright ink and its outline, which the engine's thread.css reads (--kb-bright-ink, --kb-bright-outline). */
+    const bare = css.replace(/--kb-bright-(?:ink|outline):\s*#[0-9a-f]{6};/giu, '');
+    expect(bare).not.toMatch(/gradient|@keyframes|animation|data-kb-running|#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/iu);
   });
 
   test('no style element is ever created: the foil is a canvas', () => {
     const before = document.querySelectorAll('style').length;
     render(<><FeelinFabEffect {...props(1)} /><FeelinFabEffect {...props(2)} /></>);
     expect(document.querySelectorAll('style')).toHaveLength(before);
+  });
+});
+
+/* Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md, section 1): with `data-kb-effects="bright"` on the root the band is the
+   free one, the foil is drawn from FAB_BRIGHT on both boards and the post body asks for the bright ink; with it off nothing is as it was. */
+describe("Feelin' Fab, bright", () => {
+  const bodyOfPost = () => document.querySelector('.kb-act-main') as HTMLElement;
+  const inBody = (level = 1) => render(<div className="kb-act-main"><FeelinFabEffect {...props(level)} /></div>);
+  const effects = (on: boolean) => act(async () => { if (on) document.documentElement.setAttribute('data-kb-effects', 'bright'); else document.documentElement.removeAttribute('data-kb-effects'); await Promise.resolve(); });
+
+  test('FAB_BRIGHT is the bench\'s six full-saturation stops, red to violet', () => {
+    expect(FAB_BRIGHT).toEqual(['#ff1f2d', '#ff8a00', '#ffe600', '#19d43c', '#1a8cff', '#9a2bff']);
+  });
+
+  test.each(['light', 'dark'] as const)('marked, the foil is drawn from FAB_BRIGHT on the %s board and the body carries the bright ink', (board) => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    if (board === 'dark') document.documentElement.setAttribute('data-kb-mode', 'dark');
+    inBody();
+    void see(canvas(), true); frames(2);
+    expect(made).toHaveLength(1);
+    expect(made[0]!.opts.palette).toEqual(FAB_BRIGHT);
+    expect(made[0]!.draw.mock.calls[0]![4]).toEqual({ lo: 0, hi: 1, board, bright: true });
+    expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('unmarked, the foil is drawn from FAB_STOPS as today and the body carries no mark', () => {
+    inBody();
+    void see(canvas(), true); frames(2);
+    expect(made[0]!.opts.palette).toEqual(FAB_STOPS.light);
+    expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('the mark goes when the post unmounts', () => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    const r = inBody();
+    const body = bodyOfPost();
+    expect(body).toHaveAttribute('data-kb-bright-ink');
+    r.unmount();
+    expect(body).not.toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('a post mounted standard and then switched to bright takes the bright palette and mark, and back again: neither mode keeps the other\'s foil, band or mark', async () => {
+    inBody();
+    void see(canvas(), true); frames(10);
+    const standard = made[0]!;
+    expect(standard.opts.palette).toEqual(FAB_STOPS.light);
+    await effects(true);
+    frames(10, 1000);
+    expect(made).toHaveLength(2);
+    expect(made[1]!.opts.palette).toEqual(FAB_BRIGHT);
+    expect(made[1]!.draw.mock.calls.at(-1)![4]).toEqual({ lo: 0, hi: 1, board: 'light', bright: true });
+    expect(standard.release).toHaveBeenCalledTimes(1);
+    expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
+    await effects(false);
+    frames(10, 3000);
+    expect(made).toHaveLength(3);
+    expect(made[2]!.opts.palette).toEqual(FAB_STOPS.light);
+    expect(made[2]!.draw.mock.calls.at(-1)![4]).toEqual({ lo: 0.59, hi: 1, board: 'light', bright: false });
+    expect(made[1]!.release).toHaveBeenCalledTimes(1);
+    expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('turning it on while the loop sleeps (reduced motion) redraws once, bright', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    inBody();
+    void see(canvas(), true); frames(3);
+    const settled = draws();
+    await effects(true);
+    frames(3, 200);
+    expect(draws()).toBe(settled + 1);
+    expect(made.at(-1)!.opts.palette).toEqual(FAB_BRIGHT);
+    expect(probe.running()).toBe(false);
+  });
+
+  test('a moment (still) draws bright once and redraws when the mark changes', async () => {
+    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} still /></div>);
+    expect(made.at(-1)!.opts.palette).toEqual(FAB_STOPS.light);
+    await effects(true);
+    expect(made.at(-1)!.opts.palette).toEqual(FAB_BRIGHT);
+    expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('a takeover that moves the words to another body while bright is on unmarks the old body and marks the new one', () => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    render(<><div className="kb-act-main" id="a"><FeelinFabEffect {...props(1)} /></div><div className="kb-act-main" id="b" /></>);
+    const a = document.getElementById('a')!, b = document.getElementById('b')!;
+    expect(a).toHaveAttribute('data-kb-bright-ink');
+    b.appendChild(box());
+    act(() => { for (const o of resizes) o.cb(); });
+    expect(a).not.toHaveAttribute('data-kb-bright-ink');
+    expect(b).toHaveAttribute('data-kb-bright-ink');
+    a.appendChild(box());
+  });
+
+  test.each([['reduced motion', () => document.documentElement.setAttribute('data-kb-motion', 'reduce'), true], ['out of view', () => {}, false]] as const)('turning it off while the loop sleeps (%s) clears the mark', async (_name, setUp, inView) => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    setUp();
+    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    void see(canvas(), true); frames(3);
+    if (!inView) { void see(canvas(), false); frames(3, 100); }
+    expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
+    await effects(false);
+    expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('a band that cannot be read paints nothing and asks for no ink', () => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    bandState.throws = true;
+    inBody();
+    expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
+  });
+
+  test('with no body (the ORIGIN box, a view of its own) there is nothing to mark and the foil is still bright', () => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    render(<FeelinFabEffect {...props(1)} place="origin" />);
+    void see(canvas(), true); frames(2);
+    expect(made[0]!.opts.palette).toEqual(FAB_BRIGHT);
+    expect(document.querySelector('[data-kb-bright-ink]')).toBeNull();
+  });
+
+  test('the root watch also names data-kb-effects, and no other attribute; unrelated root changes read no band', async () => {
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    inBody();
+    const mine = observe.mock.calls.find(([, o]) => (o as MutationObserverInit | undefined)?.attributeFilter?.includes('data-kb-mode'));
+    expect((mine![1] as MutationObserverInit).attributeFilter).toEqual(['data-kb-mode', 'data-kb-effects']);
+    void see(canvas(), true); frames(3);
+    const reads = vi.mocked(bandFor).mock.calls.length;
+    await act(async () => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); document.documentElement.setAttribute('data-kb-text', '2'); await Promise.resolve(); });
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(reads);
+  });
+
+  test('the stylesheet gives the ink and the outline to the foil\'s host, and the words wear them where only the host is painted', () => {
+    const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
+    /* thread.css reads both on the post body, which is an ANCESTOR of .dw-fab, and custom properties inherit downward only: they must be declared at the root. */
+    expect(css).toMatch(/:root\s*\{[^}]*--kb-bright-ink:\s*#ffffff;[^}]*--kb-bright-outline:\s*#000000;/u);
+    expect(css.match(/\.dw-fab\s*\{[^}]*\}/u)![0]).not.toMatch(/--kb-bright-/u);
+    expect(css).toMatch(/:root\[data-kb-effects="bright"\]\s+\.dw-fab:not\(\[data-kb-bleed\]\)\s+>\s+\.dw-fab-words\s*\{[^}]*color:\s*var\(--kb-bright-ink\)[^}]*text-shadow:[^}]*var\(--kb-bright-outline\)/u);
+    expect(css).toMatch(/\.kb-act-main\[data-kb-bright-ink\]\s+\.dw-fab-words\s*\{[^}]*text-shadow:\s*inherit/u);
   });
 });
 
@@ -547,7 +692,7 @@ describe("Feelin' Fab drawing in a worker", () => {
     terminate() { this.terminated = true; }
     of(kind: string) { return this.sent.filter((m) => m.kind === kind); }
   }
-  type Sent = { t: number; draws: { id: number; spec: { seed: string; pattern: string; palette: readonly string[]; stars: number; glint: string }; key: string; box: { w: number; h: number }; density: number; light: { x: number; y: number }; band: { lo: number; hi: number } | null; now: number; idle: boolean }[] };
+  type Sent = { t: number; draws: { id: number; spec: { seed: string; pattern: string; palette: readonly string[]; stars: number; glint: string }; key: string; box: { w: number; h: number }; density: number; light: { x: number; y: number }; band: { lo: number; hi: number; board: string; bright: boolean } | null; now: number; idle: boolean }[] };
   const proto = HTMLCanvasElement.prototype as unknown as { transferControlToOffscreen?: () => unknown };
   let transferred: HTMLCanvasElement[] = [];
   const worker = () => FakeWorker.made[0]!;
@@ -587,7 +732,7 @@ describe("Feelin' Fab drawing in a worker", () => {
     expect(d.key).toBe('light:3');
     expect(d.box).toEqual({ w: 300, h: 120 });
     expect(d.density).toBe(1.5);
-    expect(d.band).toEqual({ lo: 0.59, hi: 1 });
+    expect(d.band).toEqual({ lo: 0.59, hi: 1, board: 'light', bright: false });
     expect(d.idle).toBe(false);
     expect(posted()[0]!.t).toBe(d.now);
     expect(probe.draws(box())).toBeGreaterThanOrEqual(1);
@@ -599,7 +744,20 @@ describe("Feelin' Fab drawing in a worker", () => {
     void see(canvas(), true);
     await run(2);
     const d = posted()[0]!.draws[0]!;
-    expect([d.key, d.spec.palette, d.band]).toEqual(['dark:3', FAB_STOPS.dark, { lo: 0, hi: 0.048 }]);
+    expect([d.key, d.spec.palette, d.band]).toEqual(['dark:3', FAB_STOPS.dark, { lo: 0, hi: 0.048, board: 'dark', bright: false }]);
+  });
+
+  test('bright, the draw carries FAB_BRIGHT, its own key and the free band; switching back makes the standard spec again', async () => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    render(<FeelinFabEffect {...props(1)} />);
+    void see(canvas(), true);
+    await run(2);
+    const d = posted()[0]!.draws[0]!;
+    expect([d.key, d.spec.palette, d.band]).toEqual(['bright:3', FAB_BRIGHT, { lo: 0, hi: 1, board: 'light', bright: true }]);
+    await act(async () => { document.documentElement.removeAttribute('data-kb-effects'); await Promise.resolve(); });
+    await run(40, 1000);
+    const back = posted().at(-1)!.draws[0]!;
+    expect([back.key, back.spec.palette, back.band]).toEqual(['light:3', FAB_STOPS.light, { lo: 0.59, hi: 1, board: 'light', bright: false }]);
   });
 
   test('a board whose tokens cannot be read posts a draw with no band, which clears the canvas and leaves the words bare', async () => {
@@ -642,7 +800,7 @@ describe("Feelin' Fab drawing in a worker", () => {
     await tick();
     expect(posted()).toHaveLength(before + 1);
     const d = posted().at(-1)!.draws[0]!;
-    expect([d.box, d.light, d.band]).toEqual([{ w: 200, h: 80 }, lastLight, { lo: 0.59, hi: 1 }]);
+    expect([d.box, d.light, d.band]).toEqual([{ w: 200, h: 80 }, lastLight, { lo: 0.59, hi: 1, board: 'light', bright: false }]);
     expect(pageContexts()).toBe(0);
   });
 

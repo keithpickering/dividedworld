@@ -12,7 +12,7 @@ import { SettingsScreen } from './Settings.tsx';
 import { onToastChoice } from '../alerts/toast-choice.ts';
 import { LoadedSettings } from '../loaded.tsx';
 
-const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
+const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-effects', 'data-kb-glass-key'];
 beforeEach(() => { localStorage.clear(); for (const m of MARKS) document.documentElement.removeAttribute(m); });
 afterEach(() => { cleanup(); });
 
@@ -93,10 +93,12 @@ describe('Settings, as board 11 draws it', () => {
     expect(offered('Smoke')).toEqual(['Full', 'Low', 'Off']);
     expect(offered('Contrast')).toEqual(['Standard', 'High']);
     expect(offered('Text size')).toEqual(['100%', '125%', '150%', '200%']);
+    expect(offered('Brighter effects')).toEqual(['Off', 'On']);
+    expect(screen.getByText('Let card effects on posts use their full colors, even below the usual contrast standard. Some posts may be harder to read.')).toBeInTheDocument();
     /* The board's look is its own section now (Settings › The board), not a row here. */
     expect(screen.queryByRole('radiogroup', { name: 'The board' })).toBeNull();
     expect(offered('Posts')).toEqual(['Side by side', 'Stacked']);
-    for (const [g, n] of [['Motion', 'Follow my device'], ['Smoke', 'Full'], ['Contrast', 'Standard'], ['Text size', '100%'], ['Posts', 'Side by side']] as const) {
+    for (const [g, n] of [['Motion', 'Follow my device'], ['Smoke', 'Full'], ['Contrast', 'Standard'], ['Text size', '100%'], ['Brighter effects', 'Off'], ['Posts', 'Side by side']] as const) {
       expect(radio(g, n)).toBeChecked();
     }
   });
@@ -148,6 +150,17 @@ describe('Settings, as board 11 draws it', () => {
     expect(document.documentElement).toHaveAttribute('data-kb-text-size', '200');
     cleanup();
     await persists(w, 'Text size', '200%', { textSize: 200 });
+  });
+
+  test('Brighter effects marks the root at once and persists across a fresh load', async () => {
+    const w = world();
+    open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Brighter effects' });
+    expect(document.documentElement).not.toHaveAttribute('data-kb-effects');
+    await userEvent.click(radio('Brighter effects', 'On'));
+    expect(document.documentElement).toHaveAttribute('data-kb-effects', 'bright');
+    cleanup();
+    await persists(w, 'Brighter effects', 'On', { effects: 'bright' });
   });
 
   test('a refused save says so in the server\'s words and puts the choice back', async () => {

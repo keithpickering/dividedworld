@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { ratio, MODES } from '../contrast.ts';
-import { bandOf, luminanceOf, POST_INK, shineIsReadable, toLinear } from './band.ts';
+import { bandOf, brightBand, luminanceOf, type Band, POST_INK, shineIsReadable, toLinear } from './band.ts';
 import { burst, burstProbe, drawBurst, GLINT_FLOOR, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
@@ -24,6 +24,8 @@ const HUGE = { w: 1400, h: 300 };
 const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT });
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
+/** A standard-shaped band with these bounds (the board is read from the bounds here, as a fixture). */
+const bandWith = (lo: number, hi: number): Band => ({ lo, hi, board: lo === 0 ? 'dark' : 'light', bright: false });
 const bands = { light: bandOf(tokens.light), dark: bandOf(tokens.dark) };
 
 /* No DOM under node: just enough of one for `motionReduced`. */
@@ -114,7 +116,7 @@ const BURST_LIGHT = 'b1488eb8c9d1b667a736554d711d1648752f749191bf40a912ea2e025f6
 /* (Pinned with the dark post bursting on its own: before the cap rose it shared the page with the light shot's burst above and flew only the 530 flakes left of 1,500.) */
 /* Repinned 2026-11-07 with BURST_LIGHT, and for the dark board's inks at the ceiling. */
 const BURST_DARK_FLAKES = 'a2ecf0062e70a3f550d8c547878901ba08f11942a27500c26fc49533e1b05a5c';
-function burstShot(band: { lo: number; hi: number }, onlyFlakes: boolean): { digest: string; t: ReturnType<typeof tracked>; flying: number } {
+function burstShot(band: Band, onlyFlakes: boolean): { digest: string; t: ReturnType<typeof tracked>; flying: number } {
   const f = makeFlakes({ seed: 'burst-look', box: { w: 400, h: 200 }, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
   burst(f, 0);
   const t = tracked(2);
@@ -237,11 +239,11 @@ describe('flakes', () => {
     const k = f.settled[0]!;
     const light = { x: k.nx, y: k.ny };
     const lit = recorder();
-    f.draw(lit.ctx, light, { lo: 0.1, hi: 1 }, 0, false);
+    f.draw(lit.ctx, light, bandWith(0.1, 1), 0, false);
     assert.ok(lit.count('drawImage') >= 1, 'flares where hi is 1');
     assert.ok(lit.alphas.some((a) => a > 0.999), `a flare at full tilt has the plain alpha: ${lit.alphas}`);
     assert.ok(lit.alphas.every((a) => a >= 0 && a <= 1));
-    for (const band of [{ lo: 0, hi: 0.3 }, { lo: 0, hi: 0.999 }, bands.dark]) {
+    for (const band of [bandWith(0, 0.3), bandWith(0, 0.999), bands.dark]) {
       const none = recorder();
       f.draw(none.ctx, light, band, 0, false);
       assert.equal(none.count('drawImage'), 0, `no flare under hi ${band.hi}`);
@@ -251,9 +253,9 @@ describe('flakes', () => {
   /* The look, pinned: what the pre-restructure code drew (every rect's corners in canvas px and its fill, every flare), as a
      digest of the sorted lines, for a seed, three lights, both boards, at density 2. The draw order of overlapping flakes is
      not part of the look; where each one lands and what color it is, is. */
-  const SHOT: Array<[string, { x: number; y: number } | 'lit', { lo: number; hi: number }, number]> = [
+  const SHOT: Array<[string, { x: number; y: number } | 'lit', Band, number]> = [
     ['light board', { x: -0.35, y: -0.45 }, bands.light, 1234],
-    ['flares', 'lit', { lo: 0.1, hi: 1 }, 5],
+    ['flares', 'lit', bandWith(0.1, 1), 5],
     ['dark board', { x: 0.3, y: 0.2 }, bands.dark, 777],
   ];
   function shot(): { digest: string; images: number; t: ReturnType<typeof tracked> } {
@@ -276,7 +278,7 @@ describe('flakes', () => {
    * flare where one pass puts it, and every flake under a flare repainted in the lit layer before the flare, so the flare is added
    * to it there as one pass adds it. The lit layer is a small share of the flakes.
    */
-  function layered(f: Flakes, light: { x: number; y: number }, band: { lo: number; hi: number }, now: number, idle: boolean) {
+  function layered(f: Flakes, light: { x: number; y: number }, band: Band, now: number, idle: boolean) {
     const one = tracked(2), base = tracked(2), lit = tracked(2);
     f.draw(one.ctx, light, band, now, idle, 2);
     f.drawBase(base.ctx, band, 2);
@@ -294,9 +296,9 @@ describe('flakes', () => {
   test('the base and the lit layer over it paint what one pass paints: each flake in its color, each flare in its place', () => {
     const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
-    const scenes: Array<[{ x: number; y: number }, { lo: number; hi: number }, number, boolean]> = [
-      ...SHOT.map(([, l, band, now]) => [l === 'lit' ? { x: f.settled[3]!.nx, y: f.settled[3]!.ny } : l, band, now, true] as [{ x: number; y: number }, { lo: number; hi: number }, number, boolean]),
-      ...LIGHTS.flatMap((l, k) => [[l, bands.light, k * 700, k % 2 === 0], [l, bands.dark, k * 700, k % 2 === 1], [l, { lo: 0.1, hi: 1 }, k * 300, true]] as Array<[{ x: number; y: number }, { lo: number; hi: number }, number, boolean]>),
+    const scenes: Array<[{ x: number; y: number }, Band, number, boolean]> = [
+      ...SHOT.map(([, l, band, now]) => [l === 'lit' ? { x: f.settled[3]!.nx, y: f.settled[3]!.ny } : l, band, now, true] as [{ x: number; y: number }, Band, number, boolean]),
+      ...LIGHTS.flatMap((l, k) => [[l, bands.light, k * 700, k % 2 === 0], [l, bands.dark, k * 700, k % 2 === 1], [l, bandWith(0.1, 1), k * 300, true]] as Array<[{ x: number; y: number }, Band, number, boolean]>),
     ];
     const shares: string[] = [];
     for (const [light, band, now, idle] of scenes) {
@@ -325,7 +327,7 @@ describe('flakes', () => {
   test('POISON: a lit layer that leaves out the flakes under a flare is caught; one that misses a lit flake is caught', () => {
     const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
-    const light = { x: f.settled[3]!.nx, y: f.settled[3]!.ny }, band = { lo: 0.1, hi: 1 };
+    const light = { x: f.settled[3]!.nx, y: f.settled[3]!.ny }, band = bandWith(0.1, 1);
     const r = layered(f, light, band, 5, true);
     /* Drop the lit layer's rects that are not lit themselves (the ones there only for a flare): a flake under a flare goes missing. */
     const own = new Map(r.single);
@@ -357,6 +359,14 @@ describe('flakes', () => {
     assert.notEqual(before.baseKey(bands.light), k, 'a burst that lands flakes changes the key');
   });
 
+  test('the base key tells the boards and bright from standard apart: the two bright bands have the same bounds and must not share a base', () => {
+    const f = make();
+    landEverything(f);
+    const keys = [bands.light, bands.dark, brightBand('light'), brightBand('dark')].map((b) => f.baseKey(b));
+    assert.equal(new Set(keys).size, 4, keys.join(' | '));
+    assert.notEqual(f.baseKey({ ...bands.light, bright: true }), f.baseKey(bands.light), 'same bounds, bright or not');
+  });
+
   test('the lit layer clears what it drew last time, square by square, and all of its canvas the first time or after a resize', () => {
     const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
@@ -382,7 +392,7 @@ describe('flakes', () => {
   test('the lit layer with a span paints the lit flakes whose square reaches into the span, and none further off', () => {
     const f = makeFlakes({ seed: 'look', box: BOX, inks: GLITTER, holo: HOLO, density: 70, glint: GLINT, star: {} as CanvasImageSource });
     landEverything(f);
-    const light = { x: f.settled[3]!.nx, y: f.settled[3]!.ny }, band = { lo: 0.1, hi: 1 };
+    const light = { x: f.settled[3]!.nx, y: f.settled[3]!.ny }, band = bandWith(0.1, 1);
     const span = { top: 100, bottom: 180 };
     const all = tracked(2), part = tracked(2);
     f.drawLit(all.ctx, light, band, 5, true, 2);
@@ -444,20 +454,20 @@ describe('the burst', () => {
     const f = makeFlakes({ seed: 'puff', box: { w: 300, h: 150 }, inks: GLITTER, holo: HOLO, density: 70, glint: WARM });
     burst(f, 0);
     const lit = recorder();
-    drawBurst(lit.ctx, f, { lo: 0.5, hi: 1 }, 100);
+    drawBurst(lit.ctx, f, bandWith(0.5, 1), 100);
     assert.ok(lit.stops.length >= 3 && lit.strokes.size === 1);
     for (const c of [...lit.stops, ...lit.strokes]) assert.ok(c.startsWith('#ffeecc'), `the glint, not white: ${c}`);
     /* A glint darker than the band's floor is lifted to it, so a source-over puff cannot pull a cell under the floor. */
     const floor = recorder();
-    drawBurst(floor.ctx, f, { lo: 0.95, hi: 1 }, 100);
+    drawBurst(floor.ctx, f, bandWith(0.95, 1), 100);
     assert.ok(luminanceOf(toLinear(rgbaHex(floor.stops[0]!))) >= 0.95 - 0.004, floor.stops[0]);
     /* On a board with a lower ceiling the same glint is scaled under the ceiling, keeping its hue (red >= green >= blue). */
     const dark = recorder();
-    drawBurst(dark.ctx, f, { lo: 0, hi: 0.1 }, 100);
+    drawBurst(dark.ctx, f, bandWith(0, 0.1), 100);
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(rgbaHex(dark.stops[0]!).slice(i, i + 2), 16)) as [number, number, number];
     assert.ok(r >= g && g >= b && r < 255, `scaled: ${dark.stops[0]}`);
     assert.ok(luminanceOf(toLinear(rgbaHex(dark.stops[0]!))) <= 0.1 + 0.004);
-    assert.deepEqual([...sampleBurst(f, { lo: 0.5, hi: 1 }, 100)].filter((c) => c === WARM), [WARM], 'the sampler reports the same color');
+    assert.deepEqual([...sampleBurst(f, bandWith(0.5, 1), 100)].filter((c) => c === WARM), [WARM], 'the sampler reports the same color');
   });
 
   test('the flare sprite is built from the glint, one per glint', () => {
@@ -724,10 +734,10 @@ describe('everything over the words stays in the band', () => {
     const f = make('puff', { w: 300, h: 150 });
     burst(f, 0);
     const light = recorder();
-    drawBurst(light.ctx, f, { lo: 0.5, hi: 1 }, 100);
+    drawBurst(light.ctx, f, bandWith(0.5, 1), 100);
     assert.ok(light.stops.length >= 3);
     for (const c of light.stops) assert.ok(c.startsWith('#ffffff'), `white on the light board: ${c}`);
-    for (const band of [{ lo: 0, hi: 0.3 }, bands.dark]) {
+    for (const band of [bandWith(0, 0.3), bands.dark]) {
       const dark = recorder();
       drawBurst(dark.ctx, f, band, 100);
       assert.ok(dark.stops.length >= 3);
