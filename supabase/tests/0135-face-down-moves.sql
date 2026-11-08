@@ -860,6 +860,10 @@ declare
   facts_reads bigint[] := '{}'; full_reads bigint[] := '{}'; said jsonb;
   cast_reads bigint[] := '{}'; ghost uuid := gen_random_uuid();
 begin
+  -- The small tables (card_kinds, characters) are read in order by a sequential scan that stops at the first match, so the rows it reads say where a row sits in the table and not what the statement
+  -- does; key lookups through the indexes read the same rows for every key, and are the statements being counted. (A busy instance's tables are read through them.)
+  perform set_config('enable_seqscan', 'off', true);
+  discard plans;
   perform pg_temp.hand(ann, 'spxbluff', 'spxtrap', 'spxauto', 'spxbomb', 'spxbomb', 'spxwhoops');
   s_bluff := (set_card(ann, 'spxbluff', bluffer, p_bluff, '{}', 0) ->> 'id')::uuid;
   s_trap := (set_card(ann, 'spxtrap', trapper, p_trap, '{"card": "spxrare"}', 0, 'spxrare') ->> 'id')::uuid;
@@ -904,6 +908,7 @@ begin
   if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that cannot spring read differently: Bluff, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
   said := spring_traps('quote', p_spring, quoting);
   if said is null then raise exception 'the last back did not spring'; end if;
+  perform set_config('enable_seqscan', 'on', true);
 end $$;
 
 -- ---- A Trap Card set before this named no card: it catches nothing and ends at its time; no row of it is edited ----
