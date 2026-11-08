@@ -46,7 +46,7 @@
 -- Section: springing (Task 6; design sections 2, 3, 4, 5 and 7).
 --
 --   spring_traps(trigger, post, by_act, incoming_card, held, actor)   A back's trigger is `quote` for a Move (a card whose play is cast, set face down) and its card's `trap.trigger.on` for a Gimmick. A quote lays the Move on the
---                           quoting post, its character, its thread or its board, by the card's first reach (card_kinds.reaches[1]), when its phrase, if any, is in the quoting post's own words (phrase_in(bbcode_plain(body), phrase));
+--                           quoting post, its character, its thread or its board, by the card's first reach (card_kinds.reaches[1]), when its phrase, if any, is in the quoting post's own words (phrase_probe(bbcode_plain(body), phrase, id), which answers as phrase_in does);
 --                           a cast springs when `incoming_card` is the back's `catches`: the cast is caught (its Act's `caught`, as before), the caught card is written to the setter's ledger as `caught` (act = the spring), a staff
 --                           setter takes nothing, and a staff cast is copied; a visit springs a Hall Pass, which ends the visit as every visit trap did. A cast on a back holding a Move, a reaction and a plain reply spring nothing.
 --                           It no longer pays: the outcome, the payout, the strike, the reaction and reply triggers and the price and caster arguments are gone; the old eight-argument function is dropped.
@@ -77,7 +77,10 @@
 -- Lock order (0075's header, steps 1 to 6; nothing here takes a later lock before an earlier one). lock_for_quote(poster, thread, quoting) takes, for post() and for write_staff_act's quote: [2b, only when the quoted post holds a live back, a
 -- public fact] the poster's `characters` row and the thread's board's row, both `for no key update`; 3, the quoted post's live unsprung back; 4, the thread row; 5, the count rows of the poster and the back's setter. Then the insert, then
 -- spring_traps (3 again, held), whose spring is neither counted nor numbered and whose landed card is written through the setter, whose count row (5) is held. Step 2b is new: a Move that lands on a character or a board is laid under it, so a
--- play_card at the same character or board (which takes the same row, then its count row) and a second quote springing a Move there are laid one at a time, as place_cast lays them; a thread's is step 4's row, and a post's stack is the new
+-- play_card at the same character or board (which takes the same row, then its count row) and a second quote springing a Move there are laid one at a time, as place_cast lays them. The backs seen when 2b is decided are the only ones this
+-- write may spring: a back that appears between that look and step 3 (the first sprang and another was set) is locked at step 3 without 2b's rows, so lock_for_quote does not return it and it stays set for the next quote ("a Move that cannot land
+-- waits"). Cost at a busy instance's scale: every quote of a post that holds any live back, a Bluff's or a Hall Pass's too (the kind is private, so 2b cannot be limited to the kinds that land beyond a post), takes the poster's character row and the thread's board's row
+-- until it commits, so such quotes by one character, or on one board, run one at a time; the quotes of a post with no live back take neither, and a busy board's quotes are mostly of such posts; a thread's is step 4's row, and a post's stack is the new
 -- post's alone (it is not committed). 2b comes before everything a quote takes after it, and play_card takes it before step 5 too, so the two never cross. place_cast on a post is unchanged: 1, 2, 3 (spring_traps, now also a ledger insert for the
 -- setter, which waits on nothing), 5. react takes none of 3 to 6 any more. start_visit is unchanged, and so is its order: write_staff_act's `visit` Act takes neither a seq (4) nor a count row (5), then spring_traps takes 3 and nothing after it
 -- waits. The spring's trapSprang alert is written with the quoting player (auth.uid()) as its actor, as post() did, and a cast's with its payer.
@@ -106,8 +109,9 @@
 -- (lower() does not know them) are folded by neither side and so can differ from Node's table until Postgres is rebuilt; none of them is in a living script's everyday text.
 -- "A letter or a digit" is JavaScript's \p{L}\p{N}, written out as a class (phrase_word_class), never the locale's [[:alnum:]], which counts combining marks as letters.
 -- Cost. The pattern is built per phrase around the whole word class, and Postgres keeps only its last 32 compiled patterns, so a phrase it has not just seen costs
--- about 0.7 ms to compile and one it has about 0.03 ms (measured on 2000 calls). A quote meets one back, the quoted post's, so a write asks phrase_in at most once, whatever
--- the instance's size; nothing scans every live back for it.
+-- about 0.7 ms to compile and one it has about 0.03 ms (measured on 2000 calls). A quote meets one back, the quoted post's, so a write asks the matcher at most once, whatever
+-- the instance's size; nothing scans every live back for it. The write that springs a back asks phrase_probe (below), not phrase_in, of every back it meets, one with a phrase or none: each back's pattern is
+-- its own and of one length, so each is compiled afresh (the cost above, for every back alike) and no back's time says whether it held a phrase.
 
 -- ------------------------------------------------------------------------------------------------------- face_down ----
 
@@ -272,22 +276,28 @@ language sql immutable parallel safe set search_path = public, pg_temp as $$
   end
 $$;
 
--- phrase_probe(plain, phrase, token): phrase_in's answer, by the same work whether or not there is a phrase. It folds the text, builds a pattern from the folded phrase (or, for no phrase, from the token, the back's own id) between the
--- same word-edge assertions, and runs it; a pattern with no phrase carries a contradiction (an assertion that 'a' is and is not next) that no text can satisfy, so it never matches, and its answer is ANDed with whether there is a phrase.
+-- phrase_pattern(phrase, token): the pattern phrase_probe runs, '(?<!C)(?:A|B)(?!C)' with C the word class. A is the escaped folded phrase, or for no phrase a contradiction no text satisfies (an assertion that 'a' is and is not next)
+-- and the escaped token; B is the same contradiction, the escaped token (the back's own id, so the pattern is its own) and padding after escaping, to make A and B together 400 characters. A phrase is at most 100 characters
+-- (Autocorrect's validateConfig; place_set holds the same bound), 200 escaped at the most, so the length is the same for every back whatever it holds. B never matches, so the answer is A's.
+create or replace function phrase_pattern(phrase text, token text) returns text
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select '(?<!' || phrase_word_class() || ')(?:' || x.a || '|' || rpad(x.b, greatest(length(x.b), 400 - length(x.a)), 'z') || ')(?!' || phrase_word_class() || ')'
+  from (select case when r.real then regexp_replace(phrase_fold(phrase), '([.*+?^${}()|\[\]\\])', '\\\1', 'g') else '(?=a)(?!a)' || regexp_replace(token, '([.*+?^${}()|\[\]\\])', '\\\1', 'g') end as a,
+               '(?=a)(?!a)' || regexp_replace(token, '([.*+?^${}()|\[\]\\])', '\\\1', 'g') as b
+        from (select phrase is not null and phrase ~ phrase_word_class() as real) r) x
+$$;
+
+-- phrase_probe(plain, phrase, token): phrase_in's answer, by the same work whether or not there is a phrase: the text is folded and phrase_pattern is compiled and run for every back; a back with no phrase answers false.
 create or replace function phrase_probe(plain text, phrase text, token text) returns boolean
 language sql immutable parallel safe set search_path = public, pg_temp as $$
-  select case when plain is null then false else
-    (phrase_fold(plain) ~ ('(?<!' || phrase_word_class() || ')' || case when r.real then '' else '(?=a)(?!a)' end
-                           || regexp_replace(phrase_fold(case when r.real then phrase else token end), '([.*+?^${}()|\[\]\\])', '\\\1', 'g')
-                           || '(?!' || phrase_word_class() || ')')) and r.real end
-  from (select phrase is not null and phrase ~ phrase_word_class() as real) r
+  select case when plain is null then false else (phrase_fold(plain) ~ phrase_pattern(phrase, token)) and (phrase is not null and phrase ~ phrase_word_class()) end
 $$;
 
 -- Called by the write that springs a back, never by the API's anonymous or digest roles (0117 granted bbcode_plain the same way).
 revoke execute on function phrase_word_class(), phrase_fold(text), phrase_in(text, text) from public, anon;
 grant execute on function phrase_word_class(), phrase_fold(text), phrase_in(text, text) to authenticated, service_role;
--- phrase_probe is spring_facts' alone (a definer function that runs it as its owner), so no API role holds it.
-revoke execute on function phrase_probe(text, text, text) from public, anon, authenticated, service_role;
+-- phrase_probe (and phrase_pattern) are spring_facts' alone (a definer function that runs it as its owner), so no API role holds it.
+revoke execute on function phrase_pattern(text, text), phrase_probe(text, text, text) from public, anon, authenticated, service_role;
 
 -- ------------------------------------------------------------------------------------------------------- setting a Move ----
 
@@ -337,6 +347,8 @@ begin
   if phrase is not null then
     if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- Autocorrect's own bound (validateConfig): phrase_pattern is one length for every back only up to it.
+    if char_length(phrase) > 100 then raise exception '% waits for a phrase of at most 100 characters', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   end if;
   select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
   if target_kind is distinct from 'post' then raise exception 'a card is set face down on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
@@ -643,9 +655,12 @@ declare
   locked uuid[];
   setters uuid[];
   on_board uuid;
+  seen uuid[];
 begin
-  if quoting is not null and exists (select 1 from face_down f where f.post = quoting and f.ends_at > now()
-       and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)) then
+  -- The live backs seen now, which decide step 2b. A back that appears after this is found at step 3 without its 2b rows held, and does not spring on this write.
+  seen := array(select f.play from face_down f where f.post = quoting and f.ends_at > now()
+                and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text));
+  if cardinality(seen) > 0 then
     select t.board into on_board from threads t where t.id = in_thread;
     perform 1 from characters c where c.id = poster for no key update;
     perform 1 from boards b where b.id = on_board for no key update;
@@ -662,7 +677,8 @@ begin
   insert into character_post_counts (character)
   select distinct c from unnest(setters || poster) c order by c on conflict do nothing;
   perform 1 from character_post_counts where character = any (setters || poster) order by character for update;
-  return locked;
+  -- Only a back seen before step 2b springs: one that appeared since stays set for the next quote.
+  return array(select u from unnest(locked) u where u = any (seen));
 end $$;
 revoke execute on function lock_for_quote(uuid, uuid, uuid) from public, anon, authenticated, service_role;
 

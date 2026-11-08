@@ -68,6 +68,58 @@ begin
   end loop;
 end $$;
 
+-- A back that appears while a quote waits for the character and board rows is not sprung by that quote. lock_for_quote sees one live back on the quoted post and waits for the poster's
+-- character row (step 2b); meanwhile that back springs and another is set on the post; the quote then finds the new back at step 3 with no 2b locks taken for it, so it does not hold it: it stays set.
+do $$
+declare
+  setter uuid := gen_random_uuid(); quoter uuid := gen_random_uuid();
+  s uuid := gen_random_uuid(); q uuid := gen_random_uuid(); q2 uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); x uuid := gen_random_uuid(); waiting uuid := gen_random_uuid(); springing uuid := gen_random_uuid();
+  held text; tries integer := 0;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sp-win-setter@test.invalid'), (%2$L, 'sp-win-quoter@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Sp Win Setter', now(), now()), (%4$L, %2$L, 'Sp Win Quoter', now(), now()), (%5$L, %2$L, 'Sp Win Quoter Two', now(), now());
+    insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now()), (%5$L, 'alpha', now());
+    insert into threads (id, board, title) select %6$L, b.id, 'Window' from boards b where b.slug = 'general';
+    insert into card_ledger (account, card, kind, price) select %1$L, 'spxwhoops', 'bought', 0 from generate_series(1, 3);
+    insert into acts (id, character, kind, thread, payload) values (%7$L, %3$L, 'post', %6$L, '{"body": "Backed twice, in turn."}'), (%8$L, %4$L, 'post', %6$L, '{"body": "The quote that waits."}'), (%9$L, %5$L, 'post', %6$L, '{"body": "The quote that springs the first."}');
+    do $d$ begin perform set_card(%1$L, 'spxwhoops', %3$L, %7$L, '{}', 0); end $d$;
+  $sql$, setter, quoter, s, q, q2, t, x, waiting, springing));
+  perform extensions.dblink_connect('win_h', current_setting('kayfabb.scratch_url'));
+  perform extensions.dblink_connect('win_q', current_setting('kayfabb.scratch_url'));
+  begin
+    perform extensions.dblink_exec('win_h', 'begin');
+    perform extensions.dblink_exec('win_h', format('do $h$ begin perform 1 from characters where id = %L for no key update; end $h$', q));
+    perform extensions.dblink_send_query('win_q', format('select lock_for_quote(%L, %L, %L)::text', q, t, x));
+    loop
+      exit when exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database() and pid <> pg_backend_pid());
+      tries := tries + 1;
+      if tries > 400 then raise exception 'lock_for_quote never waited for the character row'; end if;
+      perform pg_sleep(0.025);
+    end loop;
+    -- While it waits: the first back springs (another character's quote), and a second back is set on the same post.
+    perform tests.commit(format($sql$
+      do $d$ begin
+        perform spring_traps('quote', %1$L, %2$L);
+        perform set_card(%3$L, 'spxwhoops', %4$L, %1$L, '{}', 0);
+      end $d$;
+    $sql$, x, springing, setter, s));
+    perform extensions.dblink_exec('win_h', 'rollback');
+    select r into held from extensions.dblink_get_result('win_q') as v(r text);
+    perform * from extensions.dblink_get_result('win_q') as v(r text);
+  exception when others then
+    perform extensions.dblink_disconnect('win_h');
+    perform extensions.dblink_disconnect('win_q');
+    raise;
+  end;
+  perform extensions.dblink_disconnect('win_h');
+  perform extensions.dblink_disconnect('win_q');
+  if (select count(*) from face_down f where f.post = x) is distinct from 2::bigint then raise exception 'the second back was not set while the quote waited'; end if;
+  if held is distinct from '{}' then raise exception 'a quote held a back it had not seen when it took its rows: %', held; end if;
+end $$;
+
 -- A quote that lands a Move on its own character, and a cast of the same card on that character at once: the character carries one, the quote is never refused, and nothing deadlocks.
 -- The quote takes the character's row (step 2b) as play_card does, then its count row; the card's stack is read under it.
 do $$
@@ -839,12 +891,16 @@ end $$;
 
 -- ---- Every back costs the same reads before its decision: a Bluff, a Trap Card naming another card, a Move whose phrase is absent, a Move that cannot land, a retired setter's Move, and a back that springs ----
 -- What a call reads from the tables spring_facts and spring_traps decide from, and their indexes: rows fetched and index entries returned in this transaction so far, as 0077-trap-locks.sql counts them.
-create function pg_temp.reads() returns bigint language sql as $$
-  select sum(pg_stat_get_xact_tuples_fetched(r.oid) + pg_stat_get_xact_tuples_returned(r.oid))::bigint
-  from pg_class r
-  where r.oid in (select t.oid from pg_class t where t.relname in ('characters', 'card_kinds', 'acts', 'face_down', 'play_reach', 'threads', 'settings') and t.relnamespace = 'public'::regnamespace
-                  union select i.indexrelid from pg_index i join pg_class t on t.oid = i.indrelid
-                  where t.relname in ('characters', 'card_kinds', 'acts', 'face_down', 'play_reach', 'threads', 'settings') and t.relnamespace = 'public'::regnamespace)
+create function pg_temp.reads() returns bigint[] language sql as $$
+  select array_agg(x.n order by x.relname) from (
+    select t.relname, sum(pg_stat_get_xact_tuples_fetched(o.oid) + pg_stat_get_xact_tuples_returned(o.oid))::bigint as n
+    from pg_class t cross join lateral (select t.oid union all select i.indexrelid from pg_index i where i.indrelid = t.oid) o(oid)
+    where t.relname in ('characters', 'card_kinds', 'acts', 'face_down', 'play_reach', 'threads', 'settings') and t.relnamespace = 'public'::regnamespace
+    group by t.relname) x
+$$;
+-- A call's reads: for each table (with its indexes), in name order, what it read since `before`; compared as vectors, so a read moved from one table to another is a difference a sum would hide.
+create function pg_temp.since(before bigint[]) returns text language sql as $$
+  select array_agg(n.v - before[n.i] order by n.i)::text from unnest(pg_temp.reads()) with ordinality n(v, i)
 $$;
 do $$
 declare
@@ -858,9 +914,9 @@ declare
   quoting uuid := tests.post(q, t, 'Quoting everything, and saying nothing of stripes.'); free uuid := tests.post(q, t, 'Quoting the last, unwarded.');
   s_bluff uuid; s_trap uuid; s_phrase uuid; s_bomb uuid; s_retired uuid; s_spring uuid;
   fd face_down; backs uuid[]; one uuid; n integer;
-  before bigint;
-  facts_reads bigint[] := '{}'; full_reads bigint[] := '{}'; said jsonb;
-  cast_reads bigint[] := '{}'; ghost uuid := gen_random_uuid();
+  before bigint[];
+  facts_reads text[] := '{}'; full_reads text[] := '{}'; said jsonb;
+  cast_reads text[] := '{}'; patterns text[] := '{}'; ghost uuid := gen_random_uuid();
 begin
   -- The small tables (card_kinds, characters) are read in order by a sequential scan that stops at the first match, so the rows it reads say where a row sits in the table and not what the statement
   -- does; key lookups through the indexes read the same rows for every key, and are the statements being counted. (A busy instance's tables are read through them.)
@@ -877,6 +933,8 @@ begin
   perform tests.act(bomber, 'card', t, jsonb_build_object('card', 'spxbomb', 'message', '', 'config', '{}', 'reach', 'character', 'character', q, 'ends', now() + interval '3 days', 'targetName', 'Even Quoter'), quoting);
   insert into play_reach (play, reach, character, ends_at) select a.id, 'character', q, now() + interval '3 days' from acts a where a.kind = 'card' and a.payload ->> 'card' = 'spxbomb' and a.payload ->> 'character' = q::text;
   update characters set retired_at = now() where id = retiree;
+  -- Every setter's row has been rewritten once, as the retiree's was (a rewritten row is a longer chain to read, which says nothing of the statement).
+  update characters set debuted_at = debuted_at where id in (bluffer, trapper, phrasey, bomber, springer);
   -- The quoting post is warded too: a Ward is read for every back, and the Whoops back (common) is turned away by it as a cast would be.
   perform tests.act(q, 'card', t, jsonb_build_object('card', 'spxward', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), quoting);
 
@@ -893,19 +951,27 @@ begin
   -- The reads of the decision's facts, for each back, in a quote and in a cast: the same for all six, the one that springs included.
   foreach one in array backs loop
     select * into fd from face_down f where f.post = one;
-    before := pg_temp.reads(); perform spring_facts(fd, 'quote', quoting, null); facts_reads := facts_reads || (pg_temp.reads() - before);
-    before := pg_temp.reads(); perform spring_facts(fd, 'cast', ghost, 'spxrare'); cast_reads := cast_reads || (pg_temp.reads() - before);
+    before := pg_temp.reads(); perform spring_facts(fd, 'quote', quoting, null); facts_reads := facts_reads || pg_temp.since(before);
+    before := pg_temp.reads(); perform spring_facts(fd, 'cast', ghost, 'spxrare'); cast_reads := cast_reads || pg_temp.since(before);
   end loop;
   if (select count(distinct r) from unnest(facts_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a quote''s decision: Bluff, Trap Card, phrase, Bomb, retired, springing = %', facts_reads; end if;
   if (select count(distinct r) from unnest(cast_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a cast''s decision: %', cast_reads; end if;
-  if facts_reads[1] < 8 then raise exception 'the reads were not counted (% rows)', facts_reads[1]; end if;
+  if (select sum(v) from unnest(facts_reads[1]::bigint[]) v) < 8 then raise exception 'the reads were not counted (%)', facts_reads[1]; end if;
+  -- The phrase's pattern is one fixed length for every back and its own for each (built around the back's id), a back with no phrase included.
+  foreach one in array backs loop
+    select * into fd from face_down f where f.post = one;
+    patterns := patterns || phrase_pattern(fd.phrase, fd.play::text);
+  end loop;
+  if (select count(distinct length(x)) from unnest(patterns) x) is distinct from 1::bigint or (select count(distinct x) from unnest(patterns) x) is distinct from 6::bigint then
+    raise exception 'the backs'' phrase patterns are not one length, each its own: %', (select array_agg(length(x)) from unnest(patterns) x);
+  end if;
 
   -- The whole call: the five that do not spring answer null, write nothing and read alike; the sixth springs.
   for n in 1 .. 8 loop
     foreach one in array backs[1:5] loop perform spring_traps('quote', one, quoting); end loop;
   end loop;
   foreach one in array backs[1:5] loop
-    before := pg_temp.reads(); said := spring_traps('quote', one, quoting); full_reads := full_reads || (pg_temp.reads() - before);
+    before := pg_temp.reads(); said := spring_traps('quote', one, quoting); full_reads := full_reads || pg_temp.since(before);
     if said is not null then raise exception 'a back that cannot spring sprang: %', said; end if;
   end loop;
   if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that cannot spring wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
@@ -998,4 +1064,42 @@ begin
   select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = made2 -> 'sprung' ->> 'id';
   if jsonb_typeof((select payload -> 'seed' from acts where id = laid)) is distinct from 'number' or (select payload -> 'config' ? 'seed' from acts where id = laid) then raise exception 'the sprung seed: %', (select payload from acts where id = laid); end if;
   if (select payload -> 'config' ->> 'color' from acts where id = laid) is distinct from 'red' then raise exception 'the setter''s ink was lost'; end if;
+end $$;
+
+-- ---- "By any character": the setter's own mask quoting its own post springs it; a quote from another thread lands in the quoting post's thread and board and writes the spring in the back's; the setter's other mask quoting tells nobody ----
+do $$
+declare
+  ann uuid := tests.account('sp-any-ann'); bob uuid := tests.account('sp-any-bob');
+  a1 uuid := tests.character(ann, 'Sp Any One'); a2 uuid := tests.character(ann, 'Sp Any Two'); b uuid := tests.character(bob, 'Sp Any Bob');
+  t1 uuid := tests.thread('Any one');
+  other_board uuid; t2 uuid;
+  p1 uuid := tests.post(a1, t1, 'My own, quoted by myself.'); p2 uuid := tests.post(a1, t1, 'Quoted by my other mask.');
+  p3 uuid := tests.post(a1, t1, 'A thread card, quoted from afar.'); p4 uuid := tests.post(a1, t1, 'A board card, quoted from afar.');
+  set1 uuid; set2 uuid; set3 uuid; set4 uuid; made jsonb; laid uuid;
+begin
+  insert into boards (slug, name) values ('sp-any-board', 'Sp Any Board') returning id into other_board;
+  insert into threads (board, title) values (other_board, 'Elsewhere') returning id into t2;
+  perform pg_temp.hand(ann, 'spxwhoops', 'spxwhoops', 'spxthread', 'spxboard');
+  insert into settings (key, value) select 'systemAnnouncements', to_jsonb(tests.thread('Any announcements')::text) where not exists (select 1 from settings where key = 'systemAnnouncements');
+  set1 := (set_card(ann, 'spxwhoops', a1, p1, '{}', 0) ->> 'id')::uuid;
+  set2 := (set_card(ann, 'spxwhoops', a1, p2, '{}', 0) ->> 'id')::uuid;
+  set3 := (set_card(ann, 'spxthread', a1, p3, '{}', 0) ->> 'id')::uuid;
+  set4 := (set_card(ann, 'spxboard', a1, p4, '{}', 0) ->> 'id')::uuid;
+  -- The very character that set it.
+  made := pg_temp.quote(a1, t1, 'Quoting myself.', p1);
+  if made -> 'sprung' is null or pg_temp.sprung_of(set1) is null then raise exception 'a character quoting its own post did not spring its back: %', made; end if;
+  -- The setter's other mask: it springs, and the setter's account is told nothing.
+  delete from alerts; delete from broadcasts_due where topic like 'account:%';
+  made := pg_temp.quote(a2, t1, 'Quoting from my other mask.', p2);
+  if made -> 'sprung' is null or pg_temp.sprung_of(set2) is null then raise exception 'the setter''s other mask did not spring the back: %', made; end if;
+  if exists (select 1 from alerts where account = ann) or exists (select 1 from broadcasts_due where topic = 'account:' || ann) then raise exception 'the setter was alerted to their own masks'' doing'; end if;
+  -- A quote from another thread: the spring is in the back's thread, a thread card lands in the quoting post's thread, a board card on its board.
+  made := pg_temp.quote(b, t2, 'Quoting across threads.', p3);
+  if (select thread from acts where id = (made -> 'sprung' ->> 'id')::uuid) is distinct from t1 then raise exception 'the spring is not in the back''s thread'; end if;
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = made -> 'sprung' ->> 'id';
+  if not exists (select 1 from play_reach r where r.play = laid and r.thread = t2) or (select payload ->> 'thread' from acts where id = laid) is distinct from t2::text then raise exception 'the thread card did not land on the quoting post''s thread'; end if;
+  made := pg_temp.quote(b, t2, 'Quoting the board card across threads.', p4);
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = made -> 'sprung' ->> 'id';
+  if not exists (select 1 from play_reach r where r.play = laid and r.board = other_board) then raise exception 'the board card did not land on the quoting post''s board'; end if;
+  if (select thread from acts where id = (made -> 'sprung' ->> 'id')::uuid) is distinct from t1 then raise exception 'the board spring is not in the back''s thread'; end if;
 end $$;
