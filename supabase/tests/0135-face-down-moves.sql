@@ -183,3 +183,112 @@ begin
   if card_held(carol, 'sweetie') is distinct from 0 then raise exception 'the caught card was spent once: %', card_held(carol, 'sweetie'); end if;
   if (select count(*) from card_ledger where account = carol and kind = 'played') is distinct from 1::bigint then raise exception 'the play was not recorded'; end if;
 end $$;
+
+-- ---- Setting a Move (Task 5): a Move or a Gimmick sets, a Use does not; a Trap Card stores its named catch, a Move its phrase ----
+do $$
+declare
+  ann uuid := tests.account('fdm-set-ann');
+  a uuid := tests.character(ann, 'Set Ann');
+  t uuid := tests.thread('Setting');
+  p1 uuid := tests.post(a, t); p2 uuid := tests.post(a, t); p3 uuid := tests.post(a, t); p4 uuid := tests.post(a, t); p5 uuid := tests.post(a, t); p6 uuid := tests.post(a, t); p7 uuid := tests.post(a, t); p8 uuid := tests.post(a, t);
+  other uuid := tests.character(tests.account('fdm-set-bob'), 'Set Bob');
+  q uuid := tests.post(other, t);
+  placed jsonb;
+  why text;
+begin
+  update settings set value = value || '{"fdsmove.price": 100, "fdsgimmick.price": 100, "fdsuse.price": 100, "fdstrap.price": 100, "fdsvisit.price": 100, "fdsthread.price": 100}' where key = 'economy';
+  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
+    ('fdsmove', 'Set Move', 'salty', 'fdsmove.price', 'common', 'cast', null, '{post}', null),
+    ('fdsthread', 'Set Thread Move', 'salty', 'fdsthread.price', 'common', 'cast', null, '{thread}', '7 days'),
+    ('fdsgimmick', 'Set Gimmick', 'pepperoni', 'fdsgimmick.price', 'common', 'set', null, '{post}', null),
+    ('fdsuse', 'Set Use', 'sweet', 'fdsuse.price', 'common', 'use', null, '{post}', null),
+    ('fdstrap', 'Set Trap', 'salty', 'fdstrap.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
+    ('fdsvisit', 'Set Visit', 'sweet', 'fdsvisit.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
+  insert into card_ledger (account, card, kind, price) select ann, k, 'bought', 0 from unnest(array['fdsmove', 'fdsgimmick', 'fdsuse', 'fdstrap', 'fdsvisit']) k, generate_series(1, 4);
+
+  -- A Move is set face down, as a Gimmick is; the back holds neither a catch nor a phrase unless it was given one.
+  placed := set_card(ann, 'fdsmove', a, p1, '{}', 0);
+  if placed ->> 'kind' is distinct from 'set' then raise exception 'a Move was not set: %', placed; end if;
+  if exists (select 1 from face_down f where f.play = (placed ->> 'id')::uuid and (f.catches is not null or f.phrase is not null)) then raise exception 'a Move set with no phrase holds one'; end if;
+  placed := set_card(ann, 'fdsgimmick', a, p2, '{}', 0);
+  if placed ->> 'kind' is distinct from 'set' then raise exception 'a Gimmick was not set: %', placed; end if;
+  if card_held(ann, 'fdsmove') is distinct from 3 or card_held(ann, 'fdsgimmick') is distinct from 3 then raise exception 'a set spends one card'; end if;
+
+  -- A Move stores the phrase it waits for.
+  placed := set_card(ann, 'fdsmove', a, p3, '{"phrase": "Heel"}', 0, null, 'heel');
+  if (select phrase from face_down where play = (placed ->> 'id')::uuid) is distinct from 'heel' then raise exception 'the phrase was not stored'; end if;
+  -- A Trap Card stores the card it names.
+  placed := set_card(ann, 'fdstrap', a, p4, '{"card": "fdsmove"}', 0, 'fdsmove', null);
+  if (select catches from face_down where play = (placed ->> 'id')::uuid) is distinct from 'fdsmove' then raise exception 'the named catch was not stored'; end if;
+  -- A Gimmick that springs on a visit holds neither.
+  placed := set_card(ann, 'fdsvisit', a, p5, '{}', 0);
+
+  -- A Use is refused, in the engine's words, and nothing is spent.
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'fdsuse', a, p6, '{}'));
+  if why is distinct from 'Set Use is used on your own post' then raise exception 'a Use was set: %', why; end if;
+  -- A catch is a cast Gimmick's alone, and names a card cast on a post.
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdsgimmick', a, p6, '{}', 'fdsmove'));
+  if why is distinct from 'Set Gimmick catches no card' then raise exception 'a Bluff named a catch: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdsmove', a, p6, '{}', 'fdsmove'));
+  if why is distinct from 'Set Move catches no card' then raise exception 'a Move named a catch: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdstrap', a, p6, '{}', 'fdsuse'));
+  if why is distinct from 'Set Trap names a card that is cast on a post' then raise exception 'a Trap Card named a Use: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdstrap', a, p6, '{}', 'fdsgimmick'));
+  if why is distinct from 'Set Trap names a card that is cast on a post' then raise exception 'a Trap Card named a Gimmick: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdstrap', a, p6, '{}', 'fdsthread'));
+  if why is distinct from 'Set Trap names a card that is cast on a post' then raise exception 'a Trap Card named a card cast on a thread: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdstrap', a, p6, '{}', 'nosuchcard'));
+  if why is distinct from 'Set Trap names a card that is cast on a post' then raise exception 'a Trap Card named no card: %', why; end if;
+  -- A phrase is a Move's alone, and is not blank.
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, null, %L)', ann, 'fdsgimmick', a, p6, '{}', 'heel'));
+  if why is distinct from 'Set Gimmick waits for no phrase' then raise exception 'a Gimmick held a phrase: %', why; end if;
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, null, %L)', ann, 'fdsmove', a, p6, '{}', '  '));
+  if why is distinct from 'Set Move needs a phrase to wait for' then raise exception 'a blank phrase was stored: %', why; end if;
+  if card_held(ann, 'fdsuse') is distinct from 4 or exists (select 1 from face_down where post = p6) then raise exception 'a refused set spent a card or left a back'; end if;
+  -- It is still the setter's own post alone.
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'fdsmove', a, q, '{}'));
+  if why is null then raise exception 'a Move was set on another character''s post'; end if;
+end $$;
+
+-- ---- A persona's Set: Gimmicks only, a Trap Card names its catch ----
+do $$
+begin
+  perform seed_instance(jsonb_build_object(
+    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'rosterRecentExcluded', 0, 'inheritanceGraceDays', 3,
+      'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('Landed: {move}.'),
+        'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'fdm-boss',
+      'staff', jsonb_build_array(
+        jsonb_build_object('key', 'fdm-boss', 'name', 'Fdm Boss', 'title', 'Boss', 'signature', 'a'),
+        jsonb_build_object('key', 'fdm-mod', 'name', 'Fdm Mod', 'title', 'Mod', 'signature', 'b')),
+      'firstStaff', jsonb_build_array('fdm-mod'),
+      'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
+      'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
+  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
+  update settings set value = value || '{"fdpmove.price": 100, "fdptrap.price": 100}' where key = 'economy';
+  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
+    ('fdpmove', 'Persona Move', 'salty', 'fdpmove.price', 'common', 'cast', null),
+    ('fdptrap', 'Persona Trap', 'salty', 'fdptrap.price', 'common', 'set', '{"trigger": {"on": "cast"}}');
+end $$;
+create function pg_temp.staff_post(k text, in_thread uuid, body text) returns uuid language sql as $$
+  select (write_staff_act(k, 'post', in_thread, null, jsonb_build_object('body', body)) ->> 'id')::uuid
+$$;
+do $$
+declare
+  t uuid := tests.thread('Persona sets');
+  p1 uuid := pg_temp.staff_post('fdm-mod', t, 'One.'); p2 uuid := pg_temp.staff_post('fdm-mod', t, 'Two.'); p3 uuid := pg_temp.staff_post('fdm-mod', t, 'Three.');
+  placed jsonb;
+  why text;
+begin
+  perform tests.become_service();
+  placed := staff_set_card('fdm-mod', 'fdptrap', p1, '{"card": "fdpmove"}', 'fdpmove');
+  if (select catches from face_down where play = (placed ->> 'id')::uuid) is distinct from 'fdpmove' then raise exception 'a persona''s Trap Card did not store its named catch'; end if;
+  if (select account from face_down where play = (placed ->> 'id')::uuid) is not null then raise exception 'a persona''s back has an account'; end if;
+  why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpmove', p2));
+  if why is distinct from 'Persona Move is not a Gimmick; a persona sets Gimmicks' then raise exception 'a persona set a Move: %', why; end if;
+  why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L, %L, %L)', 'fdm-mod', 'fdptrap', p3, '{"card": "nosuch"}', 'nosuch'));
+  if why is distinct from 'Persona Trap names a card that is cast on a post' then raise exception 'a persona''s Trap Card named no card: %', why; end if;
+  perform tests.unbecome();
+end $$;

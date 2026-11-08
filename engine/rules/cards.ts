@@ -265,7 +265,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
-  const lands = rules.canApply(target, effects, undefined, now);
+  // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.
+  const lands = reachesOf(rules).includes('post') ? rules.canApply(target, effects, undefined, now) : ok(undefined);
   if (!lands.ok) return lands;
   const checked = rules.validateConfig(config);
   if (!checked.ok) return checked;
@@ -386,7 +387,11 @@ export function color(value: unknown): string | null {
   return typeof value === 'string' ? safeColor(value.trim()) : null;
 }
 
-/** Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. */
+/**
+ * Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. A Gimmick that
+ * springs on a visit is never offered: a Mod Bot visits only players' posts, so a persona's Hall Pass could never spring.
+ */
 export function staffOffers(card: CardRules): boolean {
+  if (card.trap?.trigger.on === 'visit') return false;
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }

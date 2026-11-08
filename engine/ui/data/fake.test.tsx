@@ -1887,6 +1887,16 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     void ana;
   });
 
+  test('a Move is set face down like a Gimmick, and a Use is refused, in the card\'s words', async () => {
+    const { fake, ana, anaFace, opener } = setup();
+    fake.seed.cards(ana, { blot: 1 });
+    const set = must(await fake.setCard('blot', anaFace, opener, {}));
+    expect([set.kind, set.payload]).toEqual(['set', {}]);
+    expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'blot' });
+    const refused = await fake.setCard('shield', anaFace, opener, {});
+    expect(refused).toMatchObject({ ok: false, error: 'Shield is used on your own post' });
+  });
+
   test('a trap catches the next cast, which is spent, and the spring reveals it', async () => {
     const { fake, bo, anaFace, boFace, opener } = setup();
     const set = must(await fake.setCard('snare', anaFace, opener, {}));

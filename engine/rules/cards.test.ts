@@ -79,6 +79,11 @@ test('decideSet sets a Gimmick, one face-down card to a post', () => {
   assert.match((decideSet(snare, settings, { ...post, kind: 'spin' }, [], { card: 'inky' }, [inky]) as { why: string }).why, /post/);
 });
 
+test('decideSet sets a Move that lands on a character, since the quote decides where it lands', () => {
+  const beyond: CardRules = { ...inky, key: 'beyond', reaches: ['character'], lasts: { unit: 'day', count: 7 }, canApply: (t, e, _c, now) => landsOn({ key: 'beyond', reaches: ['character'] }, t, e, now) };
+  assert.equal(decideSet(beyond, settings, post, [], { ink: 'red' }, [inky]).ok, true);
+})
+
 test('decideSet sets a Move, and returns the phrase its landing needs', () => {
   assert.deepEqual(decideSet(inky, settings, post, [], { ink: 'red' }, [inky]), { ok: true, value: { price: 0, config: { ink: 'red' } } });
   assert.deepEqual(decideSet(inky, settings, post, [], { ink: 'blue' }, [inky]), { ok: false, why: 'the ink is red' });
@@ -263,4 +268,6 @@ test('staffOffers: a card with staffOptions and no default is offered, and a car
   assert.equal(staffOffers({ ...inky, staffOptions: options }), true, 'the persona chooses, so there is something to play');
   assert.equal(staffOffers({ ...inky, staffConfigs: [{ ink: 'red' }] }), true, 'the fallback list alone still offers it');
   assert.equal(staffOffers(plain), true, 'a default alone offers it');
+  assert.equal(staffOffers(hallway), false, 'a Gimmick that springs on a visit is never offered: a Mod Bot visits only players\' posts');
+  assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a Gimmick that springs on a cast is offered with its options');
 });

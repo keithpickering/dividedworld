@@ -18,7 +18,7 @@
 --   my_face_down            returns `catches` and `phrase` (last) to the setter. my_card_ledger (0075) already returns every kind the caller's account holds, so a `caught` row reaches the log with
 --                           no change to it.
 --
--- Copied from their latest definitions: play_card (nine arguments) and set_card from 0104_warn_bar.sql, with the inline hand count replaced by card_held and nothing else changed, the lock order
+-- Copied from their latest definitions: play_card (nine arguments) from 0104_warn_bar.sql (and set_card, in the setting section below), with the inline hand count replaced by card_held and nothing else changed, the lock order
 -- (0075's header, steps 1 to 6) included: step 1 (the player's accounts row) is still taken before the count; card_held takes no lock. card_kinds_problem from 0108_interception.sql, my_face_down
 -- from 0078_reply_passes.sql, my_cards from 0006_cards.sql. buy_card is 0006's, its reported `held` now from card_held; no inline count of a hand is left.
 -- Masks. A back's catch and phrase are the setter's alone: face_down is read through its `own` policy and my_face_down through the caller's account, and neither is in an Act, a projection or
@@ -26,6 +26,23 @@
 -- Ways out. Unchanged and none added by the schema: a back springs once or ends at setLasts; a caught card is a card in the setter's hand like any other.
 -- Append-only. Nothing here updates a face_down or card_ledger row. A caught card is one more ledger row beside the caster's `played` row.
 --
+-- Section: setting a Move (Task 5; design sections 1, 4 and 5).
+--
+--   set_card(who, card, through, target, config, price, catches, phrase)   and place_set(setter, card, target, config, payer, price, catches, phrase) take what the engine's decideSet
+--                           returned (engine/rules/cards.ts): a Move (cast) or a Gimmick (set) is set face down, a Use is refused ("<card> is used on your own post"), and the back stores
+--                           `catches` and `phrase`. `catches` is a cast Gimmick's alone and must name a card kind that is cast on a post ("<card> names a card that is cast on a post"); `phrase` is a
+--                           Move's alone and is not blank ("<card> needs a phrase to wait for"). Both default to null, so a caller that sets a card with neither (a Bluff, a visit Gimmick, a back from before
+--                           this) is unchanged, and a cast Gimmick set with no catch names none and catches nothing, as an old Trap Card does. The act function (supabase/functions/act/core.ts) passes the
+--                           two from the card's own rules; set_card is callable by the service role alone, so a caller's request never reaches them.
+--   staff_set_card(staff_key, card, target, config, catches)   takes the named catch. A persona sets Gimmicks only ("<card> is a Move; a persona sets Gimmicks"), and the refusal of a trap that
+--                           pays out is gone with the payout.
+--
+-- Copied from their latest definitions: set_card from 0104_warn_bar.sql (its hand counted by card_held, Task 3), place_set and staff_set_card from 0086_staff_cards.sql. Everything they do that is not named
+-- above stays as written, the lock order included (0075's header, steps 1 to 6): set_card takes the player's accounts row (1), place_set the target post's acts row (2), and nothing here takes a later lock before
+-- an earlier one. The new reads (card_kinds) take no lock.
+-- Masks. A refusal reads the card's own kind and the named card's, public facts, and never who owns a character. The stored catch and phrase are the setter's alone (Task 3).
+-- Ways out. A back set here springs once or ends at setLasts, as every back does.
+
 -- Section: the phrase matcher (Task 4; design section 6, "Autocorrect on a quote").
 --
 --   phrase_in(plain, phrase)   whether the phrase is in the text as a whole word, at least once, case-folded as JavaScript folds it. It MIRRORS engine/bbcode/phrase.ts
@@ -160,32 +177,6 @@ begin
   return played;
 end $function$;
 
--- set_card (0104), counting the hand with card_held. Everything else as 0104 wrote it.
-CREATE OR REPLACE FUNCTION public.set_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_temp'
-AS $function$
-declare
-  held integer;
-  placed jsonb;
-  written uuid;
-begin
-  perform played_by(through, who);
-  perform not_banned(through);
-  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
-  if price is null or price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  perform 1 from accounts where id = who for no key update;
-  held := card_held(who, set_card.card);
-  if coalesce(held, 0) < 1 then raise exception 'you hold no "%" card; the Vending Machine sells them', card using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
-  placed := place_set(through, card, target, config, who, price);
-  written := (placed ->> 'id')::uuid;
-  perform wallet_spend(who, price, 'play', written);
-  insert into card_ledger (account, card, kind, act, price) values (who, card, 'played', written, price);
-  return placed;
-end $function$;
-
 -- buy_card (0006), reporting the hand through card_held. Everything else as 0006 wrote it.
 create or replace function buy_card(who uuid, card text, price integer) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -239,3 +230,126 @@ $$;
 -- Called by the write that springs a back, never by the API's anonymous or digest roles (0117 granted bbcode_plain the same way).
 revoke execute on function phrase_word_class(), phrase_fold(text), phrase_in(text, text) from public, anon;
 grant execute on function phrase_word_class(), phrase_fold(text), phrase_in(text, text) to authenticated, service_role;
+
+-- ------------------------------------------------------------------------------------------------------- setting a Move ----
+
+drop function set_card(uuid, text, uuid, uuid, jsonb, integer);
+drop function place_set(uuid, text, uuid, jsonb, uuid, integer);
+drop function staff_set_card(text, text, uuid, jsonb);
+
+-- place_set (0086), taking what decideSet returned. A Move or a Gimmick sets and a Use is refused, in decideSet's words; a catch is a cast Gimmick's and names a card cast on a post; a phrase is a Move's and is
+-- not blank. The face_down row holds both. Everything else as 0086 wrote it. Callable by no API role.
+create function place_set(setter uuid, card text, target uuid, config jsonb, payer uuid, price integer, catches text default null, phrase text default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  kind_of card_kinds%rowtype;
+  named card_kinds%rowtype;
+  target_kind text;
+  author uuid;
+  in_thread uuid;
+  written uuid;
+  rounds integer;
+  staff_setter boolean;
+begin
+  select c.staff is not null into staff_setter from characters c where c.id = setter;
+  if staff_setter is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
+  if staff_setter is distinct from (payer is null) then
+    raise exception 'a staff character''s card is paid by no one, and a player''s by its player' using errcode = '22023';
+  end if;
+  if payer is null and coalesce(price, 0) <> 0 then raise exception 'a staff character''s card costs nothing' using errcode = '22023'; end if;
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  select * into kind_of from card_kinds k where k.key = place_set.card;
+  if kind_of.key is null then raise exception 'there is no such card' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if kind_of.play is distinct from 'cast' and kind_of.play is distinct from 'set' then
+    raise exception '% is %', kind_of.name, case kind_of.play when 'use' then 'used on your own post' else 'kept in the hand' end using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if catches is not null then
+    if kind_of.play is distinct from 'set' or kind_of.trap #>> '{trigger,on}' is distinct from 'cast' then
+      raise exception '% catches no card', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    select * into named from card_kinds k where k.key = place_set.catches;
+    if named.key is null or named.play is distinct from 'cast' or not ('post' = any (named.reaches)) then
+      raise exception '% names a card that is cast on a post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+  end if;
+  if phrase is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if catches is not null and phrase is not null then raise exception 'a back waits for a card or a phrase, never both' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
+  if target_kind is distinct from 'post' then raise exception 'a card is set face down on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if author is distinct from setter then raise exception 'a card is set face down on a post of your own character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+  -- Public, since the back is.
+  if exists (select 1 from face_down f where f.post = target and f.ends_at > now()
+             and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)) then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  select count(*) into rounds from face_down f where f.post = target;
+  insert into acts (character, kind, thread, target_act_id, payload) values (setter, 'set', in_thread, target, '{}') returning id into written;
+  begin
+    insert into face_down (play, account, card, config, post, thread, round, ends_at, catches, phrase)
+    values (written, payer, card, coalesce(config, '{}'), target, in_thread, rounds + 1, now() + span_interval(setting('setLasts')), place_set.catches, place_set.phrase);
+    -- Its reply moment, waiting for the first post by another character (a row for every card alike, a Bluff's too).
+    insert into face_down_reply (play, thread) values (written, in_thread);
+  exception when unique_violation then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end;
+  return act_projection(written);
+end $$;
+revoke execute on function place_set(uuid, text, uuid, jsonb, uuid, integer, text, text) from public, anon, authenticated, service_role;
+
+-- set_card (0104), counting the hand with card_held (Task 3) and passing the catch and the phrase on. Everything else as 0104 wrote it; the grants as 0054 gave them.
+create function set_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer, catches text default null, phrase text default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  held integer;
+  placed jsonb;
+  written uuid;
+begin
+  perform played_by(through, who);
+  perform not_banned(through);
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  if price is null or price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  perform 1 from accounts where id = who for no key update;
+  held := card_held(who, set_card.card);
+  if coalesce(held, 0) < 1 then raise exception 'you hold no "%" card; the Vending Machine sells them', card using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
+  placed := place_set(through, card, target, config, who, price, set_card.catches, set_card.phrase);
+  written := (placed ->> 'id')::uuid;
+  perform wallet_spend(who, price, 'play', written);
+  insert into card_ledger (account, card, kind, act, price) values (who, card, 'played', written, price);
+  return placed;
+end $$;
+revoke execute on function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text) from public, anon, authenticated;
+grant execute on function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text) to service_role;
+
+-- staff_set_card (0086), taking the named catch. A persona sets Gimmicks only, and no trap pays out now, so the payout refusal is gone. Everything else as 0086 wrote it.
+create function staff_set_card(staff_key text, card text, target uuid, config jsonb default '{}', catches text default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  whose text;
+  held text;
+  kind_of card_kinds%rowtype;
+  flag text;
+  placed jsonb;
+begin
+  select c.id, c.staff_kind into who, whose from characters c where c.staff = staff_key;
+  if who is null then raise exception 'there is no staff member "%"', staff_key using errcode = 'P0002'; end if;
+  if whose is distinct from 'persona' then raise exception 'only a persona plays a card' using errcode = '42501'; end if;
+  select o.office into held from staff_office_now o where o.staff = staff_key;
+  if held in ('waiting', 'benched') then raise exception 'a % persona writes nothing', held using errcode = '55000'; end if;
+  select * into kind_of from card_kinds k where k.key = staff_set_card.card;
+  if kind_of.key is null then raise exception 'there is no such card' using errcode = 'P0002'; end if;
+  if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('pool') #>> '{cardRarityMost}'), false) then
+    raise exception '% is above the rarity the pool plays', kind_of.name using errcode = '55000';
+  end if;
+  if kind_of.play is distinct from 'set' then raise exception '% is not a Gimmick; a persona sets Gimmicks', kind_of.name using errcode = '55000'; end if;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  placed := place_set(who, card, target, coalesce(config, '{}'), null, 0, staff_set_card.catches, null);
+  perform set_config('kayfabb.staff_writer', flag, true);
+  return placed;
+end $$;
+revoke execute on function staff_set_card(text, text, uuid, jsonb, text) from public, anon, authenticated;
+grant execute on function staff_set_card(text, text, uuid, jsonb, text) to service_role;

@@ -1290,7 +1290,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
    * The in-memory backend springs a cast trap on a cast; the other triggers are the server's to test.
    */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null }>();
+  /** The back of each card set face down: `catches` is the card a Trap Card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
     return null;
@@ -1375,7 +1376,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** set_card (0054): decided by the card's rules (decideSet), then the author, the hand and the post's one back are the database's. */
+  /** set_card (0139): a Move or a Gimmick, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
   function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Answer<Act> {
     const bad = request({ action: 'setCard', card, character, target, config });
     if (bad) return bad;
@@ -1394,7 +1395,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (short) return short;
     account.cards[card]! -= 1;
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
-    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }) });
     spend(account, decided.value.price, 'play', written.id);
     /* As my_card_ledger (0075) says it: whether the card carries a trap, from the card kinds. */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null });
