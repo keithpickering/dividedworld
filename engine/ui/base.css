@@ -27,6 +27,7 @@ body {
   color: var(--kb-fg);
   font: var(--kb-size-body) / var(--kb-line) var(--kb-font-body);
   caret-color: var(--kb-fg);
+  overflow-y: scroll; /* No jumping around between screens that scroll and don't */
 }
 
 ::selection {
