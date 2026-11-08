@@ -87,11 +87,14 @@ allow contradictions.
 
 - **Any public character may be named**, a Mod Bot's included, and so may the setter's own other masks and the setting
   character itself. **No refusal reads who owns a character**, so naming one's own other mask is accepted without a
-  word ("A response never proves a private fact"). The only refusal is for a character that is not on the board
-  (missing, not yet debuted, or retired), and it reads the same for all three. A retired character's state is public,
-  and the list is picked from characters on the board.
-- A named character that retires after the set leaves its part of the condition unmeetable. The back still waits until
-  `setLasts`, which is a way out every back already has.
+  word ("A response never proves a private fact"). The list is picked with the board's search (the owner: "we can use
+  the Search we just built for the character select part"): `charactersSource` (`engine/ui/search/suggest.ts`), whose
+  `suggest_characters` returns only debuted characters' ids and names and nothing computed from who owns one. So the
+  only refusal is for an id that is not a debuted character (missing or not yet debuted), with one message for both,
+  which a player using the form never meets.
+- **A retired character may be named.** The search offers them, and an admin may restore one. A back naming a
+  character that is retired, at the set or after it, leaves that part of the condition unmeetable while the character
+  stays retired, and the back still ends by itself at `setLasts`, the way out every back already has.
 
 ## 5. When it springs: what is shown
 
@@ -130,7 +133,8 @@ by the post's length and independent of how many backs, characters or threads th
 
 - **The set form (the glass).** Below the card's own settings, under "Springs when someone quotes this post", a
   **Only when** group: "they say…" (a text field), "they quote…" (a field with a picker over the post's text), and
-  "Who" (a three-way choice, with a character picker for the two lists, reusing the composer's someone-picker). Each is
+  "Who" (a three-way choice; for the two lists, the search's character box, `GlassCombobox` over `charactersSource`,
+  as the Reveal overlay and Quote someone already use it, with each chosen character shown as a removable chip). Each is
   optional. The summary line reads the conditions back in plain words ("Springs when Spritey or Boshi quotes 'the
   punchline'"). Impeccable's `shape` step runs on it with the owner before it is built.
 - **Highlight-to-quote (the board).** Section 3.

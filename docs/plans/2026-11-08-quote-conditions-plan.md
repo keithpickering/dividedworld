@@ -6,7 +6,7 @@ in one PR from `main`, after the design's PR is merged.
 Every task is test first: name the test, record its red run, then write the code. The checks this plan changes
 (Tasks 1 and 2 extend two existing generated-SQL pairs) are driven red again on a poisoned input of the new kind.
 
-**Migrations.** One migration, `NNNN_quote_conditions.sql`, taking the next free number in `supabase/migrations/` (0143
+**Migrations.** One migration, `NNNN_quote_conditions.sql`, taking the next free number in `supabase/migrations/` (0144
 as this is written), written section by section, one task at a time, as 0142 was. Its SQL tests take the next free
 numbers in `supabase/tests/` (0142 on). Each function it replaces is copied from its latest definition, found with
 `grep -l "function <name>\|view <name>" supabase/migrations/*.sql` before copying. As this is written those are
@@ -115,12 +115,13 @@ Model: sonnet
   (`face_down_one_of` widened). No row is updated (the append-only triggers stay).
 - `place_set` and `set_card` take `passage`, `who` and `who_except` (default null). `place_set` refuses a condition on
   a Gimmick; a passage not `phrase_in(bbcode_plain(<the post's current body>), passage)`; and any `who` id that is not a
-  debuted, unretired character, with one message for all three cases ("<n> is not a character on the board"). It never
-  reads `characters.owner`.
+  debuted character, with one message for a missing and an undebuted one ("<n> is not a character on the board"); a
+  retired character is accepted (design section 4). It reads `characters` as `suggest_characters` does, never
+  `characters.owner`.
 - `my_face_down` returns `passage`, `who` and `who_except` last.
 
-**Tests first:** a back stored with each condition; each refusal; the one message for a missing, an undebuted and a
-retired character; naming one's own other mask is accepted. **Red:** the columns do not exist.
+**Tests first:** a back stored with each condition; each refusal; the one message for a missing and an undebuted
+character; a retired character is accepted; naming one's own other mask is accepted. **Red:** the columns do not exist.
 
 ## Task 5. Springing on the conditions (SQL)
 
@@ -169,13 +170,15 @@ condition.
 
 Model: sonnet
 
-**Files:** `engine/ui/cards/PlayForm.tsx`, its CSS and tests; a new `engine/ui/cards/SetConditions.tsx`; the composer's
-someone-picker (`engine/ui/composer/`), reused.
+**Files:** `engine/ui/cards/PlayForm.tsx`, its CSS and tests; a new `engine/ui/cards/SetConditions.tsx`; the board search's
+character box, reused as it is: `GlassCombobox` (`engine/ui/glass/GlassCombobox.tsx`) over `charactersSource`
+(`engine/ui/search/suggest.ts`), as `engine/ui/composer/QuoteSomeone.tsx` and `engine/ui/characters/RevealOverlay.tsx`
+use them. No new character query is added.
 
 - Under the set summary, an optional **Only when** group: "they say…" (text, at most 100 characters, locked and filled
   for a card with `setPhrase`); "they quote…" (text, plus a read-only view of the post's visible text in which a
-  selection fills the field); "Who" (a radio trio, Anyone, Only these, Anyone but these, with the someone-picker for up
-  to five characters). The summary line reads the conditions back in plain words, as Task 6's `set` line does.
+  selection fills the field); "Who" (a radio trio, Anyone, Only these, Anyone but these; for the two lists, the character box,
+  each choice added as a removable chip, up to five, a character already chosen not added twice). The summary line reads the conditions back in plain words, as Task 6's `set` line does.
 - The request sends `when` only with the conditions set. Refusals show beside the field they belong to.
 - Every control has a visible label and works by keyboard. The passage field can always be typed.
 
@@ -244,8 +247,9 @@ reviewer reads the Review focus below.
 
 - A back's conditions are read only by the setter's account (`face_down`'s own policy, `my_face_down`). The Set Act,
   its Realtime event, `card_target` and the thread page carry none of them.
-- Setting never reads who owns a character. A named character is refused only for not being on the board, with one
-  message for every way of not being there.
+- Setting never reads who owns a character. Characters are picked through `suggest_characters`, which returns
+  nothing computed from ownership, and a named id is refused only for not being a debuted character, with one message
+  for both ways of not being one.
 - Every quote that meets a back makes the same walk, both probes and the Who check, whatever the back holds (Task 5).
 - A spring names the matched Says and passage, and the quoter only for Only these. An Anyone but list is never in an Act.
 
