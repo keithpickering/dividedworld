@@ -168,42 +168,51 @@
 }
 
 /*
- * A tab (or Back) waiting on its load shows the Signal spinner after its label (MenuBar.tsx): a slot whose width eases from 0 to 22px, so the label
- * does not jump. Under Off the slot is open at once. The bar's end holds a spinner for a load no control on the page claims (claims.tsx).
+ * A tab or Back waiting on its load does not change shape: the bar draws one Signal spinner in its upper right corner (MenuBar.tsx), which
+ * fades in and out. The same corner shows a load no control on the page claims (claims.tsx). Under Off or reduced motion it appears and goes at once.
  */
-.kb-glass-menu-wait {
-  display: inline-block;
-  width: 0;
-  vertical-align: middle;
-  overflow: hidden;
-  transition: width 180ms ease;
-}
-
-[data-kb-pending] > .kb-glass-upright > .kb-glass-menu-wait {
-  width: 22px;
-}
-
-.kb-glass-menu-wait > .kb-spinner {
-  /* Four 4px bars and three 2px gaps are the slot's 22px. */
-  gap: 2px;
-  height: 14px;
-  vertical-align: middle;
-}
-
-.kb-glass-menu-end {
-  flex: 0 0 auto;
+.kb-glass-menu-corner {
+  position: absolute;
+  top: 14px;
+  right: 16px;
   display: flex;
   align-items: center;
-  padding: 0 14px;
   color: var(--kb-glass-text-hi);
+  pointer-events: none;
+  animation: kb-glass-menu-corner-out 180ms ease both;
+}
+
+.kb-glass-menu-corner[data-kb-on] {
+  animation-name: kb-glass-menu-corner-in;
+}
+
+.kb-glass-menu-corner > .kb-spinner {
+  /* Four 4px bars and three 2px gaps. */
+  gap: 2px;
+  height: 14px;
+}
+
+@keyframes kb-glass-menu-corner-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes kb-glass-menu-corner-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .kb-glass-menu-wait { transition: none; }
+  :root:not([data-kb-motion='full']) .kb-glass-menu-corner { animation: none; }
 }
 
-:root[data-kb-motion='reduce'] .kb-glass-menu-wait {
-  transition: none;
+:root[data-kb-motion='reduce'] .kb-glass-menu-corner {
+  animation: none;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-glass-menu-corner {
+  top: 10px;
+  right: 12px;
 }
 
 /* A load is out (Page.tsx): the page shows the progress cursor over everything on it. */

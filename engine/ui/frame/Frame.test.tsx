@@ -335,6 +335,26 @@ describe('Esc and a load', () => {
     expect(screen.getByText('the board')).toBeInTheDocument();
   });
 
+  test('Menu pressed toward a loading page keeps its word, its name and its place and shows one spinner over it, until it lands', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    const { calls, page } = loads();
+    setup(true, undefined, page);
+    const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+    await screen.findByText('the board');
+    const children = () => Array.from(menu.children).map((c) => c.className);
+    const before = children();
+    await userEvent.click(menu);
+    expect(menu).toHaveAttribute('data-kb-pending');
+    expect(menu).toHaveAttribute('aria-busy', 'true');
+    expect(menu.querySelectorAll('.kb-hud-wait .kb-spinner')).toHaveLength(1);
+    /* The label and the key stay in the button, where they were: only the wait is added, as a layer over them. */
+    expect(menu.textContent).toContain('Menu');
+    expect(children().slice(0, before.length)).toEqual(before);
+    expect(menu.lastElementChild!.className).toContain('kb-hud-wait');
+    await act(async () => { calls[0]!.resolve('roster'); });
+    await waitFor(() => expect(menu.querySelector('.kb-spinner')).toBeNull());
+  });
+
   test('a silent re-read of the shown page does not take the Esc: it still opens the menu', async () => {
     window.history.replaceState(null, '', '/b/general');
     const { calls, retry, page } = loads();
@@ -745,6 +765,29 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
     expect(within(side.querySelector<HTMLElement>('.kb-hud-actions')!).getAllByRole('button').map((b) => b.className.split(' ')[0])).toEqual(['kb-hud-menu', 'kb-hud-hand']);
   });
 
+  test('pressed toward a loading page it keeps its name and its parts and shows one spinner over them, until it lands', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    alerts.unread = 3;
+    const calls: Array<(d: unknown) => void> = [];
+    const routes = [
+      { path: '/b/general', render: () => <p>the board</p> },
+      { path: '/alerts', load: () => new Promise<unknown>((resolve) => { calls.push(resolve); }), render: () => <p>the alerts</p> },
+    ];
+    setup(true, undefined, <Routes routes={routes} />);
+    const link = await alertsLink();
+    const parts = () => Array.from(link.children).map((c) => c.className);
+    const before = parts();
+    await userEvent.click(link);
+    expect(link).toHaveAttribute('data-kb-pending');
+    expect(link).toHaveAttribute('aria-busy', 'true');
+    expect(link).toHaveAccessibleName('Alerts 3 new');
+    expect(link.querySelectorAll('.kb-hud-wait .kb-spinner')).toHaveLength(1);
+    expect(parts().slice(0, before.length)).toEqual(before);
+    expect(link.lastElementChild!.className).toContain('kb-hud-wait');
+    await act(async () => { calls[0]!('alerts'); });
+    await waitFor(() => expect(link.querySelector('.kb-spinner')).toBeNull());
+  });
+
   test('on the Phone board it is a bell between "Posting as" and Menu', async () => {
     width(boardSwitch(testGlass) - 1);
     setup();
@@ -826,64 +869,33 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
   });
 
   describe('Menu on the Phone board', () => {
-    let picker = 200;
-    let name = 120;
-    const callbacks: (() => void)[] = [];
-    beforeEach(() => {
-      picker = 200; name = 120; callbacks.length = 0;
-      vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { callbacks.push(cb); } observe() {} unobserve() {} disconnect() {} });
+    test('is always its glyph, still named Menu, however long the mask\'s name or wide the picker', async () => {
       vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-        const cls = this.classList;
-        const w = cls.contains('kb-hud-name-probe') ? name : cls.contains('kb-hud-select') ? picker : cls.contains('kb-hud-menu') ? (this.querySelector('.kb-hud-menu-glyph') ? 52 : 90) : 0;
+        const w = this.classList.contains('kb-hud-name-probe') ? 400 : this.classList.contains('kb-hud-select') ? 400 : 0;
         return { width: w, height: 48, left: 0, top: 0, right: w, bottom: 48 } as DOMRect;
       });
-    });
-    const tell = () => act(() => { for (const cb of [...callbacks]) cb(); });
-
-    test('keeps its word while the name fits, and shortens to its glyph, still named Menu, when the row would cut the name', async () => {
       width(boardSwitch(testGlass) - 1);
       setup();
       const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
-      await tell();
-      expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull();
-      /* A longer name than the picker holds with Menu's word. */
-      name = 190;
-      await tell();
-      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull());
-      expect(menu).toHaveAccessibleName('Menu');
-      /* The picker grew by what shortening gave back (38px): with the word it would still cut the name, so it stays short rather than flipping back and forth. */
-      picker = 238;
-      await tell();
       expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull();
-      /* A shorter name returns the word. */
-      name = 100;
-      await tell();
-      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull());
+      expect(menu).toHaveAccessibleName('Menu');
     });
 
-    test('is judged afresh when the text size changes, with the word\'s width measured again and not the one kept from before', async () => {
+    test('is its glyph again on coming back from the glass, as it was before it was pressed', async () => {
       width(boardSwitch(testGlass) - 1);
       setup();
       const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
-      name = 190;
-      await tell();
-      await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull());
-      /* The word is wider at a larger size (the kept 90px would say 128 cuts nothing), and the bar itself reports nothing. */
-      name = 150;
-      picker = 240;
-      document.documentElement.setAttribute('data-kb-text-size', '125');
-      try {
-        await waitFor(() => expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull());
-      } finally { document.documentElement.removeAttribute('data-kb-text-size'); }
+      expect(menu.querySelector('.kb-hud-menu-glyph')).not.toBeNull();
+      await userEvent.click(menu);
+      expect(within(await hud()).getByRole('button', { name: 'Menu' }).querySelector('.kb-hud-menu-glyph')).not.toBeNull();
     });
 
     test('the Main board\'s Menu is always its word', async () => {
       width(1440);
       setup();
       const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
-      name = 900;
-      await tell();
       expect(menu.querySelector('.kb-hud-menu-glyph')).toBeNull();
+      expect(menu).toHaveTextContent('Menu');
       expect(document.querySelector('.kb-hud-name-probe')).toBeNull();
     });
   });

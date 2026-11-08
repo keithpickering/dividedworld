@@ -12,6 +12,8 @@ test.use({ deviceScaleFactor: 1, viewport: { width: 1440, height: 900 } });
 const LATENCY = 'latency=300';
 const menu = (page: Page) => page.getByRole('navigation', { name: 'Menu' });
 const logTab = (page: Page) => menu(page).getByRole('link', { name: 'Log' });
+/* A tab's wait is the bar's one spinner in its upper right corner; the tab itself keeps its shape. */
+const corner = (page: Page) => menu(page).locator('.kb-glass-menu-corner[data-kb-on]');
 const roster = (page: Page) => page.locator('.kb-roster-card');
 const logLines = (page: Page) => page.locator('.kb-glass-screen tr[data-kb-kind]');
 type E2eWindow = typeof globalThis & { readonly __kbFake: Fake };
@@ -62,7 +64,8 @@ test('from My characters, the Log tab keeps the roster and spins, and the Log ha
   });
   await logTab(page).click();
   await expect(logTab(page)).toHaveAttribute('data-kb-pending', '');
-  await expect(logTab(page).locator('.kb-spinner')).toBeVisible();
+  await expect(corner(page).locator('.kb-spinner')).toBeVisible();
+  await expect(logTab(page).locator('.kb-spinner')).toHaveCount(0);
   await expect(roster(page).first()).toBeVisible();
   await expect(logLines(page).first()).toBeVisible();
   const entered = await page.evaluate(() => (window as unknown as { __entered: { lines: number } | null }).__entered);
@@ -117,7 +120,7 @@ test('a failed load says so, and Try again loads it', async ({ page }) => {
 
 /* The spinner's bars exist only while the load is out, so the wait is long and every read of them is one evaluate. */
 const SLOW = 'latency=1500';
-const barsNow = (page: Page) => logTab(page).locator('.kb-spinner > i').evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, running: e.getAnimations().length })));
+const barsNow = (page: Page) => corner(page).locator('.kb-spinner > i').evaluateAll((els) => els.map((e) => ({ name: getComputedStyle(e).animationName, running: e.getAnimations().length })));
 
 for (const motion of ['reduce', 'full'] as const) {
   test(`with Motion ${motion === 'reduce' ? 'Off' : 'on'}, the spinner's bars ${motion === 'reduce' ? 'stand still' : 'move'}`, async ({ page }) => {
@@ -128,11 +131,32 @@ for (const motion of ['reduce', 'full'] as const) {
     await expect(roster(page).first()).toBeVisible();
     await expect(page.locator('html')).toHaveAttribute('data-kb-motion', motion);
     await logTab(page).click();
-    await expect(logTab(page).locator('.kb-spinner > i')).toHaveCount(4);
+    await expect(corner(page).locator('.kb-spinner > i')).toHaveCount(4);
     const bars = await barsNow(page);
     expect(bars).toHaveLength(4);
     for (const b of bars) {
       if (motion === 'reduce') { expect(b.name).toBe('none'); expect(b.running).toBe(0); } else { expect(b.name).not.toBe('none'); expect(b.running).toBeGreaterThan(0); }
     }
   });
+}
+
+/* The HUD's Menu and Alerts keep their shape while they wait, and the spinner sits at the center of each (base.css's upright wrapper once left it at the corner). */
+for (const [layout, viewport] of [['Main', { width: 1440, height: 900 }], ['Phone', { width: 390, height: 800 }]] as const) {
+  for (const control of ['.kb-hud-menu', '.kb-hud-alerts']) {
+    test(`on the ${layout} board, ${control} keeps its size and centers its spinner while it waits`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.goto(`/b/general?${SLOW}`);
+      const button = page.locator(control);
+      await expect(button).toBeVisible();
+      const before = await button.boundingBox();
+      await button.click();
+      const spinner = button.locator('.kb-spinner');
+      await expect(spinner).toBeVisible();
+      const [box, bars] = await Promise.all([button.boundingBox(), spinner.boundingBox()]);
+      expect(box!.width).toBeCloseTo(before!.width, 0);
+      expect(box!.height).toBeCloseTo(before!.height, 0);
+      expect(bars!.x + bars!.width / 2).toBeCloseTo(box!.x + box!.width / 2, 0);
+      expect(bars!.y + bars!.height / 2).toBeCloseTo(box!.y + box!.height / 2, 0);
+    });
+  }
 }

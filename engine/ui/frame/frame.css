@@ -780,7 +780,7 @@ html[data-kb-float='sheet'] .kb-frame {
   outline-offset: 3px;
 }
 
-/* The mask's name set in the picker's face, unseen, so the HUD can tell whether the picker would cut it (Hud.tsx). */
+/* The mask's name's widest word set in the picker's face, unseen, so the HUD can size the drawn name to the picker's room (Hud.tsx). */
 .kb-hud-name-probe {
   position: absolute;
   visibility: hidden;
@@ -1810,4 +1810,50 @@ html[data-kb-float='sheet'] .kb-frame {
 .kb-hud-menu[data-kb-pending],
 .kb-hud-alerts[data-kb-pending] {
   cursor: progress;
+}
+
+/*
+ * Menu's wait covers its label (Hud.tsx): the spinner is centered over the button, and the key cap, the word and the phone's glyph fade out
+ * beneath it by opacity, so they keep their room and the button keeps its name and its width.
+ */
+.kb-hud-menu {
+  position: relative;
+}
+
+/* Three classes deep, to win over base.css's `.kb-glass-skew > .kb-glass-upright`, which makes the wrapper inline-block and would leave the spinner at the corner. */
+.kb-hud-menu.kb-glass-skew > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.kb-hud-menu > :not(.kb-hud-wait),
+.kb-hud-alerts > :not(.kb-hud-wait) {
+  transition: opacity 120ms ease;
+}
+
+.kb-hud-menu[data-kb-pending] > :not(.kb-hud-wait),
+.kb-hud-alerts[data-kb-pending] > :not(.kb-hud-wait) {
+  opacity: 0;
+}
+
+/* Alerts' wait is the same: centered over the link (it is already a positioned box, on both boards), the bell, word and count faded beneath it. */
+.kb-hud-alerts.kb-glass-skew > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-hud-menu > :not(.kb-hud-wait),
+  :root:not([data-kb-motion='full']) .kb-hud-alerts > :not(.kb-hud-wait) { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-hud-menu > :not(.kb-hud-wait),
+:root[data-kb-motion='reduce'] .kb-hud-alerts > :not(.kb-hud-wait) {
+  transition: none;
 }
