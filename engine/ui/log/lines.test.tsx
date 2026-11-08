@@ -269,6 +269,28 @@ describe('cards set face down, traps and catches', () => {
     expect(row!.characters).toEqual(['p']);
   });
 
+  describe('a play a trap caught says where the card went only for a spring that says so', () => {
+    const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
+    const log = { ...empty,
+      cards: [{ card: 'whoops', kind: 'played' as const, act: 'k2', price: 75, at }],
+      caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, boughtPrice: 100, at }],
+      wallet: [{ settlement: null, kind: 'play' as const, change: -75, overflow: 0, floored: 0, balanceAfter: 225, ref: 'k2', at }] };
+    const read = (payload: Record<string, unknown>, staff?: Set<string>) => {
+      const spring = act('spX', 'spring', 's', { targetActId: 'post9', payload: { card: 'snare', trigger: 'cast', set: 'setX', by: 'k2', caught: 'k2', ...payload } });
+      return text(logRows(data({ log, mine, acts: new Map([...others, spring].map((a) => [a.id, a])), names, ...(staff ? { staff } : {}) }), w, 600, null)[0]!);
+    };
+    test('a spring written before: the card was spent, and its old words stand', () => {
+      expect(read({ outcome: { do: 'payout' } })).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+    });
+    test('a spring that is not read keeps the old words too', () => {
+      const rows = logRows(data({ log, mine, acts: new Map(others.map((a) => [a.id, a])), names }), w, 600, null);
+      expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+    });
+    test('a staff setter takes nothing: the card is spent', () => {
+      expect(read({ did: 'caught' }, new Set(['s']))).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and the card is spent; it cost 1.00 and 0.75, and nothing came back to you.');
+    });
+  });
+
   test('a caught play is the caster\'s line, with its whole cost, and no line of its own as a play', () => {
     const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
     const log = { ...empty,

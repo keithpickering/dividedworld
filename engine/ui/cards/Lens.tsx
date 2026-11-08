@@ -51,7 +51,7 @@ import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase,
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
-import { useSprungWords } from './sprung.ts';
+import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
 import { PREPARED_FAILED, usePrepared, useRest } from '../glass/prepared.ts';
 import { Spinner } from '../glass/Spinner.tsx';
@@ -420,8 +420,13 @@ const endable = (play: CardPlay, now: number): boolean =>
 
 function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
+  const { instance } = useKayfa();
   const name = playName(caster, card);
-  const note = view.notes[play.id];
+  /* A caught play says where its card went, once the spring that caught it is read: the view's note (the card is spent) stands until then, and always for a play caught before. */
+  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
+  const fate = useCaughtFate(springOfCatch);
+  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
+  const note = fate?.taken && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? null, fate) : view.notes[play.id];
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);

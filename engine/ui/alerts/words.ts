@@ -35,6 +35,8 @@ export interface WordsContext {
   readonly names?: ReadonlyMap<Id, string>;
   /** The settlement id (a row's `sub`) of the newest settlement, which `/log/settlement` shows. */
   readonly newestSettlement: string | null;
+  /** The staff characters among `names` (a public fact of a character): a staff setter's Trap Card takes nothing. Absent, none is known to be staff. */
+  readonly staff?: ReadonlySet<Id>;
 }
 
 export const plainText = (parts: readonly Part[]): string => parts.map((p) => (typeof p === 'string' ? p : p.em)).join('');
@@ -157,23 +159,24 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const ended = spring ? Date.parse(spring.createdAt) : act ? Date.parse(act.createdAt) : NaN;
   const span = set && Number.isFinite(ended) ? spanWords(ended - Date.parse(set.createdAt)) : null;
   const laid = cardName(act?.payload.card, ctx);
+  const setterStaff = setterId !== null && ctx.staff?.has(setterId) === true;
   if (caughtSet !== null) {
     const post = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
-    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'caught', setter, card: laid, laid: null, span });
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'caught', setter, card: laid, laid: null, span, setterStaff });
     const when = `face down ${span ? `${span} before` : 'before'} you cast it`;
     const named = `it named ${laid ?? 'your card'} exactly`;
     return {
       line: own ? [own.line] : [`${setter ? `${setter}'s` : 'A'} face-down trap caught your ${laid ?? 'card'}`],
       detail: own ? [own.detail] : sentences(
         [setter ? `${setter} set it ${when}, and ${named}.` : `It was set ${when}, and ${named}.`],
-        [`${laid ? `Your ${laid}` : 'The card'} is now ${setter ? `${setter}'s` : 'the setter\'s'}.`], inTitle(row)),
+        [`${laid ? `Your ${laid}` : 'The card'} ${setterStaff ? 'is spent' : `is now ${setter ? `${setter}'s` : 'the setter\'s'}`}.`], inTitle(row)),
       ways: postWay(post, row, ctx), who,
     };
   }
   const card = cardName(spring?.payload.card, ctx);
   const on = cardOn(row, ctx);
   const place: Part[] = on ? on.place : [ownPost(row.name)];
-  const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'quote', setter, card, laid, span });
+  const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'quote', setter, card, laid, span, setterStaff });
   const subject = setter ? `${setter}'s face-down ${card ?? 'card'}` : card ? `A face-down ${card}` : 'A face-down card';
   return {
     line: own ? [own.line] : [`${subject} struck `, ...place],

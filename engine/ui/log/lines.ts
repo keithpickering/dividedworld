@@ -79,6 +79,8 @@ export interface LogData {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Names of the characters whose posts the lines name. */
   readonly names: ReadonlyMap<Id, string>;
+  /** The staff characters among them (a public fact of a character): a staff setter's Trap Card takes nothing. Absent, none is known to be staff. */
+  readonly staff?: ReadonlySet<Id>;
   /** Titles of the threads the lines name (The System's Turn announcements). */
   readonly titles: ReadonlyMap<Id, string>;
   /** The state each play's effect was last saved with, for the saves the log reads (`effectStates`, public). */
@@ -576,11 +578,14 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const catchOf = data.log.caught.find((c) => c.play === e.act);
     if (catchOf) {
       const cost = catchOf.boughtPrice === null ? plain(e.price) : `${plain(catchOf.boughtPrice)} and ${plain(e.price)}`;
-      /* The setter's character, from the spring (a public Act); never an account. */
-      const setter = data.acts.get(catchOf.spring)?.character;
+      /* Where the card went, only for a spring that says it caught (`did`, from the face-down Moves on): a play caught before had its card spent, and keeps its old words.
+         The setter is the spring's character, public with it, never an account; a staff setter takes nothing. */
+      const spring = data.acts.get(catchOf.spring);
+      const setter = spring?.payload.did === 'caught' ? spring.character : null;
+      const fate = setter ? (data.staff?.has(setter) ? ', and the card is spent' : `, and went to ${nameOf(setter, 'the setter')}`) : '';
       rows.push({
         key: `caught:${e.act}`, kind: 'caught', at: e.at, what: `Your ${cardName(e.card)} was caught`,
-        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}${setter ? `, and went to ${nameOf(setter, 'the setter')}` : ''}; it cost ${cost}, and nothing came back to you.`],
+        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}${fate}; it cost ${cost}, and nothing came back${setter ? ' to you' : ''}.`],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
       });
       return;

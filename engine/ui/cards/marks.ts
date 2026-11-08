@@ -89,8 +89,12 @@ export function wardWords(rarity: Rarity, ends: string | undefined, now: Date = 
 /** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */
 export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
 
-/** A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). */
-export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card went to the trap\'s setter.`;
+/**
+ * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says
+ * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff Trap Card caught, were spent.
+ */
+export const caughtWords = (trap: string | null, fate?: { readonly taken?: string }): string =>
+  `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card ${fate?.taken ? `went to ${fate.taken}` : 'is spent'}.`;
 
 /** The Lens's state for a play an admin ended: plain words, never in character. Its layer is off for everyone and nothing was refunded. */
 export const endedWords = (): string => 'Ended by an admin';

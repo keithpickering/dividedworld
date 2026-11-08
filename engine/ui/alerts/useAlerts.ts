@@ -30,6 +30,8 @@ export interface AlertsRead {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Public names of the authors of the posts a card an admin ended was played on. */
   readonly names: ReadonlyMap<Id, string>;
+  /** The staff characters among them: a staff Trap Card takes nothing, and its alert says the card is spent. */
+  readonly staff: ReadonlySet<Id>;
   /** The furthest seq read in each followed thread; null where it could not be read. */
   readonly reading: Readonly<Record<Id, number>> | null;
   /** Followed thread -> the player's own character that started it (from the thread's first post, a public fact); a thread followed by choice is absent. */
@@ -44,6 +46,7 @@ interface Held {
   readonly rows: readonly Alert[];
   readonly acts: ReadonlyMap<Id, Act>;
   readonly names: ReadonlyMap<Id, string>;
+  readonly staff: ReadonlySet<Id>;
   /** Followed thread -> the character that wrote its first post. */
   readonly openings: ReadonlyMap<Id, Id>;
   readonly reading: Readonly<Record<Id, number>> | null;
@@ -63,6 +66,7 @@ const heldFrom = (doc: AlertsPage): Held => ({
   rows: doc.alerts,
   acts: new Map(doc.acts.map((a) => [a.id, a])),
   names: new Map(doc.people.map((c) => [c.id, c.name])),
+  staff: new Set(doc.people.filter((c) => c.staff !== undefined).map((c) => c.id)),
   openings: new Map(doc.openings.flatMap((a) => (a.character === null ? [] : [[a.thread, a.character] as const]))),
   reading: doc.reading,
   more: doc.alerts.length >= ALERTS_PAGE,
@@ -70,7 +74,8 @@ const heldFrom = (doc: AlertsPage): Held => ({
 });
 
 /** The Acts the rows name, and the posts those Acts landed on (a card's, a trap's), beyond those already held; used for an older page. */
-async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyMap<Id, Act>, heldNames: ReadonlyMap<Id, string>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string> }> {
+async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyMap<Id, Act>, heldNames: ReadonlyMap<Id, string>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string>; staff: Set<Id> }> {
+  const staff = new Set<Id>();
   const acts = new Map(held);
   const names = new Map(heldNames);
   const read = async (ids: readonly Id[]) => {
@@ -86,10 +91,11 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
   const authors = ended.map((p) => (p?.targetActId ? acts.get(p.targetActId)?.character : undefined)).filter((c): c is Id => typeof c === 'string' && !names.has(c));
   for (const part of await Promise.all(inChunks([...new Set(authors)]).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
   /* A face-down card that struck names its spring and its set, and the setter's character. */
-  const trap = await readTrapActs(api, rows, acts, names);
+  const trap = await readTrapActs(api, rows, acts);
   for (const [id, a] of trap.acts) acts.set(id, a);
   for (const [id, n] of trap.names) names.set(id, n);
-  return { acts, names };
+  for (const id of trap.staff) staff.add(id);
+  return { acts, names, staff };
 }
 
 /** The player's Alerts: the document's page, `older()` to read the next page below it, and `dropFollowed` for an Unfollow. */
@@ -109,7 +115,7 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
   const data = useMemo<AlertsRead>(() => {
     const own = new Set(mine.map((c) => c.id));
     return {
-      rows: current.rows, mark: current.doc.seenAt, markKnown: true, joined: current.doc.openedAt ?? null, mine, acts: current.acts, names: current.names, reading: current.reading,
+      rows: current.rows, mark: current.doc.seenAt, markKnown: true, joined: current.doc.openedAt ?? null, mine, acts: current.acts, names: current.names, staff: current.staff, reading: current.reading,
       started: new Map([...current.openings].filter(([, c]) => own.has(c))), more: current.more,
     };
   }, [current, mine]);
@@ -130,9 +136,9 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
   useEffect(() => {
     if (!doc.alerts.some((r) => r.kind === 'trapStruck')) return;
     let live = true;
-    void readTrapActs(api, doc.alerts, new Map(doc.acts.map((a) => [a.id, a])), new Map(doc.people.map((c) => [c.id, c.name]))).then((got) => {
+    void readTrapActs(api, doc.alerts, new Map(doc.acts.map((a) => [a.id, a]))).then((got) => {
       if (!live || (got.acts.size === 0 && got.names.size === 0)) return;
-      setHeld((now) => (now.doc === doc ? { ...now, acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]) } : now));
+      setHeld((now) => (now.doc === doc ? { ...now, acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]), staff: new Set([...now.staff, ...got.staff]) } : now));
     });
     return () => { live = false; };
   }, [api, doc]);
@@ -148,12 +154,12 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
       const have = new Set(current.rows.map(rowKey));
       const fresh = page.filter((r) => !have.has(rowKey(r)));
       const threads = [...new Set(fresh.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
-      const [{ acts, names }, openings, reading] = await Promise.all([
+      const [{ acts, names, staff }, openings, reading] = await Promise.all([
         actsAround(api, fresh, current.acts, current.names),
         threads.length === 0 ? [] : orElse(api.openingActs(threads), [] as readonly Act[]),
         threads.length === 0 ? {} : orElse(api.reading(threads), null),
       ]);
-      return { page, fresh, acts, names, openings, reading };
+      return { page, fresh, acts, names, staff, openings, reading };
     })()).then(
       (got) => setHeld((now) => {
         if (now.doc !== doc) return now;
@@ -162,7 +168,7 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
         const fresh = withoutUnfollowed(got.fresh).filter((r) => !have.has(rowKey(r)));
         const reading = got.reading === null || now.reading === null ? null : { ...now.reading, ...got.reading };
         return {
-          ...now, rows: [...now.rows, ...fresh], acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]),
+          ...now, rows: [...now.rows, ...fresh], acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]), staff: new Set([...now.staff, ...got.staff]),
           openings: new Map([...now.openings, ...got.openings.flatMap((a) => (a.character === null ? [] : [[a.thread, a.character] as const]))]), reading, more: got.page.length >= ALERTS_PAGE, older: 'idle',
         };
       }),

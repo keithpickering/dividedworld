@@ -15,6 +15,6 @@ export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; re
   }
   return {
     line: `${f.setter} had a Trap Card waiting.`,
-    detail: `It named your ${f.card} exactly${f.span ? `, and it had been face down for ${f.span} when you cast it` : ''}. ${f.card} is ${f.setter}'s now.`,
+    detail: `It named your ${f.card} exactly${f.span ? `, and it had been face down for ${f.span} when you cast it` : ''}. ${f.card} ${f.setterStaff ? 'is spent' : `is ${f.setter}'s now`}.`,
   };
 }

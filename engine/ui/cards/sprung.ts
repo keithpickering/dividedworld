@@ -26,6 +26,31 @@ export async function readSprungWords(api: Pick<KayfaApi, 'actsById' | 'characte
   return sprungWords({ setter: nameOf(sprang.character), setAt: set?.createdAt ?? null, quoter: trigger === 'reaction' ? null : nameOf(by?.character), trigger });
 }
 
+/**
+ * Where a caught play's card went: the setter's character where the spring says it caught (`did`, written from the face-down Moves on) and the setter is a
+ * player; `{}` where the card was spent (a spring written before, or a staff setter, which takes nothing); null where it could not be read.
+ */
+export async function readCaughtFate(api: Pick<KayfaApi, 'actsById' | 'characters'>, spring: Id): Promise<{ readonly taken?: string } | null> {
+  const [sprang] = await api.actsById([spring]);
+  if (!sprang || sprang.kind !== 'spring') return null;
+  if (sprang.payload.did !== 'caught' || sprang.character === null) return {};
+  const [setter] = await api.characters([sprang.character]);
+  return setter && setter.staff === undefined ? { taken: setter.name } : {};
+}
+
+/** The fate of a caught play's card, by the spring that caught it; undefined while it is unread or when the spring is unknown. */
+export function useCaughtFate(spring: Id | undefined): { readonly taken?: string } | undefined {
+  const { api } = useKayfa();
+  const [fate, setFate] = useState<{ spring: Id; fate: { readonly taken?: string } } | null>(null);
+  useEffect(() => {
+    if (spring === undefined) return undefined;
+    let live = true;
+    readCaughtFate(api, spring).then((f) => { if (live && f) setFate({ spring, fate: f }); }, () => {});
+    return () => { live = false; };
+  }, [api, spring]);
+  return spring !== undefined && fate?.spring === spring ? fate.fate : undefined;
+}
+
 /** The line above a play's rows when it landed from a back, or null (no spring, not read yet, or unreadable). */
 export function useSprungWords(spring: Id | undefined): string | null {
   const { api } = useKayfa();

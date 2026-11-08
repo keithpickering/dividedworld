@@ -168,6 +168,8 @@ export interface TrapStruckFacts {
   readonly card: string | null;
   readonly laid: string | null;
   readonly span: string | null;
+  /** Whether the setter is a staff character (a public fact of a character): a staff Trap Card takes nothing, so the caught card is spent. */
+  readonly setterStaff: boolean;
 }
 
 /**

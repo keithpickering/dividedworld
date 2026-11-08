@@ -151,7 +151,8 @@ describe('a caught play', () => {
     expect(heading).toBe('Caught, did nothing');
     expect(wordsProblems('state', heading)).toEqual([]);
     await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
-    expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card went to the trap\'s setter.');
+    /* The spring says it caught, and Spritey is a player: the card went to them (read once the row is drawn). */
+    await waitFor(() => expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card went to Spritey.'));
     await user.keyboard('{Escape}');
     expect(within(post(2)).queryByTestId('splash')).toBeNull();
     /* The back sprang: it shows the card it was, in its place. */

@@ -136,6 +136,13 @@ describe('a trap', () => {
     });
     expect(JSON.stringify(s)).not.toMatch(/account|owner|player/iu);
   });
+  test('a staff setter takes nothing: the caught card is spent, never "now theirs"', () => {
+    const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
+    const c = ctx([caught, set(), act('post9', { seq: 9, character: 'cPipe' })], { names, staff: new Set(['cPipe']) });
+    const s = said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' }), c);
+    expect(s.detail).toBe('Pipewrench set it face down two days before you cast it, and it named Whoops! exactly. Your Whoops! is spent. In Hobbies.');
+    expect(s.detail).not.toMatch(/now Pipewrench/u);
+  });
   test('the instance may give either a voice; it is handed the facts and nothing private', () => {
     const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
     const caught = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', caught: 'set1' } });
@@ -145,8 +152,8 @@ describe('a trap', () => {
     expect(said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), c)).toMatchObject({ line: 'L', detail: 'D' });
     expect(said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey' }), c)).toMatchObject({ line: 'L', detail: 'D' });
     expect(seen).toEqual([
-      { how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days' },
-      { how: 'caught', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: 'two days' },
+      { how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days', setterStaff: false },
+      { how: 'caught', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: 'two days', setterStaff: false },
     ]);
   });
   test('how long is said in words: minutes, hours, days', () => {
