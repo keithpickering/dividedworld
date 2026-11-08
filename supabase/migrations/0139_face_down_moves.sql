@@ -4,7 +4,7 @@
 --   face_down.catches / face_down.phrase   the card a Trap Card waits for (a key of card_kinds), or the phrase a Move's landing needs in the quoting post's own words. A row holds at most one
 --                           of them (face_down_one_of); a back set before this holds neither, and no row is updated to hold one (face_down's append-only triggers stay). A phrase is not empty.
 --   card_kinds_trap_shape   a trap is {trigger: {on}} with `on` a cast or a visit: a Gimmick's alone. A Move's trigger is the engine's (a quote), never a card's; reaction, reply, outcomes,
---                           payouts and strikes are gone. NOT VALID, so an existing row with the old shape does not stop this migration; every write to a card_kinds row (the seed's upsert) is checked.
+--                           payouts and strikes are gone. NOT VALID because the only rows with the old shape are test cards (no instance is deployed); validating would stop this migration on a database that holds one, while every write to a card_kinds row, the seed's upsert included, is checked.
 --   card_kinds_problem      holds engine/rules/instance.ts's rules again, in its words: "has a trap, and only a Gimmick does" and "springs on <on>; a Gimmick springs on cast or visit". That a cast Gimmick
 --                           names a catch, and that a set phrase is a Move's, are functions of the engine's CardRules, so they stay with instanceProblems. seed_instance (0132) already writes
 --                           `trap` as the instance gave it, so it is not replaced.
@@ -17,7 +17,7 @@
 --
 -- Copied from their latest definitions: play_card (nine arguments) and set_card from 0104_warn_bar.sql, with the inline hand count replaced by card_held and nothing else changed, the lock order
 -- (0075's header, steps 1 to 6) included: step 1 (the player's accounts row) is still taken before the count; card_held takes no lock. card_kinds_problem from 0108_interception.sql, my_face_down
--- from 0078_reply_passes.sql, my_cards from 0006_cards.sql. buy_card (0006) counts the hand it reports inline; it is a purchase's own return, not a hand check, and stays.
+-- from 0078_reply_passes.sql, my_cards from 0006_cards.sql. buy_card is 0006's, its reported `held` now from card_held; no inline count of a hand is left.
 -- Masks. A back's catch and phrase are the setter's alone: face_down is read through its `own` policy and my_face_down through the caller's account, and neither is in an Act, a projection or
 -- card_target. card_held answers a signed-in caller for their own account alone (any other account's count reads 0, a constant) and the definer functions that spend a card for the account they act for; no anon role executes it.
 -- Ways out. Unchanged and none added by the schema: a back springs once or ends at setLasts; a caught card is a card in the setter's hand like any other.
@@ -74,7 +74,7 @@ language sql stable set search_path = public, pg_temp as $$
            then format('card "%s" lasts %s; it must be a span: a unit of day, week or month and a whole count from 1 to 1000', c.key, c.e -> 'lasts') end,
       -- engine/rules/instance.ts, playProblems: a Gimmick springs on a cast or a visit. A Move's trigger is the engine's (a quote), never a card's.
       case when c.trap is not null and coalesce(c.trigger_on not in ('cast', 'visit'), true)
-           then format('card "%s" springs on %s; a Gimmick springs on cast or visit', c.key, coalesce(to_jsonb(c.trigger_on)::text, 'null')) end
+           then format('card "%s" springs on %s; a Gimmick springs on cast or visit', c.key, coalesce(nullif((c.trap #> '{trigger,on}')::text, 'null'), 'nothing')) end
     ]) with ordinality w(why, n)
   ) p where why is not null
 $$;
@@ -162,3 +162,22 @@ begin
   insert into card_ledger (account, card, kind, act, price) values (who, card, 'played', written, price);
   return placed;
 end $function$;
+
+-- buy_card (0006), reporting the hand through card_held. Everything else as 0006 wrote it.
+create or replace function buy_card(who uuid, card text, price integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  listed integer;
+  left_over integer;
+begin
+  if not exists (select 1 from card_kinds where key = card) then raise exception 'the Vending Machine has no card "%"', card using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- Its price is the economy setting the card names: what the settings rows hold now, a whole
+  -- number however it is written (20 and 20.0 alike), as the engine reads it.
+  select (setting('economy') ->> k.price_setting)::numeric::integer into listed from card_kinds k where k.key = card;
+  if listed is null or listed <= 0 then raise exception 'the settings give "%" no price', card using errcode = 'P0002'; end if;
+  if price is distinct from listed then raise exception 'the price is %, not %', listed, price using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  left_over := wallet_spend(who, listed, 'purchase', null);
+  insert into card_ledger (account, card, kind, price) values (who, card, 'bought', listed);
+  return jsonb_build_object('card', card, 'balance', left_over,
+    'held', card_held(who, buy_card.card));
+end $$;

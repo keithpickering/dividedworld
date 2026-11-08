@@ -99,7 +99,11 @@ begin
   why := card_kinds_problem('[{"key": "r", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]');
   if why is distinct from 'card "r" springs on "reply"; a Gimmick springs on cast or visit' then raise exception 'a reply trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "n", "rarity": "common", "play": "set", "trap": {}}]');
-  if why is distinct from 'card "n" springs on null; a Gimmick springs on cast or visit' then raise exception 'a trap with no trigger: %', why; end if;
+  if why is distinct from 'card "n" springs on nothing; a Gimmick springs on cast or visit' then raise exception 'a trap with no trigger: %', why; end if;
+  why := card_kinds_problem('[{"key": "e", "rarity": "common", "play": "set", "trap": {"trigger": {"on": 5}}}]');
+  if why is distinct from 'card "e" springs on 5; a Gimmick springs on cast or visit' then raise exception 'a numeric trigger: %', why; end if;
+  why := card_kinds_problem('[{"key": "t", "rarity": "common", "play": "set", "trap": {"trigger": {}}}]');
+  if why is distinct from 'card "t" springs on nothing; a Gimmick springs on cast or visit' then raise exception 'a trigger with no on: %', why; end if;
   why := card_kinds_problem('[{"key": "m", "rarity": "common", "play": "cast", "trap": {"trigger": {"on": "cast"}}}]');
   if why is distinct from 'card "m" has a trap, and only a Gimmick does' then raise exception 'a Move with a trap: %', why; end if;
 end $$;
@@ -118,12 +122,15 @@ declare
 begin
   if card_held(ann, 'sweetie') is distinct from 0 then raise exception 'an empty hand holds %', card_held(ann, 'sweetie'); end if;
   insert into card_ledger (account, card, kind, price) select ann, 'sweetie', 'bought', 0 from generate_series(1, 2);
+  -- A purchase reports the hand through the same count.
+  insert into wallets (account, balance) values (ann, 500);
+  if (buy_card(ann, 'splat', 100) ->> 'held')::integer is distinct from 1 then raise exception 'buy_card reports the hand: %', buy_card(ann, 'splat', 100); end if;
   if card_held(ann, 'sweetie') is distinct from 2 then raise exception 'two bought hold %', card_held(ann, 'sweetie'); end if;
   insert into card_ledger (account, card, kind, act, price) values (ann, 'sweetie', 'caught', spring, 0);
   if card_held(ann, 'sweetie') is distinct from 3 then raise exception 'a caught card is a card held: %', card_held(ann, 'sweetie'); end if;
   insert into card_ledger (account, card, kind, act, price) values (ann, 'sweetie', 'played', tests.act(a, 'card', t, '{"card": "sweetie"}', p), 0);
   if card_held(ann, 'sweetie') is distinct from 2 then raise exception 'a played card is spent: %', card_held(ann, 'sweetie'); end if;
-  if card_held(ann, 'splat') is distinct from 0 or card_held(bob, 'sweetie') is distinct from 0 then raise exception 'a hand is one account''s, one card''s'; end if;
+  if card_held(ann, 'blot') is distinct from 0 or card_held(bob, 'sweetie') is distinct from 0 then raise exception 'a hand is one account''s, one card''s'; end if;
 
   -- A caught row is the spring's, and costs nothing; a bought one is neither.
   why := pg_temp.refusal(format('insert into card_ledger (account, card, kind, price) values (%L, %L, %L, 0)', ann, 'sweetie', 'caught'));

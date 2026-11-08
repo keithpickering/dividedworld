@@ -411,7 +411,7 @@ function playProblems(c: CardRules): string[] {
   if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a Use card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
   const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
-  if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a Gimmick springs on ${TRIGGERS.join(' or ')}`);
+  if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a Gimmick springs on ${TRIGGERS.join(' or ')}`);
   if (c.trap !== undefined && c.catches === undefined && on === 'cast') out.push(`${who} springs on a cast and names no card to catch (catches)`);
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a Gimmick that springs on a cast does`);

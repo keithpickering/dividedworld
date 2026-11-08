@@ -681,7 +681,9 @@ test('a Gimmick springs on a cast or a visit, and a Move\'s trigger is the engin
   for (const on of ['sneeze', 'quote', 'reply', 'reaction']) {
     assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on } } })).join('\n'), new RegExp(`card "splat" springs on "${on}"; a Gimmick springs on cast or visit`), on);
   }
-  assert.match(instanceProblems(withCards({ play: 'set', trap: {} })).join('\n'), /card "splat" springs on undefined; a Gimmick springs on cast or visit/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: {} })).join('\n'), /card "splat" springs on nothing; a Gimmick springs on cast or visit/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: {} } })).join('\n'), /card "splat" springs on nothing; a Gimmick springs on cast or visit/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 5 } } })).join('\n'), /card "splat" springs on 5; a Gimmick springs on cast or visit/);
   assert.match(instanceProblems(withCards({ trap: { trigger: { on: 'quote' } } })).join('\n'), /card "splat" has a trap, and only a Gimmick does/);
 });
 
