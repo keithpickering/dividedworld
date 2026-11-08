@@ -12,7 +12,7 @@
  *   Price         in orbs, stored in hundredths.
  *   The Boss      a Boss move in force on the slot, in plain words, with a link to REVERSE it in the queue.
  *
- * One "Save changes" saves the order, every availability and every price in a single transaction (`saveMachine`, save_machine in 0123); nothing is sent until
+ * One "Save changes" saves the order, every availability and every price in a single transaction (`saveMachine`, save_machine in 0141); nothing is sent until
  * then. A price that is not an amount (0.01 to 1,000,000.00, up to two decimals) refuses the whole save in words beside it and sends nothing; the server's
  * refusal saves nothing either, names the slot and why, and marks that slot's availability or price field invalid. Taking a pack off sale ends the Boss's
  * Pulls of cards that no pack on sale can still give; the status says how many.
@@ -44,7 +44,7 @@ const PRICE_WORDS = 'a price is an amount in orbs between 0.01 and 1,000,000.00,
 /** A slot's code on the machine's front: A1, A2, B1 ... two to a row. */
 const codeOf = (i: number) => `${String.fromCharCode(65 + Math.floor(i / 2))}${(i % 2) + 1}`;
 
-/** The most a price may be, in hundredths of an orb: 1,000,000.00, as the database holds it (set_slot, 0121). */
+/** The most a price may be, in hundredths of an orb: 1,000,000.00, as the database holds it (set_slot, 0140). */
 const MOST = 100000000;
 
 /** What an admin typed in a price field as hundredths of an orb, or null where it is no amount: whole orbs or up to two decimals, from 0.01 to 1,000,000.00. */

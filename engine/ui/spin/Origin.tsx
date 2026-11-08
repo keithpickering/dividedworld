@@ -18,7 +18,7 @@ import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, 
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
 import { newer } from '../thread/feed.ts';
-import { AnnounceLine, LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from '../thread/lines.tsx';
+import { AnnounceLine, LastEdited, SystemPost, UnmaskLine, quoteHead, text, useHistory, when } from '../thread/lines.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
@@ -180,7 +180,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
          */
         return cardPlay.reach ? null : (
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null}
-            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />} />
+            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
         );
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'announce': return <AnnounceLine act={act} name={name} />;
@@ -190,7 +190,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}

@@ -30,6 +30,13 @@ function Parts() {
           <GlassButton kind="quiet" size={size} to="/log">Link {size}</GlassButton>
         </ButtonRow>
       ))}
+      {/* Busy: each kind and a link; the label gives way to the spinner at the control's own width. */}
+      {SIZES.map((size) => (
+        <ButtonRow key={`busy-${size}`}>
+          {KINDS.map((kind) => <GlassButton key={kind} kind={kind} size={size} busy>{kind} {size} busy</GlassButton>)}
+          <GlassButton kind="quiet" size={size} to="/log" busy>Link {size} busy</GlassButton>
+        </ButtonRow>
+      ))}
       <ButtonRow align="end">
         <GlassButton kind="quiet">Cancel</GlassButton>
         <GlassButton>Review it</GlassButton>

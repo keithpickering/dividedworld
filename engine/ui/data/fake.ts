@@ -13,6 +13,7 @@
  * the live events a post or a reaction sends and deliver them twice and out of order.
  *
  * Where it differs from the server, and says so:
+ *  - A bar is not refused by post, start thread or spin (the database's `barred()` does); `myApologies` and `apologize` are, and `myCharacters` carries `bars`.
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
@@ -23,8 +24,10 @@ import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { atOrBelow, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
+import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
@@ -34,13 +37,15 @@ import { visibleText } from '../../bbcode/visible.ts';
 import { parse } from '../../bbcode/parse.ts';
 import { pageOf } from '../thread/pages.ts';
 import { PROFILE_ROWS, RECORD_PAGE, type RecordKind } from '../profile/record.ts';
+import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, ProfilePage, RecordPage, Slot, SlotMove, ThreadPage, ThreadPerson, PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -73,7 +78,7 @@ export interface Seed {
   account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number; seasoned?: boolean }): Id;
   admin(account: Id, on?: boolean): void;
   /** A character of an account; debuted unless said otherwise. */
-  character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number }): Id;
+  character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number; pronouns?: PronounSet }): Id;
   retire(character: Id): void;
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
@@ -165,13 +170,22 @@ export interface Seed {
   /** A tally on an Act as if that many others had reacted, kind by kind: no one's reaction (no account or character stands behind it), only the counts every reader sees. */
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
-  staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean }): Id;
+  staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean; pronouns?: PronounSet }): Id;
   /** A staff member's career as `staff_career` would return it (default: none). */
   career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
-  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
+  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number; ruling?: { readonly verdict: 'accepted' | 'rejected'; readonly apology: Id } }): Id;
+  /**
+   * A conferGroup move that has landed (what `apply_mod_move`/`apply_meeting` write): `staff` moved `character` into `group` (a key of the instance's groups), barring it from `board` (a
+   * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on; null: it has no end date). Returns the move's Act.
+   */
+  groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number | null; readonly demand?: boolean }): Id;
+  /** A staff character's office changes (a handover, a reassignment): moves it made before keep the office stamped on them. */
+  setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched'): void;
+  /** An apology a character wrote to a move (`apologize`): the spin Act is written as the server writes it, and the row is in `state` (default `pending`) from `at`. Returns the row's apology Act. */
+  apology(character: Id, move: Id, state?: 'pending' | 'accepted' | 'rejected' | 'returned', options?: { at?: number }): Id;
   /**
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
    * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
@@ -220,9 +234,9 @@ export interface Seed {
   verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
   /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on). */
   infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
-  /** A character's appeal of an infraction (`open_appeal`), and the Mod's ruling on it. */
+  /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
-  ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number }): Id;
+  ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number; until?: number }): Id;
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
@@ -317,6 +331,7 @@ interface CharRec {
   title: string;
   signature: string;
   pipStyle: string;
+  pronouns: PronounSet;
   square: string | null;
   portrait: string | null;
   squareFrame: Frame | null;
@@ -375,12 +390,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
   const instance: Instance = { ...options.instance, settings };
   const screen: ScreenSettings = {
+    pronouns: settings.pronouns,
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
-    staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
+    /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
+    groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
     cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
@@ -421,7 +438,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
-  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
+  /** The apologies barred characters wrote (`apologies`, 0129). */
+  const apologies: { move: Id; apology: Id; character: Id; state: 'pending' | 'accepted' | 'rejected' | 'returned'; at: number }[] = [];
+  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
   interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
@@ -651,17 +670,38 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function publicCharacter(c: CharRec): Character {
     return {
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
-      portraitFrame: c.portraitFrame, pipStyle: c.pipStyle,
+      portraitFrame: c.portraitFrame, pipStyle: c.pipStyle, pronouns: c.pronouns,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
       ...(warnOf(c.id) > 0 ? { warnPoints: warnOf(c.id) } : {}),
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
+      group: groupOf(c),
     };
+  }
+  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
+  function groupOf(c: CharRec): string {
+    const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id).length;
+    return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
   }
 
   /* ---------------------------------------------------------------------- moves ---- */
   /** The moves in force, newest first: a landed `move` Act with no end. */
   const inForce = () => [...acts.values()].filter((a) => a.kind === 'move' && !moveEnds.has(a.id)).sort((a, b) => b.at - a.at || b.order - a.order);
+  /** The boards a character is barred from posting on now (bars_now, less a move past its expiry that the tick has not ended). */
+  /** When a move ends by itself (`move_expires_at`): the latest appeal ruling's `until`, else the move's own expiry; null for a move with no end of its own. */
+  const moveEndsAt = (a: ActRec): string | null => {
+    const ruled = [...acts.values()].filter((r) => r.kind === 'appeal_ruling' && typeof r.payload['until'] === 'string' && acts.get(r.target ?? '')?.target === a.id).sort((x, y) => y.at - x.at)[0];
+    return typeof ruled?.payload['until'] === 'string' ? ruled.payload['until'] : typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null;
+  };
+  const barsOf = (character: Id): Bar[] => inForce().filter((a) => {
+    const params = (a.payload['params'] ?? {}) as Record<string, unknown>;
+    const end = moveEndsAt(a);
+    return a.payload['kind'] === 'conferGroup' && params['character'] === character && typeof params['board'] === 'string' && (end === null || Date.parse(end) > now());
+  }).map((a): Bar => {
+    const params = a.payload['params'] as Record<string, unknown>;
+    return { board: String(params['board']), move: a.id, group: String(params['group']), expiresAt: moveEndsAt(a) };
+  });
+  const apologyEveryMs = (): number => 3_600_000 * (settings.apology.apologyEveryHours);
   /** A board as it is called now: its latest rename in force, else its own row (boards_now). */
   function boardNow(b: Board): Board {
     const m = inForce().find((a) => a.payload['kind'] === 'renameBoard' && (a.payload['params'] as Record<string, unknown>)['board'] === b.id);
@@ -741,6 +781,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c: CharRec = {
       id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      pronouns: persona.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key: 'developer', office: 'developer' },
     };
     characters.set(c.id, c);
@@ -802,7 +843,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function updateOf(a: ActRec): Update {
     const c = characters.get(a.character!)!;
     return {
-      act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
+      act: a.id, thread: a.thread, character: c.id, name: c.name, tagline: c.title, pronouns: c.pronouns, avatar: (options.instance.developer ?? DEFAULT_DEVELOPER).avatar ?? null,
       title: String(a.payload['title']), body: String(a.payload['body']), changes: a.payload['changes'] as UpdateChange[], at: iso(a.at), seq: a.seq!,
     };
   }
@@ -818,7 +859,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const season = i + 2;
       if (h.outgoing === h.boss || latest > h.at || dismissedTodos.has(season)) return [];
       return [{
-        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossPronouns: staffByKey(h.boss)?.pronouns ?? settings.pronouns, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        outgoingPronouns: (h.outgoing === null ? undefined : staffByKey(h.outgoing)?.pronouns) ?? settings.pronouns,
         outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at),
       }];
     }).reverse();
@@ -978,8 +1020,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { t, board: boards.find((b) => b.id === t.board)! };
   }
 
-  function post(thread: Id, character: Id, body: string, quote: Id | null): Answer<Act> {
-    const bad = request({ action: 'post', thread, character, body, quote });
+  /**
+   * write_framed (0118): for each distinct id among the first 5 of `framing`, a debuted character whose id the body holds as `user=<id>` (case ignored)
+   * is told through write_alert's rules, which skip a staff character (no owner) and the acting account's own masks. Any other id is skipped silently.
+   */
+  function writeFramed(body: string, framing: readonly Id[] | undefined, act: ActRec) {
+    const mine = me()?.id;
+    const lowered = body.toLowerCase();
+    for (const named of new Set((framing ?? []).slice(0, 5))) {
+      const c = characters.get(named);
+      if (!c || c.debutedAt === null || !lowered.includes(`user=${named.toLowerCase()}`)) continue;
+      if (!c.owner || c.owner === mine) continue;
+      seededAlerts.push({ account: c.owner, kind: 'framed', sub: null, act: act.id, character: named, at: act.at });
+      const live = { id: crypto.randomUUID(), kind: 'framed' as const, sub: null, act: act.id, character: named, at: iso(act.at) };
+      send(`account:${c.owner}`, 'alert', () => { for (const l of [...(accountListeners.get(c.owner) ?? [])]) l.onAlert?.(live); });
+    }
+  }
+
+  function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[]): Answer<Act> {
+    const bad = request({ action: 'post', thread, character, body, quote, ...(framing ? { framing } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -989,11 +1048,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (quote !== null && !acts.has(quote)) return refuse('there is no such Act to quote');
     const written = write({ character, kind: 'post', thread, target: quote, payload: { body } });
     sendAct(written);
+    writeFramed(body, framing, written);
     return ok(publicAct(written));
   }
 
-  function startThread(boardSlug: string, character: Id, title: string, body: string): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'startThread', board: boardSlug, character, title, body });
+  function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1004,11 +1064,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     sendThread(t);
     sendAct(written);
+    writeFramed(body, framing, written);
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
-  function spin(origin: Id, character: Id, title: string, body: string): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'spin', origin, character, title, body });
+  function spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'spin', origin, character, title, body, ...(framing ? { framing } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1020,6 +1081,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'spin', thread: t.id, target: origin, payload: { title, body } });
     sendThread(t);
     sendAct(written);
+    writeFramed(body, framing, written);
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
@@ -1113,7 +1175,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
   /*
-   * The Vending Machine's slots (machine_slots, 0119_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
+   * The Vending Machine's slots (machine_slots, 0139_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
    * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
    * fixed-seed generator: the fake is deterministic, and a test that wants other cards seeds the hand.
    */
@@ -1125,9 +1187,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').sort((x, y) => x.position - y.position).map((r): Slot => ({
     id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: r.move,
   }));
-  /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0117). */
+  /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0139). */
   const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
-  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0123), in the server's words, and which of the two. */
+  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0141), in the server's words, and which of the two. */
   function slotWords(availability: unknown, price: unknown): { readonly error: string; readonly field: 'availability' | 'price' } | null {
     if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return { error: 'a slot is on sale, sold out or hidden', field: 'availability' };
     if (typeof price !== 'number' || !Number.isInteger(price) || price < 1) return { error: 'a price is at least 0.01', field: 'price' };
@@ -1147,7 +1209,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return 'pack' in rec.item && was === 'onSale' && availability !== 'onSale';
   }
-  /** `card_in_open_pack` (0119): whether a pack on sale can still give the card. */
+  /** `card_in_open_pack` (0139): whether a pack on sale can still give the card. */
   function cardInOpenPack(card: string): boolean {
     const rarity = instance.cards.find((c) => c.key === card)?.rarity;
     if (!rarity) return false;
@@ -1175,7 +1237,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return ended;
   }
-  /** `slot_for_sale` (0119): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
+  /** `slot_for_sale` (0139): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
   function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
     const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
     if (!seen) return refuse('the machine has no such slot');
@@ -1185,7 +1247,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (shown.price !== seen.price) return refuse(`the price is now ${orbsOf(seen.price)}, not ${orbsOf(shown.price)}`);
     return seen;
   }
-  /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0119, write it). */
+  /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0139, write it). */
   const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
@@ -1246,7 +1308,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
   const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
-  /** `buy_card` (0119_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
+  /** `buy_card` (0139_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
   function buyCard(shown: Slot): Answer<Bought> {
     const bad = request({ action: 'buyCard', slot: shown.id, price: shown.price });
     if (bad) return bad;
@@ -1261,7 +1323,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ card, balance: left, held: account.cards[card]! });
   }
 
-  /** `buy_pack` (0119_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
+  /** `buy_pack` (0139_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
   function buyPack(shown: Slot): Answer<Opened> {
     const bad = request({ action: 'buyPack', slot: shown.id, price: shown.price });
     if (bad) return bad;
@@ -1523,16 +1585,21 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
+  /** The SQL's words (pronouns_hold, 0124): a set is held after it is lowercased, as set_profile and create_character store it. */
+  const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
+  const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
+
   const ownedCount = (account: Id) => [...characters.values()].filter((c) => c.owner === account && c.retiredAt === null).length;
 
-  function createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness): Answer<CreatedCharacter> {
+  function createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Answer<CreatedCharacter> {
     const bad = request({ action: 'createCharacter', name, class: cls, timing, loudness });
     if (bad) return bad;
     const account = me()!;
     const named = name.replace(/^ +| +$/g, '');
     if (ownedCount(account.id) >= settings.charactersPerPlayer) return refuse(`a player runs at most ${settings.charactersPerPlayer} characters`);
     if ([...characters.values()].some((c) => sameName(c.name, named))) return refuse('that name is taken');
-    const c = addCharacter(account.id, named, cls, { debuted: timing === 'now', loudness });
+    if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
+    const c = addCharacter(account.id, named, cls, { debuted: timing === 'now', loudness, ...(pronouns === undefined ? {} : { pronouns: normalizePronouns(pronouns) }) });
     return ok({ id: c.id, name: c.name, class: cls, waiting: timing === 'tally', loudness });
   }
 
@@ -1548,11 +1615,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ id: c.id, waiting: timing === 'tally', loudness });
   }
 
-  function addCharacter(owner: Id, name: string, cls: string, o: { debuted: boolean; loudness: DebutLoudness; retired?: boolean; at?: number }): CharRec {
+  function addCharacter(owner: Id, name: string, cls: string, o: { debuted: boolean; loudness: DebutLoudness; retired?: boolean; at?: number; pronouns?: PronounSet }): CharRec {
     const at = o.at ?? now();
     const c: CharRec = {
       id: uuid(), owner, name, createdAt: at, debutedAt: o.debuted ? at : null, retiredAt: o.retired ? at : null, loudness: o.loudness,
       history: [{ cls, at }], pending: null, presenceHidden: false, title: '', signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+      pronouns: o.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null,
     };
     characters.set(c.id, c);
@@ -1661,7 +1729,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return out;
       }, []).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
+      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, group: groupOf(characters.get(id)!), ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
   }
   /** The rule an infraction was filed under, in the glass's words (punishment_words). */
   function ruleOf(inf: ActRec): string | null {
@@ -1678,7 +1746,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account: Id | undefined,
     newest: <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => T[],
     fits: (ms: number) => boolean,
-  ): { infractions: LogInfraction[]; bans: LogBan[]; reports: LogReport[]; appeals: LogAppeal[] } {
+  ): { infractions: LogInfraction[]; bans: LogBan[]; groupMoves: LogGroupMove[]; reports: LogReport[]; appeals: LogAppeal[] } {
     const owned = (id: unknown): boolean => typeof id === 'string' && account !== undefined && characters.get(id)?.owner === account;
     const all = [...acts.values()];
     const seqOf = (post: unknown): number | null => (typeof post === 'string' ? acts.get(post)?.seq ?? null : null);
@@ -1699,6 +1767,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: (rulingOn(b.id)?.payload.until ?? b.payload.until) as string,
           infraction: b.payload.infraction_act as Id, rule: ((i) => (i ? ruleWords(i) : null))(acts.get(String(b.payload.infraction_act))), thread: b.thread,
         })),
+      /* my_group_moves (0134): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
+      groupMoves: newest(all.filter((m) => m.kind === 'move' && m.payload['kind'] === 'conferGroup' && owned((m.payload['params'] as Record<string, unknown> | undefined)?.['character']) && fits(m.at)).map((m) => ({ ms: m.at, order: m.order, m })))
+        .map(({ m }): LogGroupMove => {
+          const params = (m.payload['params'] ?? {}) as Record<string, unknown>;
+          const end = all.find((e) => e.kind === 'move_end' && e.target === m.id);
+          const ruling = all.find((r) => r.kind === 'appeal_ruling' && all.some((a) => a.id === r.target && a.kind === 'appeal' && a.target === m.id));
+          const boardId = typeof params['board'] === 'string' ? params['board'] : null;
+          return {
+            move: m.id, character: params['character'] as Id, at: iso(m.at), thread: m.thread, seq: m.seq ?? null, group: String(params['group'] ?? ''), board: boardId,
+            boardName: boardId ? boards.find((b) => b.id === boardId)?.name ?? null : null,
+            expiresAt: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : typeof m.payload['expires_at'] === 'string' ? m.payload['expires_at'] : null,
+            landedUntil: typeof m.payload['expires_at'] === 'string' ? m.payload['expires_at'] : null,
+            checkAt: typeof params['checkAt'] === 'string' ? params['checkAt'] : null,
+            demand: typeof (m.payload['demand'] as { kind?: unknown } | undefined)?.kind === 'string' ? String((m.payload['demand'] as { kind: string }).kind) : null,
+            office: m.payload['office'] === 'mod' ? 'mod' as const : 'boss' as const, endedWhy: (end?.payload['why'] as LogGroupMove['endedWhy'] | undefined) ?? null, endedBy: (end?.payload['by'] as string | undefined) ?? null,
+            endedAt: end ? iso(end.at) : null, ruling: (ruling?.payload['verdict'] as AppealVerdict | undefined) ?? null, ruledAt: ruling ? iso(ruling.at) : null,
+            ruledUntil: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : null,
+          };
+        }),
       reports: newest(all.filter((r) => r.kind === 'report' && owned(r.character) && fits(r.at)).map((r) => ({ ms: r.at, order: r.order, r })))
         .map(({ r }): LogReport => {
           const v = all.find((x) => x.kind === 'report_verdict' && x.target === r.id);
@@ -1713,7 +1800,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const r = all.find((x) => x.kind === 'appeal_ruling' && x.target === a.id);
           const about = p?.kind === 'ban' ? acts.get(String(p.payload.infraction_act))?.payload.about_act : p?.payload.about_act;
           return {
-            appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : 'infraction', postSeq: seqOf(about), thread: a.thread,
+            appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : p?.kind === 'move' ? 'move' : 'infraction', postSeq: seqOf(about), thread: a.thread,
             verdict: (r?.payload.verdict as AppealVerdict | undefined) ?? null, ruledAt: r ? iso(r.at) : null, pointsDelta: typeof r?.payload.points_delta === 'number' ? r.payload.points_delta : null,
             hearer: named(r?.character ?? null), refund: refundedAppeals.has(a.id) ? 'failed' : null,
           };
@@ -1950,6 +2037,41 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!a || a.kind !== 'move') return null;
       return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
     },
+    myApologies(character) {
+      const account = me();
+      if (!account || characters.get(character)?.owner !== account.id) return [];
+      const every = apologyEveryMs();
+      return apologies.filter((a) => a.character === character).sort((x, y) => y.at - x.at)
+        .map((a): Apology => ({ move: a.move, state: a.state, at: iso(a.at), nextAt: a.state === 'returned' ? null : iso(a.at + every) }));
+    },
+    appealedMoves(character) {
+      const account = me();
+      if (!account || characters.get(character)?.owner !== account.id) return [];
+      return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
+    },
+    apologize(move, character, title, body, framing) {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+      const banned = bannedUntilOf(character);
+      if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+      const m = acts.get(move);
+      const params = (m?.payload['params'] ?? {}) as Record<string, unknown>;
+      const demand = (m?.payload['demand'] ?? {}) as Record<string, unknown>;
+      const live = m !== undefined && m.kind === 'move' && !moveEnds.has(move) && m.payload['kind'] === 'conferGroup' && params['character'] === character && demand['kind'] === 'apologyAccepted'
+        && Date.parse(String(m.payload['expires_at'])) > now();
+      if (!live) return refuse('there is no move of this character\'s that an apology can answer');
+      const mine = apologies.filter((a) => a.move === move);
+      if (mine.some((a) => a.state === 'pending')) return refuse('an apology to that move is still waiting for a ruling');
+      const next = Math.max(0, ...mine.filter((a) => a.character === character && a.state !== 'returned' && a.at > now() - apologyEveryMs()).map((a) => a.at + apologyEveryMs()));
+      if (next > 0) return refuse(`this character has already apologized to that move in the last ${apologyEveryMs() / 3_600_000} hours; the next apology opens at ${iso(next).slice(0, 16).replace('T', ' ')} UTC`);
+      const t = openThread(threads.get(m.thread)!.board, title, move);
+      const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title, body } });
+      apologies.push({ move, apology: written.id, character, state: 'pending', at: written.at });
+      sendThread(t);
+      sendAct(written);
+      writeFramed(body, framing, written);
+      return ok({ thread: summary(t), act: publicAct(written) });
+    },
     movesLog(staff, before) {
       const who = [...characters.values()].find((c) => c.staff?.key === staff);
       const mine = !who ? [] : [...acts.values()].filter((a) => (a.kind === 'move' || a.kind === 'visit' || a.kind === 'report_verdict' || a.kind === 'appeal_ruling') && a.character === who.id)
@@ -1994,25 +2116,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     adminQueue() {
       if (!me()?.admin) throw new Error('only an admin reads the queue');
       const nameOf = (staff: string | null) => (staff === null ? null : [...characters.values()].find((c) => c.staff?.key === staff)?.name ?? null);
+      const pronounsOf = (staff: string | null): PronounSet => (staff === null ? undefined : staffByKey(staff)?.pronouns) ?? settings.pronouns;
       const paramsOf = moveParams;
       const demandFor = moveDemand;
       const waiting = queue.filter((q) => q.landed === null && q.heldAt === null && !q.refusal).sort((a, b) => a.goLiveAt - b.goLiveAt || a.id - b.id).map((q): QueuedMove => q.successor !== undefined ? ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
       }) : ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
         failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null,
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
         const who = a.character ? characters.get(a.character) : undefined;
-        return { q, staff: who?.staff?.key ?? null, boss: who?.name ?? null };
+        return { q, staff: who?.staff?.key ?? null, boss: who?.name ?? null, bossPronouns: who?.pronouns ?? settings.pronouns };
       };
       const live = inForce().map((a): MoveInForce => {
-        const { q, staff, boss } = rowOf(a);
+        const { q, staff, boss, bossPronouns } = rowOf(a);
         return {
-          act: a.id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
+          act: a.id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(a.id),
           why: q?.why ?? null, landedAt: iso(a.at), expiresAt: typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null, progress: toProgress(progressOf(a)),
         };
       });
@@ -2020,22 +2143,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const ended: MoveEnded[] = [
         ...[...moveEnds.entries()].filter(([, e]) => e.at >= since).map(([id, e]): MoveEnded => {
           const a = acts.get(id)!;
-          const { q, staff, boss } = rowOf(a);
-          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
+          const { q, staff, boss, bossPronouns } = rowOf(a);
+          return { how: e.why, by: e.by, at: iso(e.at), act: id, id: q?.id ?? null, staff, boss, bossPronouns, kind: String(a.payload['kind']), params: (a.payload['params'] ?? {}) as Record<string, unknown>, demand: demandOf(id), why: q?.why ?? null, landedAt: iso(a.at) };
         }),
         ...[...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && e.at >= since).map((e): MoveEnded => {
           const play = acts.get(e.target!)!;
           return {
             how: 'reversed', by: 'admin', at: iso(e.at), act: play.id, id: null, staff: play.character ? characters.get(play.character)?.staff?.key ?? null : null,
-            boss: play.character ? characters.get(play.character)?.name ?? null : null, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
+            boss: play.character ? characters.get(play.character)?.name ?? null : null, bossPronouns: (play.character ? characters.get(play.character)?.pronouns : undefined) ?? settings.pronouns, kind: 'card', params: {}, demand: null, why: null, landedAt: iso(play.at),
             card: instance.cards.find((c) => c.key === play.payload.card)?.name ?? String(play.payload.card ?? ''),
           };
         }),
         ...queue.filter((q) => q.refusal && q.heldAt === null && q.refusal.at >= since).map((q): MoveEnded => ({
-          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
+          how: 'refused', by: 'tick', at: iso(q.refusal!.at), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null, reason: q.refusal!.text,
         })),
         ...queue.filter((q) => q.heldAt !== null && q.heldAt >= since).map((q): MoveEnded => ({
-          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
+          how: 'held', by: 'admin', at: iso(q.heldAt!), act: null, id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, landedAt: null,
         })),
       ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
       /* The Mod Bots' cards in force: a face-up `card` Act of a staff character, from the last 30 days, not caught, not worn off, not ended. */
@@ -2054,7 +2177,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         };
       });
       return { cap: 100, waiting, inForce: live, staffCards: staffCards.slice(0, 100), ended, todos: handoverTodos(), more: { waiting: false, inForce: false, staffCards: staffCards.length > 100, ended: false },
-        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name })) } satisfies AdminQueue;
+        roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns })) } satisfies AdminQueue;
     },
     dismissHandoverTodo(season) {
       if (!me()?.admin) return refuse('only an admin dismisses a to-do');
@@ -2109,11 +2232,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* boss_roster_names (0082): the roster's own list, a waiting persona's name included, for an admin alone. */
     bosses() {
       if (!me()?.admin) throw new Error('only an admin reads the Boss list');
-      return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+      return [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns }));
     },
     /* characters_public: staff that have debuted, for anyone. */
     staffNames() {
-      return [...characters.values()].filter((c) => c.staff && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name }));
+      return [...characters.values()].filter((c) => c.staff && c.debutedAt !== null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns }));
     },
     reverseMove(act) {
       if (!me()?.admin) return refuse('only an admin reverses a move');
@@ -2222,9 +2345,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (said === '') return refuse('say why this punishment should change', 'plea');
       if (said.length > 1000) return refuse('a plea is at most 1000 characters', 'plea');
       const pun = acts.get(punishment);
-      if (!pun || (pun.kind !== 'infraction' && pun.kind !== 'ban') || pun.payload.character !== through) return refuse('that is not a punishment of this character');
+      /* A group move that punishes (its group's tone, the instance's) and has not ended, of this character's: appealed by the character it moved (params.character). */
+      const params = (pun?.payload['params'] ?? {}) as Record<string, unknown>;
+      const movePunishes = pun?.kind === 'move' && pun.payload['kind'] === 'conferGroup' && params['character'] === through
+        && instance.groups.conferred.find((g) => g.key === params['group'])?.tone === 'punishment';
+      if (!pun || !((pun.kind === 'infraction' || pun.kind === 'ban') && pun.payload.character === through) && !movePunishes) return refuse('that is not a punishment of this character');
+      if (movePunishes) {
+        const end = moveEndsAt(pun);
+        if (moveEnds.has(pun.id) || (end !== null && Date.parse(end) <= now())) return refuse('that punishment has already run out');
+      }
       if ([...acts.values()].some((a) => a.kind === 'appeal' && a.target === punishment && !refundedAppeals.has(a.id))) return refuse('this punishment has already been appealed; each punishment is appealed once');
-      const hearer = [...characters.values()].find((c) => c.staff && c.staff.office === (pun.kind === 'ban' ? 'boss' : 'mod') && c.debutedAt !== null && c.retiredAt === null)
+      const hearer = (movePunishes ? characters.get(pun.character ?? '') : undefined)
+        ?? [...characters.values()].find((c) => c.staff && c.staff.office === (pun.kind === 'ban' ? 'boss' : 'mod') && c.debutedAt !== null && c.retiredAt === null)
         ?? [...characters.values()].find((c) => c.staff && c.debutedAt !== null && c.retiredAt === null && c.staff.office !== 'developer');
       if (!hearer) return refuse('there is no one on duty to hear an appeal right now');
       const account = me()!;
@@ -2243,7 +2375,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const line = `${hearer.name} has heard it: ${verdict}.`;
       /* A ban's ruling names its new end (close_appeal): overturned ends it now, reduced halves it from its start, increased runs it half again. */
       let until: string | undefined;
-      if (pun.kind === 'ban') {
+      if (movePunishes) {
+        /* A move's length is from its landing to its own end; none has no length, so reduced and increased are upheld (close_appeal). Increased adds half the length, never past moveExpiryMostDays from landing. Overturned ends it now, why overturned. */
+        const own = typeof pun.payload['expires_at'] === 'string' ? Date.parse(pun.payload['expires_at']) : null;
+        const length = own === null ? null : own - pun.at;
+        const end = verdict === 'overturned' ? now() : length === null ? null : verdict === 'reduced' ? pun.at + length / 2 : verdict === 'increased' ? own! + Math.min(length / 2, Math.max(0, settings.moveExpiryMostDays * DAY - length)) : null;
+        if (end !== null) until = iso(end);
+      } else if (pun.kind === 'ban') {
         const days = Number(pun.payload.days);
         const start = pun.at;
         const was = Date.parse(String(pun.payload.until));
@@ -2251,6 +2389,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (end !== null) until = iso(end);
       }
       write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}) } });
+      if (movePunishes) {
+        if (verdict === 'overturned') {
+          moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
+          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'overturned', by: 'appeal' } });
+        } else if (verdict === 'reduced' && until !== undefined && Date.parse(until) <= now()) {
+          moveEnds.set(pun.id, { why: 'expired', by: 'appeal', at: now() });
+          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'expired', by: 'appeal' } });
+        }
+      }
       const refunded = verdict === 'overturned' ? settings.modBots.appealPrice : 0;
       giveBack(account, refunded, appeal.id);
       return ok<AppealResult>({ appeal: appeal.id, verdict, line, pointsDelta: delta, refunded });
@@ -2259,7 +2406,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     beatMod(board) {
       const mod = [...characters.values()].find((c) => c.staff?.office === 'mod' && c.debutedAt !== null && c.retiredAt === null);
       const b = boards.find((x) => x.id === board);
-      return mod && b ? { mod: mod.name, board: boardNow(b).name } : null;
+      return mod && b ? { mod: mod.name, pronouns: mod.pronouns, board: boardNow(b).name } : null;
     },
     myBan(character) {
       const mine = characters.get(character);
@@ -2531,12 +2678,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
         return {
-          id: c.id, name: c.name, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
+          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
           presenceHidden: c.presenceHidden,
           ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
+          ...(barsOf(c.id).length > 0 ? { bars: barsOf(c.id) } : {}),
         };
       });
     },
@@ -2727,6 +2875,79 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         unread: core.alertsUnread(),
       };
     },
+    myCharactersPage(): MyCharactersPage {
+      const mine = core.myCharacters();
+      const debuted = mine.filter((c) => c.debutedAt !== null).map((c) => c.id);
+      return {
+        characters: mine, faces: core.characters(debuted), counts: Object.fromEntries(mine.map((c) => [c.id, core.characterCounts(c.id)])),
+        standings: core.standingAmounts(debuted), reveals: core.classReveals(debuted), turns: core.turnsAnnounced(debuted), nextSettlementAt: core.nextSettlementAt(),
+      };
+    },
+    seasonPage(tab, season, character, page): SeasonPage | null {
+      const now = core.season();
+      const finished = core.finishedSeasons();
+      const mode = tab === 'news' ? 'news' : season === null || season === now?.number ? 'standings' : finished.some((f) => f.number === season) ? 'results' : 'missing';
+      if (mode === 'missing') return null;
+      if (mode === 'news') return { tab: 'news', season: now, news: core.seasonNews(null) };
+      const place = mode === 'results' && character !== null ? core.resultPlace(season!, character) : null;
+      const shown = page !== null ? Math.min(Math.max(page, 1), 10_000) : Math.min(Math.max(place === null ? 1 : Math.floor(place / 50) + 1, 1), 10_000);
+      if (mode === 'results') return { tab: 'results', season: now, finished, page: shown, place, results: core.resultsPage(season!, shown) };
+      const standings = core.standingsPage((shown - 1) * 50, 50);
+      const people = standings.map((x) => x.character);
+      return { tab: 'standings', season: now, finished, page: shown, standings, size: core.standingsCount(), reveals: core.classReveals(people), turns: core.turnsAnnounced(people) };
+    },
+    alertsPage(before): AlertsPage {
+      const alerts = core.alerts(before);
+      const acts = new Map<Id, Act>();
+      /* The rows' Acts, and the Acts those lead to, three links deep (alerts_page's chain). */
+      let next = alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
+      for (let depth = 0; depth < 3 && next.length; depth++) {
+        const read = core.actsById(next.filter((id) => !acts.has(id)));
+        for (const a of read) acts.set(a.id, a);
+        next = read.flatMap((a) => (a.targetActId === null ? [] : [a.targetActId]));
+      }
+      const threads = [...new Set(alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
+      return {
+        alerts, seenAt: core.preferences().alertsSeenAt, openedAt: (() => { try { return core.accountOpenedAt(); } catch { return null; } })(), acts: [...acts.values()],
+        people: core.characters([...new Set([...acts.values()].flatMap((a) => (a.character === null ? [] : [a.character])))]), openings: core.openingActs(threads), reading: core.reading(threads),
+      };
+    },
+    updatesPage(update, before, handoverSeason): UpdatesPage {
+      const updates = core.updates(before);
+      const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act ?? null;
+      return {
+        updates, tallies: core.tallies(open === null ? [] : [open]), mine: core.myReactions(open === null ? [] : [open]),
+        ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
+      };
+    },
+    queuePage(): QueuePage | null {
+      return core.isAdmin() ? { queue: core.adminQueue(), boardNames: core.boardNames(), bosses: core.bosses(), contact: core.adminContact() } : null;
+    },
+    logPage(before): LogPage {
+      const log = core.log(before);
+      const mine = core.myCharacters();
+      const ids = mine.map((c) => c.id);
+      /* Only a character's latest Turn is a line (lines.ts), so only its announcement is named. */
+      const announced = core.turnsAnnounced(ids);
+      const turns = announced.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
+      const acts = new Map<Id, Act>();
+      for (const a of core.actsById(actsNamed(log, null, turns))) acts.set(a.id, a);
+      for (let round = 0; round < 2; round++) for (const a of core.actsById(actsFollowed(acts))) acts.set(a.id, a);
+      const unnamed: { character: Id[]; thread: Id[]; board: Id[] } = { character: [], thread: [], board: [] };
+      for (const a of acts.values()) {
+        const reach = a.payload.reach;
+        if (a.kind !== 'card' || typeof a.payload.targetName === 'string' || (reach !== 'character' && reach !== 'thread' && reach !== 'board')) continue;
+        const target = a.payload[reach];
+        if (typeof target === 'string') unnamed[reach].push(target);
+      }
+      const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character).filter((c): c is Id => c !== null && !ids.includes(c)))];
+      const threads = [...new Set(turns.map((t) => acts.get(t.act)?.thread).concat(unnamed.thread).filter((t): t is Id => t !== undefined))];
+      return {
+        log, acts: [...acts.values()], states: core.effectStates([...new Set(log.saves.map((s) => s.play))]), people: core.characters(others),
+        threads: threads.flatMap((id) => core.thread(id) ?? []), boards: [...new Set(unnamed.board)].flatMap((id) => core.board(id) ?? []),
+        standings: core.standingAmounts(ids), turns: announced, season: core.season(),
+      };
+    },
     setPresenceHidden(character, hidden) {
       if (!me()) return refuse('sign in with an account first');
       const c = presenceMask(character);
@@ -2895,12 +3116,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     createInvite, reissueInvite,
 
     startThread, post: lossy(post), edit: lossy(edit), spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
-    setProfile(character, title, signature, pipStyle) {
+    setProfile(character, title, signature, pipStyle, pronouns) {
       const c = acting(character);
       if (isRefusal(c)) return c;
       if ([...title].length > 40) return refuse('a title is at most 40 characters');
       if ([...signature].length > 500) return refuse('a signature is at most 500 characters');
       if (!options.instance.pipStyles.some((p) => p.key === pipStyle)) return refuse(`there is no pip style "${pipStyle}"`);
+      if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
+      if (pronouns !== undefined) c.pronouns = normalizePronouns(pronouns);
       c.title = title;
       c.signature = signature;
       c.pipStyle = pipStyle;
@@ -3082,7 +3305,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     admin(account, on = true) { accounts.get(account)!.admin = on; },
     character(account, name, cls, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
-      return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at }).id;
+      return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;
     },
     retire(character) {
       const c = characters.get(character)!;
@@ -3249,6 +3472,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c: CharRec = {
         id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
+        pronouns: o?.pronouns ?? options.instance.system.roster.find((r) => r.key === key)?.pronouns ?? settings.pronouns,
         square: null, portrait: null, squareFrame: null, portraitFrame: null, staff: { key, office },
       };
       characters.set(c.id, c);
@@ -3265,7 +3489,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     staffPost(staff, thread, body, o) {
       if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);
       if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as staff');
-      return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
+      return write({ character: staff, kind: 'post', thread, payload: { body, ...(o?.ruling ? { ruling: o.ruling.verdict, apology: o.ruling.apology } : {}) }, at: o?.at }).id;
+    },
+    setOffice(staff, office) {
+      const c = characters.get(staffId(staff));
+      if (!c?.staff) throw new Error(`no staff member ${staff}`);
+      c.staff = { ...c.staff, office };
+    },
+    groupMove(staff, m) {
+      const at = m.at ?? now();
+      const held = characters.get(staffId(staff))?.staff?.office;
+      const office = m.office === undefined ? (held === 'boss' || held === 'mod' ? held : null) : m.office;
+      const board = m.board === undefined ? undefined : boards.find((b) => b.slug === m.board)?.id;
+      if (m.board !== undefined && !board) throw new Error(`no board ${m.board}`);
+      return write({
+        character: staffId(staff), kind: 'move', thread: announcements(),
+        payload: {
+          kind: 'conferGroup', ...(office ? { office } : {}), body: m.body ?? 'You have been moved.', params: { character: m.character, group: m.group, ...(board ? { board } : {}) },
+          ...(m.demand === false ? {} : { demand: { kind: 'apologyAccepted', params: {} } }), ...(m.expiresAt === null ? {} : { expires_at: iso(m.expiresAt ?? at + 3 * DAY) }),
+        }, at,
+      }).id;
+    },
+    apology(character, move, state = 'pending', o) {
+      const m = acts.get(move);
+      if (!m || m.kind !== 'move') throw new Error(`no such move ${move}`);
+      const at = o?.at ?? now();
+      const t = openThread(threads.get(m.thread)!.board, 'An apology', move, at);
+      const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title: 'An apology', body: 'I am sorry.' }, at });
+      apologies.push({ move, apology: written.id, character, state, at });
+      return written.id;
     },
     move(staff, m) {
       const at = m.at ?? now();
@@ -3428,13 +3680,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     appeal(character, infraction, plea, o) {
       const i = acts.get(infraction);
-      if (!i || i.kind !== 'infraction') throw new Error(`no such infraction ${infraction}`);
+      if (!i || (i.kind !== 'infraction' && !(i.kind === 'move' && i.payload['kind'] === 'conferGroup'))) throw new Error(`no such infraction ${infraction}`);
       return write({ character, kind: 'appeal', thread: i.thread, target: infraction, at: o?.at, payload: { plea } }).id;
     },
     ruling(appeal, mod, verdict, o) {
       const a = acts.get(appeal);
       if (!a || a.kind !== 'appeal') throw new Error(`no such appeal ${appeal}`);
-      return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '' } }).id;
+      return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '', ...(o?.until !== undefined ? { until: iso(o.until) } : {}) } }).id;
     },
     ban(character, until, o) {
       const inf = o?.infraction ? acts.get(o.infraction) : [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === character).sort((x, y) => y.at - x.at)[0];

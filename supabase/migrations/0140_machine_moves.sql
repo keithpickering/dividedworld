@@ -13,16 +13,16 @@
 --                                 landing (the machine as it is then: the slot, its availability, the card in a pack on sale, the pulls in force, one move per slot, one flash
 --                                 sale at a time). A move failing it at landing is refused for good with the reason (`queued_moves.refused_at`, as a rule is): it is never an
 --                                 Act, so it is never applied and there is nothing to reverse.
---   machine_now (0119)            also applies the moves in force and carries them (`move`, last): a Pull makes a slot sold out; a Reprice sets round(price * percent / 100),
+--   machine_now (0139)            also applies the moves in force and carries them (`move`, last): a Pull makes a slot sold out; a Reprice sets round(price * percent / 100),
 --                                 at least 1; a Flash sale lists its hidden slot as on sale. An admin's sold out or hidden wins over a Pull and a Reprice, and the moved price is the
 --                                 admin's CURRENT price times the factor. `move` is {kind, act, ends, demand, progress, was, percent, hours}: the demand as the move's Act holds it and
 --                                 its stored progress as move_progress (0053) reads it, `was` the admin's price.
---   queued_moves_guard (0106)     also refuses a machine move whose params, demand or bounds are wrong.
---   system_tick (0105)            also refuses at landing a machine move the machine can no longer take, under the machine's one lock (pg_advisory_xact_lock(hashtext('kayfabb.machine'))),
---                                 the same one 0123's admin functions take, so the Boss's landings and an admin's pack change run one at a time ("packs are the floor").
---   meeting_context (0103)        also carries `machine`: the slots (hidden ones too, for a flash sale), whether a pull could land, the Boss's move on each.
+--   queued_moves_guard (0129)     also refuses a machine move whose params, demand or bounds are wrong.
+--   system_tick (0129)            also refuses at landing a machine move the machine can no longer take, under the machine's one lock (pg_advisory_xact_lock(hashtext('kayfabb.machine'))),
+--                                 the same one 0141's admin functions take, so the Boss's landings and an admin's pack change run one at a time ("packs are the floor").
+--   meeting_context (0136)        also carries `machine`: the slots (hidden ones too, for a flash sale), whether a pull could land, the Boss's move on each.
 --
---   apply_meeting (0110)          also skips and records (`machineSkipped`, as `rulesSkipped` records a rule) a machine move the queue's guard would refuse for what its params, demand
+--   apply_meeting (0131)          also skips and records (`machineSkipped`, as `rulesSkipped` records a rule) a machine move the queue's guard would refuse for what its params, demand
 --                                 and bounds say, so one bad machine move never fails the whole answer.
 --
 -- Cost: machine_now costs the slots times the machine moves in force, never the purchases; the meeting reads at most 60 slots.
@@ -152,7 +152,7 @@ grant execute on function machine_move_problem(text, jsonb, jsonb, timestamptz, 
 
 -- ------------------------------------------------------------------------------------ the queue's guard ----
 
--- queued_moves_guard (0106), also holding a machine move to its params, its demand and its bounds. Everything else as 0106 wrote it.
+-- queued_moves_guard (0129), also holding a machine move to its params, its demand and its bounds. Everything else as 0129 wrote it (the group moves included).
 create or replace function queued_moves_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -160,6 +160,12 @@ declare
   problem text;
   holder text;
   watched uuid;
+  target record;
+  grp group_kinds%rowtype;
+  has_board boolean;
+  dkind text;
+  check_at timestamptz;
+  cap jsonb;
 begin
   if tg_op = 'DELETE' then
     raise exception 'a queued move is held or landed, never removed' using errcode = '23514';
@@ -182,7 +188,7 @@ begin
     if holder is null or not exists (select 1 from move_kinds k where k.key = new.kind and holder = any (k.offices)) then
       raise exception 'a % move is not one a % makes', new.kind, coalesce(holder, 'staff member with no office') using errcode = '23514';
     end if;
-    -- The Boss's three moves on the machine (0121): the params, the demand and the bounds, from the move and the economy alone. What the machine looks like when
+    -- The Boss's three moves on the machine (0140): the params, the demand and the bounds, from the move and the economy alone. What the machine looks like when
     -- the move lands is checked then, by the tick, which refuses a move that cannot (a meeting that read the machine a day earlier is not failed for it).
     if new.kind in ('pullSlot', 'repriceSlot', 'flashSale') then
       if jsonb_typeof(new.params -> 'slot') = 'string' then new.params := jsonb_set(new.params, '{slot}', to_jsonb(lower(new.params ->> 'slot'))); end if;
@@ -196,6 +202,62 @@ begin
         raise exception 'a nomination names a persona on the Boss roster, not a benched or retired one' using errcode = '23514';
       end if;
       if new.params ->> 'boss' = new.staff then raise exception 'a Boss does not name itself' using errcode = '23514'; end if;
+    end if;
+    -- A group move (the design's section 5). The character is a debuted one of the players' and not staff; the group is one the instance lists as conferred. A board is barred
+    -- only by a punishment, and it is a board of the players. A punishment that bars a board carries the apology that lifts it, and nothing else carries that demand. A favor
+    -- carries the check the tick reads and the demand it reads; a punishment carries none. A character has one such move at a time, and a punishment waits out the cap.
+    if new.kind = 'conferGroup' then
+      -- One form of the ids for every reader (the landed-Act count, the index), as a rule's board is kept in lowercase.
+      if jsonb_typeof(new.params -> 'character') = 'string' then new.params := jsonb_set(new.params, '{character}', to_jsonb(lower(new.params ->> 'character'))); end if;
+      if jsonb_typeof(new.params -> 'board') = 'string' then new.params := jsonb_set(new.params, '{board}', to_jsonb(lower(new.params ->> 'board'))); end if;
+      select c.id, c.name, c.staff into target from characters_public c
+      where c.id = case when lower(new.params ->> 'character') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (new.params ->> 'character')::uuid end;
+      if target.id is null then raise exception 'a group move names a member who has debuted' using errcode = '23514'; end if;
+      if target.staff is not null then raise exception 'a group move never names a staff member' using errcode = '23514'; end if;
+      select * into grp from group_kinds k where k.key = new.params ->> 'group' and k.source = 'conferred';
+      if not found then raise exception 'a group move names a conferred group, and "%" is not one', coalesce(new.params ->> 'group', '') using errcode = '23514'; end if;
+      -- A Mod's group move is a punishment that bars a board of its beat: the favor is refused here, and the board and the beat by the Mod's rules below.
+      if holder = 'mod' and grp.tone <> 'punishment' then raise exception 'a Mod confers a punishment, never a favor' using errcode = '23514'; end if;
+      has_board := new.params -> 'board' is not null and new.params -> 'board' <> 'null'::jsonb;
+      if has_board then
+        if grp.tone <> 'punishment' then raise exception 'only a punishment bars a board' using errcode = '23514'; end if;
+        if lower(new.params ->> 'board') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+           or not exists (select 1 from boards b where b.id = (new.params ->> 'board')::uuid and b.id is distinct from system_board()) then
+          raise exception 'a group move bars a board of the players, not The System''s' using errcode = '23514';
+        end if;
+      end if;
+      dkind := new.demand ->> 'kind';
+      if grp.tone = 'punishment' and has_board and dkind is distinct from 'apologyAccepted' then
+        raise exception 'a punishment that bars a board carries the demand apologyAccepted' using errcode = '23514';
+      end if;
+      if dkind = 'apologyAccepted' and not (grp.tone = 'punishment' and has_board) then
+        raise exception 'only a punishment that bars a board carries the demand apologyAccepted' using errcode = '23514';
+      end if;
+      if grp.tone = 'favor' then
+        begin
+          check_at := (new.params ->> 'checkAt')::timestamptz;
+        exception when others then
+          check_at := null;
+        end;
+        if new.expires_at is null or check_at is null or check_at <= new.go_live_at or check_at >= new.expires_at then
+          raise exception 'a favor carries a checkAt between its go-live and its expiry' using errcode = '23514';
+        end if;
+        if new.demand is null then raise exception 'a favor carries the demand its check reads' using errcode = '23514'; end if;
+      elsif new.params ? 'checkAt' then
+        raise exception 'a punishment carries no checkAt' using errcode = '23514';
+      end if;
+      -- One decision under the character's lock, as a patrol's finding is (start_visit): the one-at-a-time rule and the cap.
+      perform pg_advisory_xact_lock(hashtextextended('kayfabb.cap:' || target.id::text, 0));
+      if exists (select 1 from open_moves o join acts a on a.id = o.move_act where a.payload ->> 'kind' = 'conferGroup' and lower(a.payload #>> '{params,character}') = target.id::text)
+         or exists (select 1 from queued_moves q where q.kind = 'conferGroup' and lower(q.params ->> 'character') = target.id::text and q.landed_act is null and q.held_at is null and q.refused_at is null) then
+        raise exception 'that character is already in a group a move put it in' using errcode = '23514';
+      end if;
+      if grp.tone = 'punishment' then
+        cap := mod_cap();
+        if staff_punishments(target.id, (cap ->> 'days')::integer) >= (cap ->> 'punishments')::integer then
+          raise exception '% has been punished % times in % days, the most staff may', target.name, cap ->> 'punishments', cap ->> 'days' using errcode = '23514';
+        end if;
+      end if;
     end if;
     if new.admin_description is not null then raise exception 'a queued move is queued without an admin''s replacement' using errcode = '23514'; end if;
     if new.kind = 'setRule' then
@@ -266,7 +328,8 @@ end $$;
 
 -- ----------------------------------------------------------------------------------------------- the tick ----
 
--- system_tick (0105), also refusing at landing a machine move the machine can no longer take (queued_moves.refused_at, as for a rule). Everything else as 0105 wrote it.
+-- system_tick (0129), also refusing at landing a machine move the machine can no longer take (queued_moves.refused_at, as for a rule). Everything else as 0129 wrote it (the group moves'
+-- landing and checks included).
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -288,12 +351,14 @@ declare
   met integer := 0;
   expired integer := 0;
   failed integer := 0;
+  unmet integer := 0;
   checked integer := 0;
   out_of_time boolean := false;
   superseded integer := 0;
   filed integer := 0;
   tries integer;
   late record;
+  check_at timestamptz;
   filing_grace interval := make_interval(mins => coalesce((select (s.value #>> '{filingGraceMinutes}')::integer from settings s where s.key = 'modBots'), 10));
   boss text := current_boss();
   season_start timestamptz := (select x.starts_at from seasons x where x.ends_at is null);
@@ -306,7 +371,7 @@ begin
     for due in
       select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked
     loop
-      -- A machine move is checked against the machine as it is now, so it waits for the machine's one lock (0123's admin functions take it to take a pack off sale or
+      -- A machine move is checked against the machine as it is now, so it waits for the machine's one lock (0141's admin functions take it to take a pack off sale or
       -- reorder), taken here and not inside the block below so that a timeout is not swallowed as a failed move. Without it a Pull landing as an admin took the last pack
       -- holding its card off sale could each miss the other and leave a Pull with no pack on sale. The tick holds only queued_moves rows (and Acts it inserts) when it
       -- waits here, and those functions never lock those rows, so there is no cycle. Taken only when a machine move is about to be checked, and held to the end of
@@ -321,7 +386,7 @@ begin
             continue;
           end if;
         end if;
-        -- The machine's moves are checked against the machine as it is now (0121): a slot an admin has since changed, a card no pack on sale can give, a pull too many.
+        -- The machine's moves are checked against the machine as it is now (0140): a slot an admin has since changed, a card no pack on sale can give, a pull too many.
         -- Refused for good with the reason, as a rule is, and never applied: it is no Act, so nothing was put on the machine and nothing needs reversing.
         if due.kind in ('pullSlot', 'repriceSlot', 'flashSale') then
           clash := machine_move_problem(due.kind, due.params, due.demand, (select q.go_live_at from queued_moves q where q.id = due.id), due.expires_at, true);
@@ -352,7 +417,7 @@ begin
   for inforce in
     select o.move_act, a.character, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act order by o.landed_at, o.move_act
   loop
-    expires := (inforce.payload ->> 'expires_at')::timestamptz;
+    expires := move_expires_at(inforce.move_act);
     if expires is not null and expires <= now() then
       begin
         did_end := (end_move(inforce.move_act, 'expired', 'expiry') ->> 'ended')::boolean;
@@ -393,7 +458,7 @@ begin
   -- A move with no demand is never read. `checked_at` is set before the read, so a move whose progress errors takes its turn like the
   -- rest instead of holding the front of the line; the count it read is stored beside it (`open_moves.progress`, 0053).
   for inforce in
-    select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> 'demand') = 'object' and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap
+    select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> 'demand') = 'object' and not (a.payload ->> 'kind' = 'conferGroup' and a.payload #> '{params,checkAt}' is not null) and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     update open_moves set checked_at = now() where move_act = inforce.move_act;
@@ -416,6 +481,41 @@ begin
     if counted is not null then update open_moves set progress = counted where move_act = inforce.move_act; end if;
     -- The Boss says it. The move is ended whether or not the line is posted.
     if did_end then perform say_move_end(inforce.move_act, 'met'); end if;
+  end loop;
+
+  -- 3b. Favors: a favor is a group conferred with a check (`params.checkAt`) and the demand it reads. It is not ended `met` by the pass above: a favor met is kept to its
+  -- expiry. At its check, one whose demand is not met is stripped, `unmet`, and the Boss says so. A demand that cannot be evaluated (progress carries an `error`) is no evidence:
+  -- the favor is left and read again at the next turn. The moves in force that carry a check are a handful; one past its check is read at most once in `demandCheckMinutes`, the
+  -- least recently checked first, and none once the budget is spent. One already recorded met (open_moves.progress) is not read again: a demand only ever grows, and the favor
+  -- is kept to its expiry.
+  for inforce in
+    select o.move_act, a.payload from open_moves o join acts a on a.id = o.move_act
+    where a.payload ->> 'kind' = 'conferGroup' and a.payload #> '{params,checkAt}' is not null and (o.checked_at is null or o.checked_at <= now() - check_every)
+      and coalesce((o.progress ->> 'met')::boolean, false) is not true
+      -- Only a favor whose check has come (the case keeps a malformed time from being cast: the guard refuses one, and a move written any other way must not stop the tick).
+      and case when a.payload #>> '{params,checkAt}' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' then (a.payload #>> '{params,checkAt}')::timestamptz end <= now()
+    order by o.checked_at nulls first, o.move_act limit cap
+  loop
+    if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
+    begin
+      check_at := (inforce.payload #>> '{params,checkAt}')::timestamptz;
+      if check_at <= now() then
+        update open_moves set checked_at = now() where move_act = inforce.move_act;
+        checked := checked + 1;
+        counted := demand_progress_or_error(inforce.move_act);
+        if not (counted ? 'error') then update open_moves set progress = counted where move_act = inforce.move_act; end if;
+        if counted ? 'error' then
+          failed := failed + 1;
+          raise warning 'system_tick: favor % could not be read at its check: % ', inforce.move_act, counted ->> 'error';
+        elsif not coalesce((counted ->> 'met')::boolean, false) then
+          did_end := (end_move(inforce.move_act, 'unmet', 'check') ->> 'ended')::boolean;
+          if did_end then unmet := unmet + 1; perform say_move_end(inforce.move_act, 'unmet'); end if;
+        end if;
+      end if;
+    exception when others then
+      failed := failed + 1;
+      raise warning 'system_tick: favor % was not checked: % (%)', inforce.move_act, sqlerrm, sqlstate;
+    end;
   end loop;
 
   -- 4. Visits: each open visit `filingGraceMinutes` past its end is filed with the stock line, so nothing waits on a model. Whatever the switch says: a
@@ -446,13 +546,13 @@ begin
     end;
   end loop;
 
-  return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'failed', failed, 'checked', checked, 'visits', filed, 'budget', out_of_time,
+  return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'budget', out_of_time,
     'noThread', enabled and ann is null);
 end $$;
 
 -- ------------------------------------------------------------------------------------- the meeting's read ----
 
--- meeting_context (0103), also carrying `machine`. Everything else as 0103 wrote it.
+-- meeting_context (0136), also carrying `machine`. Everything else as 0136 wrote it (the groups included).
 create or replace function meeting_context() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(
@@ -474,6 +574,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
     -- The rules in force, so the meeting drops a rule that would leave no compliant post before the queue would refuse it.
     'rules', coalesce((select jsonb_agg(jsonb_build_object('board', r.board, 'predicate', r.predicate, 'param', r.param, 'number', r.number) order by r.board nulls last, r.number)
       from rules_now r), '[]'),
+    -- The groups (member groups design, section 5): the catalog a move may confer, and the characters the meeting may not choose. A character is held while a group move is
+    -- in force on it or queued and not held (the guard's one-at-a-time rule), and capped while staff_punishments is at the cap; each is listed with the group it is in now.
+    -- Only those two kinds are listed, which a busy instance keeps to a handful; every other character is in its earned group and free to be chosen.
+    'groups', jsonb_build_object(
+      'conferred', coalesce((select jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'tone', g.tone) order by g.tone desc, g.key) from group_kinds g where g.source = 'conferred'), '[]'),
+      'characters', group_move_bars()),
     -- The machine, so the Boss can name a slot: the admins' own word on each (hidden ones too, for a flash sale), whether a pull of it could land, and the Boss's move
     -- in force on it. Slots and moves only: no purchase, no buyer, nothing computed from who owns what.
     'machine', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'position', s.position, 'card', s.card, 'pack', s.pack, 'availability', s.availability, 'price', s.price,
@@ -484,7 +590,7 @@ $$;
 
 -- ----------------------------------------------------------------------------------------------- the machine ----
 
--- machine_now (0119), the moves laid over it. A slot an admin made sold out stays so, and a hidden one stays hidden unless a flash sale is open on it, whatever a Pull or a Reprice
+-- machine_now (0139), the moves laid over it. A slot an admin made sold out stays so, and a hidden one stays hidden unless a flash sale is open on it, whatever a Pull or a Reprice
 -- says: the admin's word wins. A Reprice moves the price of a slot that is on sale, from the admin's price as it is now. `move` is added last, so readers of the columns before it
 -- keep working. One row per slot (the newest move, should two ever be in force).
 create or replace view machine_now as
@@ -504,8 +610,8 @@ create or replace view machine_now as
   left join (select distinct on (m.slot) m.* from machine_moves_open m where m.slot is not null order by m.slot, m.landed_at desc, m.move_act desc) mv on mv.slot = s.id
   where s.availability <> 'hidden' or mv.kind = 'flashSale';
 
--- buy_card and buy_pack (0119), writing whether the price was one the Boss moved: a Reprice in force on the slot whose result differs from the admin's price. Read from the slot as
--- slot_for_sale returned it, and written in the purchase's own insert (an Act-like row is never updated, "Append-only"). Everything else as 0119 wrote them.
+-- buy_card and buy_pack (0139), writing whether the price was one the Boss moved: a Reprice in force on the slot whose result differs from the admin's price. Read from the slot as
+-- slot_for_sale returned it, and written in the purchase's own insert (an Act-like row is never updated, "Append-only"). Everything else as 0139 wrote them.
 create or replace function buy_card(who uuid, slot uuid, price integer) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -538,7 +644,7 @@ begin
 end $$;
 
 -- apply_meeting (0110), also skipping and recording a machine move the queue's guard would refuse (`machineSkipped`, as `rulesSkipped` records a rule), spending nothing. Everything
--- else as 0110 wrote it.
+-- else as 0131 wrote it (the group moves included).
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -588,6 +694,7 @@ declare
   prev staff_orders%rowtype;
   at_order integer;
   room integer;
+  check_at timestamptz;
   pat jsonb;
   pat_at timestamptz;
   pat_most integer;
@@ -724,6 +831,18 @@ begin
     select * into kind_row from move_kinds k where k.key = mv ->> 'kind';
     live := greatest((mv ->> 'go_live_at')::timestamptz, now());
     if kind_row.structural then live := greatest(live, now() + hold); end if;
+    -- A favor's check must fall between its go-live and its expiry as the queue lands them; the answer set it from the meeting's clock, so one that no longer does is
+    -- moved to half the favor's life from its go-live.
+    if kind_row.key = 'conferGroup' and mv #> '{params,checkAt}' is not null then
+      begin
+        check_at := (mv #>> '{params,checkAt}')::timestamptz;
+      exception when others then
+        check_at := null;
+      end;
+      if check_at is null or check_at <= live or check_at >= live + ((mv ->> 'expires_in_hours')::numeric * interval '1 hour') then
+        mv := jsonb_set(mv, '{params,checkAt}', to_jsonb(to_char((live + ((mv ->> 'expires_in_hours')::numeric * interval '30 minutes')) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
+      end if;
+    end if;
     insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
     values (apply_meeting.meeting, boss, kind_row.key, mv -> 'params', mv -> 'demand', mv ->> 'why', live,
       live + ((mv ->> 'expires_in_hours')::numeric * interval '1 hour'), kind_row.structural);

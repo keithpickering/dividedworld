@@ -455,6 +455,11 @@
   margin-top: 1.625rem;
 }
 
+/* The email step's Send a code ends its form. The "Sending…" line that used to follow it (an empty note, its 8px margin) is gone, the button showing the wait; the room it held stays, so the aside stands where board 14 has it on a phone. */
+.kb-door-form form > .kb-button-row:last-child {
+  margin-bottom: 8px;
+}
+
 .kb-door-aside {
   min-width: 0;
 }

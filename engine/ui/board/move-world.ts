@@ -7,6 +7,7 @@
  * the one in force on the first board, "Pointless Toast Palace", which asks twelve different characters to post and has five.
  * A move waits in the admin queue, and one was held.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
 import type { Fake } from '../data/fake.ts';
 
@@ -46,8 +47,8 @@ export function seedMoves(fake: Fake, instance: Instance, options: { readonly si
   const spritey = fake.seed.character(fake.seed.account('moves-spritey'), 'Spritey', cls, { at: ago(40) });
   const pipewrench = fake.seed.character(me, 'Pipewrench', cls, { at: ago(40) });
   fake.seed.character(admin, 'Admin Alex', cls, { at: ago(40) });
-  const director = fake.seed.staff('director', 'The Director', 'boss', { title: 'Head of Board Operations (Toast Division)', signature: '[i]A forum is like a loaf of bread. Somebody has to slice it.[/i]', at: ago(60) });
-  const bot = fake.seed.staff('hall-monitor', 'Hall Monitor', 'mod', { title: 'Keeper of the Hall', signature: 'Walk, do not run.', at: ago(60) });
+  const director = fake.seed.staff('director', 'The Director', 'boss', { pronouns: PRONOUN_PRESETS.she, title: 'Head of Board Operations (Toast Division)', signature: '[i]A forum is like a loaf of bread. Somebody has to slice it.[/i]', at: ago(60) });
+  const bot = fake.seed.staff('hall-monitor', 'Hall Monitor', 'mod', { pronouns: PRONOUN_PRESETS.they, title: 'Keeper of the Hall', signature: 'Walk, do not run.', at: ago(60) });
   fake.seed.staffProfile('director', { interests: ['toast', 'artisanal breads', 'the 1998 film Small Soldiers (since Tuesday)'], favorites: [spritey, pipewrench], mood: 'Disappointed but Hopeful', signature: 'A forum is like a loaf of bread. Somebody has to slice it.', at: ago(1) });
 
   const distinct = (board: string, count: number) => ({ kind: 'distinctCharactersOnBoard', params: { board, count } });

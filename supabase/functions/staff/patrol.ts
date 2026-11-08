@@ -39,7 +39,8 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { RUN_BUDGET_MS, learnMod, said, stopsTheRun } from './core.ts';
+import { pronounsOr, type PronounSet } from '../../../engine/rules/pronouns.ts';
+import { RUN_BUDGET_MS, instanceSet, learnMod, readModGroups, said, stopsTheRun } from './core.ts';
 
 /** The most patrols one run judges. The meeting schedules at most `patrolsPerDay` (6) a day, so a run rarely meets more than a few; the rest are the next run's. */
 export const PATROLS_PER_RUN = 10;
@@ -147,7 +148,10 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
     if (standing?.office !== 'mod' || !mod.career) return skipped('the persona is not a Mod now');
     if (standing.beat.length === 0) return skipped('the Mod has no beat to patrol');
 
-    const sample = await db.rpc<PatrolSamplePost[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample });
+    // An author with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set.
+    const fallback = instanceSet(settings);
+    const read = await db.rpc<(Omit<PatrolSamplePost, 'pronouns'> & { pronouns: PronounSet | null })[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample });
+    const sample: PatrolSamplePost[] = read.map((x) => ({ ...x, pronouns: pronounsOr(x.pronouns, fallback) }));
     const ids = sample.map((s) => s.act);
     if (sample.length === 0) return skipped('there was nothing on the beat to patrol', ids);
 
@@ -158,13 +162,16 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
       const b = named.find((x) => x.id === id);
       return { id, name: b?.name ?? 'a board', premise: b?.premise ?? '', rules: await rulesFor(id) };
     }));
+    const groups = await readModGroups(db, standing);
     const frame = patrolPrompt({
-      persona, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
+      ...(groups ? { conferred: groups.conferred } : {}),
+      persona, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
       ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
       boards, sample, limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
     });
     const context = {
       allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
+      ...(groups ? { groups: groups.facts } : {}),
       sample: sample.map((s) => ({ act: s.act, board: s.board })), rulesOf: (board: string) => boards.find((b) => b.id === board)?.rules ?? [],
     };
 

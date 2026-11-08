@@ -24,7 +24,7 @@
  * The section is the address's `?section=`, so the menu bar's Settings stays current on both and the
  * page does not move its focus from the link the player chose.
  */
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Preferences } from '../data/api.ts';
 import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
@@ -32,7 +32,11 @@ import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
+import { settingsSection, type AccountDoc } from '../glass-docs.ts';
+import { useBoot } from '../boot.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { Choice, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { ModeRow, ThemeRow } from './ThemePicker.tsx';
 import { Invites } from './Invites.tsx';
@@ -61,6 +65,7 @@ const POSTBIT: readonly Option<Preferences['postbit']>[] = [
  */
 const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string; readonly sentence: string }[] = [
   { kind: 'quote', title: 'Quotes', sentence: 'A post quotes one of your characters.' },
+  { kind: 'framed', title: 'Words put in your mouth', sentence: 'A post quotes one of your characters saying something they did not.' },
   { kind: 'cardOnYours', title: 'Cards on yours', sentence: 'A card is played on one of your posts.' },
   { kind: 'cardEnded', title: 'Cards an admin ended', sentence: 'An admin ended a card one of your characters played.' },
   { kind: 'trapStruck', title: 'Traps that hit', sentence: 'A trap struck one of your posts.' },
@@ -170,30 +175,24 @@ function Frame({ section, children }: { readonly section: Section | null; readon
   );
 }
 
-export function SettingsScreen() {
+/**
+ * The Settings page. Account is drawn from the invites and sign-in address its route loaded (`doc`; the marker, signed out); every other section has no document
+ * and is drawn from boot and the player's session. The session is the player's, and the preferences are boot's while it has them.
+ */
+export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<AccountDoc> }) {
   const { api, settings } = useKayfa();
-  const session = useSession(api);
+  const session = useSession();
+  const boot = useBoot();
   const navigate = useNavigate();
   const { query } = useLocation();
-  const asked = query.get('section');
-  const section: Section = asked === 'account' || asked === 'board' || asked === 'notifications' ? asked : 'accessibility';
+  const section: Section = settingsSection(query);
   const account = session?.account ?? null;
-  /* The preferences, read and saved as the welcome page's rows save them too (preferences.ts). */
-  const { prefs, refusal, saved, change, changeTips, refuse } = usePreferenceSaves(account);
-  /* The address is read for the account too, and drawn only while that account is the one signed in. */
-  const [addressRead, setAddressRead] = useState<{ readonly account: string; readonly address: string | null } | null>(null);
-  const address = addressRead?.account === account ? addressRead : null;
-
-  useEffect(() => {
-    if (!account) return;
-    let live = true;
-    void api.signInAddress().then((a) => { if (live) setAddressRead({ account, address: a }); }, () => { if (live) setAddressRead({ account, address: null }); });
-    return () => { live = false; };
-  }, [api, account]);
+  /* The preferences, saved as the welcome page's rows save them too (preferences.ts); boot's are the page's start, so none is read for them. */
+  const { prefs, refusal, saved, change, changeTips, refuse } = usePreferenceSaves(account, boot ? boot.preferences : undefined);
 
   if (session === null) return <div className="kb-acct" aria-busy="true" />;
   if (!session.signedIn || !account) {
-    return <Frame section={null}><CalmRegion as="p" className="kb-acct-lead"><Link to="/sign-in">Sign in</Link> to change your settings.</CalmRegion></Frame>;
+    return <Frame section={null}><CalmRegion as="p" className="kb-acct-lead"><GlassLink to="/sign-in">Sign in</GlassLink> to change your settings.</CalmRegion></Frame>;
   }
   if (prefs === null) {
     return <Frame section={section}><CalmRegion className="kb-settings-section" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</CalmRegion></Frame>;
@@ -223,11 +222,10 @@ export function SettingsScreen() {
           <h2 id="kb-settings-account" className="kb-acct-section-title kb-glass-display">Account</h2>
           <p className="kb-acct-lead">Out of character: what you sign in with, and who you bring in.</p>
           <Row label="Sign-in address" sentence="The address the code and the link come to. It is not shown to anyone else.">
-            {address === null
-              ? <p className="kb-acct-value" aria-busy="true" />
-              : <p className="kb-acct-value">{address.address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>}
+            <p className="kb-acct-value">{doc === undefined || isSignedOutDoc(doc) ? '' : doc.address ?? 'Your address could not be read right now. Reload the page to try again.'}</p>
           </Row>
-          <Row label="Invites"><Invites /></Row>
+          {/* The invites are the route's document; between a change of account and the read that follows it there is none to draw. */}
+          <Row label="Invites">{doc === undefined || isSignedOutDoc(doc) ? <div className="kb-invites" aria-busy="true" /> : <Invites invites={doc.invites} />}</Row>
           {said}
           <Row label="Sign out" sentence="Ends this session on this device. Your characters and settings stay with your account.">
             <ButtonRow><GlassButton onClick={() => void signOut()}>Sign out</GlassButton></ButtonRow>

@@ -7,6 +7,7 @@
  * you so. It inherits nothing (a fresh Boss with no `inheritsMemoryOf`).
  */
 import type { Persona } from '../../../../engine/rules/types.ts';
+import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
 
 const name = 'Sighbot (placeholder)';
@@ -17,7 +18,7 @@ export const sighbot: Persona = {
   name,
   title,
   signature: 'No, it is fine. Really. (Placeholder Boss.)',
-  startingHobby: 'houseplants (it keeps forgetting to water them and blames the board)',
+  startingHobby: 'houseplants (you keep forgetting to water them and blame the board)',
   temperament: 'Weary and passive-aggressive: has seen every thread before and is not surprised, only let down.',
   // DRAFT for the owner: strictness, weakness (distraction), pet rules and what persuades it are drafts, and the rest are placeholders so every persona has every field.
   beats: ['general'],
@@ -25,7 +26,8 @@ export const sighbot: Persona = {
   strictness: { visitHours: { least: 4, most: 10 }, bands: ['minor'] },
   weakness: { kind: 'distraction' },
   voice: 'chat',
-  persuadedBy: 'DRAFT: a sincere argument made in its own style, delivered quietly and without exclamation points.',
+  pronouns: PRONOUN_PRESETS.it,
+  persuadedBy: 'DRAFT: a sincere argument made in your own style, delivered quietly and without exclamation points.',
   persona: persona({
     name,
     title,

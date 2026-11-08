@@ -4,6 +4,7 @@
 -- a price in hundredths of an orb; seed_instance adds the slots an instance names that the database does not hold and never changes one it
 -- does (an admin's choices stand). A pack is a list of pulls the instance's code gives; it is rolled on the server when it is bought, and the
 -- cards it gave are written to the card ledger as `pulled` rows beside a row in `packs`. One function, card_held, counts a hand.
+-- The one-read log (log_page) reads the packs, and the card ledger's `pack` and `repriced`, beside its other sources.
 --
 --   - machine_slots is read by nobody but through machine_now, which holds no hidden slot, the same for every caller;
 --   - a purchase is refused from the slot alone, in the same words for everyone, and a refusal writes nothing;
@@ -60,7 +61,7 @@ create table packs (
   contents text[] not null check (cardinality(contents) >= 1),
   bought_at timestamptz not null default now(),
   opened_at timestamptz,
-  -- Whether the Boss had moved the price when it was bought (0121 writes it; here a pack is never repriced). Recorded with the purchase, so the log can say it was.
+  -- Whether the Boss had moved the price when it was bought (0140 writes it; here a pack is never repriced). Recorded with the purchase, so the log can say it was.
   repriced boolean not null default false
 );
 create index packs_account on packs (account, bought_at);
@@ -75,7 +76,7 @@ alter table card_ledger add constraint card_ledger_kind_check check (kind in ('b
 alter table card_ledger add column pack uuid references packs (id);
 alter table card_ledger add constraint card_ledger_pulled_from_pack check ((kind = 'pulled') = (pack is not null));
 alter table card_ledger add constraint card_ledger_pulled_is_free check (kind <> 'pulled' or price = 0);
--- A bought card's row says whether the Boss had moved the price it was bought at (0121 writes it), written in the purchase's own insert.
+-- A bought card's row says whether the Boss had moved the price it was bought at (0140 writes it), written in the purchase's own insert.
 alter table card_ledger add column repriced boolean not null default false;
 alter table card_ledger add constraint card_ledger_repriced_is_bought check (not repriced or kind = 'bought');
 
@@ -123,18 +124,22 @@ update settings s set value = s.value - coalesce((
     select array_agg(k.price_setting) from card_kinds k where not exists (select 1 from card_kinds r where k.price_setting = any (r.reads))), '{}')
 where s.key = 'economy' and jsonb_typeof(s.value) = 'object';
 
--- screen_settings (0116), whose `cardEconomy` is now the keys the cards read and no prices: a price is a slot's. The two search settings stay (0116).
+-- screen_settings (0132), whose `cardEconomy` is now the keys the cards read and no prices: a price is a slot's. Everything else as 0132 wrote it (its groups, the
+-- two search settings and `pronouns` included).
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (
               select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
               from settings x cross join lateral jsonb_each(x.value) e
               where x.key = 'economy' and jsonb_typeof(x.value) = 'object'
-                and e.key in (select unnest(k.reads) from card_kinds k))) as settings
+                and e.key in (select unnest(k.reads) from card_kinds k)))
+         || jsonb_build_object('groups', (
+              select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('key', g.key, 'name', g.name, 'badge', g.badge, 'color', g.color, 'stripe', g.stripe, 'staff', g.condition = 'staff'))
+                                        order by g.source = 'conferred', coalesce(g.rung, 0), g.key), '[]'::jsonb) from group_kinds g)) as settings
   from settings s
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
                   'turnCooldown', 'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
-                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'staffGroup', 'searchLanguage', 'searchRankPool');
+                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'searchLanguage', 'searchRankPool', 'pronouns');
 
 drop trigger card_kinds_priced on card_kinds;
 drop function card_kinds_priced();
@@ -283,7 +288,7 @@ revoke execute on function card_held(uuid, text) from public, anon;
 grant execute on function card_held(uuid, text) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------- the writes that counted a hand ----
--- Each as its latest definition wrote it (play_card and set_card 0104, place_cast 0108, seed_instance 0108), with the count now card_held, a staff Cast's
+-- Each as its latest definition wrote it (play_card and set_card 0104, place_cast 0108, seed_instance 0132), with the count now card_held, a staff Cast's
 -- base price the card's slot, and the seed adding packs and slots. Create or replace keeps each one's grants.
 
 -- play_card and set_card (0104).
@@ -496,7 +501,8 @@ begin
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
 end $$;
 
--- seed_instance (0108), also seeding packs and the machine's slots, and no longer a card's price.
+-- seed_instance (0132), also seeding packs and the machine's slots, and no longer a card's price. Everything else as 0132 wrote it (the groups and the
+-- personas' and the developer's pronouns included).
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -518,7 +524,7 @@ begin
   insert into class_kinds (key, name) select e ->> 'key', e ->> 'name' from jsonb_array_elements(payload -> 'classes') e
   on conflict (key) do update set name = excluded.name;
   -- Reaction kinds are the one vocabulary a seed removes. Classes and cards never are: a card must outlive its slot and its pulls
-  -- (0119). A reaction kind has nothing that must outlive it once nothing uses it, and a kind something does use is never removed.
+  -- (0139). A reaction kind has nothing that must outlive it once nothing uses it, and a kind something does use is never removed.
   if payload ? 'reactions' then
     select string_agg(k.key || ' (' || (select count(*) from reactions r where r.kind = k.key) || ' reactions)', ', ' order by k.key) into unknown
     from reaction_kinds k
@@ -532,6 +538,26 @@ begin
   end if;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;
+  -- Member groups (0128): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
+  -- naming the group. A group the payload no longer lists is deleted unless a move (landed or queued) names it, so the log line that names it still can.
+  if payload ? 'groups' then
+    select string_agg(e ->> 'key' || ' (' || coalesce(e ->> 'condition', 'none') || ')', ', ') into unknown
+    from jsonb_array_elements(payload -> 'groups') e
+    where e ->> 'source' = 'ladder' and coalesce(e ->> 'condition', '') <> all (array['default', 'posts', 'seasons', 'staff']);
+    if unknown is not null then
+      raise exception 'the instance''s groups name a condition kind group_now has no case for: %', unknown using errcode = '22023';
+    end if;
+    delete from group_kinds k
+    where not exists (select 1 from jsonb_array_elements(payload -> 'groups') e where e ->> 'key' = k.key)
+      and not exists (select 1 from acts a where a.kind = 'move' and a.payload ->> 'kind' = 'conferGroup' and a.payload #>> '{params,group}' = k.key)
+      and not exists (select 1 from queued_moves q where q.kind = 'conferGroup' and q.params ->> 'group' = k.key);
+    insert into group_kinds (key, name, badge, color, stripe, source, rung, condition, at_least, tone)
+    select e ->> 'key', e ->> 'name', e ->> 'badge', e ->> 'color', coalesce((e ->> 'stripe')::boolean, false), e ->> 'source', (e ->> 'rung')::integer,
+      e ->> 'condition', (e ->> 'atLeast')::integer, e ->> 'tone'
+    from jsonb_array_elements(payload -> 'groups') e
+    on conflict (key) do update set name = excluded.name, badge = excluded.badge, color = excluded.color, stripe = excluded.stripe, source = excluded.source, rung = excluded.rung,
+      condition = excluded.condition, at_least = excluded.at_least, tone = excluded.tone;
+  end if;
   -- A card's play, rarity, trap, ward and time up (0054), and its reaches (0055), checked as instanceProblems checks them, each
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
@@ -550,7 +576,7 @@ begin
     reaches = excluded.reaches, pins = excluded.pins;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
-  -- admin's (0119). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
+  -- admin's (0139). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
   insert into pack_kinds (key, pulls, leaves)
   select e ->> 'key', e -> 'pulls', coalesce(array(select jsonb_array_elements_text(e -> 'leaves')), '{}')
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
@@ -575,8 +601,12 @@ begin
   -- is made waiting, with no debut, and debuts the moment it first takes an office. What an admin wrote is never written over: a reseed
   -- finds the key and does nothing. A persona in firstStaff with no office row is hired as a Mod Bot, cause `seed`; one with a row,
   -- a benched one's included, is left as that row says, so a reseed never rehires.
+  unknown := (select string_agg(distinct e ->> 'key', ', ') from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
+    where e ? 'pronouns' and not pronouns_hold(pronouns_lowered(e -> 'pronouns')));
+  if unknown is not null then raise exception 'persona % has pronouns that are not five words of 1 to 12 letters and a plural', unknown using errcode = '22023'; end if;
   with seeded as (
-    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature
+    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature,
+      pronouns_lowered(e -> 'pronouns') as pronouns
     from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
   ), made as (
     insert into characters (name, staff, staff_kind, debuted_at)
@@ -586,8 +616,14 @@ begin
     from seeded s
     on conflict (staff) do nothing returning id, staff
   )
-  insert into character_profiles (character, title, signature)
-  select m.id, left(s.title, 40), left(s.signature, 500) from made m join seeded s on s.staff = m.staff;
+  insert into character_profiles (character, title, signature, pronouns)
+  select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
+  -- Each listed persona's pronouns (0124), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
+  -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
+  update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
+  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
+  where e.value ? 'pronouns' and c.staff = e.value ->> 'key' and c.staff_kind = 'persona' and p.character = c.id
+    and p.pronouns is distinct from pronouns_lowered(e.value -> 'pronouns');
   select string_agg(k, ', ') into unknown from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
   where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona');
   if unknown is not null then raise exception 'firstStaff names %, which no persona in the seed''s roster is', unknown using errcode = '22023'; end if;
@@ -635,18 +671,16 @@ begin
   where c.debuted_at is null and c.staff_kind = 'persona'
     and c.staff in (select k from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k)
     and exists (select 1 from staff_offices x where x.staff = c.staff and x.cause = 'seed' and x.office = 'mod');
-  -- The name of the member group every persona is in, which the instance gives.
-  insert into settings (key, value)
-  select 'staffGroup', payload -> 'system' -> 'staffGroup' where jsonb_typeof(payload -> 'system' -> 'staffGroup') = 'object'
-  on conflict (key) do update set value = excluded.value;
+  -- The staff group is the ladder's staff rung (group_kinds, seeded above), so no staffGroup setting is written; a row an earlier seed left is read by no one.
   -- The catalogs (0046): the moves and demands the engine holds, as the engine lists them. A reseed upserts a move's flag and
   -- never removes a kind, since a landed move may name it. A missing flag is a seed's mistake (a move that reshapes a board
   -- must not be seeded as one that does not), so it is refused by the column.
-  insert into move_kinds (key, structural, shapes_board, offices)
+  insert into move_kinds (key, structural, shapes_board, offices, derived)
   select e ->> 'key', (e ->> 'structural')::boolean, coalesce((e ->> 'shapesBoard')::boolean, false),
-         case when jsonb_typeof(e -> 'offices') = 'array' and jsonb_array_length(e -> 'offices') > 0 then array(select jsonb_array_elements_text(e -> 'offices')) else '{boss}' end
+         case when jsonb_typeof(e -> 'offices') = 'array' and jsonb_array_length(e -> 'offices') > 0 then array(select jsonb_array_elements_text(e -> 'offices')) else '{boss}' end,
+         case when jsonb_typeof(e -> 'derived') = 'array' then array(select jsonb_array_elements_text(e -> 'derived')) else '{}' end
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'moves', '[]')) e
-  on conflict (key) do update set structural = excluded.structural, shapes_board = excluded.shapes_board, offices = excluded.offices;
+  on conflict (key) do update set structural = excluded.structural, shapes_board = excluded.shapes_board, offices = excluded.offices, derived = excluded.derived;
   -- The rule predicates (0102), as the engine lists them (engine/rules/predicates.ts). A reseed upserts; a predicate is never removed,
   -- since a landed rule may name it.
   insert into rule_predicates (key, param_kind, least, most, tags, plain)
@@ -689,14 +723,21 @@ begin
   -- writes it over); the board's thread counter is netted by the thread's own, since a board's count is the length of its list and
   -- thread_list never lists this one.
   if jsonb_typeof(payload -> 'developer') = 'object' then
+    if payload -> 'developer' ? 'pronouns' and not pronouns_hold(pronouns_lowered(payload -> 'developer' -> 'pronouns')) then
+      raise exception 'the developer has pronouns that are not five words of 1 to 12 letters and a plural' using errcode = '22023';
+    end if;
     -- The thread opens on The System's board, so a database with no board is told so before anything is made.
     if system_board() is null then raise exception 'a developer needs The System''s board; seed boards first' using errcode = '22023'; end if;
     with made as (
       insert into characters (name, staff, staff_kind, debuted_at) values (payload -> 'developer' ->> 'name', 'developer', 'developer', now())
       on conflict (staff) do nothing returning id
     )
-    insert into character_profiles (character, title, signature)
-    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '' from made m;
+    insert into character_profiles (character, title, signature, pronouns)
+    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
+    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0124); its title and signature are not.
+    update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
+    from characters c
+    where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
       insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
       on conflict (key) do update set value = excluded.value;
@@ -710,5 +751,166 @@ begin
     end if;
   end if;
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
-    'reactions', (select count(*) from reaction_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
+    'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;
+
+-- ------------------------------------------------------------------------------------------------- the log ----
+
+-- log_page (0134), also reading the packs as its fifteenth source, `packs` (my_packs, above, newest first by `bought_at`, at most 200, the columns the adapter's log()
+-- reads), and the card ledger's `pack` and `repriced` (my_card_ledger, above), ordered as log() reads them at one instant. A pack's rows are the caller's own, as every
+-- other source's are. Everything else as 0134 wrote it (the group moves, each profile's `pronouns` and each person's `group` included).
+create or replace function log_page(in_before timestamptz) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with recursive
+  mine as (
+    select m.id, m.class_since from my_characters m
+  ), lg as materialized (
+    select l.settlement, l.starts_at, l.ends_at, l.character, l.reason, l.amount, l.shares_kept, l.params
+    from my_ledger l where in_before is null or l.ends_at <= in_before
+    order by l.ends_at desc, l.settlement, l.character, l.reason limit 200
+  ), wl as materialized (
+    select e.settlement, e.kind, e.change, e.overflow, e.floored, e.balance_after, e.ref, e.at
+    from my_wallet_events e where in_before is null or e.at <= in_before
+    order by e.at desc, e.settlement, e.kind, e.ref, e.change, e.overflow, e.floored, e.balance_after limit 200
+  ), cd as materialized (
+    select c.card, c.kind, c.act, c.price, c.at, c.springs, c.pack, c.repriced
+    from my_card_ledger c where in_before is null or c.at <= in_before
+    order by c.at desc, c.card, c.kind, c.act, c.price, c.pack limit 200
+  ), pk as materialized (
+    select p.id, p.pack, p.price, p.repriced, p.contents, p.bought_at
+    from my_packs p where in_before is null or p.bought_at <= in_before
+    order by p.bought_at desc, p.id limit 200
+  ), po as materialized (
+    select p.play, p.post, p.at, p.reach, p.target_name, p.target_character
+    from my_posts_played_on p where in_before is null or p.at <= in_before
+    order by p.at desc, p.play limit 200
+  ), sv as materialized (
+    select p.play, p.post, p.saved_at
+    from my_posts_played_on p where p.saved_at is not null and (in_before is null or p.saved_at <= in_before)
+    order by p.saved_at desc, p.play limit 200
+  ), se as materialized (
+    select f.play, f.card, f.post, f.spring, f.ended_at
+    from my_face_down f where f.ended_at is not null and (in_before is null or f.ended_at <= in_before)
+    order by f.ended_at desc, f.play limit 200
+  ), sp as materialized (
+    select f.play, f.card, f.post, f.ends_at, f.passed_at
+    from my_face_down f where f.passed_at is not null and f.spring is null and (in_before is null or f.passed_at <= in_before)
+    order by f.passed_at desc, f.play limit 200
+  ), ca as materialized (
+    select c.play, c.card, c.post, c.trap, c.spring, c.price, c.bought_price, c.at
+    from my_caught c where in_before is null or c.at <= in_before
+    order by c.at desc, c.play limit 200
+  ), en as materialized (
+    select e.card_end, e.play, e.card, e.at, e.side, e.reach, e.target_name, e.post_author_name, e.caster_name, e.character
+    from my_cards_ended e where in_before is null or e.at <= in_before
+    order by e.at desc, e.card_end limit 200
+  ), inf as materialized (
+    select i.infraction, i.character, i.at, i.band, i.points, i.rule_number, i.rule, i.mod_name, i.post, i.post_seq, i.thread, i.expires_at, i.relief, i.emptied_at
+    from my_infractions i where in_before is null or i.at <= in_before
+    order by i.at desc, i.infraction limit 200
+  ), bn as materialized (
+    select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread
+    from my_bans b where in_before is null or b.at <= in_before
+    order by b.at desc, b.ban limit 200
+  ), gm as materialized (
+    select g.move, g.character, g.at, g.thread, g.seq, g."group", g.board, g.board_name, g.expires_at, g.landed_until, g.check_at, g.demand, g.office,
+           g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until
+    from my_group_moves g where in_before is null or g.at <= in_before
+    order by g.at desc, g.move limit 200
+  ), rp as materialized (
+    select r.report, r.character, r.at, r.post, r.post_seq, r.thread, r.verdict, r.verdict_at, r.mod_name, r.refund
+    from my_reports r where in_before is null or r.at <= in_before
+    order by r.at desc, r.report limit 200
+  ), ap as materialized (
+    select a.appeal, a.character, a.at, a.punishment, a.punishment_kind, a.post_seq, a.thread, a.verdict, a.ruled_at, a.points_delta, a.hearer_name, a.refund
+    from my_appeals a where in_before is null or a.at <= in_before
+    order by a.at desc, a.appeal limit 200
+  ), sh as materialized (
+    select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
+    from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
+  ), tn as materialized (
+    select t.act, t.character, t.at, t.was from turns_announced t where t.character in (select m.id from mine m)
+  ), named(id) as (
+    -- actsNamed (engine/ui/log/lines.ts) over every row read; the Turns are the latest one of each character, the one announced as its class began.
+    select x.act from sh x where x.act is not null
+    union select t.act from tn t where exists (select 1 from mine m where m.id = t.character and date_trunc('milliseconds', m.class_since) = date_trunc('milliseconds', t.at))
+    union select x.act from cd x where x.act is not null
+    union select x.play from po x union select x.post from po x where x.post is not null
+    union select x.play from sv x union select x.post from sv x where x.post is not null
+    union select x.post from se x where x.post is not null union select x.spring from se x where x.spring is not null
+    union select x.post from sp x where x.post is not null
+    union select x.play from ca x union select x.post from ca x where x.post is not null
+    union select x.play from en x
+    union select x.ref from wl x where x.kind = 'bribe' and x.ref is not null
+  ), walk(id, depth) as (
+    -- actsFollowed, twice: what the Acts read lead to. A loop costs the two rounds as a chain does.
+    select n.id, 0 from named n
+    union
+    select f.id, w.depth + 1
+    from walk w
+    join acts_public a on a.id = w.id
+    cross join lateral (values
+      (case when a.kind in ('card', 'spring', 'set') then a.target_act_id end),
+      (case when a.kind = 'intercept' and a.payload ->> 'visit_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'visit_act')::uuid end),
+      (case when a.kind in ('spring', 'card') and a.payload ->> 'spring' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'spring')::uuid end),
+      (case when a.kind = 'spring' and a.payload ->> 'caught' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'caught')::uuid end),
+      (case when a.kind = 'spring' and a.payload ->> 'by' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'by')::uuid end)
+    ) f(id)
+    where w.depth < 2 and f.id is not null
+  ), ac as materialized (
+    select a.* from acts_public a where a.id in (select w.id from walk w)
+  ), reach as materialized (
+    -- A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so its target is named here.
+    select a.payload ->> 'reach' as kind,
+           case when a.payload ->> (a.payload ->> 'reach') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> (a.payload ->> 'reach'))::uuid end as target
+    from ac a
+    where a.kind = 'card' and jsonb_typeof(a.payload -> 'targetName') is distinct from 'string' and a.payload ->> 'reach' in ('character', 'thread', 'board')
+  ), pe(id) as (
+    select a.character from ac a where a.character is not null and a.character not in (select m.id from mine m)
+    union select r.target from reach r where r.kind = 'character' and r.target is not null and r.target not in (select m.id from mine m)
+  ), th(id) as (
+    select a.thread from ac a where a.id in (select t.act from tn t where exists (select 1 from mine m where m.id = t.character and date_trunc('milliseconds', m.class_since) = date_trunc('milliseconds', t.at)))
+    union select r.target from reach r where r.kind = 'thread' and r.target is not null
+  )
+  select jsonb_build_object(
+    'sources', jsonb_build_object(
+      'ledger', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character, x.reason) from lg x), '[]'::jsonb),
+      'wallet', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.settlement, x.kind, x.ref, x.change, x.overflow, x.floored, x.balance_after) from wl x), '[]'::jsonb),
+      'cards', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.card, x.kind, x.act, x.price, x.pack) from cd x), '[]'::jsonb),
+      'packs', coalesce((select jsonb_agg(to_jsonb(x) order by x.bought_at desc, x.id) from pk x), '[]'::jsonb),
+      'playsOnMine', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play) from po x), '[]'::jsonb),
+      'saves', coalesce((select jsonb_agg(to_jsonb(x) order by x.saved_at desc, x.play) from sv x), '[]'::jsonb),
+      'setEnds', coalesce((select jsonb_agg(to_jsonb(x) order by x.ended_at desc, x.play) from se x), '[]'::jsonb),
+      'setPasses', coalesce((select jsonb_agg(to_jsonb(x) order by x.passed_at desc, x.play) from sp x), '[]'::jsonb),
+      'caught', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.play) from ca x), '[]'::jsonb),
+      'ended', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.card_end) from en x), '[]'::jsonb),
+      'infractions', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.infraction) from inf x), '[]'::jsonb),
+      'bans', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.ban) from bn x), '[]'::jsonb),
+      'groupMoves', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.move) from gm x), '[]'::jsonb),
+      'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
+      'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
+    'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
+    'states', coalesce((select jsonb_agg(to_jsonb(e) order by e.play::text collate "C") from (
+      select s.play, s.state, s.saved_at from effect_state s where s.play in (select v.play from sv v)) e), '[]'::jsonb),
+    'people', coalesce((
+      select jsonb_agg(f.face order by f.name, f.id) from (
+        select cp.name, cp.id, to_jsonb(cp) || jsonb_build_object('profile', (
+          select to_jsonb(p) from (
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
+            from character_profiles r where r.character = cp.id) p)) as face
+        from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),
+    'threads', coalesce((select jsonb_agg(to_jsonb(t) order by t.created_at, t.id::text collate "C") from thread_open t where t.id in (select h.id from th h)), '[]'::jsonb),
+    'boards', coalesce((select jsonb_agg(to_jsonb(b) order by b.id::text collate "C") from (
+      select n.id, n.slug, n.name, n.description, n.is_system, n.move_act from boards_now n
+      where n.id in (select r.target from reach r where r.kind = 'board' and r.target is not null)) b), '[]'::jsonb),
+    'standings', coalesce((select jsonb_agg(to_jsonb(s) order by s.character::text collate "C") from (
+      select c.character, c.standing from current_standings c where c.character in (select m.id from mine m)) s), '[]'::jsonb),
+    'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
+    'season', (select to_jsonb(s) from current_season s limit 1)
+  );
+end;
+
+revoke all on function log_page(timestamptz) from public, anon, authenticated;
+grant execute on function log_page(timestamptz) to authenticated;

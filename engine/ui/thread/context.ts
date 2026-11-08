@@ -1,5 +1,6 @@
 /** What a post reads of the thread it is in. */
 import { createContext, useContext } from 'react';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import type { Act, Id, ThreadSummary, Visit } from '../data/api.ts';
 import type { Plays } from '../cards/plays.ts';
 import type { Mine } from '../reactions/mine.ts';
@@ -18,6 +19,8 @@ export interface ThreadContext {
   readonly visits?: ReadonlyMap<Id, Visit>;
   /** A character's name as the thread knows it, for a card tag's caster: "A character" where it could not be read, The System's for none. */
   readonly nameOf: (character: Id | null) => string;
+  /** A character's pronouns as the thread knows them (its profile, read with the page): copy about a visit's Mod takes the set of the character holding the office now. The engine's it/its where the character could not be read. */
+  readonly pronounsOf: (character: Id | null) => PronounSet;
   /**
    * Read these characters so the thread can name them (a card tag's caster is named before it is drawn). A play the player
    * makes on a post is added after its caster is known, since a tag is not redrawn when a name arrives; a thread drawn

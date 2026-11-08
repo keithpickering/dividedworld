@@ -7,7 +7,16 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { renderInWorld } from '../test-world.tsx';
+import { Link } from '../router.tsx';
+import { Routes, type Route } from '../routes.tsx';
+import * as enter from './enter.ts';
+import { GlassLink } from './Link.tsx';
 import { Page } from './Page.tsx';
+
+vi.mock('./enter.ts', async (orig) => {
+  const real = await orig<typeof import('./enter.ts')>();
+  return { ...real, enterScreen: vi.fn(real.enterScreen) };
+});
 
 const signedIn = (fake: Fake) => fake.signInAs(fake.seed.account('me'));
 
@@ -86,5 +95,98 @@ describe('a change between glass screens', () => {
     const { entering, leaving } = screens();
     expect(Number(x(entering))).toBeLessThan(0);
     await waitFor(() => expect(Number(x(leaving))).toBeGreaterThan(0));
+  });
+});
+
+/* The screen is keyed by the router's key, and the page shows the wait. */
+describe('a page and the router\'s key', () => {
+  const entered = () => vi.mocked(enter.enterScreen);
+  beforeEach(() => entered().mockClear());
+
+  test('a change of key within one path swaps the screen and plays the entrance again', async () => {
+    const routes: Route[] = [{ path: '/log', load: async () => 'doc', key: (_p, q) => q.get('p') ?? '1', render: () => <p>log</p> }];
+    renderInWorld(<><Page surface="log"><p>page</p></Page><Routes routes={routes} /><Link to="/log?p=2">next</Link></>, { path: '/log', seed: signedIn });
+    await screen.findByText('log');
+    const before = entered().mock.calls.length;
+    await userEvent.click(screen.getByRole('link', { name: 'next' }));
+    expect(entered().mock.calls.length).toBe(before + 1);
+    expect(scrolled).toHaveBeenCalledWith(0, 0);
+    expect(screen.getByRole('main')).toHaveFocus();
+  });
+
+  test('two paths that share a key are one screen: no new entrance, no scroll, and no second screen', async () => {
+    const routes: Route[] = [
+      { path: '/characters', load: async () => 'doc', key: () => 'mine', render: () => <p>list</p> },
+      { path: '/characters/edit', load: async () => 'doc', key: () => 'mine', render: () => <p>edit</p> },
+    ];
+    renderInWorld(<><Page surface="characters"><p>page</p></Page><Routes routes={routes} /><Link to="/characters/edit">edit</Link></>, { path: '/characters', seed: signedIn });
+    await screen.findByText('list');
+    const before = entered().mock.calls.length;
+    await userEvent.click(screen.getByRole('link', { name: 'edit' }));
+    expect(entered().mock.calls.length).toBe(before);
+    expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1);
+  });
+});
+
+describe('the page while a load is out', () => {
+  function mount() {
+    const resolves: Array<(d: unknown) => void> = [];
+    const routes: Route[] = [
+      { path: '/alerts', render: () => <p>alerts</p> },
+      { path: '/season', load: () => new Promise<unknown>((r) => { resolves.push(r); }), render: () => <p>arrived</p> },
+    ];
+    const view = renderInWorld(<><Page surface="log"><GlassLink to="/season">Open season</GlassLink><Link to="/season">plain</Link></Page><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    return { ...view, land: async () => { await act(async () => { resolves.splice(0).forEach((r) => r('doc')); }); } };
+  }
+
+  test('main is aria-busy and the page takes the progress cursor while pending, and neither after', async () => {
+    const { container, land } = mount();
+    await screen.findByRole('navigation', { name: 'Menu' });
+    expect(screen.getByRole('main')).not.toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(screen.getByRole('link', { name: 'Open season' }));
+    expect(screen.getByRole('main')).toHaveAttribute('aria-busy', 'true');
+    expect(container.querySelector('.kb-glass-page')).toHaveAttribute('data-kb-pending');
+    await land();
+    expect(screen.getByRole('main')).not.toHaveAttribute('aria-busy', 'true');
+    expect(container.querySelector('.kb-glass-page')).not.toHaveAttribute('data-kb-pending');
+  });
+
+  test('a visually hidden status says Screen loaded when a load lands, and nothing at rest', async () => {
+    const { land } = mount();
+    await screen.findByRole('navigation', { name: 'Menu' });
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(screen.getByRole('status')).toHaveClass('kb-visually-hidden');
+    await userEvent.click(screen.getByRole('link', { name: 'Open season' }));
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    await land();
+    expect(screen.getByRole('status')).toHaveTextContent('Screen loaded');
+  });
+
+  test('the status empties a few seconds after it lands, so it is said once', async () => {
+    const { land } = mount();
+    await screen.findByRole('navigation', { name: 'Menu' });
+    await userEvent.click(screen.getByRole('link', { name: 'Open season' }));
+    vi.useFakeTimers();
+    try {
+      await land();
+      expect(screen.getByRole('status')).toHaveTextContent('Screen loaded');
+      act(() => { vi.advanceTimersByTime(5000); });
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a link on the page that is pending is a claimed source: the menu bar\'s end shows no spinner beside it', async () => {
+    const { container } = mount();
+    await screen.findByRole('navigation', { name: 'Menu' });
+    await userEvent.click(screen.getByRole('link', { name: 'Open season' }));
+    expect(screen.getByRole('link', { name: 'Open season' }).querySelector('.kb-spinner')).not.toBeNull();
+    expect(container.querySelector('.kb-glass-menu-end .kb-spinner')).toBeNull();
+  });
+
+  test('a plain Link on the page claims nothing, so the menu bar\'s end shows the wait', async () => {
+    const { container } = mount();
+    await screen.findByRole('navigation', { name: 'Menu' });
+    await userEvent.click(screen.getByRole('link', { name: 'plain' }));
+    expect(container.querySelector('.kb-glass-menu-end .kb-spinner')).not.toBeNull();
   });
 });

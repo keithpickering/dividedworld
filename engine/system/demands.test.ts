@@ -51,6 +51,7 @@ test('every demand kind accepts a well-formed demand and renders its template as
     quadrantOnBoard: { board, quadrant: 'calmPositive', count: 20 },
     characterPostsInThread: { character: a, thread: b },
     crossQuote: { a, b, reactions: 6 },
+    apologyAccepted: {},
   };
   assert.deepEqual(DEMAND_KINDS.map((k) => k.key).sort(), Object.keys(samples).sort(), 'a kind added here needs a sample here');
   for (const k of DEMAND_KINDS) {
@@ -66,8 +67,13 @@ test('every demand kind accepts a well-formed demand and renders its template as
 });
 
 test('the kinds in TypeScript are the kinds demand_progress has a case for (the two lists are one list)', () => {
-  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0046_moves.sql'), 'utf8');
-  const body = sql.slice(sql.indexOf('create function demand_progress'));
+  // demand_progress is redefined by later migrations (0046, then each kind added since), so the cases read are the latest migration's that defines it.
+  const dir = path.join(import.meta.dirname, '../../supabase/migrations');
+  const latest = fs.readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+    .filter((f) => /create (or replace )?function demand_progress\(/.test(fs.readFileSync(path.join(dir, f), 'utf8'))).at(-1)!;
+  const sql = fs.readFileSync(path.join(dir, latest), 'utf8');
+  const from = sql.search(/create (or replace )?function demand_progress\(/);
+  const body = sql.slice(from, sql.indexOf('\nend $$;', from));
   const cases = [...body.matchAll(/^\s*when '([A-Za-z]+)' then/gm)].map((m) => m[1]!).sort();
   assert.deepEqual(cases, DEMAND_KINDS.map((k) => k.key).sort());
 });
@@ -109,4 +115,15 @@ test('every demand kind says in a few plain words what met it', () => {
   const params = { board, count: 12, quadrant: 'calmPositive', reactions: 6 };
   for (const k of DEMAND_KINDS) assert.doesNotMatch(k.met(params), /[{}]|undefined|NaN/u, k.key);
   assert.equal(demandKind('distinctCharactersOnBoard')!.met(params), '12 posted');
+  assert.equal(demandKind('characterPostsInThread')!.met(params), 'the named character posted');
+});
+
+test('apologyAccepted takes no params, reads as an accepted apology, and the meeting is not offered it', () => {
+  assert.ok(demandProblems({ kind: 'apologyAccepted', params: {} }, CAP).ok);
+  const k = demandKind('apologyAccepted')!;
+  assert.deepEqual(k.unit, { one: 'APOLOGY', many: 'APOLOGIES' });
+  assert.equal(k.needs({}), 'an accepted apology');
+  assert.equal(k.met({}), 'an apology was accepted');
+  assert.equal(k.offered, false);
+  assert.ok(DEMAND_KINDS.filter((d) => d.key !== 'apologyAccepted').every((d) => d.offered !== false));
 });

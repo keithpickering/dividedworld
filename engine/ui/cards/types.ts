@@ -242,7 +242,7 @@ export interface CardUi {
   readonly hint?: string;
   /**
    * The status a card with no live view of its own shows as the Lens's heading (`CardView.state`), in place of `summary`: a short
-   * status of at most 6 words, never a sentence ("Sparkling every post of theirs"). A card whose status depends on how many of
+   * status of at most 6 words, never a sentence ("Sparkling every post by that character"). A card whose status depends on how many of
    * its plays are on the post (Feelin' Fab's "2 of 3 stacked") gives a function of those plays. A card face down has the engine's
    * own, the same for every card that can be face down ("Face down on this post"), so one card's cannot be told from another's.
    * `instanceUiProblems` holds every card to having one, and to these words (lens-words.ts): the heading falls back to `summary`,

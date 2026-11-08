@@ -7,7 +7,9 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
-import { renderInWorld } from '../test-world.tsx';
+import { useNavigate, useRouterInternals } from '../router.tsx';
+import { Routes, type Route } from '../routes.tsx';
+import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
 import { boardPlace, forgetBoard, rememberBoard } from './back.ts';
 import { MenuBar } from './MenuBar.tsx';
 
@@ -253,5 +255,135 @@ describe('the ADMIN tab', () => {
     renderInWorld(<MenuBar />, { path: '/sign-in' });
     await within(bar()).findByRole('link', { name: 'Back to the board' });
     expect(tabs()).toEqual(['Back to the board']);
+  });
+});
+
+/* The wait: a load the test answers by hand, and the controls that show it. */
+describe('a load the menu bar waits on', () => {
+  function loading(paths: readonly string[]) {
+    const resolves: Array<(d: unknown) => void> = [];
+    const routes: Route[] = [
+      { path: '/alerts', render: () => <p>alerts</p> },
+      ...paths.map((path) => ({ path, load: () => new Promise<unknown>((r) => { resolves.push(r); }), render: () => <p>arrived</p> })),
+    ];
+    return { routes, land: async () => { await act(async () => { resolves.splice(0).forEach((r) => r('doc')); }); } };
+  }
+  const spinners = () => bar().querySelectorAll('.kb-spinner');
+  const end = () => bar().querySelector('.kb-glass-menu-end .kb-spinner');
+
+  test('a tab pressed toward a loading route shows the spinner after its label and data-kb-pending, until it lands', async () => {
+    const { routes, land } = loading(['/season']);
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    const season = await within(bar()).findByRole('link', { name: 'Season' });
+    expect(season).not.toHaveAttribute('data-kb-pending');
+    expect(spinners()).toHaveLength(0);
+    await userEvent.click(season);
+    expect(within(bar()).getByRole('link', { name: 'Season' })).toHaveAttribute('data-kb-pending');
+    expect(within(bar()).getByRole('link', { name: 'Season' }).querySelector('.kb-spinner')).not.toBeNull();
+    expect(within(bar()).getByRole('link', { name: 'Alerts' })).not.toHaveAttribute('data-kb-pending');
+    await land();
+    expect(spinners()).toHaveLength(0);
+    expect(within(bar()).getByRole('link', { name: 'Season' })).not.toHaveAttribute('data-kb-pending');
+  });
+
+  test('a tab already spinning is the only spinner: the end of the bar shows none beside it', async () => {
+    const { routes } = loading(['/season']);
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await userEvent.click(await within(bar()).findByRole('link', { name: 'Season' }));
+    expect(spinners()).toHaveLength(1);
+    expect(end()).toBeNull();
+  });
+
+  test('under reduced motion the tab\'s spinner slot is in the tab at once, with no transition to wait on', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    const { routes } = loading(['/season']);
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await userEvent.click(await within(bar()).findByRole('link', { name: 'Season' }));
+    expect(within(bar()).getByRole('link', { name: 'Season' }).querySelector('.kb-glass-menu-wait .kb-spinner')).not.toBeNull();
+  });
+
+  test('Esc\'s load is Back\'s: Back is pending and no other control, and the end shows none', async () => {
+    const { routes, land } = loading(['/']);
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    const back = await within(bar()).findByRole('link', { name: 'Back to the board' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(back).toHaveAttribute('data-kb-pending');
+    expect(spinners()).toHaveLength(1);
+    expect(end()).toBeNull();
+    await land();
+    expect(spinners()).toHaveLength(0);
+  });
+
+  test('an Esc while Back\'s load is out stops it and starts no other: the page stays', async () => {
+    const calls: AbortSignal[] = [];
+    const routes: Route[] = [
+      { path: '/alerts', render: () => <p>alerts</p> },
+      { path: '/', load: ({ signal }) => new Promise<unknown>(() => { calls.push(signal); }), render: () => <p>arrived</p> },
+    ];
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Back to the board' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(calls).toHaveLength(1);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.aborted).toBe(true);
+    expect(window.location.pathname).toBe('/alerts');
+    expect(spinners()).toHaveLength(0);
+  });
+
+  test('a silent re-read of the shown page does not take the Esc: Back still goes', async () => {
+    const calls: AbortSignal[] = [];
+    let retry: () => void = () => undefined;
+    function Retry() { retry = useRouterInternals().retry; return null; }
+    let reads = 0;
+    const routes: Route[] = [
+      { path: '/alerts', load: () => (reads++ === 0 ? Promise.resolve('doc') : new Promise<unknown>(() => undefined)), render: () => <p>alerts</p> },
+      { path: '/', load: ({ signal }) => new Promise<unknown>(() => { calls.push(signal); }), render: () => <p>arrived</p> },
+    ];
+    renderInWorld(<><MenuBar /><Retry /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await screen.findByText('alerts');
+    act(() => retry());
+    expect(reads).toBe(2);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('pressing Back with the mouse is Back\'s load too', async () => {
+    const { routes } = loading(['/']);
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await userEvent.click(await within(bar()).findByRole('link', { name: 'Back to the board' }));
+    expect(within(bar()).getByRole('link', { name: 'Back to the board' })).toHaveAttribute('data-kb-pending');
+    expect(end()).toBeNull();
+  });
+
+  test('a navigate with no source shows the spinner at the end of the bar, and it goes when the load lands', async () => {
+    const { routes, land } = loading(['/season']);
+    function Go() { const go = useNavigate(); return <button type="button" onClick={() => go('/season')}>go</button>; }
+    renderInWorld(<><MenuBar /><Go /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Season' });
+    await userEvent.click(screen.getByRole('button', { name: 'go' }));
+    expect(end()).not.toBeNull();
+    expect(spinners()).toHaveLength(1);
+    await land();
+    expect(end()).toBeNull();
+  });
+
+  test('a navigate naming a source no control has claimed shows the end spinner too', async () => {
+    const { routes } = loading(['/season']);
+    function Go() { const go = useNavigate(); return <button type="button" onClick={() => go('/season', { source: 'nobody' })}>go</button>; }
+    renderInWorld(<><MenuBar /><Go /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await within(bar()).findByRole('link', { name: 'Season' });
+    await userEvent.click(screen.getByRole('button', { name: 'go' }));
+    expect(end()).not.toBeNull();
+  });
+
+  test('with boot holding admin: true the Admin tab shows and the menu bar asks isAdmin nothing', async () => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    const boot = await fake.boot();
+    const asked = vi.spyOn(fake, 'isAdmin');
+    renderIn(fake, <MenuBar />, { path: '/season', boot });
+    expect(await within(bar()).findByRole('link', { name: 'Admin' })).toBeInTheDocument();
+    expect(asked).not.toHaveBeenCalled();
   });
 });

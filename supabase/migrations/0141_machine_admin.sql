@@ -8,7 +8,7 @@
 --                                      Boss's machine move in force on each: {slot, position, card, pack, rarity, availability, price, move}, `move` {kind, act, ends,
 --                                      percent, hours} or null. The REVERSE of a move is the queue's (reverse_move, 0049), reached by the move's act.
 --   set_slot(slot, availability, price) saves both. Taking a PACK off sale (sold out or hidden) ends, as `reversed` by that admin and in the same transaction, every
---                                      Pull whose card is then in no pack on sale (card_in_open_pack, 0121), so the floor ("packs are the floor", the design's section 6)
+--                                      Pull whose card is then in no pack on sale (card_in_open_pack, 0140), so the floor ("packs are the floor", the design's section 6)
 --                                      holds after a Pull has landed too. The fiction learns of it as it does of any reversal (say_move_end, 0051).
 --   move_slot(slot, direction)         swaps the slot with its neighbor, `up` or `down`; the first slot up and the last slot down do nothing and say so.
 --   save_machine(changes)              what the page's one "Save changes" sends: `changes` is every slot, once, in the order wanted, each with its availability and price
@@ -17,7 +17,7 @@
 --                                      price>`) names the slot and the field.
 --
 -- The machine's one lock: taking a pack off sale (set_slot, save_machine) and reordering (move_slot) each take pg_advisory_xact_lock(hashtext('kayfabb.machine'))
--- first, so they run one at a time, and the Boss's machine landings in system_tick (0121) take the same lock before checking a machine move, so a landing and an admin's change serialize too. Without it two admins each taking a different pack off sale could each see the other's pack still on sale, and leave a Pull
+-- first, so they run one at a time, and the Boss's machine landings in system_tick (0140) take the same lock before checking a machine move, so a landing and an admin's change serialize too. Without it two admins each taking a different pack off sale could each see the other's pack still on sale, and leave a Pull
 -- whose card is in no pack on sale: "packs are the floor" would fail by a race. With it the second admin's check reads the first's committed change.
 --
 -- Two private helpers (no grant to the web client): machine_apply_slot validates and writes one slot and says whether a pack just left sale; and

@@ -277,6 +277,23 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     expect(document.querySelector('.kb-vending-hand-count')).toHaveTextContent('3');
   });
 
+  test('Buy is a busy button while the purchase is out: aria-busy, its name kept, and a second press buys once', async () => {
+    const fake = seeded(562);
+    let release!: () => void;
+    const real = fake.buyCard.bind(fake);
+    const buy = vi.spyOn(fake, 'buyCard').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(fake);
+    fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
+    const button = screen.getByRole('button', { name: 'Buy Whoops! · 1.00' });
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBe(button);
+    fireEvent.click(button);
+    expect(buy).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(document.querySelector('.kb-vending-outcome')).toHaveTextContent(/is in your hand/));
+  });
+
   test('two presses in one tick buy once', async () => {
     const fake = seeded(562);
     const buy = vi.spyOn(fake, 'buyCard');
@@ -337,7 +354,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     open(fake);
     fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toHaveAttribute('aria-busy', 'true'));
     act(() => fake.signInAs(other));
     await land();
     await nothingOfA();
@@ -349,7 +366,7 @@ describe('a lost answer, two presses in one tick, and a held answer', () => {
     open(fake);
     fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' })).toHaveAttribute('aria-busy', 'true'));
     act(() => fake.signInAs(other));
     /* The second account's page has loaded once its wallet shows. */
     await waitFor(() => expect(document.querySelector('.kb-vending-sum')).toHaveTextContent(/^3\.00$/), { timeout: 800 });

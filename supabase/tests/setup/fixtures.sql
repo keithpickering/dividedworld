@@ -42,8 +42,8 @@ insert into reaction_kinds (key, emoji, quadrant) values
   ('up', '⬆️', 'excitedPositive'), ('boo', '👻', 'excitedNegative'),
   ('calm', '🌊', 'calmPositive'), ('meh', '😑', 'boredNegative'), ('wow', '🎆', 'excitedPositive');
 -- Three cards: sweetie and splat, and a card that stacks three to a post, each play drawn from a seed the server chooses. A card's price is its
--- slot's from 0117, on sale here at one orb; before it, the economy's (card_kinds.price_setting). The e2e files that load these onto the migrations
--- before 0117 (e2e/0010, 0014) meet the older shape, so this meets whichever it finds.
+-- slot's from 0139, on sale here at one orb; before it, the economy's (card_kinds.price_setting). The e2e files that load these onto the migrations
+-- before 0139 (e2e/0010, 0014) meet the older shape, so this meets whichever it finds.
 do $$
 begin
   if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'card_kinds' and column_name = 'price_setting') then

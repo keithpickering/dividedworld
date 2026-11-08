@@ -24,11 +24,12 @@
  * shadow (Float.tsx), in the open tab's ink.
  */
 import {
-  createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
+  createContext, forwardRef, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, PlayMoment, Visit, VisitEnd } from '../data/api.ts';
+import type { Act, Id, PlayMoment, Visit, VisitEnd, VisitStory } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
 import { CloseCross, DialogBar } from '../glass/Frame.tsx';
@@ -41,14 +42,16 @@ import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
-import { inkOf, useSheet, useUntil } from './Effects.tsx';
+import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
 import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
-import { VisitPanel } from './Visit.tsx';
-import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, type LensForm } from './Forms.tsx';
+import { VisitPanel, readVisit } from './Visit.tsx';
+import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
+import { PREPARED_FAILED, usePrepared, useRest } from '../glass/prepared.ts';
+import { Spinner } from '../glass/Spinner.tsx';
 import { VISIT_KIND, tabName, visitState } from './visit.ts';
 import './lens.css';
 import './visit.css';
@@ -315,12 +318,25 @@ interface RowProps {
  * (docs/plans/2026-11-03-effect-history-design.md, section 4). One moment shows on the page, and it goes with this Lens.
  */
 function AsItLanded({ play }: { readonly play: Id }) {
+  const { api } = useKayfa();
   const store = useLensStore();
   const pressed = useSyncExternalStore(store.subscribe, () => store.moment() === play, () => false);
+  /* The moment is read before it shows (the glass-load design, section 4): the button is busy over `playMoment`, and the post's body changes once it is in. */
+  const read = usePrepared<true>(async () => { await store.readMoment(play, () => api.playMoment(play)); return true; }, () => play);
+  const rest = useRest(() => { if (!pressed && store.kept(play) === undefined) read.early(); });
+  const press = () => {
+    if (read.busy) return;
+    if (pressed) { store.showMoment(null); return; }
+    if (store.kept(play) !== undefined) { store.showMoment(play); return; }
+    void read.open().then((landed) => { if (landed) store.showMoment(play); });
+  };
   return (
-    <button type="button" className="kb-kit-tile kb-lens-action" aria-pressed={pressed} onClick={() => store.showMoment(pressed ? null : play)}>
-      <span className="kb-kit-tile-label">As it landed</span>
-    </button>
+    <>
+      <button type="button" className="kb-kit-tile kb-lens-action" aria-pressed={pressed} aria-busy={read.busy ? 'true' : undefined} onClick={press} {...rest}>
+        <span className="kb-kit-tile-label">As it landed</span>{read.busy && <Spinner />}
+      </button>
+      {read.failed && <p role="alert" className="kb-lens-note">{PREPARED_FAILED}</p>}
+    </>
   );
 }
 
@@ -363,7 +379,7 @@ export function EndCardDialog({ play, card, caster, onClose, onEnded, returnFocu
         {refusal && <p role="alert" className="kb-lens-end-refusal">{refusal}</p>}
         <ButtonRow align="end">
           <GlassButton onClick={onClose}>Cancel</GlassButton>
-          <GlassButton kind="primary" disabled={busy} onClick={() => void submit()}>End it</GlassButton>
+          <GlassButton kind="primary" busy={busy} onClick={() => void submit()}>End it</GlassButton>
         </ButtonRow>
       </div>
     </Overlay>
@@ -499,14 +515,32 @@ export interface LensProps {
     readonly visit: Visit; readonly thread: Id; readonly author: Id | null;
     readonly onSpinAct: ((act: Id, name: string, opener: HTMLElement) => void) | undefined; readonly onEnded: (end: VisitEnd) => void;
   } | undefined;
+  /** The visit's Mod's pronouns, as the thread knows them (the character holding the office now); the engine's it/its where the thread has none. */
+  readonly modPronouns?: PronounSet | undefined;
   /** A form the panel is open on (Forms.tsx): a post's report or an appeal. It is the panel's one tab while it is open, and the cards' and the visit's are not offered with it. */
   readonly form?: LensForm | undefined;
 }
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, form }: LensProps) {
-  const { instance, ui } = useKayfa();
+/** One tab of the Lens. A tab that reads before it shows is busy while its read is out, and a rest or focus on it starts the read early. */
+const PreparedTab = forwardRef<HTMLButtonElement, {
+  readonly id: string; readonly kind: string; readonly selected: boolean; readonly controls: string | undefined; readonly children: ReactNode; readonly onChoose: () => void;
+  readonly read: { readonly data: unknown; readonly busy: boolean; readonly early: () => void } | null;
+}>(function PreparedTab({ id, kind, selected, controls, children, onChoose, read }, ref) {
+  const rest = useRest(() => { if (read && read.data === null) read.early(); });
+  const busy = read?.busy === true;
+  return (
+    <button
+      ref={ref} type="button" role="tab" id={id} className="kb-lens-tab kb-glass-skew" aria-selected={selected} aria-controls={controls} aria-busy={busy ? 'true' : undefined}
+      tabIndex={selected ? 0 : -1} data-kb-card={kind} onClick={() => { if (!busy) onChoose(); }} {...rest}
+    ><span className="kb-glass-upright">{children}{busy && <Spinner />}</span></button>
+  );
+});
+
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form }: LensProps) {
+  const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
+  const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
   const billed = markedPlays(shownPlays(here.billed, instance.settings.setLasts), now);
@@ -517,6 +551,31 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const kinds = useMemo(() => (onForm ? [form.kind] : visit ? [VISIT_KIND, ...cardKinds] : cardKinds), [onForm, form?.kind, visit, cardKinds.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
   const card = kinds.includes(open.card) ? open.card : null;
   const onVisit = !onForm && card === VISIT_KIND && visit !== undefined;
+  /*
+   * A tab that reads (Report, Appeal, the visit) shows once its read has landed (the glass-load design, section 4): its tab is busy
+   * meanwhile, and a press on the visit's tab among others moves to it when the story is in. The panel is drawn from what was read.
+   */
+  const reportP = useReportRead();
+  const appealP = useAppealRead(form?.kind === APPEAL_KIND ? form.infraction : '');
+  const visitP = usePrepared<VisitStory>(() => readVisit(api, visit!.visit, visit!.thread, tallies, mine), () => visit?.visit.id ?? '');
+  const formP = onForm ? (form.kind === REPORT_KIND ? reportP : appealP) : null;
+  const formKey = onForm ? (form.kind === APPEAL_KIND ? form.infraction : form.post) : '';
+  /* A form read is for the form it was asked for: a different form drops the kept answer and reads its own. */
+  useEffect(() => { if (formP) { formP.cancel(); void formP.open(); } }, [formKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (onVisit && visitP.data === null) void visitP.open(); }, [onVisit]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* The story is the panel's once it has been drawn from: leaving the tab drops it, so the tab read again is not a story from before a try. */
+  useEffect(() => { if (!onVisit && visitP.data !== null) visitP.cancel(); }, [onVisit]); // eslint-disable-line react-hooks/exhaustive-deps
+  const readOf = (kind: string): { readonly data: unknown; readonly busy: boolean; readonly open: () => Promise<unknown>; readonly early: () => void } | null =>
+    onForm ? (kind === form.kind ? formP : null) : kind === VISIT_KIND && visit ? visitP : null;
+  /* The latest press on a tab: a read that lands after another tab was pressed does not take the reader back. */
+  const pressed = useRef(0);
+  const choose = (kind: string) => {
+    const mine = ++pressed.current;
+    const read = readOf(kind);
+    if (read === null || read.data !== null) { store.select(kind); return; }
+    void read.open().then((landed) => { if (landed !== null && !onForm && pressed.current === mine) store.select(kind); });
+  };
+  const waiting = onForm ? formP : onVisit ? visitP : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
   useEffect(() => { if (card === null) store.close(); }, [card, store]);
   const view = useResolvedView(plays, post, open.card, nameOf);
@@ -587,7 +646,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const cardUi = ui.cards.find((c) => c.key === card);
   const name = onForm ? formTabName(form) : onVisit ? tabName(visitState(visit.visit)) : kindName(instance, card, here.plays);
   const ofKind = billed.filter((p) => p.card === card);
-  const ink = onVisit || onForm ? 'var(--kb-visit-ink)' : inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder)) ?? cardUi?.art.color;
+  const ink = onVisit || onForm ? 'var(--kb-visit-ink)' : inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder), onInk) ?? cardUi?.art.color;
   /* A card whose rules stack lists its rows by layer, top first; any other in billing order. */
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
@@ -599,7 +658,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     if (to_ < 0) return;
     e.preventDefault();
     const next = kinds[to_]!;
-    store.select(next);
+    choose(next);
     tabs.current.get(next)?.focus();
   };
 
@@ -644,11 +703,10 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             const label = onForm ? formTabName(form) : kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
             const selected = kind === card;
             return (
-              <button
+              <PreparedTab
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
-                type="button" role="tab" id={tabId(kind)} className="kb-lens-tab kb-glass-skew" aria-selected={selected} aria-controls={selected ? panelId : undefined}
-                tabIndex={selected ? 0 : -1} data-kb-card={kind} onClick={() => store.select(kind)}
-              ><span className="kb-glass-upright">{label}</span></button>
+                id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => choose(kind)}
+              >{label}</PreparedTab>
             );
           })}
         </div>
@@ -657,11 +715,12 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       {/* Before the body: the body is the dialog's last child, which the frame's own checks lay their probes in. */}
       <div className="kb-lens-fade" aria-hidden="true" />
       <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
-        {onForm && form.kind === REPORT_KIND && <ReportForm post={form.post} seq={form.seq} />}
-        {onForm && form.kind === APPEAL_KIND && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} />}
-        {onVisit && (
-          <VisitPanel
-            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} tallies={tallies} mine={mine} onEnded={visit.onEnded}
+        {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
+        {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
+        {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
+        {onVisit && visitP.data && (
+          <VisitPanel first={visitP.data}
+            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded}
             onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
           />
         )}
@@ -674,7 +733,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder))} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
+          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} card={name} view={view} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
       </div>

@@ -1,0 +1,9 @@
+/*
+ * A glass text link with a wait (Link.tsx): the Signal spinner follows the words, a line tall, in the link's own color. Under
+ * Motion Off the spinner stands still (spinner.css); it appears at once either way.
+ */
+.kb-glass-link > .kb-spinner {
+  height: 1em;
+  margin-inline-start: 0.4em;
+  vertical-align: -0.12em;
+}

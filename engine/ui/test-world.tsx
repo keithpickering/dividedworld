@@ -15,7 +15,7 @@ import { PlayerProvider } from './player.tsx';
 import { ACTION_TIPS, TIP_KEYS } from './tips/keys.ts';
 import type { GuideUi } from './types.ts';
 import { RouterProvider } from './router.tsx';
-import { systemSettings, testSystem } from '../rules/test-system.ts';
+import { systemSettings, testSystem, testGroups } from '../rules/test-system.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -25,6 +25,9 @@ const settings: Settings = {
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
   postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
 };
+
+/* What screen_settings's groups holds (0128) for the test instance: the ladder lowest first, then the conferred groups. */
+const screenGroups = [...testGroups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...testGroups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))];
 
 const earn = () => [];
 
@@ -53,6 +56,7 @@ export const testInstance: Instance = {
   ],
   ranks: [{ name: 'Jobber', from: 0 }, { name: 'Midcarder', from: 300 }, { name: 'Main Eventer', from: 600 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
+  groups: testGroups,
 };
 
 /**
@@ -82,10 +86,10 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five'];
 const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
   /* A reason whose words state a tunable number (the core loop design, section 6): said with the numbers it is given. */
   'heel.postedTooMuch': (n) => `Posted too much: a post past ${COUNTS[n['heel.postsAllowed'] ?? 0] ?? n['heel.postsAllowed']} in one day`,
-  'heel.drewHeat': 'Drew heat: excited, negative reactions to its posts and cards',
-  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
-  'heel.shrugged': 'Shrugged off: calm, positive reactions to its posts and cards',
-  'face.cheered': 'Cheered: excited, positive reactions to its posts and cards',
+  'heel.drewHeat': 'Drew heat: excited, negative reactions to the character\'s posts and cards',
+  'heel.stoleThunder': 'Stole the thunder: a Salty card the character played on another\'s post drew more votes than the post this window',
+  'heel.shrugged': 'Shrugged off: calm, positive reactions to the character\'s posts and cards',
+  'face.cheered': 'Cheered: excited, positive reactions to the character\'s posts and cards',
 };
 const reasonWords = (reason: string, params: Readonly<Record<string, number>>) => {
   const w = REASONS[reason];
@@ -154,7 +158,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.copy ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, staffGroup: { name: testSystem.staffGroup.name }, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.copy ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(

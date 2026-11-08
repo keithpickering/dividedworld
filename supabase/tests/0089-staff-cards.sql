@@ -15,7 +15,6 @@ begin
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sc-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'sc-boss', 'name', 'Sc Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'sc-mod', 'name', 'Sc Mod', 'title', 'Mod', 'signature', 'b'),
@@ -36,7 +35,7 @@ begin
     ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
     ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
     ('hook', 'Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null);
-  -- What each is worth to a trap that catches a staff Cast of it is its slot's price (place_cast, 0117).
+  -- What each is worth to a trap that catches a staff Cast of it is its slot's price (place_cast, 0139).
   insert into machine_slots (position, card, availability, price) values
     (21, 'snare', 'onSale', 150), (22, 'catcher', 'onSale', 100), (23, 'bluffy', 'onSale', 25), (24, 'grandie', 'onSale', 100), (25, 'shield', 'onSale', 150), (26, 'hook', 'onSale', 100);
 end $$;

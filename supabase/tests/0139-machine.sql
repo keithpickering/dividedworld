@@ -1,4 +1,4 @@
--- The Vending Machine's catalog, packs and the hand (supabase/migrations/0119_machine.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 2):
+-- The Vending Machine's catalog, packs and the hand (supabase/migrations/0139_machine.sql; docs/plans/2026-11-04-booster-packs-plan.md, Task 2):
 -- slots with a price and an availability, packs rolled when they are bought, and one function that counts a hand. As the service role
 -- the act Edge Function calls them as, and as a player where the player reads.
 
@@ -93,6 +93,16 @@ begin
     raise exception 'one pulled row per pull, in order, priced 0: %', (select jsonb_agg(l) from card_ledger l where pack = pack_row.id);
   end if;
   if (select change from wallet_events where account = ann and kind = 'purchase' order by id desc limit 1) is distinct from -300 then raise exception 'the pack purchase is recorded'; end if;
+  -- The one-read log hands the buyer the pack as its own source, as my_packs reads it, and each pulled card with the pack it came from.
+  perform tests.become(ann);
+  if (log_page(null) -> 'sources' -> 'packs') is distinct from jsonb_build_array(jsonb_build_object('id', pack_row.id, 'pack', 'mc-pack', 'price', 300, 'repriced', false,
+        'contents', to_jsonb(rolled), 'bought_at', pack_row.bought_at)) then
+    raise exception 'log_page''s packs: %', log_page(null) -> 'sources' -> 'packs';
+  end if;
+  if (select count(*) from jsonb_array_elements(log_page(null) -> 'sources' -> 'cards') x where x ->> 'kind' = 'pulled' and x ->> 'pack' = pack_row.id::text) is distinct from 5 then
+    raise exception 'log_page''s pulled cards name their pack: %', log_page(null) -> 'sources' -> 'cards';
+  end if;
+  perform tests.unbecome();
   -- (Other files commit cards of their own, so a pull is read by the rarity of what it gave.)
   if (select count(*) from unnest(rolled[1:4]) k join card_kinds c on c.key = k where c.rarity in ('common', 'uncommon')) is distinct from 4 then raise exception 'a pull that cannot roll a rare, or a legendary, rolled one: %', rolled; end if;
   if (select rarity from card_kinds where key = rolled[5]) not in ('uncommon', 'rare') then raise exception 'the hit pull is an uncommon or a rare: %', rolled; end if;

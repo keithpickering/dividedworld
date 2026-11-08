@@ -5,7 +5,7 @@
  * story wrong says so on the error screen. The address is read apart from the stories
  * (address.ts), so the app's own pages never load the preview to ask.
  */
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { storyFromAddress } from './address.ts';
@@ -27,10 +27,13 @@ describe('the story route', () => {
   it('renders Rankings\' story for the owner: the season in its order, the player\'s own rows marked, a stranger\'s class only as revealed', async () => {
     const Story = boardStory('boards-13-rankings--season');
     render(<Story />);
-    const rows = await screen.findAllByRole('row');
-    expect(rows.map((r) => r.querySelector('th[scope="row"]')?.textContent ?? null).filter(Boolean)).toEqual([
-      'Spritey Yours', 'Mrs. Hooligan Yours', 'Pipewrench Yours', 'Gloomba', 'Thwompson', 'Ringside 1', 'Ringside 2', 'Ringside 3', 'Ringside 4',
-    ]);
+    await screen.findAllByRole('row');
+    /* The player's own rows are the provider's, and mark the table once they have been read. */
+    await waitFor(() => {
+      expect(screen.getAllByRole('row').map((r) => r.querySelector('th[scope="row"]')?.textContent ?? null).filter(Boolean)).toEqual([
+        'Spritey Yours', 'Mrs. Hooligan Yours', 'Pipewrench Yours', 'Gloomba', 'Thwompson', 'Ringside 1', 'Ringside 2', 'Ringside 3', 'Ringside 4',
+      ]);
+    });
     expect(screen.getAllByText('Yours')).toHaveLength(3);
     expect(screen.getAllByText(/^Revealed /)).toHaveLength(2);
     expect(screen.getAllByText(/^Has Turned since /)).toHaveLength(1);

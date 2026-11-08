@@ -3,13 +3,15 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
+import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
 import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
-import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
+import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
+import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 import type { Pull, SlotSeed } from './packs.ts';
@@ -182,6 +184,20 @@ function warnBarRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The member groups' settings (`Settings.apology`): exactly the fields of ApologySettings, each a whole number, at least 1. Mirrors `setting_apology` in
+ * supabase/migrations/0130_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
+function apologyRule(v: unknown): string | null {
+  const shape = 'an object giving apologyEveryHours (the hours between a character\'s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(APOLOGY_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const k of APOLOGY_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -215,6 +231,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
   hints: hintsRule,
@@ -233,6 +250,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   pool: poolRule,
   modBots: modBotsRule,
   warnBar: warnBarRule,
+  apology: apologyRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
@@ -289,6 +307,7 @@ function developerProblems(d: Instance['developer']): string[] {
   }
   if (typeof d.tagline !== 'string') out.push('the developer tagline is not text');
   else if (d.tagline.length > DEVELOPER_TAGLINE_MAX) out.push(`the developer tagline is ${d.tagline.length} characters; the seed keeps at most ${DEVELOPER_TAGLINE_MAX} and cuts the rest in silence`);
+  if (d.pronouns !== undefined) for (const p of pronounProblems(d.pronouns)) out.push(`the developer's pronouns: ${p}`);
   if (d.avatar !== undefined && (typeof d.avatar !== 'string' || d.avatar.trim() === '')) out.push('the developer avatar is blank; leave it out for none, or name the instance\'s picture');
   return out;
 }
@@ -349,6 +368,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
   out.push(...developerProblems(instance.developer), ...packProblems(instance));
+  out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
     if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');
@@ -493,6 +513,7 @@ function systemProblems(instance: Instance): string[] {
     if (typeof p.title === 'string' && p.title.length > STAFF_TITLE_MAX) out.push(`${who} has a title of ${p.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
     if (typeof p.signature === 'string' && p.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} has a signature of ${p.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
     for (const list of ['beats', 'petRules'] as const) if (!Array.isArray(p[list])) out.push(`${who} has no ${list}`);
+    if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
     for (const ph of PHASES) {
@@ -532,8 +553,6 @@ function systemProblems(instance: Instance): string[] {
     if (!rosterKeys.has(k)) out.push(`firstStaff names "${k}", which is not in the roster`);
     else if (k === sys.firstBoss) out.push(`firstStaff names "${k}", who is firstBoss; the first season's Boss is not also on staff from the start`);
   }
-  const groupName = sys.staffGroup?.name;
-  if (typeof groupName !== 'string' || groupName.length < 1 || groupName.length > 40) out.push(`staffGroup.name must be 1 to 40 characters (it is ${typeof groupName === 'string' ? groupName.length : 'missing'})`);
   const duties = sys.duties ?? ({} as SystemContent['duties']);
   for (const d of DUTIES) {
     const who = duties[d];
@@ -546,7 +565,14 @@ function systemProblems(instance: Instance): string[] {
     if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`stock line "${key}" is missing; every standing order needs at least one line`); continue; }
     for (const line of lines) {
       for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
-        if (!STOCK_LINE_TOKENS[key].includes(token!)) out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${STOCK_LINE_TOKENS[key].map((t) => `{${t}}`).join(', ')})`);
+        const [name, form, ...extra] = token!.split('.');
+        const given = STOCK_LINE_TOKENS[key];
+        if (form !== undefined && given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!)) {
+          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`stock line "${key}" uses {${token}}, which is not a pronoun form ({${name}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
+        } else if (!given.includes(token!)) {
+          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) ? '' : form !== undefined ? ` ({${name}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
+          out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
+        }
       }
     }
   }

@@ -266,6 +266,9 @@ describe('the row', () => {
     expect(row).toHaveTextContent('Spritey');
     expect(within(row).getByRole('link', { name: 'Pipewrench' })).toHaveAttribute('href', `/c/${seeded.mine}`);
     expect(within(row).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${seeded.spritey}`);
+    expect(row.querySelectorAll('.kb-thread-started .kb-mini[aria-hidden="true"]')).toHaveLength(1);
+    expect(within(row.querySelector('.kb-thread-started')! as HTMLElement).getByRole('link')).toHaveAttribute('href', `/c/${seeded.spritey}`);
+    expect(within(row.querySelector('.kb-thread-last')! as HTMLElement).getAllByRole('link')[0]).toHaveAttribute('href', `/c/${seeded.mine}`);
     /* WCAG 2.5.3: the link's name holds its visible text (the time), then says where it goes. */
     const latest = within(row).getByRole('link', { name: /latest post in Thread 001/u });
     expect(latest).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=3#post-5`);
@@ -288,6 +291,11 @@ describe('the staff board', () => {
     expect(screen.queryByRole('textbox', { name: 'Title' })).toBeNull();
     expect(screen.getByText(/only the staff post here/i)).toBeInTheDocument();
     expect(rowOf('The Bulletin')).toHaveTextContent('The staff');
+    /* Unlike the index, the board draws the staff with its "S" avatar, and never as a profile link. */
+    const bulletin = rowOf('The Bulletin');
+    expect(bulletin.querySelectorAll('.kb-system-name')).toHaveLength(2);
+    expect(bulletin.querySelectorAll('.kb-mini-none')[0]).toHaveTextContent('S');
+    expect(bulletin.querySelector('a[href^="/c/"]')).toBeNull();
   });
 
   test('the ordinary board has a "Start a thread" button that opens the form in place, above the list, with focus on the title', async () => {
@@ -435,6 +443,19 @@ describe('the new-thread form', () => {
     expect(listed.map((t) => t.title)).toEqual(['A fresh start']);
     expect(window.location.pathname).toBe(`/t/${listed[0]!.id}`);
     expect(window.location.href).not.toContain(listed[0]!.firstCharacter ?? 'never');
+  });
+
+  test('sends the characters its first post\'s counterfeit quotes name as framing', async () => {
+    let spritey = '';
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => { const w = world(f, { threads: 0 }); spritey = w.spritey; return w; } });
+    const started = vi.spyOn(fake, 'startThread');
+    const form = await openForm();
+    await waitFor(() => expect(within(form).getByText('Pipewrench')).toBeInTheDocument());
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Title' }), 'Framed');
+    await userEvent.click(within(form).getByRole('textbox', { name: 'First post' }));
+    await userEvent.paste(`[quote=Spritey user=${spritey}]Nope.[/quote]`);
+    await userEvent.click(within(form).getByRole('button', { name: 'Start thread' }));
+    await waitFor(() => expect(started).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'Framed', expect.stringContaining('Nope.'), [spritey]));
   });
 
   test('the first post is the shared editor: the toolbar, a Preview drawn by the post\'s renderer, the count, and the hint', async () => {

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { PLAYER_HOSTS } from '../engine/bbcode/video.ts';
 import { ASSET_CACHE_CONTROL, MAIL_HEADERS, SECURITY_HEADERS } from './headers.ts';
 
 const toml = readFileSync(join(process.cwd(), 'netlify.toml'), 'utf8');
@@ -41,5 +42,20 @@ describe('the owner\'s choice, 2026-10-29: a post may show an image from any htt
     expect(csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
     expect(csp).toContain("connect-src 'self' https://*.supabase.co wss://*.supabase.co");
     expect(csp).toContain("frame-ancestors 'none'");
+  });
+});
+
+describe('video: a post may play from the named providers, and nowhere else', () => {
+  const directive = (name: string): string[] | undefined =>
+    (SECURITY_HEADERS['Content-Security-Policy'] ?? '').split(';').map((d) => d.trim()).find((d) => d.startsWith(`${name} `))?.split(/\s+/u).slice(1);
+  test('frame-src is exactly the player hosts', () => {
+    expect(directive('frame-src')).toEqual(PLAYER_HOSTS.map((h) => `https://${h}`));
+    expect(PLAYER_HOSTS.length).toBeGreaterThan(0);
+  });
+  test('media-src allows https: for a file', () => {
+    expect(directive('media-src')).toEqual(["'self'", 'https:']);
+  });
+  test('img-src still allows YouTube\'s thumbnails (any https host)', () => {
+    expect(directive('img-src')).toContain('https:');
   });
 });

@@ -8,6 +8,8 @@
  * plays on the player's posts by when each happened, the effects' saves by when each was saved, the
  * player's face-down cards by when each sprang or ended, the player's caught plays by when each was played, the card plays an admin ended by when each was ended, and
  * the player's own infractions, bans, reports and appeals by when each was made.
+ * A staff move into a group (`groupMoves`) is paged by when it landed, with its end and its appeal's ruling on the same row: a recent end or ruling dated after its move shows
+ * on the move's page, with its own time on its line, as an appeal's ruling does with `appeals`.
  * The shares are read whole for the settlements read. A source that came back full may hold more at
  * its oldest row's time and before, so the page ends there: it keeps what is newer than the newest of
  * those times (`after`), and the next page reads from that time on, at or before it. A source that
@@ -28,7 +30,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, FaceDownPass, Log, LogAppeal, LogBan, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, WalletEvent } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, FaceDownPass, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, WalletEvent } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -68,6 +70,7 @@ export interface LogRead {
   readonly ended: readonly CardEnded[];
   readonly infractions: readonly LogInfraction[];
   readonly bans: readonly LogBan[];
+  readonly groupMoves: readonly LogGroupMove[];
   readonly reports: readonly LogReport[];
   readonly appeals: readonly LogAppeal[];
 }
@@ -98,6 +101,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.ended, () => read.ended[read.ended.length - 1]!.at),
     ...reached(read.infractions, () => read.infractions[read.infractions.length - 1]!.at),
     ...reached(read.bans, () => read.bans[read.bans.length - 1]!.at),
+    ...reached(read.groupMoves, () => read.groupMoves[read.groupMoves.length - 1]!.at),
     ...reached(read.reports, () => read.reports[read.reports.length - 1]!.at),
     ...reached(read.appeals, () => read.appeals[read.appeals.length - 1]!.at),
   ];
@@ -139,6 +143,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ended: read.ended.filter((e) => keep(e.at)),
     infractions: read.infractions.filter((e) => keep(e.at)),
     bans: read.bans.filter((e) => keep(e.at)),
+    groupMoves: read.groupMoves.filter((e) => keep(e.at)),
     reports: read.reports.filter((e) => keep(e.at)),
     appeals: read.appeals.filter((e) => keep(e.at)),
     before: after,

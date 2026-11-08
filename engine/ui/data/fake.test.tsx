@@ -13,7 +13,9 @@ import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
-import { systemSettings, testSystem } from '../../rules/test-system.ts';
+import { actsFollowed, actsNamed } from '../log/lines.ts';
+import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
+import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -43,6 +45,7 @@ const instance: Instance = {
   ],
   ranks: [{ name: 'Jobber', from: 0 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
+  groups: testGroups,
 };
 
 const DAY = 86_400_000;
@@ -363,6 +366,45 @@ describe('Turns', () => {
     expect(landed.classSince).toBe(new Date(fake.clock.now()).toISOString());
     expect(landed.classDueAt).toBe(new Date(due).toISOString());
     expect(landed.pendingTurn).toBeNull();
+  });
+});
+
+describe('pronouns', () => {
+  const REFUSAL = 'pronouns are five words of 1 to 12 letters';
+  test('a character made with she/her reads it back on Character and MyCharacter; one made with none takes the instance\'s', async () => {
+    const { fake } = world({ charactersPerPlayer: 6 });
+    const hers = must(await fake.createCharacter('Hers', 'face', 'now', 'silent', PRONOUN_PRESETS.she));
+    const plain = must(await fake.createCharacter('Plain', 'face', 'now', 'silent'));
+    expect((await fake.characters([hers.id]))[0]?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect((await fake.myCharacters()).find((c) => c.id === hers.id)?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect((await fake.characters([plain.id]))[0]?.pronouns).toEqual(settings.pronouns);
+    expect((await fake.myCharacters()).find((c) => c.id === plain.id)?.pronouns).toEqual(settings.pronouns);
+  });
+  test('a set is stored lowercased; a bad one is refused in the server\'s words and makes nothing', async () => {
+    const { fake } = world({ charactersPerPlayer: 6 });
+    const loud = must(await fake.createCharacter('Loud', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'SHE' }));
+    expect((await fake.characters([loud.id]))[0]?.pronouns.subject).toBe('she');
+    const before = (await fake.myCharacters()).length;
+    expect(await fake.createCharacter('Bad', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'abcdefghijklm' })).toEqual(refused(REFUSAL));
+    expect((await fake.myCharacters()).length).toBe(before);
+  });
+  test('set_profile stores a set, keeps the stored one when given none, and refuses a bad one with nothing changed', async () => {
+    const { fake, anaFace } = world();
+    const set = must(await fake.setProfile(anaFace, 'T', 's', 'default', PRONOUN_PRESETS.they));
+    expect(set.pronouns).toEqual(PRONOUN_PRESETS.they);
+    expect(must(await fake.setProfile(anaFace, 'T2', 's', 'default')).pronouns).toEqual(PRONOUN_PRESETS.they);
+    expect(await fake.setProfile(anaFace, 'T3', 's', 'default', { ...PRONOUN_PRESETS.they, object: '' })).toEqual(refused(REFUSAL));
+    const now = (await fake.characters([anaFace]))[0]!;
+    expect(now).toMatchObject({ title: 'T2', pronouns: PRONOUN_PRESETS.they });
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)?.pronouns).toEqual(PRONOUN_PRESETS.they);
+  });
+  test('a staff character takes the set its persona names, else the instance\'s; the developer persona too', async () => {
+    const { fake } = world();
+    const boss = fake.seed.staff('s-boss', 'Boss Staff', 'boss', { pronouns: PRONOUN_PRESETS.she });
+    const mod = fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+    const got = await fake.characters([boss, mod]);
+    expect(got.find((c) => c.id === boss)?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect(got.find((c) => c.id === mod)?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
   });
 });
 
@@ -1509,7 +1551,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -1529,6 +1571,20 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     expect(await fake.log()).toEqual(empty);
     fake.signInAs(null);
     expect(await fake.log()).toEqual(empty);
+  });
+
+  test('the staff moves of the account\'s own characters into groups are its log\'s group rows, with their end and the appeal\'s ruling, and no one else\'s', async () => {
+    const { fake, anaFace, boFace } = logWorld();
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const m = fake.seed.groupMove('boss', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: fake.clock.now() + 3 * 86_400_000 });
+    fake.seed.groupMove('boss', { character: boFace, group: 'trialMembers' });
+    expect((await fake.log()).groupMoves).toMatchObject([{ move: m, character: anaFace, group: 'trialMembers', boardName: 'General', office: 'boss', endedWhy: null, ruling: null }]);
+    const appeal = fake.seed.appeal(anaFace, m, 'I did nothing wrong.');
+    const until = fake.clock.now() + 86_400_000;
+    fake.seed.ruling(appeal, fake.seed.staff('boss2', 'The Second', 'boss'), 'reduced', { until });
+    fake.seed.endMove(m, { why: 'expired' });
+    const [row] = (await fake.log()).groupMoves;
+    expect(row).toMatchObject({ ruling: 'reduced', endedWhy: 'expired', ruledUntil: new Date(until).toISOString(), expiresAt: new Date(until).toISOString() });
   });
 
   test('a settlement\'s lines read with their shares, its window, and the wallet\'s credit with what the cap held back', async () => {
@@ -1805,7 +1861,7 @@ describe('presence', () => {
     expect(ids(await fake.here({ kind: 'board', board: general.id }, null))).toEqual([anaFace]);
     expect(ids(await fake.here({ kind: 'board', board: system.id }, null))).toEqual([]);
     const online = await fake.here({ kind: 'index' }, null);
-    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false }], others: 0 });
+    expect(online).toEqual({ names: [{ id: anaFace, name: 'Ana Face', staff: false, group: 'members' }], others: 0 });
   });
   test('a hidden mask is written nowhere and omitted for another account; my characters say it is hidden', async () => {
     const { fake, bo, anaFace, boFace, thread } = world();
@@ -2384,6 +2440,74 @@ describe('live alerts derived from Acts', () => {
   });
 });
 
+/* The framed alert (0118, write_framed; the BBCode plan, Tasks 8 and 9): a counterfeit quote's `user=<id>` names a character, and its owner is told. */
+describe('framed alerts', () => {
+  function framedWorld() {
+    const w = world({ postMaxLength: 2000 });
+    const cy = w.fake.seed.account('cy');
+    const cyFace = w.fake.seed.character(cy, 'Cy Face', 'face');
+    const waiting = w.fake.seed.character(cy, 'Waiting', 'heel', { debuted: false });
+    const boss = w.fake.seed.staff('boss', 'The Boss', 'boss');
+    const heard = [] as { kind: string; character: unknown }[];
+    w.fake.signInAs(w.bo);
+    w.fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    w.fake.signInAs(w.ana);
+    const named = (...ids: string[]) => ids.map((i) => `[quote=Someone user=${i}]words[/quote]`).join(' ');
+    const framedFor = async (account: string) => { w.fake.signInAs(account); const rows = (await w.fake.alerts()).filter((a) => a.kind === 'framed'); w.fake.signInAs(w.ana); return rows; };
+    return { ...w, cy, cyFace, waiting, boss, heard, named, framedFor };
+  }
+  test('a post that names another player\'s debuted character writes one alert for its owner, about the post, and the owner hears it live', async () => {
+    const w = framedWorld();
+    const body = w.named(w.boFace);
+    const made = must(await w.fake.post(w.thread, w.anaFace, body, null, [w.boFace]));
+    await flush();
+    expect(await w.framedFor(w.bo)).toMatchObject([{ kind: 'framed', act: made.id, character: w.boFace, name: 'Bo Face', sub: null }]);
+    expect(w.heard).toEqual([expect.objectContaining({ kind: 'framed', character: w.boFace })]);
+    expect(await w.framedFor(w.ana)).toEqual([]);
+  });
+  test('a thread start and a spin write them as a post does', async () => {
+    const w = framedWorld();
+    must(await w.fake.startThread('general', w.anaFace, 'Fresh', w.named(w.boFace), [w.boFace]));
+    must(await w.fake.spin(w.opener, w.anaFace, 'Spun', w.named(w.boFace), [w.boFace]));
+    expect(await w.framedFor(w.bo)).toHaveLength(2);
+  });
+  test('an apology writes them as the spin it is', async () => {
+    const w = framedWorld();
+    const at = Date.now() - 3_600_000;
+    const move = w.fake.seed.groupMove('boss', { character: w.anaFace, group: 'trialMembers', board: 'general', at, expiresAt: at + 86_400_000 });
+    must(await w.fake.apologize(move, w.anaFace, 'Sorry', w.named(w.boFace), [w.boFace]));
+    expect(await w.framedFor(w.bo)).toHaveLength(1);
+  });
+  test('none for an undebuted, unknown, unnamed-in-the-body, staff or own-mask target, and the answer is the same ok', async () => {
+    const w = framedWorld();
+    const nowhere = '99999999-9999-4999-8999-999999999999';
+    for (const [framing, body] of [
+      [[w.waiting], w.named(w.waiting)], [[nowhere], w.named(nowhere)], [[w.boFace], 'no quote here'],
+      [[w.boss], w.named(w.boss)], [[w.anaHeel], w.named(w.anaHeel)],
+    ] as const) expect((await w.fake.post(w.thread, w.anaFace, body, null, [...framing])).ok).toBe(true);
+    for (const account of [w.bo, w.cy, w.ana]) expect(await w.framedFor(account)).toEqual([]);
+  });
+  test('the id is found in the body without regard to case', async () => {
+    const w = framedWorld();
+    must(await w.fake.post(w.thread, w.anaFace, `[quote user=${w.boFace.toUpperCase()}]x[/quote]`, null, [w.boFace]));
+    expect(await w.framedFor(w.bo)).toHaveLength(1);
+  });
+  test('only the first five ids count, and a repeat is one alert', async () => {
+    const w = framedWorld();
+    const six = Array.from({ length: 6 }, (_, i) => w.fake.seed.character(w.bo, `Bo ${i}`, 'face'));
+    must(await w.fake.post(w.thread, w.anaFace, w.named(...six), null, six));
+    expect(await w.framedFor(w.bo)).toHaveLength(5);
+    must(await w.fake.post(w.thread, w.anaFace, w.named(w.cyFace), null, [w.cyFace, w.cyFace, w.cyFace]));
+    expect(await w.framedFor(w.cy)).toHaveLength(1);
+  });
+  test('an edit writes none', async () => {
+    const w = framedWorld();
+    const made = must(await w.fake.post(w.thread, w.anaFace, 'plain', null));
+    must(await w.fake.edit(made.id, w.anaFace, w.named(w.boFace)));
+    expect(await w.framedFor(w.bo)).toEqual([]);
+  });
+});
+
 describe('a play on a post is not announced on reach', () => {
   test('only a character, a thread or a board play is', async () => {
     const w = world();
@@ -2646,5 +2770,99 @@ describe('a screen in one call is what the separate calls answer', () => {
     const boot = await fake.boot();
     expect(boot).toMatchObject({ settings: await fake.settings(), preferences: await fake.preferences(), characters: await fake.myCharacters(), wallet: await fake.wallet(), boards, unread: await fake.alertsUnread() });
     expect(boot.faces.map((f) => f.name)).toEqual(['Ana Face', 'Ana Heel']);
+  });
+
+  test('logPage of the demo player is the log and what useLog reads around it', async () => {
+    const { fake, anaFace, anaHeel, boFace, opener } = world();
+    fake.seed.settle({ ledger: [{ character: anaFace, reason: 'face.cheered', amount: 30, shares: [{ act: opener, quadrant: 'excitedPositive', amount: 30 }] }, { character: anaHeel, reason: 'heel.shrugged', amount: -5 }], standings: { [anaFace]: 300 } });
+    const page = await fake.logPage(null);
+    const log = await fake.log();
+    expect(page.log).toEqual(log);
+    expect(page.log.settlements).toHaveLength(1);
+    /* What useLog's `around` computes from the same log: the own state, then the Acts the lines name and the ones those lead to. */
+    const characters = await fake.myCharacters();
+    const ids = characters.map((c) => c.id);
+    expect(page.standings).toEqual(await fake.standingAmounts(ids));
+    expect(page.season).toEqual(await fake.season());
+    const turns = (await fake.turnsAnnounced(ids)).filter((t) => characters.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
+    expect(page.turns).toEqual(await fake.turnsAnnounced(ids));
+    const acts = new Map((await fake.actsById(actsNamed(log, null, turns))).map((a) => [a.id, a]));
+    for (let round = 0; round < 2; round++) for (const a of await fake.actsById(actsFollowed(acts))) acts.set(a.id, a);
+    expect(page.acts).toEqual([...acts.values()]);
+    expect(page.acts.map((a) => a.id)).toContain(opener);
+    expect(page.people).toEqual(await fake.characters([boFace]));
+    expect(page.states).toEqual(await fake.effectStates([...new Set(log.saves.map((x) => x.play))]));
+    expect(page.threads).toEqual([]);
+    expect(page.boards).toEqual([]);
+    /* An older cursor is the log from there. */
+    expect((await fake.logPage(log.before ?? '2000-01-01T00:00:00.000Z')).log).toEqual(await fake.log(log.before ?? '2000-01-01T00:00:00.000Z'));
+  });
+
+  test('the glass pages are built of the existing calls\' answers', async () => {
+    const { fake, anaFace, anaHeel, boFace } = world();
+    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: 500 } });
+    const mine = await fake.myCharacters();
+    const characters = await fake.myCharactersPage();
+    expect(characters.characters).toEqual(mine);
+    expect(characters.faces).toEqual(await fake.characters([anaFace, anaHeel].sort((a, b) => mine.findIndex((c) => c.id === a) - mine.findIndex((c) => c.id === b))));
+    expect(characters.counts[anaFace]).toEqual(await fake.characterCounts(anaFace));
+    expect(characters.standings).toEqual(await fake.standingAmounts(mine.map((c) => c.id)));
+    expect(characters.nextSettlementAt).toEqual(await fake.nextSettlementAt());
+
+    const news = await fake.seasonPage('news', null, null, null);
+    expect(news).toEqual({ tab: 'news', season: await fake.season(), news: await fake.seasonNews(null) });
+    const standings = await fake.seasonPage(null, null, null, null);
+    expect(standings).toMatchObject({ tab: 'standings', page: 1, standings: await fake.standingsPage(0, 50), size: await fake.standingsCount(), finished: await fake.finishedSeasons() });
+    expect(await fake.seasonPage(null, 99, null, null)).toBeNull();
+
+    const alerts = await fake.alertsPage(null);
+    expect(alerts).toMatchObject({ alerts: await fake.alerts(null), seenAt: (await fake.preferences()).alertsSeenAt, openedAt: await fake.accountOpenedAt() });
+    const updates = await fake.updatesPage(null, null, null);
+    expect(updates).toMatchObject({ updates: await fake.updates(null), tallies: {}, mine: [] });
+    expect('queue' in updates).toBe(false);
+    expect(await fake.queuePage()).toBeNull();
+  });
+
+  test('alertsPage carries the Acts, people, openings and reading its rows name', async () => {
+    const { fake, ana, bo, anaFace, boFace, thread, opener } = world();
+    fake.signInAs(bo);
+    await fake.follow(thread, true);
+    fake.signInAs(ana);
+    const reply = must(await fake.post(thread, anaFace, 'a reply', opener));
+    fake.signInAs(bo);
+    const page = await fake.alertsPage(null);
+    expect(page.alerts).toEqual(await fake.alerts(null));
+    expect(page.alerts.length).toBeGreaterThan(0);
+    const named = page.alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
+    expect(named).toContain(reply.id);
+    expect(page.acts.map((a) => a.id)).toEqual(expect.arrayContaining(named));
+    expect(page.people).toEqual(await fake.characters([...new Set(page.acts.flatMap((a) => (a.character === null ? [] : [a.character])))]));
+    expect(page.people.map((c) => c.id)).toContain(anaFace);
+    const followed = [...new Set(page.alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
+    expect(page.openings).toEqual(await fake.openingActs(followed));
+    expect(page.reading).toEqual(await fake.reading(followed));
+    expect(boFace).toBeTruthy();
+  });
+
+  test('updatesPage opens the newest update when the one asked for is not on the page, as the server does', async () => {
+    const { fake, ana, anaFace } = world();
+    fake.seed.admin(ana);
+    fake.signInAs(ana);
+    const update = must(await fake.postUpdate('Traps bite', 'Two fixes.', []));
+    must(await fake.react(update.act, anaFace, 'fire'));
+    const newest = await fake.updatesPage(null, null, null);
+    expect(Object.keys(newest.tallies)).toEqual([update.act]);
+    expect(await fake.updatesPage('00000000-0000-4000-8000-000000000000', null, null)).toEqual(newest);
+  });
+
+  test('queuePage and updatesPage carry an admin\'s queue, and only an admin\'s', async () => {
+    const { fake, ana } = world();
+    fake.seed.admin(ana);
+    const queue = await fake.queuePage();
+    expect(queue).toEqual({ queue: await fake.adminQueue(), boardNames: await fake.boardNames(), bosses: await fake.bosses(), contact: await fake.adminContact() });
+    expect(await fake.updatesPage(null, null, 3)).toMatchObject({ queue: await fake.adminQueue() });
+    expect('queue' in (await fake.updatesPage(null, null, null))).toBe(false);
+    const other = world();
+    expect('queue' in (await other.fake.updatesPage(null, null, 3))).toBe(false);
   });
 });

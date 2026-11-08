@@ -5,7 +5,8 @@
  * project set in the environment.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createBackend } from './backend.ts';
+import type { KayfaApi } from '../../../engine/ui/data/api.ts';
+import { createBackend, withFailure } from './backend.ts';
 import { MOMENTS } from './fixtures/boards.ts';
 
 const URL_ = 'https://proj.supabase.co';
@@ -208,5 +209,33 @@ describe('createBackend and the boards fixture', () => {
     await api.boards().catch(() => undefined);
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain(URL_);
     fetchSpy.mockRestore();
+  });
+});
+
+describe('?fail=<rpc>', () => {
+  const stub = () => ({ logPage: vi.fn(async () => 'page'), alertsPage: vi.fn(async () => 'alerts'), version: 3 }) as unknown as KayfaApi & { logPage: ReturnType<typeof vi.fn>; alertsPage: ReturnType<typeof vi.fn> };
+
+  it('returns the api untouched where no parameters are read (a production build)', () => {
+    const api = stub();
+    expect(withFailure(api, null)).toBe(api);
+    expect(withFailure(api, new URLSearchParams(''))).toBe(api);
+  });
+
+  it('fails the first call of the named rpc, answers the second, and leaves every other rpc alone', async () => {
+    const api = stub();
+    const failing = withFailure(api, new URLSearchParams('fail=log_page'));
+    await expect(failing.logPage(null)).rejects.toThrow(/log_page to fail once/);
+    expect(api.logPage).not.toHaveBeenCalled();
+    await expect(failing.logPage(null)).resolves.toBe('page');
+    await expect(failing.alertsPage(null)).resolves.toBe('alerts');
+    expect((failing as unknown as { version: number }).version).toBe(3);
+  });
+
+  it('is read by the end-to-end build from the address and answers the second call', async () => {
+    vi.stubEnv('MODE', 'e2e');
+    at('?fail=log_page');
+    const api = await createBackend();
+    await expect(api.logPage(null)).rejects.toThrow(/log_page/);
+    await expect(api.logPage(null)).resolves.toBeDefined();
   });
 });

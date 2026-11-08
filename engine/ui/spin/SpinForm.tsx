@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useWhoPosts } from '../composer/draft.ts';
+import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -35,8 +36,13 @@ export function useSpinDrafts(): { readonly get: (origin: Id) => SpinDraft | und
  * `label` names the origin as the form says it: "post 41" for a post, "Mrs. Hooligan's Whoops!" for a card play
  * (the plays-on-a-post design, section 3); null for an Act with no such name ("this Act").
  */
-export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
+export function SpinForm({ origin, label: named, onClose, draft, onDraft, apology }: {
   readonly origin: Id; readonly label: string | null; readonly onClose: () => void;
+  /**
+   * Set, the form writes an apology: the origin is the move that bars the character, and sending goes through `apologize` (the spin of that move, with the bar the one
+   * thing skipped) instead of `spin`. `to` names whom it is written to as the form says it ("the Boss", "a Mod").
+   */
+  readonly apology?: { readonly to: string };
   /** What was typed here before, and where to put each change (`useSpinDrafts`); a form with neither starts empty and keeps nothing. */
   readonly draft?: SpinDraft; readonly onDraft?: (draft: SpinDraft | null) => void;
 }) {
@@ -56,11 +62,12 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
 
   useEffect(() => { first.current?.focus(); }, []);
 
-  const label = named === null ? 'Spin a thread' : `Spin a thread from ${named}`;
+  const label = apology ? 'Write an apology' : named === null ? 'Spin a thread' : `Spin a thread from ${named}`;
+  const verb = apology ? 'Send apology' : 'Spin thread';
   if (!hudCharacter) {
     return (
       <div className="kb-spin-form kb-box" role="group" aria-label={label}>
-        <p>None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; one waiting to debut can post once it has.</p>
+        <p>None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; a character waiting to debut can post after the debut.</p>
       </div>
     );
   }
@@ -81,7 +88,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
     } catch { looked = false; }
     if (found) { went(found); return; }
     setAgain(true);
-    setRefusal(`${words ?? 'No answer came back.'} ${looked ? 'The thread is not there yet.' : 'The threads spun from this Act could not be checked.'} Press “Spin again anyway” to spin it again.`);
+    setRefusal(`${words ?? 'No answer came back.'} ${looked ? 'The thread is not there yet.' : 'The threads spun from this Act could not be checked.'} Press “${apology ? 'Send again anyway' : 'Spin again anyway'}” to ${apology ? 'send it' : 'spin it'} again.`);
   };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -92,7 +99,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
     setRefusal(null);
     try {
       let answer;
-      try { answer = await api.spin(origin, character, title, body); } catch { await look(null, character); return; }
+      try { answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, ...framingArgs(body))); } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
       else setRefusal(answer.error);
@@ -108,11 +115,13 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
 
   return (
     <form className="kb-spin-form kb-box" aria-label={label} onSubmit={(e) => void submit(e)} onKeyDown={key} noValidate>
-      <p className="kb-small">Spinning a thread from {named === null ? 'this Act' : <b>{named}</b>} as <strong>{hudCharacter.name}</strong></p>
+      {apology
+        ? <p className="kb-small">Writing an apology to {apology.to} as <strong>{hudCharacter.name}</strong>. It is a public thread, and {apology.to} reads it.</p>
+        : <p className="kb-small">Spinning a thread from {named === null ? 'this Act' : <b>{named}</b>} as <strong>{hudCharacter.name}</strong></p>}
       <div className="kb-spin-now-region" role="status">
         {who.changed && (
           <p className="kb-notice">
-            <span>now posting as <strong>{hudCharacter.name}</strong></span>. This was started as {was}. Press the button to confirm, then spin, or switch back in the HUD.
+            <span>now posting as <strong>{hudCharacter.name}</strong></span>. This was started as {was}. Press the button to confirm, then {apology ? 'send' : 'spin'}, or switch back in the HUD.
           </p>
         )}
       </div>
@@ -128,7 +137,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <div className="kb-spin-actions">
         <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || title.trim() === '' || [...body].length > settings.postMaxLength}>
-          {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Spin again anyway' : 'Spin thread'}
+          {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? (apology ? 'Send again anyway' : 'Spin again anyway') : verb}
         </button>
         <button type="button" className="kb-button" onClick={dismiss}>Cancel</button>
       </div>

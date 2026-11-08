@@ -47,6 +47,7 @@
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
 import { atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import {
@@ -170,7 +171,7 @@ interface Week {
 
 interface ThreadRead {
   readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly body: string }[];
+  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string }[];
 }
 
 const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
@@ -289,7 +290,10 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     const read = !startsThread
       ? await db.rpc<ThreadRead>('pool_thread', { in_thread: p.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: p.quoting })
       : null;
-    const quotedPost: ThreadPost | null = read && p.quoting ? (read.posts.find((x) => x.act === p.quoting) ?? null) : null;
+    // A character with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set. The persona's own set is its file's, else the same.
+    const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
+    const quotedRead = read && p.quoting ? (read.posts.find((x) => x.act === p.quoting) ?? null) : null;
+    const quotedPost: ThreadPost | null = quotedRead ? { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body } : null;
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
     // when the day's allowance has a slot for a card.
@@ -304,10 +308,10 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     ]);
     const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: p.staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
     const known = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
-    const names = known.length ? await db.rpc<Record<string, string>>('pool_names', { ids: known }) : {};
+    const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
 
     const limits = { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
-    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, body: x.body })) } : null;
+    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body })) } : null;
 
     // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
     let raw: unknown;
@@ -320,9 +324,9 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: POOL_PREMISE, persona, career, memory, notes, thread,
-          quoting: quotedPost ? { name: quotedPost.name, body: quotedPost.body } : null,
-          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => names[id] ?? 'a character',
+          premise: POOL_PREMISE, persona, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
+          quoting: quotedPost,
+          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],

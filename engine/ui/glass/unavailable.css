@@ -1,0 +1,10 @@
+/*
+ * The two error screens' panel (Unavailable.tsx): the cut panel's own edge and fill come from base.css; this gives its
+ * content the room a glass panel's content has elsewhere (the invite panel's measure, account.css), and no more.
+ */
+.kb-glass-unavailable-panel {
+  box-sizing: border-box;
+  width: min(100%, 40em);
+  margin: 16px 0;
+  padding: 20px 24px;
+}
