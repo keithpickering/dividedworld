@@ -212,6 +212,12 @@ and built, since the grant names it; a build session that reaches Task 11 first 
   `instance.test.ts`: each refusal above, planted. `lines.test.tsx`: the grant's one line. The export round-trip carries
   `account_grants` and the new kinds.
 
+**Amended 2026-11-07, after the booster packs plan** (`docs/plans/2026-11-04-booster-packs-plan.md`, Task 2). A hand is
+counted by one function, `card_held(who, card)`: rows in (`bought`, `pulled`) less rows out (`played`), called by
+`my_cards`, `buy_card`, `play_card` and `set_card` in place of their inline counts. So `card_ledger.kind`'s `'granted'`
+is added to `card_held`'s rows in, as one line in that function, and no reader counts it inline; "`my_cards` counts it
+as held" above is met through `card_held`.
+
 ## Review focus
 
 - **Existing accounts:** the migrations run on an instance with accounts and characters. Every account that has a

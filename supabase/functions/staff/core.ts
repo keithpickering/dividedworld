@@ -37,6 +37,7 @@
  * **Cost does not grow with the instance.** One light-tier call per visit (two for an old voice with something to spend), at most `FILINGS_PER_RUN` visits, at most
  * `filingLinesPerDay` calls a day. A Mod's standing, career, memory and notes are read once for all its visits in a run, and a board's rules once.
  */
+import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
@@ -54,6 +55,7 @@ import {
   type ModMoveContext,
   type RuleLine,
 } from '../../../engine/system/judgment.ts';
+import type { ConferredGroup } from '../../../engine/system/meeting.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
@@ -86,6 +88,35 @@ interface DueVisit {
   readonly charges: readonly Charge[];
 }
 
+/** What a Mod's call is told about groups (`mod_group_context`): the catalog for the prompt, and the same catalog and the characters no group move may name for the repair. */
+export interface ModGroups {
+  readonly conferred: readonly ConferredGroup[];
+  readonly facts: NonNullable<ModMoveContext['groups']>;
+}
+
+/**
+ * The groups a Mod's call may confer, read for a call that has a move to make (an allowance and a beat); none otherwise, so a call with nothing to spend reads nothing.
+ * A read the database cannot answer costs the call its group move only: the Mod's setRule still stands.
+ */
+export async function readModGroups(db: Db, standing: Pick<Standing, 'allowance' | 'beat'>): Promise<ModGroups | null> {
+  if (!(standing.allowance >= 1) || standing.beat.length === 0) return null;
+  try {
+    const read = await db.rpc<{ conferred: ConferredGroup[]; characters: { id: string; capped: boolean; held: boolean }[] }>('mod_group_context', {});
+    const characters = read.characters ?? [];
+    return {
+      conferred: read.conferred ?? [],
+      facts: {
+        conferred: new Map((read.conferred ?? []).map((g) => [g.key, g.tone])),
+        capped: new Set(characters.filter((c) => c.capped).map((c) => c.id.toLowerCase())),
+        held: new Set(characters.filter((c) => c.held).map((c) => c.id.toLowerCase())),
+      },
+    };
+  } catch (e) {
+    if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+    return null;
+  }
+}
+
 export interface Standing {
   readonly office: string | null;
   allowance: number;
@@ -93,9 +124,28 @@ export interface Standing {
   readonly beat: readonly { readonly id: string; readonly name: string }[];
 }
 
-interface ThreadRead {
+/** `pool_thread`'s answer: each post's author carries `pronouns`, null for a character with no profile row. */
+export interface ThreadRead {
   readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly body: string }[];
+  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string }[];
+}
+
+/** The instance's default set (`Settings.pronouns`), else the engine's it-set: what a character with no profile row is written with. */
+export const instanceSet = (settings: { readonly pronouns?: PronounSet }): PronounSet => pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
+
+/** The thread as a prompt is given it, each author's set settled. */
+export const threadFor = (read: ThreadRead, fallback: PronounSet) => ({ title: read.title, posts: read.posts.map((p) => ({ name: p.name, pronouns: pronounsOr(p.pronouns, fallback), body: p.body })) });
+
+/** The post named by `act` in the read, its author's set settled; `absent` where the read does not hold it, or where there is none (a group move's appeal is about no post). */
+export const postFor = (read: ThreadRead, act: string | null, fallback: PronounSet, absent: { readonly name: string }) => {
+  const found = read.posts.find((p) => p.act === act);
+  return found ? { name: found.name, pronouns: pronounsOr(found.pronouns, fallback), body: found.body } : { name: absent.name, pronouns: fallback, body: '' };
+};
+
+/** One character's pronouns, from `character_faces` (a report's reporter, an appeal's appellant), else the fallback. */
+export async function pronounsOfCharacter(db: Db, id: string, fallback: PronounSet): Promise<PronounSet> {
+  const faces = await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: [id] });
+  return pronounsOr(faces[id]?.pronouns, fallback);
 }
 
 /** What a filing came to. `filed` and `already` ended the visit (this run, or the tick before it); every other status left it open. */
@@ -136,7 +186,10 @@ export interface Known {
   readonly career: Career | null;
   readonly memory: Memory | null;
   readonly notes: readonly string[];
+  /** The names its memory mentions, each with its pronouns beside it (`Gloomba (she/her)`). */
   readonly names: Readonly<Record<string, string>>;
+  /** The Mod's own pronouns: its persona file's, else `Settings.pronouns`, else the engine's it-set. */
+  readonly pronouns: PronounSet;
 }
 
 /**
@@ -144,11 +197,13 @@ export interface Known {
  * memory, notes and the names its memory mentions. Public play and the staff character's own record; never an owner. Shared by the filing run, the report and the appeal (which a Boss
  * may hear: it asks for `['mod', 'boss']`).
  */
-export async function learnMod(db: Db, roster: readonly Persona[], settings: Pick<Instance['settings'], 'pool'>, staff: string, offices: readonly string[] = ['mod']): Promise<Known> {
+export async function learnMod(db: Db, roster: readonly Persona[], settings: Pick<Instance['settings'], 'pool'> & { readonly pronouns?: PronounSet }, staff: string, offices: readonly string[] = ['mod']): Promise<Known> {
   const persona = roster.find((p) => p.key === staff);
-  if (!persona) return { persona, standing: null, career: null, memory: null, notes: [], names: {} };
+  const fallback = instanceSet(settings);
+  const own = pronounsOr(persona?.pronouns, fallback);
+  if (!persona) return { persona, standing: null, career: null, memory: null, notes: [], names: {}, pronouns: own };
   const standing = await db.rpc<Standing>('mod_standing', { staff });
-  if (standing.office === null || !offices.includes(standing.office)) return { persona, standing, career: null, memory: null, notes: [], names: {} };
+  if (standing.office === null || !offices.includes(standing.office)) return { persona, standing, career: null, memory: null, notes: [], names: {}, pronouns: own };
   const [career, memory, since] = await Promise.all([
     db.rpc<Career>('staff_career', { of_staff: staff }),
     db.rpc<Memory | null>('staff_memory_latest', { staff }),
@@ -156,8 +211,9 @@ export async function learnMod(db: Db, roster: readonly Persona[], settings: Pic
   ]);
   const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
   const mentioned = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
-  const names = mentioned.length ? await db.rpc<Record<string, string>>('pool_names', { ids: mentioned }) : {};
-  return { persona, standing, career, memory, notes, names };
+  const faces = mentioned.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: mentioned }) : {};
+  const names = Object.fromEntries(Object.entries(faces).map(([id, f]) => [id, taggedName(f.name.slice(0, 60), pronounsOr(f.pronouns, fallback))]));
+  return { persona, standing, career, memory, notes, names, pronouns: own };
 }
 
 export async function runFilings(db: Db, models: Models, instance: Instance, slot: string, clock: () => number = Date.now): Promise<StaffOutcome> {
@@ -192,6 +248,8 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
   const roster = tuned.system.roster;
   const known = new Map<string, Known>();
   const rulesOf = new Map<string, readonly RuleLine[]>();
+  // The groups a Mod may confer, read once per Mod per run and read again after any move is queued (a queued move holds its character against every Mod).
+  const groupsOf = new Map<string, ModGroups | null>();
 
   const learn = async (staff: string): Promise<Known> => {
     const have = known.get(staff);
@@ -235,13 +293,23 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       const rules = rulesOf.get(v.board.id) ?? await db.rpc<RuleLine[]>('rules_in_force', { board: v.board.id });
       rulesOf.set(v.board.id, rules);
       const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: v.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: v.post });
-      const post = read.posts.find((p) => p.act === v.post) ?? { name: 'a character', body: '' };
+      const fallback = instanceSet(settings);
+      const post = postFor(read, v.post, fallback, { name: 'a character' });
       const charges = v.charges.map((c) => ({ rule: c.rule ?? 'a breach of the rules', band: c.band, cause: c.cause }));
-      const moveContext = (): ModMoveContext => ({ allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours });
+      let groups = groupsOf.get(v.staff);
+      if (groups === undefined) {
+        groups = await readModGroups(db, standing);
+        groupsOf.set(v.staff, groups);
+      }
+      const moveContext = (): ModMoveContext => ({
+        allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
+        ...(groups ? { groups: groups.facts } : {}),
+      });
       const input = (): FilingInput => ({
-        persona, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
+        persona, pronouns: mod.pronouns, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
         ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-        board: v.board, thread: { title: read.title, posts: read.posts.map((p) => ({ name: p.name, body: p.body })) }, post: { name: post.name, body: post.body }, charges,
+        ...(groups ? { conferred: groups.conferred } : {}),
+        board: v.board, thread: threadFor(read, fallback), post, charges,
         limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
       });
 
@@ -302,6 +370,7 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
     let queued: FilingRecord['move'];
     if (move) {
       queued = await db.rpc<NonNullable<FilingRecord['move']>>('apply_mod_move', { staff: v.staff, move, cause_act: v.visit });
+      if (queued.queued) groupsOf.clear();
       if (queued.queued && mod.standing) mod.standing.allowance = Math.max(0, mod.standing.allowance - 1);
     }
     const filed = await db.rpc<{ filed: boolean }>('file_visit', line === null ? { visit_act: v.visit } : { visit_act: v.visit, line });

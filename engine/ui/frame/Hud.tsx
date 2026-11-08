@@ -46,10 +46,13 @@ import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
+import { Avatar } from '../glass/Avatar.tsx';
 import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
-import { Link, searchOf, useLocation, useNavigate, useRouterInternals } from '../router.tsx';
+import { Link, searchOf, useLocation, useNavigate, useNavigation, useRouterInternals } from '../router.tsx';
+import { usePendingControl } from '../glass/claims.tsx';
+import { Spinner } from '../glass/Spinner.tsx';
 import { Hand } from '../cards/Hand.tsx';
 import { facesOf, withCardEconomy } from '../cards/faces.ts';
 import { usePlay } from '../cards/play.tsx';
@@ -86,6 +89,16 @@ export function Hud() {
   const player = usePlayer();
   const location = useLocation();
   const navigate = useNavigate();
+  /* A load out when Esc is pressed is the router's to stop (router.tsx); this Esc does not start another. */
+  const loadOut = useRef(false);
+  const { pending: loading } = useNavigation();
+  loadOut.current = loading !== null && !loading.silent;
+  /* The links and Menu each name their load, so the control pressed shows the wait (the HUD sits on the board, outside any page's claims, so the claim is a no-op here). */
+  const avatarWait = usePendingControl();
+  const orbsWait = usePendingControl();
+  const alertsWait = usePendingControl();
+  const menuWait = usePendingControl();
+  const menuSource = menuWait.source;
   const { board, scale } = useBoard();
   const wide = board === 'main';
   const [readFace, setFace] = useState<Character | null>(null);
@@ -106,8 +119,8 @@ export function Hud() {
   const [compact, setCompact] = useState(false);
   const menuWide = useRef(0);
   const drawerId = useId();
-  /* Priced as the server prices them now (withCardEconomy). */
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
+  /* Read with the economy as the server holds it now (withCardEconomy); a card in the hand has no buy price. */
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds, settings.cardEconomy]);
   const selectId = useId();
   /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */
   const hudCalm = useSurfaceStyle('hud');
@@ -321,13 +334,13 @@ export function Hud() {
         handButton.current?.focus();
         return;
       }
-      if (!pageEscape(e)) return;
+      if (!pageEscape(e) || loadOut.current) return;
       e.preventDefault();
-      navigate(GLASS_NAV.characters);
+      navigate(GLASS_NAV.characters, { source: menuSource });
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [signedIn, handOpen, armed, play, setHandOpen, navigate]);
+  }, [signedIn, handOpen, armed, play, setHandOpen, navigate, menuSource]);
 
   /* A card in the hand is armed, or put back if it was the armed one; a post then offers it (cards/PlayActions.tsx). */
   const pick = (face: { readonly key: string }) => {
@@ -392,10 +405,13 @@ export function Hud() {
                     <>
                       <Link
                         to={GLASS_NAV.characters}
+                        source={avatarWait.source}
+                        data-kb-pending={avatarWait.pending ? '' : undefined}
                         className="kb-hud-avatar"
                         aria-label="My characters"
                       >
-                        {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
+                        <Avatar src={face?.avatarSquare ?? null} name={hud.name} />
+                        {avatarWait.pending && <span className="kb-hud-wait"><Spinner /></span>}
                       </Link>
                       <span className="kb-hud-who">
                         <span className="kb-hud-name kb-glass-display" style={{ '--kb-name-chars': hud.name.length } as CSSProperties}>{hud.name}</span>
@@ -435,8 +451,11 @@ export function Hud() {
                   {player.wallet && (
                     <Link
                       to={GLASS_NAV.log}
+                      source={orbsWait.source}
+                      data-kb-pending={orbsWait.pending ? '' : undefined}
                       className="kb-hud-orbs"
                     >
+                      {orbsWait.pending && <span className="kb-hud-wait"><Spinner /></span>}
                       <span className="kb-visually-hidden">My log: </span>
                       <Orbs settled={player.wallet.balance} pending={player.pending} cap={player.wallet.cap ?? settings.walletCap} cascadeFrom={player.walletSeen} />
                     </Link>
@@ -480,6 +499,8 @@ export function Hud() {
                   </CalmRegion>
                   <Link
                     to={GLASS_NAV.alerts}
+                    source={alertsWait.source}
+                    data-kb-pending={alertsWait.pending ? '' : undefined}
                     className="kb-hud-alerts kb-glass-skew"
                     data-kb-held={handOpen ? '' : undefined}
                     aria-label={unread === null ? 'Alerts' : `Alerts ${unread} new`}
@@ -491,6 +512,7 @@ export function Hud() {
                     <span className="kb-hud-alerts-word kb-glass-upright">Alerts</span>
                     {' '}
                     {unread !== null && <span className="kb-hud-alerts-count kb-glass-upright kb-num" aria-hidden="true">{unread}</span>}
+                    {alertsWait.pending && <span className="kb-hud-wait kb-glass-upright"><Spinner /></span>}
                   </Link>
                   <div className="kb-hud-actions">
                     <button
@@ -498,10 +520,12 @@ export function Hud() {
                       type="button"
                       className="kb-hud-menu kb-glass-skew"
                       aria-keyshortcuts="Escape"
-                      onClick={() => navigate(GLASS_NAV.characters)}
+                      data-kb-pending={menuWait.pending ? '' : undefined}
+                      onClick={() => navigate(GLASS_NAV.characters, { source: menuSource })}
                     >
                       <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
                       <span className={compact ? 'kb-visually-hidden' : 'kb-glass-upright'}>Menu</span>
+                      {menuWait.pending && <span className="kb-hud-wait kb-glass-upright"><Spinner /></span>}
                       {compact && (
                         <svg className="kb-hud-menu-glyph kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="18" viewBox="0 0 22 18">
                           <path d="M2 3h18M2 9h18M2 15h18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />

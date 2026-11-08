@@ -1,21 +1,16 @@
 /**
- * Reading the player's log for Log.tsx and Settlement.tsx: the newest page of `KayfaApi.log`, each
- * older page when asked for, and what its lines name (lines.ts's `LogData`). Every read is the
- * player's own (the log, their characters, their estimate, their standings and announced Turns) or a
- * public Act, character or thread the lines link; none is asked about anyone but because a line of
- * the player's names it.
+ * The player's log for Log.tsx and Settlement.tsx: the newest page and what its lines name (lines.ts's `LogData`) are the route's document
+ * (`log_page`, the glass-load plan, Task 12); each older page is read when asked for. Every read is the player's own (the log, their standings and
+ * announced Turns, their estimate) or a public Act, character or thread the lines link; none is asked about anyone but because a line of the
+ * player's names it. Nothing here writes: the summary marks itself seen once it is drawn (Settlement.tsx).
  *
- * The reading is the signed-in account's: another account signing in reads afresh, and nothing of the
- * last account's is drawn meanwhile (the key below, as RankingsScreen keys its read).
+ * The document is the signed-in account's: the router reads it again for another account, and nothing of the last account's is drawn meanwhile.
  */
-import { useCallback, useEffect, useState } from 'react';
-import type { Act, EffectState, Id, KayfaApi, Log } from '../data/api.ts';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Act, Estimate, EffectState, Id, KayfaApi, Log, MyCharacter } from '../data/api.ts';
+import { estimateActIds, type LogDoc } from '../glass-docs.ts';
+import { useNavigation } from '../router.tsx';
 import { actsFollowed, actsNamed, type LogData } from './lines.ts';
-
-type State =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed'; readonly key: string }
-  | { readonly status: 'ready'; readonly key: string; readonly data: LogData; readonly older: 'idle' | 'loading' | 'failed' };
 
 /** Two pages as one: the older page's rows after the newer's, each settlement once, and the older page's cursor. */
 export function mergeLogs(newer: Log, older: Log): Log {
@@ -24,14 +19,15 @@ export function mergeLogs(newer: Log, older: Log): Log {
     settlements: [...newer.settlements, ...older.settlements.filter((s) => !have.has(s.id))],
     wallet: [...newer.wallet, ...older.wallet],
     cards: [...newer.cards, ...older.cards],
+    packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
-    setPasses: [...newer.setPasses, ...older.setPasses],
     caught: [...newer.caught, ...older.caught],
     ended: [...newer.ended, ...older.ended],
     infractions: [...newer.infractions, ...older.infractions],
     bans: [...newer.bans, ...older.bans],
+    groupMoves: [...newer.groupMoves, ...older.groupMoves],
     reports: [...newer.reports, ...older.reports],
     appeals: [...newer.appeals, ...older.appeals],
     before: older.before,
@@ -45,26 +41,11 @@ const inChunks = <T,>(xs: readonly T[]) => Array.from({ length: Math.ceil(xs.len
 const orElse = <T,>(read: Promise<T>, fallback: T) => read.catch(() => fallback);
 
 /**
- * Everything the lines need beside the log itself, for the log as it stands. `before` is what was read for the pages already
- * shown: the player's own state (characters, estimate, standings, season, announced Turns) is read once, with the first page,
- * and an older page reads only the Acts, names and states none of the pages before it named, so a page costs its own lines.
+ * Everything the lines need beside the log itself, for the log as it stands. `before` is what was read for the pages already shown: the
+ * first page is the route's document (`logDataOf`), and an older page reads only the Acts, names and states none of the pages before it named,
+ * so a page costs its own lines.
  */
-async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogData> {
-  const own = before ?? await (async () => {
-    const mine = await api.myCharacters();
-    const ids = mine.map((c) => c.id);
-    const [estimate, standings, season, announced, nextSettlement] = await Promise.all([
-      api.estimate().catch(() => null),
-      ids.length === 0 ? {} : api.standingAmounts(ids),
-      api.season(),
-      ids.length === 0 ? [] : api.turnsAnnounced(ids),
-      /* Only the empty log says it, and a failed read leaves that row without its time. */
-      orElse(api.nextSettlementAt(), null),
-    ]);
-    /* Only a character's latest Turn is a line (lines.ts), so only its announcement is named. */
-    const turns = announced.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at)));
-    return { mine, estimate, standings, season, turns, nextSettlement, acts: new Map<Id, Act>(), names: new Map<Id, string>(), titles: new Map<Id, string>(), states: new Map<Id, unknown>() };
-  })();
+async function around(api: KayfaApi, log: Log, own: LogData): Promise<LogData> {
   const ids = own.mine.map((c) => c.id);
   const acts = new Map(own.acts);
   const named = actsNamed(log, own.estimate, own.turns).filter((id) => !acts.has(id));
@@ -83,6 +64,7 @@ async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogDat
     for (const a of await api.actsById(followed)) acts.set(a.id, a);
   }
   const names = new Map(own.names);
+  const staff = new Set(own.staff ?? []);
   /* A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so only those are asked
      for: their characters' names, threads' titles and boards' names, in one pass over the card Acts. */
   const unnamed: { character: Id[]; thread: Id[]; board: Id[] } = { character: [], thread: [], board: [] };
@@ -93,7 +75,7 @@ async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogDat
     if (typeof target === 'string') unnamed[reach].push(target);
   }
   const others = [...new Set([...acts.values()].map((a) => a.character).concat(unnamed.character).filter((c): c is Id => c !== null && !ids.includes(c) && !names.has(c)))];
-  for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
+  for (const part of await Promise.all(inChunks(others).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) { names.set(c.id, c.name); if (c.staff !== undefined) staff.add(c.id); }
   const titles = new Map(own.titles);
   const threads = [...new Set(own.turns.map((t) => acts.get(t.act)?.thread).concat(unnamed.thread).filter((t): t is Id => t !== undefined && !titles.has(t)))];
   for (const t of await Promise.all(threads.map((id) => orElse(api.thread(id), null)))) if (t) titles.set(t.id, t.title);
@@ -101,34 +83,93 @@ async function around(api: KayfaApi, log: Log, before?: LogData): Promise<LogDat
   for (const b of await Promise.all(boards.map((id) => orElse(api.board(id), null)))) if (b) titles.set(b.id, b.name);
   const states = new Map(own.states);
   for (const [play, s] of Object.entries(saved as Readonly<Record<Id, EffectState>>)) states.set(play, s.state);
-  return { ...own, log, acts, names, titles, states };
+  return { ...own, log, acts, names, staff, titles, states };
 }
 
-/** The player's log, read when `on` (signed in), with `older()` to read the next page below it. */
-export function useLog(api: KayfaApi, on: boolean | null, account: Id | null) {
-  const [read, setRead] = useState<State>({ status: 'loading' });
-  const key = account ?? '';
-  const state: State = read.status !== 'loading' && read.key === key ? read : { status: 'loading' };
+/** The fixed pieces of the log's data: what the route's document read and the player's own rows. */
+type Own = Omit<LogData, 'log' | 'acts' | 'names' | 'titles' | 'states'>;
 
+/**
+ * The log's data from the document: the first page and everything its lines name (`log_page`), and the player's own rows. The player's characters and the
+ * next settlement are the player's (the frame's), the estimate is the document's (it may fill in later). A character's latest announced Turn is the line
+ * (lines.ts): the document holds every announced Turn, and each character's latest is the one dated at its `classSince`.
+ */
+export function logDataOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlement: string | null, estimate: Estimate | null): LogData {
+  const { page } = doc;
+  /* Turns are the document's: a Turn taken while the page is open shows on the next read. */
+  const ids = new Set(mine.map((c) => c.id));
+  const names = new Map<Id, string>();
+  const staff = new Set<Id>();
+  for (const c of page.people) if (!ids.has(c.id)) { names.set(c.id, c.name); if (c.staff !== undefined) staff.add(c.id); }
+  const titles = new Map<Id, string>();
+  for (const t of page.threads) titles.set(t.id, t.title);
+  for (const b of page.boards) titles.set(b.id, b.name);
+  const states = new Map<Id, unknown>();
+  for (const [play, s] of Object.entries(page.states as Readonly<Record<Id, EffectState>>)) states.set(play, s.state);
+  return {
+    log: page.log, mine, estimate, standings: page.standings, season: page.season, nextSettlement,
+    turns: page.turns.filter((t) => mine.some((c) => c.id === t.character && Date.parse(c.classSince) === Date.parse(t.at))),
+    acts: new Map([...page.acts, ...(doc.estimateActs ?? [])].map((a) => [a.id, a])), names, staff, titles, states,
+  };
+}
+
+interface Held {
+  readonly doc: LogDoc;
+  /** The pages read so far, and what they name. */
+  readonly log: Log;
+  readonly acts: ReadonlyMap<Id, Act>;
+  readonly names: ReadonlyMap<Id, string>;
+  /** The staff characters among them: a Mod Bot's Trap Card takes nothing, so a line about its catch says the card is spent. */
+  readonly staff: ReadonlySet<Id>;
+  readonly titles: ReadonlyMap<Id, string>;
+  readonly states: ReadonlyMap<Id, unknown>;
+  readonly estimate: Estimate | null;
+  readonly older: 'idle' | 'loading' | 'failed';
+}
+
+/**
+ * The player's log, from the route's document, with `older()` to read the next page below it. The document is one account's: the router reads it
+ * again for another, and the page starts afresh when it does.
+ */
+export function useLog(api: KayfaApi, doc: LogDoc, mine: readonly MyCharacter[], nextSettlement: string | null) {
+  const { track } = useNavigation();
+  const [held, setHeld] = useState<Held>(() => heldOf(doc, mine, nextSettlement));
+  const current = held.doc === doc ? held : heldOf(doc, mine, nextSettlement);
+  if (current !== held) setHeld(current);
+
+  const data = useMemo<LogData>(() => ({ ...logDataOf(doc, mine, nextSettlement, current.estimate), log: current.log, acts: current.acts, names: current.names, staff: current.staff, titles: current.titles, states: current.states }),
+    [doc, mine, nextSettlement, current]);
+
+  /* The estimate that was not in time fills in when it lands; the Acts its lines name, which the page did not, are read then. */
   useEffect(() => {
-    if (!on) return undefined;
+    const later = doc.estimateLater;
+    if (!later) return undefined;
     let live = true;
-    api.log().then((log) => around(api, log)).then(
-      (data) => { if (live) setRead({ status: 'ready', key, data, older: 'idle' }); },
-      () => { if (live) setRead({ status: 'failed', key }); },
-    );
+    void later.then(async (estimate) => {
+      if (!live || estimate === null) return;
+      const want = estimateActIds(estimate, new Set(current.acts.keys()));
+      const read = want.length === 0 ? [] : await orElse(api.actsById(want), [] as readonly Act[]);
+      if (!live) return;
+      setHeld((now) => (now.doc !== doc ? now : { ...now, estimate, acts: new Map([...now.acts, ...read.map((a) => [a.id, a] as const)]) }));
+    });
     return () => { live = false; };
-  }, [api, on, key]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once for each document
+  }, [api, doc]);
 
   const older = useCallback(() => {
-    if (state.status !== 'ready' || state.older === 'loading' || state.data.log.before === null) return;
-    const { data } = state;
-    setRead({ ...state, older: 'loading' });
-    api.log(data.log.before).then((page) => around(api, mergeLogs(data.log, page), data)).then(
-      (next) => setRead((now) => (now.status === 'ready' && now.key === key ? { status: 'ready', key, data: next, older: 'idle' } : now)),
-      () => setRead((now) => (now.status === 'ready' && now.key === key ? { ...now, older: 'failed' } : now)),
+    if (current.older === 'loading' || current.log.before === null) return;
+    setHeld({ ...current, older: 'loading' });
+    /* The read is the router's to count (the meter), and the button is busy while it is out. */
+    track(api.log(current.log.before).then((page) => around(api, mergeLogs(current.log, page), data))).then(
+      (next) => setHeld((now) => (now.doc === doc ? { ...now, log: next.log, acts: next.acts, names: next.names, staff: next.staff ?? new Set<Id>(), titles: next.titles, states: next.states, older: 'idle' } : now)),
+      () => setHeld((now) => (now.doc === doc ? { ...now, older: 'failed' } : now)),
     );
-  }, [api, key, state]);
+  }, [api, doc, current, data, track]);
 
-  return { state, older };
+  return { data, older, olderState: current.older };
+}
+
+function heldOf(doc: LogDoc, mine: readonly MyCharacter[], nextSettlement: string | null): Held {
+  const d = logDataOf(doc, mine, nextSettlement, doc.estimate);
+  return { doc, log: d.log, acts: d.acts, names: d.names, staff: d.staff ?? new Set<Id>(), titles: d.titles, states: d.states, estimate: doc.estimate, older: 'idle' };
 }

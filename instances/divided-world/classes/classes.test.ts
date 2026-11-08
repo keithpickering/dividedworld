@@ -10,29 +10,30 @@ import { heel } from './heel.ts';
 import { lurker } from './lurker.ts';
 import { jabroni } from './jabroni.ts';
 import { technician } from './technician.ts';
+import { tweener } from './tweener.ts';
 import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
 import { estimateForOwner, settle } from '../../../engine/rules/settle.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
-  ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread,
+  ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing,
 } from '../../../engine/rules/types.ts';
 
 const none: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
 const input = (over: Partial<ClassInput>): ClassInput => ({
-  character: 'c', from: 0, to: 100, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], ...over,
+  character: 'c', from: 0, to: 100, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], threadsSpun: [], standings: [], ...over,
 });
 const got = (quadrant: Quadrant, votes = 1, actKind: 'post' | 'card' = 'post', act = 'a1', actAt = 0): ReceivedReaction => ({ act, actKind, quadrant, at: 10, actAt, votes });
 const card = (over: Partial<PlayedCard>): PlayedCard => ({
-  act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, ...over,
+  act: 'k1', card: 'whoops', alignment: 'salty', at: 5, target: 'p9', onOthers: true, votes: 0, targetVotes: 0, targetAfter: none, drawnAfter: null, ...over,
   readsAs: over.readsAs ?? over.alignment ?? 'salty',
 });
 const total = (rules: ClassRules, i: ClassInput, reason?: string) =>
   rules.earn(i, settings).filter((e) => !reason || e.reason === reason).reduce((s, e) => s + e.amount, 0);
 
 test('the instance holds its classes, in the order every screen draws them, and is whole', () => {
-  assert.deepEqual(classes.map((c) => c.key), ['face', 'heel', 'jabroni', 'technician', 'lurker']);
+  assert.deepEqual(classes.map((c) => c.key), ['face', 'heel', 'jabroni', 'technician', 'tweener', 'lurker']);
   assert.deepEqual(instanceProblems(instance), []);
 });
 
@@ -196,7 +197,7 @@ test('an instance missing the Technician\'s age, or holding it at 0 or 2.5, is r
 
 /* ---- through the settlement ---- */
 /* A Salty card of the test's own, so these cases need no card of the instance's. */
-const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
+const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
 const H = 3_600_000;
 function board(lurkerClass = 'lurker'): SettlementInput {
   return {
@@ -555,7 +556,7 @@ test('a Pepperoni card that read as Sweet lifts another\'s post for a Face; one 
   assert.equal(total(face, input({ cardsPlayed: [card({ ...lift, readsAs: 'salty' })] }), 'face.liftedAPost'), 0);
 });
 test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells the L; drawing cheers, it does not', () => {
-  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   const pepWorld = { ...world, cards: [...world.cards, pep] };
   const b = board();
   const onJa = (kind: string): SettlementInput => ({
@@ -568,7 +569,7 @@ test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells 
   assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
 });
 test('settled whole: a Jabroni\'s own second mask groaning at a Pepperoni card on the Jabroni\'s post sells no L (#170)', () => {
-  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   const pepWorld = { ...world, cards: [...world.cards, pep] };
   const b = board();
   const r = settle({
@@ -583,7 +584,7 @@ test('a Pepperoni card that stayed Pepperoni (a tie) lifts nothing for a Face', 
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'pepperoni', targetAfter: { ...none, excitedPositive: 2 } })] }), 'face.liftedAPost'), 0);
 });
 test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a Heel; one cheered pays a Face for the lift after it', () => {
-  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   const pepWorld = { ...world, cards: [...world.cards, pep] };
   const b = board();
   const cast = (by: string, kind: string, lift: boolean): SettlementInput => ({
@@ -598,4 +599,89 @@ test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a
   assert.equal(paid(settle(cast('he', 'fire', false), pepWorld), 'he', 'heel.stoleThunder'), 0, 'cheered, it reads as Sweet: no thunder stolen');
   assert.equal(paid(settle(cast('fa', 'fire', true), pepWorld), 'fa', 'face.liftedAPost'), 1, 'cheered, it reads as Sweet, and the post\'s cheer after it lifts it for a Face');
   assert.equal(paid(settle(cast('fa', 'facepalm', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
+});
+
+/* ---- Tweener ---- */
+const lean = (q: 'excitedPositive' | 'excitedNegative', n: number, share = 1): Standing[] =>
+  Array.from({ length: n }, () => ({ ...none, [q]: share }));
+const room = (hype: number, heat: number): Standing[] => [...lean('excitedPositive', hype), ...lean('excitedNegative', heat)];
+const standing = (before: readonly Standing[], now: readonly Standing[]): ClassInput['standings'][number] =>
+  ({ act: 'a1', actKind: 'post', at: 10, before, now });
+const split = (before: readonly Standing[], now: readonly Standing[]) =>
+  total(tweener, input({ standings: [standing(before, now)] }), 'tweener.splitTheRoom');
+
+test('Tweener splits the room: pays twice the smaller side, new this window', () => {
+  assert.equal(split([], room(6, 6)), 12 * settings.vote);
+  assert.equal(split([], room(10, 2)), 4 * settings.vote);
+  assert.equal(split([], room(12, 0)), 0);
+});
+test('Tweener counts each player once: one player\'s half-and-half hedge pays nothing', () => {
+  assert.equal(split([], [{ ...none, excitedPositive: 0.5, excitedNegative: 0.5 }]), 0);
+});
+test('Tweener counts a player by net lean: 🔥🔥🍅 from one player and 🍅 from another is hype 1/3, heat 1', () => {
+  const now: Standing[] = [{ ...none, excitedPositive: 2 / 3, excitedNegative: 1 / 3 }, { ...none, excitedNegative: 1 }];
+  assert.ok(Math.abs(split([], now) - (2 / 3) * settings.vote) < 1e-9);
+});
+test('Tweener is paid only the change since the window began', () => {
+  assert.equal(split(room(6, 6), [...room(6, 6), ...lean('excitedPositive', 6)]), 0);
+  assert.equal(split([...lean('excitedPositive', 10), ...lean('excitedNegative', 2)], room(10, 6)), 8 * settings.vote);
+  assert.equal(split(room(6, 6), [...lean('excitedPositive', 7), ...lean('excitedNegative', 5)]), -2 * settings.vote);
+});
+test('Tweener\'s heat vote moving to hype takes its part back', () => {
+  assert.equal(split(room(5, 5), room(6, 4)), -2 * settings.vote);
+});
+test('Tweener shrugged off: calm-positive and bored-negative votes cost half a vote, excited costs nothing', () => {
+  assert.equal(total(tweener, input({ received: [got('calmPositive', 2), got('boredNegative', 1)] })), -1.5 * settings.vote);
+  assert.equal(total(tweener, input({ received: [got('excitedPositive', 3), got('excitedNegative', 3)] })), 0);
+});
+test('Tweener stirred the pot on another\'s post, not its own, and not with nobody drawn', () => {
+  const drawn = { at: 8, now: room(3, 3) };
+  const stir = (c: Partial<PlayedCard>) => total(tweener, input({ cardsPlayed: [card({ drawnAfter: drawn, ...c })] }), 'tweener.stirredThePot');
+  assert.equal(stir({}), 6 * settings.vote);
+  assert.equal(stir({ onOthers: false }), 0);
+  assert.equal(stir({ drawnAfter: null }), 0);
+});
+test('Tweener\'s lines scale with the vote', () => {
+  const i = input({ standings: [standing([], room(6, 6))], received: [got('calmPositive')], cardsPlayed: [card({ drawnAfter: { at: 8, now: room(3, 3) } })] });
+  const at = (vote: number) => tweener.earn(i, { ...settings, vote }).map((e) => e.amount);
+  assert.deepEqual(at(20), at(10).map((a) => a * 2));
+  assert.equal(at(10).length, 3);
+});
+
+const twWorld = (): Pick<SettlementInput, 'characters'> => ({
+  characters: [
+    { id: 'tw', player: 'pt', classes: [{ class: 'tweener', from: -1 }] },
+    { id: 'tw2', player: 'pt', classes: [{ class: 'face', from: -1 }] },
+    ...['a', 'b', 'c', 'd', 'e'].map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'heel', from: -1 }] })),
+  ],
+});
+const twPaid = (r: ReturnType<typeof settle>, reason: string) => r.entries.filter((e) => e.character === 'tw' && e.reason === reason).reduce((t, e) => t + e.amount, 0);
+const twBy = (who: string, kind: string, at: number, act: string) => ({ act, player: `p-${who}`, character: who, kind, at });
+test('settled whole: a Tweener\'s post drawing hype and heat pays twice the smaller side, then only the difference when it grows; a hedger counts nothing', () => {
+  const acts = [{ id: 'tp', character: 'tw', kind: 'post' as const, at: 1 * H, thread: 't' }];
+  const w1 = settle({
+    window: { id: 'w1', from: 0, to: 24 * H }, ...twWorld(), acts,
+    reactions: [twBy('a', 'fire', 2 * H, 'tp'), twBy('b', 'tomato', 3 * H, 'tp'), twBy('c', 'fire', 4 * H, 'tp'), twBy('c', 'tomato', 4 * H, 'tp')],
+  }, world);
+  assert.equal(twPaid(w1, 'tweener.splitTheRoom'), 2 * settings.vote, 'one of each side is 1, and the player hedging both ways adds nothing to either');
+  const w2 = settle({
+    window: D2, ...twWorld(), acts, paid: upTo(w1),
+    reactions: [twBy('a', 'fire', 2 * H, 'tp'), twBy('b', 'tomato', 3 * H, 'tp'), twBy('c', 'fire', 4 * H, 'tp'), twBy('c', 'tomato', 4 * H, 'tp'), twBy('d', 'fire', 25 * H, 'tp'), twBy('e', 'tomato', 26 * H, 'tp')],
+  }, world);
+  assert.equal(twPaid(w2, 'tweener.splitTheRoom'), 2 * settings.vote, 'the smaller side grew from 1 to 2: only the difference is paid');
+});
+test('settled whole: a Tweener\'s card pays twice the smaller side of the players who arrived after it, never its own player\'s or the author\'s', () => {
+  const r = settle({
+    window: { id: 'w', from: 0, to: 24 * H }, ...twWorld(),
+    acts: [
+      { id: 'p1', character: 'a', kind: 'post', at: 1 * H, thread: 't' },
+      { id: 'k1', character: 'tw', kind: 'card', at: 2 * H, thread: 't', target: 'p1', card: 'whoops' },
+    ],
+    reactions: [
+      twBy('b', 'fire', 3 * H, 'p1'), twBy('c', 'tomato', 4 * H, 'p1'),
+      { act: 'p1', player: 'pt', character: 'tw2', kind: 'tomato', at: 5 * H },
+      { act: 'p1', player: 'p-a', character: 'a', kind: 'fire', at: 5 * H },
+    ],
+  }, world);
+  assert.equal(twPaid(r, 'tweener.stirredThePot'), 2 * settings.vote);
 });

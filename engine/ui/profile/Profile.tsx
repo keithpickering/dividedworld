@@ -1,6 +1,6 @@
 /**
  * A character's public profile at /c/:id (a character's own page is public; no player is named).
- * It shows only what anyone could have watched: the tall avatar, title, rank, the exact standing
+ * It shows only what anyone could have watched: the tall avatar, title, pronouns, rank, the exact standing
  * and when it was settled, its place, counts of posts, spins and card plays, the month it joined,
  * its signature, and its public record's latest rows with a link to the full view.
  *
@@ -15,10 +15,12 @@ import { useId, useMemo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Character, CharacterCounts, ClassReveal, Id, ProfilePage, StandingPlace, TurnAnnounced } from '../data/api.ts';
+import { pronounLabel, words as pronounWords } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { dayAndTime, figure } from '../characters/format.ts';
 import { Ago } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
+import { GroupBar } from '../postbit/GroupBar.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
 import { Avatar } from './Avatar.tsx';
 import { StaffProfile } from './Staff.tsx';
@@ -74,18 +76,21 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
   const pips = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   const monthJoined = monthYear(c.joined);
   const signed = c.signature.trim() !== '';
+  const group = settings.groups.find((g) => g.key === c.group);
   /* Each fact is a row: its label a row header, its words and links as they were a line of a paragraph. `lead` marks the two that stand beside the avatar on a phone. */
   const facts: readonly Fact[] = [
     ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),
     ...(data.standing && instance.ranks.length > 0
       ? [{ key: 'rank', label: 'Rank', lead: true, value: <span className="kb-about-rank"><b aria-hidden="true">{rank}</b> <Pips ranks={instance.ranks.length} index={index} name={rank} style={pips} /></span> }]
       : []),
+    ...(group ? [{ key: 'group', label: 'Group', value: <GroupBar look={group} /> }] : []),
+    { key: 'pronouns', label: 'Pronouns', value: <span className="kb-profile-pronouns kb-muted">{pronounLabel(c.pronouns)}</span> },
     ...(data.standing && data.settledAt
       ? [
         { key: 'aura', label: 'Aura this season', value: <><b>{figure(data.standing.standing)}</b> <span className="kb-muted">(settled {dayAndTime(data.settledAt)})</span></> },
         { key: 'place', label: 'Place', value: <>{data.standing.place}{data.standing.of > 0 && <> of {data.standing.of}</>}{data.season !== null && <> in season {data.season}</>} · <Link to="/season?tab=rankings">season standings</Link></> },
       ]
-      : [{ key: 'aura', label: 'Aura this season', value: <span className="kb-muted">Nothing has settled for it yet. <Link to="/season?tab=rankings">Season standings</Link></span> }]),
+      : [{ key: 'aura', label: 'Aura this season', value: <span className="kb-muted">Nothing has settled for {pronounWords(c.pronouns).them} yet. <Link to="/season?tab=rankings">Season standings</Link></span> }]),
     { key: 'posts', label: 'Posts', value: data.counts.posts },
     { key: 'spins', label: 'Threads spun', value: data.counts.spins },
     { key: 'cards', label: 'Cards played', value: data.counts.cards },

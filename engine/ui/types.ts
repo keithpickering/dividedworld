@@ -8,7 +8,7 @@
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
 import type { Quadrant, Span } from '../rules/types.ts';
-import type { CardUi } from './cards/types.ts';
+import type { CardArt, CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
 import type { TipKey } from './tips/keys.ts';
 
@@ -57,11 +57,20 @@ export interface ClassLook {
   readonly marks?: ClassMarks;
 }
 
+/** The map's cells in the React picker's order: Heat and Hype on top, Groan and Calm below (the class cards and the guide draw it; a split must sit side by side in one row). */
+export const MAP: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
+
 export interface ClassMarks {
   readonly label: string;
   readonly earns?: readonly Quadrant[];
   readonly hurts?: readonly Quadrant[];
   readonly calls?: readonly Quadrant[];
+  /**
+   * Two quadrants the class earns from together, by their balance: drawn as two cells each half-filled
+   * toward the other and joined by a bar. The pair must sit side by side on the map (one row of
+   * `MAP` above), and neither is also in `earns`, `hurts` or `calls`.
+   */
+  readonly splits?: readonly [Quadrant, Quadrant];
 }
 
 /**
@@ -93,6 +102,12 @@ export interface UiCopy {
   readonly staffWord: string;
   readonly gameWord: string;
   readonly staffBoardTag: string;
+  /**
+   * How a card's kind is said on its face and in its spoken name, in the instance's words, for each way a card is played: cast on a
+   * target (`cast`), set face down (`set`) and used on the player's own post (`use`). Absent, a face says the play capitalized
+   * ("Cast", "Set", "Use"). Each is non-empty text; `instanceUiProblems` refuses one that is not.
+   */
+  readonly cardKinds?: Readonly<Record<'cast' | 'set' | 'use', string>>;
   /** What the shop is called, in plain words: the log's line and the machine's group label say it. */
   readonly shopName: string;
   /**
@@ -136,6 +151,25 @@ export interface AlertCopy {
    * undefined for one the instance has no words for, which is then said in the engine's plain words. The link to the Season page is the engine's.
    */
   readonly seasonNews?: (sub: string, row: Alert) => { readonly line: string; readonly detail: string } | undefined;
+  /**
+   * A `trapStruck` alert's line and detail, for the player whose post a face-down card landed on after a quote (`how: 'quote'`), or whose cast a
+   * Trap Card caught (`how: 'caught'`), in the instance's voice. It is handed only what the spring already shows everyone: the setter's character
+   * (null where it could not be read), the setter's card (the quote's `card`; for a caught cast, the caster's own card), the card laid (null for a
+   * caught cast) and how long the card was set face down before it sprang ("two days"; null where unknown). It may gloat and may not bluff:
+   * what it says happened did. Undefined for one the instance has no words for, which is then said in the engine's plain words.
+   */
+  readonly trapStruck?: (facts: TrapStruckFacts) => { readonly line: string; readonly detail: string } | undefined;
+}
+
+/** What a `trapStruck` alert's words may say (AlertCopy.trapStruck): public facts of the spring, never an account or a class. */
+export interface TrapStruckFacts {
+  readonly how: 'quote' | 'caught';
+  readonly setter: string | null;
+  readonly card: string | null;
+  readonly laid: string | null;
+  readonly span: string | null;
+  /** Whether the setter is a staff character (a public fact of a character): a staff Trap Card takes nothing, so the caught card is spent. */
+  readonly setterStaff: boolean;
 }
 
 /**
@@ -376,6 +410,8 @@ export interface InstanceUi {
   readonly avatars?: Readonly<Record<string, string>>;
   /** How each card draws and describes itself, one per card key the instance sells; a card with none is shown as its tag alone (engine/ui/cards/types.ts). */
   readonly cards: readonly CardUi[];
+  /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
+  readonly packs: Readonly<Record<string, { readonly name: string; readonly art: CardArt }>>;
   /**
    * The instance's mark for a card's back: a URL the bundler resolved, drawn at the center of the back's crossed bands
    * (`PostcardBack`). It is the instance's, never a card's, so a back still says nothing about the card it is. Without it the back

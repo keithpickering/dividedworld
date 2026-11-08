@@ -7,19 +7,22 @@
  * unlit (the base, painted only when the board, the size or the settled count changes) and over that what the light changes this
  * frame (the lit flakes, their flares and the loose glitter); over the words, the burst. A canvas the browser re-rasters every frame
  * of a scroll is then the sparse one, never 4,200 flakes, and the words keep their text shadow in the board's ground. Every pixel the engine draws
- * is held inside the readable band the board leaves free of the post's inks (engine/ui/shine/band.ts), so nothing here proves a
- * palette's contrast at run time. The accessible path is reduced motion: no burst, every flake placed at once, the light at rest.
+ * is held inside the readable band the board leaves free of the post's inks (engine/ui/shine/band.ts), but the dark board's
+ * glints, the few flakes facing the light, which leave it by decision (shine design section 5, issue #340); so
+ * nothing here proves a palette's contrast at run time. The accessible path is reduced motion: no burst, every flake placed at once, the light at rest.
  *
- * Until the post is at least 40% in view it shows 15% of its flakes; the first time it is, the rest fly out of the seeded point
- * and land (a second threshold on the in-view observer, watchInView's `threshold`). The burst fires once per mount: leaving and
- * coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
+ * Until its burst it shows 15% of its flakes. The burst waits for the reader to be looking at the spot it goes off from: a
+ * point placed on the burst point (`.dw-glitter-origin`) is watched against the middle of the view (`ORIGIN_ZONE`, watchInView's
+ * `rootMargin`), and once it has stayed there `ARM_MS` by the loop's clock the rest fly out of it and land. A scroll that only
+ * passes the spot fires nothing. The burst fires once per mount: leaving and coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
  * registration. The host is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
  * and never saved or sent), and unmounting unregisters it and drops the loose glitter. A play's moment (`still`) draws every flake
  * landed, at rest, once: no burst, no cling, nothing registered that moves.
  *
- * The seed is `${play.id}:${post.id}`, both public, so every reader sees the same glitter on the same post and two posts of one
- * character differ. Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post
+ * The seed is `${play.id}:${post.id}`, both public, then a draw made for this mount (`loadSeed`), so each load's burst goes off
+ * from its own spot and leaves its own glitter, and two posts of one character differ; the mount keeps it, so a post that leaves
+ * view and returns shows the same glitter. A play's moment (`still`) is the public seed alone, the same on every device. Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post
  * only while it is in view. The band is read from the tokens the board resolves for this post, after mount, and held: they change
  * only with `data-kb-mode` on the root or the device's color scheme, so it is read in setup (mount and resize) and when either
  * changes, never per draw (a getComputedStyle and a few property reads, ~30 times a second per post). A board that cannot be read
@@ -57,16 +60,25 @@ import { REST, type Light } from '../../../../engine/ui/shine/light.ts';
 import { register, unregister, wake, type Span } from '../../../../engine/ui/shine/loop.ts';
 import './glitter.css';
 
-/** The flakes' inks: the seven rainbow inks (the holographic ones), then silver three times, so a third of the glitter is plain. */
+/** The flakes' inks: the seven rainbow inks, each a plain flake's color and together the rainbow a holographic flake throws, then silver three times, the holographic flakes, a third of the glitter. */
 export const GLITTER_INKS: readonly string[] = Object.freeze(['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec']);
-/** The index from which inks are plain: the first seven are holographic. */
+/** The index from which inks are holographic (the silver); the seven before it are plain, and the rainbow the holographic ones throw. */
 export const GLITTER_HOLO = 7;
-/** The flare and the puff's tint (the engine names no color; this is Divided World's). It only lightens, inside the band. */
+/** The flare, the heart of a dark-board glint, and the puff's tint (the engine names no color; this is Divided World's). It only lightens. */
 export const GLITTER_GLINT = '#ffffff';
 /** CSS px squared per flake. */
 const AREA = 70;
-/** The share of the post that must show for the burst to fire. */
-const BURST_AT = 0.4;
+/** The middle of the view the burst point must be in for the burst to fire (the top and bottom fifths do not count). */
+const ORIGIN_ZONE = '-20% 0px -20% 0px';
+/** How long, by the loop's clock, the burst point must stay there first. */
+const ARM_MS = 300;
+
+/** This mount's own draw: nothing about a reader, only what makes one load's glitter differ from the next. */
+const loadSeed = (): string => {
+  const c = globalThis.crypto;
+  if (c?.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0]!.toString(36);
+  return Math.floor(Math.random() * 2 ** 32).toString(36);
+};
 
 export function GlitterBombEffect({ post, plays, place, still, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
@@ -74,17 +86,22 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
   const under = useRef<HTMLCanvasElement>(null);
   const flash = useRef<HTMLCanvasElement>(null);
   const over = useRef<HTMLCanvasElement>(null);
+  const mark = useRef<HTMLDivElement>(null);
   const play = plays[0]!;
   const seed = `${play.id}:${post.id}`;
 
   useEffect(() => {
-    const el = host.current, face = surface.current, below = under.current, lit = flash.current, above = over.current;
-    if (!el || !face || !below || !lit || !above) return;
+    const el = host.current, face = surface.current, below = under.current, lit = flash.current, above = over.current, spot = mark.current;
+    if (!el || !face || !below || !lit || !above || !spot) return;
+    /* This mount's glitter: its own burst point and resting places, kept until it unmounts (a moment's is the public seed's). */
+    const drawn = still ? seed : `${seed}:${loadSeed()}`;
     let flakes: Flakes | null = null;
     let unclung: (() => void) | null = null;
-    /* Whether this mount's burst has fired, and whether the post has been 40% in view: both outlive a flakes object. */
+    /* Whether this mount's burst has fired; whether the burst point is in the middle of the view, and since when by the loop's
+       clock (null until a draw sees it there): all outlive a flakes object. */
     let fired = still;
-    let seen = false;
+    let aimed = false;
+    let aimedAt: number | null = null;
     /* The size painted (what the loop and the drawing are handed) and where it stands from the host (the layer's placement). */
     let box = { w: 0, h: 0 };
     let placed: BodyBox = { left: 0, top: 0, w: 0, h: 0 };
@@ -118,7 +135,10 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     const ensure = (): Flakes | null => {
       if (flakes) return flakes;
       if (box.w <= 0 || box.h <= 0) return null;
-      flakes = makeFlakes({ seed, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA / (scale * scale), glint: GLITTER_GLINT });
+      flakes = makeFlakes({ seed: drawn, box, inks: GLITTER_INKS, holo: GLITTER_HOLO, density: AREA / (scale * scale), glint: GLITTER_GLINT });
+      /* The point the burst watches stands on the burst point, in the surface's px. */
+      spot.style.left = `${flakes.origin.x}px`;
+      spot.style.top = `${flakes.origin.y}px`;
       if (fired) landAll(flakes);
       if (!still) unclung = cling.register(face, { sticky: true, flakes, landed: redraw });
       return flakes;
@@ -141,8 +161,13 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
         freeOver();
         return false;
       }
-      /* Reduced motion has no burst: the flakes are placed at once. Otherwise it waits for the 40%. */
-      if (!fired && (seen || motionReduced())) { fired = true; stopWatching(); burst(f, now); }
+      /* Reduced motion has no burst: the flakes are placed at once. Otherwise it waits for the burst point to stay in view. */
+      let arming = false;
+      if (!fired && aimed && !motionReduced()) {
+        aimedAt ??= now;
+        arming = now - aimedAt < ARM_MS;
+      }
+      if (!fired && (motionReduced() || (aimed && !arming))) { fired = true; stopWatching(); burst(f, now); }
       /* Reduced motion turned on mid-burst: what is in the air lands where it was headed (release), and the over canvas goes. */
       if (f.flying > 0 && motionReduced()) release(f);
       const busy = fired && !still ? stepBurst(f, now) : false;
@@ -161,7 +186,7 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
         const o = above.getContext('2d');
         if (o) { o.setTransform(1, 0, 0, 1, 0, 0); o.clearRect(0, 0, above.width, above.height); drawBurst(o, f, band, now, density); }
       } else freeOver();
-      return busy;
+      return busy || arming;
     };
     const size = (): void => {
       below.width = lit.width = Math.round(box.w * density);
@@ -224,8 +249,8 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       size();
       if (last) paint(last.light, last.t, false);
     };
-    /* The burst's own watch: the post at least 40% showing, the first time. The loop draws it (it waits for the post to be seen).
-       It stops once the burst has fired, so a long scroll past the post handles no more of its threshold callbacks. */
+    /* The burst's own watch: the burst point in the middle of the view. The loop draws it (it waits for the post to be seen) and
+       times the wait. It stops once the burst has fired, so a long scroll past the post handles no more of its callbacks. */
     let stopWatch: () => void = () => {};
     const stopWatching = (): void => { stopWatch(); stopWatch = () => {}; };
     /* A resize (of the host or of the body it paints) builds the flakes again at the new size; the loop draws it fresh. */
@@ -236,11 +261,11 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
     resize?.observe(el);
     setup();
     if (!still && !fired) {
-      stopWatch = watchInView(el, (showing) => {
-        if (!showing || seen) return;
-        seen = true;
-        wake(el);
-      }, { threshold: BURST_AT });
+      stopWatch = watchInView(spot, (showing) => {
+        aimed = showing;
+        aimedAt = null;
+        if (showing) wake(el);
+      }, { rootMargin: ORIGIN_ZONE });
     }
 
     /* The board switched (the player's choice on the root, or the device's color scheme) while nothing was drawing. */
@@ -269,6 +294,7 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
         <canvas ref={under} className="dw-glitter-under" aria-hidden="true" />
         <canvas ref={flash} className="dw-glitter-flash" aria-hidden="true" />
         <canvas ref={over} className="dw-glitter-over" aria-hidden="true" />
+        <div ref={mark} className="dw-glitter-origin" aria-hidden="true" />
       </div>
       <div className="dw-glitter-words">{children}</div>
     </div>

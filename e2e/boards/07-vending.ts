@@ -31,7 +31,7 @@ const manifest: BoardManifest = {
   board: '07-vending',
   size: { width: 1440, height: 1080 },
   build: { moment: '07-vending' },
-  press: [{ role: 'button', name: 'Buy Whoops!, 1.00 orb, common Cast' }],
+  press: [{ role: 'button', name: 'Buy Whoops!, 1.00 orb, common Move' }],
   landmarks: [
     /* The menu bar every glass page shares, the Vending Machine current. */
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
@@ -67,8 +67,9 @@ const manifest: BoardManifest = {
      */
     { id: 'hand', role: 'link', name: 'Your hand 3 → 4', buildName: 'Your hand 2 → 3', box: 'none', type: false },
 
-    /* The machine's sign carries one of the instance's marquees, the first in the fixture; its drawing is the instance's art, and its type is fitted to its name. */
-    { id: 'sign', role: 'text', name: '[Machine name]', buildName: 'FRESH BEEF', type: false, box: 'across' },
+    /* The machine's sign carries one of the instance's marquees, the first in the fixture; its drawing is the instance's art, and its type is fitted to its name.
+       Its width follows the marquee's name, so its center is compared (`center`), not its x and width. */
+    { id: 'sign', role: 'text', name: '[Machine name]', buildName: 'FRESH BEEF', type: false, box: 'center' },
 
     /* The slots: the two cards, A2 picked, and the four sealed. Their box is compared; their type is not, because a slot's
        visible words are the machine's printing, the instance's art (the postcard's face and a code the stylesheet writes out),
@@ -78,12 +79,12 @@ const manifest: BoardManifest = {
        Its Part 2 (docs/plans/2026-11-01-card-reach-plan.md, Task 7) departs once more: Glitter Bomb stocks C2, and Main Event a fourth
        row the board does not draw, so the machine holds four rows of shorter slots in the same body. So no slot's box is compared (`box: 'none'`);
        its name and role still are, and they say which card stocks it. */
-    { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Cast', type: false, box: 'none' },
-    { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Cast, selected', type: false, box: 'none' },
-    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Set', type: false, box: 'none' },
-    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Use', type: false, box: 'none' },
-    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Bluff, 0.25 orbs, common Set', type: false, box: 'none' },
-    { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 1.50 orbs, uncommon Cast', type: false, box: 'none' },
+    { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Move', type: false, box: 'none' },
+    { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Move, selected', type: false, box: 'none' },
+    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Gimmick', type: false, box: 'none' },
+    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Ward', type: false, box: 'none' },
+    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Bluff, 0.25 orbs, common Gimmick', type: false, box: 'none' },
+    { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 1.50 orbs, uncommon Move', type: false, box: 'none' },
 
     /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's
        printing (`data-kb-art`) and the text a reader gets is visually hidden, so its box is compared and its type is not. */

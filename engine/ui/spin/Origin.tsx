@@ -18,7 +18,7 @@ import { createPlays, effectCards, holdsEffects, playOf, readEffects, usePlays, 
 import { useKayfa } from '../context.tsx';
 import type { Act, Character, Id, ThreadSummary } from '../data/api.ts';
 import { newer } from '../thread/feed.ts';
-import { AnnounceLine, LastEdited, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from '../thread/lines.tsx';
+import { AnnounceLine, LastEdited, SystemPost, UnmaskLine, quoteHead, text, useHistory, when } from '../thread/lines.tsx';
 import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { useLocated } from '../thread/locate.tsx';
@@ -98,7 +98,8 @@ function useOrigin(origin: Id, thread: Id, plays: Plays, tallies: Tallies, mine:
   return { act, more, reading: act ? 'ready' : read, retry: () => setAttempt((n) => n + 1) };
 }
 
-function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
+/** The names and pictures of the characters in play on a spin's origin, both read from the one map. */
+function useCast(ids: readonly (Id | null)[]): { readonly nameOf: (id: Id | null) => string; readonly faceOf: (id: Id | null) => string | null } {
   const { api, ui } = useKayfa();
   const [known, setKnown] = useState<ReadonlyMap<Id, Character>>(new Map());
   const wanted = [...new Set(ids.filter((i): i is Id => i !== null))].sort().join(',');
@@ -108,7 +109,10 @@ function useNames(ids: readonly (Id | null)[]): (id: Id | null) => string {
     api.characters(wanted.split(',')).then((cs) => { if (live) setKnown(new Map(cs.map((c) => [c.id, c]))); }, () => { /* shown as "A character" */ });
     return () => { live = false; };
   }, [api, wanted]);
-  return (id) => (id === null ? ui.copy.staffWord : known.get(id)?.name ?? 'A character');
+  return {
+    nameOf: (id) => (id === null ? ui.copy.staffWord : known.get(id)?.name ?? 'A character'),
+    faceOf: (id) => (id === null ? null : known.get(id)?.avatarSquare ?? null),
+  };
 }
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
@@ -126,7 +130,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const cardPlay = useMemo(() => (act?.kind === 'card' ? playOf(act) : null), [act]);
   const target = useLocated(cardPlay?.post ?? null);
   useEffect(() => { if (act && cardPlay) plays.add([act]); }, [act, cardPlay, plays]);
-  const nameOf = useNames([act?.character ?? null, ...played.map((p) => p.caster), ...(cardPlay ? [cardPlay.caster] : [])]);
+  const { nameOf, faceOf } = useCast([act?.character ?? null, ...played.map((p) => p.caster), ...(cardPlay ? [cardPlay.caster] : [])]);
   const history = useHistory(originId);
   /* A play in the box is spun from in a form of the box's own, under it: the box's post is in another thread. */
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
@@ -140,7 +144,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     <PostMarks
       post={cardPlay ? cardPlay.post : originId} compare={cardPlay === null} moments={cardPlay === null} plays={plays}
       to={cardPlay ? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null) : backHref}
-      nameOf={nameOf} tallies={tallies} mine={mine}
+      nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
       onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
     />
   ) : null;
@@ -180,7 +184,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
          */
         return cardPlay.reach ? null : (
           <MomentView play={cardPlay} place="origin" nameOf={nameOf} now={null}
-            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />} />
+            bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />} />
         );
       case 'unmask': return <UnmaskLine act={act} name={name} />;
       case 'announce': return <AnnounceLine act={act} name={name} />;
@@ -190,7 +194,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <p className="kb-small kb-muted"><b>{name}</b> · <time dateTime={act.createdAt}>{when(act.createdAt)}</time></p>
-            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>
+            <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>
             <LastEdited act={act} />
             {act.kind === 'post' && <p className="kb-small">{history.button}</p>}
             {history.panel}

@@ -7,7 +7,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { UpdatesScreen } from '../updates/Updates.tsx';
+import { LoadedUpdates } from '../loaded.tsx';
 
 /** An admin with a character and no update posted yet, so the page holds the writer alone. */
 const writer: World = (fake, instance) => {
@@ -17,7 +17,7 @@ const writer: World = (fake, instance) => {
 };
 
 function UpdatesStory() {
-  return <Page surface="settings"><UpdatesScreen /></Page>;
+  return <Page surface="settings"><LoadedUpdates /></Page>;
 }
 
 const meta: Meta<typeof UpdatesStory> = {

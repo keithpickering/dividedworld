@@ -213,12 +213,12 @@ export function keepBoardPlace(isGlass: (path: string) => boolean, doc: Document
  * what came meanwhile behind its bar. On a page with no posts the scroll comes back once the page
  * has drawn (restoreScroll).
  */
-export function useBackToBoard(): () => void {
+export function useBackToBoard(source?: string): () => void {
   const navigate = useNavigate();
   return useCallback(() => {
     const place = boardPlace();
     forgetBoard();
-    navigate(backHref(place), place?.thread ? { state: returnState(place.thread) } : undefined);
+    navigate(backHref(place), { ...(place?.thread ? { state: returnState(place.thread) } : {}), ...(source !== undefined ? { source } : {}) });
     if (place && !place.post && place.scrollY > 0) restoreScroll(window, place.scrollY);
-  }, [navigate]);
+  }, [navigate, source]);
 }

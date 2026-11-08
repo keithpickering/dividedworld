@@ -6,9 +6,11 @@ import { resetTilt, tiltState } from '../shine/tilt.ts';
 import { DEFAULT_PREFERENCES, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { Smoke } from '../glass/Smoke.tsx';
 import { applyAppearance } from '../appearance.ts';
-import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
-import { onToastChoice } from '../alerts/toast-choice.ts';
+import { buildWorld, holdReads, renderIn, testGlass } from '../test-world.tsx';
+import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { SettingsScreen } from './Settings.tsx';
+import { onToastChoice } from '../alerts/toast-choice.ts';
+import { LoadedSettings } from '../loaded.tsx';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
 beforeEach(() => { localStorage.clear(); for (const m of MARKS) document.documentElement.removeAttribute(m); });
@@ -20,7 +22,7 @@ function world() {
   fake.signInAs(me);
   return { fake, me };
 }
-const open = (fake: ReturnType<typeof world>['fake'], path = '/settings') => renderIn(fake, <SettingsScreen />, { path });
+const open = (fake: ReturnType<typeof world>['fake'], path = '/settings') => renderIn(fake, <LoadedSettings />, { path });
 const group = (name: string) => screen.getByRole('radiogroup', { name });
 const radio = (groupName: string, name: string) => within(group(groupName)).getByRole('radio', { name });
 
@@ -118,7 +120,7 @@ describe('Settings, as board 11 draws it', () => {
 
   test('smoke persists across a fresh load, and off draws no smoke element', async () => {
     const w = world();
-    renderIn(w.fake, <><Smoke surface="settings" /><SettingsScreen /></>, { path: '/settings' });
+    renderIn(w.fake, <><Smoke surface="settings" /><LoadedSettings /></>, { path: '/settings' });
     await screen.findByRole('radiogroup', { name: 'Smoke' });
     expect(document.body.querySelector('[data-kb-smoke]')).not.toBeNull();
     await userEvent.click(radio('Smoke', 'Off'));
@@ -452,19 +454,6 @@ describe('Settings, as board 11 draws it', () => {
     await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ contrast: 'high' }));
   });
 
-  test('the next account\'s choices answered but its address still out, Settings › Account shows no address of the last account', async () => {
-    const w = world();
-    const mine = (await w.fake.signInAddress())!;
-    open(w.fake, '/settings?section=account');
-    expect(await screen.findByText(mine)).toBeInTheDocument();
-    w.fake.signInAddress = () => new Promise(() => {});
-    w.fake.signInAs(w.fake.seed.account('other'));
-    await screen.findByRole('heading', { name: 'Account' });
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-    expect(screen.queryByText(mine)).toBeNull();
-    expect(screen.queryByText(/could not be read/u)).toBeNull();
-  });
-
   test('a refused save that answers after the screen is gone puts nothing back', async () => {
     const { calls, view } = await leaving('signed out');
     view.unmount();
@@ -488,10 +477,11 @@ describe('Settings, as board 11 draws it', () => {
 describe('Settings › Notifications', () => {
   const WORDS: readonly (readonly [string, string])[] = [
     ['Quotes', 'A post quotes one of your characters.'],
+    ['Words put in your mouth', 'A post quotes one of your characters saying something they did not.'],
     ['Cards on yours', 'A card is played on one of your posts.'],
     ['Cards an admin ended', 'An admin ended a card one of your characters played.'],
-    ['Traps that hit', 'A trap struck one of your posts.'],
-    ['Traps you set', 'A trap you set sprang.'],
+    ['Traps that hit', 'A face-down card struck one of your posts, or a trap caught a card you cast.'],
+    ['Traps you set', 'A card you set face down sprang.'],
     ['Rulings', 'A ruling lands on one of your characters.'],
     ['Settlements', 'A settlement is in and moved your characters.'],
     ['Updates', 'The developer posts an update.'],
@@ -505,7 +495,7 @@ describe('Settings › Notifications', () => {
 
   test('it lists a switch for each kind of alert, in plain words, each on or off as the instance\'s defaults say', async () => {
     const { fake } = world();
-    renderIn(fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote', 'hint'] } });
+    renderIn(fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote', 'hint'] } });
     expect(await screen.findByRole('heading', { level: 2, name: 'Notifications' })).toBeInTheDocument();
     expect(screen.getAllByRole('switch').map((el) => el.getAttribute('aria-label') ?? el.closest('.kb-acct-row')?.querySelector('h3')?.textContent)).toEqual(WORDS.map(([n]) => n));
     for (const [name, sentence] of WORDS) {
@@ -520,7 +510,7 @@ describe('Settings › Notifications', () => {
 
   test('a change is saved as it is made, read back from the account, and kept on a fresh load', async () => {
     const w = world();
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Hints' });
     await userEvent.click(kindSwitch('Hints'));
     expect(kindSwitch('Hints')).toBeChecked();
@@ -529,7 +519,7 @@ describe('Settings › Notifications', () => {
     await userEvent.click(kindSwitch('Quotes'));
     await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual(['hint']));
     cleanup();
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Hints' });
     expect(kindSwitch('Hints')).toBeChecked();
     expect(kindSwitch('Quotes')).not.toBeChecked();
@@ -538,7 +528,7 @@ describe('Settings › Notifications', () => {
 
   test('turning every kind off is a choice of its own: nothing toasts, and it is not the defaults', async () => {
     const w = world();
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Quotes' });
     await userEvent.click(kindSwitch('Quotes'));
     await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual([]));
@@ -547,7 +537,7 @@ describe('Settings › Notifications', () => {
 
   test('Reset to defaults puts the choice back to the instance\'s, and says nothing is left to reset', async () => {
     const w = world();
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Hints' });
     expect(reset()).toHaveAttribute('aria-disabled', 'true');
     await userEvent.click(kindSwitch('Hints'));
@@ -565,7 +555,7 @@ describe('Settings › Notifications', () => {
     const w = world();
     const real = w.fake.setPreferences;
     w.fake.setPreferences = async (p: PreferencesPatch): Promise<Answer<Preferences>> => (p.toasts !== undefined ? { ok: false, error: 'not a kind of alert: hint' } : real(p));
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Hints' });
     await userEvent.click(kindSwitch('Hints'));
     expect(await screen.findByRole('alert')).toHaveTextContent('not a kind of alert: hint');
@@ -574,7 +564,7 @@ describe('Settings › Notifications', () => {
 
   test('the switches are real switches: named, described, reached by Tab and toggled by Space, in a group named for the section', async () => {
     const w = world();
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Quotes' });
     for (const el of screen.getAllByRole('switch')) {
       expect(el).toHaveAttribute('role', 'switch');
@@ -588,14 +578,14 @@ describe('Settings › Notifications', () => {
     expect(kindSwitch('Quotes')).not.toBeChecked();
     await waitFor(async () => expect((await w.fake.preferences()).toasts).toEqual([]));
     await userEvent.tab();
-    expect(kindSwitch('Cards on yours')).toHaveFocus();
+    expect(kindSwitch('Words put in your mouth')).toHaveFocus();
   });
 
   test('the kinds that toast reach the HUD at once, with no reload', async () => {
     const heard: unknown[] = [];
     const off = onToastChoice((k) => heard.push(k));
     const w = world();
-    renderIn(w.fake, <SettingsScreen />, { path: at, settings: { toastDefaults: ['quote'] } });
+    renderIn(w.fake, <LoadedSettings />, { path: at, settings: { toastDefaults: ['quote'] } });
     await screen.findByRole('switch', { name: 'Hints' });
     await userEvent.click(kindSwitch('Hints'));
     await waitFor(() => expect(heard).toEqual([['quote', 'hint']]));
@@ -781,5 +771,50 @@ describe('Settings › Accessibility › Tilt', () => {
     expect(screen.getByRole('button', { name: 'Allow on this phone' })).toBeInTheDocument();
     const found = await axeViolations(row);
     expect(found, describeViolations(found)).toEqual([]);
+  });
+});
+
+describe('Settings is drawn from its route\'s document', () => {
+  test('Account is whole in the first render, from the invites, the sign-in address, boot and the player\'s session; nothing is read for it', async () => {
+    const w = world();
+    await w.fake.createInvite();
+    const boot = await w.fake.boot();
+    const doc = { invites: await w.fake.invites(), address: await w.fake.signInAddress() };
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <SettingsScreen doc={doc} />, { path: '/settings?section=account', boot });
+    expect(screen.getByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
+    expect(within(screen.getByRole('list', { name: 'Your invites' })).getAllByRole('listitem')).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText('me@example.test')).toBeInTheDocument();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('the other sections are whole in the first render with no document and no read at all', async () => {
+    const w = world();
+    const boot = await w.fake.boot();
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <SettingsScreen />, { path: '/settings', boot });
+    expect(screen.getByRole('radiogroup', { name: 'Smoke' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('signed out, the marker is the sign-in line', async () => {
+    renderIn(buildWorld(), <SettingsScreen doc={SIGNED_OUT_DOC} />, { path: '/settings?section=account' });
+    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+  });
+
+  test('a move between sections is a load of the section, and Account reads the invites once', async () => {
+    const w = world();
+    const invites = vi.spyOn(w.fake, 'invites');
+    open(w.fake);
+    await screen.findByRole('radiogroup', { name: 'Smoke' });
+    expect(invites).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('link', { name: 'Account' }));
+    expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
+    expect(invites).toHaveBeenCalledTimes(1);
   });
 });

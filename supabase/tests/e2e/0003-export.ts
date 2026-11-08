@@ -89,7 +89,7 @@ test('an instance exported and imported into a fresh database is the same instan
       a uuid := tests.character(ann, 'Exported A'); b uuid := tests.character(bob, 'Exported B');
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
-      play uuid;
+      play uuid; move_post uuid; pass_post uuid;
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
@@ -102,14 +102,32 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0072): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
-      -- A trap of the export's own (#136 F1): Ann sets a cast-trigger nullify on her post through set_card, and Bob's Blot cast on it
+      -- A trap of the export's own (#136 F1): Ann sets a Trap Card naming Blot on her post through set_card, and Bob's Blot cast on it
       -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
-      update settings set value = value || '{"expcatch.price": 100}' where key = 'economy';
-      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap)
-      values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+      insert into card_kinds (key, name, alignment, rarity, play, trap) values ('expcatch', 'Exported Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}');
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
-      perform set_card(ann, 'expcatch', a, p, '{}', 0);
+      perform set_card(ann, 'expcatch', a, p, '{"card": "blot"}', 0, 'blot');
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
+      -- A Move set face down with a phrase (0142, Autocorrect's kind): its back holds the phrase and no catch, set on a post of its own.
+      -- A Hall Pass set face down on another post (0142): a Mod Bot's visit to that post springs it, and the visit ends (0105, 0110).
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches)
+      values ('expauto', 'Exported Autocorrect', 'pepperoni', 'common', 'cast', null, '{post}'),
+             ('exppass', 'Exported Hall Pass', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expauto', 'bought', 0), (ann, 'exppass', 'bought', 0);
+      move_post := tests.post(a, t, 'Carried across, and phrased.');
+      perform set_card(ann, 'expauto', a, move_post, '{"phrase": "carried across"}', 0, null, 'carried across');
+      -- Bob quotes the post through the real post(), with the phrase in his own words: the quote springs the Move onto his post (spring_traps, 0142).
+      perform tests.become((select owner from characters where id = b));
+      perform post(t, b, 'Carried across, quoted back.', move_post);
+      perform tests.unbecome();
+      pass_post := tests.post(a, t, 'Under a Hall Pass.');
+      perform set_card(ann, 'exppass', a, pass_post, '{}', 0);
+      -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
+      insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
+      insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
+      insert into machine_slots (position, pack, availability, price) values (9500, 'exppack', 'onSale', 250);
+      update wallets set balance = 250 where account = ann;
+      perform buy_pack(ann, (select id from machine_slots where pack = 'exppack'), 250);
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
       insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
@@ -128,8 +146,10 @@ test('an instance exported and imported into a fresh database is the same instan
       perform count_thread_views();
       -- Tilt turned on (0093), motion snappy (0112) and a mode chosen beside a theme (0115), so values other than the columns' defaults must survive the round trip.
       insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, tilt, mode, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen) values (ann, 'dusk', 'stacked', 'snappy', 'low', 'high', 150, 'on', 'light', '{whoops,stick-around}', now() - interval '1 hour', now() - interval '2 hours', '{quote,hint}', now() - interval '3 hours', 'off', '{tour-plate,grid}');
-      insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
-      values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
+      -- A custom pronoun set (0124), not the column's default, so the round trip has to carry it.
+      insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pronouns)
+      values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}',
+        '{"subject": "xe", "object": "xem", "determiner": "xyr", "possessive": "xyrs", "reflexive": "xemself", "plural": false}');
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
       insert into avatar_orphans (key) values ('exp-src.webp');
       insert into admins (account) values (ann);
@@ -193,6 +213,11 @@ test('an instance exported and imported into a fresh database is the same instan
       -- its queue entry, so that the catalogs, the queue and the moves in force are carried across with the Acts that name them.
       insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do nothing;
       insert into demand_kinds (key) values ('postsOnBoard') on conflict (key) do nothing;
+      -- A move kind whose words SQL fills with a derived token (0129), so the column is carried across.
+      insert into move_kinds (key, structural, derived) values ('conferGroup', false, '{groupName}') on conflict (key) do update set derived = excluded.derived;
+      -- The member groups (0128): a rung and a conferred group, carried across with the rest of the instance's catalogs.
+      insert into group_kinds (key, name, color, source, rung, condition, at_least) values ('expPosts', 'Exported Posts', '#7a7a7a', 'ladder', 98, 'posts', 1) on conflict (key) do nothing;
+      insert into group_kinds (key, name, color, stripe, source, tone) values ('expTrial', 'Exported Trial', '#d2691e', true, 'conferred', 'punishment') on conflict (key) do nothing;
       moved := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Old Palace', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
       ended := (end_move(moved, 'expired', 'tick') ->> 'act')::uuid;
@@ -203,12 +228,17 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p from meetings m;
+      -- An apology to the move in force (0129), carried across with the Acts it names.
+      insert into apologies (move_act, apology_act, character, state) values (kept, p, b, 'pending');
       -- A Mod's order from that meeting (0103), and a visit by the Mod on the post with its open row (0105), one failed attempt to draw a visit and one to file it, so the
       -- tables the Mod Bots add are carried across with the Acts that name them. The order hands out nothing: an
       -- allowance left unspent here would be returned to the Boss's bank by e2e/0011's meeting, which counts the bank.
       insert into staff_orders (meeting, staff, boards, order_line, allowance) select max(id), 'exp-bot', '{}', 'Watch the boards.', 0 from meetings;
       perform write_staff_act('exp-bot', 'visit', t, p, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', gen, 'band', 'minor', 'cause', 'rule', 'about_act', p::text)),
         'ends_at', now() + interval '3 hours', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'));
+      -- The visit to the Hall Pass's post, started as the Mod Bots start one (start_visit, 0107): its start springs the back, and the visit ends.
+      perform start_visit(pass_post, 'exp-bot', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol',
+        'about_act', pass_post, 'predicate', 'noAllCaps', 'rule', 'Rule 1: no all-caps posts'));
       -- The Mod Bots' settings (so the filing run's job exists, 0106) and one judged call's record.
       insert into settings (key, value) values ('modBots', '{"allowanceMost": 3, "ruleDaysMost": 7, "visitHours": {"least": 2, "most": 12}, "patrolsPerDay": 6, "patrolSample": 5, "reportPrice": 25, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 3, "days": 7}, "filingCron": "*/5 * * * *", "filingGraceMinutes": 10}')
         on conflict (key) do update set value = excluded.value;
@@ -267,7 +297,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -277,6 +307,16 @@ test('an instance exported and imported into a fresh database is the same instan
     join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text join acts k on k.kind = 'card' and k.payload ->> 'caught' = f.play::text`);
   const [setPlay, springAct, caughtAct] = trapIds.split('|');
   assert.ok(setPlay && springAct && caughtAct, `the cast holds a set, its spring and the card it caught: "${trapIds}"`);
+  // The Move set with its phrase, the Hall Pass a visit ended and its spring, and the caught card's ledger row, each read as the seed made it (0142).
+  const moveSet = sql(`select play from face_down where card = 'expauto'`);
+  const passSet = sql(`select play from face_down where card = 'exppass'`);
+  assert.ok(moveSet && passSet, 'the Move and the Hall Pass are set face down');
+  assert.equal(sql(`select phrase || '|' || coalesce(catches, '-') from face_down where play = '${moveSet}'`), 'carried across|-', 'a Move holds its phrase and no catch');
+  assert.equal(sql(`select catches || '|' || coalesce(phrase, '-') from face_down where play = '${setPlay}'`), 'blot|-', 'a Trap Card holds its catch and no phrase');
+  assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'caught' and l.card = 'blot'`), '1', 'the caught card is in the setter\'s ledger');
+  assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${passSet}'`), 'ended', 'the Hall Pass spring says the visit ended');
+  assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${moveSet}'`), 'landed', 'the quote springs the Move');
+  assert.equal(sql(`select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expauto' and payload ->> 'spring' is not null`), '1', 'the Move lands as a card Act marked as its spring');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -453,7 +493,11 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    // A custom pronoun set (0124) is carried as it was chosen, not reset to the column's default.
+    const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
+    const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
+    assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');
@@ -468,6 +512,18 @@ test('an instance exported and imported into a fresh database is the same instan
       (select to_jsonb(a)::text from acts a where a.id = '${springAct}' and a.kind = 'spring') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${caughtAct}' and a.kind = 'card')`);
     assert.notEqual(trapRows(fresh.toString()), '', 'the set, its spring and the caught card are in the imported instance');
     assert.equal(trapRows(fresh.toString()), trapRows(from));
+    // The Move set with its phrase, the Hall Pass and its spring, and the caught card's ledger row, each carried as it was.
+    const faceDownRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
+      select to_jsonb(f)::text x from face_down f where f.play in ('${moveSet}', '${passSet}')
+      union all select to_jsonb(l)::text from card_ledger l where l.kind = 'caught'
+      union all select to_jsonb(s)::text from acts s where s.kind = 'spring' and s.payload ->> 'set' in ('${moveSet}', '${passSet}')
+      union all select to_jsonb(k)::text from acts k where k.kind = 'card' and k.payload ->> 'card' = 'expauto') q`);
+    assert.match(faceDownRows(from), /"phrase": "carried across"/, 'the Move\'s phrase is in the export');
+    assert.match(faceDownRows(from), /"kind": "caught"/, 'the caught ledger row is in the export');
+    assert.match(faceDownRows(from), /"did": "ended"/, 'the Hall Pass spring is in the export');
+    assert.match(faceDownRows(from), /"did": "landed"/, 'the quote\'s spring is in the export');
+    assert.match(faceDownRows(from), /"spring": "/, 'the Move\'s card Act is in the export, marked as its spring');
+    assert.equal(faceDownRows(fresh.toString()), faceDownRows(from), 'the Move, the Hall Pass, their springs, the card and the caught ledger row survive the round trip');
     // The card an admin ended (0092): its card_end Act is carried as written, by its id, its target, its kind, and its payload.
     const endAct = sql(`select id from acts where kind = 'card_end' and target_act_id = '${endedPlay}'`);
     assert.ok(endAct, 'the card an admin ended holds a card_end in the exported instance');
@@ -495,7 +551,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

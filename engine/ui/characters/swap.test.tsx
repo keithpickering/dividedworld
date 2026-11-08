@@ -5,7 +5,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test } from 'vitest';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { Characters } from './Characters.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 
 afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); });
 
@@ -22,7 +22,7 @@ const roster = () => screen.getByRole('tablist', { name: /^Roster, /u });
 describe('the roster\'s panel swap', () => {
   test('at full motion the old panel is held, inert and out of the reading order, while the new one is the tabpanel; then it goes', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'full');
-    renderIn(seeded(), <Characters />, { path: '/characters', settings: { charactersPerPlayer: 4 } });
+    renderIn(seeded(), <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: 4 } });
     await within(await screen.findByRole('tablist', { name: /^Roster, /u })).findByText('Pipewrench');
     const first = screen.getByRole('tabpanel');
     const other = within(roster()).getAllByRole('tab').find((t) => t.getAttribute('aria-selected') !== 'true')!;
@@ -42,7 +42,7 @@ describe('the roster\'s panel swap', () => {
   });
   test('under Off the panel is replaced at once', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
-    renderIn(seeded(), <Characters />, { path: '/characters', settings: { charactersPerPlayer: 4 } });
+    renderIn(seeded(), <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: 4 } });
     await within(await screen.findByRole('tablist', { name: /^Roster, /u })).findByText('Pipewrench');
     const first = screen.getByRole('tabpanel');
     fireEvent.click(within(roster()).getAllByRole('tab').find((t) => t.getAttribute('aria-selected') !== 'true')!);

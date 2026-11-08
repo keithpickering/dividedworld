@@ -24,6 +24,8 @@ interface World {
   closedBeforeRefund?: boolean;
   failOn?: Record<string, 'always'>;
   closeSays?: Record<string, unknown>;
+  /** What `mod_group_context` answers. */
+  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 
 function fakeDbs(w: World = {}) {
@@ -44,14 +46,15 @@ function fakeDbs(w: World = {}) {
         }
         case 'instance_settings':
           return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true } as T;
+        case 'mod_group_context': return (w.groups ?? { conferred: [{ key: 'trial', name: 'Trial Members', tone: 'punishment' }, { key: 'vip', name: 'VIPs', tone: 'favor' }], characters: [] }) as T;
         case 'mod_standing': return (w.standing ?? { office: 'mod', allowance: 2, order: 'Crack down on bumping.', beat: [{ id: GAMES, name: 'Games' }] }) as T;
         case 'rules_in_force': return [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }, { board: null, number: 1, predicate: 'noAllCaps', param: null, band: 'minor' }] as T;
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return [] as T;
-        case 'pool_names': return {} as T;
-        case 'pool_thread': return { title: 'Best Mario game?', posts: [{ act: POST, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;
+        case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false } }])) as T;
+        case 'pool_thread': return { title: 'Best Mario game?', posts: [{ act: POST, name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: 'Odyssey. Odyssey.' }] } as T;
         case 'record_staff_call': { state.records.push(args); return { recorded: true } as T; }
         case 'close_report': {
           state.closed.push(args);
@@ -232,6 +235,9 @@ test('no judgment reads who owns a mask: no owner, class or reactor is read, and
   assert.ok(text.includes('Ann') && text.includes('This one bumps.') && text.includes('Odyssey. Odyssey.') && text.includes('Talk about games.') && text.includes('Rule 2: no double posting'));
   // The player's session never reaches the model or its prompt, and the service never calls open_report.
   assert.ok(!text.includes(THROUGH), 'the reporter\'s character id is not told to the model');
+  assert.ok(text.includes('The report, from Ann (she/her)'), 'the reporter, with the pronouns the faces read gave');
+  assert.ok(text.includes('The post reported, by Bob (they/them)') && text.includes('Bob (they/them): Odyssey. Odyssey.'), 'the post and the thread');
+  assert.ok(text.includes('Your pronouns are'), 'the Mod is told its own');
 });
 
 /* ------------------------------------------------------------------------------------------------------ the door ---- */

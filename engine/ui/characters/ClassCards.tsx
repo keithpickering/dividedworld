@@ -11,7 +11,7 @@
  *
  * The cards are one row, a carousel (docs/plans/2026-10-30-technician-design.md, section 3): as
  * many as fit at the theme's card width, the next peeking under a fade, with arrows and a count
- * ("1–4 of 5") while the row overflows. How many show comes from the width, never from how many
+ * ("1–4 of 6") while the row overflows. How many show comes from the width, never from how many
  * classes there are. It stays one radiogroup: the arrow keys move the choice through every class,
  * and the row scrolls the chosen card whole into view, gliding, or at once under reduced motion. A
  * card scrolled out of view is never hidden or inert, so a screen reader hears every class. The
@@ -25,7 +25,7 @@
 import { useId, type CSSProperties } from 'react';
 import type { Quadrant } from '../../rules/types.ts';
 import { useKayfa } from '../context.tsx';
-import type { ClassMarks } from '../types.ts';
+import { MAP, type ClassMarks } from '../types.ts';
 import { classVars } from './ClassChip.tsx';
 import { Carousel } from '../glass/Carousel.tsx';
 import { economyNow } from '../economy.ts';
@@ -41,10 +41,15 @@ export interface ClassCardsProps {
 }
 
 /** The map's cells in the React picker's order: Heat and Hype on top, Groan and Calm below. */
-export const MAP: readonly Quadrant[] = ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'];
+export { MAP };
 
 export function Marks({ marks, id }: { readonly marks: ClassMarks; readonly id: string }) {
   const cell = (q: Quadrant) => {
+    if (marks.splits?.includes(q)) {
+      /* The pair's left cell (in MAP's order) is filled toward the right, its partner, and the right one toward the left. */
+      const toward = MAP.indexOf(q) === Math.min(...marks.splits.map((s) => MAP.indexOf(s))) ? 'right' : 'left';
+      return <span key={q} className="kb-class-mark" data-kb-mark="splits" data-kb-toward={toward} />;
+    }
     if (marks.earns?.includes(q)) return <span key={q} className="kb-class-mark" data-kb-mark="earns">+</span>;
     if (marks.hurts?.includes(q)) return <span key={q} className="kb-class-mark" data-kb-mark="hurts">−</span>;
     if (marks.calls?.includes(q)) return <span key={q} className="kb-class-mark" data-kb-mark="calls" />;
@@ -57,7 +62,7 @@ export function Marks({ marks, id }: { readonly marks: ClassMarks; readonly id: 
    */
   return (
     <>
-      <span className="kb-class-marks" role="img" aria-label={marks.label}>{MAP.map(cell)}</span>
+      <span className="kb-class-marks" role="img" aria-label={marks.label}>{MAP.map(cell)}{marks.splits && <span className="kb-class-split-bar" aria-hidden="true" />}</span>
       <span id={id} hidden>{marks.label}</span>
     </>
   );

@@ -18,10 +18,11 @@
  *  - The classes' large colors are the instance's (glass.json): Heel's is the owner's lifted
  *    `#ff959f` where the board draws `#ff8a96` (the glass plan, section 6, amended 2026-10-30), and
  *    Face's differs from the board's too, so their names are compared by box only; Jabroni's and the
- *    Technician's match and are compared in full. The Lurker's is the board's violet, and differs
- *    from the board only under the fade it peeks from, so its name is compared by box only.
+ *    Technician's match and are compared in full. The board's peeking card is the Lurker and the
+ *    build's the Tweener (below), so that name is compared by its place only.
  *  - Choose a class is the carousel the Technician design redrew this board with (its section 3):
- *    four cards in view, the Lurker peeking, the count and the two arrows on the legend's line. The
+ *    four cards in view, a fifth peeking (the board's Lurker; the build's Tweener, the Lurker being
+ *    the sixth and out of view), the count and the two arrows on the legend's line. The
  *    arrows' glyphs are drawn in the glass's own text tokens on its ground, not the board's
  *    translucent ones, so they are compared by where they stand.
  *  - A name quotes the whole line the post carries (from previews.ts, one source), so the tile wraps and the dialog is taller than the board's; its place is compared, not its height.
@@ -79,9 +80,12 @@ const manifest: BoardManifest = {
     { id: 'jabroni', role: 'text', name: 'Jabroni', within: 'classes' },
     /* "TECHNICIAN", the longest name, set smaller to clear its radio, as the board sets it at 34px. */
     { id: 'technician', role: 'text', name: 'Technician', within: 'classes' },
-    /* Under the fade it peeks from (above), so by its box. */
-    { id: 'lurker', role: 'text', name: 'Lurker', within: 'classes', type: false },
-    { id: 'count', role: 'text', name: '1–4 OF 5', buildName: '1–4 of 5', within: 'classes' },
+    /*
+     * The board's peeking card is the Lurker; the build's, with the Tweener before the Lurker (the Tweener plan's Task 6), is the Tweener, in its
+     * own color and a wider name, so it stands in the board's Lurker by its place. The Lurker is now the sixth card, out of view, and so is not drawn.
+     */
+    { id: 'peeking-card', role: 'text', name: 'Lurker', buildName: 'Tweener', within: 'classes', type: false, box: 'position' },
+    { id: 'count', role: 'text', name: '1–4 OF 5', buildName: '1–4 of 6', within: 'classes' },
     { id: 'earlier', role: 'button', name: 'Earlier classes', within: 'classes', type: false, box: 'position' },
     { id: 'more', role: 'button', name: 'More classes', within: 'classes', type: false, box: 'position' },
     { id: 'face-marks', role: 'img', name: 'Earns from hype, hurt by the groan', within: 'classes', type: false },

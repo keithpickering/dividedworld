@@ -354,7 +354,7 @@ declare
   src text := regexp_replace((select prosrc from pg_proc where proname = 'system_tick' and pronamespace = 'public'::regnamespace), '\s+', ' ', 'g');
   due text := 'select q.id, q.staff, q.kind, q.params, q.demand, q.expires_at, q.admin_description from queued_moves q where q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now() order by q.go_live_at, q.id for update skip locked';
   open_ text := 'select o.move_act, a.character, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act order by o.landed_at, o.move_act';
-  demand_ text := 'select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> ''demand'') = ''object'' and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap';
+  demand_ text := 'select o.move_act, a.thread, a.payload from open_moves o join acts a on a.id = o.move_act where jsonb_typeof(a.payload -> ''demand'') = ''object'' and not (a.payload ->> ''kind'' = ''conferGroup'' and a.payload #> ''{params,checkAt}'' is not null) and (o.checked_at is null or o.checked_at <= now() - check_every) order by o.checked_at nulls first, o.move_act limit cap';
   m bigint;
   act uuid;
   plan text;

@@ -6,7 +6,7 @@
 import type { DutyAssignee, SystemContent } from '../rules/types.ts';
 import type { Tier } from './model.ts';
 
-export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge'] as const;
+export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 export interface DutySpec {
@@ -28,6 +28,8 @@ export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   filing: { mode: 'chat', tier: 'light' },
   reportJudge: { mode: 'chat', tier: 'light' },
   patrolJudge: { mode: 'chat', tier: 'light' },
+  // An apology's verdict (member groups design): a chat call by the staff member who made the move. Always the light tier.
+  apologyJudge: { mode: 'chat', tier: 'light' },
 };
 
 /**

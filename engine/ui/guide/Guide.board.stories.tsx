@@ -3,7 +3,7 @@
  * Classes, at 1440 wide) and `04-phone.html` (the same section on the Phone board's layout at 390 by 844, the contents folded into a menu).
  * The page is the screen itself (`GuideScreen`) in the glass's page shell, as the route /guide puts it (web/src/App.tsx), signed in, and
  * opened at the Classes anchor as the board is. Every word on it is the instance's own Markdown and its live classes, cards and settings
- * (the preview builds the backend from the instance, which names them), so the board's five classes, their marks and hints are the
+ * (the preview builds the backend from the instance, which names them), so the board's five classes (the instance's six), their marks and hints are the
  * instance's, not this story's.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';

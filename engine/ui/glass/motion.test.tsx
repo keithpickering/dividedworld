@@ -5,7 +5,7 @@
  */
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
+import { beat, deal, lift, toHand, turn, wipe, wipeMask, backdrop, crossing, crossingPinned, currentFeel, feelTokens, modal, overlay, screen, stagger, staggerItem, swap, useFeel, type ActiveFeel } from './motion.ts';
 
 const rect = { x: 10, y: 20, width: 100, height: 40 };
 const within = { width: 1000, height: 700 };
@@ -281,5 +281,70 @@ describe('the stagger at a busy page\'s length', () => {
     }
     /* A short page keeps the feel's own step. */
     expect(stagger(feel, 3)[1]! * 1000).toBeCloseTo(feel.stagger);
+  });
+});
+
+/* The machine's motion (booster packs plan, Task 10): the flight to the hand, the lift, the turn, the deal and the hit's beat. */
+describe('the machine\'s presets', () => {
+  const card = { x: 400, y: 300, width: 150, height: 225 };
+  const hand = { x: 40, y: 60, width: 170, height: 52 };
+  const last = (t: unknown, axis: string) => { const v = (t as Record<string, number[]>)[axis]!; return v[v.length - 1]!; };
+
+  it('are empty under Off', () => {
+    expect(toHand(null, card, hand, 0)).toEqual({});
+    expect(lift(null)).toEqual({});
+    expect(turn(null)).toEqual({});
+    expect(deal(null, 2, [])).toEqual({});
+    expect(beat(null)).toEqual({});
+  });
+
+  it.each([['smooth', smooth], ['snappy', snappy]] as const)('toHand (%s) ends at the center of the hand link\'s rect, shrunk to 0.12 and faded, eased over the feel\'s screen', (_n, f) => {
+    const p = toHand(f, card, hand, 0.06);
+    const a = p.animate as Record<string, unknown> & { transition: Record<string, unknown> };
+    /* Offsets from where the card stands: the target's center less the card's. */
+    expect(last(a, 'x')).toBe(hand.x + hand.width / 2 - (card.x + card.width / 2));
+    expect(last(a, 'y')).toBe(hand.y + hand.height / 2 - (card.y + card.height / 2));
+    expect(last(a, 'scale')).toBe(0.12);
+    expect(last(a, 'opacity')).toBe(0);
+    /* Through a point above and between them. */
+    const y = a.y as number[];
+    expect(y[1]).toBeLessThan(Math.min(0, y[2]!));
+    expect(a.transition).toMatchObject({ duration: f!.screen / 1000, delay: 0.06, ease: [0.22, 1, 0.36, 1] });
+    expect(a.transition).not.toHaveProperty('type');
+  });
+
+  it('toHand ends at the viewport\'s edge toward a link that is outside it', () => {
+    const w = window.innerWidth, h = window.innerHeight;
+    const above = toHand(smooth, card, { x: 40, y: -900, width: 170, height: 52 }, 0).animate as Record<string, number[]>;
+    expect(last(above, 'y')).toBe(0 - (card.y + card.height / 2));
+    expect(last(above, 'x')).toBe(40 + 85 - (card.x + card.width / 2));
+    const below = toHand(smooth, card, { x: w + 300, y: h + 500, width: 170, height: 52 }, 0).animate as Record<string, number[]>;
+    expect(last(below, 'x')).toBe(w - (card.x + card.width / 2));
+    expect(last(below, 'y')).toBe(h - (card.y + card.height / 2));
+  });
+
+  it('deal starts the fifth card within the feel\'s screen times three, in order, and lands each card at rest', () => {
+    for (const f of [smooth, snappy]) {
+      const delays = stagger(f, 5);
+      const starts = [0, 1, 2, 3, 4].map((i) => ((deal(f, i, delays).animate as { transition: { delay: number } }).transition.delay));
+      expect(Math.max(...starts) * 1000).toBeLessThanOrEqual(f!.screen * 3 + 1e-6);
+      expect(starts).toEqual([...starts].sort((a, b) => a - b));
+      /* Three times the stagger's step. */
+      expect(starts[1]! * 1000).toBeCloseTo(delays[1]! * 3000);
+      expect(deal(f, 4, delays).animate).toMatchObject({ x: 0, y: 0, rotate: 0, scale: 1 });
+    }
+  });
+
+  it('turn is rotateY from 0 to 180, landing: Snappy by its spring, Smooth by its ease over enter x 1.2', () => {
+    expect(turn(snappy).animate).toMatchObject({ rotateY: 180, transition: { type: 'spring', stiffness: 520, damping: 32 } });
+    expect(turn(smooth).animate).toMatchObject({ rotateY: 180, transition: { duration: (380 * 1.2) / 1000, ease: [0.22, 1, 0.36, 1] } });
+    expect(turn(smooth).initial).toEqual({ rotateY: 0 });
+  });
+
+  it('lift is a shared layout landing over enter (a spring under Snappy), and beat is scale 1, 1.05, 1 eased over screen', () => {
+    expect(lift(smooth)).toMatchObject({ layout: true, transition: { duration: 0.38 } });
+    expect(lift(snappy)).toMatchObject({ layout: true, transition: { type: 'spring' } });
+    expect((beat(smooth).animate as { scale: number[] }).scale).toEqual([1, 1.05, 1]);
+    expect((beat(smooth).animate as { transition: unknown }).transition).toMatchObject({ duration: 0.42, ease: [0.22, 1, 0.36, 1] });
   });
 });

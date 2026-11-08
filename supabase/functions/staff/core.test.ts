@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FILINGS_PER_RUN, runFilings } from './core.ts';
+import { FILINGS_PER_RUN, learnMod, runFilings } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as dividedWorld } from '../_shared/instance.ts';
 import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
@@ -38,7 +38,8 @@ interface World {
   modBots?: Record<string, unknown>;
   failOn?: Record<string, number | 'always'>;
   /** Visits the tick files while the model is thinking (the race). */
-  tickFiles?: string[];
+  tickFiles?: string[];  /** What `mod_group_context` answers. */
+  groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
 const mod = (allowance: number, over: Partial<Standing> = {}): Standing => ({ office: 'mod', allowance, order: 'Crack down on bumping in Games.', beat: [{ id: GAMES, name: 'Games' }], ...over });
 
@@ -74,12 +75,13 @@ function fakeDb(w: World = {}) {
           const s = standing[String(args.staff)] ?? { office: null, allowance: 0, order: null, beat: [] };
           return { ...s, allowance: state.allowance.get(String(args.staff)) ?? 0 } as T;
         }
+        case 'mod_group_context': return (w.groups ?? { conferred: [{ key: 'trial', name: 'Trial Members', tone: 'punishment' }, { key: 'vip', name: 'VIPs', tone: 'favor' }], characters: [] }) as T;
         case 'rules_in_force': return [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }, { board: null, number: 1, predicate: 'noAllCaps', param: null, band: 'minor' }] as T;
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return ['Games gets bumped.'] as T;
-        case 'pool_names': return {} as T;
+        case 'character_faces': return {} as T;
         case 'pool_thread': {
           const v = visits.find((x) => x.thread === args.in_thread)!;
           return { title: 'Best Mario game?', posts: [{ act: v.post, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;
@@ -495,4 +497,70 @@ test('through the real model layer: each call is a ledger row naming the filing 
 test('the database failing before anything is read fails the run loudly, and a bad slot is refused', async () => {
   await assert.rejects(run(fakeDb({ failOn: { filings_due: 'always' } }), fakeModels(() => ({ words: 'x' }))), /connection dropped/);
   await assert.rejects(runFilings(fakeDb().db, fakeModels(() => ({})).models, dividedWorld, 'not a time', clock), /slot is not a time/);
+});
+
+/* ---- a filing's move may confer a group (member groups plan, Task 13) ---- */
+
+const WHO = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd1';
+const confer = (over: Record<string, unknown> = {}) => ({ kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', ...over });
+
+test('a filing whose answer carries a conferGroup queues it with the apology demand, spends one allowance, and files', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)] });
+  const m = fakeModels(() => ({ words: 'Cool off.', move: confer({ demand: { kind: 'postsOnBoard', params: {} } }) }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.match(m.chats[0]!.system, /trial \(Trial Members\)/);
+  assert.deepEqual(d.of('apply_mod_move')[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', demand: { kind: 'apologyAccepted', params: {} } });
+  assert.equal(d.state.moves.length, 1);
+  assert.equal(d.state.allowance.get(MON), 1);
+  assert.deepEqual(d.of('file_visit'), [{ visit_act: V1, line: 'Cool off.' }]);
+});
+
+test('a filing by a Mod with no allowance drops the conferGroup, reads no groups, and still files', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)], standing: { [MON]: mod(0) } });
+  const m = fakeModels(() => ({ words: 'Cool off.', move: confer() }));
+  await run(d, m);
+  assert.equal(d.count('mod_group_context'), 0);
+  assert.equal(d.count('apply_mod_move'), 0);
+  assert.equal(d.state.records[0]!.record.dropped[0].predicate, 'allowance');
+  assert.equal(d.of('file_visit').length, 1);
+});
+
+test('the groups are read once per Mod per run, and again after a move is queued', async () => {
+  const quiet = fakeDb({ visits: [due(V1, P1), due(V2, P2)] });
+  await run(quiet, fakeModels(() => ({ words: 'Fine.' })));
+  assert.equal(quiet.count('mod_group_context'), 1);
+  const moved = fakeDb({ visits: [due(V1, P1), due(V2, P2)] });
+  await run(moved, fakeModels(() => ({ words: 'Cool off.', move: confer() })));
+  assert.equal(moved.count('mod_group_context'), 2, 'a queued move holds its character, so the next filing reads again');
+});
+
+/* ------------------------------------------------------------------------------- the Mod's own pronouns and the names it is shown ---- */
+
+test('learnMod: a persona\'s own pronouns are its file\'s, else settings.pronouns, else it/its; a memory opinion\'s name is tagged from character_faces and cut before the tag', async () => {
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  const OPINED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const LONG = 'L'.repeat(80);
+  const db: Db = {
+    async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+      switch (fn) {
+        case 'mod_standing': return { office: 'mod', allowance: 1, order: null, beat: [] } as T;
+        case 'staff_career': return { led: [], offices: [] } as T;
+        case 'staff_memory_latest': return { hobby: { name: 'h', since: 's', from: 'f' }, opinions: [{ character: OPINED, score: 1, note: 'n' }], grudges: [], wheelhouse: [], realWorld: [], marks: [] } as T;
+        case 'staff_memory_at': return null as T;
+        case 'staff_notes_recent': return [] as T;
+        case 'character_faces': return { [OPINED]: { name: LONG, pronouns: null } } as T;
+        default: throw new Error(`unexpected ${fn}`);
+      }
+    },
+  };
+  const base = dividedWorld.system.roster[0]!;
+  const pool = dividedWorld.settings.pool;
+  const withOwn = (own: unknown) => [{ ...base, pronouns: own }] as unknown as typeof dividedWorld.system.roster;
+  assert.deepEqual((await learnMod(db, withOwn(undefined), { pool, pronouns: she }, base.key)).pronouns, she, 'settings.pronouns');
+  const known = await learnMod(db, withOwn(undefined), { pool }, base.key);
+  assert.equal(known.pronouns.subject, 'it', 'the engine\'s it-set');
+  assert.equal(known.names[OPINED], `${'L'.repeat(60)} (it/its)`, 'cut to 60 before the tag, the missing profile taking the default');
+  const tagged = await learnMod(db, withOwn(undefined), { pool, pronouns: she }, base.key);
+  assert.equal(tagged.names[OPINED], `${'L'.repeat(60)} (she/her)`);
 });

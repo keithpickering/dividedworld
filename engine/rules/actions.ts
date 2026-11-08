@@ -13,7 +13,8 @@
  * the two never disagree on an emoji.
  */
 import type { Instance } from './types.ts';
-import { REACHES, basePrice, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
+import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
+import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -61,7 +62,25 @@ const id = (r: Fields, field: string): string => {
   if (typeof v !== 'string' || !UUID.test(v)) throw new Refused(field, 'is not an id');
   return v;
 };
+/** The price a purchase's screen showed: a whole number of hundredths above 0 and within the database's integer. */
+const shownPrice = (r: Fields): number => {
+  const v = r.price;
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 2_147_483_647) throw new Refused('price', 'is not a price the machine shows');
+  return v;
+};
 const optionalId = (r: Fields, field: string): string | null => (r[field] === undefined || r[field] === null ? null : id(r, field));
+/**
+ * The characters a body puts words in the mouth of (the BBCode design, "The framed alert"): a list of ids the page found in its counterfeit quotes. The first five
+ * distinct ones are sent, as write_framed looks at no more; none, or none given, is no argument at all, so a request that names no `framing` reads as before.
+ */
+const FRAMING_MOST = 5;
+const framing = (r: Fields): { framing?: string[] } => {
+  const v = r.framing;
+  if (v === undefined || v === null) return {};
+  if (!Array.isArray(v)) throw new Refused('framing', 'is not a list of ids');
+  const kept = [...new Set(v.slice(0, FRAMING_MOST).map((x) => { if (typeof x !== 'string' || !UUID.test(x)) throw new Refused('framing', 'is not a list of ids'); return x; }))];
+  return kept.length === 0 ? {} : { framing: kept };
+};
 const text = (r: Fields, field: string, most: number, { mayBeEmpty = false } = {}): string => {
   const v = r[field] ?? (mayBeEmpty ? '' : undefined);
   if (typeof v !== 'string') throw new Refused(field, 'is not text');
@@ -112,6 +131,18 @@ const setArgs = (r: Fields, instance: Instance): Fields => {
 
 type Decided = Omit<Extract<Decision, { ok: true }>, 'ok'>;
 
+/** A character's pronouns, if the request names any: lowered as every writer stores them, or refused in pronounProblems' words; none is null, which create_character reads as the instance's default. */
+const pronouns = (r: Fields): PronounSet | null => {
+  const v = r.pronouns;
+  if (v === undefined || v === null) return null;
+  const lowered = typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, typeof x === 'string' ? x.trim().toLowerCase() : x]))
+    : v;
+  const problems = pronounProblems(lowered);
+  if (problems.length) throw new Refused('pronouns', problems.join('; '));
+  return normalizePronouns(lowered as unknown as PronounSet);
+};
+
 /**
  * A character's debut (supabase/migrations/0024_debuts.sql, 0028_loud_classes.sql): dropped `now`
  * or at the `tally`, `silent`, `announced`, or announced `with_class`; what a request leaves out is
@@ -137,11 +168,11 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   startThread: (r, { settings }) => {
     const board = r.board;
     if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
-    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength) } };
+    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r) } };
   },
   post: (r, { settings }) => ({
     rpc: 'post',
-    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote') },
+    args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote'), ...framing(r) },
   }),
   edit: (r, { settings }) => ({
     rpc: 'edit_post',
@@ -149,7 +180,12 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   spin: (r, { settings }) => ({
     rpc: 'spin',
-    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }) },
+    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), ...framing(r) },
+  }),
+  // A barred character's apology (supabase/migrations/0130_bars_apologies.sql): the spin of the move's Act that bars it, with words of its own that the judge reads.
+  apologize: (r, { settings }) => ({
+    rpc: 'apologize',
+    args: { in_move: id(r, 'move'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r) },
   }),
   react: (r, { reactions }) => {
     const kind = r.kind;
@@ -178,10 +214,10 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (!said.ok) throw new Refused('message', said.why);
     return { rpc: 'unmask', args: { through: id(r, 'character'), in_thread: id(r, 'thread'), message: said.value } };
   },
-  buyCard: (r, instance) => {
-    const key = card(r, instance);
-    return { rpc: 'buy_card', args: { card: key, price: basePrice(instance.cards.find((c) => c.key === key)!, instance.settings) }, asService: true };
-  },
+  // A purchase names the slot and the price the screen showed (supabase/migrations/0139_machine.sql): the database holds the slot and
+  // refuses, in plain words, a price that is no longer its own, so an admin's change between the look and the press is never charged unseen.
+  buyCard: (r) => ({ rpc: 'buy_card', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
+  buyPack: (r) => ({ rpc: 'buy_pack', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
   playCard: (r, instance) => ({
     rpc: 'play_card',
     // The message is the card's rules' to read (decidePlay), with the target they price.
@@ -211,7 +247,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);
     const name = text({ name: typeof r.name === 'string' ? r.name.replace(/^ +| +$/g, '') : r.name }, 'name', NAME_MAX_LENGTH);
     if (NAME_HIDDEN.test(name)) throw new Refused('name', 'can hold letters, marks, digits, symbols and single spaces, nothing hidden');
-    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'now', loudness: 'announced' }) } };
+    return { rpc: 'create_character', args: { name, class: kind, ...debut(r, { timing: 'now', loudness: 'announced' }), pronouns: pronouns(r) } };
   },
   setDebut: (r) => ({ rpc: 'set_debut', args: { through: id(r, 'character'), ...debut(r) } }),
   createInvite: () => ({ rpc: 'create_invite', args: {} }),

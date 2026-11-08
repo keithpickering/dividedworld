@@ -7,23 +7,28 @@
  *
  * Everything on the News tab is read from Acts already written (`api.seasonNews()`, supabase/migrations/0063_season_news.sql) and is the
  * same for every reader: no item says whose a character is. The player's own characters are marked "yours" here, by this screen, from
- * `myCharacters`, which is asked for whatever the page holds, as Rankings marks them. The glass describes the game; it never speaks as
- * the Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on the staff's board.
+ * the player's own characters (`usePlayer`), as Rankings marks them. The page is drawn from `season_page`'s document: a tab, a season, a
+ * page of the rankings or the season choice is another address and so another load, with the tab pressed spinning (web/src/App.tsx). The glass describes the game; it never speaks as
+ * The System or a Boss: the Boss's arrival quotes its first words, as words that are its, and links its post on the staff's board.
  *
  * The tabs are a tablist of links, `?tab=rankings|news` naming the open one (Rankings by default): Left and Right (and Home and End)
  * move between them as a tablist does, the open tab alone is in the tab order, and the open panel is labelled by its tab.
  * `/rankings` and `/standings` open this page (web/src/App.tsx).
  */
-import { useEffect, useId, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { dayAndTime, figure } from '../characters/format.ts';
+import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
-import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonResult, type TallyName } from '../data/api.ts';
+import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNewsItem, type SeasonPage, type SeasonResult, type TallyName } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { PageHead } from '../glass/PageHead.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
-import { Link, useLocation, useNavigate } from '../router.tsx';
+import { useLocation, useNavigate, useNavigation } from '../router.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
+import { GlassLink } from '../glass/Link.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { finalClass } from '../reveal/statements.ts';
 import { seasonAt, type SeasonTab } from './address.ts';
@@ -52,6 +57,11 @@ export interface NewsProps {
   readonly perPage: number;
   readonly more: boolean;
   readonly onMore: () => void;
+  /** True while the earlier page is out: the button is busy. */
+  readonly busy?: boolean;
+  /** The element the rows are found in, for their entrance, and which rows are the ones a press added (`useEnterAdded`). */
+  readonly scope?: RefObject<HTMLDivElement | null>;
+  readonly entering?: (key: string) => true | undefined;
 }
 
 const Yours = () => <span className="kb-rankings-yours kb-glass-skew-tag"><span className="kb-glass-upright">Yours</span></span>;
@@ -79,7 +89,7 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
             return (
               <li key={r.character} className="kb-glass-cut-dialog kb-season-podium">
                 <span className="kb-season-place">{PLACES[i] ?? `Place ${r.place}`}</span>
-                <b className="kb-season-name"><Link to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</Link></b>
+                <b className="kb-season-name"><GlassLink to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</GlassLink></b>
                 <span className="kb-season-standing">
                   {figure(r.standing)}
                   {' · '}
@@ -91,14 +101,14 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
           })}
         </ol>
       )}
-      <p><Link className="kb-season-link" to={seasonAt('rankings', 1, item.season)}>{item.count !== null ? `All ${item.count} characters and their standings` : 'All the standings'}</Link></p>
+      <p><GlassLink className="kb-season-link" to={seasonAt('rankings', 1, item.season)}>{item.count !== null ? `All ${item.count} characters and their standings` : 'All the standings'}</GlassLink></p>
     </>
   );
 }
 
 function Names({ names, own, verb, className }: { readonly names: readonly TallyName[]; readonly own: ReadonlySet<Id>; readonly verb: 'debuted' | 'turned'; readonly className: (key: string) => string }) {
   const one = names.length === 1 ? names[0]! : null;
-  const profile = (n: TallyName) => <Link className="kb-season-link" to={`/c/${encodeURIComponent(n.character)}`}>{n.name}</Link>;
+  const profile = (n: TallyName) => <GlassLink className="kb-season-link" to={`/c/${encodeURIComponent(n.character)}`}>{n.name}</GlassLink>;
   const turn = (n: TallyName) => (
     <>
       {n.was !== null && <> was a <ClassChip cls={n.was} name={className(n.was)} /></>}
@@ -110,10 +120,10 @@ function Names({ names, own, verb, className }: { readonly names: readonly Tally
       <>
         <h3>{one.name} {verb}</h3>
         {verb === 'debuted'
-          ? <p>A new character joins the board. {one.class !== null ? <>Announced with its class: <ClassChip cls={one.class} name={className(one.class)} />. </> : 'Its class is its own secret until it says otherwise. '}{profile(one)}{own.has(one.character) && <> <Yours /></>}</p>
+          ? <p>A new character joins the board. {one.class !== null ? <>Announced with the class: <ClassChip cls={one.class} name={className(one.class)} />. </> : 'The class stays a secret until the player says otherwise. '}{profile(one)}{own.has(one.character) && <> <Yours /></>}</p>
           : <p>
-            {one.was !== null ? <>Announced with its old class: {one.name} was a <ClassChip cls={one.was} name={className(one.was)} />. </> : 'Announced. '}
-            {one.class !== null ? <>It is now a <ClassChip cls={one.class} name={className(one.class)} />. </> : 'What it is now, it isn\u2019t saying. '}
+            {one.was !== null ? <>Announced with the old class: {one.name} was a <ClassChip cls={one.was} name={className(one.was)} />. </> : 'Announced. '}
+            {one.class !== null ? <>{one.name} is now a <ClassChip cls={one.class} name={className(one.class)} />. </> : <>What {one.name} is now isn’t being said. </>}
             {profile(one)}{own.has(one.character) && <> <Yours /></>}
           </p>}
       </>
@@ -131,16 +141,18 @@ function Names({ names, own, verb, className }: { readonly names: readonly Tally
   );
 }
 
-/** The name of the board only the staff post on, as the board has it now (a move may have renamed it), or null until it is read. */
+/** The name of the board only the staff post on, as the board has it now (a move may have renamed it): boot's boards, so the first render has it; only where boot is not there (a story, a screen before boot) is it read, and null until then. */
 function useStaffBoardName(): string | null {
   const { api } = useKayfa();
-  const [name, setName] = useState<string | null>(null);
+  const boot = useBoot();
+  const [read, setRead] = useState<string | null>(null);
   useEffect(() => {
+    if (boot) return undefined;
     let live = true;
-    void api.boards().then((bs) => { if (live) setName(bs.find((b) => b.isSystem)?.name ?? null); }, () => { /* the words say "the board" */ });
+    void api.boards().then((bs) => { if (live) setRead(bs.find((b) => b.isSystem)?.name ?? null); }, () => { /* the words say "the board" */ });
     return () => { live = false; };
-  }, [api]);
-  return name;
+  }, [api, boot]);
+  return (boot ? boot.boards.find((b) => b.isSystem)?.name : read) ?? null;
 }
 
 function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPage: number }) {
@@ -154,26 +166,33 @@ function Boss({ item, perPage }: { readonly item: SeasonNewsItem; readonly perPa
     <>
       <h3>{name} has {arrived ? 'arrived' : 'left'}</h3>
       {arrived
-        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ` Its first words, on ${board}:`}</p>
-        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ` Its last words are still on ${board}.`}</p>}
+        ? <p>{name} runs the board for Season {item.season}.{words !== '' && ` ${name}’s first words, on ${board}:`}</p>
+        : <p>Season {item.season}&apos;s Boss has left.{words !== '' && ` ${name}’s last words are still on ${board}.`}</p>}
       {words !== '' && <blockquote className="kb-season-quote">{'“'}{words}{'”'}</blockquote>}
-      {post !== null && <p><Link className="kb-season-link" to={post}>{arrived ? 'Read its post on the board' : 'Read its last post on the board'}</Link></p>}
+      {post !== null && <p><GlassLink className="kb-season-link" to={post}>{arrived ? 'Read the post on the board' : 'Read the last post on the board'}</GlassLink></p>}
     </>
   );
 }
 
 /** One feed row: its time, and its words. A tally with debuts and Turns is two rows at one instant. */
-function Row({ at, children }: { readonly at: string; readonly children: React.ReactNode }) {
-  return <li className="kb-season-item"><time dateTime={at}>{dayAndTime(at)}</time><div>{children}</div></li>;
+function Row({ at, children, entering }: { readonly at: string; readonly children: React.ReactNode; readonly entering?: true }) {
+  return <li className="kb-season-item" {...(entering ? { [ENTERING]: '' } : {})}><time dateTime={at}>{dayAndTime(at)}</time><div>{children}</div></li>;
 }
 
-export function News({ items, mine, season, perPage, more, onMore }: NewsProps) {
+/** The keys of the rows an item draws: a settlement or a Boss is one, a tally is a row for its debuts and a row for its Turns. */
+export function newsKeys(item: SeasonNewsItem): string[] {
+  const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
+  if (item.kind === 'tally') return [...(item.debuts.length > 0 ? [`${key}:d`] : []), ...(item.turns.length > 0 ? [`${key}:t`] : [])];
+  return [key];
+}
+
+export function News({ items, mine, season, perPage, more, onMore, busy = false, scope, entering }: NewsProps) {
   const { instance } = useKayfa();
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const own = new Set(mine.map((c) => c.id));
   const boss = season ? items.find((i) => i.kind === 'bossArrived' && i.season === season.number)?.name ?? null : null;
   return (
-    <div className="kb-season-news">
+    <div ref={scope} className="kb-season-news">
       <CalmRegion as="p" className="kb-season-lede">
         {season ? `Season ${season.number} began ${dayAndTime(season.startsAt)}.` : ''}
         {boss !== null && ` The Boss this season is ${boss}.`}
@@ -184,80 +203,68 @@ export function News({ items, mine, season, perPage, more, onMore }: NewsProps) 
         : (
           <CalmRegion as="ul" className="kb-season-feed">
             {items.flatMap((item) => {
-              const key = item.act ?? `${item.kind}:${item.at}:${item.name ?? ''}`;
-              if (item.kind === 'results') return [<Row key={key} at={item.at}><Results item={item} own={own} className={className} /></Row>];
+              const keys = newsKeys(item);
+              const row = (key: string, body: React.ReactNode) => <Row key={key} at={item.at} entering={entering?.(key)}>{body}</Row>;
+              if (item.kind === 'results') return [row(keys[0]!, <Results item={item} own={own} className={className} />)];
               if (item.kind === 'tally') {
+                /* newsKeys lists the debuts' row, where there are debuts, then the Turns' row, where there are Turns. */
+                const [debuts, turns] = item.debuts.length > 0 ? [keys[0]!, keys[1]] : [undefined, keys[0]];
                 return [
-                  ...(item.debuts.length > 0 ? [<Row key={`${key}:d`} at={item.at}><Names names={item.debuts} own={own} verb="debuted" className={className} /></Row>] : []),
-                  ...(item.turns.length > 0 ? [<Row key={`${key}:t`} at={item.at}><Names names={item.turns} own={own} verb="turned" className={className} /></Row>] : []),
+                  ...(debuts !== undefined ? [row(debuts, <Names names={item.debuts} own={own} verb="debuted" className={className} />)] : []),
+                  ...(turns !== undefined ? [row(turns, <Names names={item.turns} own={own} verb="turned" className={className} />)] : []),
                 ];
               }
-              return [<Row key={key} at={item.at}><Boss item={item} perPage={perPage} /></Row>];
+              return [row(keys[0]!, <Boss item={item} perPage={perPage} />)];
             })}
           </CalmRegion>
         )}
-      {more && <ButtonRow><GlassButton className="kb-season-more" onClick={onMore}>Show earlier news</GlassButton></ButtonRow>}
+      {more && <ButtonRow><GlassButton className="kb-season-more" busy={busy} onClick={onMore}>Show earlier news</GlassButton></ButtonRow>}
     </div>
   );
 }
 
-type NewsState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed' }
-  | { readonly status: 'ready'; readonly key: string; readonly items: readonly SeasonNewsItem[]; readonly mine: readonly MyCharacter[]; readonly more: boolean };
-
-/** The News tab's read: the first page of the news, the player's own characters and the season. */
-function NewsPanel({ season }: { readonly season: Season | null }) {
+/** The News tab: the first page of the news is the document's, and the older pages a press brings are added to it. */
+function NewsPanel({ doc }: { readonly doc: Extract<SeasonPage, { readonly tab: 'news' }> }) {
   const { api, settings } = useKayfa();
-  const { account } = usePlayer().session;
-  const [read, setRead] = useState<NewsState>({ status: 'loading' });
+  const { characters: mine } = usePlayer();
+  const [older, setOlder] = useState<{ readonly doc: typeof doc; readonly items: readonly SeasonNewsItem[]; readonly more: boolean | null } | null>(null);
   const [paging, setPaging] = useState(false);
-  const key = account ?? '';
-  /* Another account signing in reads again, with its own marks: the last account's are never drawn for the next. */
-  const state: NewsState = read.status === 'ready' && read.key !== key ? { status: 'loading' } : read;
-  useEffect(() => {
-    let live = true;
-    Promise.all([api.seasonNews(), api.myCharacters()]).then(
-      ([items, mine]) => { if (live) setRead({ status: 'ready', key, items, mine, more: items.length >= SEASON_NEWS_PAGE }); },
-      () => { if (live) setRead({ status: 'failed' }); },
-    );
-    return () => { live = false; };
-  }, [api, key]);
-  if (state.status === 'loading') return <div aria-busy="true" />;
-  if (state.status === 'failed') return <CalmRegion as="p" className="kb-season-empty">The news could not be loaded. Reload the page to try again.</CalmRegion>;
-  const more = () => {
-    const last = state.items.at(-1);
+  const scope = useRef<HTMLDivElement>(null);
+  const added = useEnterAdded(scope, paging);
+  const { track } = useNavigation();
+  /* Older rows belong to the document they were read after: a new document starts from its own first page. */
+  const held = older?.doc === doc ? older : null;
+  const items = held ? [...doc.news, ...held.items] : doc.news;
+  const more = held?.more ?? doc.news.length >= SEASON_NEWS_PAGE;
+  const onMore = () => {
+    const last = items.at(-1);
     if (!last || paging) return;
     setPaging(true);
-    api.seasonNews(last.at).then(
-      (older) => setRead((was) => (was.status !== 'ready' ? was : { ...was, items: [...was.items, ...older.filter((o) => !was.items.some((x) => x.kind === o.kind && x.act === o.act && x.at === o.at && x.name === o.name))], more: older.length >= SEASON_NEWS_PAGE })),
+    added.arm(items.flatMap(newsKeys));
+    track(api.seasonNews(last.at)).then(
+      (page) => setOlder((was) => {
+        const kept = was?.doc === doc ? was.items : [];
+        const fresh = page.filter((o) => ![...doc.news, ...kept].some((x) => x.kind === o.kind && x.act === o.act && x.at === o.at && x.name === o.name));
+        return { doc, items: [...kept, ...fresh], more: page.length >= SEASON_NEWS_PAGE };
+      }),
       () => { /* the button stays, to try again */ },
     ).finally(() => setPaging(false));
   };
-  return <News items={state.items} mine={state.mine} season={season} perPage={settings.postsPerPage} more={state.more} onMore={more} />;
+  return <News items={items} mine={mine} season={doc.season} perPage={settings.postsPerPage} more={more} onMore={onMore} busy={paging} scope={scope} entering={added.entering} />;
 }
 
-/** The season page at /season. */
-export function SeasonScreen() {
-  const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
+/** The season page at /season, drawn from its document: whole on the first frame. Signed out, the marker is the sign-in line. */
+export function SeasonScreen({ doc }: { readonly doc: ScreenDoc<SeasonPage> }) {
   const { query } = useLocation();
   const navigate = useNavigate();
   const ids = useId();
-  const [season, setSeason] = useState<Season | null>(null);
+  const signedOut = isSignedOutDoc(doc);
   const tab: SeasonTab = query.get('tab') === 'news' ? 'news' : 'rankings';
   /* A finished season's final table, and the character whose row opens highlighted: from the address, as the Record's Seasons rows and News link them. */
   const asked = Number.parseInt(query.get('season') ?? '', 10);
   const shownSeason = Number.isInteger(asked) && asked >= 1 ? asked : undefined;
   const shownCharacter = shownSeason === undefined ? undefined : query.get('character') ?? undefined;
   const rankingsAt = (page: number) => seasonAt('rankings', page, shownSeason);
-
-  useEffect(() => {
-    if (!signedIn) return undefined;
-    let live = true;
-    void api.season().then((s) => { if (live) setSeason(s); }, () => { /* the heading stays plain */ });
-    return () => { live = false; };
-  }, [api, signedIn]);
 
   const onKey = (e: KeyboardEvent<HTMLElement>, at: number) => {
     const next = e.key === 'ArrowRight' ? (at + 1) % TABS.length : e.key === 'ArrowLeft' ? (at + TABS.length - 1) % TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : null;
@@ -267,7 +274,8 @@ export function SeasonScreen() {
     document.getElementById(`${ids}-tab-${TABS[next]!.key}`)?.focus();
   };
 
-  if (signedIn === false) return <div className="kb-season"><CalmRegion className="kb-season-empty"><SignInPrompt /></CalmRegion></div>;
+  if (signedOut) return <div className="kb-season"><CalmRegion className="kb-season-empty"><SignInPrompt /></CalmRegion></div>;
+  const season = doc.season;
   return (
     <div className="kb-season">
       <PageHead
@@ -296,7 +304,7 @@ export function SeasonScreen() {
         )}
       />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">
-        {tab === 'rankings' ? <RankingsScreen embedded season={shownSeason} character={shownCharacter} href={rankingsAt} /> : signedIn === null ? <div aria-busy="true" /> : <NewsPanel season={season} />}
+        {doc.tab === 'news' ? <NewsPanel doc={doc} /> : <RankingsScreen doc={doc} embedded season={shownSeason} character={shownCharacter} href={rankingsAt} />}
       </div>
     </div>
   );

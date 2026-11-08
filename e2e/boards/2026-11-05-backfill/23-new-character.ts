@@ -10,10 +10,10 @@
  *    (the glass polish, design section 2), so the title is compared by its type at 96 and everything under it by its place from the form's own
  *    corner (`origin`), which the head's height does not move.
  *  - The class cards are the carousel's, 216px wide at the board's 14px gap (the Technician design, section 3), where the board draws them 236px
- *    wide and 33px apart so that all five fill the row, with the count and the arrows drawn. The carousel draws its count and arrows only while
- *    the row overflows, and five whole cards do not overflow 1312px, so neither is drawn here (the arrows are held on the Turn board, where
- *    the row does overflow, and by the layout check's cut-control refusal). The cards are therefore compared by their names' type and not by place,
- *    and the marks and the words by their type alone.
+ *    wide and 33px apart so that all five fill the row, with the count and the arrows drawn. The build has a sixth, the Tweener (the Tweener
+ *    plan's Task 6), which the board does not draw; six cards of 216px do not fit 1312px, so the build's row overflows and draws its count and
+ *    arrows, which the board does not (the arrows are held on the Turn board, and by the layout check's cut-control refusal). The cards are
+ *    therefore compared by their names' words and not by place, and the marks and the words by their type alone.
  *  - New character's surface draws no class's large text (engine/ui/glass/apply.ts `classLargeText`), so a class's name stands in the glass's text with
  *    the class's color on its card's edge and marks, where the board draws the name in the class's color; and the card's words are the body's 21px
  *    (600) where the board draws 20px (500). So the cards' names and hurts are compared by their words and not by their type.
@@ -86,7 +86,7 @@ export default manifest;
  *    compared (`type: false`), and a part is compared by its place, x and y, at the shift the first run measured (`buildShift`).
  *  - The first screen is the page scrolled to its classes, with no head and no name field above them; the build's page starts at the top, so its parts are
  *    held from the CLASS label (`origin`), not from the menu. The board draws the class row as one card of 300px with the next peeking under the
- *    fade and "1 OF 5"; the build's carousel says "1–1 of 5" or "1–2 of 5" for the cards it shows whole, so the count is held by its place.
+ *    fade and "1 OF 5"; the build's carousel says "1–1 of 6" or "1–2 of 6" for the cards it shows whole, so the count is held by its place.
  *  - The Debut sheet's save is the board's "SAVE" where the build says the character's name ("Save how Waiting Wanda debuts"), the sheet shows its preview
  *    and its footer line where the board's does not, and the board draws it from 40px under the top of the window to its foot, the full width: the build's
  *    sheet stands on the window's foot, as tall as its words (a sheet stretched to the window moved what the calm covers at 200% text, which the contrast
@@ -94,6 +94,9 @@ export default manifest;
  *    Close and options are held by their places from its kicker, and its buttons by their words.
  *  - Edit profile on the board is the head, the lead, Title, Signature and the save button; the build adds the character's select above Title, and the pip style,
  *    the avatar and the preview under the save, so Title and what follows stand lower by the select's height.
+ *  - The build's New character and Edit profile each carry the pronoun picker (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board
+ *    predates: on New character it stands between the class note and When it debuts, so When it debuts and Drop now stand 472.8px lower from the note;
+ *    on Edit profile it stands above the save, which stands 472.5px lower again.
  *  - My characters' count stands on its own line under the title: the board's "3 OF 6" is the build's "(3 of 6)", its box a line of its own that is not broken.
  */
 const PHONE = '2026-11-05-backfill/27-characters-phone';
@@ -116,10 +119,10 @@ export const phone: BoardManifest = {
   press: [{ role: 'radio', name: 'Face' }],
   landmarks: [
     { id: 'class-label', role: 'text', name: 'CLASS', type: false, box: 'none' },
-    held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 5' }),
+    held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 6' }),
     held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: -81 }),
-    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 14 }, { origin: 'note', originEdge: 'bottom' }),
-    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 5 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
+    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 486.8 }, { origin: 'note', originEdge: 'bottom' }),
+    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],
   also: [
     {
@@ -152,7 +155,7 @@ export const phone: BoardManifest = {
         held('menu', 'title-count', 'text', '29 of 40', { y: 75.6 }),
         held('menu', 'signature-label', 'text', 'SIGNATURE', { y: 90.1 }),
         held('menu', 'signature-count', 'text', '34 of 500', { y: 106.7 }),
-        held('menu', 'save', 'button', 'SAVE THE PROFILE', { y: 239.2 }, { buildName: 'Save the profile' }),
+        held('menu', 'save', 'button', 'SAVE THE PROFILE', { y: 711.7 }, { buildName: 'Save the profile' }),
       ],
     },
     {

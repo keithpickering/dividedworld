@@ -1,4 +1,5 @@
 import { screen, within } from '@testing-library/react';
+import type { QuoteOf } from '../bbcode/render.tsx';
 import { describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
@@ -31,14 +32,14 @@ describe('a character\'s post in the season\'s reveal', () => {
     expect(post).toHaveTextContent('3.50');
   });
 
-  test('the bar and its accessible description list each class its player made public, and their dates', async () => {
+  test('the bar and its accessible description list each class the player made public, and their dates', async () => {
     show(reveal({
       shown: [
         { kind: 'turn', act: 'x', at: OCT20, was: 'face' },
         { kind: 'reveal', act: 'y', at: OCT3, class: 'heel', via: 'act' },
       ],
     }));
-    const bar = await screen.findByRole('img', { name: /Classes its player made public/u });
+    const bar = await screen.findByRole('img', { name: /Classes made public by the player/u });
     const described = bar.getAttribute('aria-label')!;
     expect(described).toContain('Face');
     expect(described).toContain('Oct 20');
@@ -53,7 +54,7 @@ describe('a character\'s post in the season\'s reveal', () => {
     show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20 }] }));
     const post = await screen.findByRole('region', { name: /in the season's reveal/u });
     expect(post).toHaveTextContent('A Turn on Oct 20');
-    expect(screen.queryByRole('img', { name: /Classes its player made public/u })).toBeNull();
+    expect(screen.queryByRole('img', { name: /Classes made public by the player/u })).toBeNull();
     expect(post).not.toHaveTextContent(/Face|Heel/u);
   });
 
@@ -63,13 +64,13 @@ describe('a character\'s post in the season\'s reveal', () => {
     expect(post).not.toHaveTextContent('Announced a Turn');
     const items = within(post).getAllByRole('listitem');
     expect(items).toHaveLength(1);
-    expect(items[0]).toHaveTextContent('Face, until its Turn on Oct 20');
+    expect(items[0]).toHaveTextContent('Face, until the Turn on Oct 20');
   });
 
   test('a reveal written before #23 that still says since when a Turn\'s old class began never dates it', async () => {
     show(reveal({ shown: [{ kind: 'turn', act: 'x', at: OCT20, was: 'face', since: '2026-10-01T12:00:00Z' }] }));
     const post = await screen.findByRole('region', { name: /in the season's reveal/u });
-    expect(within(post).getAllByRole('listitem')[0]).toHaveTextContent('Face, until its Turn on Oct 20');
+    expect(within(post).getAllByRole('listitem')[0]).toHaveTextContent('Face, until the Turn on Oct 20');
     expect(post).not.toHaveTextContent('Oct 1 ');
     expect(post).not.toHaveTextContent(/from Oct 1\b/u);
   });
@@ -90,7 +91,7 @@ describe('a character\'s post in the season\'s reveal', () => {
         { kind: 'turn', act: 'x', at: OCT20, was: 'face' },
       ],
     }));
-    const bar = await screen.findByRole('img', { name: /Classes its player made public/u });
+    const bar = await screen.findByRole('img', { name: /Classes made public by the player/u });
     expect(bar.querySelectorAll('[data-kb-class]')).toHaveLength(1);
     const described = bar.getAttribute('aria-label')!;
     expect(described).toContain('Face');
@@ -108,16 +109,16 @@ describe('a character\'s post in the season\'s reveal', () => {
     }));
     const post = await screen.findByRole('region', { name: /in the season's reveal/u });
     expect(within(post).getAllByRole('listitem').map((li) => li.textContent)).toEqual([
-      'Face, revealed Oct 1', 'Heel, until its Turn on Oct 10', 'Face, until its Turn on Oct 20',
+      'Face, revealed Oct 1', 'Heel, until the Turn on Oct 10', 'Face, until the Turn on Oct 20',
     ]);
   });
 
   test('a character that made nothing public shows no class at all', async () => {
     show(reveal({ shown: [] }));
     const post = await screen.findByRole('region', { name: /in the season's reveal/u });
-    expect(post).toHaveTextContent('Its player made nothing about its class public.');
+    expect(post).toHaveTextContent("The player made nothing about this character's class public.");
     expect(post).not.toHaveTextContent(/Face|Heel/u);
-    expect(screen.queryByRole('img', { name: /Classes its player made public/u })).toBeNull();
+    expect(screen.queryByRole('img', { name: /Classes made public by the player/u })).toBeNull();
   });
 
   test('the opening post of the reveal is its words', async () => {
@@ -130,11 +131,11 @@ describe('a quote in the staff\'s words', () => {
   test('a tally\'s body and the reveal\'s opening link their quotes like any post', async () => {
     const fake = buildWorld();
     const body = '[quote=00000000-0000-4000-8000-000000000abc]earlier[/quote]';
-    const link = (id: string) => <a href={`#${id}`}>quoted {id}</a>;
-    const { unmount } = renderIn(fake, <TallyPost act={actOf('tally', { body })} quoteLink={link} />, { path: '/' });
+    const link = (q: QuoteOf) => <a href={`#${q.kind === 'real' ? q.act : ''}`}>quoted {q.kind === 'real' ? q.act : ''}</a>;
+    const { unmount } = renderIn(fake, <TallyPost act={actOf('tally', { body })} quoteHead={link} />, { path: '/' });
     expect(await screen.findByRole('link', { name: 'quoted 00000000-0000-4000-8000-000000000abc' })).toBeInTheDocument();
     unmount();
-    renderIn(fake, <RevealPost act={actOf('reveal', { body })} quoteLink={link} />, { path: '/' });
+    renderIn(fake, <RevealPost act={actOf('reveal', { body })} quoteHead={link} />, { path: '/' });
     expect(await screen.findByRole('link', { name: 'quoted 00000000-0000-4000-8000-000000000abc' })).toBeInTheDocument();
   });
 });

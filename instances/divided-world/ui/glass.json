@@ -217,6 +217,7 @@
     "heel": { "fill": "#ff3d57", "ink": "#14030a", "large": "#ff959f" },
     "jabroni": { "fill": "#ffd93d", "ink": "#1a1403", "large": "#ffe27a" },
     "technician": { "fill": "#2ef0a0", "ink": "#03141a", "large": "#7dffc8" },
+    "tweener": { "fill": "#ff4fd8", "ink": "#1a0316", "large": "#ffa3ec" },
     "lurker": { "fill": "#b97aff", "ink": "#12051f", "large": "#d4b0ff" }
   },
   "orbs": {

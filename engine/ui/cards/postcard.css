@@ -280,31 +280,40 @@ button.kb-postcard {
 .kb-postcard-credit { color: var(--kb-glass-text-2); font-style: italic; letter-spacing: 0.06em; }
 .kb-postcard[data-kb-alignment='salty'] .kb-postcard-foot { color: var(--kb-glass-salty-text); }
 
-/* ---- the back: the same frame, the glass's crossed bands on its field, in no card's color ---- */
+/* ---- the back: the same frame, clouded, in no card's color ----
+ * The back's cloud: two layers of the glass's noise, white with alpha, tinted by a gradient of the glass's own colors
+ * multiplied over them, so the clouds take the colors and the field between them stays dark (the card template design's
+ * amendment of 2026-11-07, drawn on the booster packs' boards). The noise's only literals are inside url(). */
 .kb-postcard-back {
   --kb-card-color: var(--kb-glass-text-hi);
+  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-violet) 0%, var(--kb-glass-neon) 45%, var(--kb-glass-violet) 72%, var(--kb-glass-salty) 100%);
+  --kb-back-glow: var(--kb-glass-neon);
 }
 
 .kb-postcard-back .kb-postcard-canvas {
-  background:
-    linear-gradient(45deg, transparent 40%, var(--kb-card-color) 40% 60%, transparent 60%),
-    linear-gradient(-45deg, transparent 40%, var(--kb-card-color) 40% 60%, transparent 60%),
-    var(--kb-glass-field);
+  background-image:
+    var(--kb-back-tint),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 840' preserveAspectRatio='none'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0045 0.006' numOctaves='4' seed='23'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.9 0 0 0 -0.62'/%3E%3CfeGaussianBlur stdDeviation='5'/%3E%3C/filter%3E%3Crect width='540' height='840' filter='url(%23n)'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 840' preserveAspectRatio='none'%3E%3Cfilter id='n' x='0' y='0' width='100%25' height='100%25'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.009 0.012' numOctaves='3' seed='61'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.6 0 0 0 -0.75'/%3E%3CfeGaussianBlur stdDeviation='4'/%3E%3C/filter%3E%3Crect width='540' height='840' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-blend-mode: multiply, normal, normal;
+  background-color: var(--kb-glass-field);
 }
 
-/* The instance's mark on the back, as a TCG back's emblem: half the card's width, on a dark disc so it reads over the bands. */
+/* The instance's mark on the back, as a TCG back's emblem: two thirds of the card's width, glowing; the mark draws its own
+   rim, so no disc is laid under it. */
 .kb-postcard-emblem {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 50cqw;
-  height: 50cqw;
+  width: 66cqw;
+  height: 66cqw;
   box-sizing: border-box;
   transform: translate(-50%, -50%);
-  padding: 4cqw;
+  padding: 0;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--kb-glass-field) 92%, transparent);
-  box-shadow: 0 0 0 1px var(--kb-card-color), 0 0 4cqw 1cqw var(--kb-glass-field);
+  background: none;
+  box-shadow: 0 0 0 max(1px, 0.6cqw) var(--kb-back-glow), 0 0 6cqw 1.5cqw color-mix(in srgb, var(--kb-back-glow) 90%, transparent), 0 0 18cqw 5cqw color-mix(in srgb, var(--kb-back-glow) 45%, transparent);
 }
 
 .kb-postcard-emblem img {
@@ -314,9 +323,11 @@ button.kb-postcard {
   object-fit: contain;
 }
 
-/* The hit pull's back is the machine's gold. */
+/* The hit pull's back: its clouds and its glow in the machine's gold. */
 .kb-postcard-back[data-hit] {
   --kb-card-color: var(--kb-glass-ready);
+  --kb-back-tint: linear-gradient(160deg, var(--kb-glass-ready) 0%, var(--kb-glass-salty) 55%, var(--kb-glass-ready) 100%);
+  --kb-back-glow: var(--kb-glass-ready);
 }
 
 /* ---- armed ---- */

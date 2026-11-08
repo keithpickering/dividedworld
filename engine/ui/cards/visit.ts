@@ -6,6 +6,8 @@
  * The words are the glass's own voice: plain and true, out of character. What a Mod said (its arrival line, its filing line, a verdict's line,
  * a quiz's question) is quoted by the screen as the Mod's words and never written here.
  */
+import type { PronounSet } from '../../rules/pronouns.ts';
+import { words } from '../../rules/pronouns.ts';
 import type { Visit, VisitBand, VisitCharge, VisitEnd, VisitInfraction, VisitOutcome } from '../data/api.ts';
 import type { UiCopy } from '../types.ts';
 import { figure } from '../characters/format.ts';
@@ -62,10 +64,10 @@ export function tabName(state: VisitState): string {
 }
 
 /** The mark's name for a screen reader: the Mod, the time left or how it ended, and that it opens the visit. The name holds the tile's visible words ("2:41", "Trapped"), so a voice command that says what it reads finds it (WCAG 2.5.3). */
-export function markLabel(mod: string, state: VisitState, endsAt: string, now: number): string {
+export function markLabel(mod: string, pronouns: PronounSet, state: VisitState, endsAt: string, now: number): string {
   const how = {
     open: `${mod} is on a visit to this post, ${timeLeft(endsAt, now)} left, ${timeLeftWords(endsAt, now)}`,
-    filed: `${mod} filed its visit to this post`,
+    filed: `${mod} filed ${words(pronouns).their} visit to this post`,
     intercepted: `${mod}'s visit to this post was talked down`,
     trapped: `${mod}'s visit to this post was trapped, ended by a trap`,
     reversed: `${mod}'s visit to this post was ended by an admin`,
@@ -110,8 +112,8 @@ export function rulingWords(verdict: string): string {
 }
 
 /** The terms of an appeal, in the glass's plain words. */
-export function appealTerms(mod: string, infraction: Pick<VisitInfraction, 'points'>): string {
-  return `${mod} hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to ${pointsWords(infraction.points)}. One appeal per filing, and your plea is public.`;
+export function appealTerms(mod: string, pronouns: PronounSet | null, infraction: Pick<VisitInfraction, 'points'>): string {
+  return `${mod} hears it, or whoever has ${pronouns === null ? 'taken over' : `taken ${words(pronouns).their} place`}. It is refunded if overturned. It may be upheld, reduced, or increased by up to ${pointsWords(infraction.points)}. One appeal per filing, and your plea is public.`;
 }
 
 /** The terms of a try at talking a visit down, for the mask making it. */

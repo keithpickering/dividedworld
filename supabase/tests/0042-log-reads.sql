@@ -26,9 +26,9 @@ declare
 begin
   insert into wallets (account, balance) values (ann, 600), (bob, 600);
   perform tests.become_service();
-  perform buy_card(ann, 'blot', 100);
+  perform buy_card(ann, tests.slot('blot'), 100);
   played := (play_card(ann, 'blot', a, p, '{}', 25, 'Take that.') ->> 'id')::uuid;
-  perform buy_card(bob, 'sweetie', 100);
+  perform buy_card(bob, tests.slot('sweetie'), 100);
   perform tests.unbecome();
 
   perform tests.become(ann);

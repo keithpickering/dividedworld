@@ -79,6 +79,22 @@ describe('inView', () => {
     expect(r.getByTestId('a')).toHaveAttribute('data-in-view', 'true');
   });
 
+  test('a margin has its own observer, handed the margin, shared by the elements that watch with it; any overlap of the shrunk view counts', () => {
+    const a = document.createElement('div'), b = document.createElement('div');
+    const mid: boolean[] = [];
+    const stopPlain = watchInView(a, () => {});
+    const stopMid = watchInView(a, (v) => mid.push(v), { rootMargin: '-20% 0px' });
+    const stopMid2 = watchInView(b, () => {}, { rootMargin: '-20% 0px' });
+    expect(made).toHaveLength(2);
+    expect(made[1]!.opts).toEqual({ rootMargin: '-20% 0px' });
+    expect(made[1]!.seen).toEqual(new Set([a, b]));
+    act(() => { made[1]!.cb([{ target: a, isIntersecting: true, intersectionRatio: 0.01 } as unknown as IntersectionObserverEntry], {} as IntersectionObserver); });
+    expect(mid).toEqual([true]);
+    stopMid(); stopMid2();
+    expect(made[1]!.disconnected).toBe(true);
+    stopPlain();
+  });
+
   test('a threshold has its own observer, shared by the elements that watch at it, and counts the share showing', () => {
     const a = document.createElement('div'), b = document.createElement('div');
     const plain: boolean[] = [], deep: boolean[] = [];

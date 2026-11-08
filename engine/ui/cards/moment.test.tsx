@@ -16,7 +16,7 @@ import { CalloutProvider } from './Callout.tsx';
 import { MomentEffects, momentParts } from './Effects.tsx';
 import type { CardUi, EffectProps } from './types.ts';
 
-const base = { alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const rule = (key: string, name: string, extra: Partial<CardRules> = {}): CardRules => ({ ...base, key, name, canApply: (t, e, _config, now) => landsOn({ key }, t, e, now), ...extra });
 /* Smear saves state and stacks (as a wash does); Ripple stacks; Holdy is a takeover that does neither; Tagger saves nothing and stacks one. */
 const smear = rule('smear', 'Smear', { stack: 3, validateState: (s) => ok(s) });
@@ -24,7 +24,7 @@ const ripple = rule('ripple', 'Ripple', { stack: 2 });
 const holdy = rule('holdy', 'Holdy');
 const tagger = rule('tagger', 'Tagger');
 const shieldy = rule('shieldy', 'Shieldy', { play: 'use', ward: true, lasts: { unit: 'day', count: 7 } });
-const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } } });
+const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'visit' } } });
 const sparkly = rule('sparkly', 'Sparkly', { rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 } });
 /* Lifty is a takeover that stacks: drawn in a moment, and outermost there as it is live. */
 const lifty = rule('lifty', 'Lifty', { stack: 2 });

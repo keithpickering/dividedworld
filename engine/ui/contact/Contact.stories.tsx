@@ -4,13 +4,13 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { World } from '../story.tsx';
-import { ContactScreen } from './Contact.tsx';
+import { LoadedContact } from '../loaded.tsx';
 
 const meta: Meta = { title: 'Contact' };
 export default meta;
 
 export const Set: StoryObj = {
-  render: () => <ContactScreen />,
+  render: () => <LoadedContact />,
   parameters: {
     path: '/contact',
     world: ((fake) => {
@@ -23,4 +23,4 @@ export const Set: StoryObj = {
   },
 };
 
-export const Unset: StoryObj = { render: () => <ContactScreen />, parameters: { path: '/contact' } };
+export const Unset: StoryObj = { render: () => <LoadedContact />, parameters: { path: '/contact' } };

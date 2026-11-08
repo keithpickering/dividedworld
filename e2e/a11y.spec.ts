@@ -5,6 +5,7 @@ import type { Fake } from '../engine/ui/data/fake.ts';
 import { boardSwitch, MAIN_BOARD_WIDTH } from '../engine/ui/glass/board.ts';
 import type { Demo } from '../web/src/demo.ts';
 import { boardStoryIds, routeStoryIds } from './board-stories.ts';
+import { settled } from './settled.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
@@ -305,9 +306,13 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
         await page.getByRole('link', { name: 'Sign in' }).first().click();
         await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+        /* Each move here is made in the app, so its screen is read once it has entered: a screen drawn whole on its first render staggers its head
+           in from transparent (engine/ui/glass/enter.ts), and contrast read mid-entrance is of a title the player sees only for a moment. */
+        await settled(page, { loops: true });
         expect(await pageViolations(page)).toEqual([]);
         await page.evaluate(() => { history.pushState(null, '', '/register?invite=ab12cd34'); window.dispatchEvent(new PopStateEvent('popstate')); });
         await expect(page.getByRole('heading', { level: 1, name: /register|create|join/iu })).toBeVisible();
+        await settled(page, { loops: true });
         expect(await pageViolations(page)).toEqual([]);
       });
     });

@@ -8,6 +8,7 @@ import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { NewCharacter } from './NewCharacter.tsx';
 import type { ClassLook } from '../types.ts';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 beforeEach(() => { localStorage.clear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
@@ -87,7 +88,7 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
     await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
     await userEvent.click(submit);
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', 'tally', 'announced'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', 'tally', 'announced', PRONOUN_PRESETS.it));
     await waitFor(() => expect(window.location.pathname).toBe('/characters'));
     const mine = await w.fake.myCharacters();
     expect(mine.find((c) => c.name === 'Spritey')).toMatchObject({ debutedAt: null, class: 'heel' });
@@ -95,6 +96,39 @@ describe('New character', () => {
     /* My characters opens on the new one: the navigation carries it in history.state, never in the address. */
     expect(window.location.search + window.location.hash).toBe('');
     expect((window.history.state as { state: unknown }).state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
+  });
+
+  test('starts on the instance\'s pronouns, makes the character with the ones chosen, and a bad custom set disables it', async () => {
+    const w = world();
+    const create = vi.spyOn(w.fake, 'createCharacter');
+    open(w);
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^it\/its/u })).toBeChecked();
+    await userEvent.type(within(f).getByLabelText('Name'), 'Gloomba');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
+    const submit = within(f).getByRole('button', { name: 'Make the character' });
+    expect(submit).toBeEnabled();
+    await userEvent.click(within(f).getByRole('radio', { name: /^Custom/u }));
+    expect(submit).toBeEnabled();
+    await userEvent.clear(within(f).getByLabelText('Subject'));
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(f).getByLabelText('Subject'), 'abcdefghijklm');
+    expect(within(f).getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
+    await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
+    await userEvent.click(submit);
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Gloomba', 'heel', 'now', 'announced', PRONOUN_PRESETS.she));
+    expect((await w.fake.myCharacters()).find((c) => c.name === 'Gloomba')!.pronouns).toEqual(PRONOUN_PRESETS.she);
+  });
+
+  test('starts on the screen settings\' pronouns when the instance sets them', async () => {
+    const w = world();
+    /* The backend's own screen settings carry it (the fake, as the screen_settings read does), and the screen starts there. */
+    expect((await buildWorld({ pronouns: PRONOUN_PRESETS.she }).settings()).pronouns).toEqual(PRONOUN_PRESETS.she);
+    renderIn(w.fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: w.per, pronouns: PRONOUN_PRESETS.she } });
+    const f = await form();
+    expect(within(f).getByRole('radio', { name: /^she\/her/u })).toBeChecked();
+    expect(within(f).getByRole('radio', { name: /^it\/its/u })).not.toBeChecked();
   });
 
   test('drops at once, silently, with only the loudness changed', async () => {
@@ -106,8 +140,27 @@ describe('New character', () => {
     await userEvent.click(within(f).getByRole('radio', { name: /^Face/u }));
     await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(f).getByRole('button', { name: 'Make the character' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'face', 'now', 'silent'));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'face', 'now', 'silent', PRONOUN_PRESETS.it));
     expect((await w.fake.myCharacters()).find((c) => c.name === 'Spritey')!.debutedAt).not.toBeNull();
+  });
+
+  test('Make the character is a busy button while the create is out: aria-busy, its name kept, and a second press makes one character', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.createCharacter.bind(w.fake);
+    const create = vi.spyOn(w.fake, 'createCharacter').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    const f = await form();
+    await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
+    const submit = within(f).getByRole('button', { name: 'Make the character' });
+    await userEvent.click(submit);
+    expect(submit).toHaveAttribute('aria-busy', 'true');
+    expect(within(f).getByRole('button', { name: 'Make the character' })).toBe(submit);
+    await userEvent.click(submit);
+    expect(create).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(window.location.pathname).toBe('/characters'));
   });
 
   test('shows a refusal in the server\'s words and keeps what was typed', async () => {
@@ -161,6 +214,25 @@ describe('New character\'s head, name and foot', () => {
     const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'characters.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     expect(/\.kb-new-form\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
     expect(/\.kb-debut,\s*\.kb-reveal\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
+  });
+
+  test('every line about the new character follows the pronouns chosen on the form: she/her, then they/them', async () => {
+    open(world());
+    const f = await form();
+    const line = () => f.querySelector('.kb-glass-form-foot-line')!;
+    await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
+    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
+    await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
+    expect(within(f).getByText('Only you will know her class, unless you choose to reveal it.')).toBeInTheDocument();
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays yours alone.');
+    expect(within(f).getByText(/Nothing is posted\. Waiting Wanda is on the board at once, and her first post is her entrance\./u)).toBeInTheDocument();
+    await userEvent.click(within(f).getByRole('radio', { name: /^they\/them/u }));
+    expect(within(f).getByText('Only you will know their class, unless you choose to reveal it.')).toBeInTheDocument();
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays yours alone.');
+    expect(within(f).getByText('When they debut')).toBeInTheDocument();
+    expect(within(f).getByText(/They are on the board at once, and can post at once\./u)).toBeInTheDocument();
+    expect(within(f).getByText(/They wait, seen by no one but you, and debut at the next settlement\./u)).toBeInTheDocument();
+    expect(within(f).getByRole('radio', { name: /^Announced, with their class/u })).toBeInTheDocument();
   });
 
   test('says in one line, beside Cancel and Make the character, what will happen, as the form is filled', async () => {
@@ -226,16 +298,16 @@ describe('New character\'s class cards', () => {
   });
 });
 
-/* The carousel's five classes (the Technician plan's Task 4), in an instance of the test's own, since a test in engine/ui may not import one. */
+/* The carousel's six classes (the Technician plan's Task 4, the Tweener plan's Task 6), in an instance of the test's own, since a test in engine/ui may not import one. */
 describe('New character\'s classes', () => {
   test('offers every class in the instance\'s order, in one group, nothing chosen', async () => {
-    const five: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
-    const fake = buildWorld({ charactersPerPlayer: 3 }, five);
+    const six: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Tweener', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
+    const fake = buildWorld({ charactersPerPlayer: 3 }, six);
     fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: five });
+    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: six });
     const f = await form();
     const radios = within(within(f).getByRole('group', { name: /class/iu })).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(six.classes.map((c) => c.key));
     expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
     expect(radios.filter((r) => (r as HTMLInputElement).checked)).toEqual([]);
   });

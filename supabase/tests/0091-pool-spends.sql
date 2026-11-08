@@ -17,7 +17,6 @@ begin
     'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Ps Gabe', 'title', 'Made this.', 'avatar', 'gabe'),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ps-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'ps-boss', 'name', 'Ps Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'ps-mod', 'name', 'Ps Mod', 'title', 'Mod', 'signature', 'b'),
@@ -96,7 +95,7 @@ begin
     denied := false;
     begin perform count(*) from pool_spends; exception when insufficient_privilege then denied := true; end;
     if not denied then raise exception '% can read the pool''s spends', who; end if;
-    foreach fn in array array['select pool_week(''2030-01-07'')', 'select pool_orphans(''2030-01-07'')', 'select claim_pool_run(''2030-01-07'')', 'select pool_context()', 'select pool_names(''[]'')',
+    foreach fn in array array['select pool_week(''2030-01-07'')', 'select pool_orphans(''2030-01-07'')', 'select claim_pool_run(''2030-01-07'')', 'select pool_context()', 'select character_faces(''[]'')',
       'select pool_thread(gen_random_uuid(), 1, 1, null)', 'select write_staff_thread(''ps-boss'', ''side'', ''t'', ''b'')', 'select schedule_chatter()',
       'select record_pool_spend(''2030-01-07'', ''ps-boss'', ''named'', gen_random_uuid(), null, false)', 'select write_staff_note(''ps-boss'', gen_random_uuid(), ''n'')'] loop
       denied := false;
@@ -359,8 +358,8 @@ begin
   if jsonb_array_length(th -> 'posts') is distinct from 2 or th -> 'posts' -> 0 ->> 'body' is distinct from 'First.' or th -> 'posts' -> 1 ->> 'body' is distinct from 'Third.' then raise exception 'the quoted post was not included: %', th; end if;
   th := pool_thread(t, 1, 10, gen_random_uuid());
   if jsonb_array_length(th -> 'posts') is distinct from 1 then raise exception 'a post that is not there changed the read: %', th; end if;
-  names := pool_names(jsonb_build_array(a, gen_random_uuid(), 'not an id', 7));
-  if names ->> a::text is distinct from 'Ps Ann' or (select count(*) from jsonb_object_keys(names)) is distinct from 1::bigint then raise exception 'the names: %', names; end if;
+  names := character_faces(jsonb_build_array(a, gen_random_uuid(), 'not an id', 7));
+  if names -> a::text ->> 'name' is distinct from 'Ps Ann' or (select count(*) from jsonb_object_keys(names)) is distinct from 1::bigint then raise exception 'the names: %', names; end if;
   perform tests.unbecome();
 end $$;
 
