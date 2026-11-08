@@ -197,7 +197,9 @@
  * become the instance's ink (`--kb-bright-ink`) with its outline (`--kb-bright-outline`) around every glyph, since white on yellow
  * is readable only by the outline. The engine names no color; the instance sets both properties. A quote's border is the ink too.
  * What brings its own ground (the reaction chips, the ORIGIN box, whatever the engine lifts over a post's ink) takes the board's four
- * inks back from the root's copies (tokens.css `--kb-board-*`) and drops the shadow, so white is never drawn on a light chip.
+ * inks back from the root's copies (tokens.css `--kb-board-*`) and drops the shadow, so white is never drawn on a light chip. That
+ * includes a shut spoiler (its bar is the ink on the ink, and an outline over it would show the hidden glyphs) and the video box and
+ * its face, which paint the board's ground.
  */
 .kb-act-main[data-kb-bright-ink] {
   --kb-fg: var(--kb-bright-ink);
@@ -212,7 +214,7 @@
   border-color: var(--kb-bright-ink);
 }
 
-.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink]) {
+.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span) {
   --kb-fg: var(--kb-board-fg);
   --kb-link: var(--kb-board-link);
   --kb-link-visited: var(--kb-board-link-visited);
@@ -221,7 +223,7 @@
   text-shadow: none;
 }
 
-.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink]) .kb-quote {
+.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span) .kb-quote {
   border-color: var(--kb-rule);
 }
 

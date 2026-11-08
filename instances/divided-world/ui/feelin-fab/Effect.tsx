@@ -8,16 +8,17 @@
  * nothing here needs to prove a palette's contrast at run time (the engine's check does, over the foil itself).
  *
  * The palettes are the two the board has, pastels for the light board and deep colors for the dark one, chosen per post by the
- * band's board (`band.board`); under Brighter effects (`data-kb-effects="bright"` on the root, docs/plans/2026-11-08-brighter-effects-design.md
- * section 1) the band is bright and the foil is FAB_BRIGHT on both boards, free of the band, while the post body is marked for the bright
- * ink (engine/ui/cards/body.ts `markBrightInk`, read by thread.css and fab.css: white words, black outline). The palette is in the foil's
- * key, so a standard and a bright foil are never shared, on the page or in the worker. FAB_STOPS and FAB_BRIGHT stay in TypeScript as the
- * lists. The band is read from the tokens the board resolves for this post, after mount (it needs the element in the document), and
- * kept: the tokens change only with `data-kb-mode` or `data-kb-effects` on the root or the device's color scheme, so the band is read
- * again in setup (mount and resize) and when any changes, never per draw (a draw is ~30 a second per post, a read is a getComputedStyle and a few property reads). A board
- * that cannot be read draws nothing and leaves the words bare, and is read again at the next setup or board change.
- * Because a board can change while the loop sleeps (reduced motion, a post out of view), a change of `data-kb-mode` or `data-kb-effects` on the root or of
- * the device's color scheme asks for one more draw by itself.
+ * band's board (`band.board`); under Brighter effects (`data-kb-effects="bright"` on the root, docs/plans/2026-11-08-brighter-
+ * effects-design.md section 1) the band is bright and the foil is FAB_BRIGHT on both boards, free of the band, while the post
+ * body is marked for the bright ink (engine/ui/cards/body.ts `markBrightInk`, read by thread.css and fab.css: white words,
+ * black outline). The palette is in the foil's key, so a standard and a bright foil are never shared, on the page or in the
+ * worker. FAB_STOPS and FAB_BRIGHT stay in TypeScript as the lists. The band is read from the tokens the board resolves for
+ * this post, after mount (it needs the element in the document), and kept: the tokens change only with `data-kb-mode` or `data-
+ * kb-effects` on the root or the device's color scheme, so the band is read again in setup (mount and resize) and when any
+ * changes, never per draw (a draw is ~30 a second per post, a read is a getComputedStyle and a few property reads). A board
+ * that cannot be read draws nothing and leaves the words bare, and is read again at the next setup or board change. Because a
+ * board can change while the loop sleeps (reduced motion, a post out of view), a change of `data-kb-mode` or `data-kb-effects`
+ * on the root or of the device's color scheme asks for one more draw by itself.
  *
  * The page's one loop (engine/ui/shine/loop.ts) serves the post: it draws only while the post is in view, when the light moved, and
  * on the idle shimmer's cadence; reduced motion holds the light at rest, so it draws once. The accessible path is that stillness,

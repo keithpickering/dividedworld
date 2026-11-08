@@ -21,13 +21,15 @@
  * landed, at rest, once: no burst, no cling, nothing registered that moves.
  *
  * The seed is `${play.id}:${post.id}`, both public, then a draw made for this mount (`loadSeed`), so each load's burst goes off
- * from its own spot and leaves its own glitter, and two posts of one character differ; the mount keeps it, so a post that leaves
- * view and returns shows the same glitter. A play's moment (`still`) is the public seed alone, the same on every device. Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post
- * only while it is in view. The band is read from the tokens the board resolves for this post, after mount, and held: they change
- * only with `data-kb-mode` or `data-kb-effects` (Brighter effects: a bright band, free of the readable band, docs/plans/2026-11-08-brighter-effects-design.md) on the root or the device's color scheme, so it is read in setup (mount and resize) and when any
- * changes, never per draw (a getComputedStyle and a few property reads, ~30 times a second per post). A board that cannot be read
- * draws nothing and leaves the words bare, and is read again at the next setup or board change. That change also asks for one
- * more draw by itself, since a board can change while the loop sleeps.
+ * from its own spot and leaves its own glitter, and two posts of one character differ; the mount keeps it, so a post that
+ * leaves view and returns shows the same glitter. A play's moment (`still`) is the public seed alone, the same on every device.
+ * Nothing here reads who owns a post, who played on it, or any class. The page's one loop (loop.ts) draws the post only while
+ * it is in view. The band is read from the tokens the board resolves for this post, after mount, and held: they change only
+ * with `data-kb-mode` or `data-kb-effects` (Brighter effects: a bright band, free of the readable band,
+ * docs/plans/2026-11-08-brighter-effects-design.md) on the root or the device's color scheme, so it is read in setup (mount and
+ * resize) and when any changes, never per draw (a getComputedStyle and a few property reads, ~30 times a second per post). A
+ * board that cannot be read draws nothing and leaves the words bare, and is read again at the next setup or board change. That
+ * change also asks for one more draw by itself, since a board can change while the loop sleeps.
  *
  * Where. The glitter covers the post, not only its words (2026-11-06: "the card effect should apply to the entire post in all cases"):
  * the three canvases stand on one surface, an element placed inline over the box the effect paints (engine/ui/cards/body.ts): in the

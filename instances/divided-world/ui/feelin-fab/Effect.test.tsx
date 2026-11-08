@@ -587,6 +587,29 @@ describe("Feelin' Fab, bright", () => {
     expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
   });
 
+  test('a takeover that moves the words to another body while bright is on unmarks the old body and marks the new one', () => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    render(<><div className="kb-act-main" id="a"><FeelinFabEffect {...props(1)} /></div><div className="kb-act-main" id="b" /></>);
+    const a = document.getElementById('a')!, b = document.getElementById('b')!;
+    expect(a).toHaveAttribute('data-kb-bright-ink');
+    b.appendChild(box());
+    act(() => { for (const o of resizes) o.cb(); });
+    expect(a).not.toHaveAttribute('data-kb-bright-ink');
+    expect(b).toHaveAttribute('data-kb-bright-ink');
+    a.appendChild(box());
+  });
+
+  test.each([['reduced motion', () => document.documentElement.setAttribute('data-kb-motion', 'reduce'), true], ['out of view', () => {}, false]] as const)('turning it off while the loop sleeps (%s) clears the mark', async (_name, setUp, inView) => {
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    setUp();
+    render(<div className="kb-act-main"><FeelinFabEffect {...props(1)} /></div>);
+    void see(canvas(), true); frames(3);
+    if (!inView) { void see(canvas(), false); frames(3, 100); }
+    expect(bodyOfPost()).toHaveAttribute('data-kb-bright-ink');
+    await effects(false);
+    expect(bodyOfPost()).not.toHaveAttribute('data-kb-bright-ink');
+  });
+
   test('a band that cannot be read paints nothing and asks for no ink', () => {
     document.documentElement.setAttribute('data-kb-effects', 'bright');
     vi.spyOn(console, 'error').mockImplementation(() => {});
