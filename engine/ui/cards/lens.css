@@ -328,6 +328,7 @@
 .kb-lens-by {
   margin: 0 0 0.35rem;
   color: var(--kb-glass-text-2);
+  font-size: var(--kb-glass-size-display-xxs);
 }
 
 .kb-lens-who {
@@ -348,12 +349,7 @@
 .kb-lens-yours {
   margin: 0 0 0.35rem;
   color: var(--kb-glass-text);
-  font-weight: 700;
-}
-
-/* A play's note stands above its caster, as the mockup's `.play .note` does. */
-.kb-lens-note {
-  letter-spacing: 0.06em;
+  font-size: var(--kb-glass-size-display-xxs);
 }
 
 /*
