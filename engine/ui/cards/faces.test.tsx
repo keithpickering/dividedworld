@@ -116,4 +116,3 @@ describe('a card\'s kind word', () => {
     expect([faceOf(plain, undefined, settings).kind, faceOf(set, undefined, settings).kind, facesOf([plain], [], settings)[0]?.kind]).toEqual(['Cast', 'Set', 'Cast']);
   });
 });
-

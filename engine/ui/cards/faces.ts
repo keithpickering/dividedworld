@@ -40,9 +40,9 @@ export interface CardFace {
   readonly describe: string;
   /** How rare it is: drawn as the corner gem, whose shape says it (never its color alone). */
   readonly rarity: Rarity;
-  /** How it is played: its word on the face ("Set"). */
+  /** How it is played, as the rules name it (`set`); the face says `kind`. */
   readonly play: Play;
-  /** The kind tag as the face says it, in the instance's words: `playWord` of the play. */
+  /** How it is played as every screen says it, in the instance's words ("Gimmick"): `playWord` of the play. */
   readonly kind: string;
 }
 

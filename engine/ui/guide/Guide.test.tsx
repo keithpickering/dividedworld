@@ -264,6 +264,12 @@ describe('the cards marker', () => {
     const cells = within(row).getAllByRole('cell').map((c) => c.textContent);
     expect(cells).toEqual(['Salty Common', 'Cast', '1.00', 'Splat a post in ink. Splats a post in your ink.']);
   });
+
+  test('its play is said in the instance\'s kind words, as its face says it', () => {
+    renderInWorld(<Guide />, { path: '/guide', instance, guide: guide('## Cards\n\n<!-- kayfabb:cards -->'), cards: [whoops], copy: { cardKinds: { cast: 'Move', set: 'Gimmick', use: 'Ward' } } });
+    const row = within(within(sectionOf('Cards')).getByRole('table', { name: 'The cards' })).getByRole('row', { name: /Whoops!/u });
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('Move');
+  });
   test('each stacked label is its column\'s name: the head row says what every data-kb-label says', () => {
     page('## Cards\n\n<!-- kayfabb:cards -->', { cards: [whoops] });
     const table = within(sectionOf('Cards')).getByRole('table', { name: 'The cards' });

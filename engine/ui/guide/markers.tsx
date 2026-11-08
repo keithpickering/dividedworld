@@ -115,7 +115,7 @@ export function CardList() {
             <tr key={f.key}>
               <th scope="row">{f.name}</th>
               <td data-kb-label="Kind">{`${f.tag} ${rarityName(f.rarity)}`}</td>
-              <td data-kb-label="Played">{f.play.charAt(0).toUpperCase() + f.play.slice(1)}</td>
+              <td data-kb-label="Played">{f.kind}</td>
               <td className="kb-num" data-kb-label="Price in orbs">{priceOf(f)}</td>
               <td data-kb-label="What it does">
                 {f.tagline !== '' && <i className="kb-guide-flavor">{f.tagline}</i>}
