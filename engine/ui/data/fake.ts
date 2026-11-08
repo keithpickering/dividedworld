@@ -1864,7 +1864,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boards: () => boards.map((b): BoardSummary => {
       const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
-      return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null };
+      return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
     }),
     board(slugOrId) {
       const found = boards.find((b) => b.slug === slugOrId || b.id === slugOrId);

@@ -65,6 +65,7 @@ begin
     select 1 from jsonb_array_elements(got -> 'boards') x
     where (x ->> 'thread_count')::integer is distinct from coalesce((select c.threads from board_counts c where c.board = (x ->> 'id')::uuid), 0)
        or x ->> 'last_thread' is distinct from (select l.id::text from thread_list l where l.board = (x ->> 'id')::uuid order by l.last_at desc limit 1)
+       or x ->> 'last_title' is distinct from (select l.title from thread_list l where l.board = (x ->> 'id')::uuid order by l.last_at desc limit 1)
        or x ->> 'last_character' is distinct from (select l.last_character::text from thread_list l where l.board = (x ->> 'id')::uuid order by l.last_at desc limit 1)
   ) then
     raise exception 'a board carries its count and its newest thread: %', got -> 'boards';

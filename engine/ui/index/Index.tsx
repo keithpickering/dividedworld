@@ -54,6 +54,7 @@ export function IndexScreen({ doc }: { readonly doc: ScreenDoc<IndexPage> }) {
                   {b.lastAt === null ? <><span className="kb-board-sep" aria-hidden="true"> · </span><span>None yet</span></> : (
                     <>
                       <span className="kb-board-sep" aria-hidden="true"> · </span>
+                      {b.lastThread && b.lastTitle && <><Link to={`/t/${b.lastThread}`} className="kb-board-last-title">{b.lastTitle}</Link><br /></>}
                       <span className="kb-board-last-label">last: </span>
                       <Byline character={who} id={b.lastCharacter} name={who?.name} link avatar={false} />
                       <span className="kb-board-sep" aria-hidden="true">, </span>

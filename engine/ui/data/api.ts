@@ -230,6 +230,8 @@ export interface BoardSummary extends Board {
   readonly lastAt: string | null;
   readonly lastCharacter: Id | null;
   readonly lastThread: Id | null;
+  /** That thread's title, for the Last post column. */
+  readonly lastTitle: string | null;
 }
 
 /** A thread as the list shows it (the thread_list view). */

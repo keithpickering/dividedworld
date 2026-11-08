@@ -506,7 +506,7 @@ describe('reads and their rows', () => {
     expect(h.to('boards_now')[0]?.url.searchParams.get('select')).toBe('id,slug,name,description,is_system,move_act');
     expect(h.to('board_counts')[0]?.url.searchParams.get('select')).toBe('board,threads');
     expect(h.to('thread_list').every((r) => r.method === 'GET' && !(r.headers.get('prefer') ?? '').includes('count'))).toBe(true);
-    expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, moveAct: null, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T });
+    expect(board).toEqual({ id: C, slug: 'general', name: 'General', description: 'All', isSystem: false, moveAct: null, threadCount: 12, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T, lastTitle: 'A title' });
     const latest = h.to('thread_list').find((r) => r.method === 'GET');
     expect(latest?.url.searchParams.get('order')).toBe('last_at.desc');
     expect(latest?.url.searchParams.get('limit')).toBe('1');
@@ -1890,7 +1890,7 @@ describe('a screen in one call', () => {
       settings: { postsPerPage: 7, hotReplies: 'x' }, account: A, preferences: { theme: 'dark', text_size: 125, tips: 'off' },
       characters: [{ id: B, name: 'Bea', class: 'face', class_since: '2026-10-01T00:00:00+00:00', presence_hidden: true }],
       faces: [{ ...CHAR, profile: PROFILE }], wallet: { balance: 40, cap: null }, cards: [{ card: 'splat', held: 2 }],
-      boards: [{ ...BOARD_ROW, thread_count: 5, last_at: '2026-10-01T10:00:00+00:00', last_character: B, last_thread: T }],
+      boards: [{ ...BOARD_ROW, thread_count: 5, last_at: '2026-10-01T10:00:00+00:00', last_character: B, last_thread: T, last_title: 'A title' }],
       unread: 99999, nextSettlementAt: '2026-10-02T08:17:00+00:00', lastSettledAt: '2026-10-01T08:17:00+00:00', newestSettlement: '2026-09-30T08:17:00+00:00',
     });
     const boot = await h.api.boot();
@@ -1903,7 +1903,7 @@ describe('a screen in one call', () => {
     expect(boot.faces).toEqual([BEA]);
     expect(boot.wallet).toEqual({ balance: 40, cap: FALLBACK.walletCap });
     expect(boot.cards).toEqual([{ card: 'splat', held: 2 }]);
-    expect(boot.boards).toEqual([{ ...BOARD, threadCount: 5, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T }]);
+    expect(boot.boards).toEqual([{ ...BOARD, threadCount: 5, lastAt: '2026-10-01T10:00:00+00:00', lastCharacter: B, lastThread: T, lastTitle: 'A title' }]);
     expect(boot.unread).toBe(10);
     expect([boot.nextSettlementAt, boot.lastSettledAt, boot.newestSettlement]).toEqual(['2026-10-02T08:17:00+00:00', '2026-10-01T08:17:00+00:00', '2026-09-30T08:17:00+00:00']);
   });
@@ -1922,10 +1922,10 @@ describe('a screen in one call', () => {
   });
 
   it('index_page: sends one request and maps boards, characters and the box', async () => {
-    const h = once('index_page', { boards: [{ ...BOARD_ROW, thread_count: 5, last_at: null, last_character: null, last_thread: null }], characters: [{ ...CHAR, profile: PROFILE }], presence: PRESENCE, unread: 3 });
+    const h = once('index_page', { boards: [{ ...BOARD_ROW, thread_count: 5, last_at: null, last_character: null, last_thread: null, last_title: null }], characters: [{ ...CHAR, profile: PROFILE }], presence: PRESENCE, unread: 3 });
     const page = await h.api.indexPage();
     expect(only(h, 'index_page') ?? {}).toEqual({});
-    expect(page).toEqual({ boards: [{ ...BOARD, threadCount: 5, lastAt: null, lastCharacter: null, lastThread: null }], characters: [BEA], presence: PRESENCE, unread: 3 });
+    expect(page).toEqual({ boards: [{ ...BOARD, threadCount: 5, lastAt: null, lastCharacter: null, lastThread: null, lastTitle: null }], characters: [BEA], presence: PRESENCE, unread: 3 });
   });
 
   it('board_page: sends the slug, page and cards by name, and maps the document; no such board is null', async () => {
