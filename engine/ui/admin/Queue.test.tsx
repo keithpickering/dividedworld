@@ -1,8 +1,10 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { seedMoves } from '../board/move-world.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { LoadedQueue } from '../loaded.tsx';
 import { QueueScreen } from './Queue.tsx';
 
 beforeEach(() => localStorage.clear());
@@ -11,7 +13,7 @@ function open(options: { readonly as?: 'admin' | 'player'; readonly build?: (fak
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance, { signIn: options.as === 'player' ? 'player' : 'admin' });
   options.build?.(fake, w);
-  renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue', ...(options.copy ? { copy: options.copy } : {}) });
+  renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', ...(options.copy ? { copy: options.copy } : {}) });
   return { fake, w };
 }
 
@@ -133,7 +135,7 @@ describe('holding and reversing', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
     const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
     expect(dialog).toHaveTextContent('Rename Off Topic to Small Soldiers Situation Room');
-    expect(dialog).toHaveTextContent('It will never land, and no player will see it. A hold cannot be taken back.');
+    expect(dialog).toHaveTextContent('It will never land, and no player will see it. A hold cannot be taken back. The Boss chooses her next move at her next meeting, and learns of the hold only then.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect((await fake.adminQueue()).waiting).toHaveLength(1);
@@ -157,12 +159,29 @@ describe('holding and reversing', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Reverse/u }));
     const dialog = await screen.findByRole('dialog', { name: 'Reverse this move?' });
     expect(dialog).toHaveTextContent('Renamed General to Pointless Toast Palace');
-    expect(dialog).toHaveTextContent('It ends now, as reversed by an admin, and the old name returns at once.');
+    expect(dialog).toHaveTextContent('It ends now, as reversed by an admin, and the old name returns at once. The Boss says so in the move\'s thread, and learns of it at her next meeting.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reverse it' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Reverse/u })).toBeNull());
     expect((await fake.board(w.general))?.name).toBe('General');
     expect(await group(/^In force/u)).toHaveTextContent('Nothing is in force.');
     expect((await fake.adminQueue()).ended.filter((e) => e.how === 'reversed')).toHaveLength(2);
+  });
+
+  test('Hold it is a busy button while the hold is out: aria-busy, its name kept, and a second press holds once', async () => {
+    const { fake } = open();
+    let release!: () => void;
+    const real = fake.holdMove.bind(fake);
+    const hold = vi.spyOn(fake, 'holdMove').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    const button = within(dialog).getByRole('button', { name: 'Hold it' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Hold it' })).toBe(button);
+    await userEvent.click(button);
+    expect(hold).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   test('a refusal is shown in the server\'s words in the dialog, and the queue behind it is read again', async () => {
@@ -177,7 +196,84 @@ describe('holding and reversing', () => {
   });
 });
 
+describe('the page is its document', () => {
+  test('is whole in its first render, from the document, with the boards beside the queue: nothing is read', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const boot = await fake.boot();
+    const doc = { ...(await fake.queuePage())!, boards: await fake.boards() };
+    const read = holdReads(fake, ['session']);
+    renderIn(fake, <QueueScreen doc={doc} now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    expect(screen.getByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^In force/u })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /^Boards/u }).querySelectorAll('article').length).toBeGreaterThan(0);
+    expect(screen.getByRole('form', { name: 'How players reach you' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(read).toEqual([]);
+  });
+
+  test('the route reads queuePage once, and none of the four reads it replaced', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const page = vi.spyOn(fake, 'queuePage');
+    const own = ['adminQueue', 'boardNames', 'bosses', 'adminContact', 'isAdmin'] as const;
+    const spies = own.map((n) => vi.spyOn(fake, n));
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot: await fake.boot() });
+    await group(/^Waiting to land/u);
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('an action reads queuePage once more, in place', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot: await fake.boot() });
+    const waiting = await group(/^Waiting to land/u);
+    const page = vi.spyOn(fake, 'queuePage');
+    await userEvent.click(within(waiting).getByRole('button', { name: /^Hold/u }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^Hold/u }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(page).toHaveBeenCalledTimes(1);
+    expect((await fake.adminQueue()).waiting).toHaveLength(0);
+  });
+});
+
+describe('the boards are read with the queue', () => {
+  test('a description saved, then leaving and coming back, shows the new description (boot\'s boards are as the page loaded)', async () => {
+    const fake = buildWorld();
+    seedMoves(fake, testInstance, { signIn: 'admin' });
+    const boot = await fake.boot();
+    const first = renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    const boards = await group(/^Boards/u);
+    const board = (await fake.boards())[0]!;
+    const card = await within(boards).findByRole('article', { name: board.name });
+    await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
+    await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Fresh words');
+    await userEvent.click(within(card).getByRole('button', { name: `Save the description of ${board.name}` }));
+    await waitFor(() => expect(card).toHaveTextContent('Description: “Fresh words”'));
+    first.unmount();
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue', boot });
+    const again = await within(await group(/^Boards/u)).findByRole('article', { name: board.name });
+    expect(again).toHaveTextContent('Description: “Fresh words”');
+  });
+});
+
 describe('who may see it', () => {
+  test('carries the admin pages\' strip under its lead: Moves is the current page, and The machine is a link to it', async () => {
+    open();
+    const strip = await screen.findByRole('navigation', { name: 'Admin pages' });
+    expect(within(strip).getByRole('link', { name: 'Moves' })).toHaveAttribute('aria-current', 'page');
+    expect(within(strip).getByRole('link', { name: 'The machine' })).toHaveAttribute('href', '/admin/machine');
+    expect(within(strip).getByRole('link', { name: 'The machine' })).not.toHaveAttribute('aria-current');
+  });
+
+  test('a player sees no strip', async () => {
+    open({ as: 'player' });
+    await screen.findByText('The admin queue is for admins.');
+    expect(screen.queryByRole('navigation', { name: 'Admin pages' })).toBeNull();
+  });
+
   test('a player is told plainly that it is for admins, and the queue is not asked for', async () => {
     open({ as: 'player' });
     expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
@@ -189,18 +285,22 @@ describe('who may see it', () => {
     const fake = buildWorld();
     seedMoves(fake, testInstance, { signIn: 'player' });
     const asked = vi.spyOn(fake, 'adminQueue');
-    renderIn(fake, <QueueScreen now={fake.clock.now()} />, { path: '/admin/queue' });
+    const page = vi.spyOn(fake, 'queuePage');
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue' });
     expect(await screen.findByText('The admin queue is for admins.')).toBeInTheDocument();
     await new Promise((r) => setTimeout(r, 50));
     expect(asked).not.toHaveBeenCalled();
+    /* The address exists, so it is not "can't be found": the line is the page's, from one queuePage read that answered null. */
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/can.t be found/u)).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 
 describe('a nomination of a successor', () => {
   const nominate = (fake: ReturnType<typeof buildWorld>) => {
-    fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms' });
-    fake.seed.staff('hype-man', 'Hype Man', 'boss', { title: 'Hype' });
+    fake.seed.staff('the-clerk', 'The Clerk', 'boss', { title: 'Keeper of Forms', pronouns: PRONOUN_PRESETS.they });
+    fake.seed.staff('hype-man', 'Hype Man', 'boss', { title: 'Hype', pronouns: PRONOUN_PRESETS.he });
     return fake.seed.queueSuccessor('director', 'the-clerk', { goLiveAt: fake.clock.now() + 20 * 3_600_000, why: 'It has the stamina.' });
   };
 
@@ -215,10 +315,18 @@ describe('a nomination of a successor', () => {
     expect(within(waiting).getByRole('button', { name: 'Hold: the naming of a successor' })).toBeInTheDocument();
   });
 
+  test('holding a they/them Boss\'s nomination says "their next meeting"', async () => {
+    open({ build: (f) => { f.seed.staff('the-clerk', 'The Clerk', 'boss', { pronouns: PRONOUN_PRESETS.they }); f.seed.staff('hype-man', 'Hype Man', 'boss'); f.seed.queueSuccessor('the-clerk', 'hype-man', { goLiveAt: f.clock.now() + 20 * 3_600_000, why: 'Fine.' }); } });
+    const waiting = await group(/^Waiting to land/u);
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Hold: the naming of a successor' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    expect(dialog).toHaveTextContent('The Boss chooses their next move at their next meeting, and learns of the hold only then.');
+  });
+
   test('offers REPLACE with the roster\'s other personas (a Mod Bot too, since the Boss may come from any office), never the Boss that wrote it nor the one it names; replacing changes the nomination and reads the queue again', async () => {
     const { fake } = open({ build: (f) => { nominate(f); } });
     const waiting = await group(/^Waiting to land/u);
-    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
+    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in their place' });
     expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man']);
     const replace = within(waiting).getByRole('button', { name: 'Replace the nominated Boss, The Clerk' });
     expect(replace).toBeDisabled();
@@ -227,9 +335,9 @@ describe('a nomination of a successor', () => {
     await userEvent.click(replace);
     await waitFor(() => expect(waiting).toHaveTextContent('Name Hype Man as the next Boss'));
     expect((await fake.adminQueue()).waiting.map((q) => q.params['boss'])).toContain('hype-man');
-    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).not.toBeNull();
+    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in his place' })).not.toBeNull();
     /* What was chosen is done: the pick is empty and the button waits, and the line in plain words names who will follow. */
-    expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' })).toHaveValue('');
+    expect(within(waiting).getByRole('combobox', { name: 'Put another Boss in his place' })).toHaveValue('');
     expect(within(waiting).getByRole('button', { name: 'Replace the nominated Boss, Hype Man' })).toBeDisabled();
     expect(within(waiting).getAllByRole('status').map((n) => n.textContent)).toContain('Replaced. Hype Man will follow.');
     expect(waiting).toHaveTextContent('An admin put this Boss in the nomination\'s place on');
@@ -244,7 +352,7 @@ describe('a nomination of a successor', () => {
       void id;
     } });
     const waiting = await group(/^Waiting to land/u);
-    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in its place' });
+    const choice = within(waiting).getByRole('combobox', { name: 'Put another Boss in their place' });
     expect(within(choice).getAllByRole('option').map((o) => o.textContent)).toEqual(['Choose a Boss', 'Hall Monitor', 'Hype Man', 'Newcomer']);
     expect((await fake.adminQueue()).roster.map((b) => b.staff)).not.toContain('old-timer');
   });
@@ -252,7 +360,7 @@ describe('a nomination of a successor', () => {
   test('a held nomination no longer waits, so it has no REPLACE', async () => {
     open({ build: (fake) => { const id = nominate(fake); fake.seed.holdQueued(id); } });
     const waiting = await group(/^Waiting to land/u);
-    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in its place' })).toBeNull();
+    expect(within(waiting).queryByRole('combobox', { name: 'Put another Boss in their place' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Replace the nominated Boss/u })).toBeNull();
   });
 
@@ -282,6 +390,42 @@ describe('a nomination of a successor', () => {
       fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
     };
 
+    test('Dismiss is a busy button while the dismissal is out: aria-busy, its name kept, and a second press dismisses once', async () => {
+      const { fake } = open({ build: (fake) => handover(fake) });
+      let release!: () => void;
+      const real = fake.dismissHandoverTodo.bind(fake);
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo').mockImplementation((season) => new Promise((resolve) => { release = () => resolve(real(season)); }));
+      const todo = await group(/^To do/u);
+      const button = within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' });
+      await userEvent.click(button);
+      expect(button).toHaveAttribute('aria-busy', 'true');
+      expect(within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' })).toBe(button);
+      await userEvent.click(button);
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      release();
+      await waitFor(() => expect(within(todo).queryByRole('button', { name: 'Dismiss the season 2 to-do' })).toBeNull());
+    });
+
+    test('Dismiss is busy only on the season pressed: another season\'s Dismiss is held, not spinning', async () => {
+      const { fake } = open({ build: (fake) => {
+        handover(fake, fake.clock.now() - 7_200_000);
+        fake.seed.staff('third', 'Third', 'mod');
+        fake.seed.handover({ outgoing: 'comptroller', boss: 'third', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member' });
+      } });
+      let release!: () => void;
+      const real = fake.dismissHandoverTodo.bind(fake);
+      const dismiss = vi.spyOn(fake, 'dismissHandoverTodo').mockImplementation((season) => new Promise((resolve) => { release = () => resolve(real(season)); }));
+      const todo = await group(/^To do/u);
+      const two = within(todo).getByRole('button', { name: 'Dismiss the season 2 to-do' });
+      const three = within(todo).getByRole('button', { name: 'Dismiss the season 3 to-do' });
+      await userEvent.click(two);
+      expect(two).toHaveAttribute('aria-busy', 'true');
+      expect(three).not.toHaveAttribute('aria-busy');
+      release();
+      await waitFor(() => expect(dismiss).toHaveBeenCalledTimes(1));
+      expect(dismiss).toHaveBeenCalledWith(2);
+    });
+
     test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
       open({ build: (fake) => handover(fake) });
       const todo = await group(/^To do/u);
@@ -304,7 +448,7 @@ describe('a nomination of a successor', () => {
       expect(todo).not.toHaveTextContent(/[Tt]he Boss/u);
       await userEvent.click(await screen.findByRole('button', { name: /^Hold/u }));
       const hold = await screen.findByRole('dialog', { name: 'Hold this move?' });
-      expect(hold).toHaveTextContent('The Champ chooses its next move at its next meeting');
+      expect(hold).toHaveTextContent('The Champ chooses her next move at her next meeting');
       expect(hold).not.toHaveTextContent(/Boss/u);
     });
 
@@ -504,16 +648,20 @@ describe('How players reach you, on the admin screen', () => {
     expect((within(row(1)).getByLabelText('Link 1 label') as HTMLInputElement).value).toBe('');
   });
 
-  test('while a save is out, the status says Saving\u2026, and the button is held', async () => {
+  test('while a save is out, the button is busy: aria-busy, its name kept, a second press saves once, and no Saving\u2026 line', async () => {
     const { fake } = open();
     const f = await form();
     let release!: () => void;
     const real = fake.setAdminContact.bind(fake);
-    vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
+    const save = vi.spyOn(fake, 'setAdminContact').mockImplementation((links) => new Promise((resolve) => { release = () => resolve(real(links)); }));
     await fill(1, 'Chat', 'https://chat.example/a');
-    await userEvent.click(within(f).getByRole('button', { name: 'Save how players reach you' }));
-    expect(within(f).getByRole('status')).toHaveTextContent('Saving\u2026');
-    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBeDisabled();
+    const button = within(f).getByRole('button', { name: 'Save how players reach you' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(f).getByRole('button', { name: 'Save how players reach you' })).toBe(button);
+    await userEvent.click(button);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(within(f).queryByText('Saving\u2026')).toBeNull();
     release();
     await waitFor(() => expect(within(f).getByRole('status')).toHaveTextContent('Saved.'));
   });
@@ -600,7 +748,7 @@ describe('replacing a description', () => {
     const { fake } = open();
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
-    const card = within(boards).getByRole('article', { name: first.name });
+    const card = await within(boards).findByRole('article', { name: first.name });
     expect(card).toHaveTextContent(`Description: “${first.description}”`);
     await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), 'Words from an admin.');
@@ -615,7 +763,7 @@ describe('replacing a description', () => {
     const { fake } = open();
     const boards = await group(/^Boards/u);
     const first = (await fake.boards())[0]!;
-    const card = within(boards).getByRole('article', { name: first.name });
+    const card = await within(boards).findByRole('article', { name: first.name });
     await userEvent.click(within(card).getByRole('button', { name: /^Replace description of/u }));
     await userEvent.type(within(card).getByRole('textbox', { name: /^Replace description/u }), '   x');
     vi.spyOn(fake, 'describeBoard').mockResolvedValueOnce({ ok: false, error: 'there is no such board' });

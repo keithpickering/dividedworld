@@ -672,7 +672,7 @@ describe('pinned threads and the banner', () => {
   vi.setConfig({ testTimeout: 20_000 });
   const pinning = {
     key: 'beacon', name: 'Beacon', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['thread' as const], lasts: { unit: 'day' as const, count: 1 }, pins: true as const,
-    priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }),
+    playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }),
   };
   const rumble = { ...pinning, key: 'rumble', name: 'Rumble', rarity: 'legendary' as const, reaches: ['board' as const], pins: undefined };
   const instance = { ...testInstance, cards: [...testInstance.cards, pinning, rumble] };

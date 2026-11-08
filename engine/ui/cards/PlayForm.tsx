@@ -25,7 +25,8 @@
  * offer to play again, in so many words ("Play again anyway").
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
-import { casterMessage, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
+import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
+import { casterMessage, castOnPost, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -35,7 +36,7 @@ import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
-import { landing, landingOn, lengthOf, targetOf } from './land.ts';
+import { endsWords, landing, landingOn, lengthOf, springWords, targetOf } from './land.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
 import './play.css';
@@ -47,18 +48,26 @@ export interface PlayFormProps {
   readonly onClose: () => void;
   /** The play is on the post. */
   readonly onPlayed: () => void;
+  /** The post as `actsById` answered when the form was asked for (play.tsx reads it before the form opens): the form starts from its newest copy. */
+  readonly seen?: readonly Act[];
+  /** Whether a Move opens as Set face down: the choice the player made last on this armed card (play.tsx keeps it, so the ghost's name follows it). */
+  readonly faceDown?: boolean;
+  /** The player picked Play it now (false) or Set face down (true). */
+  readonly onChoose?: (faceDown: boolean) => void;
 }
 
 /** Where the message's counter starts to speak: its last stretch before the limit. */
 const MESSAGE_NEAR = MESSAGE_MOST - 20;
 
-export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
+export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown = false, onChoose }: PlayFormProps) {
   const { api, instance, settings: screen, ui } = useKayfa();
   /* Priced as the server will charge (withCardEconomy): a surcharge an admin has tuned is the one shown. */
   const priced = useMemo(() => withCardEconomy(instance.settings, screen.cardEconomy), [instance.settings, screen.cardEconomy]);
   const player = usePlayer();
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
+  /* A Move on one's own post is played now or set face down; a Gimmick is set, and the choice is not asked. */
+  const [down, setDown] = useState(faceDown);
   const [message, setMessage] = useState('');
   /**
    * What the counter last said aloud: only on crossing into its last stretch, or on reaching the limit (#89 P2-2). `n` counts what was
@@ -80,7 +89,7 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const accountNow = useRef(account);
   accountNow.current = account;
   /* The post as it stands: its edits change its length and so its price, and the click's copy is only where it starts. */
-  const [live, setLive] = useState(target.post);
+  const [live, setLive] = useState(() => seen.reduce<Act | null>((held, a) => (a.id === target.post?.id && a.kind === 'post' ? (held ? newer(held, a) : a) : held), target.post));
   const post = live !== null && target.post !== null && live.id === target.post.id ? live : target.post;
   const postId = target.post?.id ?? null;
   const postThread = target.post?.thread ?? null;
@@ -88,7 +97,8 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     if (postId === null || postThread === null) return;
     let open = true;
     const take = (a: Act) => { if (open && a.id === postId && a.kind === 'post') setLive((held) => (held ? newer(held, a) : a)); };
-    try { void api.actsById([postId]).then((read) => { for (const a of read) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
+    /* The form opens at once from the answer read before it (it may be up to 30 s old); the post is read again here in the background, so an edit in the gap reaches the price. */
+    try { void api.actsById([postId]).then((again) => { for (const a of again) take(a); }, () => { /* the live edits still arrive */ }); } catch { /* ditto */ }
     const stop = api.subscribeThread(postThread, { onAct: take });
     return () => { open = false; stop(); };
   }, [api, postId, postThread]);
@@ -99,29 +109,34 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
 
   const rules = instance.cards.find((c) => c.key === card);
   const cardUi = ui.cards.find((c) => c.key === card);
-  /* How the card is played (the card mechanic's design, section 1), and for a trap that strikes, the card it lays: its settings are that card's. */
+  /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
-  const struck = rules?.trap?.outcome.do === 'strike' ? rules.trap.outcome.card : null;
-  const configUi = struck ? ui.cards.find((c) => c.key === struck) : cardUi;
-  const configRules = struck ? instance.cards.find((c) => c.key === struck) : rules;
-  const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced) : null), [rules, cardUi, priced]);
+  /* The post is one of the player's own characters': a Move on it may be set face down; a Gimmick is set there alone. */
+  const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
+  const choosing = how === 'cast' && ownPost;
+  const setting = how === 'set' || (choosing && down);
+  /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
+  const setter = (setting && post ? player.actingCharacters.find((c) => c.id === post.character) : undefined) ?? player.hudCharacter;
+  const castable = useMemo(() => instance.cards.filter(castOnPost).map((r) => faceOf(r, ui.cards.find((c) => c.key === r.key), priced, ui.copy.cardKinds)), [instance.cards, ui.cards, priced, ui.copy.cardKinds]);
+  const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced, ui.copy.cardKinds) : null), [rules, cardUi, priced, ui.copy.cardKinds]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;
 
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
   const carried = livePlays(usePlays(target.plays, home).plays);
-  const context = { cards: instance.cards, setLasts: instance.settings.setLasts, ...(beyond?.above ? { above: beyond.above } : {}) };
+  const context = { cards: instance.cards, setLasts: instance.settings.setLasts, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   const price = useMemo(() => {
-    if (!rules) return 0;
+    /* A Set costs only the card. */
+    if (!rules || setting) return 0;
     try {
-      const checked = (configRules ?? rules).validateConfig(config);
+      const checked = rules.validateConfig(config);
       return goal ? rules.playPrice(priced, goal, checked.ok ? checked.value : config ?? {}) : 0;
     } catch {
       return 0;
     }
-  }, [rules, configRules, priced, goal, config]);
+  }, [rules, setting, priced, goal, config]);
 
   if (!rules || !face) return null;
   const length = post ? lengthOf(post) : 0;
@@ -131,7 +146,9 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
   const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
-  const blocked = busy || !hud || !wallet || short || !lands.ok;
+  /* A Set waits for the card's own settings to be accepted, as a cast's price does (a Gimmick that names a card has no card until the player names one). */
+  const unsettled = setting && !rules.validateConfig(config).ok;
+  const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled;
 
   const change = (value: string) => {
     const typed = [...value];
@@ -169,21 +186,22 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     target.plays.add(acts);
     await readEffects(api, target.plays, acts, effectCards(ui));
   };
+  const verb = setting ? 'Set' : how === 'use' ? 'Use' : 'Play';
   const look = async (words: string | null, before: ReadonlySet<Id>, character: Id) => {
     let looked = true;
     try { await read(); } catch { looked = false; }
     if (accountNow.current !== account) return;
     /* A Set comes back as a card back, which names no card: the new back by this character is it. */
-    const found = target.plays.get(home).plays.find((p) => !before.has(p.id) && (how === 'set' ? p.faceDown === true : p.card === card) && p.caster === character);
+    const found = target.plays.get(home).plays.find((p) => !before.has(p.id) && (setting ? p.faceDown === true : p.card === card) && p.caster === character);
     if (found) { onPlayed(); return; }
     setAgain(true);
-    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? `Your play is not on the ${beyond?.reach ?? 'post'} yet.` : `The ${beyond?.reach ?? 'post'} could not be checked for it.`} Press “${how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play'} again anyway” to ${how === 'set' ? 'set' : how === 'use' ? 'use' : 'play'} it again.`);
+    setRefusal(`${words === null ? 'No answer came back.' : plainRefusal(words)} ${looked ? `Your play is not on the ${beyond?.reach ?? 'post'} yet.` : `The ${beyond?.reach ?? 'post'} could not be checked for it.`} Press “${verb} again anyway” to ${verb.toLowerCase()} it again.`);
   };
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (blocked || !hud) return;
-    const said = casterMessage(message);
+    if (blocked || !hud || !setter) return;
+    const said = setting ? { ok: true as const, value: '' } : casterMessage(message);
     if (!said.ok) { setRefusal(plainRefusal(said.why)); return; }
     const before = new Set(carried.map((p) => p.id));
     setBusy(true);
@@ -194,13 +212,13 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
         answer = beyond
           ? how === 'use' ? await api.useCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
             : await api.playCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
-          : how === 'set' ? await api.setCard(card, hud.id, post!.id, config ?? {})
+          : setting ? await api.setCard(card, setter.id, post!.id, config ?? {})
           : how === 'use' ? await api.useCard(card, hud.id, post!.id, config ?? {}, message)
           : await api.playCard(card, hud.id, post!.id, config ?? {}, message);
-      } catch { await look(null, before, hud.id); return; }
+      } catch { await look(null, before, (setting ? setter : hud).id); return; }
       if (accountNow.current !== account) return;
       if (answer.ok) await landed(answer.value);
-      else if (answer.uncertain) await look(answer.error, before, hud.id);
+      else if (answer.uncertain) await look(answer.error, before, (setting ? setter : hud).id);
       else {
         setRefusal(settle(answer.error));
         /* The post may have changed under the play (a fourth Whoops! landed first): read its plays again so this form and the post stop offering it. */
@@ -211,32 +229,49 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
     }
   };
 
-  const Config = configUi?.ConfigForm;
-  const verb = how === 'set' ? 'Set' : how === 'use' ? 'Use' : 'Play';
+  const Config = cardUi?.ConfigForm;
   const surcharge = cardUi?.surcharge?.(priced) ?? 'This post';
   const hint = `${id}-hint`;
+  const pick = (value: boolean) => { setDown(value); onChoose?.(value); setRefusal(null); setAgain(false); };
+  const named = setter ?? hud;
 
   return (
     <Overlay
       title={face.name}
-      kicker={<span>{how === 'set' ? 'Set a card face down' : how === 'use' ? 'Use a card' : 'Play a card'}</span>}
+      kicker={<span>{setting ? 'Set a card face down' : how === 'use' ? 'Use a card' : 'Play a card'}</span>}
       surface="play"
       className="kb-play-dialog"
       onClose={onClose}
       returnFocusTo={() => target.focusBack?.() ?? (post ? document.getElementById(`post-${post.seq}`) : null)}
     >
-      <form className="kb-play" data-kb-alignment={face.alignment} style={{ '--kb-card-color': face.art.color } as React.CSSProperties} onSubmit={(e) => void submit(e)} noValidate>
+      <form className="kb-play" data-kb-alignment={face.alignment} data-kb-setting={setting ? 'true' : undefined} style={{ '--kb-card-color': face.art.color } as React.CSSProperties} onSubmit={(e) => void submit(e)} noValidate>
         <div className="kb-play-fields">
+          {choosing && (
+            <fieldset className="kb-play-choice">
+              <legend className="kb-play-label">How to play it</legend>
+              <div className="kb-play-choice-row">
+                <label className="kb-play-choice-opt">
+                  <input type="radio" name={`${id}-how`} className="kb-visually-hidden" checked={!down} onChange={() => pick(false)} />
+                  <span>Play it now</span>
+                </label>
+                <label className="kb-play-choice-opt">
+                  <input type="radio" name={`${id}-how`} className="kb-visually-hidden" checked={down} onChange={() => pick(true)} />
+                  <span>Set face down</span>
+                </label>
+              </div>
+            </fieldset>
+          )}
           <p className="kb-play-target">
             {beyond || !post
-              ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of theirs` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
+              ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of ${words(beyond.pronouns ?? ENGINE_DEFAULT_PRONOUNS).theirs}` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
               : <>On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.</>}
           </p>
-          {ownBoth && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
-          {how === 'set' && <p className="kb-play-both">Everyone sees a card back on your post, the same as any card set face down; only you see which card it is.{struck && configRules ? ` If it springs, it lays ${configRules.name} with these settings.` : ''}</p>}
-          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} /></div>}
-          {/* A Set's Act says nothing, so it carries no message: a Bluff's and a trap's are alike. */}
-          {how !== 'set' && <div className="kb-play-message">
+          {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
+          {setting && <p className="kb-play-sets" data-kb-sets>{springWords(rules)}</p>}
+          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} /></div>}
+          {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(instance.settings.setLasts)}</p>}
+          {/* A Set's Act says nothing, so it carries no message and costs no more than the card: a Bluff's and a trap's are alike. */}
+          {!setting && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label">Your message</label>
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />
             <div className="kb-play-count">
@@ -246,27 +281,32 @@ export function PlayForm({ card, target, onClose, onPlayed }: PlayFormProps) {
               <span className="kb-visually-hidden" aria-live="polite" data-kb-count-said>{countSaid.words}{countSaid.words && countSaid.n % 2 === 0 ? '\u00a0' : ''}</span>
             </div>
           </div>}
-          <div className="kb-play-sum">
-            <dl className="kb-play-cost">
-              <div><dt>Card</dt><dd>Paid</dd></div>
-              <div><dt>{surcharge}</dt><dd className="kb-num">{orbs(price)}</dd></div>
-              <div className="kb-play-total"><dt>To pay now</dt><dd className="kb-num">{orbs(price)}</dd></div>
-            </dl>
-            {wallet && after !== null && (
-              <div className="kb-play-wallet">
-                <Orbs settled={wallet.balance} pending={-price} cap={wallet.cap} figures={false} label={`Wallet after playing: ${orbs(Math.max(0, after))} of ${orbs(wallet.cap)}`} />
-                <span className="kb-play-wallet-sum kb-num">{orbs(wallet.balance)} → <b>{orbs(Math.max(0, after))}</b> solid</span>
-              </div>
-            )}
-            <p className="kb-play-fine" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
-          </div>
+          {setting
+            ? <p className="kb-play-fine" role="status" aria-label="Whether it can be set">{!lands.ok ? plainRefusal(lands.why) : ''}</p>
+            : <div className="kb-play-sum">
+              <dl className="kb-play-cost">
+                <div><dt>Card</dt><dd>Paid</dd></div>
+                <div><dt>{surcharge}</dt><dd className="kb-num">{orbs(price)}</dd></div>
+                <div className="kb-play-total"><dt>To pay now</dt><dd className="kb-num">{orbs(price)}</dd></div>
+              </dl>
+              {wallet && after !== null && (
+                <div className="kb-play-wallet">
+                  <Orbs settled={wallet.balance} pending={-price} cap={wallet.cap} figures={false} label={`Wallet after playing: ${orbs(Math.max(0, after))} of ${orbs(wallet.cap)}`} />
+                  <span className="kb-play-wallet-sum kb-num">{orbs(wallet.balance)} → <b>{orbs(Math.max(0, after))}</b> solid</span>
+                </div>
+              )}
+              <p className="kb-play-fine" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
+            </div>}
+          {unsettled && <p className="kb-play-fine" id={`${id}-unsettled`} role="status">Choose the card's settings above to set it.</p>}
           <p className="kb-play-fine">
-            {verb === 'Play' ? 'Playing' : verb === 'Set' ? 'Setting' : 'Using'} is a public Act{hud ? ` under ${hud.name}'s name` : ''}. Only solid Aura is spent; the ghost doesn't count.
+            {setting
+              ? `Setting is a public Act${named ? ` under ${named.name}'s name` : ''}. Everyone sees a card back on the post; only you see which card it is.`
+              : `${verb === 'Play' ? 'Playing' : 'Using'} is a public Act${hud ? ` under ${hud.name}'s name` : ''}. Only solid Aura is spent; the ghost doesn't count.`}
           </p>
         </div>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <ButtonRow>
-          <GlassButton type="submit" kind="primary" disabled={blocked}>{again ? `${verb} again anyway` : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={blocked} {...(unsettled ? { 'aria-describedby': `${id}-unsettled` } : {})}>{again ? `${verb} again anyway` : setting ? (named ? `Set face down as ${named.name}` : 'Set face down') : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
         </ButtonRow>
       </form>

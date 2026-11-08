@@ -7,12 +7,12 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seedMoves } from '../board/move-world.ts';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { QueueScreen } from './Queue.tsx';
+import { LoadedQueue } from '../loaded.tsx';
 
-const meta: Meta<typeof QueueScreen> = { title: 'Admin/Queue', component: QueueScreen };
+const meta: Meta<typeof LoadedQueue> = { title: 'Admin/Queue', component: LoadedQueue };
 export default meta;
 
-type Story = StoryObj<typeof QueueScreen>;
+type Story = StoryObj<typeof LoadedQueue>;
 
 /** The in-memory world's clock is fixed at the start of its season (engine/ui/data/fake.ts), so the countdown is read against it. */
 const START = Date.UTC(2026, 9, 29, 12);
@@ -21,7 +21,7 @@ const admin: World = (fake, instance) => { seedMoves(fake, instance, { signIn: '
 const player: World = (fake, instance) => { seedMoves(fake, instance, { signIn: 'player' }); };
 
 function InPage() {
-  return <Page surface="settings"><QueueScreen now={START} /></Page>;
+  return <Page surface="settings"><LoadedQueue now={START} /></Page>;
 }
 
 export const Admin: Story = { render: () => <InPage />, parameters: { world: admin, path: '/admin/queue' } };

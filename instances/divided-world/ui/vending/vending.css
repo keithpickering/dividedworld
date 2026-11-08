@@ -83,7 +83,7 @@
 }
 
 .kb-vending-cell:has(button.kb-vending-slot) .kb-vending-slot-code {
-  padding: 0 6px;
+  padding: 0 5px;
   background: var(--kb-card-color);
   color: var(--kb-card-ink);
 }
@@ -184,11 +184,18 @@
   pointer-events: none;
 }
 
-.kb-vending-drop > .kb-postcard {
+.kb-vending-drop .kb-postcard {
   transform: none;
   box-shadow: 0 0 0 1.5px var(--kb-card-color), 0 0 26px color-mix(in srgb, var(--kb-card-color) 80%, transparent);
 }
 
 :where(:root[data-kb-layout='phone']) .kb-vending-tray::after {
   display: none;
+}
+
+
+/* A slot that is sold out: its code chip is greyed, as the slot is. */
+.kb-vending-cell[data-kb-sold]:has(button.kb-vending-slot) .kb-vending-slot-code {
+  background: rgba(241, 236, 255, 0.16);
+  color: #e4def7;
 }

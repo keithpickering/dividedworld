@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import type { World } from '../story.tsx';
 import { Characters } from './Characters.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 import { NewCharacter } from './NewCharacter.tsx';
 
-const meta: Meta<typeof Characters> = { title: 'Characters/My characters', component: Characters, parameters: { path: '/characters' } };
+const meta: Meta<typeof Characters> = { title: 'Characters/My characters', component: Characters, parameters: { path: '/characters' }, render: () => <LoadedCharacters /> };
 export default meta;
 type Story = StoryObj<typeof Characters>;
 

@@ -24,10 +24,10 @@ const body = (selector: string) => styles.get(selector) ?? '';
 
 const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'b.price': 250 } } as unknown as Settings;
-const rules: CardRules = { key: 'b', name: 'B card', alignment: 'salty', rarity: 'rare', priceKey: 'b.price', stack: 3, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
+const rules: CardRules = { key: 'b', name: 'B card', alignment: 'salty', rarity: 'rare', stack: 3, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const ui = (art: Partial<CardUi['art']>): CardUi => ({ key: 'b', art: { color: '#f0f', ink: '#000', canvas: '/b.svg', mark: '/b-mark.svg', credit: 'Divided World', tagline: 'A short line.', ...art }, summary: 'One sentence of rules.', describe: () => 'In full.' });
 const face = (art: Partial<CardUi['art']> = {}): CardFace => faceOf(rules, ui(art), settings);
-const shown = (size: PostcardSize, f: CardFace = face()) => render(<Postcard face={f} size={size} />).container.querySelector<HTMLElement>('.kb-postcard')!;
+const shown = (size: PostcardSize, f: CardFace = face(), price?: number) => render(<Postcard face={f} size={size} price={price} />).container.querySelector<HTMLElement>('.kb-postcard')!;
 const has = (card: HTMLElement, selector: string) => card.querySelector(selector) !== null;
 
 describe('the frame at every size', () => {
@@ -94,7 +94,7 @@ describe('what each size holds', () => {
   });
 
   test('the sheet adds the summary, the price and the foot, which says the credit', () => {
-    const card = shown('sheet');
+    const card = shown('sheet', face(), 250);
     expect(card.querySelector('.kb-postcard-line')?.textContent).toBe('One sentence of rules.');
     expect(card.querySelector('.kb-postcard-price')?.textContent).toBe('2.50');
     const foot = card.querySelector('.kb-postcard-foot')!.textContent!;
@@ -106,6 +106,12 @@ describe('what each size holds', () => {
     const card = shown('sheet', faceOf({ ...rules, stack: 1 }, ui({ credit: undefined }), settings));
     expect(card.querySelector('.kb-postcard-foot')!.textContent).toContain('Postcard · One per post');
     expect(card.querySelector('.kb-postcard-foot')!.textContent).not.toContain('Art');
+  });
+
+  test('a sheet given no price draws none: a card in the hand is not for sale', () => {
+    const card = shown('sheet');
+    expect(has(card, '.kb-postcard-price')).toBe(false);
+    expect(has(card, '.kb-postcard-foot')).toBe(true);
   });
 
   test('every word is real text in the label\'s order, and aria-hidden', () => {
@@ -120,7 +126,7 @@ describe('what each size holds', () => {
 
 describe('the bottom border\'s row', () => {
   test('the foot and the price share one flex row, so the foot ends where the price begins at any price width', () => {
-    const base = shown('sheet').querySelector('.kb-postcard-base')!;
+    const base = shown('sheet', face(), 250).querySelector('.kb-postcard-base')!;
     expect(base.querySelector(':scope > .kb-postcard-foot')).not.toBeNull();
     expect(base.querySelector(':scope > .kb-postcard-price')).not.toBeNull();
     expect(body('.kb-postcard-base')).toMatch(/display:\s*flex/u);
@@ -193,6 +199,29 @@ describe('the back', () => {
     expect(css).toMatch(/\.kb-postcard-back\s*\{[^}]*--kb-card-color:\s*var\(--kb-glass-text-hi\)/u);
     expect(css).toMatch(/\.kb-postcard-back\s+\.kb-postcard-canvas[^{]*\{[^}]*var\(--kb-glass-field\)/u);
     expect(css).toMatch(/\.kb-postcard-back\[data-hit\][^{]*\{[^}]*var\(--kb-glass-ready\)/u);
+  });
+
+  const rule = (selector: string) => new RegExp(`${selector.replace(/[.[\]]/gu, '\\$&')}\\s*\\{([^}]*)\\}`, 'u').exec(css)?.[1] ?? '';
+
+  test('is clouded: a gradient of tokens multiplied over the noise, with no crossed bands', () => {
+    const canvas = rule('.kb-postcard-back .kb-postcard-canvas');
+    expect(canvas).not.toMatch(/45deg/u);
+    expect(canvas).toMatch(/background-blend-mode:\s*multiply/u);
+    expect(canvas).toContain('var(--kb-back-tint)');
+    // A doubled comma makes the whole background-image invalid, and the back draws as a flat field.
+    expect(canvas).toMatch(/background-image:\s*var\(--kb-back-tint\),\s*url\("[^"]+"\),\s*url\("[^"]+"\);/u);
+    expect(rule('.kb-postcard-back')).toMatch(/--kb-back-tint:\s*linear-gradient\([^;]*var\(--kb-glass-/u);
+  });
+
+  test('draws the mark two thirds of the card wide, glowing in the back\'s glow', () => {
+    const emblem = rule('.kb-postcard-emblem');
+    expect(emblem).toMatch(/width:\s*66cqw/u);
+    expect(emblem).toMatch(/height:\s*66cqw/u);
+    expect(emblem).toMatch(/box-shadow:[^;]*var\(--kb-back-glow\)/u);
+  });
+
+  test('glows in the machine\'s gold on a hit', () => {
+    expect(rule('.kb-postcard-back[data-hit]')).toMatch(/--kb-back-glow:\s*var\(--kb-glass-ready\)/u);
   });
 });
 

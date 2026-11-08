@@ -56,6 +56,8 @@ declare global {
 }
 
 const SHINY = '[data-kb-fab], [data-kb-glitter]';
+/** The busy thread's first post: the fixture's #41, a Feelin' Fab, the first shiny post in document order. */
+const FIRST = 41;
 
 /**
  * Story-only poisons for e2e/shine.spec.ts, which plants each to see its check go red (a guard never red is not known to work).
@@ -64,7 +66,9 @@ const SHINY = '[data-kb-fab], [data-kb-glitter]';
  *  - `'slow'`: the second Glitter Bomb post's first canvas costs 25 ms every time it is drawn on (a busy-wait in `getContext`, which the
  *    effect calls on each paint). A Feelin' Fab is no longer drawn on the page, so the page-side cost is planted on a Glitter Bomb.
  *  - `'slow-worker'`: every batch the foil worker draws takes 25 ms more (shine-probe.worker.ts).
- *  - `'keep'`: the first shiny post's canvas ignores being freed (a width or height of 0), in the worker where its canvas lives.
+ *  - `'keep'`: the first shiny post's canvas (#41's, the first the spec's `held` lists) ignores being freed (a width or height of 0), in the
+ *    worker where its canvas lives. It is found by its post: the posts' foils do not all mount in one frame, and on a loaded machine #42's
+ *    was seen on the page before #41's, so the first foil on the page at a given moment is not always the first post's.
  */
 function plant(poison: string | null): () => void {
   if (poison === 'slow') {
@@ -79,9 +83,9 @@ function plant(poison: string | null): () => void {
     return () => { proto.getContext = get; };
   }
   if (poison === 'keep') {
-    /* Once the first shiny post's canvas has been handed over, tell the worker which canvas it is. */
+    /* Once the first post's foil has mounted and its canvas has been handed over, tell the worker which canvas it is. */
     const timer = setInterval(() => {
-      const cv = document.querySelector(SHINY)?.querySelector('canvas'), w = foilProbe.worker();
+      const cv = document.getElementById(`post-${FIRST}`)?.querySelector(SHINY)?.querySelector('canvas'), w = foilProbe.worker();
       const id = cv ? foilProbe.idOf(cv) : undefined;
       if (id === undefined || !w) return;
       w.postMessage({ kind: 'story', what: 'poison', poison: 'keep', id } satisfies StoryAsk);

@@ -3,12 +3,21 @@
  * starting within the feel's screen duration; nothing under Off.
  */
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { MAX_ROWS, delaysFor, enterScreen, entrants } from './enter.ts';
+import { MAX_ROWS, delaysFor, enterRows, enterScreen, entrants } from './enter.ts';
 import { feelTokens, type ActiveFeel } from './motion.ts';
+
+const played: Array<{ el: Element; delay: number }> = [];
+vi.mock('motion/react', async (orig) => ({
+  ...(await orig<typeof import('motion/react')>()),
+  animate: (el: Element, _f: unknown, t: { delay?: number }) => {
+    played.push({ el, delay: t.delay ?? 0 });
+    return { then: () => {}, stop: () => {} };
+  },
+}));
 
 const feel: ActiveFeel = { name: 'smooth', ...feelTokens('smooth') };
 let host: HTMLElement;
-afterEach(() => host?.remove());
+afterEach(() => { host?.remove(); played.length = 0; });
 
 function screenOf(rows: number): HTMLElement {
   host = document.createElement('div');
@@ -54,5 +63,32 @@ describe('a screen\'s entrance', () => {
     const stop = enterScreen(feel, screen);
     stop();
     expect(panel.style.transform).toBe('rotate(3deg)');
+  });
+});
+
+describe('the rows a press brought', () => {
+  test('only the rows given enter, in order, each after the one before', () => {
+    const screen = screenOf(6);
+    const rows = Array.from(screen.querySelectorAll<HTMLElement>('tr')).slice(3);
+    enterRows(feel, rows);
+    expect(played.map((p) => p.el)).toEqual(rows);
+    const delays = played.map((p) => p.delay);
+    expect(delays).toEqual([...delays].sort((a, b) => a - b));
+    expect(delays[2]!).toBeGreaterThan(delays[0]!);
+  });
+  test('at most MAX_ROWS, and none below the window', () => {
+    const screen = screenOf(500);
+    const rows = Array.from(screen.querySelectorAll<HTMLElement>('tr'));
+    enterRows(feel, rows);
+    expect(played).toHaveLength(MAX_ROWS);
+    played.length = 0;
+    rows.forEach((tr, i) => { tr.getBoundingClientRect = () => ({ top: i * 40, bottom: i * 40 + 40 }) as DOMRect; });
+    enterRows(feel, rows, 100);
+    expect(played.length).toBeLessThanOrEqual(3);
+  });
+  test('nothing under Off', () => {
+    const rows = Array.from(screenOf(3).querySelectorAll<HTMLElement>('tr'));
+    enterRows(null, rows)();
+    expect(played).toHaveLength(0);
   });
 });

@@ -3,6 +3,7 @@
  * player who plays two characters, and a pair of buttons that swap the HUD's character the way the
  * HUD does (a test in engine/ui may not import the HUD's screen parts or an instance).
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { screen } from '@testing-library/react';
 import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
@@ -16,7 +17,7 @@ export function threadWorld(posts = 2, settings: Parameters<typeof buildWorld>[0
   const fake = buildWorld(settings);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
-  const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+  const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { pronouns: PRONOUN_PRESETS.she });
   const zed = fake.seed.character(me, 'Zed', 'face');
   const spritey = fake.seed.character(other, 'Spritey', 'face');
   const { thread, act: first } = fake.seed.thread('general', spritey, 'A short thread', 'post 1');
@@ -36,8 +37,8 @@ export function Swapper() {
   );
 }
 
-export function openThread(w: { fake: Fake; thread: Id }, path = `/t/${w.thread}`) {
-  return renderIn(w.fake, <><LoadedThread thread={w.thread} /><Swapper /></>, { path });
+export function openThread(w: { fake: Fake; thread: Id }, path = `/t/${w.thread}`, world: Omit<Parameters<typeof renderIn>[2] & object, 'path'> = {}) {
+  return renderIn(w.fake, <><LoadedThread thread={w.thread} /><Swapper /></>, { ...world, path });
 }
 
 /** The composer's box, once the thread has loaded. */

@@ -141,7 +141,7 @@ export function WriteUpdate({ onWritten, initial }: WriteUpdateProps) {
         </fieldset>
         <ButtonRow>
           <GlassButton disabled={rows.length >= MOST_CHANGES} onClick={add}>Add a change</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={busy || blank || tooLong || drafting} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={busy} disabled={blank || tooLong || drafting} aria-describedby={why === '' ? undefined : `${id}-why`}>Post update</GlassButton>
         </ButtonRow>
         <div id={`${id}-why`} aria-live="polite" className="kb-write-update-why">{why}</div>
         <div role="status" className="kb-write-update-status">{posted ? 'Posted. Every player has it in their alerts.' : ''}</div>

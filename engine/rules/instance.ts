@@ -3,15 +3,18 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
+import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
 import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
-import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
-import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
+import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
+import { pronounProblems } from './pronouns.ts';
+import { BEYOND_POST, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
+import type { Pull, SlotSeed } from './packs.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -181,6 +184,20 @@ function warnBarRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The member groups' settings (`Settings.apology`): exactly the fields of ApologySettings, each a whole number, at least 1. Mirrors `setting_apology` in
+ * supabase/migrations/0130_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
+function apologyRule(v: unknown): string | null {
+  const shape = 'an object giving apologyEveryHours (the hours between a character\'s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(APOLOGY_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const k of APOLOGY_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -214,6 +231,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
   hints: hintsRule,
@@ -232,6 +250,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   pool: poolRule,
   modBots: modBotsRule,
   warnBar: warnBarRule,
+  apology: apologyRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
@@ -288,7 +307,40 @@ function developerProblems(d: Instance['developer']): string[] {
   }
   if (typeof d.tagline !== 'string') out.push('the developer tagline is not text');
   else if (d.tagline.length > DEVELOPER_TAGLINE_MAX) out.push(`the developer tagline is ${d.tagline.length} characters; the seed keeps at most ${DEVELOPER_TAGLINE_MAX} and cuts the rest in silence`);
+  if (d.pronouns !== undefined) for (const p of pronounProblems(d.pronouns)) out.push(`the developer's pronouns: ${p}`);
   if (d.avatar !== undefined && (typeof d.avatar !== 'string' || d.avatar.trim() === '')) out.push('the developer avatar is blank; leave it out for none, or name the instance\'s picture');
+  return out;
+}
+
+/** Problems with the packs and the machine's slots, each a sentence naming what is wrong. */
+function packProblems(instance: Instance): string[] {
+  const out: string[] = [];
+  const packs = Array.isArray(instance.packs) ? instance.packs : (out.push('the instance has no packs list'), []);
+  const machine = Array.isArray(instance.machine) ? instance.machine : (out.push('the instance has no machine list'), []);
+  for (const k of duplicates(packs, (p) => p.key)) out.push(`pack key "${k}" is used twice`);
+  for (const pack of packs) {
+    if (!Array.isArray(pack.pulls) || !pack.pulls.length) { out.push(`pack "${pack.key}" has no pulls`); continue; }
+    for (const k of pack.leaves ?? []) if (!instance.cards.some((c) => c.key === k)) out.push(`pack "${pack.key}" leaves out "${k}", and the instance has no such card`);
+    (pack.pulls as readonly Pull[]).forEach((pull, i) => {
+      const where = `pack "${pack.key}", pull ${i + 1}`;
+      const weights = Object.entries(pull.weights ?? {});
+      if (!weights.length) out.push(`${where} has no weights`);
+      for (const [rarity, w] of weights) {
+        if (!isWhole(w, 1)) out.push(`${where} has a weight of ${JSON.stringify(w)} for ${rarity}; a weight is a positive whole number`);
+        const eligible = instance.cards.some((c) => c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
+        if (!eligible) out.push(`${where} names ${rarity}, and the pack has no eligible card of that rarity`);
+      }
+    });
+  }
+  const names = (s: SlotSeed) => ('card' in s.item ? `card "${s.item.card}"` : `pack "${s.item.pack}"`);
+  for (const slot of machine) {
+    const who = `the slot for ${names(slot)}`;
+    if ('card' in slot.item) { if (!instance.cards.some((c) => c.key === (slot.item as { card: string }).card)) out.push(`${who} names a card, and the instance has no such card`); }
+    else if (!packs.some((p) => p.key === (slot.item as { pack: string }).pack)) out.push(`${who} names a pack, and the instance has no such pack`);
+    if (!isWhole(slot.price, 1) || slot.price > INT4_MAX) out.push(`${who} has a price of ${JSON.stringify(slot.price)}; a price is a whole number of hundredths from 1 to ${INT4_MAX}`);
+    if (!['onSale', 'soldOut', 'hidden'].includes(slot.availability)) out.push(`${who} has the availability ${JSON.stringify(slot.availability)}; it is onSale, soldOut or hidden`);
+  }
+  for (const k of duplicates(machine, names)) out.push(`two slots sell ${k}`);
   return out;
 }
 
@@ -307,7 +359,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
-    out.push(...playProblems(c, instance.cards), ...reachProblems(c, instance.settings));
+    out.push(...playProblems(c), ...reachProblems(c, instance.settings));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -315,7 +367,8 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
-  out.push(...developerProblems(instance.developer));
+  out.push(...developerProblems(instance.developer), ...packProblems(instance));
+  out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
     if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');
@@ -347,8 +400,6 @@ export function instanceProblems(instance: Instance): string[] {
     };
     for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }
     for (const c of instance.cards) {
-      const price = economy[c.priceKey];
-      if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
       for (const r of c.reads ?? []) { const why = check(`card "${c.key}"`, r); if (why) out.push(why); }
     }
   }
@@ -375,7 +426,7 @@ export function instanceProblems(instance: Instance): string[] {
  * A card's rarity, play, trap and ward, each refused naming the card (the card mechanic's design,
  * sections 1 to 5). seed_instance (supabase/migrations/0054_card_plays.sql) holds the same pairings.
  */
-function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
+function playProblems(c: CardRules): string[] {
   const out: string[] = [];
   const who = `card "${c.key}"`;
   if (c.rarity === undefined) out.push(`${who} has no rarity; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
@@ -383,28 +434,20 @@ function playProblems(c: CardRules, cards: readonly CardRules[]): string[] {
   const play = c.play ?? 'cast';
   if (!PLAYS.includes(play)) out.push(`${who} is played ${JSON.stringify(play)}; a card is cast, used, set or kept`);
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
-  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Set card does`);
+  if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a Gimmick does`);
   if (c.ward !== undefined && play !== 'use') out.push(`${who} is a ward, and only a Use card is`);
   if (c.ward !== undefined && c.ward !== true) out.push(`${who} is a ward of ${JSON.stringify(c.ward)}; a ward is true or left out`);
   if (c.ward === true && play === 'use' && c.lasts === undefined) out.push(`${who} is a ward with no time up (lasts); a ward ends at its time`);
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
   if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a Use card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
-  const trap = c.trap;
-  if (trap !== undefined) {
-    const on = (trap.trigger as { on?: unknown } | undefined)?.on;
-    if (!TRIGGERS.includes(on as never)) out.push(`${who} springs on ${JSON.stringify(on)}; a trap springs on ${TRIGGERS.join(', ')}`);
-    else if (on === 'reaction' && !QUADRANTS.includes((trap.trigger as { quadrant?: never }).quadrant!)) out.push(`${who} springs on a reaction of ${JSON.stringify((trap.trigger as { quadrant?: unknown }).quadrant)}, which is no quadrant; it names one of ${QUADRANTS.join(', ')}`);
-    const outcome = trap.outcome as { do?: unknown; card?: unknown } | undefined;
-    if (!OUTCOMES.includes(outcome?.do as never)) out.push(`${who} does ${JSON.stringify(outcome?.do)} when it springs; a trap does ${OUTCOMES.join(', ')}`);
-    else if (outcome!.do === 'payout' && on !== 'cast' && TRIGGERS.includes(on as never)) out.push(`${who} pays out on a ${String(on)}; it pays out only on a cast, since only a cast is paid for`);
-    else if (outcome!.do === 'strike' && (on === 'cast' || on === 'reaction' || on === 'visit')) out.push(`${who} strikes on a ${on}; a strike lays its card on a reply or a quote, until cards reach characters`);
-    else if (outcome!.do === 'strike') {
-      const struck = cards.find((k) => k.key === outcome!.card);
-      if (!struck) out.push(`${who} strikes with ${JSON.stringify(outcome!.card)}, which the instance does not have`);
-      else if (RARITIES.includes(struck.rarity) && RARITIES.includes(c.rarity) && !atOrBelow(struck.rarity, c.rarity)) out.push(`${who} strikes with "${struck.key}", which is ${struck.rarity}, rarer than the trap (${c.rarity})`);
-    }
-  }
+  const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
+  if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a Gimmick springs on ${TRIGGERS.join(' or ')}`);
+  if (c.trap !== undefined && c.catches === undefined && on === 'cast') out.push(`${who} springs on a cast and names no card to catch (catches)`);
+  if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
+  else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a Gimmick that springs on a cast does`);
+  if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
+  else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a Move does`);
   return out;
 }
 
@@ -462,6 +505,7 @@ function systemProblems(instance: Instance): string[] {
     if (typeof p.title === 'string' && p.title.length > STAFF_TITLE_MAX) out.push(`${who} has a title of ${p.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
     if (typeof p.signature === 'string' && p.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} has a signature of ${p.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
     for (const list of ['beats', 'petRules'] as const) if (!Array.isArray(p[list])) out.push(`${who} has no ${list}`);
+    if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
     for (const ph of PHASES) {
@@ -501,8 +545,6 @@ function systemProblems(instance: Instance): string[] {
     if (!rosterKeys.has(k)) out.push(`firstStaff names "${k}", which is not in the roster`);
     else if (k === sys.firstBoss) out.push(`firstStaff names "${k}", who is firstBoss; the first season's Boss is not also on staff from the start`);
   }
-  const groupName = sys.staffGroup?.name;
-  if (typeof groupName !== 'string' || groupName.length < 1 || groupName.length > 40) out.push(`staffGroup.name must be 1 to 40 characters (it is ${typeof groupName === 'string' ? groupName.length : 'missing'})`);
   const duties = sys.duties ?? ({} as SystemContent['duties']);
   for (const d of DUTIES) {
     const who = duties[d];
@@ -515,7 +557,14 @@ function systemProblems(instance: Instance): string[] {
     if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`stock line "${key}" is missing; every standing order needs at least one line`); continue; }
     for (const line of lines) {
       for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
-        if (!STOCK_LINE_TOKENS[key].includes(token!)) out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${STOCK_LINE_TOKENS[key].map((t) => `{${t}}`).join(', ')})`);
+        const [name, form, ...extra] = token!.split('.');
+        const given = STOCK_LINE_TOKENS[key];
+        if (form !== undefined && given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!)) {
+          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`stock line "${key}" uses {${token}}, which is not a pronoun form ({${name}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
+        } else if (!given.includes(token!)) {
+          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) ? '' : form !== undefined ? ` ({${name}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
+          out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
+        }
       }
     }
   }

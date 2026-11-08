@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { RecordScreen } from './Record.tsx';
 import { LoadedRecord } from '../loaded.tsx';
 
@@ -13,7 +14,7 @@ const T0 = Date.UTC(2026, 9, 1, 12);
 function world(fake: Fake, posts = 45) {
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
-  const spritey = fake.seed.character(other, 'Spritey', 'face', { at: T0 });
+  const spritey = fake.seed.character(other, 'Spritey', 'face', { at: T0, pronouns: PRONOUN_PRESETS.they });
   const { thread, act } = fake.seed.thread('general', spritey, 'A long one', 'first', { at: T0 });
   for (let i = 1; i < posts; i++) fake.seed.post(thread, spritey, `post number ${i + 1}`, { at: T0 + i * 60_000 });
   fake.seed.card(spritey, act, 'whoops', { at: T0 + DAY });
@@ -34,6 +35,13 @@ describe('the full public record', () => {
     open(fake, w.spritey);
     expect(await screen.findByRole('heading', { level: 1, name: 'How do we explain this' })).toBeInTheDocument();
     expect(screen.queryByText(/The board is for players\./u)).toBeNull();
+  });
+
+  test('the \"All\" line names the record in the character\'s own pronouns', async () => {
+    const fake = buildWorld();
+    const w = world(fake);
+    open(fake, w.spritey);
+    expect(await screen.findByText('Their Acts with their reveals, announced Turns and past seasons, newest first.')).toBeInTheDocument();
   });
 
   test('pages twenty to a page, newest first, and says which page', async () => {

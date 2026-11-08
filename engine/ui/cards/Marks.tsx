@@ -22,6 +22,7 @@
  * `PostMarks` is the strip with what a mark opens: the Lens (Lens.tsx), on the mark's tab; "+N" opens the first kind it hides.
  */
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, Visit, VisitEnd } from '../data/api.ts';
 import type { Mine } from '../reactions/mine.ts';
@@ -195,7 +196,7 @@ export interface MarkStripProps {
   /** A character's name, for a card back's (who set it). */
   readonly nameOf?: (character: Id | null) => string;
   /** The post's visit, if it has one: its mark is first in the strip, ahead of the card kinds (Visit.tsx), and takes a place of the room the cards have. */
-  readonly visit?: { readonly visit: Visit; readonly mod: string };
+  readonly visit?: { readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet };
 }
 
 /** One mark per kind of card played on the post, "+N" for the kinds past the strip's room, and the ghost mark while an armed card can land here. */
@@ -239,7 +240,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const hidden = kinds.slice(shown.length);
   return (
     <span className="kb-marks" ref={strip}>
-      {visit && <VisitMark visit={visit.visit} mod={visit.mod} expanded={open === VISIT_KIND} onOpen={press} />}
+      {visit && <VisitMark visit={visit.visit} mod={visit.mod} pronouns={visit.pronouns} expanded={open === VISIT_KIND} onOpen={press} />}
       {shown.map((kind) => (
         <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} />
       ))}
@@ -255,8 +256,10 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, author = null, thread, onSpinAct, ask = null }: {
+export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+  /** A character's picture URL, or null for none: the Lens draws it by the name. */
+  readonly faceOf: (character: Id | null) => string | null;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
   readonly moments?: boolean;
   readonly tallies: Tallies; readonly mine: Mine;
@@ -264,6 +267,8 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   readonly onSpin: (play: CardPlay, name: string, opener: HTMLElement) => void;
   /** The post's latest visit, with the post's author and thread (Visit.tsx): a mark ahead of the cards' and a tab in the Lens. */
   readonly visit?: Visit | undefined; readonly author?: Id | null; readonly thread?: Id;
+  /** The visit's Mod's pronouns, as the thread knows them (the character holding the office now). */
+  readonly modPronouns?: PronounSet;
   /** Spin a thread from one of the visit's Acts: the Lens has closed. */
   readonly onSpinAct?: (act: Id, name: string, opener: HTMLElement) => void;
   /** A form the post asked for (Report in its foot links, Appeal in its visit's tab): this strip's Lens opens on it, each new ask (`n`) once. */
@@ -291,9 +296,9 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
   const form = ask !== null && open?.card === ask.form.kind ? ask.form : undefined;
   return (
     <span className="kb-marks-anchor" ref={anchor}>
-      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod) } : undefined} />
+      <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
       <Layers>
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
       </Layers>
     </span>
   );

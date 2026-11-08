@@ -4,6 +4,7 @@
  * the reader has something to do, and a corner sign when a play has drawn more public reactions than its post. Too many
  * kinds end in a "+N" mark. The ghost mark (an armed card's) is tested with the rest of playing a card (play.test.tsx).
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
@@ -333,7 +334,7 @@ describe('a visit\'s mark', () => {
   const MINUTE = 60_000;
   const visited = (endsInMinutes = 161) => {
     const w = world();
-    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.she });
     const visit = w.fake.seed.visit(clerk, w.second, { at: Date.now(), endsInMs: endsInMinutes * MINUTE });
     return { ...w, clerk, visit };
   };
@@ -435,7 +436,7 @@ describe('a visit\'s mark', () => {
   });
 
   test.each([
-    ['filed', 'Filed', 'The Clerk filed its visit to this post. Opens the visit.'],
+    ['filed', 'Filed', 'The Clerk filed her visit to this post. Opens the visit.'],
     ['intercepted', 'Talked down', 'The Clerk\'s visit to this post was talked down. Opens the visit.'],
     ['trapped', 'Trapped', 'The Clerk\'s visit to this post was trapped, ended by a trap. Opens the visit.'],
   ] as const)('a visit that ended %s says so in place of the time', async (outcome, text, label) => {

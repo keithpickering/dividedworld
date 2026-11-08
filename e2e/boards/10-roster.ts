@@ -14,8 +14,10 @@
  * the board draws it. The lead is not compared by place, and the roster and the panel by their size and the places of their parts from
  * their own corners.
  *
- * Section 4 (the roster is a carousel of tabs): the roster is one row, a tablist, and the selected panel is its tabpanel directly under
- * the row, capped at a readable 52em on a wide layout (full width on the phone), where the board draws the grid of three beside a 500px panel. So the roster is compared by its x and width as
+ * Section 4 (the roster is a carousel of tabs): the roster is a tablist and the selected panel its tabpanel. Where the page has room, as it
+ * does here, they stand as the board draws them, the grid of three beside a 500px panel (docs/plans/2026-11-07-carousel-edges-design.md,
+ * section 3); on a narrower page the roster is one row with the panel under it. The comparisons below were relaxed for the row and are
+ * kept as they are, so they hold either way: the roster is compared by its x and width as
  * the three tabs (its row gap is the board's 20px), New character, which stands beside the tablist and not in it, by its size, and the
  * panel by nothing of its own: the labels keep their places from the panel's top-left, the parts whose width follows the panel (its head, the Was
  * line, the pip style: 1252px under the row, the board's 438px) are held by their y and height from that corner, and the cooldown, the Turn button

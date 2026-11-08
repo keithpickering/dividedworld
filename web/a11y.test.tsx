@@ -49,7 +49,7 @@ async function settled(container: HTMLElement, floor: number): Promise<void> {
   let last = '';
   let since = Date.now();
   await waitFor(() => {
-    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(container.querySelector('[aria-busy="true"]:not(button, a, [role="button"])')).toBeNull();
     expect((container.textContent ?? '').trim().length).toBeGreaterThan(floor);
     const now = container.innerHTML;
     if (now !== last) { last = now; since = Date.now(); }

@@ -4,7 +4,7 @@
  * adapters over a fake `fetch`. Posts name the Boss and quote a Mod Bot; the season is handed over (the Boss becomes a member, a waiting
  * persona debuts as Boss); the pool runs for the day. The ex-Boss answers the post that names it, quoting it, and its spend is a row of
  * `pool_spends`. The Mod Bot answers the post that quotes it with a Whoops! on that post, which a Trap Card its author set there catches
- * (the author is paid `trapSystem`); the ex-Boss's Whoops! on the other post lands and shows in that post's marks, where the screens read
+ * (the author takes a copy of the card into her hand, and no wallet moves); the ex-Boss's Whoops! on the other post lands and shows in that post's marks, where the screens read
  * them. Gabe's to-do is in the admin queue from the handover until an update is posted, and then it is gone. Run by tools/test-sql.mjs.
  *
  * Stepped over, as 0012 and 0013 step over theirs: the pool's numbers (a week of 700 and no thread starts, so the day's allowance has room for
@@ -72,7 +72,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   const boPost = postAt(chars['Staffday Bo']!, 14, boPostBody, null);
   sql(`insert into card_ledger (account, card, kind, price) values ('${account('Staffday Ann')}', 'trap-card', 'bought', 0);
        insert into wallets (account, balance) values ('${account('Staffday Ann')}', 0) on conflict (account) do update set balance = 0;
-       select set_card('${account('Staffday Ann')}', 'trap-card', '${chars['Staffday Ann']}', '${annPost}', '{}', 0);`);
+       select set_card('${account('Staffday Ann')}', 'trap-card', '${chars['Staffday Ann']}', '${annPost}', '{"card": "whoops"}', 0, 'whoops');`);
   assert.equal(sql(`select count(*) from face_down where post = '${annPost}'`), '1', 'the trap is set face down on Ann\'s post');
 
   // ---- The season is handed over: OLD becomes a member, NEXT debuts as Boss. ----
@@ -120,7 +120,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   assert.equal(reply.target_act_id, boPost, 'quoting the post that named it');
   assert.equal(reply.payload.body, words[OLD]);
   assert.equal(sql(`select c.staff from acts a join characters c on c.id = a.character where a.id = '${oldPick.post}'`), OLD);
-  assert.match(promptsFor[OLD] ?? '', new RegExp(`You are replying to Staffday Bo: "${boPostBody.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), 'the model was shown the post it quotes');
+  assert.match(promptsFor[OLD] ?? '', new RegExp(`You are replying to Staffday Bo \\([a-z]+/[a-z]+\\): "${boPostBody.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), 'the model was shown the post it quotes');
   const spend = JSON.parse(sql(`select to_jsonb(s) from pool_spends s where s.staff = '${OLD}' and s.day = '${day}'`));
   assert.equal(spend.post_act, oldPick.post);
   assert.equal(spend.trigger, 'named');
@@ -138,16 +138,15 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   const boMarks = marks(boPost);
   assert.deepEqual(boMarks.map((m) => [m.id, m.payload.card, m.payload.caught ?? null]), [[oldPick.card, 'whoops', null]], 'a staff Whoops! shows in the post\'s marks, uncaught');
 
-  // The Whoops! on Ann's post was caught by her Trap Card, which paid her the card's base price as trapSystem.
+  // The Whoops! on Ann's post was caught by her Trap Card, which names it: the card is hers now, a copy of a staff cast, and nothing is paid.
   assert.ok(modPick.card, `the Mod Bot's Whoops! was played: ${JSON.stringify(modPick)}`);
   const annMarks = marks(annPost);
   assert.equal(annMarks.length, 1);
   assert.equal(annMarks[0]!.id, modPick.card);
   assert.ok(annMarks[0]!.payload.caught, 'the play was caught');
-  const base = Number(sql(`select value ->> 'whoops.price' from settings where key = 'economy'`));
-  assert.equal(sql(`select string_agg(change::text, ',') from wallet_events where account = '${account('Staffday Ann')}' and kind = 'trapSystem'`), String(base), 'Ann was paid the base price, made new');
-  assert.equal(sql(`select count(*) from wallet_events where account = '${account('Staffday Bo')}' and kind = 'trapSystem'`), '0', 'Bo\'s uncaught Whoops! paid nobody');
-  assert.equal(sql(`select count(*) from wallet_events where kind = 'trap' and account = '${account('Staffday Ann')}'`), '0', 'and nothing was taken from a wallet');
+  assert.equal(sql(`select count(*) from card_ledger where account = '${account('Staffday Ann')}' and kind = 'caught' and card = 'whoops' and act = (select s.id from acts s where s.kind = 'spring' and s.payload ->> 'by' = '${modPick.card}')`), '1', 'Ann took a copy of the Mod Bot\'s Whoops!');
+  assert.equal(sql(`select count(*) from card_ledger where account = '${account('Staffday Bo')}' and kind = 'caught'`), '0', 'Bo\'s uncaught Whoops! gave nobody a card');
+  assert.equal(sql(`select count(*) from wallet_events where kind in ('trap', 'trapSystem') and account in ('${account('Staffday Ann')}', '${account('Staffday Bo')}')`), '0', 'and no wallet moved');
 
   // The week's spend is recorded: a row for each pick, posts and cards counted.
   assert.equal(sql(`select count(*) from pool_spends where day = '${day}' and staff in ('${OLD}', '${MOD}')`), '2');

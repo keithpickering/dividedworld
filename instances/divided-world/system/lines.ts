@@ -3,7 +3,10 @@
  * or fails (design, section 2), so cost never grows without bound and nothing stalls. In the
  * board's world, so they may bluff; they carry no fact the glass does not show plainly. Each key
  * may use only the tokens the engine gives it (engine/system/stock.ts): `{move}` a move's plain
- * name, `{boss}` a Boss's name, `{board}` a board's name, `{rule}` a rule's number and words. Several lines a key, so one is not
+ * name, `{boss}` a Boss's name, `{board}` a board's name, `{rule}` a rule's number and words. Where a line may use `{boss}` or `{mod}`, it may add that staff
+ * character's pronouns, filled from its own set: `{mod.they} {mod.them} {mod.their} {mod.theirs} {mod.themself}`, each capitalized too
+ * (`{mod.They}`), and the verbs `{mod.is} {mod.was} {mod.has} {mod.does}` and `{mod.s}` ("{mod.they} {mod.is}" reads "they are" or
+ * "it is"); `{boss.they}` and the rest likewise. A reporter's or an appellant's are never tokens. Several lines a key, so one is not
  * heard every time.
  */
 import type { StockLines } from '../../../engine/rules/types.ts';
@@ -33,6 +36,18 @@ export const stockLines: StockLines = Object.freeze({
     'A new era has begun, and {move} has been filed under things the last Boss did. It is over.',
     'The new Boss has looked at {move} and decided it was somebody else\'s idea. It is set aside.',
     'Regime change: {move} did not survive the handover. The System sends its regards.',
+  ]),
+  // A favor whose check came and the demand was not met: the group is taken back. `{move}` names the group by its name. DRAFT for the owner.
+  moveUnmet: Object.freeze([
+    'The check came and the demand was not met, so {move} is withdrawn. The System is not surprised. The System is a little surprised.',
+    'Time was called and nothing was done: {move} is over. The favor was a loan and the System is collecting.',
+    'Audit complete. {move} does not survive it. The System expected more and has written down exactly how much.',
+  ]),
+  // A move overturned on appeal. DRAFT for the owner.
+  moveOverturned: Object.freeze([
+    'On appeal, {move} is overturned. The System would like it noted that the System was right and has been outvoted.',
+    'The appeal succeeded and {move} is undone. The System accepts this the way a cat accepts a bath.',
+    '{move} did not survive its appeal. The System has filed a grievance against the appeal.',
   ]),
   bossFarewell: Object.freeze([
     '{boss} is leaving the building. Please stop clapping.',
@@ -72,7 +87,7 @@ export const stockLines: StockLines = Object.freeze({
     'Inspection over. {mod} files this post under {rule}.',
     '{mod} found this post in violation of {rule}, and has written it down.',
     '{mod} has stamped this post. The stamp says {rule}, and the stamp is heavy.',
-    'Case closed by {mod}, with the finding {rule}. {mod} has already forgotten how it felt about this.',
+    'Case closed by {mod}, with the finding {rule}. {mod} has already forgotten how {mod.they} felt about this.',
     '{mod} came, saw and filed. The finding is {rule}, and {mod} would do it again.',
   ]),
   // A report dismissed (the Aura is spent, the Mod grumbles) and one that backfired on the reporter. DRAFT for the owner.

@@ -40,7 +40,7 @@ export function buildMoveNotice(act: Act, tally: Tally, progress: unknown): Move
   const p = act.payload;
   const demand = toDemand(p['demand']);
   return {
-    act: act.id, thread: act.thread, character: act.character, kind: typeof p['kind'] === 'string' ? p['kind'] : '',
+    act: act.id, thread: act.thread, character: act.character, ...(p['office'] === 'boss' || p['office'] === 'mod' ? { office: p['office'] } : {}), kind: typeof p['kind'] === 'string' ? p['kind'] : '',
     params: isObject(p['params']) ? p['params'] : {}, demand, body: typeof p['body'] === 'string' ? p['body'] : '',
     expiresAt: typeof p['expires_at'] === 'string' ? p['expires_at'] : null, landedAt: act.createdAt,
     progress: demand === null ? null : toProgress(progress), reactions: topReactions(tally),

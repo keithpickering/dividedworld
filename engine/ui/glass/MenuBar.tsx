@@ -32,11 +32,14 @@
  * once. Back stays out of the strip, so no tab ever slides under it.
  */
 import { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { motion, type Transition } from 'motion/react';
 import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link, useLocation } from '../router.tsx';
+import { useIsAdmin } from '../mini.tsx';
+import { Link, useLocation, useNavigation } from '../router.tsx';
+import { ClaimsProvider, useHasClaims, usePendingControl, useUnclaimed } from './claims.tsx';
+import { Spinner } from './Spinner.tsx';
 import { isLeaving } from './Held.tsx';
 import { backHref, boardPlace, useBackToBoard } from './back.ts';
 import { pageEscape, plainClick } from './keys.ts';
@@ -70,21 +73,50 @@ function density(count: number): 'few' | 'many' | 'most' {
   return count > 8 ? 'most' : count > 5 ? 'many' : 'few';
 }
 
+/**
+ * A tab, which names its own load: while it is pending it shows the Signal spinner after its label, in a slot that eases open
+ * (shell.css; at once under Off) and takes `data-kb-pending`. The claim keeps the bar's end from drawing the same wait.
+ */
+function MenuTab({ tab, path, transition }: { readonly tab: Tab; readonly path: string; readonly transition: Transition }) {
+  const { source, pending } = usePendingControl();
+  const current = tab.current(path);
+  return (
+    <>
+      <Link to={tab.to} source={source} className="kb-glass-menu-tab kb-glass-skew" aria-current={current ? 'page' : undefined} data-kb-pending={pending ? '' : undefined}>
+        <span className="kb-glass-upright">{tab.label}<span className="kb-glass-menu-wait" aria-hidden="true">{pending && <Spinner />}</span></span>
+      </Link>
+      {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight; its holder wears the link's skew, so the rule is drawn as the boards draw it, 3px along the foot of the skewed tab. */}
+      {current && (
+        <span className="kb-glass-menu-rule kb-glass-skew" aria-hidden="true">
+          <motion.span layoutId="kb-glass-menu-underline" className="kb-glass-menu-underline" transition={transition} />
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The bar makes its own set of claimed sources where no page has (a bar drawn alone); on a page, Page.tsx's serves it and the page's controls. */
 export function MenuBar() {
+  return useHasClaims() ? <Bar /> : <ClaimsProvider><Bar /></ClaimsProvider>;
+}
+
+function Bar() {
   const { api, ui } = useKayfa();
   const feel = useFeel(ui.glass.motion);
   const { session } = usePlayer();
-  const [admin, setAdmin] = useState(false);
-  useEffect(() => {
-    setAdmin(false);
-    if (!session.signedIn) return;
-    let live = true;
-    void api.isAdmin().then((a) => { if (live) setAdmin(a); }, () => { /* no tab */ });
-    return () => { live = false; };
-  }, [api, session.signedIn, session.account]);
+  /* Boot's answer where the first load read it; a read only where there is none. */
+  const admin = useIsAdmin(api, session.signedIn);
   const { path } = useLocation();
-  const back = useBackToBoard();
+  const backControl = usePendingControl();
+  const back = useBackToBoard(backControl.source);
+  /* A load out that no control here or on the page draws (a Back or Forward, a `navigate` with no source) is drawn at the bar's end. */
+  const { pending } = useNavigation();
+  /* A load out when Esc is pressed is the router's to stop (router.tsx); this Esc does not start another. */
+  const loadOut = useRef(false);
+  loadOut.current = pending !== null && !pending.silent;
+  const waitAtEnd = useUnclaimed(pending ? pending.source : undefined);
   const list = useRef<HTMLUListElement>(null);
+  const transition: Transition = feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 };
   const shown = admin ? [...TABS, ADMIN] : TABS;
   const [fade, setFade] = useState<'none' | 'start' | 'end' | 'both'>('none');
   const bar = useRef<HTMLElement>(null);
@@ -103,7 +135,7 @@ export function MenuBar() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!pageEscape(e) || isLeaving(bar.current)) return;
+      if (!pageEscape(e) || loadOut.current || isLeaving(bar.current)) return;
       e.preventDefault();
       back();
     };
@@ -167,6 +199,8 @@ export function MenuBar() {
         <Link
           to={backHref(boardPlace())}
           early={false}
+          source={backControl.source}
+          data-kb-pending={backControl.pending ? '' : undefined}
           className="kb-glass-menu-back kb-glass-skew"
           aria-keyshortcuts="Escape"
           onClick={(e) => { if (!plainClick(e)) return; e.preventDefault(); back(); }}
@@ -175,23 +209,17 @@ export function MenuBar() {
             <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
             <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
             Back to the board
+            <span className="kb-glass-menu-wait" aria-hidden="true">{backControl.pending && <Spinner />}</span>
           </span>
         </Link>
         {session.signedIn && (
           <ul ref={list} className="kb-glass-menu-list" data-kb-tabs={density(shown.length)} data-kb-fade={fade}>
             {shown.map((t) => (
-              <li key={t.label}>
-                <Link to={t.to} className="kb-glass-menu-tab kb-glass-skew" aria-current={t.current(path) ? 'page' : undefined}><span className="kb-glass-upright">{t.label}</span></Link>
-                {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight; its holder wears the link's skew, so the rule is drawn as the boards draw it, 3px along the foot of the skewed tab. */}
-                {t.current(path) && (
-                  <span className="kb-glass-menu-rule kb-glass-skew" aria-hidden="true">
-                    <motion.span layoutId="kb-glass-menu-underline" className="kb-glass-menu-underline" transition={feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 }} />
-                  </span>
-                )}
-              </li>
+              <li key={t.label}><MenuTab tab={t} path={path} transition={transition} /></li>
             ))}
           </ul>
         )}
+        {waitAtEnd && <span className="kb-glass-menu-end" aria-hidden="true"><Spinner /></span>}
       </div>
     </nav>
   );

@@ -71,7 +71,7 @@ export function MomentFrame({ play, place, at, read, back, own = null, named, wo
   const onInk = useOnInk();
   const ink = play.faceDown ? undefined : inkOf(ui, play, [play], onInk);
   const ring = useRing(place);
-  /* The moment is the content (a play-spun ORIGIN box): the box frames it, so there is no ring or tag, and a read not yet done is said above the words (and Try again). */
+  /* The moment is the content (a play-spun ORIGIN box): the box frames it, so there is no ring or tag, and a read not yet done is said above the words (and Try again). Over a post, As it landed opens once the moment is read (glass/prepared.ts), so the tag never says it is loading. */
   const content = back === undefined;
   const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
   const said = content && status !== null;
@@ -84,7 +84,7 @@ export function MomentFrame({ play, place, at, read, back, own = null, named, wo
         <p ref={ring.tag} className="kb-moment-tag">
           <span>As it landed</span>
           {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
-          {status !== null && <><span aria-hidden="true"> · </span><span>{status}</span></>}
+          {status !== null && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{status}</span></>}
           {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
         </p>
       )}

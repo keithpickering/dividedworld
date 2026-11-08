@@ -194,6 +194,14 @@ describe('instanceUiProblems', () => {
       assert.deepEqual(instanceUiProblems(poisoned, rules), [`the copy has no ${key}`]);
     }
   });
+  test('refuses a card kind word that is empty, missing or not text, and takes the three words', () => {
+    const words = { cast: 'Move', set: 'Gimmick', use: 'Ward' };
+    const withKinds = (kinds: unknown) => { const u = ui(good); (u.copy as Record<string, unknown>).cardKinds = kinds; return u; };
+    assert.deepEqual(instanceUiProblems(withKinds(words), rules), []);
+    for (const key of ['cast', 'set', 'use']) {
+      for (const value of [' ', undefined, 7]) assert.deepEqual(instanceUiProblems(withKinds({ ...words, [key]: value }), rules), [`the copy's cardKinds has no ${key}`]);
+    }
+  });
   test('refuses a copy key that is missing, and one that is not a string', () => {
     for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
       const missing = ui(good);

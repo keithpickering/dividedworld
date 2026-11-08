@@ -5,6 +5,7 @@
  * then the thread's, then the author's, then the post's own; and a play beyond a post stops drawing at its end without a reread.
  * The cards are the engine's own test cards, never an instance's.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
@@ -23,7 +24,7 @@ import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
 
-const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches'], extra: Partial<CardRules> = {}): CardRules => ({
   ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, ...extra,
   canApply: (t, e, _config, now) => landsOn({ key, reaches }, t, e, now),
@@ -54,7 +55,7 @@ function world() {
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
-  const spritey = fake.seed.character(other, 'Spritey', 'face');
+  const spritey = fake.seed.character(other, 'Spritey', 'face', { pronouns: PRONOUN_PRESETS.she });
   const gloomba = fake.seed.character(other, 'Gloomba', 'heel');
   const { thread, act: p1 } = fake.seed.thread('general', spritey, 'Glitter everywhere', 'the first post');
   const ids = [p1, fake.seed.post(thread, gloomba, 'second'), fake.seed.post(thread, spritey, 'third'), fake.seed.post(thread, pipe, 'mine'), fake.seed.post(thread, spritey, 'fifth')];
@@ -131,7 +132,7 @@ describe('a character card armed', () => {
     /* It opens the play form on the character, and the play lands there. */
     await user.click(ghost(3)!);
     const dialog = await screen.findByRole('dialog', { name: /Sparkle/u });
-    expect(dialog).toHaveTextContent('On Spritey');
+    expect(dialog).toHaveTextContent('On Spritey, on every post of hers, until its time is up.');
     await user.click(within(dialog).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(within(postbit(5)).getByRole('button', { name: /^Sparkle, 1 play\b.*Opens the cards on this character\./u })).toBeInTheDocument());
     /* The ghost is gone with the play, so focus goes back to the post it was played from. */

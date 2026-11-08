@@ -268,6 +268,63 @@
   clip-path: polygon(0 0, 100% 0, 100% 100%);
 }
 
+.kb-lens-row-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: center;
+  margin: 0 0 0.35rem;
+}
+
+.kb-lens-row-head .kb-lens-by {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-lens-row-avatar {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 2px solid var(--kb-play-ink, var(--kb-glass-neon));
+}
+
+.kb-lens-row-avatar .kb-avatar-none {
+  font-size: var(--kb-glass-size-display-xs);
+  color: var(--kb-lens-ink-text);
+}
+
+/* The fold's words, an item apart from the faces: they shrink and wrap, a long name breaking where it must, as in a row's head. */
+.kb-lens-fold-words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The faces before the fold's words: decoration, overlapping. Their wrappers take no box, they only carry each play's ink. */
+.kb-lens-faces {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+}
+
+.kb-lens-face-ink {
+  display: contents;
+}
+
+.kb-lens-face {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 1.5px solid var(--kb-play-ink, var(--kb-glass-neon));
+}
+
+/* Overlapped by a sixth, not more: a deeper overlap lays the next face's border over this one's letter (e2e/glass-text.spec.ts reads it). */
+.kb-lens-face-ink + .kb-lens-face-ink .kb-lens-face {
+  margin-inline-start: -0.25rem;
+}
+
+.kb-lens-face .kb-avatar-none {
+  font-size: var(--kb-glass-size-display-xs);
+  color: var(--kb-lens-ink-text);
+}
+
 .kb-lens-by {
   margin: 0 0 0.35rem;
   color: var(--kb-glass-text-2);
@@ -421,3 +478,13 @@
 }
 
 .kb-lens-end { width: min(100%, 560px); }
+
+/* A tab or an action that reads before it shows: its spinner stands beside its label (glass/prepared.ts). */
+.kb-lens-tab[aria-busy='true'] .kb-glass-upright,
+.kb-lens-action[aria-busy='true'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+}
+.kb-lens-tab .kb-spinner,
+.kb-lens-action .kb-spinner { height: 1em; }

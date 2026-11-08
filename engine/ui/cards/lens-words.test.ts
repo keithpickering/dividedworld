@@ -5,8 +5,9 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
 import type { CardView } from './types.ts';
+import { caughtWords } from './marks.ts';
 
 const view = (over: Partial<CardView> = {}): CardView => ({ progress: null, state: 'Holding you on this post', yours: false, controls: [], notes: {}, ...over });
 
@@ -28,7 +29,7 @@ describe('a state or status is a short status, never a sentence', () => {
     assert.equal(wordsProblems('status', 'Top: yellow').length, 1);
   });
   test('the drafted words pass', () => {
-    for (const ok of ['Holding you on this post', 'Not holding you · you wrote it', 'Not holding you · you played it', 'Done holding you', 'Broke free this visit', '41% washed for you', '3 strips, 1 peeled', 'Turning away cards up to uncommon', 'Sparkling every post of theirs', "Pinned to its board's top", '2 of 3 stacked', 'Set, face down to everyone else', 'Face down on this post', 'Washed clean', 'Ended by an admin']) {
+    for (const ok of ['Holding you on this post', 'Not holding you · you wrote it', 'Not holding you · you played it', 'Done holding you', 'Broke free this visit', '41% washed for you', '3 strips, 1 peeled', 'Turning away cards up to uncommon', 'Sparkling every post by that character', "Pinned to its board's top", '2 of 3 stacked', 'Set, face down to everyone else', 'Face down on this post', 'Washed clean', 'Ended by an admin']) {
       assert.deepEqual(wordsProblems('state', ok), [], ok);
     }
     assert.deepEqual(wordsProblems('state', 'Washed clean.'), []);
@@ -54,5 +55,45 @@ describe('a view that holds the reader or covers the post names its way out', ()
   });
   test("the view's own state is checked too", () => {
     assert.equal(viewProblems(view({ state: 'Top: yellow', ends: 'x' }), { holds: true, covers: false }).length, 1);
+  });
+});
+
+describe('sprungWords', () => {
+  const at = '2026-11-05T12:00:00.000Z';
+  test('a quote spring: who set it, on what day, and whose quote set it off', () => {
+    assert.equal(sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'quote' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey quoted it.');
+  });
+  test('what could not be read is left out, never guessed', () => {
+    assert.equal(sprungWords({ setter: null, setAt: null, quoter: null, trigger: 'quote' }, 'UTC'), 'Set face down by someone; sprang when a post quoted it.');
+  });
+  test('a spring written before the face-down Moves: a reply names its post\'s character, a reaction names no one', () => {
+    assert.equal(sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reply' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey replied to it.');
+    const said = sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reaction' }, 'UTC');
+    assert.equal(said, 'Set face down by Pipewrench on November 5; sprang on a reaction.');
+    assert.ok(!said.includes('Spritey'));
+  });
+});
+
+describe('readCaughtFate: where a caught play\'s card went, for the Lens', () => {
+  const spring = (payload: Record<string, unknown>, character: string | null = 'cPipe') =>
+    ({ id: 'sp', kind: 'spring', character, thread: 't', targetActId: null, seq: null, createdAt: '2026-11-02T09:41:00.000Z', payload, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const api = (sp: unknown, staff: boolean) => ({
+    actsById: async () => [sp],
+    characters: async () => [{ id: 'cPipe', name: 'Pipewrench', ...(staff ? { staff: 'clerk' } : {}) }],
+  }) as never;
+  test('a player setter took the card', async () => {
+    assert.deepEqual(await readCaughtFate(api(spring({ did: 'caught' }), false), 'sp'), { taken: 'Pipewrench' });
+  });
+  test('a staff setter takes nothing: the card is spent', async () => {
+    const fate = await readCaughtFate(api(spring({ did: 'caught' }), true), 'sp');
+    assert.deepEqual(fate, {});
+    assert.equal(caughtWords('Trap Card', fate ?? undefined), 'Caught by a Trap Card. It did nothing, and its card is spent.');
+  });
+  test('a setter that could not be read yields no claim: never "spent"', async () => {
+    const none = { actsById: async () => [spring({ did: 'caught' })], characters: async () => [] } as never;
+    assert.equal(await readCaughtFate(none, 'sp'), null);
+  });
+  test('a spring written before has no did: the card was spent', async () => {
+    assert.deepEqual(await readCaughtFate(api(spring({ outcome: { do: 'payout' } }), false), 'sp'), {});
   });
 });

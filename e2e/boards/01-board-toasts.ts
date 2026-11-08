@@ -54,7 +54,7 @@ const manifest: BoardManifest = {
     { id: 'dismiss-2', role: 'button', name: 'Dismiss', nth: 1, box: 'size', type: false },
     { id: 'dismiss-3', role: 'button', name: 'Dismiss', nth: 2, box: 'size', type: false },
     { id: 'toast-1', role: 'text', name: 'Mrs. Hooligan quoted Pipewrench', buildName: 'A ruling landed on Pipewrench', box: 'none' },
-    { id: 'toast-2', role: 'text', name: 'Glitter Bomb was played on Spritey', buildName: 'A trap struck a post of Spritey\'s', box: 'none' },
+    { id: 'toast-2', role: 'text', name: 'Glitter Bomb was played on Spritey', buildName: 'A face-down card struck a post of Spritey\'s', box: 'none' },
     { id: 'toast-3', role: 'text', name: 'Your post is picking up heat', buildName: 'A ruling landed on Mrs. Hooligan', box: 'none' },
   ],
 };

@@ -37,7 +37,14 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
   const boot = useBoot();
   const apiRef = useRef(api);
   apiRef.current = api;
-  const store = useMemo(() => createTipsStore({ see: (key) => apiRef.current.seeTip(key), skip: () => apiRef.current.skipTips() }), []);
+  /*
+   * One store for each account the page is read for: what it decided (a tip dropped as seen, the page's one budget spent, a line carried) is that
+   * account's, and the frame, which holds this provider, stays mounted when the session changes under a board page (a device two players
+   * share), or comes back from its exit when the glass is left mid-crossing. A new account's tips are decided afresh, as its screens are drawn.
+   */
+  const reader = session.account;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the account is what a store is for, not something it reads
+  const store = useMemo(() => createTipsStore({ see: (key) => apiRef.current.seeTip(key), skip: () => apiRef.current.skipTips() }), [reader]);
 
   /* The account's own state, read once for the page: a visitor, or a failed read, has none and nothing shows. */
   const [account, setAccount] = useState<Preferences | null>(null);

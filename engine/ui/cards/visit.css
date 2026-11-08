@@ -106,7 +106,7 @@
   margin: 0;
 }
 
-.kb-kit-tile.kb-visit-appeal {
+.kb-visit-appeal {
   --kb-tile: var(--kb-visit-ink);
   margin-bottom: 0.5rem;
   color: var(--kb-glass-text-hi);

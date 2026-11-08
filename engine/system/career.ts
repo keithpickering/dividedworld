@@ -19,7 +19,7 @@ export interface Career {
 const OFFICE_WORDS: Readonly<Record<string, string>> = { mod: 'Mod Bot', member: 'Member', benched: 'Benched' };
 const HOW_WORDS: Readonly<Record<string, string>> = {
   seed: 'the first Boss',
-  nomination: 'named by the Boss before it',
+  nomination: 'named by the previous Boss',
   rotation: 'by rotation',
   unchanged: 'held over, since no one else could be chosen',
   none: 'with no Boss chosen',

@@ -19,17 +19,23 @@
  * anyone it reached.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import { BanAppeal } from '../cards/Forms.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
 import { CONTACT_PATH } from '../contact/Contact.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
+import { useBoot } from '../boot.tsx';
+import type { LogDoc } from '../glass-docs.ts';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link, useLocation } from '../router.tsx';
+import { useLocation } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
 import { useLog } from './useLog.ts';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { economyNow, paramsOf } from '../economy.ts';
 import { untilWords } from '../characters/format.ts';
 import './log.css';
@@ -48,7 +54,7 @@ const openingOf = (state: unknown): LogOpening => {
 };
 
 export function Said({ parts }: { readonly parts: readonly Segment[] }) {
-  return <>{parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <Link key={i} to={p.href}>{p.text}</Link>))}</>;
+  return <>{parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : <GlassLink key={i} to={p.href}>{p.text}</GlassLink>))}</>;
 }
 
 /** The characters a log has tabs for: the player's own that have debuted or have a line, in the order they debuted, as the boards and the roster list them. */
@@ -107,7 +113,7 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
   );
 }
 
-function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly open: boolean; readonly onToggle: (id: number, to?: boolean) => void }) {
+function Row({ row, data, words, tab, open, onToggle, entering }: { readonly entering?: true; readonly row: LogRow; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly open: boolean; readonly onToggle: (id: number, to?: boolean) => void }) {
   const base = useId();
   const breakdown = `${base}-posts`;
   const button = useRef<HTMLButtonElement>(null);
@@ -115,7 +121,7 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
   const close = () => { if (s) onToggle(s.id, false); button.current?.focus(); };
   return (
     <>
-      <tr data-kb-kind={row.kind} data-kb-estimate={row.kind === 'estimate' ? '' : undefined}>
+      <tr data-kb-kind={row.kind} data-kb-estimate={row.kind === 'estimate' ? '' : undefined} {...(entering ? { [ENTERING]: '' } : {})}>
         <td className="kb-log-when" data-kb-label="When (UTC)">{utcWhen(row.at)}</td>
         <td className="kb-log-what" data-kb-label="What">{row.what}</td>
         <td className="kb-log-details" data-kb-label="Details">
@@ -151,20 +157,20 @@ function Row({ row, data, words, tab, open, onToggle }: { readonly row: LogRow; 
  * a line when a settlement scores it, never that the next one writes it; the next settlement's time is said where it is known and still ahead. `name` is the
  * open tab's character; All says "you" and "one of your characters".
  */
-export function nothingSettled(name: string | null, next: string | null): string {
+export function nothingSettled(name: string | null, next: string | null, pronouns: PronounSet | null = null): string {
   const until = next === null ? null : untilWords(next);
   const head = name === null ? 'Nothing has settled for you yet.' : `Nothing has settled for ${name} yet.`;
-  const scored = name === null ? 'one of your characters' : 'it';
+  const scored = name === null || pronouns === null ? 'one of your characters' : pronounWords(pronouns).them;
   return until === null ? `${head} A line comes here when a settlement scores ${scored}.` : `${head} A line comes here when a settlement scores ${scored}; the next is ${until}.`;
 }
 
 /** The one row of a log with nothing in it (board 30): the table keeps its shape, and the row says when the next settlement is and what a line here will be. */
-function NothingYet({ name, next }: { readonly name: string | null; readonly next: string | null }) {
+function NothingYet({ name, next, pronouns }: { readonly name: string | null; readonly next: string | null; readonly pronouns: PronounSet | null }) {
   return (
     <tr data-kb-kind="nothing">
       <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null ? utcWhen(next) : '—'}</td>
       <td className="kb-log-what" data-kb-label="What">Nothing yet</td>
-      <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next)}</td>
+      <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next, pronouns)}</td>
       <td className="kb-log-num" data-kb-label="Aura" />
       <td className="kb-log-num" data-kb-label="Wallet">—</td>
     </tr>
@@ -196,6 +202,8 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   const table = useRef<HTMLTableElement>(null);
   const reading = useRef(false);
   const last = data.log.before === null;
+  /* The lines a press adds enter; lines that arrive any other way do not. */
+  const added = useEnterAdded(table, older === 'loading');
   /* On the phone the character tabs are one row that scrolls (log.css); the current one is kept in view. */
   const tabRow = useRef<HTMLDivElement>(null);
   const currentId = current?.id ?? null;
@@ -239,52 +247,45 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
             </tr>
           </thead>
           <tbody>
-            {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} next={data.nextSettlement} />}
-            {rows.map((r) => <Row key={r.key} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
+            {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} pronouns={current?.pronouns ?? null} next={data.nextSettlement} />}
+            {rows.map((r) => <Row key={r.key} entering={added.entering(r.key)} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
           </tbody>
         </table>
-        {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement)}</p>}
+        {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement, current?.pronouns ?? null)}</p>}
         {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
         {onOlder && data.log.before !== null && (
           <p className="kb-log-older">
-            <GlassButton size="s" onClick={() => { reading.current = true; onOlder(); }} disabled={older === 'loading'}>Show older lines</GlassButton>
+            <GlassButton size="s" busy={older === 'loading'} onClick={() => { reading.current = true; added.arm(rows.map((r) => r.key)); onOlder(); }}>Show older lines</GlassButton>
             {older === 'failed' && <span className="kb-log-older-failed"> The older lines could not be read. Try again.</span>}
           </p>
         )}
       </CalmRegion>
-      <CalmRegion as="p" className="kb-log-foot">If a line here looks wrong, that is a bug and not the game. <Link to={CONTACT_PATH}>Tell an admin</Link>.</CalmRegion>
+      <CalmRegion as="p" className="kb-log-foot">If a line here looks wrong, that is a bug and not the game. <GlassLink to={CONTACT_PATH}>Tell an admin</GlassLink>.</CalmRegion>
     </div>
   );
 }
 
-/** My log at /log: the newest page, the HUD's character's tab unless the navigation chose one, and a settlement open where it asked. */
-export function LogScreen() {
+/** My log at /log: the document's newest page, the HUD's character's tab unless the navigation chose one, and a settlement open where it asked. */
+export function LogScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {
+  if (isSignedOutDoc(doc)) return <div className="kb-log"><CalmRegion className="kb-log-empty"><SignInPrompt /></CalmRegion></div>;
+  return <LogPageView doc={doc} />;
+}
+
+function LogPageView({ doc }: { readonly doc: LogDoc }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session, hudCharacter } = usePlayer();
+  const { hudCharacter, characters } = usePlayer();
+  const boot = useBoot();
   const { state: carried } = useLocation();
   const opening = openingOf(carried);
-  const { state, older } = useLog(api, signedIn, session.account);
+  const { data, older, olderState } = useLog(api, doc, characters, boot?.nextSettlementAt ?? null);
   /* Undefined until the player picks: the navigation's choice, else the HUD's character. */
   const [picked, setPicked] = useState<Id | null | undefined>(undefined);
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set(opening.open === undefined ? [] : [opening.open]));
-  /* Another account's log starts on its own tab with nothing open. */
-  const account = session.account;
-  const last = useRef(account);
-  useEffect(() => {
-    if (last.current === account) return;
-    last.current = account;
-    setPicked(undefined);
-    setOpen(new Set());
-  }, [account]);
-  if (signedIn === false) return <div className="kb-log"><CalmRegion className="kb-log-empty"><SignInPrompt /></CalmRegion></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-log" aria-busy="true" />;
-  if (state.status === 'failed') return <div className="kb-log"><CalmRegion as="p" className="kb-log-empty">Your log could not be loaded. Reload the page to try again.</CalmRegion></div>;
   const tab = picked !== undefined ? picked : (opening.character ?? hudCharacter?.id ?? null);
   const toggle = (id: number, to?: boolean) => setOpen((now) => {
     const next = new Set(now);
     if (to ?? !now.has(id)) next.add(id); else next.delete(id);
     return next;
   });
-  return <Log data={state.data} tab={tab} onTab={setPicked} open={open} onToggle={toggle} onOlder={older} older={state.older} />;
+  return <Log data={data} tab={tab} onTab={setPicked} open={open} onToggle={toggle} onOlder={older} older={olderState} />;
 }

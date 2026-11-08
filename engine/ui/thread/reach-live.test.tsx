@@ -15,7 +15,7 @@ import type { CardUi } from '../cards/types.ts';
 import { ThreadScreen } from './Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
-const base = { priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const reaching = (key: string, name: string, rarity: CardRules['rarity'], reaches: CardRules['reaches']): CardRules => ({
   ...base, key, name, alignment: 'pepperoni', rarity, reaches, lasts: { unit: 'day', count: 1 }, canApply: (t, e, _config, now) => landsOn({ key, reaches }, t, e, now),
 });
@@ -46,10 +46,13 @@ async function open(withCards = false) {
   const elsewhere = fake.seed.thread('general', spritey, 'Somewhere else', 'a post over there');
   const gloombaThere = fake.seed.post(elsewhere.thread, gloomba, 'gloomba over there');
   fake.signInAs(me);
+  /* The page hears reach once its effect has subscribed, a moment after its first article is drawn: a broadcast seeded before then is heard by no one. */
+  const heard = vi.spyOn(fake, 'subscribeReach');
   renderIn(fake, <Frame><LoadedThread thread={here.thread} /></Frame>, { path: `/t/${here.thread}`, instance, ...(withCards ? { cards } : {}) });
   await screen.findByRole('article', { name: /^Post 1 /u });
-  /* The post is drawn before React has run the screen's effects when the machine is loaded, and a play sent before the thread subscribes to
-     `reach` is never heard (as on the wire). The frame listens to `reach` too, so the thread is the second listener. */
+  await waitFor(() => expect(heard).toHaveBeenCalled());
+  /* Reach is heard by the frame too, so the thread's own listener is the second. */
+  await waitFor(() => expect(heard).toHaveBeenCalled());
   await waitFor(() => expect(fake.broadcast.reachListeners()).toBeGreaterThanOrEqual(2), landed);
   return { fake, me, spritey, gloomba, here, elsewhere, gloombaThere };
 }

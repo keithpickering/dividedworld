@@ -1,0 +1,231 @@
+/*
+ * The machine's admin page (Machine.tsx; docs/research/2026-11-07-booster-packs/05-admin.html, and the fourth screen of 04-phone.html): the lead under the title,
+ * the admin pages' strip, then a plain table of the slots ruled row by row, and one Save changes under a rule. Sizes are the glass's tokens, never px
+ * (engine/ui/glass/board.test.tsx reads this file); every color is a glass token. On the Phone board's layout each row is a plate: the slot, its name and
+ * its arrows on one line, the availability and the price under it, the Boss's move under those.
+ */
+.kb-machine-admin {
+  padding-top: 32px;
+  padding-bottom: 40px;
+}
+
+.kb-machine-lead {
+  max-width: 900px;
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-machine-note {
+  margin: 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-machine-calm {
+  margin-top: 34px;
+}
+
+.kb-machine-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  color: var(--kb-glass-text);
+}
+
+.kb-machine-table thead th {
+  padding-bottom: 12px;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-machine-table tbody tr {
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-machine-table td,
+.kb-machine-table tbody th {
+  padding: 1px 12px 1px 0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.kb-machine-table thead th:nth-child(1) { width: 90px; }
+.kb-machine-table thead th:nth-child(2) { width: 150px; }
+.kb-machine-table thead th:nth-child(3) { width: 260px; }
+.kb-machine-table thead th:nth-child(4) { width: 200px; }
+.kb-machine-table thead th:nth-child(5) { width: 170px; }
+
+.kb-machine-table td.kb-machine-code {
+  padding-block: 8px;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 800;
+  color: var(--kb-glass-ready-text);
+}
+
+.kb-machine-order {
+  white-space: nowrap;
+}
+
+.kb-machine-order > * + * {
+  margin-left: 8px;
+}
+
+.kb-machine-item {
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.kb-machine-kind {
+  display: block;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 500;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-machine-field {
+  box-sizing: border-box;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--kb-glass-neon);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-hi);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 700;
+}
+
+.kb-machine-field:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 2px;
+}
+
+.kb-machine-price {
+  width: 110px;
+  text-align: right;
+}
+
+.kb-machine-price[aria-invalid='true'] {
+  border-color: var(--kb-glass-loss);
+}
+
+/* The note beside Save changes is the label's size, as the board sets it. */
+.kb-machine-save-note {
+  font-size: var(--kb-glass-size-label);
+}
+
+/* The Boss's move on a slot: a skewed tag with its words upright, and the link to reverse it in the queue. */
+.kb-machine-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid var(--kb-glass-salty-text);
+  font-size: var(--kb-glass-size-label);
+  font-style: italic;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--kb-glass-salty-text);
+}
+
+.kb-machine-reverse {
+  margin-left: 10px;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--kb-glass-neon-text);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.kb-machine-reverse:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-machine-form > .kb-button-row {
+  align-items: center;
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-machine-status:not(:empty),
+.kb-machine-problem {
+  margin: 14px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
+.kb-machine-problem {
+  padding-left: 14px;
+  border-left: 3px solid var(--kb-glass-loss);
+}
+
+/* A phone's head row is no table row (its cells never lay the table out), as the Log's: each cell is a clipped block, still read by a screen reader. */
+:where(:root[data-kb-layout='phone']) .kb-machine-table thead th {
+  display: block;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A phone: each slot is a plate of its own, the head row of the table kept for a screen reader. */
+:where(:root[data-kb-layout='phone']) .kb-machine-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-machine-table thead tr,
+:where(:root[data-kb-layout='phone']) .kb-machine-table,
+:where(:root[data-kb-layout='phone']) .kb-machine-table tbody {
+  display: block;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-machine-table tbody tr {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 10px;
+  align-items: center;
+  padding: 12px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-machine-table td,
+:where(:root[data-kb-layout='phone']) .kb-machine-table tbody th {
+  padding: 0;
+}
+
+/*
+ * The slot, its name and its arrows on one line, in that order (the arrows come first in the markup); the name asks for eight of its own type sizes,
+ * so at a larger text size it takes a line to itself and the arrows wrap under it, never a sliver beside them.
+ */
+:where(:root[data-kb-layout='phone']) .kb-machine-code { order: 1; }
+:where(:root[data-kb-layout='phone']) .kb-machine-item { order: 2; flex: 1 1 8em; min-width: 0; }
+:where(:root[data-kb-layout='phone']) .kb-machine-order { order: 3; min-width: 110px; } /* as wide as the price under it, which the board's third column made it */
+:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(4) { order: 4; flex: 1 1 8em; }
+:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(5) { order: 5; }
+:where(:root[data-kb-layout='phone']) .kb-machine-boss { order: 6; flex: 0 0 100%; }
+:where(:root[data-kb-layout='phone']) .kb-machine-boss:empty { display: none; }
+
+:where(:root[data-kb-layout='phone']) .kb-machine-table td:nth-child(4) .kb-machine-field { width: 100%; }
+:where(:root[data-kb-layout='phone']) .kb-machine-field { min-height: 44px; }
+
+:where(:root[data-kb-layout='phone']) .kb-machine-table td.kb-machine-code { padding: 0; }
