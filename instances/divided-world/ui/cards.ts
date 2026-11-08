@@ -120,7 +120,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
-      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains what their wallet paid to play it, as far as your wallet's cap allows. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
+      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains what the caster paid to play it, as far as your wallet's cap allows. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
   },
   {
     key: 'force-field',
@@ -175,10 +175,10 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'glitter-bomb',
     Effect: GlitterBombEffect,
     art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
-    summary: `Cast on a character. Every post of theirs sparkles for ${spanWords(glitterBomb.lasts!)}.`,
-    status: 'Sparkling every post of theirs',
+    summary: `Cast on a character. Every post by that character sparkles for ${spanWords(glitterBomb.lasts!)}.`,
+    status: 'Sparkling every post by that character',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${glitterBomb.rarity}, cast on a character from any of their posts. For ${spanWords(glitterBomb.lasts!)}, every post of that character sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'main-event',

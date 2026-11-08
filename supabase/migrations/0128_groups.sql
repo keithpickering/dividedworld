@@ -90,7 +90,7 @@ create or replace view characters_public as
   from characters c left join staff_office_now o on o.staff = c.staff
   where c.debuted_at is not null;
 
--- my_characters (0111), also saying the group each of the caller's characters is in (`group`, its last column). Everything else as 0111 wrote it.
+-- my_characters (0125), also saying the group each of the caller's characters is in (`group`, after 0125's `pronouns`). Everything else as 0125 wrote it.
 create or replace view my_characters as
   select c.id, c.name, h.class_key as class, h.started_at as class_since,
          case when t.at > now() then t.at end as turn_opens_at,
@@ -100,6 +100,7 @@ create or replace view my_characters as
          exists (select 1 from presence_hidden x where x.character = c.id) as presence_hidden,
          h.due_at as class_due_at,
          banned_until(c.id) as banned_until,
+         (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
          group_now(c.id) as "group"
   from characters c
   cross join lateral (select x.class_key, x.started_at, x.due_at from class_history x where x.character = c.id order by x.started_at desc limit 1) h
@@ -111,8 +112,8 @@ create or replace view my_characters as
   left join pending_turns p on p.character = c.id
   where c.owner = auth.uid();
 
--- screen_settings (0117), also carrying `groups`: every group's key, name, badge (where it has one), color and stripe, the ladder lowest first and then the conferred ones. Public.
--- Everything else as 0117 wrote it, its two search settings included.
+-- screen_settings (0125), also carrying `groups`: every group's key, name, badge (where it has one), color and stripe, the ladder lowest first and then the conferred ones. Public.
+-- Everything else as 0125 wrote it, its two search settings and `pronouns` included.
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (
@@ -126,9 +127,9 @@ create or replace view screen_settings as
   from settings s
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
                   'turnCooldown', 'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
-                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'staffGroup', 'searchLanguage', 'searchRankPool');
+                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'staffGroup', 'searchLanguage', 'searchRankPool', 'pronouns');
 
--- thread_page (0111), each person's character also carrying its group. Everything else as 0111 wrote it.
+-- thread_page (0125), each person's character also carrying its group. Everything else as 0125 wrote it (its profile's `pronouns` included).
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -206,7 +207,7 @@ begin atomic
         'character', jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office,
           'warn_points', c.warn_points, 'banned_until', c.banned_until, 'group', c."group"),
         'profile', (select jsonb_build_object('character', p.character, 'title', p.title, 'signature', p.signature, 'avatar_square', p.avatar_square,
-                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style)
+                      'avatar_portrait', p.avatar_portrait, 'square_frame', p.square_frame, 'portrait_frame', p.portrait_frame, 'pip_style', p.pip_style, 'pronouns', p.pronouns)
                     from character_profiles p where p.character = c.id),
         'posts', coalesce((select n.posts from character_post_counts n where n.character = c.id), 0),
         'standing', coalesce((select st.standing from current_standings st where st.character = c.id), 0),
@@ -255,7 +256,7 @@ begin atomic
   ) end;
 end;
 
--- profile_page and record_page (0104), the character also carrying its group. Everything else as 0104 wrote it.
+-- profile_page and record_page (0125), the character also carrying its group. Everything else as 0125 wrote it (the profile's `pronouns` included).
 create or replace function profile_page(in_character uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -274,7 +275,7 @@ begin atomic
   select case when not exists (select 1 from c) then null else jsonb_build_object(
     'character', (select to_jsonb(c) from c),
     'profile', (select to_jsonb(p) from (
-      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style
+      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
       from character_profiles where character = in_character) p),
     'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character) n),
     'standing', standing_place(in_character),
@@ -336,7 +337,7 @@ begin atomic
     'page', (select page from k),
     'character', (select to_jsonb(c) from c),
     'profile', (select to_jsonb(p) from (
-      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style
+      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
       from character_profiles where character = in_character) p),
     -- RecordScreen reads the counters for all, post, spin and card only.
     'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character and (select kind from k) in ('all', 'post', 'spin', 'card')) n),
@@ -409,7 +410,7 @@ begin
   return jsonb_build_object('names', shown, 'others', greatest(0, total - jsonb_array_length(shown)));
 end $$;
 
--- seed_instance (0108), also seeding the instance's groups. Everything else as 0108 wrote it.
+-- seed_instance (0124), also seeding the instance's groups. Everything else as 0124 wrote it (the personas' and the developer's pronouns included).
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -446,7 +447,7 @@ begin
   end if;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;
-  -- Member groups (0124): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
+  -- Member groups (0128): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
   -- naming the group. A group the payload no longer lists is deleted unless a move (landed or queued) names it, so the log line that names it still can.
   if payload ? 'groups' then
     select string_agg(e ->> 'key' || ' (' || coalesce(e ->> 'condition', 'none') || ')', ', ') into unknown
@@ -498,8 +499,12 @@ begin
   -- is made waiting, with no debut, and debuts the moment it first takes an office. What an admin wrote is never written over: a reseed
   -- finds the key and does nothing. A persona in firstStaff with no office row is hired as a Mod Bot, cause `seed`; one with a row,
   -- a benched one's included, is left as that row says, so a reseed never rehires.
+  unknown := (select string_agg(distinct e ->> 'key', ', ') from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
+    where e ? 'pronouns' and not pronouns_hold(pronouns_lowered(e -> 'pronouns')));
+  if unknown is not null then raise exception 'persona % has pronouns that are not five words of 1 to 12 letters and a plural', unknown using errcode = '22023'; end if;
   with seeded as (
-    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature
+    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature,
+      pronouns_lowered(e -> 'pronouns') as pronouns
     from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
   ), made as (
     insert into characters (name, staff, staff_kind, debuted_at)
@@ -509,8 +514,14 @@ begin
     from seeded s
     on conflict (staff) do nothing returning id, staff
   )
-  insert into character_profiles (character, title, signature)
-  select m.id, left(s.title, 40), left(s.signature, 500) from made m join seeded s on s.staff = m.staff;
+  insert into character_profiles (character, title, signature, pronouns)
+  select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
+  -- Each listed persona's pronouns (0124), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
+  -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
+  update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
+  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
+  where e.value ? 'pronouns' and c.staff = e.value ->> 'key' and c.staff_kind = 'persona' and p.character = c.id
+    and p.pronouns is distinct from pronouns_lowered(e.value -> 'pronouns');
   select string_agg(k, ', ') into unknown from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
   where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona');
   if unknown is not null then raise exception 'firstStaff names %, which no persona in the seed''s roster is', unknown using errcode = '22023'; end if;
@@ -612,14 +623,21 @@ begin
   -- writes it over); the board's thread counter is netted by the thread's own, since a board's count is the length of its list and
   -- thread_list never lists this one.
   if jsonb_typeof(payload -> 'developer') = 'object' then
+    if payload -> 'developer' ? 'pronouns' and not pronouns_hold(pronouns_lowered(payload -> 'developer' -> 'pronouns')) then
+      raise exception 'the developer has pronouns that are not five words of 1 to 12 letters and a plural' using errcode = '22023';
+    end if;
     -- The thread opens on The System's board, so a database with no board is told so before anything is made.
     if system_board() is null then raise exception 'a developer needs The System''s board; seed boards first' using errcode = '22023'; end if;
     with made as (
       insert into characters (name, staff, staff_kind, debuted_at) values (payload -> 'developer' ->> 'name', 'developer', 'developer', now())
       on conflict (staff) do nothing returning id
     )
-    insert into character_profiles (character, title, signature)
-    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '' from made m;
+    insert into character_profiles (character, title, signature, pronouns)
+    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
+    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0124); its title and signature are not.
+    update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
+    from characters c
+    where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
       insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
       on conflict (key) do update set value = excluded.value;

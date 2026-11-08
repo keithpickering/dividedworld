@@ -28,7 +28,8 @@
  */
 import type { Instance } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
-import { DIGEST_MOST, renderDigest, type Digest } from '../../../engine/system/digest.ts';
+import { DIGEST_MOST, renderDigest, withPronouns, type RawDigest } from '../../../engine/system/digest.ts';
+import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
@@ -96,7 +97,7 @@ interface Context {
   /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
   readonly rules?: readonly RuleInForce[];
   /**
-   * The groups (0127): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
+   * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
    * group it is in now. Absent from an older database, which confers none.
    */
   readonly groups?: {
@@ -170,7 +171,10 @@ export async function runMeeting(
     // The window: from where the last meeting's ended (the first meeting: the season's start, or a day back if the season is older).
     const first = Math.max(context.season.startsAt, slotAt - DAY);
     const sinceAt = Math.min(context.lastSlot ? Date.parse(context.lastSlot) : first, slotAt - 60_000);
-    const digest = await db.rpc<Digest>('system_digest', { since: new Date(sinceAt).toISOString(), until: slotIso });
+    // A character with no profile row reads null; it takes the instance's default, else the engine's it-set. A persona's own set is its file's, else the same.
+    const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
+    const personaSet = (own: Parameters<typeof pronounsOr>[0]) => pronounsOr(own, instanceSet);
+    const digest = withPronouns(await db.rpc<RawDigest>('system_digest', { since: new Date(sinceAt).toISOString(), until: slotIso }), instanceSet);
 
     // Its own latest memory; a Boss with none (a new one) reads nothing, or the memory of the Boss its persona inherits.
     let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
@@ -204,6 +208,7 @@ export async function runMeeting(
       mods.push({
         key: m.key,
         name: persona?.name ?? m.key,
+        pronouns: personaSet(persona?.pronouns),
         temperament: persona?.temperament ?? '',
         beats: persona?.beats ?? [],
         petRules: persona?.petRules ?? [],
@@ -227,18 +232,19 @@ export async function runMeeting(
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
     const system = meetingSystemPrompt({
       boss,
+      bossPronouns: personaSet(boss.pronouns),
       system: tuned.system,
       settings,
       phase,
       bank,
       mods,
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
-      characterName: (id) => digest.characters.find((c) => c.id === id)?.name ?? 'someone',
+      characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
       groups: { conferred: context.groups?.conferred ?? [] },
       career,
       notes: bossNotes,
-      roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name })),
+      roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name, pronouns: personaSet(b.pronouns) })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
     // The group each shown character is in now, by name, for the reference list: one read for the ids the list holds.
@@ -254,7 +260,7 @@ export async function runMeeting(
       referenceText({
         boards: context.boards,
         threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
-        characters: shown.map((c) => ({ id: c.id, name: c.name, group: groupOf.get(c.id.toLowerCase()) })),
+        characters: shown.map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns, group: groupOf.get(c.id.toLowerCase()) })),
       }),
       '',
       'Hold your meeting.',

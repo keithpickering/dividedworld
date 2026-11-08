@@ -1,4 +1,4 @@
--- Member groups in the database (supabase/migrations/0124_groups.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 3):
+-- Member groups in the database (supabase/migrations/0128_groups.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 3):
 -- `group_kinds` is the instance's ladder and the groups a move confers, seeded by seed_instance from `payload -> 'groups'`.
 -- `group_now(character)` is the open conferGroup move's group, else the highest rung whose condition holds; it is read through
 -- characters_public ("group"). A seed with a condition kind SQL has no case for is refused; a group a move names keeps its row.

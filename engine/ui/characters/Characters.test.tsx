@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Instance } from '../../rules/types.ts';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { LoadedCharacters } from '../loaded.tsx';
@@ -24,9 +25,9 @@ function world(options: { readonly per?: number; readonly instance?: Instance } 
   vi.useFakeTimers({ shouldAdvanceTime: true, now: fake.clock.now() });
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
-  const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0 });
+  const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0, pronouns: PRONOUN_PRESETS.she });
   const hoolie = fake.seed.character(me, 'Mrs. Hooligan', 'heel', { at: T0 + DAY });
-  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, loudness: 'announced' });
+  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, loudness: 'announced', pronouns: PRONOUN_PRESETS.they });
   const stranger = fake.seed.character(other, 'Stranger', 'heel', { at: T0 });
   fake.seed.settle({ at: T0 + 2 * DAY, debut: false, standings: { [pipe]: 1420, [hoolie]: 685, [stranger]: 100 } });
   fake.signInAs(me);
@@ -173,6 +174,10 @@ describe('My characters', () => {
     const r = row('Spritey');
     expect(within(r).getByText(/waiting to debut at the next settlement/iu)).toBeInTheDocument();
     expect(within(r).getByText(/announced/iu)).toBeInTheDocument();
+    /* A they/them character: the verbs agree, and no "it" is left. */
+    expect(within(r).getByText('They will debut announced.', { exact: false })).toBeInTheDocument();
+    expect(within(r).getByText('They can Turn once they have debuted.')).toBeInTheDocument();
+    expect(within(r).getByText(/\(chosen when they were made\)/u)).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Drop Spritey now…' })).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Change how Spritey debuts…' })).toBeInTheDocument();
     /* No aria-label: each is named by what is drawn on it (the label in the name, WCAG 2.5.3). */
@@ -246,6 +251,22 @@ describe('My characters', () => {
     await ready();
     expect(screen.getByRole('link', { name: 'New character' })).toHaveAttribute('href', '/characters/new');
     expect(screen.getByText(/1 open slot/u)).toBeInTheDocument();
+  });
+
+  test('a retired she/her character says an admin can restore her', async () => {
+    const w = world();
+    w.fake.seed.retire(w.pipe);
+    open(w);
+    await ready();
+    expect(within(row('Pipewrench')).getByText('Retired. An admin can restore her.')).toBeInTheDocument();
+  });
+
+  test('a waiting they/them character announced with a class says the class is theirs', async () => {
+    const w = world();
+    w.fake.seed.character(w.me, 'Wobbly', 'face', { debuted: false, loudness: 'with_class', pronouns: PRONOUN_PRESETS.they });
+    open(w);
+    await ready();
+    expect(within(row('Wobbly')).getByText('They will debut announced, with their class.', { exact: false })).toBeInTheDocument();
   });
 
   test('a retired character says an admin can restore it, and offers nothing', async () => {
@@ -520,6 +541,14 @@ describe('the Turn', () => {
     open(w);
     await ready();
     expect(within(row('Pipewrench')).getByText(/Takes effect at the next settlement, Oct 30/u)).toBeInTheDocument();
+  });
+
+  test('the Turn dialog says, in the character\'s own pronouns, when she can Turn again', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    expect(dialog).toHaveTextContent(/After a Turn she can Turn again in /u);
   });
 
   test('a refusal is shown in the server\'s words, in the dialog, which stays open', async () => {
@@ -810,7 +839,7 @@ describe('My characters: stale words', () => {
 });
 
 describe('A pending Turn and a reveal', () => {
-  const NOTE = 'If its settlement is due, a reveal waits until it has run.';
+  const NOTE = 'If the settlement is due, a reveal waits until it has run.';
 
   test('the row\'s note on a pending Turn says so, and the reveal dialog says it too', async () => {
     const w = world();
@@ -821,6 +850,18 @@ describe('A pending Turn and a reveal', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
     const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
     expect(within(dialog).getByText(new RegExp(NOTE.replace('.', '\\.'), 'u'))).toBeInTheDocument();
+    expect(within(dialog).getByText(/This reveals the class she holds now, /u)).toBeInTheDocument();
+  });
+
+  test('the reveal dialog\'s pending-Turn line agrees with a they/them character: "the class they hold now"', async () => {
+    const w = world();
+    const wobbly = w.fake.seed.character(w.me, 'Wobbly', 'face', { at: T0, pronouns: PRONOUN_PRESETS.they });
+    expect((await w.fake.turn(wobbly, 'heel', 'announced', false, false)).ok).toBe(true);
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Wobbly')).getByRole('button', { name: 'Reveal Wobbly\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Wobbly\'s class' });
+    expect(within(dialog).getByText(/This reveals the class they hold now, /u)).toBeInTheDocument();
   });
 
   test('a character without a pending Turn is told nothing of the kind', async () => {
@@ -1229,7 +1270,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     await ready();
     await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.');
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('They debut at the next settlement, in 7 h 42 min. Until then you can drop them now instead.');
     /* How loud is the dialog\'s only choice, one row of three. */
     expect(within(dialog).getAllByRole('radio')).toHaveLength(3);
     expect(dialog.querySelector('fieldset.kb-choice-loud')).not.toBeNull();
@@ -1242,7 +1283,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     await ready();
     await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^It debuts at the next settlement\. Until then you can drop it now instead\.$/u);
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^They debut at the next settlement\. Until then you can drop them now instead\.$/u);
   });
 
   test('dropping it now says it goes on the board and can post at once', async () => {
@@ -1400,7 +1441,7 @@ describe('the panel\'s online status', () => {
     const select = await status();
     expect(select).toHaveValue('shown');
     expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: none');
-    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. While you post as it, only you see it there\./u)).toBeInTheDocument();
+    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. While you post as her, only you see her there\./u)).toBeInTheDocument();
     await userEvent.selectOptions(select, 'hidden');
     await waitFor(() => expect(hide).toHaveBeenCalledWith(w.pipe, true));
     await waitFor(() => expect(select).toHaveValue('hidden'));

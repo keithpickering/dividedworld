@@ -25,6 +25,7 @@ import { Origin } from '../spin/Origin.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
@@ -58,7 +59,7 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
         </>
       );
     case 'move_end': return <MoveEndLine act={act} />;
-    case 'move_keep': return <MoveKeepLine name={name} />;
+    case 'move_keep': return <MoveKeepLine name={name} pronouns={person?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS} />;
     case 'move':
       /* The Boss's move: its stock line in its own voice, under the glass's label of the move, which the engine's catalog words and the Boss cannot change. */
       return (
@@ -155,7 +156,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, 
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know, visits } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, pronounsOf, summary, know, visits } = useThread();
   const { ui } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
@@ -192,7 +193,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const marks = act.kind === 'post'
     ? <PostMarks
         post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
-        visit={visit} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
+        visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
       />
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
@@ -201,10 +202,10 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
     ? <PostMarks
         post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine}
-        reachAt={{ reach: 'character', target: act.character, name, fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
+        reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
       />
-    : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, summary.board, summary.title, know]);
+    : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, person?.character.pronouns, summary.board, summary.title, know]);
   return (
     <AppealCtx.Provider value={askAppeal}>
     <article

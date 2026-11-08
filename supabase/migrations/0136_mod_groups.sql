@@ -1,11 +1,11 @@
 -- A Mod's one move may confer a group (docs/plans/2026-11-06-member-groups-plan.md, Task 13).
---   apply_mod_move     (0106) also queues the move's `demand`. A rule has none; a group punishment that bars a board carries `apologyAccepted`, which the guard (0125) requires of it and
+--   apply_mod_move     (0106) also queues the move's `demand`. A rule has none; a group punishment that bars a board carries `apologyAccepted`, which the guard (0129) requires of it and
 --                      which a Mod's move had no way to carry. Everything else as 0106 wrote it: the guard still decides the office, the beat, the allowance, the favor and the cap.
---   group_move_bars    the characters no group move may name now (held or capped), the one read meeting_context (0127, redefined below) and mod_group_context share.
---   meeting_context    (0127) as it was, its `groups.characters` read from group_move_bars.
+--   group_move_bars    the characters no group move may name now (held or capped), the one read meeting_context (0131, redefined below) and mod_group_context share.
+--   meeting_context    (0131) as it was, its `groups.characters` read from group_move_bars.
 --   mod_group_context  what the staff function tells a Mod's call about groups: the conferred catalog {key, name, tone} and the characters no group move may name now, capped or
---                      held, as meeting_context (0127) lists them for the Boss. Public data only (a character's name and id, never who plays it); the service role reads it.
--- Masks. Neither reads an owner, a class or a reactor. Ways out. Adds no state: a group move ends as 0125 wrote.
+--                      held, as meeting_context (0131) lists them for the Boss. Public data only (a character's name and id, never who plays it); the service role reads it.
+-- Masks. Neither reads an owner, a class or a reactor. Ways out. Adds no state: a group move ends as 0129 wrote.
 
 create or replace function apply_mod_move(staff text, move jsonb, cause_act uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -106,7 +106,7 @@ $$;
 revoke execute on function group_move_bars(), mod_group_context() from public, anon, authenticated;
 grant execute on function group_move_bars(), mod_group_context() to service_role;
 
--- meeting_context (0127), its `groups.characters` read from group_move_bars. Everything else as 0127 wrote it.
+-- meeting_context (0131), its `groups.characters` read from group_move_bars. Everything else as 0131 wrote it.
 create or replace function meeting_context() returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object(

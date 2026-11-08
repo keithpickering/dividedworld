@@ -1,5 +1,5 @@
--- The group and bar reads use the move index (supabase/migrations/0134_group_reads.sql; final review B1, "Weigh a design at the scale of a busy instance"):
--- group_now's open-move probe, bars_of and bars_now each find a character's conferGroup moves through acts_group_moves (0125), so a busy instance's hundreds of moves in
+-- The group and bar reads use the move index (supabase/migrations/0138_group_reads.sql; final review B1, "Weigh a design at the scale of a busy instance"):
+-- group_now's open-move probe, bars_of and bars_now each find a character's conferGroup moves through acts_group_moves (0129), so a busy instance's hundreds of moves in
 -- force are never scanned to answer one character. Unlike 0125's gr5, which turns the sequential scan off and asks whether the index can be used, this EXPLAINs with the planner
 -- free to choose, over a few hundred open moves it has analyzed: a query the index cannot serve (a predicate missing `kind = 'move'`, a character cast to uuid) is planned as a
 -- Seq Scan on open_moves or acts and fails here.

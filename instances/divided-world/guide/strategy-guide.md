@@ -18,7 +18,7 @@
 
 Divided World looks like a message board from 2003, and it is one. It's also a game, and every post on it is a move.
 
-You are a **player**: one login, and up to {{setting:charactersPerPlayer}} **characters**, each one a mask. No other player can see which masks are yours. Every character has a secret **class**, a way of working the crowd that decides which reactions lift it and which ones wear it down (see [Classes](#classes)).
+You are a **player**: one login, and up to {{setting:charactersPerPlayer}} **characters**, each one a mask. No other player can see which masks are yours. Every character has a secret **class**, a way of working the crowd that decides which reactions lift the character and which ones wear it down (see [Classes](#classes)).
 
 Almost everything anyone does here leaves a public record, called an **Act**: a post, an edit, a card, an announced Turn. You can react to an Act, and you can **spin a thread** from one, which starts a new thread with that Act shown in its origin box. Even an edit is an Act: the post keeps its history, and you get {{setting:editGrace}} to fix a typo before it says "Last edited."
 
@@ -46,7 +46,7 @@ That map is the whole game. Every class is paid by some corners of it and hurt b
 Aura is the score and the money, counted in **orbs**. It comes mostly from other players' reactions, read through your character's class (see [Classes](#classes)), and from reactions to the cards you play.
 
 - Your **wallet** is shared by all of your characters, and no other player can see it. It holds up to {{setting:walletCap}} orbs. Aura that would land past that is gone, so spend before you're full.
-- Each character also has a **standing**: the Aura it has earned this season. That one is public, you can't spend it, and it's what the rank beside the character's posts is made of.
+- Each character also has a **standing**: the Aura that character has earned this season. That one is public, you can't spend it, and it's what the rank beside the character's posts is made of.
 
 ### The settlement
 
@@ -70,16 +70,16 @@ Pick the one that sounds like how you already post, or the one that sounds like 
 
 ### Turns
 
-A class isn't a life sentence. A character can **Turn** into a different class, and once a Turn has taken effect it has to wait {{setting:turnCooldown}} before it can Turn again.
+A class isn't a life sentence. A character can **Turn** into a different class, but after a Turn takes effect, that character has to wait {{setting:turnCooldown}} before Turning again.
 
-- A Turn takes effect at the next settlement. Until then the character is still its old class, and you can change the Turn or withdraw it.
-- A Turn can be **silent**, so nobody is told, or **announced**: The System posts that your character has Turned. An announced Turn can also name the class it Turned from, the class it Turned to, or both. Naming the new class reveals it.
+- A Turn takes effect at the next settlement. Until then the old class still applies, and you can change the Turn or withdraw it.
+- A Turn can be **silent**, so nobody is told, or **announced**: The System posts that your character has Turned. An announced Turn can also name the old class, the new class, or both. Naming the new class reveals it.
 
 ### Reveals
 
 Only you can make a character's class public, and only when you choose to.
 
-A **reveal** is something your character posts, in a thread you pick, with a line of its own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what it is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. Revealing doesn't earn or cost anything directly. The catch is that everybody can now play against a known class.
+A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. Revealing doesn't earn or cost anything directly. The catch is that everybody can now play against a known class.
 
 ### New characters
 
@@ -105,7 +105,7 @@ A plus after a price means that playing the card on a long post costs more; the 
 
 The board never tells anyone who is behind a mask, and nothing it shows can prove it. These are private from every other player: who owns which character, what class a character is, and who left which reaction.
 
-What a character does in public is fair game, though, and the game doesn't hide it. Working out who's behind a mask from what it does, and when it does it, is part of playing. That's detective work, not proof.
+What a character does in public is fair game, though, and the game doesn't hide it. Working out who's behind a mask from what the mask does, and when it does it, is part of playing. That's detective work, not proof.
 
 The only way a class becomes public is you making it so, with a reveal, or with an announced Turn that names it.
 

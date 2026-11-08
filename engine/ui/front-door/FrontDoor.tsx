@@ -34,6 +34,7 @@ import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 /** The instant every staged Act and play carries: a made-up thread has no real time. */
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
@@ -43,7 +44,7 @@ const idOf = (key: string): Id => `front-door:${key}`;
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
 const stage = (c: FrontDoorCharacter, group: string): Character => ({
   id: idOf(c.key), name: c.name, title: c.title ?? '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null,
-  portraitFrame: null, pipStyle: 'default', joined: '', group,
+  portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '', group,
 });
 
 interface Staged { readonly act: Act; readonly person: PostbitPerson | undefined }

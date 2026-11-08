@@ -1,4 +1,4 @@
--- The meeting confers groups (supabase/migrations/0127_meeting_groups.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 8).
+-- The meeting confers groups (supabase/migrations/0131_meeting_groups.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 8).
 --
 -- 1. meeting_context carries `groups`: the conferred catalog (key, name, tone) and no rung; the characters listed are exactly the held and the capped, each with the group it
 --    is in now, and nobody else. Held: a group move in force, or queued and not held (a held one frees the character). Capped: staff_punishments at the cap, a favor and a

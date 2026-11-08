@@ -3,10 +3,11 @@ import { describe, expect, test } from 'vitest';
 import type { Character } from '../data/api.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { StaffBadge } from './StaffBadge.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Hall Monitor', title: 'Hall monitor', signature: '', avatarSquare: null, avatarPortrait: null,
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01', group: 'staff', ...over,
+  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'staff', ...over,
 });
 const show = (c: Character) => renderInWorld(<StaffBadge character={c} />);
 

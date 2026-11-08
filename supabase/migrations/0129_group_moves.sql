@@ -24,7 +24,7 @@
 
 alter table move_kinds add column derived text[] not null default '{}';
 
--- seed_instance (0124), also seeding each move kind's `derived` tokens. Everything else as 0124 wrote it.
+-- seed_instance (0128), also seeding each move kind's `derived` tokens. Everything else as 0128 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -61,7 +61,7 @@ begin
   end if;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;
-  -- Member groups (0124): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
+  -- Member groups (0128): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
   -- naming the group. A group the payload no longer lists is deleted unless a move (landed or queued) names it, so the log line that names it still can.
   if payload ? 'groups' then
     select string_agg(e ->> 'key' || ' (' || coalesce(e ->> 'condition', 'none') || ')', ', ') into unknown
@@ -113,8 +113,12 @@ begin
   -- is made waiting, with no debut, and debuts the moment it first takes an office. What an admin wrote is never written over: a reseed
   -- finds the key and does nothing. A persona in firstStaff with no office row is hired as a Mod Bot, cause `seed`; one with a row,
   -- a benched one's included, is left as that row says, so a reseed never rehires.
+  unknown := (select string_agg(distinct e ->> 'key', ', ') from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
+    where e ? 'pronouns' and not pronouns_hold(pronouns_lowered(e -> 'pronouns')));
+  if unknown is not null then raise exception 'persona % has pronouns that are not five words of 1 to 12 letters and a plural', unknown using errcode = '22023'; end if;
   with seeded as (
-    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature
+    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature,
+      pronouns_lowered(e -> 'pronouns') as pronouns
     from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
   ), made as (
     insert into characters (name, staff, staff_kind, debuted_at)
@@ -124,8 +128,14 @@ begin
     from seeded s
     on conflict (staff) do nothing returning id, staff
   )
-  insert into character_profiles (character, title, signature)
-  select m.id, left(s.title, 40), left(s.signature, 500) from made m join seeded s on s.staff = m.staff;
+  insert into character_profiles (character, title, signature, pronouns)
+  select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
+  -- Each listed persona's pronouns (0124), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
+  -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
+  update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
+  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
+  where e.value ? 'pronouns' and c.staff = e.value ->> 'key' and c.staff_kind = 'persona' and p.character = c.id
+    and p.pronouns is distinct from pronouns_lowered(e.value -> 'pronouns');
   select string_agg(k, ', ') into unknown from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
   where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona');
   if unknown is not null then raise exception 'firstStaff names %, which no persona in the seed''s roster is', unknown using errcode = '22023'; end if;
@@ -228,14 +238,21 @@ begin
   -- writes it over); the board's thread counter is netted by the thread's own, since a board's count is the length of its list and
   -- thread_list never lists this one.
   if jsonb_typeof(payload -> 'developer') = 'object' then
+    if payload -> 'developer' ? 'pronouns' and not pronouns_hold(pronouns_lowered(payload -> 'developer' -> 'pronouns')) then
+      raise exception 'the developer has pronouns that are not five words of 1 to 12 letters and a plural' using errcode = '22023';
+    end if;
     -- The thread opens on The System's board, so a database with no board is told so before anything is made.
     if system_board() is null then raise exception 'a developer needs The System''s board; seed boards first' using errcode = '22023'; end if;
     with made as (
       insert into characters (name, staff, staff_kind, debuted_at) values (payload -> 'developer' ->> 'name', 'developer', 'developer', now())
       on conflict (staff) do nothing returning id
     )
-    insert into character_profiles (character, title, signature)
-    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '' from made m;
+    insert into character_profiles (character, title, signature, pronouns)
+    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
+    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0124); its title and signature are not.
+    update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
+    from characters c
+    where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
       insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
       on conflict (key) do update set value = excluded.value;
@@ -414,7 +431,7 @@ exception when others then
   raise warning 'say_move_end: the end of move % was not said: % (%)', move_act, sqlerrm, sqlstate;
 end $$;
 
--- system_line (0102), filling a kind's derived `groupName` with the group's name. Everything else as 0102 wrote it.
+-- system_line (0126), filling a kind's derived `groupName` with the group's name. Everything else as 0126 wrote it (the Boss's pronoun tokens included).
 create or replace function system_line(line_key text, move_kind text, params jsonb, staff_key text) returns text
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -422,6 +439,7 @@ declare
   words text;
   line text;
   boss_name text;
+  boss_id uuid;
   board_name text := '';
   rule_words text := '';
   rule_board uuid;
@@ -448,13 +466,13 @@ begin
         || ': ' || coalesce(predicate_words, 'a rule');
     end if;
   end if;
-  select c.name into boss_name from characters c where c.staff = staff_key;
+  select c.name, c.id into boss_name, boss_id from characters c where c.staff = staff_key;
   if jsonb_typeof(lines) = 'array' and jsonb_array_length(lines) > 0 and jsonb_typeof(lines -> 0) = 'string' then
     line := lines ->> floor(random() * jsonb_array_length(lines))::integer;
   else
     return words;
   end if;
-  return fill_tokens(line, jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words));
+  return fill_tokens(line, jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words) || pronoun_tokens('boss', boss_id));
 end $$;
 
 

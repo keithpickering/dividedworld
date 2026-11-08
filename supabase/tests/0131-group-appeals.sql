@@ -1,4 +1,4 @@
--- Appealing a group punishment (supabase/migrations/0131_group_appeals.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 14, as amended 2026-11-07).
+-- Appealing a group punishment (supabase/migrations/0135_group_appeals.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 14, as amended 2026-11-07).
 --
 -- 1. open_appeal accepts a landed conferGroup move whose group is a punishment, appealed only by its params->>'character', once, at appealPrice, and answers with what the
 --    judgment needs (the group, the board it bars, its length, its end, who made it, who hears it). It refuses a favor, another character's move (the same words as no move),

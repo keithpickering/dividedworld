@@ -1,4 +1,4 @@
--- write_staff_act stamps a move with the office it landed under (supabase/migrations/0133_move_office.sql).
+-- write_staff_act stamps a move with the office it landed under (supabase/migrations/0137_move_office.sql).
 -- A Boss's move says boss, a Mod's says mod, whatever the persona holds later; a post is not stamped; a payload that names an office keeps it.
 do $$
 declare

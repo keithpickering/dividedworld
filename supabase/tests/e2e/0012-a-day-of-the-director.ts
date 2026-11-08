@@ -156,7 +156,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   const line = asked.split('\n').find((l) => l.startsWith('renameBoard: ended met'));
   assert.ok(line, `the prompt has the met move: ${asked.slice(0, 600)}`);
   assert.match(line, /demand distinctCharactersOnBoard 3 of 3, met/);
-  assert.match(line, /met by Dayrun Ada, Dayrun Bea and Dayrun Cyd/, line);
+  assert.match(line, /met by Dayrun Ada \([a-z]+\/[a-z]+\), Dayrun Bea \([a-z]+\/[a-z]+\) and Dayrun Cyd \([a-z]+\/[a-z]+\)\./, line);
   assert.ok(!line.includes('Dayrun Dov') && !line.includes('Dayrun Rex'), 'neither the early poster nor the one elsewhere is credited');
   assert.ok(!line.includes(instance.system.roster.find((b) => b.key === BOSS)!.name), 'a staff member is never credited');
 

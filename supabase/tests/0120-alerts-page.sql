@@ -77,9 +77,9 @@ begin
   if doc -> 'people' is distinct from (
       select coalesce(jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
         select to_jsonb(p) from (
-          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name), '[]'::jsonb)
-      from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c
+      from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c
             where c.id in (select a.character from acts_public a where a.id in (
               select a2.target_act_id from acts_public a2 where a2.id in (select a3.target_act_id from acts_public a3 where a3.id in (
                 select (x ->> 'act')::uuid from jsonb_array_elements(doc -> 'alerts') x where x ->> 'kind' = 'cardEnded'))))) cp) then
@@ -87,7 +87,7 @@ begin
   end if;
   if jsonb_array_length(doc -> 'people') is distinct from 1 or doc #>> '{people,0,id}' is distinct from b1::text then raise exception 'Bob wrote the post the ended card landed on, and he alone: %', doc -> 'people'; end if;
   if doc -> 'people' -> 0 ?| array['warn_points', 'banned_until'] then raise exception 'a face holds the columns characters() reads: %', doc -> 'people' -> 0; end if;
-  if (select array_agg(k order by k) from jsonb_object_keys(doc -> 'people' -> 0) k) is distinct from array['id', 'joined', 'name', 'office', 'profile', 'staff'] then raise exception 'a face''s keys: %', doc -> 'people' -> 0; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(doc -> 'people' -> 0) k) is distinct from array['group', 'id', 'joined', 'name', 'office', 'profile', 'staff'] then raise exception 'a face''s keys: %', doc -> 'people' -> 0; end if;
   -- The opening Acts of the alerts' threads, and the caller's reading of them.
   -- Only for the followed threads (today's startedAmong), not for a quote's or a card's thread.
   if doc -> 'openings' is distinct from (select coalesce(jsonb_agg(to_jsonb(a) order by a.thread::text collate "C"), '[]'::jsonb) from acts_public a

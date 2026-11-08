@@ -1,5 +1,5 @@
 -- Task 8 of the member groups plan: the meeting confers groups.
---   mod_cap()            the targeting cap, {punishments, days}: the modBots setting's `cap`, else the one default. Read by the conferGroup guard (0125), start_visit and meeting_context.
+--   mod_cap()            the targeting cap, {punishments, days}: the modBots setting's `cap`, else the one default. Read by the conferGroup guard (0129), start_visit and meeting_context.
 --   character_groups     the name of the group each given character is in now, for the meeting's reference list; service role only. Public facts (a character's group is on its postbit).
 --   meeting_context      (0103) also carries `groups`: the conferred catalog {key, name, tone}, and the characters that are held (a group move in force on them, or queued and not
 --                        held: the guard's one-at-a-time rule) or capped (staff_punishments at the modBots cap), (the group each is in is read by character_groups for the ids the meeting shows). The meeting can't choose either.

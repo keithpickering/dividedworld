@@ -20,6 +20,7 @@ import { PREPARED_FAILED, usePrepared, useRest, type Prepared } from '../glass/p
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { usePlayer } from '../player.tsx';
 import { ThreadCtx } from '../thread/context.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import { auraWords, appealTerms, modRole, pointsPlain, rulingWords, shortDate, topCharge, markedAs } from './visit.ts';
 import { Layers } from '../glass/layer.tsx';
 import { lowerFirst } from '../copy-words.ts';
@@ -218,8 +219,8 @@ export function useAppealRead(infraction: Id): Prepared<Said> {
   }, () => infraction);
 }
 
-export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled, facts }: {
-  readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly ban?: MyBan;
+export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban, move, onFiled, facts }: {
+  readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly modPronouns?: PronounSet | null; readonly ban?: MyBan;
   /** Set for a group move: the form then appeals the move, with its facts and terms, and reads nothing of its own. */
   readonly move?: MoveAppealFacts;
   /** Called once an appeal was taken (paid and public), so the screen that opened the form can stop offering it. */
@@ -286,7 +287,7 @@ export function AppealForm({ infraction, visit, nameOf, ban, move, onFiled, fact
               {f !== null && <>The punishment: {rule}, a {f.band} breach, {pointsPlain(f.points)} on {nameOf(f.character)}&apos;s warn bar
                   {f.expiresAt !== '' ? (Date.parse(f.expiresAt) > Date.now() ? `, dropping off ${shortDate(f.expiresAt)}` : `, dropped off ${shortDate(f.expiresAt)}`) : ''}.</>}
             </p>
-            <p className="kb-visit-terms">{appealTerms(mod, { points: f === null ? 0 : f.points })}</p>
+            <p className="kb-visit-terms">{appealTerms(mod, visit ? modPronouns : null, { points: f === null ? 0 : f.points })}</p>
           </>
         )}
       </div>

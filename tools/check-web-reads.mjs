@@ -89,8 +89,8 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 /** The SQL functions a screen may call directly; every other write goes through the `act` function. */
 // intercept (0108): one try to talk a visit down, through a character the caller plays; the server holds every rule (a refusal says why).
 // beat_mod_name (0111): the public name of the Mod on a board's beat and the board's name, the same for everyone (who judges a report).
-// apologize (0126): a barred character's apology, through a character the caller plays; the server holds every rule (a refusal says why).
-// my_apologies (0129): the caller's own character's apologies and when the next may be written, empty for any other id.
+// apologize (0130): a barred character's apology, through a character the caller plays; the server holds every rule (a refusal says why).
+// my_apologies (0133): the caller's own character's apologies and when the next may be written, empty for any other id.
 // visit_quiz (0108): a thread_page helper that returns one visit's drawn question and its choices, never the answer.
 // search_posts, search_threads and search_suggest (0117) are the search screens' reads, held to the screen-function rules by supabase/tests/e2e/0016-screen-reads.ts. The functions they call (the matches, the
 // cursor check, the suggested threads and characters, the stemming language, the folded text, the plain words of a post) are not listed: the web never calls them, and a call to one is a fault.

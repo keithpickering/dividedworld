@@ -1,4 +1,4 @@
--- The conferGroup move in SQL, the cap and the favor's check (supabase/migrations/0125_group_moves.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 5).
+-- The conferGroup move in SQL, the cap and the favor's check (supabase/migrations/0129_group_moves.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 5).
 --
 -- 1. queued_moves_guard refuses a conferGroup move one rule at a time, each in plain words; a good punishment and a good favor are accepted.
 -- 2. The targeting cap: staff_punishments counts landed and unheld queued group punishments, whoever made them; a fourth is refused, the window passes, a favor is not counted.

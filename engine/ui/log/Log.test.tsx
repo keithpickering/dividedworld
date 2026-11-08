@@ -5,6 +5,7 @@
  * plainly. Out of character and true: it names the Act, what changed and how much, never who reacted
  * or anyone's class but the player's own.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -40,8 +41,8 @@ function world() {
   seed.season({ number: 1, startsAt: new Date(at(1, 0)).toISOString() });
   const me = seed.account('me');
   const rival = seed.account('rival');
-  const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
-  const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3) });
+  const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2), pronouns: PRONOUN_PRESETS.she });
+  const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3), pronouns: PRONOUN_PRESETS.they });
   const glo = seed.character(rival, 'Gloomba', 'heel', { at: at(4) });
   const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
   const { thread } = seed.thread('general', glo, 'a thread', 'Opening.', { at: at(27) });
@@ -114,7 +115,7 @@ describe('My log', () => {
     ]);
     expect(rows[0]![2]).toMatch(/^Scored as a Heel for Oct 28: drew heat \+2\.80, shrugged off −0\.05\./u);
     expect(rows[0]!.slice(3)).toEqual(['+2.75', '5.65']);
-    expect(rows[1]![2]).toBe('Pipewrench is a Face now. Announced with its old class in Season 1: Who Turned.');
+    expect(rows[1]![2]).toBe('Pipewrench is a Face now. Announced with her old class in Season 1: Who Turned.');
     expect(rows[1]!.slice(3)).toEqual(['0.00', '5.65']);
     expect(rows[2]![2]).toBe('Jobber to Midcarder. Standing 0.50 to 3.25 this season.');
     expect(rows[3]![2]).toMatch(/^Scored as a Heel for Oct 27: drew heat \+0\.50\./u);
@@ -220,8 +221,8 @@ describe('My log', () => {
   function nothingYet(next: number | null = Date.now() + (7 * 60 + 42) * 60_000) {
     const fake = buildWorld();
     const me = fake.seed.account('me');
-    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
-    const hoo = fake.seed.character(me, 'Mrs. Hooligan', 'face');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { pronouns: PRONOUN_PRESETS.she });
+    const hoo = fake.seed.character(me, 'Mrs. Hooligan', 'face', { pronouns: PRONOUN_PRESETS.they });
     if (next !== null) fake.seed.nextSettlementAt(next);
     fake.signInAs(me);
     return { fake, me, pipe, hoo, next };
@@ -235,7 +236,7 @@ describe('My log', () => {
     expect(bodyRows()).toHaveLength(1);
     expect(cells(bodyRows()[0]!)).toEqual([
       utcWhen(new Date(next!).toISOString()), 'Nothing yet',
-      'Nothing has settled for Mrs. Hooligan yet. A line comes here when a settlement scores it; the next is in 7 h 42 min.', '', '—',
+      'Nothing has settled for Mrs. Hooligan yet. A line comes here when a settlement scores them; the next is in 7 h 42 min.', '', '—',
     ]);
     expect(screen.queryByText('Nothing has settled for you yet. Your first settlement is the first line here.')).toBeNull();
   });
@@ -272,7 +273,7 @@ describe('My log', () => {
     const none = nothingYet(null);
     await open(none.fake, none.me, none.pipe);
     await screen.findByRole('table');
-    expect(cells(bodyRows()[0]!)).toEqual(['—', 'Nothing yet', 'Nothing has settled for Pipewrench yet. A line comes here when a settlement scores it.', '', '—']);
+    expect(cells(bodyRows()[0]!)).toEqual(['—', 'Nothing yet', 'Nothing has settled for Pipewrench yet. A line comes here when a settlement scores her.', '', '—']);
   });
 
   /* A settlement writes a line only for a character it scored: a quiet one gets none, so the empty log promises a line only when one scores it, never that the next settlement writes it. */
@@ -285,14 +286,14 @@ describe('My log', () => {
     await screen.findByRole('table');
     expect(bodyRows().length).toBeGreaterThan(0);
     expect(screen.queryByText('Nothing yet')).toBeNull();
-    expect(screen.getByText('Nothing has settled for Mrs. Hooligan yet. A line comes here when a settlement scores it; the next is in 7 h 42 min.', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByText('Nothing has settled for Mrs. Hooligan yet. A line comes here when a settlement scores them; the next is in 7 h 42 min.', { selector: 'p' })).toBeInTheDocument();
   });
 
   test('a settlement that is due names no time either, and one settled leaves no empty row', async () => {
     const due = nothingYet(Date.now() - 60_000);
     await open(due.fake, due.me, due.pipe);
     await screen.findByRole('table');
-    expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores it.');
+    expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores her.');
     cleanup();
     const { fake, me, pipe } = world();
     await open(fake, me, pipe);
@@ -420,7 +421,7 @@ describe('My log', () => {
     vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, threads: [], people: [], boards: [] });
     await open(fake, me, pipe);
     await screen.findByRole('table');
-    expect(bodyRows().map(cells)[1]![2]).toMatch(/^Pipewrench is a Face now\. Announced with its old class in the board\./u);
+    expect(bodyRows().map(cells)[1]![2]).toMatch(/^Pipewrench is a Face now\. Announced with her old class in the board\./u);
   });
 
   test('a tab with nothing on the pages read says so, rather than an empty table', async () => {

@@ -1,16 +1,16 @@
 -- The group and bar reads use the move index (final review B1; CLAUDE.md "Weigh a design at the scale of a busy instance").
 --
--- `acts_group_moves` (0125) is a partial index on (payload #>> '{params,character}', created_at desc) where kind = 'move' and payload ->> 'kind' = 'conferGroup'. A query
--- can use it only when its own WHERE implies the index's, so it must say `a.kind = 'move'` and compare the character as text, the index's own expression. group_now (0124)
--- and bars_now (0125) did neither, so every group read, and every bar read (`barred`, `not_barred` twice per post, new thread, spin and edit, and my_characters.bars),
+-- `acts_group_moves` (0129) is a partial index on (payload #>> '{params,character}', created_at desc) where kind = 'move' and payload ->> 'kind' = 'conferGroup'. A query
+-- can use it only when its own WHERE implies the index's, so it must say `a.kind = 'move'` and compare the character as text, the index's own expression. group_now (0128)
+-- and bars_now (0129) did neither, so every group read, and every bar read (`barred`, `not_barred` twice per post, new thread, spin and edit, and my_characters.bars),
 -- scanned all the moves in force: cost that grows with the moves in force and not with the one character asked about.
 --
---   group_now(character)    the open-move probe filters on the index's predicate and expression and reaches open_moves by its primary key. Everything else as 0124 wrote it.
---   bars_now                gains `a.kind = 'move'`, so a read of every bar starts from the index's rows. Its columns are as 0125 wrote them.
+--   group_now(character)    the open-move probe filters on the index's predicate and expression and reaches open_moves by its primary key. Everything else as 0128 wrote it.
+--   bars_now                gains `a.kind = 'move'`, so a read of every bar starts from the index's rows. Its columns are as 0129 wrote them.
 --   bars_of(character)      the bars of one character: bars_now's rows for it, found through acts_group_moves by comparing the character as text (the view's uuid cast
 --                           would defeat the index). barred, not_barred and my_characters.bars read it.
 --
--- Masks. Nothing here reads more than the move's Act already shows; the answers are the ones 0124, 0125, 0126 and 0129 gave.
+-- Masks. Nothing here reads more than the move's Act already shows; the answers are the ones 0128, 0129, 0130 and 0133 gave.
 -- Ways out. Read-only; it adds no state. Append-only. No Act is touched.
 
 create or replace function group_now(in_character uuid) returns text
@@ -21,7 +21,7 @@ declare
   holds boolean;
   open_group text;
 begin
-  -- A group a move confers wins while the move is open (open_moves: the moves in force). Found by the character's own index (acts_group_moves, 0125) and joined to open_moves
+  -- A group a move confers wins while the move is open (open_moves: the moves in force). Found by the character's own index (acts_group_moves, 0129) and joined to open_moves
   -- by its primary key, so the cost is the character's moves and not the instance's.
   select a.payload #>> '{params,group}' into open_group
   from acts a join open_moves o on o.move_act = a.id
@@ -83,7 +83,7 @@ begin
   end if;
 end $$;
 
--- my_characters (0129), reading `bars` through bars_of. Everything else as 0129 wrote it.
+-- my_characters (0133), reading `bars` through bars_of. Everything else as 0133 wrote it.
 create or replace view my_characters as
   select c.id, c.name, h.class_key as class, h.started_at as class_since,
          case when t.at > now() then t.at end as turn_opens_at,
@@ -93,6 +93,7 @@ create or replace view my_characters as
          exists (select 1 from presence_hidden x where x.character = c.id) as presence_hidden,
          h.due_at as class_due_at,
          banned_until(c.id) as banned_until,
+         (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
          group_now(c.id) as "group",
          coalesce((select jsonb_agg(jsonb_build_object('board', b.board, 'move', b.move_act, 'group', b."group", 'expires_at', b.expires_at) order by b.board, b.move_act)
                    from bars_of(c.id) b), '[]'::jsonb) as bars

@@ -1,14 +1,14 @@
 -- The staff rung replaces the staffGroup setting (docs/plans/2026-11-06-member-groups-plan.md, Task 9).
 --
--- The staff group's name was a setting, `staffGroup`, that the seed wrote and screen_settings carried to the screens. The ladder's staff rung (group_kinds, 0124) now
+-- The staff group's name was a setting, `staffGroup`, that the seed wrote and screen_settings carried to the screens. The ladder's staff rung (group_kinds, 0128) now
 -- is that group: a staff character's `group` names it (group_now), and the screens read its name, color and stripe from screen_settings' `groups`. So:
---   seed_instance      as 0125 wrote it, without the insert of the `staffGroup` setting. A payload that still carries `system.staffGroup` is not read; a settings row an earlier
+--   seed_instance      as 0129 wrote it, without the insert of the `staffGroup` setting. A payload that still carries `system.staffGroup` is not read; a settings row an earlier
 --                      seed wrote stays where it is, read by no one (the view below no longer lists it), so an instance seeded before this change still boots.
---   screen_settings    as 0124 wrote it, without `staffGroup` in its list of settings, and each group also saying whether it is the staff rung (`staff`, the ladder's rung whose
+--   screen_settings    as 0128 wrote it, without `staffGroup` in its list of settings, and each group also saying whether it is the staff rung (`staff`, the ladder's rung whose
 --                      condition is 'staff'), so a screen names the staff group without reading any character.
 -- Masks. Public data only, as before: the staff rung's look is a group's look. Ways out. Adds no state.
 
--- seed_instance (0125), no longer writing the `staffGroup` setting. Everything else as 0125 wrote it.
+-- seed_instance (0129), no longer writing the `staffGroup` setting. Everything else as 0129 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -45,7 +45,7 @@ begin
   end if;
   insert into reaction_kinds (key, emoji, quadrant) select e ->> 'key', e ->> 'emoji', e ->> 'quadrant' from jsonb_array_elements(payload -> 'reactions') e
   on conflict (key) do update set emoji = excluded.emoji, quadrant = excluded.quadrant;
-  -- Member groups (0124): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
+  -- Member groups (0128): the instance's whole set, the ladder and the groups a move confers. A condition kind group_now has no case for stops the seed,
   -- naming the group. A group the payload no longer lists is deleted unless a move (landed or queued) names it, so the log line that names it still can.
   if payload ? 'groups' then
     select string_agg(e ->> 'key' || ' (' || coalesce(e ->> 'condition', 'none') || ')', ', ') into unknown
@@ -97,8 +97,12 @@ begin
   -- is made waiting, with no debut, and debuts the moment it first takes an office. What an admin wrote is never written over: a reseed
   -- finds the key and does nothing. A persona in firstStaff with no office row is hired as a Mod Bot, cause `seed`; one with a row,
   -- a benched one's included, is left as that row says, so a reseed never rehires.
+  unknown := (select string_agg(distinct e ->> 'key', ', ') from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
+    where e ? 'pronouns' and not pronouns_hold(pronouns_lowered(e -> 'pronouns')));
+  if unknown is not null then raise exception 'persona % has pronouns that are not five words of 1 to 12 letters and a plural', unknown using errcode = '22023'; end if;
   with seeded as (
-    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature
+    select e ->> 'key' as staff, e ->> 'name' as name, coalesce(e ->> 'title', '') as title, coalesce(e ->> 'signature', '') as signature,
+      pronouns_lowered(e -> 'pronouns') as pronouns
     from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e
   ), made as (
     insert into characters (name, staff, staff_kind, debuted_at)
@@ -108,8 +112,14 @@ begin
     from seeded s
     on conflict (staff) do nothing returning id, staff
   )
-  insert into character_profiles (character, title, signature)
-  select m.id, left(s.title, 40), left(s.signature, 500) from made m join seeded s on s.staff = m.staff;
+  insert into character_profiles (character, title, signature, pronouns)
+  select m.id, left(s.title, 40), left(s.signature, 500), coalesce(s.pronouns, new_pronouns()) from made m join seeded s on s.staff = m.staff;
+  -- Each listed persona's pronouns (0124), as its beats below: the seed's set is the persona's, so a reseed rewrites what an earlier seed or an earlier
+  -- persona file wrote; a persona the seed gives none is left as it was. Its title and its signature stay as the first seed wrote them.
+  update character_profiles p set pronouns = pronouns_lowered(e.value -> 'pronouns')
+  from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e, characters c
+  where e.value ? 'pronouns' and c.staff = e.value ->> 'key' and c.staff_kind = 'persona' and p.character = c.id
+    and p.pronouns is distinct from pronouns_lowered(e.value -> 'pronouns');
   select string_agg(k, ', ') into unknown from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k
   where not exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona');
   if unknown is not null then raise exception 'firstStaff names %, which no persona in the seed''s roster is', unknown using errcode = '22023'; end if;
@@ -209,14 +219,21 @@ begin
   -- writes it over); the board's thread counter is netted by the thread's own, since a board's count is the length of its list and
   -- thread_list never lists this one.
   if jsonb_typeof(payload -> 'developer') = 'object' then
+    if payload -> 'developer' ? 'pronouns' and not pronouns_hold(pronouns_lowered(payload -> 'developer' -> 'pronouns')) then
+      raise exception 'the developer has pronouns that are not five words of 1 to 12 letters and a plural' using errcode = '22023';
+    end if;
     -- The thread opens on The System's board, so a database with no board is told so before anything is made.
     if system_board() is null then raise exception 'a developer needs The System''s board; seed boards first' using errcode = '22023'; end if;
     with made as (
       insert into characters (name, staff, staff_kind, debuted_at) values (payload -> 'developer' ->> 'name', 'developer', 'developer', now())
       on conflict (staff) do nothing returning id
     )
-    insert into character_profiles (character, title, signature)
-    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '' from made m;
+    insert into character_profiles (character, title, signature, pronouns)
+    select m.id, left(coalesce(payload -> 'developer' ->> 'title', ''), 40), '', coalesce(pronouns_lowered(payload -> 'developer' -> 'pronouns'), new_pronouns()) from made m;
+    -- The developer's pronouns, when the seed names them, are rewritten on every seed (0124); its title and signature are not.
+    update character_profiles p set pronouns = pronouns_lowered(payload -> 'developer' -> 'pronouns')
+    from characters c
+    where payload -> 'developer' ? 'pronouns' and c.staff = 'developer' and p.character = c.id and p.pronouns is distinct from pronouns_lowered(payload -> 'developer' -> 'pronouns');
     if nullif(payload -> 'developer' ->> 'avatar', '') is not null then
       insert into settings (key, value) values ('developerAvatar', to_jsonb(payload -> 'developer' ->> 'avatar'))
       on conflict (key) do update set value = excluded.value;
@@ -234,7 +251,7 @@ begin
 end $$;
 
 
--- screen_settings (0124), no longer carrying the `staffGroup` setting, each group carrying `staff`, and a group's `badge` (0124) where it has one. Everything else as 0124 wrote it.
+-- screen_settings (0128), no longer carrying the `staffGroup` setting, each group carrying `staff`, and a group's `badge` (0128) where it has one. Everything else as 0128 wrote it.
 create or replace view screen_settings as
   select coalesce(jsonb_object_agg(s.key, s.value), '{}'::jsonb)
          || jsonb_build_object('cardEconomy', (
@@ -248,4 +265,4 @@ create or replace view screen_settings as
   from settings s
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
                   'turnCooldown', 'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
-                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'searchLanguage', 'searchRankPool');
+                  'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'searchLanguage', 'searchRankPool', 'pronouns');

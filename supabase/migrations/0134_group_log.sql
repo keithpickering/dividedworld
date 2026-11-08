@@ -2,12 +2,12 @@
 --
 --   my_group_moves   A row for each landed `conferGroup` move on one of the caller's own characters: the move's Act and its place in the announcements thread (what the line
 --                    links to), the character, the group's key and the board it bars (with the board's name), when it ends now (move_expires_at, so an appeal's ruling is read in
---                    place of the move's own end) and when it was set to end as it landed (`landed_until`, the Act's own), a favor's check, the office the move landed under (the stamp 0133 writes on the Act, else the Boss's; the line's role word, and the hearer's, who is the move's own staff member), how the move ended (`ended_why`: met, expired, reversed, unmet,
+--                    place of the move's own end) and when it was set to end as it landed (`landed_until`, the Act's own), a favor's check, the office the move landed under (the stamp 0137 writes on the Act, else the Boss's; the line's role word, and the hearer's, who is the move's own staff member), how the move ended (`ended_why`: met, expired, reversed, unmet,
 --                    overturned, superseded or spent; `ended_by`), and the latest appeal ruling on it (verdict, when, the end it set): a refunded appeal can be made again, so a move may have several appeals and still has one row. The group's name is not here: it
 --                    is the instance's own content, which the screen holds.
 --
---   log_page         (0123) also answers `groupMoves`, my_group_moves' rows as log() reads them, and its `people` carry their `group`, so the one-read Log shows the
---                    group lines the views show.
+--   log_page         (0125) also answers `groupMoves`, my_group_moves' rows as log() reads them, and its `people` carry their `group`, so the one-read Log shows the
+--                    group lines the views show. alerts_page (0125)'s `people` carry their `group` too.
 --
 -- Masks. A group move, its end and a ruling are public Acts, so every column is a public fact about the character. The view keeps only the caller's own characters
 -- (characters' own-rows policy and `owner = auth.uid()`), as my_bans does, so a third player sees nothing and no row says who else is in a group. No alert: the log is where it shows.
@@ -36,8 +36,9 @@ create view my_group_moves with (security_invoker = true) as
 revoke all on my_group_moves from public, anon, authenticated;
 grant select on my_group_moves to authenticated;
 
--- log_page (0123), also reading the group moves as its fourteenth source, `groupMoves` (my_group_moves, above, newest first by `at`, at most 200, the columns the adapter's
--- log() reads), and each of `people` also carrying its `group` (characters_public's, 0124), as the adapter's characters() reads it. Everything else as 0123 wrote it.
+-- log_page (0125), also reading the group moves as its fourteenth source, `groupMoves` (my_group_moves, above, newest first by `at`, at most 200, the columns the adapter's
+-- log() reads), and each of `people` also carrying its `group` (characters_public's, 0128), as the adapter's characters() reads it. Everything else as 0125 wrote it
+-- (each profile's `pronouns` included).
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -172,7 +173,7 @@ begin atomic
       select jsonb_agg(f.face order by f.name, f.id) from (
         select cp.name, cp.id, to_jsonb(cp) || jsonb_build_object('profile', (
           select to_jsonb(p) from (
-            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
             from character_profiles r where r.character = cp.id) p)) as face
         from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (select p.id from pe p)) cp) f), '[]'::jsonb),
     'threads', coalesce((select jsonb_agg(to_jsonb(t) order by t.created_at, t.id::text collate "C") from thread_open t where t.id in (select h.id from th h)), '[]'::jsonb),
@@ -188,3 +189,42 @@ end;
 
 revoke all on function log_page(timestamptz) from public, anon, authenticated;
 grant execute on function log_page(timestamptz) to authenticated;
+
+-- alerts_page (0125), each of `people` also carrying its `group` (characters_public's, 0128), as the adapter's characters() reads it and log_page's people do.
+-- Everything else as 0125 wrote it (each profile's `pronouns` included). Its signature and return type are as they were, so its grants stand.
+create or replace function alerts_page(in_before timestamptz) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with recursive al as (
+    select to_jsonb(a) - 'ordinality' as j, a.ordinality as o
+    from my_alerts(in_before, 30) with ordinality as a
+  ), chain(id, depth, ended) as (
+    select (al.j ->> 'act')::uuid, 1, al.j ->> 'kind' = 'cardEnded' from al where al.j ->> 'act' is not null
+    union
+    select x.target_act_id, c.depth + 1, c.ended
+    from chain c join acts_public x on x.id = c.id
+    where (c.depth < 2 or (c.depth < 3 and c.ended)) and x.target_act_id is not null
+  ), ac as (
+    select a.* from acts_public a where a.id in (select c.id from chain c)
+  ), th as (
+    select distinct (al.j ->> 'thread')::uuid as id from al where al.j ->> 'kind' = 'followed' and al.j ->> 'thread' is not null
+  )
+  select jsonb_build_object(
+    'alerts', coalesce((select jsonb_agg(al.j order by al.o) from al), '[]'::jsonb),
+    'seenAt', (select p.alerts_seen_at from account_preferences p limit 1),
+    'openedAt', my_account_opened(),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
+    'people', coalesce((
+      select jsonb_agg(f.face order by f.name) from (
+        select cp.name, to_jsonb(cp) || jsonb_build_object('profile', (
+          select to_jsonb(p) from (
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
+            from character_profiles r where r.character = cp.id) p)) as face
+        from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c
+              where c.id in (select a.character from ac a where a.id in (select h.id from chain h where h.depth = 3))) cp) f), '[]'::jsonb),
+    'openings', coalesce((select jsonb_agg(to_jsonb(a) order by a.thread::text collate "C") from acts_public a where a.thread in (select t.id from th t) and a.seq = 1), '[]'::jsonb),
+    'reading', coalesce((select jsonb_agg(to_jsonb(r) order by r.thread::text collate "C") from (
+      select g.thread, g.furthest_seq from reading g where g.thread in (select t.id from th t)) r), '[]'::jsonb)
+  );
+end;
+

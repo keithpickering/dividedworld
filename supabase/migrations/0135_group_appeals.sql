@@ -28,7 +28,7 @@
 -- Masks. A move, its appeal and its ruling are public Acts; the answer names the appellant's public name, and the fee is found in the wallet event as for any appeal.
 -- Ways out. This adds one: a group punishment can be appealed. Append-only: the ruling is an Act of its own; the move's Act is never changed.
 -- Not changed: the acts.kind list, the appeal_ruling payload check (points_delta is 0 for a move), acts_take_seq, appeal_blocks (one appeal per target, generic), appeal_line,
--- refund_appeal, refund_stale_appeals, judgment_load_today and staff_punishments (0125 already leaves out a move that ended `overturned`, which is how an overturned appeal ends one).
+-- refund_appeal, refund_stale_appeals, judgment_load_today and staff_punishments (0129 already leaves out a move that ended `overturned`, which is how an overturned appeal ends one).
 
 -- ---------------------------------------------------------------------------------------------------- the expiry ----
 
@@ -41,7 +41,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   from acts m where m.id = in_move and m.kind = 'move'
 $$;
 
--- end_move (0125), an `expired` end refused while an appeal's ruling has put the end ahead. Everything else as 0125 wrote it.
+-- end_move (0129), an `expired` end refused while an appeal's ruling has put the end ahead. Everything else as 0129 wrote it.
 create or replace function end_move(move_act uuid, why text, by text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

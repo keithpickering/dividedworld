@@ -8,11 +8,12 @@ import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced } from '../dat
 import { testInstance } from '../test-world.tsx';
 import { actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { mergeLogs } from './useLog.ts';
+import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
 
 const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
-const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z'): MyCharacter =>
-  ({ id, name, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
+const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z', pronouns: PronounSet = ENGINE_DEFAULT_PRONOUNS): MyCharacter =>
+  ({ id, name, pronouns, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
 const words: Words = {
   instance: testInstance,
   ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: '' } },
@@ -449,7 +450,7 @@ describe('a card\'s own words for a play', () => {
  * and true words: which Act did what, the points and when they drop off. The rows are the player's own; the lines say nothing of who reacted or of anyone's class.
  */
 describe('the Mod Bots\' lines', () => {
-  const mineBoth = [char('p', 'Spritey', 'face'), char('q', 'Pipewrench', 'heel')];
+  const mineBoth = [char('p', 'Spritey', 'face', undefined, PRONOUN_PRESETS.they), char('q', 'Pipewrench', 'heel', undefined, PRONOUN_PRESETS.she)];
   const T = 'th1';
   const inf = (over: Partial<Log['infractions'][number]> = {}): Log['infractions'][number] => ({
     infraction: 'i1', character: 'p', at: '2099-10-30T12:14:00.000Z', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: 'post41', postSeq: 41, thread: T,
@@ -475,7 +476,12 @@ describe('the Mod Bots\' lines', () => {
   test('a ban says why, for how long, until when, that it ends by itself, and that other characters are not banned', () => {
     const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }] });
     expect(row!.kind).toBe('ban');
-    expect(said(row!)).toBe('Spritey\'s warn bar filled with Rule 2: No double posting, so it was banned for 3 days and the bar was emptied. It can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. Your other characters are not banned.');
+    expect(said(row!)).toBe('Spritey\'s warn bar filled with Rule 2: No double posting, so they were banned for 3 days and the bar was emptied. They can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. Your other characters are not banned.');
+  });
+
+  test('a ban reads in the banned character\'s own pronouns: she/her, verbs agreeing', () => {
+    const [row] = rowsOf({ bans: [{ ban: 'b2', character: 'q', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T }] });
+    expect(said(row!)).toBe('Pipewrench\'s warn bar filled, so she was banned for 3 days and the bar was emptied. She can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. Your other characters are not banned.');
   });
 
   test('a running ban that no appeal names carries the ban for "Appeal to the Boss"; an ended one or an appealed one does not', () => {

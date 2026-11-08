@@ -10,7 +10,8 @@ import { DIGEST_MOST } from '../system/digest.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
-import { STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
+import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
+import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
 
@@ -184,7 +185,7 @@ function warnBarRule(v: unknown): string | null {
 
 /**
  * The member groups' settings (`Settings.apology`): exactly the fields of ApologySettings, each a whole number, at least 1. Mirrors `setting_apology` in
- * supabase/migrations/0126_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ * supabase/migrations/0130_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
 function apologyRule(v: unknown): string | null {
@@ -229,6 +230,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
   hints: hintsRule,
@@ -304,6 +306,7 @@ function developerProblems(d: Instance['developer']): string[] {
   }
   if (typeof d.tagline !== 'string') out.push('the developer tagline is not text');
   else if (d.tagline.length > DEVELOPER_TAGLINE_MAX) out.push(`the developer tagline is ${d.tagline.length} characters; the seed keeps at most ${DEVELOPER_TAGLINE_MAX} and cuts the rest in silence`);
+  if (d.pronouns !== undefined) for (const p of pronounProblems(d.pronouns)) out.push(`the developer's pronouns: ${p}`);
   if (d.avatar !== undefined && (typeof d.avatar !== 'string' || d.avatar.trim() === '')) out.push('the developer avatar is blank; leave it out for none, or name the instance\'s picture');
   return out;
 }
@@ -479,6 +482,7 @@ function systemProblems(instance: Instance): string[] {
     if (typeof p.title === 'string' && p.title.length > STAFF_TITLE_MAX) out.push(`${who} has a title of ${p.title.length} characters; the seed keeps at most ${STAFF_TITLE_MAX} and cuts the rest in silence`);
     if (typeof p.signature === 'string' && p.signature.length > STAFF_SIGNATURE_MAX) out.push(`${who} has a signature of ${p.signature.length} characters; the seed keeps at most ${STAFF_SIGNATURE_MAX} and cuts the rest in silence`);
     for (const list of ['beats', 'petRules'] as const) if (!Array.isArray(p[list])) out.push(`${who} has no ${list}`);
+    if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
     for (const ph of PHASES) {
@@ -530,7 +534,14 @@ function systemProblems(instance: Instance): string[] {
     if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`stock line "${key}" is missing; every standing order needs at least one line`); continue; }
     for (const line of lines) {
       for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
-        if (!STOCK_LINE_TOKENS[key].includes(token!)) out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${STOCK_LINE_TOKENS[key].map((t) => `{${t}}`).join(', ')})`);
+        const [name, form, ...extra] = token!.split('.');
+        const given = STOCK_LINE_TOKENS[key];
+        if (form !== undefined && given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!)) {
+          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`stock line "${key}" uses {${token}}, which is not a pronoun form ({${name}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
+        } else if (!given.includes(token!)) {
+          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) ? '' : form !== undefined ? ` ({${name}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
+          out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
+        }
       }
     }
   }

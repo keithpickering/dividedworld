@@ -27,6 +27,7 @@ import {
   createContext, forwardRef, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
   type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment, Visit, VisitEnd, VisitStory } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -514,6 +515,8 @@ export interface LensProps {
     readonly visit: Visit; readonly thread: Id; readonly author: Id | null;
     readonly onSpinAct: ((act: Id, name: string, opener: HTMLElement) => void) | undefined; readonly onEnded: (end: VisitEnd) => void;
   } | undefined;
+  /** The visit's Mod's pronouns, as the thread knows them (the character holding the office now); the engine's it/its where the thread has none. */
+  readonly modPronouns?: PronounSet | undefined;
   /** A form the panel is open on (Forms.tsx): a post's report or an appeal. It is the panel's one tab while it is open, and the cards' and the visit's are not offered with it. */
   readonly form?: LensForm | undefined;
 }
@@ -533,7 +536,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, form }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, strip, onSpin, where = 'post', moments = true, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -714,10 +717,10 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
-        {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} facts={appealP.data} />}
+        {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
         {onVisit && visitP.data && (
           <VisitPanel first={visitP.data}
-            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} tallies={tallies} mine={mine} onEnded={visit.onEnded}
+            visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded}
             onSpin={(act, label) => { store.close(); visit.onSpinAct?.(act, label, open.opener); }}
           />
         )}

@@ -15,6 +15,7 @@ import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
 import { LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testSystem, testGroups } from '../../rules/test-system.ts';
+import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 
 const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
@@ -362,6 +363,45 @@ describe('Turns', () => {
     expect(landed.classSince).toBe(new Date(fake.clock.now()).toISOString());
     expect(landed.classDueAt).toBe(new Date(due).toISOString());
     expect(landed.pendingTurn).toBeNull();
+  });
+});
+
+describe('pronouns', () => {
+  const REFUSAL = 'pronouns are five words of 1 to 12 letters';
+  test('a character made with she/her reads it back on Character and MyCharacter; one made with none takes the instance\'s', async () => {
+    const { fake } = world({ charactersPerPlayer: 6 });
+    const hers = must(await fake.createCharacter('Hers', 'face', 'now', 'silent', PRONOUN_PRESETS.she));
+    const plain = must(await fake.createCharacter('Plain', 'face', 'now', 'silent'));
+    expect((await fake.characters([hers.id]))[0]?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect((await fake.myCharacters()).find((c) => c.id === hers.id)?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect((await fake.characters([plain.id]))[0]?.pronouns).toEqual(settings.pronouns);
+    expect((await fake.myCharacters()).find((c) => c.id === plain.id)?.pronouns).toEqual(settings.pronouns);
+  });
+  test('a set is stored lowercased; a bad one is refused in the server\'s words and makes nothing', async () => {
+    const { fake } = world({ charactersPerPlayer: 6 });
+    const loud = must(await fake.createCharacter('Loud', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'SHE' }));
+    expect((await fake.characters([loud.id]))[0]?.pronouns.subject).toBe('she');
+    const before = (await fake.myCharacters()).length;
+    expect(await fake.createCharacter('Bad', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'abcdefghijklm' })).toEqual(refused(REFUSAL));
+    expect((await fake.myCharacters()).length).toBe(before);
+  });
+  test('set_profile stores a set, keeps the stored one when given none, and refuses a bad one with nothing changed', async () => {
+    const { fake, anaFace } = world();
+    const set = must(await fake.setProfile(anaFace, 'T', 's', 'default', PRONOUN_PRESETS.they));
+    expect(set.pronouns).toEqual(PRONOUN_PRESETS.they);
+    expect(must(await fake.setProfile(anaFace, 'T2', 's', 'default')).pronouns).toEqual(PRONOUN_PRESETS.they);
+    expect(await fake.setProfile(anaFace, 'T3', 's', 'default', { ...PRONOUN_PRESETS.they, object: '' })).toEqual(refused(REFUSAL));
+    const now = (await fake.characters([anaFace]))[0]!;
+    expect(now).toMatchObject({ title: 'T2', pronouns: PRONOUN_PRESETS.they });
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)?.pronouns).toEqual(PRONOUN_PRESETS.they);
+  });
+  test('a staff character takes the set its persona names, else the instance\'s; the developer persona too', async () => {
+    const { fake } = world();
+    const boss = fake.seed.staff('s-boss', 'Boss Staff', 'boss', { pronouns: PRONOUN_PRESETS.she });
+    const mod = fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+    const got = await fake.characters([boss, mod]);
+    expect(got.find((c) => c.id === boss)?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect(got.find((c) => c.id === mod)?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
   });
 });
 

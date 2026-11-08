@@ -181,6 +181,22 @@ test('what an action wrote is broadcast as its public projection, on its thread\
   }
 });
 
+test('a new character\'s pronouns reach create_character, and none is a null', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  const made = pair({ create_character: { id, waiting: true, announcement: null } });
+  await runAction(made.dbs, instance, { action: 'createCharacter', name: 'Hers', class: 'heel', pronouns: { ...she, subject: 'SHE' } });
+  await runAction(made.dbs, instance, { action: 'createCharacter', name: 'Plain', class: 'heel' });
+  assert.deepEqual(made.calls, [
+    `player:create_character:${JSON.stringify({ name: 'Hers', class: 'heel', timing: 'now', loudness: 'announced', pronouns: she })}`,
+    `player:create_character:${JSON.stringify({ name: 'Plain', class: 'heel', timing: 'now', loudness: 'announced', pronouns: null })}`,
+  ]);
+  const bad = pair({});
+  const out = await runAction(bad.dbs, instance, { action: 'createCharacter', name: 'Bad', class: 'heel', pronouns: { ...she, subject: '' } });
+  assert.equal(out.status, 400);
+  assert.deepEqual(bad.calls, []);
+});
+
 test('ending a card is the caller\'s own call, heard on its thread, and on reach too for a play beyond a post; a refusal sends nothing', async () => {
   const thread = '44444444-4444-4444-8444-444444444444';
   const end = { id: 'e', kind: 'card_end', thread, target_act_id: target, payload: { why: 'reversed', by: 'admin' } };

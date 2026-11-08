@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the fourteen reads (the group moves' since 0130) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the fourteen reads (the group moves' since 0134) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -190,7 +190,7 @@ begin
   if doc -> 'people' is distinct from (
       select jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
         select to_jsonb(p) from (
-          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name, cp.id)
       from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'people') x where x ?| array['warn_points', 'banned_until']) then raise exception 'a face holds the columns characters() reads and no others: %', doc -> 'people' -> 0; end if;

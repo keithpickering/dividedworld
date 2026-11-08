@@ -685,7 +685,17 @@ insert into poisons (key, value) values
   ('apology', '"x"'),
   ('apology', '[]'),
   ('apology', 'null'),
-  ('apology', '{}');
+  ('apology', '{}'),
+  ('pronouns', '{"subject": "abcdefghijklm", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '{"subject": "", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself"}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": "no"}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "plural": false}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false, "extra": "x"}'),
+  ('pronouns', '{"subject": "a b", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '"it"'),
+  ('pronouns', 'null'),
+  ('pronouns', '[]');
 
 create temp table goods (key text, value text);
 insert into goods (key, value) values
@@ -816,7 +826,9 @@ insert into goods (key, value) values
   ('warnBar', '{"size": 10, "bands": {"minor": 10, "moderate": 10, "severe": 10}, "decay": {"unit": "month", "count": 1000}, "banDays": [1, 3, 7]}'),
   ('apology', '{"apologyEveryHours": 24, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
   ('apology', '{"apologyEveryHours": 1, "apologyJudgeBatch": 1, "apologyRulingMaxWords": 1}'),
-  ('apology', '{"apologyEveryHours": 9007199254740991, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}');
+  ('apology', '{"apologyEveryHours": 9007199254740991, "apologyJudgeBatch": 10, "apologyRulingMaxWords": 80}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '{"subject": "she", "object": "her", "determiner": "her", "possessive": "hers", "reflexive": "herself", "plural": false}');
 
 do $$
 declare r record; refused boolean; seen integer; first_good text;

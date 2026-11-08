@@ -48,7 +48,7 @@ begin
   end if;
   if exists (select 1 from jsonb_array_elements(box -> 'names') e
              where (select array_agg(k order by k) from jsonb_object_keys(e) k) is distinct from array['banned_until', 'group', 'id', 'name', 'staff']) then
-    raise exception 'a name holds only its id, its name, whether it is staff (a public fact, 0084) and until when it is banned (a public ban Act, 0104) and its group (0124): %', box;
+    raise exception 'a name holds only its id, its name, whether it is staff (a public fact, 0084) and until when it is banned (a public ban Act, 0104) and its group (0128): %', box;
   end if;
   if box #>> '{names,0,name}' is distinct from 'Here One' then raise exception 'a name is the character''s: %', box; end if;
 

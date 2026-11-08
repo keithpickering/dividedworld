@@ -16,7 +16,7 @@ test('a persona that led two seasons and was a mod between them reads as plain s
   const lines = careerText(SERVED, { 5: 'Season Five' });
   assert.equal(lines.length, 3);
   assert.match(lines[0]!, /^Boss in Season Five, from 2026-06-07 until now/u);
-  assert.match(lines[0]!, /named by the Boss before it/u);
+  assert.match(lines[0]!, /named by the previous Boss/u);
   assert.match(lines[1]!, /^Mod Bot from 2026-03-29 to 2026-06-07/u);
   assert.match(lines[1]!, /at a handover/u);
   assert.match(lines[2]!, /^Boss in Season 2, from 2026-02-01 to 2026-03-29 \(8 weeks\)/u);

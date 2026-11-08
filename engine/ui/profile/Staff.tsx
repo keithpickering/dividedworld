@@ -15,6 +15,7 @@ import { useCallback, useEffect, useId, useState, type CSSProperties, type React
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, CharacterCounts, MoveLogRow, MovesCursor, StaffProfile as StaffProfileData } from '../data/api.ts';
 import { careerText, type Career } from '../../system/career.ts';
+import { pronounLabel, words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { endedWords } from '../board/move-words.ts';
@@ -36,6 +37,7 @@ interface Said {
 export function StaffProfile({ character: c }: { readonly character: Character }) {
   const { api, settings } = useKayfa();
   const staff = c.staff!;
+  const pw = pronounWords(c.pronouns);
   const [said, setSaid] = useState<Said | 'failed' | null>(null);
   useEffect(() => {
     let live = true;
@@ -58,6 +60,7 @@ export function StaffProfile({ character: c }: { readonly character: Character }
     ...(badge ? [{ key: 'staff', label: 'Staff', lead: true, value: <StaffBadge character={c} /> }] : []),
     ...(c.title ? [{ key: 'title', label: 'Title', lead: true, value: c.title }] : []),
     ...(group ? [{ key: 'group', label: 'Group', value: <GroupBar look={group} /> }] : []),
+    { key: 'pronouns', label: 'Pronouns', value: <span className="kb-profile-pronouns kb-muted">{pronounLabel(c.pronouns)}</span> },
     ...(data
       ? [
         { key: 'interests', label: 'Interests', value: data.profile && data.profile.interests.length > 0 ? data.profile.interests.join(', ') : none },
@@ -71,7 +74,7 @@ export function StaffProfile({ character: c }: { readonly character: Character }
         { key: 'mood', label: 'Current Mood', value: data.profile?.mood ? data.profile.mood : none },
       ]
       : []),
-    { key: 'career', label: 'Career', value: <CareerList staff={staff} /> },
+    { key: 'career', label: 'Career', value: <CareerList staff={staff} pronouns={c.pronouns} /> },
     ...(data
       ? [
         { key: 'posts', label: 'Posts', value: data.counts.posts },
@@ -98,15 +101,15 @@ export function StaffProfile({ character: c }: { readonly character: Character }
             ))}
             <tr role="row">
               <td role="cell" colSpan={2} className="kb-about-sig">
-                {said === 'failed' && <p className="kb-notice" data-kb-tone="refusal">Its profile could not be loaded. Reload the page to try again.</p>}
+                {said === 'failed' && <p className="kb-notice" data-kb-tone="refusal">{pw.Their} profile could not be loaded. Reload the page to try again.</p>}
                 {signature && <div className="kb-signature kb-small"><BbCode text={signature} /></div>}
-                <p className="kb-small kb-muted kb-about-note">The interests, favorites, mood and signature are what it says about itself, in character, and it may bluff. The moderation log is a plain record.</p>
+                <p className="kb-small kb-muted kb-about-note">The interests, favorites, mood and signature are what {pw.they} say{pw.s} about {pw.themself}, in character, and {pw.they} may bluff. The moderation log is a plain record.</p>
               </td>
             </tr>
           </tbody>
         </table>
       </section>
-      <ModerationLog staff={staff} bot={c.office === 'mod'} />
+      <ModerationLog staff={staff} bot={c.office === 'mod'} pronouns={c.pronouns} />
     </div>
   );
 }
@@ -117,8 +120,9 @@ interface Fact { readonly key: string; readonly label: string; readonly lead?: b
  * The career: the seasons it led and the offices it held, as plain facts (`staff_career`, public like "Former Administrator" on a forum),
  * newest first and cut to the engine's bound with "and N more." The words of the Career row. This is the glass, not the persona: it never bluffs.
  */
-function CareerList({ staff }: { readonly staff: string }) {
+function CareerList({ staff, pronouns }: { readonly staff: string; readonly pronouns: PronounSet }) {
   const { api } = useKayfa();
+  const pw = pronounWords(pronouns);
   const [career, setCareer] = useState<Career | 'failed' | null>(null);
   useEffect(() => {
     let live = true;
@@ -129,7 +133,7 @@ function CareerList({ staff }: { readonly staff: string }) {
   const lines = career && career !== 'failed' ? careerText(career) : null;
   return (
     <>
-      {career === 'failed' && <p role="alert" className="kb-notice" data-kb-tone="refusal">Its career could not be loaded. Reload the page to try again.</p>}
+      {career === 'failed' && <p role="alert" className="kb-notice" data-kb-tone="refusal">{pw.Their} career could not be loaded. Reload the page to try again.</p>}
       <div role="status">{career === null && <p className="kb-visually-hidden">Reading the career</p>}</div>
       {career === null && <p className="kb-muted" aria-hidden="true">Loading the career…</p>}
       {lines !== null && lines.length === 0 && <>No office held yet.</>}
@@ -161,7 +165,8 @@ function ModActCells({ row, perPage }: { readonly row: MoveLogRow; readonly perP
   );
 }
 
-function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: boolean }) {
+function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; readonly bot: boolean; readonly pronouns: PronounSet }) {
+  const pw = pronounWords(pronouns);
   const { api, settings } = useKayfa();
   const [rows, setRows] = useState<readonly MoveLogRow[] | null>(null);
   const [older, setOlder] = useState<MovesCursor | null>(null);
@@ -200,13 +205,13 @@ function ModerationLog({ staff, bot }: { readonly staff: string; readonly bot: b
       {state === 'failed' && <p className="kb-notice" data-kb-tone="refusal">The moderation log could not be loaded. Reload the page to try again.</p>}
       {rows === null && state !== 'failed' && <p className="kb-muted" aria-busy="true">Loading the log…</p>}
       {rows !== null && rows.length === 0 && (
-        <p>{bot ? 'Nothing here yet. A Mod Bot\'s log lists its visits, the reports it judged and the appeals it heard, once it has any.' : 'Nothing here yet. It has not made a move.'}</p>
+        <p>{bot ? `Nothing here yet. A Mod Bot's log lists ${pw.their} visits, the reports ${pw.they} judged and the appeals ${pw.they} heard, once ${pw.they} ${pw.has} any.` : `Nothing here yet. ${pw.They} ${pw.has} not made a move.`}</p>
       )}
       {rows !== null && rows.length > 0 && (
         <table className="kb-table kb-modlog" role="table" aria-labelledby={heading}>
           <thead role="rowgroup">
             <tr role="row"><td role="cell" className="kb-bar" colSpan={3}><h2 id={heading}>Moderation log</h2></td></tr>
-            <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What it did</th><th role="columnheader" scope="col">How it ended</th></tr>
+            <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What {pw.they} did</th><th role="columnheader" scope="col">How it ended</th></tr>
           </thead>
           <tbody role="rowgroup">
             {rows.map((r) => (

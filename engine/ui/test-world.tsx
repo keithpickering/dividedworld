@@ -26,7 +26,7 @@ const settings: Settings = {
   postMaxLength: 200, titleMaxLength: 40, postsPerPage: 20, hotReplies: 3, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'whoops.price': 100 }, ...systemSettings,
 };
 
-/* What screen_settings's groups holds (0124) for the test instance: the ladder lowest first, then the conferred groups. */
+/* What screen_settings's groups holds (0128) for the test instance: the ladder lowest first, then the conferred groups. */
 const screenGroups = [...testGroups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...testGroups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))];
 
 const earn = () => [];
@@ -83,10 +83,10 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five'];
 const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
   /* A reason whose words state a tunable number (the core loop design, section 6): said with the numbers it is given. */
   'heel.postedTooMuch': (n) => `Posted too much: a post past ${COUNTS[n['heel.postsAllowed'] ?? 0] ?? n['heel.postsAllowed']} in one day`,
-  'heel.drewHeat': 'Drew heat: excited, negative reactions to its posts and cards',
-  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
-  'heel.shrugged': 'Shrugged off: calm, positive reactions to its posts and cards',
-  'face.cheered': 'Cheered: excited, positive reactions to its posts and cards',
+  'heel.drewHeat': 'Drew heat: excited, negative reactions to the character\'s posts and cards',
+  'heel.stoleThunder': 'Stole the thunder: a Salty card the character played on another\'s post drew more votes than the post this window',
+  'heel.shrugged': 'Shrugged off: calm, positive reactions to the character\'s posts and cards',
+  'face.cheered': 'Cheered: excited, positive reactions to the character\'s posts and cards',
 };
 const reasonWords = (reason: string, params: Readonly<Record<string, number>>) => {
   const w = REASONS[reason];

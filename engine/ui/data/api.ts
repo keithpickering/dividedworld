@@ -17,6 +17,7 @@
  * epoch milliseconds as the estimate function sends it.
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
@@ -153,6 +154,8 @@ export interface Suggestions {
 
 /** The instance settings a screen reads (the screen_settings view): none of them a private fact. */
 export interface ScreenSettings {
+  /** The pronouns a new character starts with (`Settings.pronouns`, the setting `pronouns`): public, as a title is. */
+  readonly pronouns: PronounSet;
   readonly postsPerPage: number;
   /** The text search configuration the search index is built in (`searchLanguage`); a screen never needs it but the view holds it. */
   readonly searchLanguage: string;
@@ -189,7 +192,7 @@ export interface ScreenSettings {
    */
   readonly economy: Readonly<Record<string, number>>;
   /**
-   * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0124): the key a
+   * Every member group's look, the ladder lowest first and then the groups moves confer (`group_kinds`, seeded from `Instance.groups`, 0128): the key a
    * character's `group` names, its name, a #rrggbb color and whether it is drawn striped. Public. The staff rung is a group like any other: a
    * staff character's `group` names it, and its name is the one the postbit's bar, the profile's Group row and the presence chip show.
    */
@@ -435,13 +438,15 @@ export interface Character {
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
   readonly pipStyle: string;
+  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row has the engine's it/its. */
+  readonly pronouns: PronounSet;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
   /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
   readonly staff?: string;
   /** The office a staff character holds now (characters_public). The Boss is shown ADMINISTRATOR and a Mod Bot MODERATOR; a member or a benched persona has no badge, and neither has the developer persona (the Updates page's author). Set with `staff`. */
   readonly office?: Office;
-  /** The key of the group it is in now (characters_public's `group`, 0124): the look is in `ScreenSettings.groups`. */
+  /** The key of the group it is in now (characters_public's `group`, 0128): the look is in `ScreenSettings.groups`. */
   readonly group: string;
   /** The points on its warn bar now (characters_public, carried by a thread's page); absent when it has none. */
   readonly warnPoints?: number;
@@ -540,7 +545,7 @@ export interface MoveNotice {
   readonly thread: Id;
   /** The Boss who made it, as a character (null if the Act somehow has none). */
   readonly character: Id | null;
-  /** The office its staff character held when it landed (`payload.office`, stamped by `write_staff_act`, 0133); absent on a move from before the stamp, which is read as the Boss's. */
+  /** The office its staff character held when it landed (`payload.office`, stamped by `write_staff_act`, 0137); absent on a move from before the stamp, which is read as the Boss's. */
   readonly office?: 'boss' | 'mod';
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
@@ -636,6 +641,8 @@ export interface QueuedMove {
   readonly id: number;
   readonly staff: string;
   readonly boss: string | null;
+  /** The Boss's pronouns, beside its name (admin_queue); the engine's it/its where no character holds the name. */
+  readonly bossPronouns: PronounSet;
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: Demand | null;
@@ -661,6 +668,7 @@ export interface MoveInForce {
   readonly id: number | null;
   readonly staff: string | null;
   readonly boss: string | null;
+  readonly bossPronouns: PronounSet;
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: Demand | null;
@@ -680,6 +688,7 @@ export interface MoveEnded {
   readonly id: number | null;
   readonly staff: string | null;
   readonly boss: string | null;
+  readonly bossPronouns: PronounSet;
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: Demand | null;
@@ -714,9 +723,12 @@ export interface HandoverTodo {
   readonly season: number;
   readonly boss: string;
   readonly bossName: string;
+  readonly bossPronouns: PronounSet;
   readonly bossWas: string | null;
   readonly outgoing: string | null;
   readonly outgoingName: string | null;
+  /** The outgoing Boss's pronouns; the engine's it/its where there is none. */
+  readonly outgoingPronouns: PronounSet;
   readonly outgoingOffice: string | null;
   /** How the new Boss was chosen: `nomination` or `rotation`. */
   readonly how: string;
@@ -735,7 +747,7 @@ export interface AdminQueue {
   readonly todos: readonly HandoverTodo[];
   readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly staffCards: boolean; readonly ended: boolean };
   /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
-  readonly roster: readonly { readonly staff: string; readonly name: string }[];
+  readonly roster: readonly { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[];
 }
 
 /* ---------------------------------------------------------- the player's own ---- */
@@ -750,6 +762,8 @@ export interface Session {
 export interface MyCharacter {
   readonly id: Id;
   readonly name: string;
+  /** Its pronouns, as a profile shows them to everyone (its player's own choice; the screens that speak about it use them). */
+  readonly pronouns: PronounSet;
   /** Its class now: shown to its player as "only you". */
   readonly class: string;
   readonly classSince: string;
@@ -783,7 +797,7 @@ export type PresencePlace = { readonly kind: 'thread'; readonly thread: Id } | {
  */
 export interface Presence {
   /** Each name is a character's. `staff` is a public fact (a staff key shows to a visitor); a staff name is listed after its own post there, or while it has an open visit in the thread, whose post's number is `visitPost` (a visit is a public Act). */
-  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; /** The key of the group it is in now (group_now, 0124): a staff name's chip is that group's name. */ readonly group?: string; readonly visitPost?: number }[];
+  readonly names: readonly { readonly id: Id; readonly name: string; readonly staff: boolean; /** The key of the group it is in now (group_now, 0128): a staff name's chip is that group's name. */ readonly group?: string; readonly visitPost?: number }[];
   readonly others: number;
 }
 
@@ -1027,6 +1041,8 @@ export interface Update {
   readonly character: Id;
   readonly name: string;
   readonly tagline: string;
+  /** The persona's pronouns (updates_read); the engine's it/its where its profile has none. */
+  readonly pronouns: PronounSet;
   readonly avatar: string | null;
   readonly title: string;
   readonly body: string;
@@ -1247,7 +1263,7 @@ export interface MyBan {
 export type GroupMoveEndWhy = 'met' | 'expired' | 'reversed' | 'unmet' | 'overturned' | 'superseded' | 'spent';
 
 /**
- * A staff member moving one of the player's characters into a group (`my_group_moves`, 0130), with how it ended and the appeal's ruling on it. Every field is a public fact about
+ * A staff member moving one of the player's characters into a group (`my_group_moves`, 0134), with how it ended and the appeal's ruling on it. Every field is a public fact about
  * the character's own move; none names another member of a group.
  */
 export interface LogGroupMove {
@@ -1268,7 +1284,7 @@ export interface LogGroupMove {
   /** A favor's check: it stays if the demand is met by then. */
   readonly checkAt: string | null;
   readonly demand: string | null;
-  /** The office the move landed under (its stamp, 0133), for the role word ("The Boss", "A Mod"); the hearer of its appeal is the same staff member. */
+  /** The office the move landed under (its stamp, 0137), for the role word ("The Boss", "A Mod"); the hearer of its appeal is the same staff member. */
   readonly office: Office | null;
   readonly endedWhy: GroupMoveEndWhy | null;
   readonly endedBy: string | null;
@@ -1741,9 +1757,9 @@ export interface KayfaApi {
    */
   describeBoard(board: Id, description: string): Promise<Answer<{ readonly board: Id; readonly description: string }>>;
   /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
-  bosses(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
+  bosses(): Promise<readonly { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[]>;
   /** The names of staff who have debuted, by staff key (`characters_public`): public, so a waiting persona is not in it. The public moderation log names a nominee and a keeper from it. */
-  staffNames(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
+  staffNames(): Promise<readonly { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[]>;
 
   settings(): Promise<ScreenSettings>;
 
@@ -1760,7 +1776,7 @@ export interface KayfaApi {
    */
   moveNotice(act: Id): Promise<MoveNotice | null>;
   /**
-   * The caller's own character's apologies, newest first (`my_apologies`, 0129): each one's move, state and when it was written, and when the next may be. Another
+   * The caller's own character's apologies, newest first (`my_apologies`, 0133): each one's move, state and when it was written, and when the next may be. Another
    * player's character, or an id that is no one's, reads none. Rejects when it cannot be read.
    */
   myApologies(character: Id): Promise<readonly Apology[]>;
@@ -1912,7 +1928,7 @@ export interface KayfaApi {
   /** How many reports this character may still make today (UTC). Shown only to the player of that character; null where it could not be read. */
   reportsLeft(character: Id): Promise<number | null>;
   /** The public name of the Mod on a board's beat, who judges its reports, and the board's name; null where no Mod is on staff. */
-  beatMod(board: Id): Promise<{ readonly mod: string; readonly board: string } | null>;
+  beatMod(board: Id): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null>;
   /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */
   myBan(character: Id): Promise<MyBan | null>;
   /** The player's own characters in one read, with what the Characters and Edit profile screens draw of each. */
@@ -2030,7 +2046,7 @@ export interface KayfaApi {
   edit(post: Id, character: Id, body: string): Promise<Answer<Act>>;
   spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
-   * A barred character's apology (`apologize`, 0126): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
+   * A barred character's apology (`apologize`, 0130): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
    * apology the move's staff member rules on. Refused while the character is banned, on a move that is not this character's or has ended, while one waits, and
    * within `Settings.apology.apologyEveryHours` of the last (the refusal names the time the next opens). `framing` is a spin's: the characters its counterfeit quotes name are told.
    */
@@ -2064,9 +2080,11 @@ export interface KayfaApi {
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;
-  createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness): Promise<Answer<CreatedCharacter>>;
+  /** `pronouns` left out: the instance's default (`Settings.pronouns`), as the server takes it. */
+  createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Promise<Answer<CreatedCharacter>>;
   setDebut(character: Id, timing: DebutTiming, loudness: DebutLoudness): Promise<Answer<{ readonly id: Id; readonly waiting: boolean; readonly loudness: DebutLoudness }>>;
-  setProfile(character: Id, title: string, signature: string, pipStyle: string): Promise<Answer<Character>>;
+  /** `pronouns` left out: the stored set stays. */
+  setProfile(character: Id, title: string, signature: string, pipStyle: string, pronouns?: PronounSet): Promise<Answer<Character>>;
   setAvatar(upload: AvatarUpload): Promise<Answer<Character>>;
 
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */

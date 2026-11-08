@@ -35,6 +35,7 @@ import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
+import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
@@ -142,11 +143,15 @@ function toAct(r: Row): Act {
   };
 }
 
+/** A staff member's set where a read hands it beside a name: null (a persona with no profile row) is the engine's it/its. */
+const pronounsOrDefault = (v: unknown): PronounSet => (isObject(v) ? (v as unknown as PronounSet) : ENGINE_DEFAULT_PRONOUNS);
+
 /** One row of `updates`, or post_update's answer, which is the same row. A change that is not a { label, text } of words is no line. */
+
 function toUpdate(r: Row): Update {
   const changes = Array.isArray(r['changes']) ? (r['changes'] as Row[]) : [];
   return {
-    act: r['act'], thread: r['thread'], character: r['character'], name: String(r['name'] ?? ''), tagline: String(r['tagline'] ?? ''), avatar: str(r['avatar']),
+    act: r['act'], thread: r['thread'], character: r['character'], name: String(r['name'] ?? ''), tagline: String(r['tagline'] ?? ''), pronouns: pronounsOrDefault(r['pronouns']), avatar: str(r['avatar']),
     title: String(r['title'] ?? ''), body: String(r['body'] ?? ''),
     changes: changes.filter((c) => typeof c?.['text'] === 'string').map((c) => ({ label: typeof c['label'] === 'string' ? c['label'] : '', text: String(c['text']) })),
     at: String(r['at']), seq: num(r['seq']),
@@ -392,7 +397,7 @@ const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v
 
 function toQueued(r: Row): QueuedMove {
   return {
-    id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
+    id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
   };
@@ -400,14 +405,14 @@ function toQueued(r: Row): QueuedMove {
 
 function toTodo(r: Row): HandoverTodo {
   return {
-    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
-    outgoingName: orNull(r['outgoingName']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+    season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
+    outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
   };
 }
 
 function toInForce(r: Row): MoveInForce {
   return {
-    act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
+    act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
   };
 }
@@ -416,7 +421,7 @@ function toEnded(r: Row): MoveEnded {
   const how = r['how'];
   return {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
-    id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), kind: String(r['kind'] ?? ''), params: params(r['params']),
+    id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
   };
 }
@@ -441,6 +446,7 @@ function toMyCharacter(r: Row): MyCharacter {
   return {
     id: r['id'],
     name: r['name'],
+    pronouns: pronounsOrDefault(r['pronouns']),
     class: r['class'],
     classSince: r['class_since'],
     classDueAt: r['class_due_at'] ?? null,
@@ -486,13 +492,13 @@ function toAdminQueue(v: unknown): AdminQueue {
     cap: num(q['cap']), waiting: rowsOf(q['waiting']).map(toQueued), inForce: rowsOf(q['inForce']).map(toInForce), ended: rowsOf(q['ended']).map(toEnded),
     staffCards: rowsOf(q['staffCards']).map(toStaffCard),
     more: { waiting: more['waiting'] === true, inForce: more['inForce'] === true, staffCards: more['staffCards'] === true, ended: more['ended'] === true },
-    roster: rowsOf(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']) }] : [])),
+    roster: rowsOf(q['roster']).flatMap((r) => (typeof r['staff'] === 'string' ? [{ staff: r['staff'], name: String(r['name'] ?? r['staff']), pronouns: pronounsOrDefault(r['pronouns']) }] : [])),
     todos: rowsOf(q['todos']).flatMap((r) => (typeof r['boss'] === 'string' ? [toTodo(r)] : [])),
   };
 }
 
 /** One of the roster rows `boss_roster_names` answers. */
-const toBosses = (v: unknown): { readonly staff: string; readonly name: string }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']) }] : []));
+const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
 function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
@@ -745,6 +751,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     squareFrame: toFrame(p?.['square_frame']),
     portraitFrame: toFrame(p?.['portrait_frame']),
     pipStyle: p?.['pip_style'] ?? 'default',
+    /* The set is read from the profile row; the engine's it/its stands only for a character with no profile row at all. */
+    pronouns: p ? pronounsOrDefault(p['pronouns']) : ENGINE_DEFAULT_PRONOUNS,
     joined: c['joined'] ?? '',
     ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
     ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
@@ -759,7 +767,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     if (ids.length === 0) return [];
     const [cs, ps] = await Promise.all([
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
-      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style').in('character', part))),
+      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style,pronouns').in('character', part))),
     ]);
     const profile = new Map(ps.map((p) => [p['character'] as string, p]));
     const byId = new Map(cs.map((c) => [c['id'] as string, c]));
@@ -894,7 +902,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
       rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
       rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
-      /* The staff moves of the player's characters into groups (0130): each with how it ended and the appeal's ruling on it. */
+      /* The staff moves of the player's characters into groups (0134): each with how it ended and the appeal's ruling on it. */
       rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
@@ -1115,8 +1123,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     /* The names anyone may read: staff in characters_public, which holds only the debuted. */
     async staffNames() {
-      const rowsOf = await list(() => client.from('characters_public').select('staff,name').not('staff', 'is', null));
-      return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? '') }] : []));
+      const rowsOf = await list(() => client.from('characters_public').select('id,staff,name').not('staff', 'is', null));
+      /* Their pronouns are their profiles': one more read of the same characters, public like the names. */
+      /* A failed read of the sets costs the sets, not the names: each then reads as the engine's it/its. */
+      const sets = new Map((await byChunks(rowsOf.map((x) => x['id'] as string), (part) => list(() => client.from('character_profiles').select('character,pronouns').in('character', part))).catch(() => [] as Row[])).map((p) => [p['character'], p['pronouns']]));
+      return rowsOf.flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? ''), pronouns: pronounsOrDefault(sets.get(x['id'])) }] : []));
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
@@ -1518,11 +1529,11 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         return null;
       }
     },
-    async beatMod(board): Promise<{ readonly mod: string; readonly board: string } | null> {
+    async beatMod(board): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null> {
       if (!idOk(board)) return null;
       try {
         const d = (await read(() => client.rpc('beat_mod_name', { in_board: board }))).data;
-        return isObject(d) && typeof d['mod'] === 'string' && typeof d['board'] === 'string' ? { mod: d['mod'], board: d['board'] } : null;
+        return isObject(d) && typeof d['mod'] === 'string' && typeof d['board'] === 'string' ? { mod: d['mod'], pronouns: pronounsOrDefault(d['pronouns']), board: d['board'] } : null;
       } catch {
         return null;
       }
@@ -1772,11 +1783,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),
     unmask: (character, thread, message) => act({ action: 'unmask', character, thread, message }, toAct),
-    createCharacter: (name, cls, timing, loudness) =>
-      act({ action: 'createCharacter', name, class: cls, timing, loudness }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
+    createCharacter: (name, cls, timing, loudness, pronouns) =>
+      act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
-    async setProfile(character, title, signature, pipStyle) {
-      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle }));
+    async setProfile(character, title, signature, pipStyle, pronouns) {
+      /* A null set keeps the stored one (set_profile, 0124). */
+      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns ?? null }));
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },
     async setAvatar(upload: AvatarUpload) {

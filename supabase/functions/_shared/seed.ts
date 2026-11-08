@@ -49,9 +49,9 @@ export function instanceSeed(instance: Instance) {
     })),
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
-    developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}) },
+    developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },
     boards: instance.boards.map((b) => ({ slug: b.slug, name: b.name, description: b.description, system: b.system === true })),
-    // The member groups (0124): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
+    // The member groups (0128): the ladder, lowest first with each rung's index, then the groups a move confers with their tone. `condition` is the kind
     // (engine/rules/groups.ts CONDITION_KINDS), `atLeast` its count where it has one. seed_instance upserts them into group_kinds.
     groups: [
       ...instance.groups.ladder.map((r, i) => ({ key: r.key, name: r.name, ...(r.badge !== undefined ? { badge: r.badge } : {}), color: r.color, stripe: r.stripe === true, source: 'ladder' as const, rung: i,
@@ -68,7 +68,9 @@ export function instanceSeed(instance: Instance) {
         // `visitHours` and `challenge` are what a persona's visits are like (0105): the hours it runs them and what talks it down. A quiz's challenge carries how many
         // questions it has and never one of them or its answer. The questions and answers travel beside it in `quiz` (0108), which seed_instance writes where no client can read it.
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
-          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness) })),
+          visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness),
+          // A persona's own pronouns (0124); left out, seed_instance gives it the instance's default.
+          ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The first season's Boss, set on an open season that has none (0047).

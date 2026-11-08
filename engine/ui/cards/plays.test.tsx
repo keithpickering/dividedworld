@@ -256,7 +256,7 @@ describe('the default view', () => {
     expect(defaultView(rules, { describe: () => 'No full stop here' }, settings).state).toBe('No full stop here');
   });
   test('says the card\'s status in place of its summary, from the plays it has when the status is a function of them', () => {
-    expect(defaultView(rules, { status: 'Sparkling every post of theirs', summary: 'Cast on a character.', describe: () => 'x' }, settings).state).toBe('Sparkling every post of theirs');
+    expect(defaultView(rules, { status: 'Sparkling every post by that character', summary: 'Cast on a character.', describe: () => 'x' }, settings).state).toBe('Sparkling every post by that character');
     const stacked = { status: (plays: readonly unknown[]) => `${plays.length} of 3 stacked`, describe: () => 'x' };
     expect(defaultView(rules, stacked, settings, undefined, [{}, {}] as never).state).toBe('2 of 3 stacked');
     expect(defaultView(rules, stacked, settings).state).toBe('0 of 3 stacked');

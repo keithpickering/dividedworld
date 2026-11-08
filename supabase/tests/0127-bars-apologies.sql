@@ -1,4 +1,4 @@
--- The bar and the apology (supabase/migrations/0126_bars_apologies.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 6).
+-- The bar and the apology (supabase/migrations/0130_bars_apologies.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 6).
 --
 -- 1. barred(character, board) reads bars_now: true for the barred mask on that board only, false for the player's other mask, for another board, and for a move past its expiry
 --    that the tick has not ended yet.

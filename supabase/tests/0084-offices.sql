@@ -36,7 +36,7 @@ create function pg_temp.rows(k text) returns text language sql security definer 
   select coalesce(string_agg(office || ':' || cause, ',' order by id), '') from staff_offices where staff = k $$;
 -- (Read as the superuser's definer: a waiting persona's row is not readable by the admin's own role, which is the point.)
 create function pg_temp.roster_with_names(roster text[]) returns jsonb language sql security definer as $$
-  select jsonb_agg(jsonb_build_object('staff', r.staff, 'name', c.name, 'office', o.office) order by r.ord)
+  select jsonb_agg(jsonb_build_object('staff', r.staff, 'name', c.name, 'pronouns', (select p.pronouns from character_profiles p where p.character = c.id), 'office', o.office) order by r.ord)
   from unnest(roster) with ordinality r(staff, ord) join characters c on c.staff = r.staff join staff_office_now o on o.staff = r.staff $$;
 create function pg_temp.boss() returns text language sql as $$ select boss from seasons where ends_at is null $$;
 create function pg_temp.roll() returns jsonb language sql as $$
@@ -76,7 +76,7 @@ begin
   if seen is distinct from 'boss' or (select office from characters_public where staff = 'of-mod') is distinct from 'mod' then raise exception 'characters_public does not show the office: %', seen; end if;
   -- The seed writes the log once, for the first staff.
   if pg_temp.rows('of-mod') is distinct from 'mod:seed' or exists (select 1 from staff_offices where staff <> 'of-mod') then raise exception 'the seed wrote % rows', (select count(*) from staff_offices); end if;
-  -- The staff group is the ladder's staff rung (0128): the seed writes no staffGroup setting, and screen_settings carries none an older seed left, so an instance seeded before it still boots.
+  -- The staff group is the ladder's staff rung (0132): the seed writes no staffGroup setting, and screen_settings carries none an older seed left, so an instance seeded before it still boots.
   if exists (select 1 from settings where key = 'staffGroup') then raise exception 'the seed wrote a staffGroup setting: %', (select value from settings where key = 'staffGroup'); end if;
   insert into settings (key, value) values ('staffGroup', '{"name": "Old Cores"}'::jsonb);
   if (select settings from screen_settings) ? 'staffGroup' then raise exception 'screen_settings still carries staffGroup'; end if;

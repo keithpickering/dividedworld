@@ -22,7 +22,7 @@ const manifest: BoardManifest = {
     { id: 'row-aura', role: 'text', name: '+0.35', within: 'table', box: 'none', type: false },
     { id: 'row-wallet', role: 'text', name: '4.72', within: 'table', box: 'position', type: false },
     { id: 'hide', role: 'button', name: 'HIDE POSTS', buildName: 'Hide posts', within: 'table', box: 'none', type: false },
-    { id: 'reason-1', role: 'text', name: 'Drew heat: excited, negative reactions to its posts and cards', within: 'table', origin: 'hide', originEdge: 'bottom', box: 'position', type: false },
+    { id: 'reason-1', role: 'text', name: 'Drew heat: excited, negative reactions to its posts and cards', buildName: "Drew heat: excited, negative reactions to the character's posts and cards", within: 'table', origin: 'hide', originEdge: 'bottom', box: 'position', type: false },
     { id: 'reason-1-amount', role: 'text', name: '+0.20', within: 'table', origin: 'hide', originEdge: 'bottom', box: 'position', type: false, buildShift: { x: 9.3 } },
     { id: 'share-1', role: 'text', name: 'your post #43', within: 'table', origin: 'hide', originEdge: 'bottom', box: 'position', type: false },
     { id: 'share-1-kind', role: 'text', name: 'HEAT', within: 'table', origin: 'hide', originEdge: 'bottom', box: 'position', type: false, buildShift: { x: 9.3 } },

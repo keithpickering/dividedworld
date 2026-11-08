@@ -87,7 +87,8 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
 
 /*
  * The selected character's panel keeps a readable measure on a wide layout: its buttons and its label/value
- * rows do not stretch across the whole content width. It is capped in em (52em) and stays full width on the phone.
+ * rows do not stretch across the whole content width. At 1440 it is the column beside the grid (the board's 500px);
+ * under the carousel it is capped in em (52em); on the phone it stays full width.
  */
 test('at 1440 the roster panel keeps a readable measure; at 390 it fills the width', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -97,8 +98,8 @@ test('at 1440 the roster panel keeps a readable measure; at 390 it fills the wid
   const wide = await panel.evaluate((el) => ({ width: el.getBoundingClientRect().width, cap: parseFloat(getComputedStyle(el).fontSize) * 56 }));
   expect(wide.width).toBeLessThanOrEqual(wide.cap);
   await page.setViewportSize({ width: 390, height: 844 });
-  const narrow = await panel.evaluate((el) => ({ width: el.getBoundingClientRect().width, parent: el.parentElement!.getBoundingClientRect().width }));
-  expect(narrow.width).toBeGreaterThanOrEqual(narrow.parent - 1);
+  /* The window's resize reaches the layout a frame or two later (the board's layout is set from it): read it once it has. */
+  await expect.poll(async () => panel.evaluate((el) => el.getBoundingClientRect().width - el.parentElement!.getBoundingClientRect().width)).toBeGreaterThanOrEqual(-1);
 });
 
 /*
@@ -209,7 +210,10 @@ const classGroup = (dialog: ReturnType<Page['locator']>) => dialog.getByRole('gr
 /** Which of the row's cards lie whole inside it, and which only partly, by their class key. */
 async function inView(dialog: ReturnType<Page['locator']>, group = classGroup(dialog)) {
   return group.locator('.kb-class-grid').evaluate((row) => {
-    const r = row.getBoundingClientRect();
+    /* Whole is inside the column the cards are counted in: the row's box, less the glow's room at each end. */
+    const box = row.getBoundingClientRect();
+    const s = getComputedStyle(row);
+    const r = { left: box.left + parseFloat(s.paddingLeft), right: box.right - parseFloat(s.paddingRight) };
     const whole: string[] = [];
     const part: string[] = [];
     for (const card of row.querySelectorAll<HTMLElement>('.kb-class-card')) {
@@ -370,16 +374,27 @@ async function fades(dialog: ReturnType<Page['locator']>) {
     return { before: px('before'), after: px('after') };
   });
 }
+/** How much of the glow's room the mask hides at each end, in whole px (the eased lengths). */
+async function rooms(dialog: ReturnType<Page['locator']>) {
+  return classGroup(dialog).locator('.kb-class-grid').evaluate((row) => {
+    const s = getComputedStyle(row);
+    return { before: Math.round(parseFloat(s.getPropertyValue('--kb-class-room-before'))), after: Math.round(parseFloat(s.getPropertyValue('--kb-class-room-after'))), room: Math.round(parseFloat(s.paddingLeft)) };
+  });
+}
+
 /**
- * How much of a card shows inside the row, in whole px, measured from the boxes. A box is in viewport pixels and the fade in the
- * row's own CSS pixels, which the Main board's `zoom` (--kb-board-scale) scales: below 1 wherever the root is narrower than 1440,
- * as a classic scrollbar makes it at a 1440 window, a 52px peek is a 51.46px box. So the box is read back at the row's zoom.
+ * How much of a card shows inside the row's column (its box less the glow's room), in whole px, measured from the boxes. A box is in viewport
+ * pixels and the fade in the row's own CSS pixels, which the Main board's `zoom` (--kb-board-scale) scales: below 1 wherever the root is narrower
+ * than 1440, as a classic scrollbar makes it at a 1440 window, a 52px peek is a 51.46px box. So the room is scaled to the box, and the box read
+ * back at the row's zoom.
  */
 async function showing(dialog: ReturnType<Page['locator']>, key: string) {
   return classGroup(dialog).locator('.kb-class-grid').evaluate((row, k) => {
-    const r = row.getBoundingClientRect();
-    const c = row.querySelector(`[data-kb-class="${k}"]`)!.getBoundingClientRect();
+    const box = row.getBoundingClientRect();
+    const st = getComputedStyle(row);
     const zoom = (row as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom ?? 1;
+    const r = { left: box.left + parseFloat(st.paddingLeft) * zoom, right: box.right - parseFloat(st.paddingRight) * zoom };
+    const c = row.querySelector(`[data-kb-class="${k}"]`)!.getBoundingClientRect();
     return Math.max(0, Math.round((Math.min(r.right, c.right) - Math.max(r.left, c.left)) / zoom));
   }, key);
 }
@@ -403,8 +418,10 @@ test('the fade covers only a peeking card, at its start and its end, and never a
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(200, 0);
   await expect(group.getByText('2–2 of 6')).toBeVisible();
-  // Snapped to the Heel, nothing of the Face shows: no fade at its start; the Jabroni peeks at its end.
+  // The Jabroni peeks at its end.
+  // Snapped to the Heel, nothing of the Face shows in the column: no fade at its start, and the glow's room there is hidden (cards lie before it).
   await expect.poll(async () => (await fades(phone)).before).toBe(0);
+  await expect.poll(async () => (await rooms(phone)).before).toBeGreaterThan(0);
   // The status text and `before` settle the moment the Heel is the first card shown, while the snap is still gliding;
   // the Jabroni's peek grows with the scroll, so wait for the glide to land before reading how much of it shows.
   await expect.poll(async () => (await fades(phone)).after).toBeGreaterThan(40);
@@ -423,7 +440,165 @@ test('on a phone, choosing the Tweener on New character counts 5–5 of 6 and fa
   await expect(group.getByText('5–5 of 6')).toBeVisible();
   const row = group.locator('.kb-class-grid');
   await expect.poll(async () => (await inView(group, group)).whole).toEqual(['tweener']);
-  // The glide has landed; the fade at the row's start is none, since the Technician lies wholly out of view.
+  // The glide has landed; the fade at the row's start is none, since the Technician lies wholly out of the column.
   await expect.poll(async () => row.evaluate((el) => (el.hasAttribute('data-kb-peek-before') ? parseFloat(getComputedStyle(el).getPropertyValue('--kb-class-peek-before')) : 0))).toBe(0);
   await expect(group.getByText('5–5 of 6')).toBeVisible();
+});
+
+/*
+ * The row keeps room for a glow at its ends (docs/plans/2026-11-07-carousel-edges-design.md, section 1): the chosen card
+ * at the start has its glow inside the row's box, which reaches past the column its cards stand in, and the card still
+ * stands at the column's edge, under the legend.
+ */
+test('the chosen card at the row\'s start has room for its glow inside the row, and stands where it stood', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  const group = classGroup(dialog);
+  await group.getByRole('radio', { name: 'Face' }).check();
+  const got = await group.evaluate((g) => {
+    const row = g.querySelector('.kb-class-grid')!.getBoundingClientRect();
+    const card = g.querySelector('[data-kb-class="face"]')!.getBoundingClientRect();
+    const legend = g.querySelector('legend')!.getBoundingClientRect();
+    return { room: card.left - row.left, aligned: card.left - legend.left };
+  });
+  expect(got.room).toBeGreaterThanOrEqual(30);
+  expect(Math.abs(got.aligned)).toBeLessThanOrEqual(1);
+});
+
+/* The fade eases (section 2): its two lengths follow the measured peeks over a transition, and at once under reduced motion. */
+async function fadeMotion(dialog: ReturnType<Page['locator']>) {
+  return classGroup(dialog).locator('.kb-class-grid').evaluate((row) => {
+    const s = getComputedStyle(row);
+    const props = s.transitionProperty.split(',').map((p) => p.trim());
+    const durations = s.transitionDuration.split(',').map((d) => parseFloat(d));
+    const of = (name: string) => { const i = props.indexOf(name); return i < 0 ? null : durations[i % durations.length]; };
+    return { before: of('--kb-class-fade-before'), after: of('--kb-class-fade-after'), fade: Math.round(parseFloat(s.getPropertyValue('--kb-class-fade-after'))), peek: Math.round(parseFloat(s.getPropertyValue('--kb-class-peek-after'))) };
+  });
+}
+
+test('the fade eases to the peek it is drawn over, and under reduced motion follows it at once', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  const eased = await fadeMotion(dialog);
+  expect(eased.before).toBeGreaterThan(0);
+  expect(eased.after).toBeGreaterThan(0);
+  await expect.poll(async () => { const m = await fadeMotion(dialog); return m.fade === m.peek && m.peek > 0; }).toBe(true);
+  /* The mask is drawn over the eased length, not the measured one, and not some other. */
+  const row = classGroup(dialog).locator('.kb-class-grid');
+  expect(await row.evaluate((el) => getComputedStyle(el).maskImage)).toContain(`${32 + (await fadeMotion(dialog)).fade}px`);
+
+  /*
+   * The peek at the end dropped to none (as when the Tweener comes whole): a transition runs on the fade's length, and
+   * halfway through it the length lies between where it was and none. (An unregistered length would not ease at all.)
+   */
+  const was = (await fadeMotion(dialog)).peek;
+  const mid = await row.evaluate((el) => {
+    el.style.setProperty('--kb-class-peek-after', '0px');
+    getComputedStyle(el).getPropertyValue('--kb-class-fade-after');
+    const t = el.getAnimations().find((a) => (a as CSSTransition).transitionProperty === '--kb-class-fade-after') as CSSTransition | undefined;
+    if (!t) return null;
+    t.pause();
+    t.currentTime = 100;
+    return parseFloat(getComputedStyle(el).getPropertyValue('--kb-class-fade-after'));
+  });
+  expect(mid).not.toBeNull();
+  expect(mid!).toBeGreaterThan(0);
+  expect(mid!).toBeLessThan(was);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const reduced = await fadeMotion(dialog);
+  /* No transition at all (`none`) or one of no length: either way the fade follows at once. */
+  expect(reduced.before ?? 0).toBe(0);
+  expect(reduced.after ?? 0).toBe(0);
+});
+
+/*
+ * Where the page has room, the roster is the Roster board's grid of three with its panel beside it (section 3): New
+ * character takes the next slot, and a row of three never overflows, so there is no count and no arrows.
+ */
+for (const width of [1440, 1280]) test(`at ${width} the roster is three across with New character in the next slot and the panel beside it`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 1000 });
+  await page.goto('/characters');
+  const tablist = page.getByRole('tablist', { name: /^Roster, /u });
+  await tablist.getByRole('tab', { name: /^Pipewrench/u }).click();
+  const got = await page.evaluate(() => {
+    const box = (el: Element | null) => { const b = el!.getBoundingClientRect(); return { left: Math.round(b.left), top: Math.round(b.top), right: Math.round(b.right), width: Math.round(b.width) }; };
+    const tabs = [...document.querySelectorAll('[role="tablist"] [role="tab"]')].map(box);
+    return { tabs, add: box(document.querySelector('.kb-roster-new')), panel: box(document.querySelector('[role="tabpanel"]')) };
+  });
+  expect(got.tabs.length).toBe(2);
+  const [a, b] = got.tabs as [typeof got.add, typeof got.add];
+  expect(b.top).toBe(a.top);
+  expect(Math.abs((b.left - a.left) - (got.add.left - b.left))).toBeLessThanOrEqual(1);
+  expect(got.add.top).toBe(a.top);
+  /* 32px of the board's, drawn at the board's scale (1280 / 1440 at 1280). */
+  expect(got.panel.left - got.add.right).toBeGreaterThanOrEqual(Math.floor(32 * Math.min(1, width / 1440)) - 1);
+  expect(Math.abs(got.panel.top - a.top)).toBeLessThanOrEqual(40);
+  await expect(page.getByRole('button', { name: 'More characters' })).toHaveCount(0);
+});
+
+test('on the Phone board\'s layout at 1024 the roster is still a carousel with its panel under it', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.goto('/characters');
+  const tablist = page.getByRole('tablist', { name: /^Roster, /u });
+  await tablist.getByRole('tab', { name: /^Pipewrench/u }).click();
+  const got = await page.evaluate(() => ({
+    layout: document.documentElement.dataset.kbLayout,
+    row: getComputedStyle(document.querySelector('.kb-roster-carousel .kb-class-grid')!).overflowX,
+    rowFoot: document.querySelector('.kb-roster-carousel')!.getBoundingClientRect().bottom,
+    panelTop: document.querySelector('[role="tabpanel"]')!.getBoundingClientRect().top,
+  }));
+  expect(got.layout).toBe('phone');
+  expect(got.row).toBe('auto');
+  expect(got.panelTop).toBeGreaterThan(got.rowFoot);
+});
+
+/*
+ * On a phone the row's glow room is no more than the dialog's own padding, so the Turn's overlay never scrolls sideways
+ * (the row reaching past what the dialog holds would make the overlay's scrollport wider than the window).
+ */
+test('on a phone the Turn dialog never scrolls sideways', async ({ page }) => {
+  const dialog = await openTurnAt(page, 390, 844);
+  await expect(classGroup(dialog).getByText('1–1 of 6')).toBeVisible();
+  const over = await page.locator('.kb-glass-overlay').evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(over).toBeLessThanOrEqual(0);
+  /* Nor does the row reach the dialog's frame: the ring is drawn inside the dialog's box, a border thick, and the row stops a border short of it. */
+  const gap = await dialog.evaluate((d) => {
+    const frame = d.closest('.kb-glass-dialog') ?? d;
+    const ring = parseFloat(getComputedStyle(frame).getPropertyValue('--kb-border')) || 0;
+    const f = frame.getBoundingClientRect();
+    const r = d.querySelector('.kb-class-grid')!.getBoundingClientRect();
+    return Math.min(r.left - f.left, f.right - r.right) - 2 * ring;
+  });
+  expect(gap).toBeGreaterThanOrEqual(-0.5);
+});
+
+/* From 150% text the page is the Phone board's one column at any width, so the roster is the carousel there too, however wide the window. */
+test('at 150% text on a wide window the roster stays a carousel with its panel under it', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/characters');
+  await page.waitForFunction(() => '__kbFake' in globalThis);
+  await page.evaluate(async () => { await (globalThis as unknown as { __kbFake: { setPreferences(p: { textSize: number }): Promise<void> } }).__kbFake.setPreferences({ textSize: 150 }); });
+  await page.goto('/characters');
+  await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
+  const got = await page.evaluate(() => ({
+    layout: document.documentElement.dataset.kbLayout,
+    row: getComputedStyle(document.querySelector('.kb-roster-carousel .kb-class-grid')!).overflowX,
+    rowFoot: document.querySelector('.kb-roster-carousel')!.getBoundingClientRect().bottom,
+    panelTop: document.querySelector('[role="tabpanel"]')!.getBoundingClientRect().top,
+  }));
+  expect(got.layout).toBe('phone');
+  expect(got.row).toBe('auto');
+  expect(got.panelTop).toBeGreaterThan(got.rowFoot);
+});
+
+/*
+ * The glow's room is drawn only at an end where no card lies beyond (section 1): there the chosen card's glow shows; where a
+ * card lies past the column, the room is hidden by the mask, so no card's words or edge are drawn outside the column.
+ */
+test('the glow\'s room shows at an end with nothing beyond it, and is hidden at an end with a card past it', async ({ page }) => {
+  const dialog = await openTurnAt(page, 1440);
+  await expect.poll(async () => rooms(dialog)).toEqual({ before: 0, after: 32, room: 32 });
+  await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
+  await expect.poll(async () => rooms(dialog)).toEqual({ before: 32, after: 0, room: 32 });
+  const mask = await classGroup(dialog).locator('.kb-class-grid').evaluate((el) => getComputedStyle(el).maskImage);
+  expect(mask).toMatch(/^linear-gradient\(90deg, rgba\(0, 0, 0, 0\) 32px, /u);
 });

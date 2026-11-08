@@ -1,4 +1,4 @@
--- A Mod's move confers a group (supabase/migrations/0132_mod_groups.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 13).
+-- A Mod's move confers a group (supabase/migrations/0136_mod_groups.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 13).
 --
 -- 1. apply_mod_move queues a Mod's punishment on a board of its beat with the apology demand, spending one allowance; without the demand the guard refuses it; the guard still
 --    refuses a favor, a board off the Mod's beat and a held character.

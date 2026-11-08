@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { AnnounceLine, UnmaskLine } from '../thread/lines.tsx';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { debutPreview, revealPreview, turnPreview } from './previews.ts';
 
 afterEach(cleanup);
@@ -10,7 +11,7 @@ afterEach(cleanup);
 const text = (lines: readonly { text: string }[]) => lines.map((l) => l.text);
 
 describe('the preview of a debut', () => {
-  const base = { name: 'Pipewrench', className: 'Face' };
+  const base = { name: 'Pipewrench', className: 'Face', pronouns: PRONOUN_PRESETS.it };
 
   test('silent says nothing is posted, and names no class', () => {
     for (const timing of ['tally', 'now'] as const) {
@@ -19,6 +20,12 @@ describe('the preview of a debut', () => {
       expect(p.nothing).toMatch(/Nothing is posted/u);
       expect(JSON.stringify(p)).not.toContain('Face');
     }
+  });
+
+  test('a silent debut names the character\'s own pronouns, verbs agreeing, and no other set', () => {
+    expect(debutPreview({ ...base, pronouns: PRONOUN_PRESETS.she, timing: 'now', loudness: 'silent' }).nothing).toBe('Nothing is posted. Pipewrench is on the board at once, and her first post is her entrance.');
+    expect(debutPreview({ ...base, pronouns: PRONOUN_PRESETS.they, timing: 'now', loudness: 'silent' }).nothing).toBe('Nothing is posted. Pipewrench is on the board at once, and their first post is their entrance.');
+    expect(debutPreview({ ...base, timing: 'now', loudness: 'silent' }).nothing).toBe('Nothing is posted. Pipewrench is on the board at once, and its first post is its entrance.');
   });
 
   test('announced names the character and never its class', () => {
@@ -78,8 +85,8 @@ describe('the preview and the thread say the same words', () => {
   };
 
   test('a debut', () => {
-    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', timing: 'tally', loudness: 'announced' }).lines)[0]).toBe(lineOf({ what: 'debut' }));
-    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', timing: 'tally', loudness: 'with_class' }).lines)[0]).toBe(lineOf({ what: 'debut', class: 'face' }));
+    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', pronouns: PRONOUN_PRESETS.it, timing: 'tally', loudness: 'announced' }).lines)[0]).toBe(lineOf({ what: 'debut' }));
+    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', pronouns: PRONOUN_PRESETS.it, timing: 'tally', loudness: 'with_class' }).lines)[0]).toBe(lineOf({ what: 'debut', class: 'face' }));
   });
 
   test('a Turn, naming neither class, one or both', () => {
@@ -127,7 +134,7 @@ describe('the preview of a reveal', () => {
 
 describe('from the Task 9 spec review', () => {
   test('a preview that names a class before one is chosen says so, never a blank', () => {
-    const p = debutPreview({ name: 'Spritey', className: '', timing: 'tally', loudness: 'with_class' });
+    const p = debutPreview({ name: 'Spritey', className: '', pronouns: PRONOUN_PRESETS.it, timing: 'tally', loudness: 'with_class' });
     expect(p.lines.map((l) => l.text)).toEqual(['Spritey debuts as a (the class you choose).']);
   });
 });

@@ -16,6 +16,7 @@
  */
 import { AnimatePresence, motion, useIsPresent } from 'motion/react';
 import { useEffect, useId, useMemo, useState, type ComponentProps } from 'react';
+import { words } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, MyCharacter, MyCharactersPage } from '../data/api.ts';
@@ -45,7 +46,7 @@ import { Layers } from '../glass/layer.tsx';
 type Dialog =
   | { readonly kind: 'turn' | 'reveal' | 'drop' | 'debut'; readonly id: Id };
 
-const LOUD = { silent: 'silently', announced: 'announced', with_class: 'announced, with its class' } as const;
+const LOUD = (their: string) => ({ silent: 'silently', announced: 'announced', with_class: `announced, with ${their} class` }) as const;
 
 /** Where focus goes when the control that opened a dialog has been replaced by the dialog's own result. */
 const returnTo = (id: Id) => () => document.querySelector<HTMLElement>(`[data-kb-character="${id}"] [data-kb-return]`);
@@ -213,8 +214,8 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   };
 
   const turnCell = (c: MyCharacter) => {
-    if (c.retiredAt !== null) return <p className="kb-roster-line">Retired. An admin can restore it.</p>;
-    if (c.debutedAt === null) return <p className="kb-roster-line">It can Turn once it has debuted.</p>;
+    if (c.retiredAt !== null) return <p className="kb-roster-line">Retired. An admin can restore {words(c.pronouns).them}.</p>;
+    if (c.debutedAt === null) return <p className="kb-roster-line">{words(c.pronouns).They} can Turn once {words(c.pronouns).they} {words(c.pronouns).has} debuted.</p>;
     if (c.pendingTurn) {
       const p = c.pendingTurn;
       const when = p.takesEffectAt ?? next;
@@ -223,7 +224,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
         <div className="kb-roster-pending">
           <p className="kb-turn-pending"><b>Turn waiting</b>: to {className(p.class)}, {named}.</p>
           <p className="kb-roster-line kb-turn-when">Takes effect at the next settlement{when ? `, ${dayAndTime(when)}` : ''}.</p>
-          <p className="kb-roster-line kb-turn-note">If its settlement is due, a reveal waits until it has run.</p>
+          <p className="kb-roster-line kb-turn-note">If the settlement is due, a reveal waits until it has run.</p>
           <ButtonRow>
             <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
             <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} busy={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
@@ -279,7 +280,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <div className="kb-character-waiting">
             <p className="kb-roster-line">
               <span>Waiting to debut at the next settlement{next ? `, ${dayAndTime(next)}` : ''}.</span>
-              <span> It will debut {LOUD[c.debutLoudness ?? 'announced']}.</span>
+              <span> {words(c.pronouns).They} will debut {LOUD(words(c.pronouns).their)[c.debutLoudness ?? 'announced']}.</span>
             </p>
             <ButtonRow>
               <GlassButton data-kb-return="" onClick={() => show({ kind: 'drop', id: c.id })}>Drop {c.name} now…</GlassButton>
@@ -291,7 +292,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <dt>Class</dt>
           <dd>
             <ClassChip cls={c.class} name={className(c.class)} />{' '}
-            {c.debutedAt === null ? '(chosen when it was made)' : `since ${shortDate(c.classSince)}`}{' '}
+            {c.debutedAt === null ? `(chosen when ${words(c.pronouns).they} ${words(c.pronouns).was} made)` : `since ${shortDate(c.classSince)}`}{' '}
             <span className="kb-private">only you</span>
           </dd>
           {before && <><dt>Was</dt><dd>{className(before)}, announced publicly</dd></>}
@@ -327,7 +328,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
                 <option value="hidden">Hidden</option>
               </select>
             </label>
-            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. While you post as it, only you see it there.</p>
+            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. While you post as {words(c.pronouns).them}, only you see {words(c.pronouns).them} there.</p>
           </>
         )}
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}

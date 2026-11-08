@@ -18,6 +18,7 @@
  * A settlement's row says the player's characters' lines; its wallet is the account's, every
  * character's lines together, and the summary says so beside one character's reasons.
  */
+import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { Act, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
@@ -263,6 +264,7 @@ function scoredWords(lines: readonly LogLine[], words: Words): string {
 export function logRows(data: LogData, words: Words, cap: number, tab: Id | null): readonly LogRow[] {
   const { instance } = words;
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const inTab = (ids: readonly Id[]) => tab === null || ids.length === 0 || ids.includes(tab);
   const settlementWallet = new Map<number, WalletEvent>();
   for (const e of data.log.wallet) if (e.kind === 'settlement' && e.settlement !== null) settlementWallet.set(e.settlement, e);
@@ -303,7 +305,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
         const act = data.acts.get(t.announced.act);
         const title = act ? data.titles.get(act.thread) : undefined;
         const where: Segment = act && title ? { text: title, href: act.seq !== null ? threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) : threadHref(act.thread, 1) } : 'the board';
-        details.push(` Announced ${t.announced.was ? 'with its old class ' : ''}in `, where, '.');
+        details.push(` Announced ${t.announced.was ? `with ${pronounsOf(t.character).their} old class ` : ''}in `, where, '.');
       } else {
         details.push(' A silent Turn: no one else was told.');
       }
@@ -392,6 +394,7 @@ function groupRows(data: LogData, words: Words): LogRow[] {
 function modRows(data: LogData, words: Words): LogRow[] {
   const now = Date.now();
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
   const rows: LogRow[] = [];
 
@@ -412,7 +415,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
     const over = Date.parse(b.until) <= now;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
-      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so it was banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. It can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
+      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
       aura: 0, wallet: null, characters: [b.character],
       ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
     });

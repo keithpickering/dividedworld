@@ -22,6 +22,8 @@
  *    the phone, as the board draws none.
  *  - The profile's Group row (docs/plans/2026-11-06-member-groups-design.md, the member groups plan's Task 12) stands after Rank, which the board, drawn
  *    before it, does not hold: every fact under it and the signature stand GROUP_ROW lower.
+ *  - The profile's Pronouns row (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md) is the build's and not the board's: it stands after the rank and
+ *    the title, so every fact under it, the class and the signature stand a row (32.9px) lower again than the shifts the departure above gives them.
  *  - The title stands 53px lower and the kinds 56px (the banner and the crumb stand lower than the board draws them, as in 03-phone and 07-phone, and the
  *    build's crumb is a line taller); the kinds' x is not compared, since the build's links are spaced by their gap and the board's buttons by their padding.
  */
@@ -48,14 +50,14 @@ const manifest: BoardManifest = {
       { id: 'title', role: 'heading', name: 'Spritey', buildShift: { y: 52.6 } },
       { id: 'rank', role: 'text', name: 'Main Eventer', box: 'position', buildShift: { x: 15.8, y: 53.6 } },
       { id: 'level', role: 'text', name: 'Level editor guy', box: 'position', buildShift: { x: 7.8, y: 57.6 } },
-      { id: 'fact-aura', role: 'rowheader', name: 'Aura this season', box: 'position', buildShift: { y: 39.6 + GROUP_ROW } },
-      { id: 'fact-place', role: 'rowheader', name: 'Place', box: 'position', buildShift: { y: 39.6 + GROUP_ROW } },
-      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { y: 39.6 + GROUP_ROW } },
-      { id: 'fact-spun', role: 'rowheader', name: 'Threads spun', box: 'position', buildShift: { y: 39.6 + GROUP_ROW } },
-      { id: 'fact-cards', role: 'rowheader', name: 'Cards played', box: 'position', buildShift: { y: 39.6 + GROUP_ROW } },
-      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { y: 39.6 + GROUP_ROW } },
-      { id: 'fact-class', role: 'rowheader', name: 'Class', box: 'position', buildShift: { y: -13.3 + GROUP_ROW } },
-      { id: 'signature', role: 'text', name: 'posting in pencil since 2003', box: 'position', buildShift: { y: -11.1 + GROUP_ROW } },
+      { id: 'fact-aura', role: 'rowheader', name: 'Aura this season', box: 'position', buildShift: { y: 72.5 + GROUP_ROW } },
+      { id: 'fact-place', role: 'rowheader', name: 'Place', box: 'position', buildShift: { y: 72.5 + GROUP_ROW } },
+      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { y: 72.5 + GROUP_ROW } },
+      { id: 'fact-spun', role: 'rowheader', name: 'Threads spun', box: 'position', buildShift: { y: 72.5 + GROUP_ROW } },
+      { id: 'fact-cards', role: 'rowheader', name: 'Cards played', box: 'position', buildShift: { y: 72.5 + GROUP_ROW } },
+      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { y: 72.5 + GROUP_ROW } },
+      { id: 'fact-class', role: 'rowheader', name: 'Class', box: 'position', buildShift: { y: 19.6 + GROUP_ROW } },
+      { id: 'signature', role: 'text', name: 'posting in pencil since 2003', box: 'position', buildShift: { y: 21.9 + GROUP_ROW } },
     ],
   }],
 };

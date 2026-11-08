@@ -23,6 +23,7 @@
  * does not show again after either way out.
  */
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -142,9 +143,9 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 <span className="kb-settled-turn-now kb-glass-display">{className(turn.classNow)}</span>
               </div>
               <p className="kb-settled-card-words">
-                {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement it scores as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
+                {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement {pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).they} score{pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).s} as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
                 {turn.announced
-                  ? <>Its own Promo announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <GlassLink to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</GlassLink> : 'the board'}.</>
+                  ? <>{pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).Their} own Promo announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <GlassLink to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</GlassLink> : 'the board'}.</>
                   : 'It was a silent Turn: no one else was told.'}
               </p>
             </section>

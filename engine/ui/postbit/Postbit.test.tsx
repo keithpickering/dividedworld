@@ -7,10 +7,11 @@ import { monthYear, shortDate } from './dates.ts';
 import { Postbit, Signature, type PostbitPerson } from './Postbit.tsx';
 import { reveals } from './reveals.ts';
 import { axeViolations, describeViolations } from '../a11y.ts';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Pipewrench', title: 'Professional Wrench', signature: '', avatarSquare: 'sq.webp', avatarPortrait: 'tall.webp',
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01', group: 'members', ...over,
+  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
   character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,

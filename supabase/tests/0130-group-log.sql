@@ -1,9 +1,9 @@
--- The log's group lines (supabase/migrations/0130_group_log.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 11).
+-- The log's group lines (supabase/migrations/0134_group_log.sql; docs/plans/2026-11-06-member-groups-plan.md, Task 11).
 --
 -- 1. my_group_moves gives a player a row for each conferGroup move on their own characters, and no one else's; a visitor reads none. log_page's groupMoves holds the same rows.
 -- 2. A row carries what the line needs: the group, the board and its name, the check, the office the move landed under (its stamp), and an expiry read through move_expires_at.
 -- 3. Each end shows (met, expired, reversed, unmet, overturned) with who ended it; a move still running has none.
--- 4. An appeal's ruling on the move, through open_appeal and close_appeal (0131), shows its verdict, when and the end it set, each of the four verdicts; a move appealed twice
+-- 4. An appeal's ruling on the move, through open_appeal and close_appeal (0135), shows its verdict, when and the end it set, each of the four verdicts; a move appealed twice
 --    (the first refunded) is still one row.
 -- 5. A move of another kind is not a row, and a row never names another member of a group.
 
@@ -45,7 +45,7 @@ begin
   return r;
 end $$;
 
--- The appeal and its ruling through the real doors (0131): the player's open_appeal, the service's close_appeal. Each is an assertion that the door took it.
+-- The appeal and its ruling through the real doors (0135): the player's open_appeal, the service's close_appeal. Each is an assertion that the door took it.
 create function pg_temp.opened(c uuid, m uuid) returns uuid language plpgsql as $$
 declare r text := pg_temp.as_val(pg_temp.owner(c), format('select open_appeal(%L, %L, %L) ->> %L', c, m, 'I did nothing wrong.', 'appeal'));
 begin
@@ -114,6 +114,7 @@ declare
   m_upl uuid := pg_temp.landed('gl-mod', mask, 'trialMembers', interval '2 days', null, null, interval '10 days');
   r record;
   n integer;
+  cut timestamptz;
   first_appeal uuid;
   lost text;
   ann uuid := pg_temp.announcements();
@@ -143,11 +144,29 @@ begin
   if exists (select 1 from my_group_moves where move = theirs) then raise exception 'a player sees a move on another player''s character'; end if;
   if exists (select 1 from my_group_moves where character = two) then raise exception 'a player sees another player''s character in the log'; end if;
   if (select count(*) from my_group_moves where character = mask) is distinct from 4::bigint then raise exception 'the other mask''s moves are not all here'; end if;
-  -- The one-read Log (log_page, 0123 as 0130 redefines it) carries the same rows as its `groupMoves` source, newest first.
+  -- The one-read Log (log_page, 0125 as 0134 redefines it) carries the same rows as its `groupMoves` source, newest first.
   if log_page(null) #> '{sources,groupMoves}' is distinct from (select jsonb_agg(to_jsonb(g) order by g.at desc, g.move) from (
        select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until
        from my_group_moves v) g) or jsonb_array_length(log_page(null) #> '{sources,groupMoves}') is distinct from 10 then
     raise exception 'log_page''s groupMoves is not the player''s group moves: %', log_page(null) #> '{sources,groupMoves}';
+  end if;
+  -- A page cut at a move's own instant holds that move: the cursor is `at <= before`, as every other source's is, so the row the cut names is not lost between pages.
+  cut := (select v.at from my_group_moves v order by v.at, v.move offset 4 limit 1);
+  if log_page(cut) #> '{sources,groupMoves}' is distinct from (select jsonb_agg(to_jsonb(g) order by g.at desc, g.move) from (
+       select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until
+       from my_group_moves v where v.at <= cut) g)
+     or not exists (select 1 from jsonb_array_elements(log_page(cut) #> '{sources,groupMoves}') x where (x ->> 'at')::timestamptz = cut) then
+    raise exception 'log_page(cut)''s groupMoves is not the moves at or before the cut %: %', cut, log_page(cut) #> '{sources,groupMoves}';
+  end if;
+  -- The one-read Characters screen and boot read my_characters whole: each character carries its pronouns (0125), its group and its bars (0128, 0133) together
+  -- (a fixture character has no profile row, so its pronouns are null here; supabase/tests/0118-pronouns-on-screens.sql reads their values on every screen).
+  if exists (select 1 from jsonb_array_elements(my_characters_page() -> 'characters') x where not (x ?& array['pronouns', 'group', 'bars']))
+     or jsonb_array_length(my_characters_page() -> 'characters') is distinct from 2 then
+    raise exception 'my_characters_page''s characters lost a column: %', my_characters_page() -> 'characters';
+  end if;
+  if exists (select 1 from jsonb_array_elements(boot() -> 'characters') x where not (x ?& array['pronouns', 'group', 'bars']))
+     or exists (select 1 from jsonb_array_elements(boot() -> 'faces') x where not (x ? 'group') or (jsonb_typeof(x -> 'profile') = 'object' and not (x -> 'profile' ? 'pronouns'))) then
+    raise exception 'boot''s characters or faces lost a column: %', boot();
   end if;
   perform tests.unbecome();
   perform tests.become(pg_temp.owner(two));

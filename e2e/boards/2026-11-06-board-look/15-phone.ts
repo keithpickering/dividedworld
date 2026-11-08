@@ -15,6 +15,8 @@
  *    labels and their places. The log's rows read as blocks, each date over its words with the end under them, which the story's words and dates fill.
  *    Its Group row (docs/plans/2026-11-06-member-groups-design.md, the member groups plan's Task 12) stands after Title, which the board, drawn before it,
  *    does not hold: every fact under it stands GROUP_ROW lower.
+ *  - The profile's Pronouns row (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md) is the build's and not the board's: it stands after the title, so
+ *    every fact under it stands a row (33px) lower than where the grid alone puts it.
  *  - The build's nav is a boards button where the board draws one; the banner and the crumb stand lower than the board draws them, as in 03-phone and 07-phone.
  */
 import type { BoardManifest } from '../../board-match.ts';
@@ -39,11 +41,11 @@ const manifest: BoardManifest = {
     build: { story: 'boards-14-staff--staff' },
     landmarks: [
       { id: 'title', role: 'heading', name: 'The Director', box: 'position', buildShift: { x: SCREEN, y: 52.6 } },
-      { id: 'fact-interests', role: 'rowheader', name: 'Interests', box: 'position', buildShift: { x: SCREEN, y: 40.5 + GROUP_ROW } },
-      { id: 'fact-mood', role: 'rowheader', name: 'Current mood', buildName: 'Current Mood', box: 'position', buildShift: { x: SCREEN, y: 40.5 + GROUP_ROW } },
-      { id: 'fact-career', role: 'rowheader', name: 'Career', box: 'position', buildShift: { x: SCREEN, y: 40.5 + GROUP_ROW } },
-      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { x: SCREEN, y: 40.5 + GROUP_ROW } },
-      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { x: SCREEN, y: 40.5 + GROUP_ROW } },
+      { id: 'fact-interests', role: 'rowheader', name: 'Interests', box: 'position', buildShift: { x: SCREEN, y: 73.5 + GROUP_ROW } },
+      { id: 'fact-mood', role: 'rowheader', name: 'Current mood', buildName: 'Current Mood', box: 'position', buildShift: { x: SCREEN, y: 73.5 + GROUP_ROW } },
+      { id: 'fact-career', role: 'rowheader', name: 'Career', box: 'position', buildShift: { x: SCREEN, y: 73.5 + GROUP_ROW } },
+      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { x: SCREEN, y: 73.5 + GROUP_ROW } },
+      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { x: SCREEN, y: 73.5 + GROUP_ROW } },
     ],
   }],
 };

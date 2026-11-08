@@ -59,7 +59,7 @@ begin
     if c -> 'face' is distinct from coalesce((
         select to_jsonb(cp) || jsonb_build_object('profile', (
           select to_jsonb(p) from (
-            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
             from character_profiles r where r.character = cp.id) p))
         from characters_public cp where cp.id = (c ->> 'id')::uuid), 'null'::jsonb) then
       raise exception 'face: %', c -> 'face';

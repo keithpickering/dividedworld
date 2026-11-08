@@ -23,7 +23,9 @@ const V = (n: number) => `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${n}`;
 
 interface Standing { office: string | null; allowance: number; order: string | null; beat: { id: string; name: string }[] }
 const mod = (allowance: number, over: Partial<Standing> = {}): Standing => ({ office: 'mod', allowance, order: 'Crack down on bumping in Games.', beat: [{ id: GAMES, name: 'Games' }], ...over });
-const post = (act: string, name = 'Bob', body = 'Odyssey. Odyssey.') => ({ act, thread: T1, title: 'Best Mario game?', board: GAMES, name, body });
+const THEY = { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true };
+/** A sampled post: Bob has a they/them profile; the others have no profile row (pronouns null), so they take the instance default. */
+const post = (act: string, name = 'Bob', body = 'Odyssey. Odyssey.') => ({ act, thread: T1, title: 'Best Mario game?', board: GAMES, name, pronouns: name === 'Bob' ? THEY : null, body });
 
 interface World {
   enabled?: boolean;
@@ -73,7 +75,7 @@ function fakeDb(w: World = {}) {
         case 'staff_career': return { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] } as T;
         case 'staff_memory_latest': case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return ['Games gets bumped.'] as T;
-        case 'pool_names': return {} as T;
+        case 'character_faces': return {} as T;
         case 'patrol_sample': return (w.sample ?? [post(P1), post(P2, 'Ann', 'Hello.'), post(P3, 'Cy', 'FRIDAY')]).slice(0, Number(args.most)) as T;
         case 'record_patrol_call': { state.records.push({ patrol: Number(args.patrol), staff: String(args.staff), record: args.record }); return { recorded: true, attempt: 1 } as T; }
         case 'patrol_record': { state.patrolRows.set(Number(args.patrol), { sampled: args.sampled as string[], outcome: args.outcome }); return null as T; }
@@ -119,6 +121,10 @@ test('a due patrol is judged once on the patrolJudge duty, light tier, as the Mo
   assert.match(c.system, /Crack down on bumping in Games\./, 'the Boss\'s order');
   assert.match(c.messages[0]!.content, /Talk about games\./);
   assert.match(c.messages[0]!.content, new RegExp(P1));
+  assert.match(c.messages[0]!.content, /by Bob \(they\/them\): "Odyssey/, 'an author is written with the pronouns the sample gave');
+  const def = dividedWorld.settings.pronouns;
+  assert.ok(c.messages[0]!.content.includes(`by Ann (${def.object === def.subject ? `${def.subject}/${def.determiner}` : `${def.subject}/${def.object}`}): "Hello."`), 'an author with no profile row takes the instance default');
+  assert.match(c.system, /Your pronouns are/, 'the Mod is told its own');
   assert.deepEqual(d.state.visits.map((v) => [v.post, v.staff, v.charge.cause, v.charge.patrol_id]), [[P1, MON, 'patrol', 1], [P3, MON, 'patrol', 1]]);
   assert.deepEqual(d.state.visits[0]!.charge, { rule_number: 2, board: GAMES, band: 'moderate', cause: 'patrol', about_act: P1, predicate: 'noDoublePost', rule: 'Rule 2: no double posting', patrol_id: 1 });
   assert.deepEqual(d.state.visits[1]!.charge, { rule_number: null, board: GAMES, band: 'moderate', cause: 'patrol', about_act: P3, rule: 'the premise of Games', patrol_id: 1 });
@@ -297,7 +303,7 @@ test('masks: the prompt holds no owner, class or reactor, and the run reads noth
   const c = m.chats[0]!;
   for (const text of [c.system, c.messages[0]!.content]) assert.ok(!/\bowner|\breactor|\bclass\b|\bclasses\b|\baccount\b|\bplayer behind/i.test(text), text.slice(0, 200));
   const allowed = new Set(['instance_settings', 'refund_stale_reports', 'refund_stale_appeals', 'judgment_load_today', 'claim_patrol', 'mod_standing', 'rules_in_force', 'board_premises', 'staff_career', 'staff_memory_latest',
-    'staff_memory_at', 'staff_notes_recent', 'pool_names', 'patrol_sample', 'record_patrol_call', 'patrol_record', 'start_visit', 'apply_mod_move', 'mod_group_context']);
+    'staff_memory_at', 'staff_notes_recent', 'character_faces', 'patrol_sample', 'record_patrol_call', 'patrol_record', 'start_visit', 'apply_mod_move', 'mod_group_context']);
   assert.deepEqual([...new Set(d.calls.map((x) => x.fn))].filter((f) => !allowed.has(f)), [], 'a call outside the reviewed list');
   // No argument names an account, an owner or a character: posts and boards only.
   for (const call of d.calls) assert.ok(!/owner|account|reactor/i.test(JSON.stringify(call.args)), call.fn);
