@@ -38,6 +38,9 @@ import autocorrectArt from './cards/autocorrect/art.json';
 import feelinFabCanvas from './cards/feelin-fab/art.svg?url';
 import feelinFabMark from './cards/feelin-fab/mark.svg?url';
 import feelinFabArt from './cards/feelin-fab/art.json';
+import hallPassCanvas from './cards/hall-pass/art.svg?url';
+import hallPassMark from './cards/hall-pass/mark.svg?url';
+import hallPassArt from './cards/hall-pass/art.json';
 import { ConfigForm as AutocorrectConfigForm } from '../cards/autocorrect/ConfigForm.tsx';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
@@ -202,5 +205,18 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
     describe: (settings: Settings) =>
       `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. It costs ${orbs(settings.economy['feelinFab.price'] ?? 0)} to buy, and nothing more to play.`,
+  },
+  /*
+   * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
+   * like a Trap Card; what it springs on is a Mod Bot's visit, so it names no card.
+   */
+  {
+    key: 'hall-pass',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: hallPassCanvas, mark: hallPassMark, credit: hallPassArt.credit, tagline: "Wave a Mod Bot's visit away." },
+    summary: "Set face down on your post. Ends the next Mod Bot visit to it when the visit starts.",
+    /* As the Trap Card's and Bluff's: the same words, so none can be told from another. */
+    status: 'Set, face down to everyone else',
+    describe: (settings: Settings) =>
+      `A Sweet card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next time a Mod Bot's visit to that post starts, the visit ends there and then, and the Mod Bot does nothing to the post. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} if no visit comes. It costs ${orbs(settings.economy['hallPass.price'] ?? 0)} to buy, and nothing more to set.`,
   },
 ] satisfies CardUi[]);
