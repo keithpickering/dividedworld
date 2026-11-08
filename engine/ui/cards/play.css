@@ -233,6 +233,23 @@
   color: var(--kb-glass-ready-text);
 }
 
+/* The "+" or "−" at the row's end: dimmer than the count, so the count (gold) is what reads first. */
+.kb-play-when-mark {
+  margin-inline-start: auto;
+  padding-inline-start: 8px;
+  color: var(--kb-glass-text-2);
+  font-weight: 800;
+}
+
+/* "N of 5" under the Who list: a small condensed muted line. */
+.kb-play .kb-play-who-count {
+  font-family: var(--kb-glass-font-display);
+  font-stretch: condensed;
+  font-size: var(--kb-glass-size-body);
+  letter-spacing: 0.04em;
+  color: var(--kb-glass-text-2);
+}
+
 .kb-play-when-group {
   display: flex;
   flex-direction: column;
@@ -273,17 +290,25 @@
   color: var(--kb-glass-text-2);
 }
 
-/* The post's own words, read-only, a chamfered block of about eight lines that scrolls past them; the same on a phone and a desktop. */
-.kb-play-post {
+/* The post's own words, read-only, a chamfered block of about eight lines that scrolls past them; the same on a phone and a desktop.
+   The frame is the glass's cut panel (engine/ui/glass/base.css): its 1px edge runs along the diagonal too, and the words scroll inside it. */
+.kb-play-post-frame {
   --kb-cut: 14px;
-  box-sizing: border-box;
+  --kb-border: 1px;
   margin-top: 10px;
+  background: color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+}
+
+.kb-play-post-frame::after {
+  background: var(--kb-glass-field-2);
+}
+
+.kb-play-post {
+  box-sizing: border-box;
+  margin: var(--kb-border);
   max-height: calc(8 * 1.4em + 20px);
   overflow-y: auto;
   padding: 10px 14px;
-  border: 1px solid color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
-  background: var(--kb-glass-field-2);
-  clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.4;
@@ -476,8 +501,7 @@
 }
 
 @media (forced-colors: active) {
-  .kb-play-chip,
-  .kb-play-post {
+  .kb-play-chip {
     border: 1px solid CanvasText;
     clip-path: none;
   }

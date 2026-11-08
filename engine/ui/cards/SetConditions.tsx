@@ -221,7 +221,9 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
             </p>
             <p id={why('passage')} className="kb-play-why" role="status">{problems.passage ?? ''}</p>
             {/* Read-only, and in the tab order so its scroll can be reached; a selection in it (by pointer or touch; typing is always possible) fills the field above. */}
-            <div ref={view} className="kb-play-post" data-kb-post-words role="group" aria-label="The post's words" tabIndex={0}>{words}</div>
+            <div className="kb-play-post-frame kb-glass-cut-panel">
+              <div ref={view} className="kb-play-post" data-kb-post-words role="group" aria-label="The post's words" tabIndex={0}>{words}</div>
+            </div>
           </div>
 
           <fieldset className="kb-play-choice kb-play-when-field">
