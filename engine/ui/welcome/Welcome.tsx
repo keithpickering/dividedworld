@@ -18,7 +18,7 @@
  */
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
+import { EffectsRow, MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
 import { ThemeRow } from '../account/ThemePicker.tsx';
 import { usePreferenceSaves } from '../account/preferences.ts';
 import { useBoot } from '../boot.tsx';
@@ -99,6 +99,7 @@ export function Welcome() {
                 <ThemeRow level={4} value={prefs} onChange={(theme) => change({ theme })} />
                 <MotionRow level={4} value={prefs.motion} onChange={(v) => change({ motion: v })} />
                 <TextSizeRow level={4} value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
+                <EffectsRow level={4} value={prefs.effects} onChange={(v) => change({ effects: v })} />
                 {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
                 <p role="status" className="kb-acct-note">{saved && !refusal ? 'Saved to your account.' : ''}</p>
               </>

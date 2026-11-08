@@ -24,6 +24,7 @@ export const MOTION: readonly Option<Preferences['motion']>[] = [
   { value: 'snappy', label: 'Snappy' },
 ];
 export const TEXT_SIZE: readonly Option<Preferences['textSize']>[] = [100, 125, 150, 200].map((n) => ({ value: n as Preferences['textSize'], label: `${n}%` }));
+export const EFFECTS: readonly Option<Preferences['effects']>[] = [{ value: 'standard', label: 'Off' }, { value: 'bright', label: 'On' }];
 
 /** A row of skewed choices, one radio each, as the board draws them; its fieldset's legend is the row's label. */
 export function Choice<V extends string | number>({ legend, options, value, onChange, sentence, level = 3, stack = false }: {
@@ -68,6 +69,13 @@ export function TextSizeRow({ value, onChange, level }: { readonly value: Prefer
   return (
     <Choice legend="Text size" options={TEXT_SIZE} value={value} onChange={onChange} level={level}
       sentence="Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off." />
+  );
+}
+
+export function EffectsRow({ value, onChange, level }: { readonly value: Preferences['effects']; readonly onChange: (v: Preferences['effects']) => void } & Level) {
+  return (
+    <Choice legend="Brighter effects" options={EFFECTS} value={value} onChange={onChange} level={level}
+      sentence="Let card effects on posts use their full colors, even below the usual contrast standard. Some posts may be harder to read." />
   );
 }
 

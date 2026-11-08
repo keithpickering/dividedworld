@@ -27,7 +27,7 @@ describe('the welcome page', () => {
     const seen = vi.spyOn(fake, 'seeWelcome');
     renderIn(fake, <WelcomeScreen />, { path: '/welcome', boot });
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    expect(await within(before).findAllByRole('radiogroup')).toHaveLength(3);
+    expect(await within(before).findAllByRole('radiogroup')).toHaveLength(4);
     expect(prefs).not.toHaveBeenCalled();
     await waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
   });
@@ -70,14 +70,14 @@ describe('the welcome page', () => {
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await within(before).findAllByRole('radiogroup');
     expect(within(before).getByRole('heading', { level: 3, name: 'Before you start' })).toBeInTheDocument();
-    expect(within(before).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Theme', 'Motion', 'Text size']);
+    expect(within(before).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects']);
   });
 
   test('Before you start holds theme, motion and text size, as Settings draws them, and no other row', async () => {
     page();
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await within(before).findAllByRole('radiogroup');
-    expect(within(before).getAllByRole('radiogroup').map((g) => within(g).getByRole('heading').textContent)).toEqual(['Theme', 'Motion', 'Text size']);
+    expect(within(before).getAllByRole('radiogroup').map((g) => within(g).getByRole('heading').textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects']);
     expect(within(before).getByRole('radiogroup', { name: 'Motion' })).toBeInTheDocument();
     expect(within(before).getByText(/Off stops every animation/u)).toBeInTheDocument();
   });
@@ -85,10 +85,19 @@ describe('the welcome page', () => {
   test('choosing a motion changes the account\'s preferences, and says it is saved', async () => {
     const { fake } = page();
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
+    await userEvent.click(await within(await within(before).findByRole('radiogroup', { name: 'Motion' })).findByRole('radio', { name: 'Off' }));
     await waitFor(async () => expect((await fake.preferences()).motion).toBe('reduce'));
-    expect(within(before).getByRole('radio', { name: 'Off' })).toBeChecked();
+    expect(within(within(before).getByRole('radiogroup', { name: 'Motion' })).getByRole('radio', { name: 'Off' })).toBeChecked();
     expect(await screen.findByText('Saved to your account.')).toBeInTheDocument();
+  });
+
+  test('choosing Brighter effects On changes the account\'s preferences, with its sentence', async () => {
+    const { fake } = page();
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    const group = await within(before).findByRole('radiogroup', { name: 'Brighter effects' });
+    expect(within(before).getByText(/Let card effects on posts use their full colors, even below the usual contrast standard\. Some posts may be harder to read\./u)).toBeInTheDocument();
+    await userEvent.click(within(group).getByRole('radio', { name: 'On' }));
+    await waitFor(async () => expect((await fake.preferences()).effects).toBe('bright'));
   });
 
   test('choosing a text size and a theme changes the account\'s preferences too', async () => {
@@ -154,10 +163,10 @@ describe('the welcome page', () => {
   test('a save the account refuses says so in an alert, and puts the choice back', async () => {
     const fake = tamper((f) => { vi.spyOn(f, 'setPreferences').mockResolvedValue({ ok: false, error: 'The account would not take that.' }); });
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
+    await userEvent.click(await within(await within(before).findByRole('radiogroup', { name: 'Motion' })).findByRole('radio', { name: 'Off' }));
     expect(await within(before).findByRole('alert')).toHaveTextContent('The account would not take that.');
     await waitFor(() => expect(within(within(before).getByRole('radiogroup', { name: 'Motion' })).getByRole('radio', { name: 'Follow my device' })).toBeChecked());
-    expect(within(before).getByRole('radio', { name: 'Off' })).not.toBeChecked();
+    expect(within(within(before).getByRole('radiogroup', { name: 'Motion' })).getByRole('radio', { name: 'Off' })).not.toBeChecked();
     expect(screen.queryByText('Saved to your account.')).toBeNull();
     expect((await fake.preferences()).motion).toBe('system');
   });
@@ -172,7 +181,7 @@ describe('the welcome page', () => {
     expect(before.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(within(before).queryAllByRole('radio')).toHaveLength(0);
     release(await fake.preferences());
-    await within(before).findByRole('radio', { name: 'Off' });
+    await within(await within(before).findByRole('radiogroup', { name: 'Motion' })).findByRole('radio', { name: 'Off' });
     expect(before.querySelector('[aria-busy="true"]')).toBeNull();
   });
 
@@ -196,7 +205,7 @@ describe('the welcome page', () => {
     });
     const before = await screen.findByRole('region', { name: 'Before you start' });
     /* Two choices made while the first save is still out. */
-    await userEvent.click(await within(before).findByRole('radio', { name: 'Off' }));
+    await userEvent.click(await within(await within(before).findByRole('radiogroup', { name: 'Motion' })).findByRole('radio', { name: 'Off' }));
     await userEvent.click(within(before).getByRole('radio', { name: 'Smooth' }));
     releaseFirst();
     await waitFor(() => { expect(firstAnswered).toBe(true); expect(secondStarted).toBe(true); });

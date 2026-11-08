@@ -11,7 +11,7 @@
  * The glass's three preferences (the web plan's glass amendment to Task 11) are marked the same
  * way, only when they leave their default: `data-kb-smoke-level` (low or off; Smoke.tsx reads it),
  * `data-kb-contrast` (high; contrast.css puts solid ground under the glass's text) and
- * `data-kb-text-size` (125, 150 or 200; base.css sets the root's font size from it, every size on
+ * `data-kb-effects` (bright; Effects.tsx's card effects use their full colors) and `data-kb-text-size` (125, 150 or 200; base.css sets the root's font size from it, every size on
  * the board and the glass is in rem or a glass size token, which is rem, so all of it follows; and
  * from 150 up useBoard folds the glass to the Phone board's one column). Given the instance's glass,
  * high contrast also puts its `high` key on the root, and anything else its standard key.
@@ -30,6 +30,7 @@ export interface AppearancePreference {
   readonly smoke?: 'full' | 'low' | 'off';
   readonly contrast?: 'standard' | 'high';
   readonly textSize?: 100 | 125 | 150 | 200;
+  readonly effects?: 'standard' | 'bright';
 }
 
 export interface Appearance {
@@ -81,6 +82,7 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   const size = pref.textSize === 125 || pref.textSize === 150 || pref.textSize === 200 ? pref.textSize : null;
   mark(root, 'data-kb-smoke-level', smoke);
   mark(root, 'data-kb-contrast', high ? 'high' : null);
+  mark(root, 'data-kb-effects', pref.effects === 'bright' ? 'bright' : null);
   mark(root, 'data-kb-text-size', size === null ? null : String(size));
   if (glass) applyGlass(root, glass, high ? 'high' : 'standard');
   return a;

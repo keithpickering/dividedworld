@@ -37,7 +37,7 @@ import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { settingsSection, type AccountDoc } from '../glass-docs.ts';
 import { useBoot } from '../boot.tsx';
 import { GlassLink } from '../glass/Link.tsx';
-import { Choice, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
+import { Choice, EffectsRow, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { ModeRow, ThemeRow } from './ThemePicker.tsx';
 import { Invites } from './Invites.tsx';
 import { usePreferenceSaves, type TipsChange } from './preferences.ts';
@@ -285,6 +285,7 @@ export function SettingsScreen({ doc }: { readonly doc?: ScreenDoc<AccountDoc> }
         <Choice legend="Contrast" options={CONTRAST} value={prefs.contrast} onChange={(v) => change({ contrast: v })}
           sentence="High puts solid black behind every line of text on the glass and lifts it all to at least 7:1. The smoke stays at the edges of the screen." />
         <TextSizeRow value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
+        <EffectsRow value={prefs.effects} onChange={(v) => change({ effects: v })} />
         <TiltRow value={prefs.tilt} onChange={(v) => change({ tilt: v })} />
         <Choice legend="Posts" options={POSTBIT} value={prefs.postbit} onChange={(v) => change({ postbit: v })}
           sentence="Side by side puts the character beside each post, as on a classic forum. Stacked puts it above each post, for narrow screens." />
