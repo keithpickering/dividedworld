@@ -97,6 +97,90 @@ export const PHRASE_FIXTURES: readonly PhraseFixture[] = [
     "found": false
   },
   {
+    "name": "a plus sign is not a repeat",
+    "body": "use c++ now",
+    "phrase": "c++",
+    "found": true
+  },
+  {
+    "name": "a phrase ending on a symbol, beside more symbols",
+    "body": "c+++x",
+    "phrase": "c++",
+    "found": true
+  },
+  {
+    "name": "brackets are not a class",
+    "body": "see [a] here",
+    "phrase": "[a]",
+    "found": true
+  },
+  {
+    "name": "brackets do not match their letter alone",
+    "body": "see a here",
+    "phrase": "[a]",
+    "found": false
+  },
+  {
+    "name": "a backslash is not an escape",
+    "body": "type a \\d b",
+    "phrase": "\\d",
+    "found": true
+  },
+  {
+    "name": "a backslash-d is not a digit",
+    "body": "a 5 b",
+    "phrase": "\\d",
+    "found": false
+  },
+  {
+    "name": "a dollar sign is not the end",
+    "body": "it costs $5 today",
+    "phrase": "$5",
+    "found": true
+  },
+  {
+    "name": "a caret is not the start",
+    "body": "a ^b c",
+    "phrase": "^b",
+    "found": true
+  },
+  {
+    "name": "braces are not a count",
+    "body": "xx and x{2}",
+    "phrase": "x{2}",
+    "found": true
+  },
+  {
+    "name": "braces do not count the letter",
+    "body": "xx here",
+    "phrase": "x{2}",
+    "found": false
+  },
+  {
+    "name": "a bar is not an alternative",
+    "body": "just a here",
+    "phrase": "a|b",
+    "found": false
+  },
+  {
+    "name": "a star is not a repeat",
+    "body": "aaa",
+    "phrase": "a*",
+    "found": false
+  },
+  {
+    "name": "a question mark is not optional",
+    "body": "whatx",
+    "phrase": "what?",
+    "found": false
+  },
+  {
+    "name": "a question mark is itself",
+    "body": "so what? fine",
+    "phrase": "what?",
+    "found": true
+  },
+  {
     "name": "mixed case",
     "body": "CaTs and DOGS",
     "phrase": "cats",
