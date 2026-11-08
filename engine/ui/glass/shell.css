@@ -548,6 +548,8 @@
   grid-template-columns: minmax(0, 1fr) auto;
   column-gap: 12px;
   align-items: start;
+  /* The title clears the bar's foot, so while the body scrolls under the stuck bar the title is not sat on its edge. The bar's height is measured (Frame.tsx), so the scroll padding follows. */
+  padding-bottom: 14px;
 }
 
 :where(:root[data-kb-layout='phone']) .kb-glass-dialog-bar > .kb-glass-dialog-titles { display: contents; }
