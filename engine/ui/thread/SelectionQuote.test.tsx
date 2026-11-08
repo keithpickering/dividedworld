@@ -5,6 +5,9 @@ import { parse } from '../../bbcode/parse.ts';
 import { openThread, replyBox, threadWorld } from '../composer/support.tsx';
 import { quoteText } from '../composer/text.ts';
 import { readRange } from './SelectionQuote.tsx';
+import { render } from '@testing-library/react';
+import { BbCode } from '../bbcode/render.tsx';
+import { RouterProvider } from '../router.tsx';
 
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } });
@@ -96,6 +99,48 @@ describe('what a selection reads as (readRange)', () => {
     const [one] = page('x <span aria-hidden="true">secret</span>');
     const hidden = one!.querySelector('span')!.firstChild!;
     expect(readRange(range(hidden, 0, hidden, 6))).toBeNull();
+  });
+});
+
+/** A post drawn by the real BbCode renderer, in the article a body lives in. */
+function drawn(text: string) {
+  document.body.innerHTML = '';
+  render(<RouterProvider><article className="kb-act" data-kb-seq="1"><BbCode text={text} /></article></RouterProvider>);
+  const body = document.querySelector<HTMLElement>('.kb-bb')!;
+  return { body, all: () => readRange(range(body, 0, body, body.childNodes.length))?.text ?? '' };
+}
+
+describe('chrome and layers are not quoted (data-kb-quotable)', () => {
+  test('a marquee\'s Pause button is chrome: the whole marquee quotes only its words', () => {
+    expect(drawn('[marquee]hello[/marquee]').all()).toBe('hello');
+  });
+
+  test('a video\'s face text, Play button and address label are chrome', () => {
+    expect(drawn('before [video]https://vimeo.com/123[/video] after').all()).toBe('before\nafter');
+  });
+
+  test('text a post shows although it is aria-hidden is read, and the words under it are not', () => {
+    const [one] = page(
+      'I said <span class="x"><span aria-hidden="true" data-kb-quotable="hidden">NAUGHTY</span><span aria-hidden="true" data-kb-quotable="shown">Hello</span></span> today',
+    );
+    expect(readRange(range(one!, 0, one!, one!.childNodes.length))?.text).toBe('I said Hello today');
+  });
+
+  test('"shown" outranks aria-hidden on its own element, and "hidden" inside shown words still wins', () => {
+    const [one] = page('a <span aria-hidden="true" data-kb-quotable="shown">shown<i data-kb-quotable="hidden"> not</i> words</span> b');
+    expect(readRange(range(one!, 0, one!, one!.childNodes.length))?.text).toBe('a shown words b');
+  });
+
+  test('the "as it landed" moment and the history panel hold older versions, not this act\'s words', () => {
+    document.body.innerHTML = '<article class="kb-act" data-kb-seq="1"><div class="kb-bb">now words</div>'
+      + '<div class="kb-moment-body" data-kb-quotable="hidden"><div class="kb-bb">older words</div></div>'
+      + '<ol class="kb-post-history" data-kb-quotable="hidden"><li><div class="kb-bb">oldest words</div></li></ol></article>';
+    const [now, moment, history] = [...document.querySelectorAll<HTMLElement>('.kb-bb')];
+    const article = document.querySelector('article')!;
+    expect(readRange(range(article, 0, article, article.childNodes.length))).toBeNull();
+    expect(readRange(range(moment!.firstChild!, 0, moment!.firstChild!, 5))).toBeNull();
+    expect(readRange(range(history!.firstChild!, 0, history!.firstChild!, 5))).toBeNull();
+    expect(readRange(range(now!.firstChild!, 0, now!.firstChild!, 3))?.text).toBe('now');
   });
 });
 

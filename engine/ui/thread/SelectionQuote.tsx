@@ -10,6 +10,14 @@
  * from a screen reader (`aria-hidden`, `hidden`, `inert`, `.kb-visually-hidden`), a Lens, a shut `<details>`'s body, a quoted
  * author's line (it names the author, it is not the post's words) and anything that is not text (images, video). A line break
  * stays a line break, between paragraphs and at a `<br>`.
+ *
+ * The data-kb-quotable contract. A renderer says what a quote may hold by marking an element, and the mark outranks every other
+ * rule above on that element (the engine never names an instance's classes; an instance marks its own markup):
+ *   data-kb-quotable="shown"   words the post shows although they are aria-hidden (a layer that replaces the words under it, such as
+ *                              a strip of label tape bearing its replacement): read.
+ *   data-kb-quotable="hidden"  chrome or words the post does not show as its own (a control, a face label, the words a layer covers,
+ *                              an older version drawn inside the same article): skipped, and a selection that starts or ends in one
+ *                              is no selection of the post.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -26,13 +34,15 @@ export interface Selected {
 
 const BODY = '.kb-bb';
 const SKIPPED = '[aria-hidden="true"], [hidden], [inert], .kb-visually-hidden, .kb-lens, cite.kb-quote-from, script, style, template, img, svg, video, iframe, audio, canvas';
+/** What a renderer marked an element as: see the contract above. */
+const quotable = (el: Element) => el.getAttribute('data-kb-quotable');
 const BLOCKS = new Set(['P', 'DIV', 'LI', 'UL', 'OL', 'BLOCKQUOTE', 'PRE', 'HR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TABLE', 'TR', 'DETAILS', 'SUMMARY']);
 
 /** The post body a node is in: a post's own words, not a signature's, with the number of the post it belongs to. */
 function bodyAt(node: Node): { readonly body: HTMLElement; readonly seq: number } | null {
   const el = node.nodeType === 1 ? (node as Element) : node.parentElement;
   const body = el?.closest<HTMLElement>(BODY);
-  if (!body || body.closest('.kb-signature')) return null;
+  if (!body || el?.closest('[data-kb-quotable="hidden"]') || body.closest('.kb-signature')) return null;
   const seq = Number(body.closest('article.kb-act')?.getAttribute('data-kb-seq'));
   return Number.isInteger(seq) && seq > 0 ? { body, seq } : null;
 }
@@ -50,7 +60,8 @@ function shownWords(body: HTMLElement, range: Range): string {
     }
     if (n.nodeType !== 1) return;
     const el = n as Element;
-    if (el.matches(SKIPPED) || !range.intersectsNode(el)) return;
+    const mark = quotable(el);
+    if (mark === 'hidden' || (mark !== 'shown' && el.matches(SKIPPED)) || !range.intersectsNode(el)) return;
     if (el.tagName === 'BR') { out += '\n'; return; }
     const block = BLOCKS.has(el.tagName);
     if (block) line();

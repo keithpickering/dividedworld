@@ -107,7 +107,7 @@ function Marquee({ children }: { readonly children: ReactNode }) {
   const [paused, setPaused] = useState(false);
   return (
     <div className="kb-bb-marquee" data-paused={paused ? '' : undefined}>
-      <button type="button" className="kb-bb-marquee-toggle" aria-pressed={paused} onClick={() => setPaused(!paused)}>
+      <button type="button" className="kb-bb-marquee-toggle" data-kb-quotable="hidden" aria-pressed={paused} onClick={() => setPaused(!paused)}>
         {paused ? 'Play' : 'Pause'}
       </button>
       <span className="kb-bb-marquee-run">{children}</span>
