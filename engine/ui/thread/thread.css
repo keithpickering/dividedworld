@@ -191,6 +191,42 @@
   max-width: 100%;
 }
 
+/*
+ * Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md, section 1): an effect that draws a bright look under the words
+ * (Feelin' Fab's rainbow) asks for it with `data-kb-bright-ink` on this body (cards/body.ts `markBrightInk`), and the four post inks
+ * become the instance's ink (`--kb-bright-ink`) with its outline (`--kb-bright-outline`) around every glyph, since white on yellow
+ * is readable only by the outline. The engine names no color; the instance sets both properties. A quote's border is the ink too.
+ * What brings its own ground (the reaction chips, the ORIGIN box, whatever the engine lifts over a post's ink) takes the board's four
+ * inks back from the root's copies (tokens.css `--kb-board-*`) and drops the shadow, so white is never drawn on a light chip. That
+ * includes a shut spoiler (its bar is the ink on the ink, and an outline over it would show the hidden glyphs) and the video box and
+ * its face, which paint the board's ground.
+ */
+.kb-act-main[data-kb-bright-ink] {
+  --kb-fg: var(--kb-bright-ink);
+  --kb-link: var(--kb-bright-ink);
+  --kb-link-visited: var(--kb-bright-ink);
+  --kb-muted: var(--kb-bright-ink);
+  color: var(--kb-bright-ink);
+  text-shadow: -1px -1px 0 var(--kb-bright-outline), 1px -1px 0 var(--kb-bright-outline), -1px 1px 0 var(--kb-bright-outline), 1px 1px 0 var(--kb-bright-outline), 0 0 3px var(--kb-bright-outline);
+}
+
+.kb-act-main[data-kb-bright-ink] .kb-quote {
+  border-color: var(--kb-bright-ink);
+}
+
+.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span) {
+  --kb-fg: var(--kb-board-fg);
+  --kb-link: var(--kb-board-link);
+  --kb-link-visited: var(--kb-board-link-visited);
+  --kb-muted: var(--kb-board-muted);
+  color: var(--kb-board-fg);
+  text-shadow: none;
+}
+
+.kb-act-main[data-kb-bright-ink] :is(.kb-tally, .kb-origin, [data-kb-over-ink], .kb-bb-ispoiler:not([aria-expanded="true"]), .kb-bb-video-box, .kb-bb-video-face > span) .kb-quote {
+  border-color: var(--kb-rule);
+}
+
 /* A line of the game's (an unmask): no postbit, the words across the whole width. */
 .kb-act[data-kb-kind="unmask"] {
   grid-template-columns: minmax(0, 1fr);

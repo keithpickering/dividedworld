@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf, type Mode } from '../contrast.ts';
-import { bandOf, shineIsReadable, toLinear, type Band } from './band.ts';
+import { bandOf, brightBand, luminanceOf, shineIsReadable, toLinear, type Band } from './band.ts';
 import { REST } from './light.ts';
 import { makeFoil, sampleFoil, type FoilCanvas } from './foil.ts';
 
@@ -21,7 +21,7 @@ const PALETTES: Record<Board, readonly string[]> = {
 /* Divided World's glint (instances/divided-world has the real one; the engine may not import it). */
 const GLINT = '#ffffff';
 const PATTERNS = ['pearl', 'bands', 'prism'] as const;
-const modeOf = (band: Band): Board => (band.hi < 0.5 ? 'dark' : 'light');
+const modeOf = (band: Band): Board => band.board;
 const foilFor = (pattern: (typeof PATTERNS)[number], mode: Board, seed = 'play:post', palette = PALETTES[mode]) =>
   makeFoil({ seed, pattern, palette, stars: 8, glint: GLINT });
 
@@ -60,9 +60,20 @@ describe('the foil', () => {
     }
   });
 
+  test('under a bright band the foil leaves the standard band: past 0.048 on the dark board; on the light board the clamp is off too (the deeper palette is drawn there, since the pastels never go under 0.59)', () => {
+    const lumOf = (hex: string) => luminanceOf(toLinear(hex));
+    for (const pattern of PATTERNS) {
+      const dark = sampleFoil(foilFor(pattern, 'dark'), { w: 240, h: 120 }, REST, brightBand('dark'));
+      assert.ok(Math.max(...dark.map(lumOf)) > 0.048, `${pattern}: the dark board draws past its ceiling`);
+      /* The light board's own pastels never go under 0.59; a player who chose bright effects may play a deeper palette on it. */
+      const light = sampleFoil(foilFor(pattern, 'light', 'play:post', PALETTES.dark), { w: 240, h: 120 }, REST, brightBand('light'));
+      assert.ok(Math.min(...light.map(lumOf)) < 0.59, `${pattern}: the light board draws under its floor`);
+    }
+  });
+
   test('POISON: a white stop on the dark board with no clamp is caught; the clamp holds it', () => {
     const white = [...PALETTES.dark.slice(0, 5), '#ffffff'];
-    const open: Band = { lo: 0, hi: 1 };
+    const open: Band = { lo: 0, hi: 1, board: 'dark', bright: false };
     for (const pattern of PATTERNS) {
       const foil = foilFor(pattern, 'dark', 'play:post', white);
       const red = shineIsReadable(tokens, (mode, light) =>
@@ -305,7 +316,7 @@ describe('draw, against a fake context', () => {
     const calls: Call[] = [];
     const foil = makeFoil({ seed: 's', pattern: 'pearl', palette: PALETTES.dark, stars: 10, glint: GLINT, createCanvas: () => fakeCanvas(calls, 'c') });
     const ctx = fakeCanvas(calls, 'ctx').getContext('2d') as unknown as CanvasRenderingContext2D;
-    foil.draw(ctx, { w: 600, h: 200 }, 1, { x: 0, y: 0 }, { lo: 0, hi: 0.3 }, 0, false);
+    foil.draw(ctx, { w: 600, h: 200 }, 1, { x: 0, y: 0 }, { lo: 0, hi: 0.3, board: 'dark', bright: false }, 0, false);
     assert.equal(calls.filter((c) => c[0] === 'ctx.drawImage').length, 1, 'only the grid');
   });
 

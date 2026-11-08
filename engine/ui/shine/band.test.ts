@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MODES, ratio, tokensOf, type Mode } from '../contrast.ts';
-import { POST_INK, bandFor, bandOf, clampInto, shineIsReadable, toHex, toHexA, toLinear, toSrgb8, type Rgb } from './band.ts';
+import { POST_INK, bandFor, bandOf, brightBand, clampInto, shineIsReadable, toHex, toHexA, toLinear, toSrgb8, type Band, type Rgb } from './band.ts';
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
 const boards = [['light', tokens.light], ['dark', tokens.dark]] as const;
@@ -53,7 +53,7 @@ describe('the readable band', () => {
       else near(lum(dim), band.lo, 0.01);
     }
     /* The other direction, on a band with room on both sides. */
-    const mid = { lo: 0.3, hi: 0.6 };
+    const mid: Band = { lo: 0.3, hi: 0.6, board: 'dark', bright: false };
     near(lum(clampInto([1, 1, 1], mid)), mid.hi, 0.01);
     near(lum(clampInto([0, 0, 0], mid)), mid.lo, 0.01);
   });
@@ -82,6 +82,58 @@ describe('the readable band', () => {
         const d = Math.abs(hue(hex) - hue(out));
         assert.ok(Math.min(d, 360 - d) <= 2, `${board}: ${hex} -> ${out} moved ${d.toFixed(1)} degrees`);
       }
+    }
+  });
+});
+
+describe('the bright band', () => {
+  test('a standard band names its board and is not bright', () => {
+    assert.equal(bandOfBoard.light.board, 'light');
+    assert.equal(bandOfBoard.dark.board, 'dark');
+    assert.equal(bandOfBoard.light.bright, false);
+    assert.equal(bandOfBoard.dark.bright, false);
+  });
+
+  test('a bright band is 0 to 1 and keeps its board', () => {
+    for (const board of ['light', 'dark'] as const) assert.deepEqual(brightBand(board), { lo: 0, hi: 1, board, bright: true });
+  });
+
+  test('clampInto leaves a bright band\'s color alone, on both boards', () => {
+    for (const board of ['light', 'dark'] as const) {
+      for (const c of [[1, 0.9, 0.8], [0.001, 0.002, 0.001], [0.3, 0.2, 0.9]] as Rgb[]) {
+        const out = clampInto([...c], brightBand(board));
+        assert.deepEqual(out, c, board);
+      }
+    }
+    /* Not so for the standard band: the same white is scaled down on the dark board. */
+    assert.notDeepEqual(clampInto([1, 1, 1], bandOfBoard.dark), [1, 1, 1]);
+  });
+
+  test('bandFor follows data-kb-effects, and the cache never hands one kind to the other kind of page', () => {
+    const realStyle = globalThis.getComputedStyle;
+    const realDoc = (globalThis as { document?: unknown }).document;
+    const mark = { current: null as string | null };
+    (globalThis as { document?: unknown }).document = { documentElement: { getAttribute: (k: string) => (k === 'data-kb-effects' ? mark.current : null) } };
+    const board = { current: tokens.dark };
+    globalThis.getComputedStyle = (() => ({ getPropertyValue: (k: string) => board.current[k] ?? '' })) as never;
+    try {
+      for (const [name, t] of boards) {
+        board.current = t;
+        mark.current = null;
+        const standard = bandFor({} as Element);
+        mark.current = 'bright';
+        const bright = bandFor({} as Element);
+        mark.current = null;
+        const again = bandFor({} as Element);
+        assert.deepEqual(standard, bandOfBoard[name]);
+        assert.deepEqual(bright, brightBand(name));
+        assert.equal(again, standard, 'the standard band is the cached one, not the bright one');
+        mark.current = 'bright';
+        assert.equal(bandFor({} as Element), bright);
+      }
+    } finally {
+      globalThis.getComputedStyle = realStyle;
+      (globalThis as { document?: unknown }).document = realDoc;
     }
   });
 });

@@ -39,7 +39,7 @@ vi.mock('../../../../engine/ui/shine/flakes.ts', async (importOriginal) => {
 });
 vi.mock('../../../../engine/ui/shine/band.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../../../engine/ui/shine/band.ts')>();
-  return { ...real, bandFor: vi.fn(() => ({ lo: 0.59, hi: 1 })) };
+  return { ...real, bandFor: vi.fn(() => ({ lo: 0.59, hi: 1, board: 'light', bright: false })) };
 });
 import { bandFor } from '../../../../engine/ui/shine/band.ts';
 import * as flakesModule from '../../../../engine/ui/shine/flakes.ts';
@@ -118,8 +118,9 @@ beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation((() => ctx) as never);
   document.documentElement.setAttribute('data-kb-motion', 'full');
   document.documentElement.removeAttribute('data-kb-mode');
+  document.documentElement.removeAttribute('data-kb-effects');
   vi.mocked(bandFor).mockReset();
-  vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1 }));
+  vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1, board: 'light', bright: false }));
   for (const f of [makeFlakes, burst, drawBurst, release, landAll, dropLoose, flakesModule.stepBurst as ReturnType<typeof vi.fn>]) f.mockClear();
   Object.values(spies).forEach((s) => s.mockClear());
   flakesModule.burstProbe.reset();
@@ -131,6 +132,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   document.documentElement.removeAttribute('data-kb-motion');
   document.documentElement.removeAttribute('data-kb-mode');
+  document.documentElement.removeAttribute('data-kb-effects');
 });
 
 const lastFlakes = () => makeFlakes.mock.results.at(-1)!.value as flakesModule.Flakes;
@@ -333,7 +335,7 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     frames(20, 4000);
     expect(l.mock.calls.length).toBeGreaterThanOrEqual(lits + 8);
     expect(b, 'a moving light paints no base').toHaveBeenCalledTimes(bases);
-    vi.mocked(bandFor).mockImplementation(() => (document.documentElement.getAttribute('data-kb-mode') === 'dark' ? { lo: 0, hi: 0.048 } : { lo: 0.59, hi: 1 }));
+    vi.mocked(bandFor).mockImplementation(() => (document.documentElement.getAttribute('data-kb-mode') === 'dark' ? { lo: 0, hi: 0.048, board: 'dark', bright: false } : { lo: 0.59, hi: 1, board: 'light', bright: false }));
     await act(async () => { document.documentElement.setAttribute('data-kb-mode', 'dark'); await Promise.resolve(); });
     frames(2, 5000);
     expect(b, 'a board change paints the base again').toHaveBeenCalledTimes(bases + 1);
@@ -379,6 +381,46 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(probe.draws(box())).toBeGreaterThan(draws);
   });
 
+  /* Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md): the mark on the root makes the band bright, and a change of it redraws. */
+  const brightMock = () => vi.mocked(bandFor).mockImplementation(() => (document.documentElement.getAttribute('data-kb-effects') === 'bright' ? { lo: 0, hi: 1, board: 'light', bright: true } : { lo: 0.59, hi: 1, board: 'light', bright: false }));
+  const effectsChange = (on: boolean) => act(async () => { if (on) document.documentElement.setAttribute('data-kb-effects', 'bright'); else document.documentElement.removeAttribute('data-kb-effects'); await Promise.resolve(); });
+
+  test('marked, the flakes are drawn with a bright band; when the mark changes the post is read again and redrawn with the other band', async () => {
+    brightMock();
+    const real = await vi.importActual<typeof import('../../../../engine/ui/shine/flakes.ts')>('../../../../engine/ui/shine/flakes.ts');
+    const lit: ReturnType<typeof vi.fn>[] = [];
+    makeFlakes.mockImplementation((o) => { const f = real.makeFlakes(o); lit.push(vi.spyOn(f, 'drawLit')); return f; });
+    document.documentElement.setAttribute('data-kb-effects', 'bright');
+    render(<GlitterBombEffect {...props()} />);
+    see(1); frames(10);
+    expect(lit.at(-1)!.mock.calls.at(-1)![2]).toMatchObject({ bright: true });
+    const reads = vi.mocked(bandFor).mock.calls.length;
+    await effectsChange(false);
+    frames(10, 1000);
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(reads + 1);
+    expect(lit.at(-1)!.mock.calls.at(-1)![2]).toMatchObject({ bright: false });
+    await effectsChange(true);
+    frames(10, 2000);
+    expect(lit.at(-1)!.mock.calls.at(-1)![2]).toMatchObject({ bright: true });
+  });
+
+  test('the mark is watched beside the board\'s mode, and an unrelated root change reads no band', async () => {
+    const observe = vi.spyOn(MutationObserver.prototype, 'observe');
+    render(<GlitterBombEffect {...props()} />);
+    const mine = observe.mock.calls.find(([, o]) => (o as MutationObserverInit | undefined)?.attributeFilter?.includes('data-kb-mode'));
+    expect((mine![1] as MutationObserverInit).attributeFilter).toEqual(['data-kb-mode', 'data-kb-effects']);
+    see(1); frames(3);
+    const reads = vi.mocked(bandFor).mock.calls.length;
+    await act(async () => { document.documentElement.setAttribute('data-kb-text', '2'); await Promise.resolve(); });
+    expect(vi.mocked(bandFor).mock.calls.length).toBe(reads);
+    document.documentElement.removeAttribute('data-kb-text');
+  });
+
+  test('the stylesheet gives the words the firmer halo only under the mark', () => {
+    const css = read('glitter.css').replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(css).toMatch(/:root\[data-kb-effects="bright"\]\s+\.dw-glitter-words\s*\{[^}]*text-shadow:\s*0 0 1px var\(--kb-bg\),\s*0 0 2px var\(--kb-bg\),\s*0 0 3px var\(--kb-bg\),\s*0 0 6px var\(--kb-bg\),\s*0 0 10px var\(--kb-bg\)/u);
+  });
+
   test('a band that could not be read is tried again at the board change, not on every draw, and nothing is drawn meanwhile', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(bandFor).mockImplementation(() => { throw new Error('not a hex color'); });
@@ -386,7 +428,7 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     see(1); frames(10);
     expect(makeFlakes).not.toHaveBeenCalled();
     expect(vi.mocked(bandFor).mock.calls.length).toBeLessThanOrEqual(1);
-    vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1 }));
+    vi.mocked(bandFor).mockImplementation(() => ({ lo: 0.59, hi: 1, board: 'light', bright: false }));
     await boardChange('dark');
     frames(5, 500);
     expect(makeFlakes).toHaveBeenCalledTimes(1);
@@ -473,7 +515,7 @@ describe('Glitter Bomb holds its band and frees its canvases', () => {
     expect(makeFlakes.mock.calls.at(-1)![0].box).toEqual({ w: 200, h: 80 });
     const call = drawn[1]!.mock.calls.at(-1)!;
     expect(call[1]).toEqual(lastLight);
-    expect(call[2]).toEqual({ lo: 0.59, hi: 1 });
+    expect(call[2]).toEqual({ lo: 0.59, hi: 1, board: 'light', bright: false });
     expect(based[1]!).toHaveBeenCalledTimes(1);
     expect(under().width).toBe(200);
     expect(flash().width).toBe(200);

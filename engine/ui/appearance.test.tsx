@@ -125,6 +125,16 @@ describe('the glass\'s three preferences on the page', () => {
   } as unknown as GlassTheme;
   const marks = () => ['data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'].map((a) => root.getAttribute(a));
 
+  test('the effects mark is on the root only while the choice is bright, and goes with the account', () => {
+    const effects = () => root.getAttribute('data-kb-effects');
+    applyAppearance(document, { theme: 'default', motion: 'system', effects: 'standard' }, themes, glass);
+    expect(effects()).toBeNull();
+    applyAppearance(document, { theme: 'default', motion: 'system', effects: 'bright' }, themes, glass);
+    expect(effects()).toBe('bright');
+    applyAppearance(document, { theme: 'default', motion: 'system' }, themes, glass);
+    expect(effects()).toBeNull();
+  });
+
   test('their defaults set no mark, and the glass keeps its standard key', () => {
     applyAppearance(document, { theme: 'default', motion: 'system', smoke: 'full', contrast: 'standard', textSize: 100 }, themes, glass);
     expect(marks()).toEqual([null, null, null, 'standard']);

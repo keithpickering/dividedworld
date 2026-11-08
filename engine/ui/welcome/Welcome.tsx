@@ -3,7 +3,7 @@
  * docs/research/2026-11-02-onboarding/01-welcome.html and 04-phone.html): a glass page in the Updates page's frame. The instance's developer
  * persona's letter (`InstanceUi.onboarding.letter`, Markdown through the guide's renderer, so the letter is written once and the Strategy
  * Guide's first section reads the same words) stands on a post with the persona's picture, name and tagline; under it, Before you start
- * (the theme tiles Settings › The board draws, without its preview, and the motion and text size rows Settings › Accessibility draws, saved as they change); then Make your first character, and a
+ * (the theme tiles Settings › The board draws, without its preview, and the motion, text size and Brighter effects rows Settings › Accessibility draws, saved as they change); then Make your first character, and a
  * quieter link to the Strategy Guide. A column beside says what happens next, plainly.
  *
  * It shows once. The page marks the welcome seen when it opens (`seeWelcome`), and `SendToWelcome` sends an account here only while it has
@@ -18,7 +18,7 @@
  */
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
+import { EffectsRow, MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
 import { ThemeRow } from '../account/ThemePicker.tsx';
 import { usePreferenceSaves } from '../account/preferences.ts';
 import { useBoot } from '../boot.tsx';
@@ -99,6 +99,7 @@ export function Welcome() {
                 <ThemeRow level={4} value={prefs} onChange={(theme) => change({ theme })} />
                 <MotionRow level={4} value={prefs.motion} onChange={(v) => change({ motion: v })} />
                 <TextSizeRow level={4} value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
+                <EffectsRow level={4} value={prefs.effects} onChange={(v) => change({ effects: v })} />
                 {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
                 <p role="status" className="kb-acct-note">{saved && !refusal ? 'Saved to your account.' : ''}</p>
               </>

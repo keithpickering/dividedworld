@@ -178,6 +178,10 @@ come and go as the light moves or a flake winks.
   that a glint is out of the band, in its flake's hue and added, and that nothing else is: the flakes' own fills, loose
   glitter, and every flare under reduced motion.
 
+**Amended 2026-11-08: Brighter effects** (the owner, `docs/plans/2026-11-08-brighter-effects-design.md`). A reader who
+turns on Brighter effects sees Feelin' Fab and Glitter Bomb drawn free of the band; for everyone else, everything above
+holds.
+
 ## 6. A busy page
 
 - **One loop for the page**, in the suds' shape: hosts register a canvas, a box and a density, and one animation loop
