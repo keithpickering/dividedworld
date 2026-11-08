@@ -47,3 +47,10 @@ test('a play whose phrase the post no longer holds shows no strip, and comes bac
   assert.deepEqual(stripsOf('only luigi here', plays, new Set()).shown, []);
   assert.equal(stripsOf('mario is back', plays, new Set()).shown.length, 1);
 });
+
+test('a strip over a looser match covers the original words, punctuation and all', () => {
+  const text = "No, don't! Mario's here. DONT";
+  const { shown, total } = stripsOf(text, [play('k1', 'dont', 'do')], new Set());
+  assert.deepEqual(shown.map((s) => cover(text, s)), ["don't", 'DONT']);
+  assert.equal(total.k1, 2);
+});
