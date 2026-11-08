@@ -7,7 +7,7 @@ import { Avatar } from './Avatar.tsx';
 
 const character = (over: Partial<Character> = {}): Character => ({
   id: 'c1', name: 'Pipewrench', title: '', signature: '', avatarSquare: 'sq.webp', avatarPortrait: 'tall.webp',
-  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', ...over,
+  squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
 });
 const slot = (c: Character) => render(<Avatar character={c} />).container.querySelector('.kb-profile-avatar')!;
 
