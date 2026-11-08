@@ -63,7 +63,7 @@ export function Page({ surface, menu = true, children }: PageProps) {
   const { shown } = useRouterInternals();
   const resolved = shown.ready && shown.route?.key !== undefined && shown.key !== null ? shown.key : path;
   /*
-   * A count of screens, bumped by the render that changes the key. Before the first page has landed the key is the path; the move to the
+   * A count of screens, bumped by the render that changes both the path and the key. Before the first page has landed the key is the path; the move to the
    * route's own key at the address the window opened at is the same screen settling, not a change.
    */
   const address = addressOf(shown.location);
