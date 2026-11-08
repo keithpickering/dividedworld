@@ -10,7 +10,7 @@
  * loader and leaves the page, and the address bar, as they are until the answer lands, then changes them together.
  * It also holds the prefetch answers and the history cache of loaded pages, both in memory only.
  */
-import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode, type Ref } from 'react';
 
 export interface Location {
   readonly path: string;
@@ -569,7 +569,7 @@ export function useNavigate(): Router['navigate'] {
 }
 
 /** A link that moves within the app without a reload; a modified click opens as the browser would. */
-export function Link({ to, replace, state, source, early: readEarly = true, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown; readonly early?: boolean; /** Names this link's load for `usePendingFrom`; the link's own id when none is given. */ readonly source?: string } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+export function Link({ to, replace, state, source, early: readEarly = true, onClick, onPointerEnter, onPointerLeave, onPointerDown, onFocus, onBlur, ...rest }: { readonly to: string; readonly replace?: boolean; readonly state?: unknown; readonly early?: boolean; /** Names this link's load for `usePendingFrom`; the link's own id when none is given. */ readonly source?: string; readonly ref?: Ref<HTMLAnchorElement> } & AnchorHTMLAttributes<HTMLAnchorElement>) {
   const navigate = useNavigate();
   const prefetch = usePrefetch();
   const ownSource = useId();

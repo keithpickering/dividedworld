@@ -20,7 +20,7 @@ const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test', copy: { announcementsThreadTitle: 'Promos {season}' },
   classes: [{ key: 'face', name: 'Face', earn }],
-  cards: [],
+  cards: [], packs: [], machine: [],
   reactions: [{ key: 'fire', emoji: 'F', quadrant: 'excitedPositive' }],
   settings, system: testSystem,
   boards: [

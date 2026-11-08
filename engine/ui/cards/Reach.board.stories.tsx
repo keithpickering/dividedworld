@@ -32,7 +32,7 @@ type Scene = 'character' | 'still' | 'armed' | 'thread' | 'banner' | 'pinned';
 /** The engine's own board card, for the banner: legendary, a day, drawn as a plain mark in the glass's neon. */
 const RUMBLE: CardRules = {
   key: 'kb-test-rumble', name: 'Rumble', alignment: 'salty', rarity: 'legendary', reaches: ['board'], lasts: { unit: 'day', count: 1 },
-  priceKey: 'kb-test-rumble.price', playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _config, now) => landsOn({ key: 'kb-test-rumble', reaches: ['board'] }, t, e, now),
+  playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _config, now) => landsOn({ key: 'kb-test-rumble', reaches: ['board'] }, t, e, now),
 };
 const RUMBLE_UI: CardUi = { key: 'kb-test-rumble', art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)', canvas: '', mark: '', tagline: 'Shake a board.', credit: 'Test' }, describe: () => 'The engine\'s test board card.' };
 
@@ -114,7 +114,7 @@ function Scene({ scene }: { readonly scene: Scene }) {
   /* The engine's test board card beside the instance's own, for the banner alone. */
   const withRumble = useMemo<Kayfa>(() => ({
     ...kayfa,
-    instance: { ...kayfa.instance, cards: [...kayfa.instance.cards, RUMBLE], settings: { ...kayfa.instance.settings, economy: { ...kayfa.instance.settings.economy, [RUMBLE.priceKey]: 100 } } },
+    instance: { ...kayfa.instance, cards: [...kayfa.instance.cards, RUMBLE], settings: { ...kayfa.instance.settings, economy: kayfa.instance.settings.economy }, machine: [...kayfa.instance.machine, { item: { card: RUMBLE.key }, availability: 'onSale' as const, price: 100 }] },
     ui: { ...kayfa.ui, cards: [...kayfa.ui.cards, RUMBLE_UI] },
   }), [kayfa]);
   return <KayfaProvider value={withRumble}><Drawn scene={scene} /></KayfaProvider>;

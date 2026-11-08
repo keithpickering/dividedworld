@@ -37,9 +37,9 @@ export function instanceSeed(instance: Instance) {
     } as Record<string, unknown>,
     classes: instance.classes.map((c) => ({ key: c.key, name: c.name })),
     reactions: instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })),
-    // What each card's price reads beside its priceKey, by name, so screen_settings can hand the screens those numbers too (0039).
+    // What each card's rules read, by name, so screen_settings can hand the screens those numbers too (0039). A card's price is its slot's.
     cards: instance.cards.map((c) => ({
-      key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey, stack: c.stack ?? 1, seeded: c.seeded === true,
+      key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true,
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
       // How it is played and how rare it is, and a Set card's trap, a Use card's ward and time up (0054), which seed_instance
       // checks as instanceProblems does. A trap or a time up left out travels as none.
@@ -47,6 +47,10 @@ export function instanceSeed(instance: Instance) {
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
     })),
+    // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
+    // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.
+    packs: instance.packs.map((p) => ({ key: p.key, pulls: p.pulls.map((pull) => ({ weights: { ...pull.weights } })), leaves: [...(p.leaves ?? [])] })),
+    machine: instance.machine.map((m) => ({ ...('card' in m.item ? { card: m.item.card } : { pack: m.item.pack }), availability: m.availability, price: m.price })),
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },

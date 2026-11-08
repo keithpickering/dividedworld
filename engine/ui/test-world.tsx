@@ -37,7 +37,7 @@ export const testInstance: Instance = {
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }],
   /* One salty card at 1.00, whose play costs nothing more: enough rules for a screen that prices a card (the HUD's hand, the Vending Machine). */
   cards: [{
-    key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', playPrice: () => 0,
+    key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', playPrice: () => 0,
     canApply: () => ({ ok: true, value: undefined }), validateConfig: (config) => ({ ok: true, value: config }),
   }],
   reactions: [
@@ -45,6 +45,9 @@ export const testInstance: Instance = {
     { key: 'tea', emoji: 'E', quadrant: 'calmPositive' }, { key: 'zzz', emoji: 'Z', quadrant: 'boredNegative' },
   ],
   settings,
+  packs: [],
+  /* The Vending Machine sells the one card at 1.00. */
+  machine: [{ item: { card: 'whoops' }, availability: 'onSale', price: 100 }],
   system: testSystem,
   boards: [
     { slug: 'general', name: 'General', description: 'Anything.' },
@@ -102,7 +105,7 @@ const previewTokens = (page: string, banner: string, buttonCase = 'lowercase'): 
   ['--kb-bg', page], ['--kb-banner-bg', banner], ['--kb-button-case', buttonCase],
 ]);
 
-const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: { light: previewTokens('house-light', 'banner-light'), dark: previewTokens('house-dark', 'banner-dark') } }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light', preview: { light: previewTokens('sepia-light', 'banner-sepia', 'none') } }], classLooks: { face: { color: 'currentColor', description: () => 'The crowd favorite: earns from cheers.', hurtsBy: () => 'Hurt by boos.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } }, heel: { color: 'currentColor', description: () => 'Earns heat: boos and tomatoes.', hurtsBy: () => 'Hurt by the polite shrug.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, reasonWords, quadrantClasses: { excitedNegative: 'heel', excitedPositive: 'face' }, copy: { siteName: 'Test', siteTagline: 'test', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'the test card still moves you, only instantly.' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } }, cards: [], onboarding: { tips: Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `Title of ${k}`, line: `The line of ${k}.`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `Action of ${k}` } : {}) }])), letter: 'A letter.' }, frontDoor: { title: 'How do we explain this', label: 'Sample thread, made up', cast: [{ key: 'ann', name: 'Ann', rank: 0, posts: 12 }, { key: 'bo', name: 'Bo', title: 'Test Talent', rank: 2, posts: 340, revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' } }], posts: [{ by: 'ann', body: 'Hello there.', reactions: { fire: 2 } }, { by: 'bo', body: 'It plays up to {{setting:charactersPerPlayer}} characters.', reactions: { tea: 1, tomato: 3 }, plays: [{ card: 'whoops', by: 'ann', config: { seed: 7 }, reactions: { fire: 1 } }] }], note: 'A note. It is by invite.', prompt: { title: 'Who will you play as?', line: 'A test game.' } }, guide: { markdown: '## Welcome letter\n\n<!-- kayfabb:letter -->\n\n## Classes\n\n<!-- kayfabb:classes -->', hints: { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' } } } as unknown as Kayfa['ui'];
+const ui = { glass: testGlass, themes: [{ key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: { light: previewTokens('house-light', 'banner-light'), dark: previewTokens('house-dark', 'banner-dark') } }, { key: 'sepia', name: 'Sepia', href: '/sepia.css', modes: 'light', preview: { light: previewTokens('sepia-light', 'banner-sepia', 'none') } }], classLooks: { face: { color: 'currentColor', description: () => 'The crowd favorite: earns from cheers.', hurtsBy: () => 'Hurt by boos.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } }, heel: { color: 'currentColor', description: () => 'Earns heat: boos and tomatoes.', hurtsBy: () => 'Hurt by the polite shrug.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } } }, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, reasonWords, quadrantClasses: { excitedNegative: 'heel', excitedPositive: 'face' }, copy: { siteName: 'Test', siteTagline: 'test', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'the test card still moves you, only instantly.' }, pips: { default: { full: 'full.svg', empty: 'empty.svg' } }, cards: [], packs: {}, onboarding: { tips: Object.fromEntries(TIP_KEYS.map((k) => [k, { title: `Title of ${k}`, line: `The line of ${k}.`, ...((ACTION_TIPS as readonly string[]).includes(k) ? { action: `Action of ${k}` } : {}) }])), letter: 'A letter.' }, frontDoor: { title: 'How do we explain this', label: 'Sample thread, made up', cast: [{ key: 'ann', name: 'Ann', rank: 0, posts: 12 }, { key: 'bo', name: 'Bo', title: 'Test Talent', rank: 2, posts: 340, revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' } }], posts: [{ by: 'ann', body: 'Hello there.', reactions: { fire: 2 } }, { by: 'bo', body: 'It plays up to {{setting:charactersPerPlayer}} characters.', reactions: { tea: 1, tomato: 3 }, plays: [{ card: 'whoops', by: 'ann', config: { seed: 7 }, reactions: { fire: 1 } }] }], note: 'A note. It is by invite.', prompt: { title: 'Who will you play as?', line: 'A test game.' } }, guide: { markdown: '## Welcome letter\n\n<!-- kayfabb:letter -->\n\n## Classes\n\n<!-- kayfabb:classes -->', hints: { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' } } } as unknown as Kayfa['ui'];
 
 export interface WorldOptions {
   /** The address the screen opens at (a path, a query, a fragment). */
@@ -116,6 +119,8 @@ export interface WorldOptions {
   readonly glass?: Kayfa['ui']['glass'];
   /** The instance's cards' looks, one `CardUi` per card key (none by default: every play is shown as its tag alone). */
   readonly cards?: Kayfa['ui']['cards'];
+  /** How the instance's packs draw themselves, by pack key (`InstanceUi.packs`; none by default). */
+  readonly packs?: Kayfa['ui']['packs'];
   /** Class looks of the test's own, in place of the test world's Face and Heel (a description that reads the settlement span). */
   readonly classLooks?: Kayfa['ui']['classLooks'];
   /** The instance's pictures for its personas, by key (`InstanceUi.avatars`); none by default. */
@@ -153,7 +158,7 @@ export function buildWorld(settingsOverride?: Partial<ScreenSettings>, instance:
 /** Render a screen on a backend made by `buildWorld`. */
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.classLooks || options.avatars || options.guide || options.copy ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.copy ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(

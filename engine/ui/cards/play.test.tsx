@@ -26,7 +26,7 @@ import { LoadedThread } from '../loaded.tsx';
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
 
 const whoopsRules: CardRules<{ color: string }> = {
-  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
   playPrice: (settings, target) => settings.economy['whoops.perLength']! * Math.floor((target.reach === 'post' ? target.length : 0) / settings.economy['whoops.lengthStep']!),
   canApply: (target, effects, _config, now) => landsOn(whoopsRules, target, effects, now),
   validateConfig: (config) => {
@@ -35,7 +35,7 @@ const whoopsRules: CardRules<{ color: string }> = {
   },
 };
 const stickRules: CardRules = {
-  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price',
+  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', 
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn({ key: 'stick-around' }, target, effects, now),
   validateConfig: (config) => ok(config),
@@ -425,10 +425,10 @@ describe('the play form', () => {
   });
 
   /* #86: the hand's postcards say their rules with the numbers the server prices with now, an admin's tuning included. */
-  test('a price an admin has tuned is the one a hand\'s postcard says', async () => {
+  test('a number an admin has tuned is the one a hand\'s postcard says', async () => {
     const user = userEvent.setup();
-    const w = world({ ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.price': 150 } } });
-    const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.price']! / 100).toFixed(2)}.` } : c));
+    const w = world({ ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.perLength': 150 } } });
+    const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.perLength']! / 100).toFixed(2)}.` } : c));
     await open(w, saying);
     await user.click(handButton());
     expect(within(drawer()).getAllByRole('button', { name: /^Whoops!, Salty, Cast, common postcard/u })[0]).toHaveAccessibleDescription('Splats a post for 1.50.');

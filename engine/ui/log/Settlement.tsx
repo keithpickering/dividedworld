@@ -158,7 +158,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
 }
 
 /** A document for a screen that is signed out and so draws none of it. */
-const EMPTY_DOC: LogDoc = { estimate: null, page: { log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null }, acts: [], states: {}, people: [], threads: [], boards: [], standings: {}, turns: [], season: null } };
+const EMPTY_DOC: LogDoc = { estimate: null, page: { log: { settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null }, acts: [], states: {}, people: [], threads: [], boards: [], standings: {}, turns: [], season: null } };
 
 /** The summary at /log/settlement: the newest settlement of the player's, the HUD's character's tab first; Esc goes back. */
 export function SettlementScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {

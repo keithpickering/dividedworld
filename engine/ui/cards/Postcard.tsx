@@ -23,6 +23,8 @@ export type { PostcardSize };
 export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'children'> {
   readonly face: CardFace;
   readonly size: PostcardSize;
+  /** The card's price at the machine, in hundredths, from its on-sale slot (`saleOf`); a sheet draws it in its foot. A face has none: without one the foot has no price. */
+  readonly price?: number | null;
   /** The element: a button where it acts, an article on a sheet. */
   readonly as?: ElementType;
   readonly armed?: boolean;
@@ -41,12 +43,13 @@ export interface PostcardProps extends Omit<HTMLAttributes<HTMLElement>, 'childr
  */
 export function cardLabel(face: CardFace, size: PostcardSize): string {
   /* The play's word is drawn after the tag, and the gem's rarity is its title: both said in words, after what is drawn before them. */
+  if (face.unknown) return face.name;
   const said = `${face.name}, ${face.tag}, ${playWord(face.play)}`;
   const shown = size === 'fan' && face.tagline ? `${said}. ${face.tagline}` : said;
   return `${shown}, ${face.rarity} postcard`;
 }
 
-export function Postcard({ face, size, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
+export function Postcard({ face, size, price = null, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
   const vars = { ...templateVars(size), '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, '--kb-name-chars': face.name.length, ...style } as CSSProperties;
   const { canvas, credit } = face.art;
   return (
@@ -56,7 +59,7 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       style={vars}
       data-size={size}
       data-kb-card={face.key}
-      data-kb-alignment={face.alignment}
+      data-kb-alignment={face.unknown ? undefined : face.alignment}
       data-armed={armed ? '' : undefined}
       data-kb-art={size === 'slot' ? '' : undefined}
     >
@@ -72,7 +75,7 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
       <span className="kb-postcard-plate" aria-hidden="true" data-kb-art><span className="kb-postcard-name">{face.name}</span></span>
       {' '}
       {/* The alignment and how it is played, as two badges on the top border; the slot holds neither. */}
-      {size !== 'slot' && (
+      {size !== 'slot' && !face.unknown && (
         <>
           <span className="kb-postcard-badges" aria-hidden="true" data-kb-art>
             <span className="kb-postcard-tag">{face.tag}</span>
@@ -83,7 +86,7 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
         </>
       )}
       {/* How rare it is, as a gem whose shape says it (the card mechanic's design, sections 1 and 2). */}
-      <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />
+      {!face.unknown && <span className="kb-postcard-gem" aria-hidden="true" data-kb-rarity={face.rarity} data-kb-gem={gemOf(face.rarity)} title={rarityName(face.rarity)} />}
       {' '}
       {size === 'fan' && face.tagline && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.tagline}</span>}
       {size === 'sheet' && <span className="kb-postcard-line" aria-hidden="true" data-kb-art>{face.summary}</span>}
@@ -94,7 +97,7 @@ export function Postcard({ face, size, as: As = 'span', armed = false, className
             {credit ? <span className="kb-postcard-credit">Art · {credit}</span> : null}
           </span>
           {' '}
-          <span className="kb-postcard-price kb-num"><span className="kb-postcard-orb" />{priceOf(face)}</span>
+          {price !== null && <span className="kb-postcard-price kb-num"><span className="kb-postcard-orb" />{priceOf(price, face.extra)}</span>}
         </span>
       )}
     </As>

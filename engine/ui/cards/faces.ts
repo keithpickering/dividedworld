@@ -4,13 +4,14 @@
  * words (`CardUi`). A card the instance gives no `CardUi` still has a face here, in the glass's
  * plain tokens, so a rule without art is bought, held and played all the same.
  *
- * Prices are the rules' own, read from the settings the screen was given, the server's economy laid over the compiled one
- * (`withCardEconomy`): the base price the
- * Vending Machine sells at (`basePrice`), and what playing the card on a very long post costs on
- * top of it, which says whether the price reads "1.00" or "1.00+" and how much more a long post
- * can cost. A card whose rules refuse the probe is shown at its base price alone.
+ * A card's face has no buy price: that is its slot's at the machine, which changes with an admin's hand, so a screen that shows one
+ * reads the card's on-sale slot from `KayfaApi.machine` (`saleOf`) and shows none where there is none. What playing the card on a very
+ * long post costs on top of a price is the rules' own, read from the settings the screen was given, the
+ * server's economy laid over the compiled one (`withCardEconomy`): it says whether the price reads "1.00" or "1.00+" and how
+ * much more a long post can cost. A card whose rules refuse the probe is shown at its price alone.
  */
-import { basePrice, playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
+import type { Slot } from '../data/api.ts';
+import { playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
 import type { Alignment, Settings } from '../../rules/types.ts';
 import type { CardArt, CardUi } from './types.ts';
 
@@ -26,9 +27,7 @@ export interface CardFace {
   readonly alignment: Alignment;
   /** The alignment as a tag reads it: "Sweet", "Salty". */
   readonly tag: string;
-  /** What the machine sells it for, in hundredths. */
-  readonly price: number;
-  /** What playing it on a very long post costs on top of the price, in hundredths; 0 for a card whose play costs nothing more. */
+  /** What playing it on a very long post costs on top of its price at the machine, in hundredths; 0 for a card whose play costs nothing more. */
   readonly extra: number;
   /** How many of it one post takes (1 unless the rules say more). */
   readonly stack: number;
@@ -42,6 +41,8 @@ export interface CardFace {
   readonly rarity: Rarity;
   /** How it is played: its word on the face ("Set"). */
   readonly play: Play;
+  /** A card the instance no longer has: its face is plain, claiming no alignment, rarity or way to play (its `alignment`, `tag`, `rarity` and `play` are placeholders, never drawn or said). */
+  readonly unknown?: true;
 }
 
 /** The corner gem's shape for each rarity, so a rarity is told by its shape and its name, never by color alone. */
@@ -66,8 +67,28 @@ export function plainRefusal(error: string): string {
 /** The alignment as a tag reads it. */
 export const alignmentTag = (alignment: Alignment): string => alignment.charAt(0).toUpperCase() + alignment.slice(1);
 
-/** The price as a card's face says it: "1.00", or "1.00+" where playing it on a long post costs more. */
-export const priceOf = (face: Pick<CardFace, 'price' | 'extra'>): string => `${orbs(face.price)}${face.extra > 0 ? '+' : ''}`;
+/** A price as a screen says it: "1.00", or "1.00+" where playing the card on a long post costs more (`CardFace.extra`). */
+export const priceOf = (price: number, extra: number): string => `${orbs(price)}${extra > 0 ? '+' : ''}`;
+
+/**
+ * The slot that sells a card now: its on-sale slot. A card with no slot, a hidden one (which the machine does not list), a sold out one,
+ * or no look at the machine yet has none, and a screen shows no price for it.
+ */
+export const saleOf = (slots: readonly Slot[] | null | undefined, card: string): Slot | null =>
+  slots?.find((s) => 'card' in s.item && s.item.card === card && s.availability === 'onSale') ?? null;
+
+/**
+ * What a card's price cell says: the on-sale slot's price (with the card's "+" where playing it can cost more), "Sold out" for a
+ * slot that is sold out, "Not on sale" for a card with no slot the machine lists (a hidden one, or none), "Price unavailable" where the
+ * machine could not be read, and nothing while the first read has not answered.
+ */
+export function priceWords(look: { readonly slots: readonly Slot[] | null; readonly status: 'loading' | 'ready' | 'failed' }, card: string, extra: number): string {
+  if (look.status === 'failed') return 'Price unavailable';
+  if (look.slots === null) return '';
+  const sale = saleOf(look.slots, card);
+  if (sale) return priceOf(sale.price, extra);
+  return look.slots.some((s) => 'card' in s.item && s.item.card === card && s.availability === 'soldOut') ? 'Sold out' : 'Not on sale';
+}
 
 /** The face a card with no `CardUi` has: the tokens' own, no picture. */
 const PLAIN: FaceArt = { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' };
@@ -88,7 +109,6 @@ export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Setti
     name: rules.name,
     alignment: rules.alignment,
     tag: alignmentTag(rules.alignment),
-    price: basePrice(rules, settings),
     extra: extraOf(rules, settings),
     stack: rules.stack ?? 1,
     art: ui?.art ?? PLAIN,
@@ -101,8 +121,8 @@ export function faceOf(rules: CardRules, ui: CardUi | undefined, settings: Setti
 }
 
 /**
- * The settings a card is priced with on a screen: the compiled ones, with the economy numbers the server prices with now laid over
- * them (`ScreenSettings.cardEconomy`, 0039_card_economy.sql), so a price an admin has tuned shows as the server will charge it. A
+ * The settings a card's rules are read with on a screen: the compiled ones, with the economy numbers the server prices with now laid over
+ * them (`ScreenSettings.cardEconomy`, 0039_card_economy.sql), so a number an admin has tuned shows as the server will use it. A
  * key the server did not give, or gave as anything but a number, is the compiled economy's.
  */
 export function withCardEconomy(settings: Settings, cardEconomy: Readonly<Record<string, unknown>> | undefined): Settings {

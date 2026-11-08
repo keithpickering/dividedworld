@@ -1,0 +1,7 @@
+/*
+ * The strip of the admin's pages (AdminPages.tsx): two small buttons under the page's lead, as boards 05 and 37's phone draw them. Sizes are the glass's
+ * tokens, never px (engine/ui/glass/board.test.tsx reads this file).
+ */
+.kb-admin-pages {
+  margin: 28px 0 0;
+}

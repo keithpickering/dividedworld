@@ -18,7 +18,7 @@
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
-import type { BeyondPost, Reach } from '../../rules/cards.ts';
+import type { BeyondPost, Rarity, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
 import type { RecordKind } from '../profile/record.ts';
@@ -181,8 +181,8 @@ export interface ScreenSettings {
   /** The numbers the instance's cards give the screens, by name (`Settings.cardSettings`). */
   readonly cardSettings: Readonly<Record<string, number>>;
   /**
-   * The economy numbers the cards' prices read, as the server prices with them now (0039_card_economy.sql): each card's price and
-   * the keys its rules read, from the economy row an admin tunes. A key it lacks is the compiled economy's (`withCardEconomy`).
+   * The economy numbers the cards' rules read, as the server uses them now (0039_card_economy.sql), from the economy row an admin
+   * tunes. A card's buy price is not here: it is its slot's (`KayfaApi.machine`). A key it lacks is the compiled economy's (`withCardEconomy`).
    */
   readonly cardEconomy: Readonly<Record<string, number>>;
   /**
@@ -912,6 +912,68 @@ export interface Bought {
   readonly held: number;
 }
 
+/**
+ * One slot of the Vending Machine as every player sees it (`machine_now`, 0139_machine.sql): its place in the grid, what it sells,
+ * whether it is for sale, and the price now, in hundredths. A hidden slot is not here, unless a flash sale has opened it. `move` is the Boss's
+ * move in force on it (0140_machine_moves.sql), already applied to `availability` and `price`; null where it has none.
+ */
+export interface Slot {
+  readonly id: Id;
+  readonly position: number;
+  readonly item: { readonly card: string } | { readonly pack: string };
+  /** A card's rarity; null for a pack. */
+  readonly rarity: Rarity | null;
+  readonly availability: 'onSale' | 'soldOut';
+  readonly price: number;
+  readonly move: SlotMove | null;
+}
+
+/**
+ * The Boss's move on a slot, as `machine_now` carries it: what a player's screen needs to say plainly what happened and how it ends. The words come from the
+ * engine's catalogs by `kind` (engine/system/moves.ts) and `demand` (engine/system/demands.ts, with `progress`), never from the Boss's text. The slot's
+ * `availability` and `price` already have the move in them; `was` is the admin's price, which a Reprice moves and a screen strikes through.
+ */
+export interface SlotMove {
+  readonly kind: 'pullSlot' | 'repriceSlot' | 'flashSale';
+  /** The move's Act. */
+  readonly act: Id;
+  /** When it ends on its own (ISO 8601); every machine move has an expiry. */
+  readonly ends: string | null;
+  /** The demand that ends it early, for a Pull and a markup; null for a markdown and a flash sale, which carry none. */
+  readonly demand: Demand | null;
+  /** The tick's stored count of that demand; null where there is no demand. */
+  readonly progress: DemandProgress | null;
+  /** The admin's price, in hundredths. */
+  readonly was: number;
+  /** A Reprice's percent of `was`; null for the other two. */
+  readonly percent: number | null;
+  /** A flash sale's window in hours; null for the other two. */
+  readonly hours: number | null;
+}
+
+/**
+ * A slot as an admin reads it (`admin_machine`, 0141_machine_admin.sql): every slot, a hidden one too, at the admin's own availability and price (the Boss's move
+ * over it is beside them, never folded in). `move` is the Boss's machine move in force on it, enough to name it and to find it in the queue.
+ */
+export interface AdminSlot {
+  readonly id: Id;
+  readonly position: number;
+  readonly item: { readonly card: string } | { readonly pack: string };
+  /** A card's rarity; null for a pack. */
+  readonly rarity: Slot['rarity'];
+  readonly availability: 'onSale' | 'soldOut' | 'hidden';
+  /** The admin's price, in hundredths of an orb. */
+  readonly price: number;
+  readonly move: Pick<SlotMove, 'kind' | 'act' | 'ends' | 'percent' | 'hours'> | null;
+}
+
+/** A pack opened: its id, the cards it gave in pull order, and the settled wallet after it (`buy_pack`'s answer). */
+export interface Opened {
+  readonly pack: Id;
+  readonly contents: readonly string[];
+  readonly balance: number;
+}
+
 /* ------------------------------------------------------------------ the log ---- */
 
 /**
@@ -962,16 +1024,34 @@ export interface WalletEvent {
   readonly at: string;
 }
 
-/** A card the player bought or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event. */
+/**
+ * A card the player bought, pulled from a pack or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event,
+ * and a pulled card costs nothing, since its pack holds the price (`PackEvent`).
+ */
 export interface CardEvent {
   readonly card: string;
-  readonly kind: 'bought' | 'played';
-  /** The play's Act; null for a purchase. */
+  readonly kind: 'bought' | 'played' | 'pulled';
+  /** The play's Act; null for a purchase and a pulled card. */
   readonly act: Id | null;
+  /** The pack a pulled card came from; absent on any other row. */
+  readonly pack?: Id;
+  /** For a purchase: true when the Boss had moved the price it was bought at. Absent otherwise, and on any other row. */
+  readonly repriced?: boolean;
   readonly price: number;
   readonly at: string;
   /** For a card the player set face down, whether it carries a trap: false for a Bluff, which never springs. Absent on any other row. */
   readonly springs?: boolean;
+}
+
+/** A pack the player bought (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order. */
+export interface PackEvent {
+  readonly pack: Id;
+  /** The pack kind's key, which `InstanceUi.packs` names. */
+  readonly kind: string;
+  readonly price: number;
+  readonly repriced: boolean;
+  readonly contents: readonly string[];
+  readonly at: string;
 }
 
 /**
@@ -1347,6 +1427,8 @@ export interface Log {
   readonly settlements: readonly LogSettlement[];
   readonly wallet: readonly WalletEvent[];
   readonly cards: readonly CardEvent[];
+  /** The packs the player bought, by when each was bought. */
+  readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
@@ -1881,6 +1963,23 @@ export interface KayfaApi {
   wallet(): Promise<Wallet>;
   myReactions(acts: readonly Id[]): Promise<readonly MyReaction[]>;
   myCards(): Promise<readonly HeldCard[]>;
+  /** The Vending Machine's slots as everyone sees them now, in grid order: public, the same for every caller, a hidden slot absent. */
+  machine(): Promise<readonly Slot[]>;
+  /** Every slot of the machine, hidden ones too, in grid order, as an admin sees them. An admin's alone; anyone else is refused (the call throws). */
+  adminMachine(): Promise<readonly AdminSlot[]>;
+  /**
+   * Saves a slot's availability and price (`set_slot`). A price is at least 1 (hundredths of an orb). Taking a pack off sale ends, as reversed by the admin, every
+   * Pull whose card is then in no pack on sale; `ended` counts them. An admin's alone.
+   */
+  setSlot(slot: Id, availability: AdminSlot['availability'], price: number): Promise<Answer<{ readonly slot: Id; readonly ended: number }>>;
+  /** Swaps a slot with its neighbor in the grid (`move_slot`); the first slot up and the last slot down answer `moved: false` and change nothing. An admin's alone. */
+  moveSlot(slot: Id, direction: 'up' | 'down'): Promise<Answer<{ readonly slot: Id; readonly moved: boolean }>>;
+  /**
+   * Saves the machine page in one transaction (`save_machine`): the slots in the order given (all of them, each once) and each one's availability and price. A refusal
+   * anywhere in the list saves nothing; its `field` is `<slot id>/availability` or `<slot id>/price` where one slot's word is at fault, so the page can mark it.
+   * `ended` counts the Pulls this ended (see `setSlot`). An admin's alone.
+   */
+  saveMachine(changes: readonly { readonly slot: Id; readonly availability: AdminSlot['availability']; readonly price: number }[]): Promise<Answer<{ readonly ended: number }>>;
   /** Which of these plays the player has released themselves from (Stick Around's certification): the player's own rows, never counted or broadcast. */
   myReleases(plays: readonly Id[]): Promise<readonly Id[]>;
   /** The furthest seq read in each thread asked about; a thread never read is absent. */
@@ -2052,10 +2151,16 @@ export interface KayfaApi {
    */
   apologize(move: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
-   * Buy a card from the Vending Machine at its base price, from the settled wallet only: the ghost estimate cannot be spent. The
-   * price is the card's rules' (`basePrice`), never sent by the screen. Private, and nothing about it is broadcast.
+   * Buy a card from its slot of the Vending Machine, from the settled wallet only: the ghost estimate cannot be spent. The slot is
+   * sent with the price it showed, and the server refuses, in plain words, a price that is no longer its own. Private, and nothing
+   * about it is broadcast.
    */
-  buyCard(card: string): Promise<Answer<Bought>>;
+  buyCard(slot: Slot): Promise<Answer<Bought>>;
+  /**
+   * Buy a pack from its slot, the same way; the server rolls it, and it comes back opened: the cards it gave in pull order, already in
+   * the hand. Private.
+   */
+  buyPack(slot: Slot): Promise<Answer<Opened>>;
   /**
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.

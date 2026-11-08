@@ -118,7 +118,7 @@ export function Hud() {
   const [compact, setCompact] = useState(false);
   const menuWide = useRef(0);
   const drawerId = useId();
-  /* Priced as the server prices them now (withCardEconomy). */
+  /* Read with the economy as the server holds it now (withCardEconomy); a card in the hand has no buy price. */
   const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy)), [instance, ui.cards, settings.cardEconomy]);
   const selectId = useId();
   /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */

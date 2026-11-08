@@ -1,7 +1,7 @@
 import { useLayoutEffect } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Estimate, KayfaApi, MyCharacter, Session } from './data/api.ts';
+import type { Estimate, KayfaApi, MyCharacter, Session, Slot } from './data/api.ts';
 import { PlayerProvider, usePlayer } from './player.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../rules/pronouns.ts';
 
@@ -26,6 +26,10 @@ function stubApi(over: Partial<KayfaApi> = {}) {
   return { api, estimate };
 }
 
+/** The slot that sells Whoops!, and the one that sells a pack. */
+const WHOOPS: Slot = { id: 's-1', position: 1, item: { card: 'whoops' }, rarity: 'common', availability: 'onSale', price: 100, move: null };
+const BOOSTER: Slot = { id: 's-2', position: 2, item: { pack: 'booster' }, rarity: null, availability: 'onSale', price: 300, move: null };
+
 /** What the last purchase answered. */
 let bought: unknown = null;
 
@@ -41,7 +45,8 @@ function Probe() {
       <button onClick={() => p.reactionLanded()}>landed</button>
       <span data-testid="wallet">{p.wallet?.balance ?? 'none'}</span>
       <span data-testid="hand">{p.cards.map((c) => `${c.card}×${c.held}`).join(',')}</span>
-      <button onClick={() => void p.buyCard('whoops').then((a) => { bought = a; })}>buy</button>
+      <button onClick={() => void p.buyCard(WHOOPS).then((a) => { bought = a; })}>buy</button>
+      <button onClick={() => void p.buyPack(BOOSTER).then((a) => { bought = a; })}>open</button>
     </div>
   );
 }
@@ -54,14 +59,19 @@ describe('a purchase from the Vending Machine', () => {
   function shop(refuse = false) {
     let balance = 562;
     let held = 2;
-    const buyCard = vi.fn(async (card: string) => {
+    const buyCard = vi.fn(async (slot: Slot) => {
       if (refuse) return { ok: false as const, error: 'that costs 100, and your wallet holds 62' };
       balance -= 100;
       held += 1;
-      return { ok: true as const, value: { card, balance, held } };
+      return { ok: true as const, value: { card: 'whoops', balance, held } };
     });
-    const { api } = stubApi({ wallet: async () => ({ balance, cap: 600 }), myCards: async () => [{ card: 'whoops', held }], buyCard });
-    return { api, buyCard };
+    const buyPack = vi.fn(async (_slot: Slot) => {
+      balance -= 300;
+      held += 5;
+      return { ok: true as const, value: { pack: 'p-1', contents: ['whoops', 'whoops', 'whoops', 'whoops', 'whoops'], balance } };
+    });
+    const { api } = stubApi({ wallet: async () => ({ balance, cap: 600 }), myCards: async () => [{ card: 'whoops', held }], buyCard, buyPack });
+    return { api, buyCard, buyPack };
   }
 
   test('reads the wallet and the hand again once it is bought, so the HUD and the machine show the new count', async () => {
@@ -73,8 +83,20 @@ describe('a purchase from the Vending Machine', () => {
     act(() => screen.getByText('buy').click());
     await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×3'));
     expect(screen.getByTestId('wallet').textContent).toBe('462');
-    expect(buyCard).toHaveBeenCalledWith('whoops');
+    expect(buyCard).toHaveBeenCalledWith(WHOOPS);
     expect(bought).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
+  });
+
+  test('a pack opened reads the wallet and the hand again too, and hands back what it gave', async () => {
+    bought = null;
+    const { api, buyPack } = shop();
+    render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×2'));
+    act(() => screen.getByText('open').click());
+    await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×7'));
+    expect(screen.getByTestId('wallet').textContent).toBe('262');
+    expect(buyPack).toHaveBeenCalledWith(BOOSTER);
+    expect(bought).toEqual({ ok: true, value: { pack: 'p-1', contents: ['whoops', 'whoops', 'whoops', 'whoops', 'whoops'], balance: 262 } });
   });
 
   test('a refused purchase changes nothing and says why in the server\'s words', async () => {

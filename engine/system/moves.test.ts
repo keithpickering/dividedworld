@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ASKABLE_MOVE_KINDS, MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, MOVE_KINDS, machineLimits, moveKind, moveParamsProblems } from './moves.ts';
+import { MACHINE_DEFAULTS } from '../rules/packs.ts';
 
 const board = '11111111-1111-4111-8111-111111111111';
 const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
 
 test('the catalog holds renameBoard, structural, with a long plain label', () => {
-  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false]]);
-  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup'], 'a successor is named in its own answer, never among the moves');
-  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false]);
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
+  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
+  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false]);
   assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
@@ -128,6 +129,82 @@ test('a setRule reads in plain words with nothing unfilled, for the log and for 
   assert.deepEqual(k.parts(rule, 'General', 'done'), ['Set a rule on ', { board, name: 'General' }, ': no double posting']);
   assert.deepEqual(k.parts({ ...rule, board: null, predicate: 'minLength', param: 20 }, null, 'plan'), ['Set a house rule for every board: posts of at least 20 characters']);
   assert.match(k.template({ ...rule, board: null }, 'The Boss'), /every board/);
+});
+
+
+/* ------------------------------------------------------------------------- the machine's three moves ---- */
+
+const slot = '55555555-5555-4555-8555-555555555555';
+
+test('the machine\'s three moves are small, askable, the Boss\'s alone, and shape no board', () => {
+  for (const key of ['pullSlot', 'repriceSlot', 'flashSale']) {
+    const k = moveKind(key)!;
+    assert.deepEqual([k.structural, k.shapesBoard, k.askable, k.offices, k.uuids], [false, false, true, ['boss'], ['slot']], key);
+    assert.match(k.label, /^\{role\} [a-z ]+$/);
+  }
+  assert.deepEqual(Object.keys((moveKind('pullSlot')!.params as { fields: object }).fields), ['slot']);
+  assert.deepEqual(Object.keys((moveKind('repriceSlot')!.params as { fields: object }).fields), ['slot', 'percent']);
+  assert.deepEqual(Object.keys((moveKind('flashSale')!.params as { fields: object }).fields), ['slot', 'hours']);
+});
+
+test('the machine limits are the economy\'s machine.* numbers, the engine\'s defaults where a key is missing', () => {
+  assert.deepEqual(machineLimits({}), { pullMost: 2, moveDaysMost: 7, repriceLeast: 50, repriceMost: 200, flashHoursLeast: 24, flashHoursMost: 48 });
+  assert.equal(machineLimits({ 'machine.pullMost': 5 }).pullMost, 5);
+  assert.equal(MACHINE_DEFAULTS['machine.pullMost'], 2);
+});
+
+test('a pull, a reprice and a flash sale keep good params, and lowercase the slot', () => {
+  assert.ok(moveParamsProblems('pullSlot', { slot }).ok);
+  const r = moveParamsProblems('repriceSlot', { slot: slot.replace('5555', 'AAAA'), percent: 150 });
+  assert.ok(r.ok && (r.value as { slot: string }).slot === slot.replace('5555', 'aaaa'), JSON.stringify(r));
+  assert.ok(moveParamsProblems('flashSale', { slot, hours: 36 }).ok);
+});
+
+test('each limit on a machine move is refused by moveParamsProblems, naming the path and the predicate', () => {
+  const no = (key: string, params: unknown, limits = machineLimits({})) => {
+    const r = moveParamsProblems(key, params, limits);
+    assert.ok(!r.ok, `${key} ${JSON.stringify(params)} should be refused`);
+    return `${r.path}:${r.predicate}`;
+  };
+  assert.equal(no('pullSlot', { slot: 'x'.repeat(36) }), 'slot:isUuid');
+  assert.equal(no('pullSlot', {}), 'slot:required');
+  assert.equal(no('repriceSlot', { slot, percent: 49 }), 'percent:atLeast(50)');
+  assert.equal(no('repriceSlot', { slot, percent: 201 }), 'percent:atMost(200)');
+  assert.equal(no('repriceSlot', { slot, percent: 100 }), 'percent:notOneHundred');
+  assert.equal(no('repriceSlot', { slot, percent: 120.5 }), 'percent:isWhole');
+  assert.equal(no('repriceSlot', { slot }), 'percent:required');
+  assert.equal(no('flashSale', { slot, hours: 23 }), 'hours:atLeast(24)');
+  assert.equal(no('flashSale', { slot, hours: 49 }), 'hours:atMost(48)');
+  assert.equal(no('flashSale', { slot, hours: 30.5 }), 'hours:isWhole');
+  // The bounds are the instance's: a retuned economy moves them.
+  const wide = machineLimits({ 'machine.repriceLeast': 10, 'machine.repriceMost': 300, 'machine.flashHoursMost': 72 });
+  assert.ok(moveParamsProblems('repriceSlot', { slot, percent: 20 }, wide).ok);
+  assert.ok(moveParamsProblems('repriceSlot', { slot, percent: 300 }, wide).ok);
+  assert.ok(moveParamsProblems('flashSale', { slot, hours: 72 }, wide).ok);
+  assert.equal(no('repriceSlot', { slot, percent: 49 }, machineLimits({ 'machine.repriceLeast': 60 })), 'percent:atLeast(60)');
+});
+
+test('a pull and a markup carry a demand; a markdown and a flash sale carry none', () => {
+  assert.equal(moveKind('pullSlot')!.demand({ slot }), 'required');
+  assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 150 }), 'required');
+  assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 50 }), 'none');
+  assert.equal(moveKind('flashSale')!.demand({ slot, hours: 24 }), 'none');
+  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.key.match(/Slot$|flashSale/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
+});
+
+test('the machine\'s moves read in plain words, with nothing unfilled and the slot named when the screen knows it', () => {
+  const pull = moveKind('pullSlot')!, up = moveKind('repriceSlot')!, flash = moveKind('flashSale')!;
+  for (const [k, p] of [[pull, { slot }], [up, { slot, percent: 150 }], [up, { slot, percent: 50 }], [flash, { slot, hours: 24 }]] as const) {
+    assert.doesNotMatch(k.template(p, 'The Boss'), /[{}]|undefined|null/);
+    assert.ok(k.template(p, 'The Boss').startsWith('The Boss '));
+    assert.doesNotMatch(k.parts(p, null, 'plan').join(''), /[{}]|undefined|null/);
+  }
+  assert.match(up.template({ slot, percent: 150 }, 'The Boss'), /up to 150%/);
+  assert.match(up.template({ slot, percent: 50 }, 'The Boss'), /down to 50%/);
+  assert.deepEqual(pull.parts({ slot }, 'Whoops!', 'done'), ['Pulled ', 'Whoops!', ' from the machine']);
+  assert.deepEqual(pull.parts({ slot }, 'Whoops!', 'plan'), ['Pull ', 'Whoops!', ' from the machine']);
+  assert.deepEqual(pull.parts({ slot }, null, 'done'), ['Pulled ', 'a slot', ' from the machine']);
+  assert.deepEqual(flash.parts({ slot, hours: 24 }, 'Main Event', 'done'), ['Opened a flash sale on ', 'Main Event', ' for 24 hours']);
 });
 
 const who = '22222222-2222-4222-8222-222222222222';

@@ -4,7 +4,7 @@ import { RARITIES, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, de
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
-const base = { alignment: 'salty' as const, priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
+const base = { alignment: 'salty' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
 const cast = (key: string, rarity: CardRules['rarity']): CardRules => ({ ...base, key, name: `Test ${key}`, rarity, canApply: (t, e, _config, now) => landsOn({ key }, t, e, now) });
 const plain = cast('plain', 'common');
 const grand = cast('grand', 'legendary');
@@ -214,7 +214,7 @@ test('drawnInMoment holds for a card that saves state, stacks or ends by time, a
 test('a card\'s landing may read its checked configuration, and a landing refusal still comes before a configuration\'s', () => {
   const said: unknown[] = [];
   const words: CardRules<{ word: string }> = {
-    key: 'words', name: 'Words', alignment: 'pepperoni', rarity: 'common', priceKey: 'p', playPrice: () => 0,
+    key: 'words', name: 'Words', alignment: 'pepperoni', rarity: 'common', playPrice: () => 0,
     canApply: (target, _effects, config) => {
       said.push(config);
       if (target.reach !== 'post' || target.kind !== 'post') return refuse('a post');

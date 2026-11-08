@@ -27,7 +27,7 @@ const instance: Instance = {
   system: testSystem,
   name: 'Test World',
   classes: [fan, quiet],
-  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
+  cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],
   reactions: [
     { key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' },
     { key: 'heart', emoji: '❤️', quadrant: 'excitedPositive' },
@@ -41,6 +41,7 @@ const instance: Instance = {
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
+  packs: [], machine: [],
 };
 
 const H = 3_600_000;
@@ -346,7 +347,7 @@ test('a reaction to one of The System\'s own Acts settles and moves nobody\'s Au
 });
 
 test('a Pepperoni play reads as the room leans on it in the window: Salty, Sweet, or Pepperoni on a tie', () => {
-  const kind = (key: string, alignment: 'sweet' | 'salty' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const kind = (key: string, alignment: 'sweet' | 'salty' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni'), kind('sugar', 'sweet')] };
   const b = base();
@@ -374,7 +375,7 @@ test('a Pepperoni play reads as the room leans on it in the window: Salty, Sweet
 /* The two players a Pepperoni card is between (the core loop design, section 2, #170): the room that decides its lean is everyone
    but the caster's player and the target post's author's player. */
 test('a Pepperoni play\'s lean leaves out the target author\'s player: their second mask never tips it; a third player does', () => {
-  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
   const b = base();
@@ -391,7 +392,7 @@ test('a Pepperoni play\'s lean leaves out the target author\'s player: their sec
 });
 
 test('a Pepperoni play on a staff post has no author player to leave out: a third player\'s groan makes it Salty', () => {
-  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
   const b = base();
@@ -405,7 +406,7 @@ test('a Pepperoni play on a staff post has no author player to leave out: a thir
 });
 
 test('a Pepperoni play from an earlier window whose post is not in the input settles: its lean has no author to leave out', () => {
-  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const world = { ...withClasses(recorder().rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
   const b = base();
   // Cat's card from before the window, on a post the input does not hold; Dee reacts to the card in the window.
@@ -418,7 +419,7 @@ test('a Pepperoni play from an earlier window whose post is not in the input set
 });
 
 test('the estimate\'s Pepperoni lean can recognize only the caller: the author\'s own reaction is left out for the author, counted for the caster', () => {
-  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const kind = (key: string, alignment: 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni')] };
   const b = base();
@@ -442,7 +443,7 @@ test('the estimate\'s Pepperoni lean can recognize only the caller: the author\'
 });
 
 test('a Pepperoni play that reads as Sweet shares the Sweet hold: one player\'s two cards on a post pay what one would', () => {
-  const kind = (key: string, alignment: 'sweet' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const kind = (key: string, alignment: 'sweet' | 'pepperoni') => ({ key, name: key, alignment, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, kind('pep', 'pepperoni'), kind('sugar', 'sweet')] };
   const b = base();
@@ -456,7 +457,7 @@ test('a Pepperoni play that reads as Sweet shares the Sweet hold: one player\'s 
 });
 
 test('two Sweet cards from one player on one post pay what one would: each vote counts once, for the earlier card', () => {
-  const sweet = (key: string) => ({ key, name: key, alignment: 'sweet' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
+  const sweet = (key: string) => ({ key, name: key, alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) });
   const { rules, inputs } = recorder();
   const world = { ...withClasses(rules), cards: [...instance.cards, sweet('sugar'), sweet('honey')] };
   const b = base();
@@ -1138,7 +1139,7 @@ const spy = (key = 'quiet'): { rules: ClassRules; inputs: ClassInput[] } => {
   return { inputs, rules: { key, name: key, earn: (i) => { inputs.push(i); return []; } } };
 };
 const standingOn = (inputs: readonly ClassInput[], act: string) => inputs.flatMap((i) => i.standings).find((s) => s.act === act);
-const sugar = { key: 'sugar', name: 'Sugar', alignment: 'sweet' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+const sugar = { key: 'sugar', name: 'Sugar', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 
 test('a standing holds every other player\'s vote before the window and now, each at its weight', () => {
   const { rules, inputs } = spy('fan');

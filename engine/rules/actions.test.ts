@@ -4,7 +4,7 @@ import { decide } from './actions.ts';
 import type { Instance } from './types.ts';
 import { systemSettings, testSystem, testGroups } from './test-system.ts';
 
-const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
 const sparkle = { ...splat, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 1 } };
 const instance: Instance = {
@@ -13,10 +13,11 @@ const instance: Instance = {
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-    postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
+    postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
+  packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }],
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -104,9 +105,20 @@ test('a reaction the instance does not have is refused', () => {
   assert.match(refusal({ action: 'react', act: other, character: id, kind: 'shrug' }) ?? '', /^kind:.*shrug/);
 });
 
-test('a card is bought at the Vending Machine\'s price, by the service, for the caller', () => {
-  assert.deepEqual(decide({ action: 'buyCard', card: 'splat' }, instance), { ok: true, rpc: 'buy_card', args: { card: 'splat', price: 100 }, asService: true });
-  assert.match(refusal({ action: 'buyCard', card: 'nothing' }) ?? '', /^card:/);
+test('a card is bought from a slot at the price the screen showed, by the service, for the caller', () => {
+  assert.deepEqual(decide({ action: 'buyCard', slot: other, price: 250 }, instance), { ok: true, rpc: 'buy_card', args: { slot: other, price: 250 }, asService: true });
+  assert.match(refusal({ action: 'buyCard', slot: 'nothing', price: 250 }) ?? '', /^slot:/);
+  assert.match(refusal({ action: 'buyCard', slot: other }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', slot: other, price: 0 }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', slot: other, price: 1.5 }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', card: 'splat' }) ?? '', /^slot:/, 'a card is no longer bought by its key');
+});
+
+test('a pack is bought from a slot and names the slot and the price the screen showed', () => {
+  assert.deepEqual(decide({ action: 'buyPack', slot: other, price: 300 }, instance), { ok: true, rpc: 'buy_pack', args: { slot: other, price: 300 }, asService: true });
+  assert.match(refusal({ action: 'buyPack', slot: 'nothing', price: 300 }) ?? '', /^slot:/);
+  assert.match(refusal({ action: 'buyPack', slot: other }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyPack', slot: other, price: -3 }) ?? '', /^price:/);
 });
 
 test('a play names the card, the character, the post and the caster\'s configuration; its price waits on the post', () => {

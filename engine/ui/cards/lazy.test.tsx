@@ -16,7 +16,7 @@ import { createPlays } from './plays.ts';
 import type { CardUi, EffectProps } from './types.ts';
 
 const post = (key: string, name: string): CardRules => ({
-  key, name, alignment: 'pepperoni', rarity: 'common', reaches: ['post'], priceKey: 'test.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c),
+  key, name, alignment: 'pepperoni', rarity: 'common', reaches: ['post'], playPrice: () => 0, validateConfig: (c: unknown) => ok(c),
   canApply: (t, e, _config, now) => landsOn({ key, reaches: ['post'] }, t, e, now),
 });
 const instance: Instance = { ...testInstance, cards: [post('dab', 'Dab'), post('daub', 'Daub')] };

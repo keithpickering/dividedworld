@@ -40,10 +40,10 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
   Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -321,6 +321,44 @@ function toPresence(v: Row): Presence {
 const toSeason = (r: Row): Season => ({ id: r['id'], number: r['number'], startsAt: r['starts_at'], endsAt: r['ends_at'] ?? null, turnsThread: r['turns_thread'] ?? null, revealAct: r['reveal_act'] ?? null });
 const toClassReveal = (r: Row): ClassReveal => ({ act: r['act'], character: r['character'], class: r['class'], at: r['at'], via: r['via'], thread: r['thread'] });
 const toTurn = (r: Row): TurnAnnounced => ({ act: r['act'], character: r['character'], at: r['at'], was: r['was'] ?? null });
+/** A slot of machine_now (0139_machine.sql): a card's or a pack's, never both; a hidden slot is not in the view. */
+const SLOT_MOVES: readonly SlotMove['kind'][] = ['pullSlot', 'repriceSlot', 'flashSale'];
+/** The move on a slot as machine_now's `move` carries it (0140), or none: a kind this client does not know is no move it can word. */
+const toSlotMove = (v: unknown): SlotMove | null => {
+  if (!isObject(v)) return null;
+  const kind = SLOT_MOVES.find((k) => k === v['kind']);
+  if (!kind || typeof v['act'] !== 'string') return null;
+  const demand = toDemand(v['demand']);
+  return {
+    kind, act: v['act'], ends: orNull(v['ends']), demand, progress: demand ? toProgress(v['progress']) : null,
+    was: num(v['was']), percent: v['percent'] == null ? null : num(v['percent']), hours: v['hours'] == null ? null : num(v['hours']),
+  };
+};
+/** A slot as machine_now carries it, or none: a row whose availability is not one a screen can word (the view holds no hidden slot) is dropped, never shown on sale. */
+const toSlot = (r: Row): Slot[] => {
+  const availability = r['availability'] === 'onSale' ? 'onSale' : r['availability'] === 'soldOut' ? 'soldOut' : null;
+  if (availability === null) return [];
+  return [{
+    id: r['slot'], position: num(r['position']),
+    item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
+    rarity: str(r['rarity']) as Slot['rarity'],
+    availability,
+    price: num(r['price']), move: toSlotMove(r['move']),
+  }];
+};
+/** A slot as admin_machine carries it (0141), or none: a row whose availability is not one of the three is dropped, never shown as something else. */
+const toAdminSlot = (r: Row): AdminSlot[] => {
+  const availability = (['onSale', 'soldOut', 'hidden'] as const).find((a) => a === r['availability']);
+  if (!availability) return [];
+  const m = isObject(r['move']) ? r['move'] : null;
+  const kind = m ? SLOT_MOVES.find((k) => k === m['kind']) : undefined;
+  return [{
+    id: r['slot'], position: num(r['position']),
+    item: typeof r['card'] === 'string' ? { card: r['card'] } : { pack: String(r['pack'] ?? '') },
+    rarity: str(r['rarity']) as Slot['rarity'], availability, price: num(r['price']),
+    move: m && kind && typeof m['act'] === 'string' ? { kind, act: m['act'], ends: orNull(m['ends']), percent: m['percent'] == null ? null : num(m['percent']), hours: m['hours'] == null ? null : num(m['hours']) } : null,
+  }];
+};
 const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
 const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
 const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) });
@@ -501,7 +539,7 @@ function toAdminQueue(v: unknown): AdminQueue {
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -518,6 +556,12 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'playsOn
     cards: src['cards'].map((r): CardEvent => ({
       card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'],
       ...(typeof r['springs'] === 'boolean' ? { springs: r['springs'] } : {}),
+      ...(typeof r['pack'] === 'string' ? { pack: r['pack'] } : {}),
+      ...(r['kind'] === 'bought' && r['repriced'] === true ? { repriced: true } : {}),
+    })),
+    packs: src['packs'].map((r): PackEvent => ({
+      pack: r['id'], kind: r['pack'], price: num(r['price']), repriced: r['repriced'] === true,
+      contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], at: r['bought_at'],
     })),
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
@@ -885,11 +929,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
-      rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs'), 'at', (q) => q, ['card', 'kind', 'act', 'price']),
+      rows(() => client.from('my_card_ledger').select('card,kind,act,price,at,springs,pack,repriced'), 'at', (q) => q, ['card', 'kind', 'act', 'price', 'pack']),
+      /* The packs the player bought (0139): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
+      rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at'), 'bought_at', (q) => q, ['id']),
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
@@ -916,7 +962,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, setPasses: passRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows);
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, setPasses: passRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows);
   };
 
   const api: KayfaApi = {
@@ -1252,8 +1298,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('release_effect', { play }));
       return a.ok ? { ok: true, value: { play: a.value['play'], releasedAt: a.value['released_at'] } } : a;
     },
-    /* The price is the card's rules' and the Edge Function's (it reads the settings rows as they stand), so a purchase sends the card alone. */
-    buyCard: (card) => act({ action: 'buyCard', card }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
+    /* A purchase names its slot and the price the screen showed; the database holds the slot and refuses a price that has since changed. */
+    buyCard: (slot) => act({ action: 'buyCard', slot: slot.id, price: slot.price }, (r): Bought => ({ card: r['card'], balance: num(r['balance']), held: num(r['held']) })),
+    buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
     playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     setCard: (card, character, target, config) => act({ action: 'setCard', card, character, target, config }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
@@ -1362,6 +1409,36 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async myCards() {
       return (await list(() => client.from('my_cards').select('card,held'))).map(toHeldCard);
+    },
+    async machine() {
+      return (await list(() => client.from('machine_now').select('slot,position,card,pack,rarity,availability,price,move').order('position', { ascending: true }))).flatMap(toSlot);
+    },
+    async adminMachine() {
+      const v = (await read(() => client.rpc('admin_machine'))).data;
+      return (Array.isArray(v) ? (v as Row[]) : []).flatMap(toAdminSlot);
+    },
+    async setSlot(slot, availability, price) {
+      const a = await rpcWrite(() => client.rpc('set_slot', { slot, availability, price }));
+      return a.ok ? { ok: true, value: { slot: a.value['slot'], ended: num(a.value['ended']) } } : a;
+    },
+    async moveSlot(slot, direction) {
+      const a = await rpcWrite(() => client.rpc('move_slot', { slot, direction }));
+      return a.ok ? { ok: true, value: { slot: a.value['slot'], moved: a.value['moved'] === true } } : a;
+    },
+    async saveMachine(changes) {
+      let r: { readonly data: unknown; readonly error: { readonly message?: string; readonly details?: string; readonly hint?: string } | null; readonly status?: number };
+      try {
+        r = (await client.rpc('save_machine', { changes })) as typeof r;
+      } catch {
+        return uncertain();
+      }
+      if (!r.error) return { ok: true, value: { ended: num((r.data as Row | null)?.['ended']) } };
+      if (r.error.hint === REFUSAL_HINT && r.error.message) {
+        /* The refusal's detail is `slot=<id> field=<availability|price>`: the page marks that field. */
+        const m = /^slot=([0-9a-f-]{36}) field=(availability|price)$/u.exec(r.error.details ?? '');
+        return refusal(r.error.message, m ? `${m[1]}/${m[2]}` : undefined);
+      }
+      return (r.status ?? 0) === 0 || (r.status ?? 0) >= 500 ? uncertain() : refusal(NOT_DONE);
     },
     async reading(threads) {
       const out: Record<Id, number> = {};
@@ -1731,7 +1808,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) throw new Error(NOT_READ);
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), playsOnMine: rowsOf(sources['playsOnMine']), saves: rowsOf(sources['saves']),
+        ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), setPasses: rowsOf(sources['setPasses']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
       }, rowsOf(d['shares']));

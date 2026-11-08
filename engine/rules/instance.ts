@@ -14,6 +14,7 @@ import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from 
 import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
+import type { Pull, SlotSeed } from './packs.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -311,6 +312,38 @@ function developerProblems(d: Instance['developer']): string[] {
   return out;
 }
 
+/** Problems with the packs and the machine's slots, each a sentence naming what is wrong. */
+function packProblems(instance: Instance): string[] {
+  const out: string[] = [];
+  const packs = Array.isArray(instance.packs) ? instance.packs : (out.push('the instance has no packs list'), []);
+  const machine = Array.isArray(instance.machine) ? instance.machine : (out.push('the instance has no machine list'), []);
+  for (const k of duplicates(packs, (p) => p.key)) out.push(`pack key "${k}" is used twice`);
+  for (const pack of packs) {
+    if (!Array.isArray(pack.pulls) || !pack.pulls.length) { out.push(`pack "${pack.key}" has no pulls`); continue; }
+    for (const k of pack.leaves ?? []) if (!instance.cards.some((c) => c.key === k)) out.push(`pack "${pack.key}" leaves out "${k}", and the instance has no such card`);
+    (pack.pulls as readonly Pull[]).forEach((pull, i) => {
+      const where = `pack "${pack.key}", pull ${i + 1}`;
+      const weights = Object.entries(pull.weights ?? {});
+      if (!weights.length) out.push(`${where} has no weights`);
+      for (const [rarity, w] of weights) {
+        if (!isWhole(w, 1)) out.push(`${where} has a weight of ${JSON.stringify(w)} for ${rarity}; a weight is a positive whole number`);
+        const eligible = instance.cards.some((c) => c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
+        if (!eligible) out.push(`${where} names ${rarity}, and the pack has no eligible card of that rarity`);
+      }
+    });
+  }
+  const names = (s: SlotSeed) => ('card' in s.item ? `card "${s.item.card}"` : `pack "${s.item.pack}"`);
+  for (const slot of machine) {
+    const who = `the slot for ${names(slot)}`;
+    if ('card' in slot.item) { if (!instance.cards.some((c) => c.key === (slot.item as { card: string }).card)) out.push(`${who} names a card, and the instance has no such card`); }
+    else if (!packs.some((p) => p.key === (slot.item as { pack: string }).pack)) out.push(`${who} names a pack, and the instance has no such pack`);
+    if (!isWhole(slot.price, 1) || slot.price > INT4_MAX) out.push(`${who} has a price of ${JSON.stringify(slot.price)}; a price is a whole number of hundredths from 1 to ${INT4_MAX}`);
+    if (!['onSale', 'soldOut', 'hidden'].includes(slot.availability)) out.push(`${who} has the availability ${JSON.stringify(slot.availability)}; it is onSale, soldOut or hidden`);
+  }
+  for (const k of duplicates(machine, names)) out.push(`two slots sell ${k}`);
+  return out;
+}
+
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
   const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
@@ -334,7 +367,7 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
-  out.push(...developerProblems(instance.developer));
+  out.push(...developerProblems(instance.developer), ...packProblems(instance));
   out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
@@ -367,8 +400,6 @@ export function instanceProblems(instance: Instance): string[] {
     };
     for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }
     for (const c of instance.cards) {
-      const price = economy[c.priceKey];
-      if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
       for (const r of c.reads ?? []) { const why = check(`card "${c.key}"`, r); if (why) out.push(why); }
     }
   }

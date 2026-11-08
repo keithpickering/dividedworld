@@ -49,6 +49,7 @@ const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';
 const SET = '55555555-5555-4555-8555-555555555555';
+const PACK = '66666666-6666-4666-8666-666666666666';
 const SPRING = '66666666-6666-4666-8666-666666666666';
 const T = '44444444-4444-4444-8444-444444444444';
 
@@ -902,17 +903,89 @@ describe('a card\'s effect', () => {
 });
 
 describe('buying and playing a card', () => {
-  it('buys through the act function, naming the card and no price, and reads the wallet and count the function answers', async () => {
+  const SLOT_CARD = { slot: A, position: 2, card: 'whoops', pack: null, rarity: 'common', availability: 'onSale', price: 250 };
+  const SLOT_PACK = { slot: B, position: 1, card: null, pack: 'booster', rarity: null, availability: 'onSale', price: 300 };
+  const slotOf = async (row: Record<string, unknown>) => {
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([row]) : undefined));
+    return (await h.api.machine())[0]!;
+  };
+
+  it('reads the machine as the database shows it now: an admin-tuned slot price is the price on the machine', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_PACK, SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'soldOut', price: 175 }]) : undefined));
+    expect(await h.api.machine()).toEqual([
+      { id: B, position: 1, item: { pack: 'booster' }, rarity: null, availability: 'onSale', price: 300, move: null },
+      { id: A, position: 2, item: { card: 'whoops' }, rarity: 'common', availability: 'onSale', price: 250, move: null },
+      { id: C, position: 3, item: { card: 'stick' }, rarity: 'common', availability: 'soldOut', price: 175, move: null },
+    ]);
+    const asked = h.log.find((r) => r.url.pathname === `${REST}/machine_now`)!;
+    expect(asked.url.searchParams.get('order')).toBe('position.asc');
+  });
+
+  it('reads the Boss\'s move on a slot as the machine carries it: its kind, end, demand, stored count and the admin\'s price; a favor has no demand and no count', async () => {
+    const pulled = await slotOf({
+      ...SLOT_CARD, availability: 'soldOut',
+      move: { kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', was: 250, percent: null, hours: null,
+              demand: { kind: 'distinctCharactersOnBoard', params: { board: C, count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00+00:00' } },
+    });
+    expect(pulled.move).toEqual({
+      kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', was: 250, percent: null, hours: null,
+      demand: { kind: 'distinctCharactersOnBoard', params: { board: C, count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00+00:00' },
+    });
+    const down = await slotOf({ ...SLOT_CARD, price: 125, move: { kind: 'repriceSlot', act: T, ends: '2026-11-09T12:00:00+00:00', was: 250, percent: 50, hours: null, demand: null, progress: null } });
+    expect(down.move).toMatchObject({ kind: 'repriceSlot', was: 250, percent: 50, demand: null, progress: null });
+    const flash = await slotOf({ ...SLOT_CARD, move: { kind: 'flashSale', act: T, ends: null, was: 250, percent: null, hours: 24, demand: null, progress: null } });
+    expect(flash.move).toMatchObject({ kind: 'flashSale', hours: 24, ends: null });
+    /* A kind this client has no words for is no move it shows. */
+    expect((await slotOf({ ...SLOT_CARD, move: { kind: 'shrinkSlot', act: T } })).move).toBeNull();
+  });
+
+  it('drops a row whose availability it does not know, rather than showing it on sale', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/machine_now` ? rows([SLOT_CARD, { ...SLOT_CARD, slot: C, position: 3, card: 'stick', availability: 'hidden' }, { ...SLOT_CARD, slot: B, position: 4, card: 'bluff', availability: 'someday' }, { ...SLOT_CARD, slot: T, position: 5, card: 'trap', availability: null }]) : undefined));
+    expect((await h.api.machine()).map((s) => s.id)).toEqual([A]);
+  });
+
+  it('reads the machine as an admin (hidden slots too, the admin\'s price, the move in force) and saves and moves a slot through the admin functions', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/admin_machine')) return json([
+        { slot: A, position: 1, card: null, pack: 'booster', rarity: null, availability: 'onSale', price: 300, move: null },
+        { slot: B, position: 2, card: 'whoops', pack: null, rarity: 'common', availability: 'onSale', price: 100, move: { kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', percent: null, hours: null } },
+        { slot: C, position: 3, card: 'main', pack: null, rarity: 'rare', availability: 'hidden', price: 300, move: { kind: 'shrinkSlot', act: T } },
+        { slot: C, position: 4, card: 'x', pack: null, rarity: 'rare', availability: 'closed', price: 300, move: null },
+      ]);
+      if (r.url.pathname.endsWith('/rpc/set_slot')) return json({ slot: B, ended: 1 });
+      if (r.url.pathname.endsWith('/rpc/move_slot')) return json({ slot: B, moved: false });
+      return json({}, 404);
+    });
+    const slots = await h.api.adminMachine();
+    expect(slots.map((s) => [s.id, s.availability, s.price, s.move?.kind ?? null])).toEqual([[A, 'onSale', 300, null], [B, 'onSale', 100, 'pullSlot'], [C, 'hidden', 300, null]]);
+    expect(slots[0]!.item).toEqual({ pack: 'booster' });
+    expect(slots[1]!.move).toEqual({ kind: 'pullSlot', act: T, ends: '2026-11-09T12:00:00+00:00', percent: null, hours: null });
+    expect(await h.api.setSlot(B, 'soldOut', 125)).toEqual({ ok: true, value: { slot: B, ended: 1 } });
+    expect(h.to('rpc/set_slot')[0]?.body).toEqual({ slot: B, availability: 'soldOut', price: 125 });
+    expect(await h.api.moveSlot(B, 'up')).toEqual({ ok: true, value: { slot: B, moved: false } });
+    expect(h.to('rpc/move_slot')[0]?.body).toEqual({ slot: B, direction: 'up' });
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/set_slot') ? json({ message: 'only an admin changes the machine', hint: 'kayfabb.refusal' }, 403) : undefined));
+    expect(await refused.api.setSlot(B, 'onSale', 100)).toEqual({ ok: false, error: 'only an admin changes the machine' });
+  });
+
+  it('buys through the act function, naming the slot and the price it showed, and reads the wallet and count the function answers', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ card: 'whoops', balance: 462, held: 3 }) : undefined));
-    expect(await h.api.buyCard('whoops')).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
-    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyCard', card: 'whoops' }]);
-    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'that costs 100, and your wallet holds 62' }, 400) : undefined));
-    expect(await refused.api.buyCard('whoops')).toEqual({ ok: false, error: 'that costs 100, and your wallet holds 62' });
+    const slot = await slotOf(SLOT_CARD);
+    expect(await h.api.buyCard(slot)).toEqual({ ok: true, value: { card: 'whoops', balance: 462, held: 3 } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyCard', slot: A, price: 250 }]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'the price is now 3.00, not 2.50' }, 400) : undefined));
+    expect(await refused.api.buyCard(slot)).toEqual({ ok: false, error: 'the price is now 3.00, not 2.50' });
     /* Never resent: a lost answer may have spent the Aura, and the player looks before they buy again. */
     const lost = harness(() => new Error('network'));
-    const gone = await lost.api.buyCard('whoops');
+    const gone = await lost.api.buyCard(slot);
     expect(gone.ok === false && gone.uncertain).toBe(true);
     expect(lost.log.filter((r) => r.url.pathname === '/functions/v1/act')).toHaveLength(1);
+  });
+
+  it('buys a pack through the act function, and reads what it gave in pull order', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ pack: T, kind: 'booster', contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 }) : undefined));
+    expect(await h.api.buyPack(await slotOf(SLOT_PACK))).toEqual({ ok: true, value: { pack: T, contents: ['whoops', 'stick', 'whoops', 'bluff', 'trap'], balance: 162 } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'buyPack', slot: B, price: 300 }]);
   });
 
   it('plays through the act function with the card, the character, the post, the settings and the message, and reads the card\'s Act', async () => {
@@ -1287,8 +1360,11 @@ describe('the log', () => {
         return rows([
           { card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00', springs: null },
           { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+          { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', springs: null, pack: null, repriced: true },
+          { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', springs: null, pack: PACK, repriced: false },
         ]);
       }
+      if (name === 'my_packs') return rows([{ id: PACK, pack: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], bought_at: '2026-10-29T17:00:00+00:00' }]);
       if (name === 'my_posts_played_on') {
         return r.url.searchParams.get('select') === 'play,post,saved_at'
           ? rows([{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }])
@@ -1324,7 +1400,11 @@ describe('the log', () => {
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
       /* A Bluff's row keeps its `springs` (0075); a row that is not a card set face down carries none. */
-      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false }],
+      cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'bluffy', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false },
+        /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
+        { card: 'whoops', kind: 'bought', act: null, price: 150, at: '2026-10-29T17:30:00+00:00', repriced: true },
+        { card: 'bluffy', kind: 'pulled', act: null, price: 0, at: '2026-10-29T17:00:00+00:00', pack: PACK }],
+      packs: [{ pack: PACK, kind: 'booster', price: 450, repriced: true, contents: ['bluffy', 'whoops'], at: '2026-10-29T17:00:00+00:00' }],
       playsOnMine: [{ play: C, post: A, at: '2026-10-29T21:16:00+00:00', reach: 'post', targetName: null, targetCharacter: B }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'bluffy', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00' }],
@@ -1345,7 +1425,7 @@ describe('the log', () => {
     expect(ledger?.url.searchParams.get('ends_at')).toBeNull();
     const [shares] = h.to('my_ledger_shares');
     expect(shares?.url.searchParams.get('settlement')).toBe('in.(9)');
-    for (const [name, column] of [['my_wallet_events', 'at'], ['my_card_ledger', 'at']] as const) {
+    for (const [name, column] of [['my_wallet_events', 'at'], ['my_card_ledger', 'at'], ['my_packs', 'bought_at']] as const) {
       const [req] = h.to(name);
       expect(req?.url.searchParams.get('order')).toBe(`${column}.desc`);
       expect(req?.url.searchParams.get('limit')).toBe('200');
@@ -1376,6 +1456,7 @@ describe('the log', () => {
     expect(h.to('my_ledger')[0]?.url.searchParams.get('ends_at')).toBe(`lte.${before}`);
     expect(h.to('my_wallet_events')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_card_ledger')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    expect(h.to('my_packs')[0]?.url.searchParams.get('bought_at')).toBe(`lte.${before}`);
     const [plays, saves] = h.to('my_posts_played_on');
     expect(plays?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(saves?.url.searchParams.getAll('saved_at')).toEqual(['not.is.null', `lte.${before}`]);
