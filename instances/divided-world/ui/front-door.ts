@@ -62,6 +62,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   ]),
   note: [
     'Uh, no?',
+    '',
     'These characters are all acting it up, as usual. The game is pretty simple:',
     '',
     '- You play up to {{setting:charactersPerPlayer}} anonymous characters, each with a secret class only you can see.',
