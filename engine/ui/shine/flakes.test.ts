@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { ratio, MODES } from '../contrast.ts';
-import { bandOf, luminanceOf, type Band, POST_INK, shineIsReadable, toLinear } from './band.ts';
+import { bandOf, brightBand, luminanceOf, type Band, POST_INK, shineIsReadable, toLinear } from './band.ts';
 import { burst, burstProbe, drawBurst, GLINT_FLOOR, GLINT_SHARE, glintsAreFew, glintShare, landAll, makeFlakes, MAX_IN_FLIGHT, release, sampleBurst, sampleCling, sampleFlakes, stepBurst, type Flakes } from './flakes.ts';
 
 /* The bench's GLITTER inks (docs/research/2026-11-06-shine-bench/01-bench.html): seven rainbow inks, then silver for the
@@ -25,7 +25,7 @@ const make = (seed = 'p1', box = BOX): Flakes => makeFlakes({ seed, box, inks: G
 
 const tokens = tokensOf(readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8'));
 /** A standard-shaped band with these bounds (the board is read from the bounds here, as a fixture). */
-const bandWith = (lo: number, hi: number): Band => ({ lo, hi, board: hi < 0.5 ? 'dark' : 'light', bright: false });
+const bandWith = (lo: number, hi: number): Band => ({ lo, hi, board: lo === 0 ? 'dark' : 'light', bright: false });
 const bands = { light: bandOf(tokens.light), dark: bandOf(tokens.dark) };
 
 /* No DOM under node: just enough of one for `motionReduced`. */
@@ -357,6 +357,14 @@ describe('flakes', () => {
     const k = before.baseKey(bands.light);
     landEverything(before);
     assert.notEqual(before.baseKey(bands.light), k, 'a burst that lands flakes changes the key');
+  });
+
+  test('the base key tells the boards and bright from standard apart: the two bright bands have the same bounds and must not share a base', () => {
+    const f = make();
+    landEverything(f);
+    const keys = [bands.light, bands.dark, brightBand('light'), brightBand('dark')].map((b) => f.baseKey(b));
+    assert.equal(new Set(keys).size, 4, keys.join(' | '));
+    assert.notEqual(f.baseKey({ ...bands.light, bright: true }), f.baseKey(bands.light), 'same bounds, bright or not');
   });
 
   test('the lit layer clears what it drew last time, square by square, and all of its canvas the first time or after a resize', () => {
