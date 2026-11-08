@@ -1047,9 +1047,9 @@ begin
   delete from broadcasts_due where topic like 'account:%';
   made := pg_temp.quote(b, t, 'Come to heel.', p);
   spring := made -> 'sprung';
-  -- The projection that goes out is the spring's public one: its payload has the card, trigger, did, set and by, nothing else, and not the phrase or the card's settings.
-  if (select array_agg(kk order by kk) from jsonb_object_keys(spring -> 'payload') kk) is distinct from array['by', 'card', 'did', 'set', 'trigger'] then raise exception 'the spring says more than it did: %', spring -> 'payload'; end if;
-  if (spring - 'struck')::text like '%plumsecret%' or (spring - 'struck')::text like '%heel%' then raise exception 'the spring carries the phrase or the settings (the card it landed shows its settings, as a cast does): %', spring; end if;
+  -- The projection that goes out is the spring's public one: its payload has the card, trigger, did, set and by, and the Says phrase the quote met as `when` (quote conditions, Task 5), nothing else, and not the card's settings.
+  if (select array_agg(kk order by kk) from jsonb_object_keys(spring -> 'payload') kk) is distinct from array['by', 'card', 'did', 'set', 'trigger', 'when'] then raise exception 'the spring says more than it did: %', spring -> 'payload'; end if;
+  if (spring - 'struck')::text like '%plumsecret%' or ((spring - 'struck') #- '{payload,when}' #- '{current_payload,when}')::text like '%heel%' or spring #> '{payload,when}' is distinct from '{"says": "heel"}'::jsonb then raise exception 'the spring carries the phrase outside `when`, or the settings (the card it landed shows its settings, as a cast does): %', spring; end if;
   if (select count(*) from play_moments where play = (spring ->> 'id')::uuid) is distinct from 1::bigint then raise exception 'a spring takes no moment'; end if;
   -- The alerts it queued carry the public projection alone and name neither the quoter nor their account.
   if exists (select 1 from broadcasts_due where topic like 'account:%' and (payload::text like '%' || bob::text || '%' or payload::text like '%' || b::text || '%' and topic <> 'account:' || bob)) then raise exception 'an alert names the quoter or their account'; end if;

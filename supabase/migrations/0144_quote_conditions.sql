@@ -593,3 +593,165 @@ begin
 end $$;
 revoke execute on function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text, text, uuid[], boolean) from public, anon, authenticated;
 grant execute on function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text, text, uuid[], boolean) to service_role;
+
+-- ============================================================================ Task 5: springing on the conditions ====
+-- A quote springs a Move only when every condition its back holds is met (design sections 5 and 6; plan Task 5): the quoting post says the Says phrase, the excerpt of the quotes of the trapped post holds the
+-- Quotes passage, and the quoter is (Only these) or is not (Anyone but these) among the Who. The spring Act's payload names what the back held and the quote met: `when` ({says?, passage?}) and `for`
+-- (the quoting character, only for an Only list, who is already public as the quote's author). An Anyone but list is never in an Act, and nothing of a condition is in any Act before the spring.
+--
+--   spring_facts      EVEN WORK, as 0142 wrote it, and now with the conditions: ONE bbcode_walk of the quoting post's BBCode (its own visible words and the excerpt of the quotes of the back's post, in the one
+--                     pass, `select ... into ... from bbcode_walk(...)`: a function in a FROM clause is called once per statement, never once per output column), then both probes for every back, whatever it holds
+--                     (the Says probe over the post's own words, the Quotes probe over the excerpt, each a phrase_probe with a pattern of one length built around the back's id, a back without that condition
+--                     probed with a pattern no text satisfies), and the Who check, a membership test of at most five against an empty list for Anyone. Only then is anything decided.
+--   spring_traps      springs a Move only when (no Says or phrase_hit) and (no Quotes or passage_hit) and (no Who or who_hit <> who_except); everything else, the landing and the lock order included, as 0142 wrote it.
+--   acts_spring_payload  also takes `when` (an object holding only `says` and `passage`) and `for` (a string), both optional, so a spring written before this still passes.
+--
+-- Cost at a busy instance's scale: a quote still meets one back; the added work is one more probe and a membership test of at most five, bounded by the quoting post's length. Held by
+-- supabase/tests/0146-quote-springs.sql (a spring and a non-spring for each condition and their combinations, and the count of reads, walks and probes per back). Ways out: nothing here adds a state.
+
+alter type spring_facts add attribute passage_hit boolean, add attribute who_hit boolean;
+
+create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  f spring_facts;
+  k card_kinds%rowtype;
+  named text;
+  in_character integer;
+  in_thread integer;
+  in_board integer;
+  ward_rank integer;
+  walked_plain text;
+  walked_excerpt text;
+begin
+  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
+  select a.character into f.setter_character from acts a where a.id = fd.play;
+  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
+  -- 2. The back's card kind.
+  select * into k from card_kinds x where x.key = fd.card;
+  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.reach := coalesce(k.reaches[1], 'post');
+  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
+  -- or a visit by_act is not a post, or not yet written, and these find what they find.
+  select a.kind, a.character, a.thread, a.payload ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  from acts a left join threads t on t.id = a.thread where a.id = by_act;
+  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
+  select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
+  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
+  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
+  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
+  -- for the ones of this back's card): which card is counted is chosen after the reads.
+  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1
+    into f.up, f.layer
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended
+        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board)
+    into in_character, in_thread, in_board
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended
+        from play_reach r join acts k2 on k2.id = r.play
+        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
+  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 4b. The live Ward on the Act, the highest one's rarity, whatever the card: place_cast turns a cast away at or below it, and a Move does not land through it either.
+  select max(rarity_rank(wk.rarity)) into ward_rank from acts w join card_kinds wk on wk.key = w.payload ->> 'card'
+  where w.kind = 'card' and w.target_act_id = by_act and wk.ward and not (w.payload ? 'caught') and coalesce(w.payload ->> 'reach', 'post') = 'post'
+    and (w.payload ->> 'ends' is null or (w.payload ->> 'ends')::timestamptz > now()) and not card_ended(w.id);
+  f.warded := ward_rank is not null and rarity_rank(k.rarity) <= ward_rank;
+  -- 5. A board's live card, whatever the card's reach.
+  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
+  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
+  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
+  f.caught := fd.catches is not null and fd.catches = incoming_card and named is not null;
+  -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
+  -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
+  select w.plain, w.excerpt into walked_plain, walked_excerpt from bbcode_walk(f.by_body, fd.post) w;
+  -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
+  -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
+  f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
+  f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
+  f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
+  return f;
+end $$;
+revoke execute on function spring_facts(face_down, text, uuid, text) from public, anon, authenticated, service_role;
+
+alter table acts drop constraint acts_spring_payload;
+alter table acts add constraint acts_spring_payload check (kind <> 'spring' or (
+  jsonb_typeof(payload -> 'card') = 'string'
+  and payload ->> 'trigger' in ('cast', 'reaction', 'reply', 'quote', 'visit')
+  and coalesce(jsonb_typeof(payload -> 'outcome') = 'object', false) <> (payload ? 'did')
+  and (not (payload ? 'did') or (payload ->> 'trigger', payload ->> 'did') in (('quote', 'landed'), ('cast', 'caught'), ('visit', 'ended')))
+  and jsonb_typeof(payload -> 'set') = 'string'
+  and coalesce(jsonb_typeof(payload -> 'by'), 'null') in ('string', 'null')
+  and coalesce(jsonb_typeof(payload -> 'caught'), 'null') in ('string', 'null')
+  and coalesce(jsonb_typeof(payload -> 'when'), 'object') = 'object'
+  and coalesce((payload -> 'when') - array['says', 'passage'] = '{}'::jsonb, true)
+  and coalesce(jsonb_typeof(payload -> 'for'), 'string') = 'string'
+  and payload - array['card', 'trigger', 'outcome', 'did', 'set', 'by', 'caught', 'when', 'for'] = '{}'::jsonb) is true);
+
+create or replace function spring_traps(trigger text, post uuid, by_act uuid, incoming_card text default null, held uuid[] default null, actor uuid default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  fd face_down%rowtype;
+  f spring_facts;
+  back_trigger text;
+  springs boolean;
+  lands boolean;
+  did text;
+  sprung uuid;
+  laid uuid;
+  flag text;
+  held_when jsonb;
+begin
+  select x.* into fd from face_down x
+  where x.post = spring_traps.post and x.ends_at > now() and (held is null or x.play = any (held))
+  order by x.round desc limit 1 for update;
+  if fd.play is null then return null; end if;
+  -- After the lock, so a spring that landed while this waited is seen.
+  if exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text) then return null; end if;
+  -- The same reads for every back, before anything is decided.
+  f := spring_facts(fd, trigger, by_act, incoming_card);
+  -- The decision, from the locals. A Move springs on a quote that meets every condition its back holds; a Gimmick on its own trigger, or never (a Bluff).
+  back_trigger := case f.kind_play when 'cast' then 'quote' else f.kind_trap #>> '{trigger,on}' end;
+  springs := back_trigger is not distinct from trigger
+    and case trigger when 'quote' then (fd.phrase is null or f.phrase_hit) and (fd.passage is null or f.passage_hit) and (fd.who is null or f.who_hit <> fd.who_except)
+                     when 'cast' then f.caught when 'visit' then true else false end;
+  -- A Move lands on what quoted it, at its first reach, if it can: its stack there has room, a board has no live card, the thread has its first post and a board card its thread.
+  lands := coalesce(f.by_kind = 'post' and case f.reach
+      when 'post' then f.up < f.kind_stack and not f.warded
+      when 'character' then f.by_character is not null and f.reach_up < f.kind_stack
+      when 'thread' then f.first_post is not null and f.reach_up < f.kind_stack
+      else f.by_board is not null and f.announce_thread is not null and f.live_board is null and f.reach_up < f.kind_stack end, false);
+  if not springs then return null; end if;
+  -- A setter's character that can no longer act (retired, until an admin restores it) springs nothing: its back stays set until its time, and the write that met it lands as if no
+  -- back were there (acts_well_formed would refuse the spring, and with it the write). A Move that cannot land leaves its back set for the next quote.
+  if f.setter_retired is not null or f.setter_debuted is null then return null; end if;
+  if back_trigger = 'quote' and not lands then return null; end if;
+  did := case back_trigger when 'quote' then 'landed' when 'cast' then 'caught' else 'ended' end;
+  -- What the quote met, to be shown: the Says phrase and the passage the back held (the setter chose them to be matched, and the spring says so), and the quoter only where the Who was Only these.
+  -- An Anyone but list, and with it who it spared, is never written.
+  held_when := case when trigger = 'quote' then jsonb_strip_nulls(jsonb_build_object('says', fd.phrase, 'passage', fd.passage)) end;
+  if held_when = '{}'::jsonb then held_when := null; end if;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  if f.setter_staff then perform set_config('kayfabb.staff_writer', 'on', true); end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (f.setter_character, 'spring', fd.thread, fd.post, jsonb_strip_nulls(jsonb_build_object(
+    'card', fd.card, 'trigger', trigger, 'did', did, 'set', fd.play::text, 'by', by_act::text,
+    'caught', case when trigger = 'cast' then by_act::text end,
+    'when', held_when,
+    'for', case when trigger = 'quote' and fd.who is not null and not fd.who_except then f.by_character::text end))) returning id into sprung;
+  if f.setter_staff then perform set_config('kayfabb.staff_writer', flag, true); end if;
+  perform write_alert(f.setter_character, 'trapSprang', null, sprung, coalesce(actor, auth.uid()));
+  if back_trigger = 'quote' then
+    laid := lay_sprung(f.setter_character, fd.card, fd.config, f.target, f.reach, sprung, by_act);
+    perform write_alert(f.by_character, 'trapStruck', null, laid, f.setter_owner);
+    -- The landed card goes out with the spring, so it reaches readers live as the spring does.
+    return act_projection(sprung) || jsonb_build_object('struck', act_projection(laid));
+  elsif back_trigger = 'cast' and fd.account is not null then
+    -- The caught card is the setter's: one more row in their own ledger, beside the caster's `played` row. A staff setter has no hand and takes nothing.
+    insert into card_ledger (account, card, kind, act, price) values (fd.account, incoming_card, 'caught', sprung, 0);
+  end if;
+  return act_projection(sprung);
+end $$;
+revoke execute on function spring_traps(text, uuid, uuid, text, uuid[], uuid) from public, anon, authenticated, service_role;
