@@ -6,13 +6,14 @@
  */
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { addressOf, useLocation } from '../router.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { SEASON_NEWS_PAGE } from '../data/api.ts';
 import { firstWords, SeasonScreen } from './Season.tsx';
 import { LoadedSeason } from '../loaded.tsx';
+import { Page } from '../glass/Page.tsx';
 
 const entered = vi.hoisted(() => ({ calls: [] as Element[] }));
 vi.mock('motion/react', async (orig) => ({
@@ -408,5 +409,36 @@ describe('signed out', () => {
     await act(async () => { await Promise.resolve(); });
     expect(await screen.findByRole('link', { name: /sign in/iu })).toBeInTheDocument();
     expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+describe('a change of tab is the body\'s (docs/plans/2026-11-08-glass-in-page-swap-design.md)', () => {
+  beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'full'));
+  afterEach(() => document.documentElement.removeAttribute('data-kb-motion'));
+
+  test('the heading and the tabs stay, the tab panel holds both bodies while one leaves inert, and the pressed tab and the arrow keys keep focus', async () => {
+    const { fake } = world();
+    renderIn(fake, <Page surface="rankings"><LoadedSeason /></Page>, { path: '/season?tab=news' });
+    await screen.findByRole('tabpanel');
+    const h1 = screen.getByRole('heading', { level: 1 });
+    const tabs = screen.getByRole('tablist', { name: 'Season' });
+    const panel = screen.getByRole('tabpanel');
+    const press = within(tabs).getByRole('tab', { name: 'Rankings' });
+    await userEvent.click(press);
+    expect(screen.getByRole('heading', { level: 1 })).toBe(h1);
+    expect(screen.getByRole('tablist', { name: 'Season' })).toBe(tabs);
+    expect(screen.getByRole('tabpanel')).toBe(panel);
+    expect(panel.getAttribute('aria-labelledby')).toBe(press.id);
+    const holder = panel.querySelector<HTMLElement>(':scope > .kb-screen-body')!;
+    expect(holder).not.toBeNull();
+    expect(holder.children).toHaveLength(2);
+    expect(holder.querySelector('[data-kb-exiting]')).toHaveAttribute('inert');
+    expect(press).toHaveFocus();
+    /* The arrow keys move to the other tab and focus it. */
+    await userEvent.keyboard('{ArrowRight}');
+    const news = within(tabs).getByRole('tab', { name: 'News' });
+    await waitFor(() => expect(news).toHaveAttribute('aria-selected', 'true'));
+    expect(news).toHaveFocus();
+    expect(screen.getByRole('heading', { level: 1 })).toBe(h1);
   });
 });

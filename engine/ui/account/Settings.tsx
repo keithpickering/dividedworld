@@ -22,7 +22,8 @@
  * either way). A player who has not chosen sees the instance's defaults, said plainly, and "Reset to defaults" puts a choice back to them.
  *
  * The section is the address's `?section=`, so the menu bar's Settings stays current on both and the
- * page does not move its focus from the link the player chose.
+ * page does not move its focus from the link the player chose. A change of section is the screen body's (glass/ScreenBody.tsx): only the
+ * section enters, and the heading and the sections' navigation stay as they are.
  */
 import { useId, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -37,6 +38,7 @@ import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { settingsSection, type AccountDoc } from '../glass-docs.ts';
 import { useBoot } from '../boot.tsx';
 import { GlassLink } from '../glass/Link.tsx';
+import { ScreenBody } from '../glass/ScreenBody.tsx';
 import { Choice, MotionRow, TextSizeRow, TiltRow, type Option } from './appearanceRows.tsx';
 import { ModeRow, ThemeRow } from './ThemePicker.tsx';
 import { Invites } from './Invites.tsx';
@@ -167,7 +169,8 @@ function Frame({ section, children }: { readonly section: Section | null; readon
             <CalmRegion as="p" className="kb-settings-rail-reach"><ReachAPerson /></CalmRegion>
           </div>
         )}
-        {children}
+        {/* Only the section enters when the section changes: the heading and the rail stay (ScreenBody). Signed out there is no section to swap. */}
+        {section ? <ScreenBody at={SECTIONS.findIndex((s) => s.key === section)} axis="y">{children}</ScreenBody> : children}
       </div>
       {/* Signed out there is no rail to put it under, and the player who needs it may not be signed in. */}
       {!section && <CalmRegion as="p" className="kb-acct-text kb-settings-reach"><ReachAPerson /></CalmRegion>}

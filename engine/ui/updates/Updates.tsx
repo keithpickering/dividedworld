@@ -32,6 +32,7 @@ import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { useLocation, useNavigate, useNavigation } from '../router.tsx';
 import { GlassLink } from '../glass/Link.tsx';
+import { ScreenBody } from '../glass/ScreenBody.tsx';
 import { todoDraft } from '../admin/handover-words.ts';
 import { WriteUpdate } from '../admin/WriteUpdate.tsx';
 import '../cards/kit.css';
@@ -158,7 +159,10 @@ export function Updates({ updates, open, more, onMore, paging = false, scope, en
               {writing && <WriteUpdate key={initial?.title ?? ''} onWritten={onWritten} initial={initial} />}
             </CalmRegion>
           )}
-          {current ? <Post key={current.act} update={current} seed={seed !== null && seed.act === current.act ? seed : null} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
+          {/* Newer updates are above older ones, as in the archive: the index in `updates` is the place. */}
+          <ScreenBody at={current ? updates.indexOf(current) : -1} axis="y">
+            {current ? <Post key={current.act} update={current} seed={seed !== null && seed.act === current.act ? seed : null} /> : <CalmRegion as="p" className="kb-updates-empty">Nothing here yet. When the developers post an update, it is here, and in everyone&apos;s alerts.</CalmRegion>}
+          </ScreenBody>
         </div>
       </div>
     </div>

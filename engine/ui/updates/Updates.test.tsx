@@ -14,6 +14,7 @@ import type { Instance } from '../../rules/types.ts';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedUpdates } from '../loaded.tsx';
+import { Page } from '../glass/Page.tsx';
 import { UpdatesScreen } from './Updates.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
@@ -420,5 +421,28 @@ describe('opened from a handover to-do', () => {
     await userEvent.type(words, 'Comptroller has the seat.');
     await userEvent.click(within(form).getByRole('button', { name: 'Post update' }));
     await waitFor(async () => expect((await w.fake.adminQueue()).todos).toEqual([]));
+  });
+});
+
+describe('a change of update is the body\'s (docs/plans/2026-11-08-glass-in-page-swap-design.md)', () => {
+  beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'full'));
+  afterEach(() => document.documentElement.removeAttribute('data-kb-motion'));
+
+  test('the heading and the archive stay, the old update leaves inert beside the new one, and the pressed link keeps focus', async () => {
+    const w = world();
+    renderIn(w.fake, <Page surface="settings"><LoadedUpdates /></Page>, { path: '/updates', instance, avatars: AVATARS });
+    await screen.findByRole('article');
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Updates' });
+    const archive = screen.getByRole('navigation', { name: 'All updates' });
+    const press = within(archive).getByRole('link', { name: /Welcome to playtest/ });
+    await userEvent.click(press);
+    expect(screen.getByRole('heading', { level: 1, name: 'Updates' })).toBe(h1);
+    expect(screen.getByRole('navigation', { name: 'All updates' })).toBe(archive);
+    const holder = document.querySelector<HTMLElement>('.kb-updates-main > .kb-screen-body')!;
+    expect(holder).not.toBeNull();
+    expect(holder.children).toHaveLength(2);
+    expect(holder.querySelector('[data-kb-exiting]')).toHaveAttribute('inert');
+    expect(press).toHaveAttribute('aria-current', 'page');
+    expect(press).toHaveFocus();
   });
 });

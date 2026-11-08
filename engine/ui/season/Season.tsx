@@ -29,6 +29,7 @@ import { RankingsScreen } from '../rankings/Rankings.tsx';
 import { useLocation, useNavigate, useNavigation } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { GlassLink } from '../glass/Link.tsx';
+import { ScreenBody } from '../glass/ScreenBody.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { finalClass } from '../reveal/statements.ts';
 import { seasonAt, type SeasonTab } from './address.ts';
@@ -304,7 +305,9 @@ export function SeasonScreen({ doc }: { readonly doc: ScreenDoc<SeasonPage> }) {
         )}
       />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">
-        {doc.tab === 'news' ? <NewsPanel doc={doc} /> : <RankingsScreen doc={doc} embedded season={shownSeason} character={shownCharacter} href={rankingsAt} />}
+        <ScreenBody at={TABS.findIndex((t) => t.key === tab)} axis="x">
+          {doc.tab === 'news' ? <NewsPanel doc={doc} /> : <RankingsScreen doc={doc} embedded season={shownSeason} character={shownCharacter} href={rankingsAt} />}
+        </ScreenBody>
       </div>
     </div>
   );

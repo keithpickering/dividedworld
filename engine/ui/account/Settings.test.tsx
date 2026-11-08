@@ -11,6 +11,7 @@ import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { SettingsScreen } from './Settings.tsx';
 import { onToastChoice } from '../alerts/toast-choice.ts';
 import { LoadedSettings } from '../loaded.tsx';
+import { Page } from '../glass/Page.tsx';
 
 const MARKS = ['data-kb-mode', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-smoke-level', 'data-kb-contrast', 'data-kb-text-size', 'data-kb-glass-key'];
 beforeEach(() => { localStorage.clear(); for (const m of MARKS) document.documentElement.removeAttribute(m); });
@@ -816,5 +817,29 @@ describe('Settings is drawn from its route\'s document', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Account' }));
     expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
     expect(invites).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a change of section is the body\'s (docs/plans/2026-11-08-glass-in-page-swap-design.md)', () => {
+  beforeEach(() => document.documentElement.setAttribute('data-kb-motion', 'full'));
+  afterEach(() => document.documentElement.removeAttribute('data-kb-motion'));
+
+  test('the heading and the rail stay, the old section leaves inert beside the new one, and the pressed control keeps focus', async () => {
+    const w = world();
+    renderIn(w.fake, <Page surface="settings"><LoadedSettings /></Page>, { path: '/settings?section=account' });
+    await screen.findByRole('heading', { name: 'Account' });
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Settings' });
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    const press = within(nav).getByRole('link', { name: 'The board' });
+    await userEvent.click(press);
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBe(h1);
+    expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBe(nav);
+    const holder = document.querySelector<HTMLElement>('.kb-settings-body > .kb-screen-body')!;
+    expect(holder).not.toBeNull();
+    expect(holder.children).toHaveLength(2);
+    expect(holder.querySelector('[data-kb-exiting]')).toHaveAttribute('inert');
+    expect(within(nav).getByRole('link', { name: 'The board' })).toHaveAttribute('aria-current', 'page');
+    expect(within(nav).getByRole('link', { name: 'The board' })).toBe(press);
+    expect(press).toHaveFocus();
   });
 });
