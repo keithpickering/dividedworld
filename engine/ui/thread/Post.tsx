@@ -156,7 +156,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, 
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, pronounsOf, summary, know, visits } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, faceOf, pronounsOf, summary, know, visits } = useThread();
   const { ui } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
@@ -192,7 +192,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = act.kind === 'post'
     ? <PostMarks
-        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
         visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
       />
     : null;
@@ -201,11 +201,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const shown = useReachShown(plays, act.kind === 'post' ? act.character : null, 'character');
   const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
     ? <PostMarks
-        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine}
+        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
         reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
       />
-    : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, person?.character.pronouns, summary.board, summary.title, know]);
+    : null), [shown, act, plays, thread, seq, perPage, casterName, faceOf, tallies, mine, name, person?.character.pronouns, summary.board, summary.title, know]);
   return (
     <AppealCtx.Provider value={askAppeal}>
     <article
@@ -246,7 +246,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
  * ghost there (the card mechanic's design, section 7). A play's Lens offers Spin, whose form opens under the head.
  */
 export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
-  const { thread, summary, plays, tallies, mine, nameOf, know } = useThread();
+  const { thread, summary, plays, tallies, mine, nameOf, faceOf, know } = useThread();
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
   const to = threadHref(thread, 1);
@@ -259,7 +259,7 @@ export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
         <h1 ref={title} tabIndex={-1} className="kb-heading kb-thread-title">{summary.title}</h1>
         {shown && <span className="kb-thread-head-marks">
           <PostMarks
-            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
+            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
             reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
             onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
           />

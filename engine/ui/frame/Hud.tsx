@@ -46,6 +46,7 @@ import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
+import { Avatar } from '../glass/Avatar.tsx';
 import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
@@ -409,7 +410,7 @@ export function Hud() {
                         className="kb-hud-avatar"
                         aria-label="My characters"
                       >
-                        {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
+                        <Avatar src={face?.avatarSquare ?? null} name={hud.name} />
                         {avatarWait.pending && <span className="kb-hud-wait"><Spinner /></span>}
                       </Link>
                       <span className="kb-hud-who">
