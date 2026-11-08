@@ -4,7 +4,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
-import { systemSettings, testSystem } from '../../rules/test-system.ts';
+import { systemSettings, testGroups, testSystem } from '../../rules/test-system.ts';
 import { SEARCH_COUNT_CAP, type SearchPage, type SearchQuery } from './api.ts';
 import { createFake } from './fake.ts';
 
@@ -20,7 +20,7 @@ const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test', copy: { announcementsThreadTitle: 'Promos {season}' },
   classes: [{ key: 'face', name: 'Face', earn }],
-  cards: [],
+  cards: [], packs: [], machine: [],
   reactions: [{ key: 'fire', emoji: 'F', quadrant: 'excitedPositive' }],
   settings, system: testSystem,
   boards: [
@@ -30,6 +30,7 @@ const instance: Instance = {
   ],
   ranks: [{ name: 'Jobber', from: 0 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'f.svg', empty: 'e.svg' }],
+  groups: testGroups,
 };
 
 const H = 3_600_000;

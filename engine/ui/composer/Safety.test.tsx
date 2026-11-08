@@ -137,7 +137,7 @@ describe('a box that is kept for one account and thread', () => {
     return (
       <>
         <button type="button" onClick={() => setThread(b)}>go to the other thread</button>
-        <Composer thread={thread} latest={null} since={() => 0} onPosted={() => undefined} />
+        <Composer thread={thread} board="a-board" latest={null} since={() => 0} onPosted={() => undefined} />
       </>
     );
   }

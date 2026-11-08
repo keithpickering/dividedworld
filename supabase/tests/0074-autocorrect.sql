@@ -28,8 +28,7 @@ begin
     insert into class_history (character, class_key, started_at) values (%2$L, 'alpha', now());
     insert into threads (id, board, title) select %3$L, b.id, 'Lock order' from boards b where b.slug = 'general';
     insert into acts (id, character, kind, thread, payload) values (%4$L, %2$L, 'post', %3$L, '{"body": "lock cats"}');
-    update settings set value = value || '{"lockstick.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity) values ('lockstick', 'Lock Stick', 'pepperoni', 'lockstick.price', 'common');
+    insert into card_kinds (key, name, alignment, rarity) values ('lockstick', 'Lock Stick', 'pepperoni', 'common');
     insert into card_ledger (account, card, kind, price) values (%1$L, 'lockstick', 'bought', 0);
   $sql$, ann, a, th, p));
   perform extensions.dblink_connect('holder', url);
@@ -74,8 +73,7 @@ declare
   got jsonb;
   said text;
 begin
-  update settings set value = value || '{"stickers.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, stack) values ('stickers', 'Stickers', 'pepperoni', 'stickers.price', 'common', 3);
+  insert into card_kinds (key, name, alignment, rarity, stack) values ('stickers', 'Stickers', 'pepperoni', 'common', 3);
   insert into card_ledger (account, card, kind, price) select bob, 'stickers', 'bought', 0 from generate_series(1, 3);
 
   -- Before any edit, the version is the post itself, and the body is what it was written with.
@@ -107,7 +105,7 @@ begin
   if (select count(*) from acts where kind = 'card' and target_act_id = p) is distinct from 2 then raise exception 'two plays landed'; end if;
 
   -- A version given with a reach beyond a post is not read: a character play from this post lands whatever version it names.
-  insert into card_kinds (key, name, alignment, price_setting, rarity, reaches, lasts) values ('pinstick', 'Pin Stick', 'pepperoni', 'stickers.price', 'uncommon', '{character}', interval '1 day');
+  insert into card_kinds (key, name, alignment, rarity, reaches, lasts) values ('pinstick', 'Pin Stick', 'pepperoni', 'uncommon', '{character}', interval '1 day');
   insert into card_ledger (account, card, kind, price) values (bob, 'pinstick', 'bought', 0);
   said := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L, %L)', bob, 'pinstick', b, a, '{}', '', 'character', p, first_edit));
   if said is not null then raise exception 'a character play is not refused for a version, said %', said; end if;

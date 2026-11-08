@@ -18,6 +18,8 @@ export interface GlassNav {
   readonly updates: string;
   /** The admin queue, whose tab only an admin sees. */
   readonly admin: string;
+  /** The machine's admin page, reached from the queue by the admin pages' strip (engine/ui/admin/AdminPages.tsx). */
+  readonly adminMachine: string;
 }
 
 export const GLASS_NAV: GlassNav = {
@@ -30,4 +32,5 @@ export const GLASS_NAV: GlassNav = {
   settings: '/settings',
   updates: '/updates',
   admin: '/admin/queue',
+  adminMachine: '/admin/machine',
 };

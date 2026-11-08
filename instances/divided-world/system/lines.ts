@@ -37,6 +37,18 @@ export const stockLines: StockLines = Object.freeze({
     'The new Boss has looked at {move} and decided it was somebody else\'s idea. It is set aside.',
     'Regime change: {move} did not survive the handover. The System sends its regards.',
   ]),
+  // A favor whose check came and the demand was not met: the group is taken back. `{move}` names the group by its name. DRAFT for the owner.
+  moveUnmet: Object.freeze([
+    'The check came and the demand was not met, so {move} is withdrawn. The System is not surprised. The System is a little surprised.',
+    'Time was called and nothing was done: {move} is over. The favor was a loan and the System is collecting.',
+    'Audit complete. {move} does not survive it. The System expected more and has written down exactly how much.',
+  ]),
+  // A move overturned on appeal. DRAFT for the owner.
+  moveOverturned: Object.freeze([
+    'On appeal, {move} is overturned. The System would like it noted that the System was right and has been outvoted.',
+    'The appeal succeeded and {move} is undone. The System accepts this the way a cat accepts a bath.',
+    '{move} did not survive its appeal. The System has filed a grievance against the appeal.',
+  ]),
   bossFarewell: Object.freeze([
     '{boss} is leaving the building. Please stop clapping.',
     'This season belonged to {boss}. {boss} regrets nothing and will say so at length.',

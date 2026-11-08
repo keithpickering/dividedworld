@@ -12,7 +12,7 @@ export { PRONOUN_FORMS };
 /** The tokens that name a staff character and so take a pronoun form after a dot (`{mod.they}`, `{boss.Their}`). */
 export const STAFF_TOKENS = ['boss', 'mod'] as const;
 
-export const STOCK_LINE_KEYS = ['moveLanded', 'moveMet', 'moveExpired', 'moveReversed', 'moveSuperseded', 'bossFarewell', 'bossArrival', 'boardDescription', 'ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const;
+export const STOCK_LINE_KEYS = ['moveLanded', 'moveMet', 'moveExpired', 'moveReversed', 'moveSuperseded', 'moveUnmet', 'moveOverturned', 'bossFarewell', 'bossArrival', 'boardDescription', 'ruleSet', 'visitArrived', 'visitFiled', 'reportDismissed', 'reportBackfired', 'appealOverturned', 'appealUpheld', 'appealReduced', 'appealIncreased'] as const;
 export type StockLineKey = (typeof STOCK_LINE_KEYS)[number];
 
 /**
@@ -27,6 +27,8 @@ export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>
   moveExpired: ['move'],
   moveReversed: ['move'],
   moveSuperseded: ['move'],
+  moveUnmet: ['move'],
+  moveOverturned: ['move'],
   bossFarewell: ['boss'],
   bossArrival: ['boss'],
   boardDescription: ['board'],

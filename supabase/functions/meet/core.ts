@@ -44,6 +44,7 @@ import {
   repairAnswer,
   ruleSchema,
   type InheritedMove,
+  type MachineSlotFacts,
   type ModFacts,
   type PlannedMove,
 } from '../../../engine/system/meeting.ts';
@@ -96,6 +97,19 @@ interface Context {
   readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
   /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
   readonly rules?: readonly RuleInForce[];
+  /**
+   * The machine's slots in grid order (0140): the admin's price and availability (hidden ones too, for a flash sale), whether a pull could land, and the Boss's
+   * move in force on each. Nothing about a purchase or a buyer. Absent from an older database, where the Boss has no machine to move.
+   */
+  readonly machine?: readonly MachineSlotFacts[];
+  /**
+   * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
+   * group it is in now. Absent from an older database, which confers none.
+   */
+  readonly groups?: {
+    readonly conferred: readonly { readonly key: string; readonly name: string; readonly tone: 'punishment' | 'favor' }[];
+    readonly characters: readonly { readonly id: string; readonly capped: boolean; readonly held: boolean }[];
+  };
 }
 
 /** How long one feed may take: outside material is a garnish, not a dependency. */
@@ -233,11 +247,17 @@ export async function runMeeting(
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
       characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
+      groups: { conferred: context.groups?.conferred ?? [] },
       career,
       notes: bossNotes,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name, pronouns: personaSet(b.pronouns) })),
     });
     const notes = skipped.map((f) => `The feed "${f.name}" could not be read today (${f.why}).`);
+    // The group each shown character is in now, by name, for the reference list: one read for the ids the list holds.
+    const shown = digest.characters.filter((c) => !c.staff).slice(0, REFERENCE_MOST.characters);
+    const groupOf = new Map(
+      (shown.length ? await db.rpc<{ id: string; group: string }[]>('character_groups', { ids: shown.map((c) => c.id) }) : []).map((g) => [g.id.toLowerCase(), g.group]),
+    );
     const message = [
       renderDigest(digest, memory, titles),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
@@ -246,7 +266,8 @@ export async function runMeeting(
       referenceText({
         boards: context.boards,
         threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
-        characters: digest.characters.filter((c) => !c.staff).map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns })).slice(0, REFERENCE_MOST.characters),
+        characters: shown.map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns, group: groupOf.get(c.id.toLowerCase()) })),
+        machine: context.machine,
       }),
       '',
       'Hold your meeting.',
@@ -285,6 +306,11 @@ export async function runMeeting(
       bank,
       mods: new Set(mods.map((m) => m.key)),
       rules: context.rules ?? [],
+      groups: {
+        conferred: new Map((context.groups?.conferred ?? []).map((g) => [g.key, g.tone])),
+        capped: new Set((context.groups?.characters ?? []).filter((x) => x.capped).map((x) => x.id.toLowerCase())),
+        held: new Set((context.groups?.characters ?? []).filter((x) => x.held).map((x) => x.id.toLowerCase())),
+      },
       now,
       boards: new Set(context.boards.map((b) => b.id)),
       // The threads the model was shown (the reference list is bounded), the only ones a demand may name.
@@ -293,6 +319,8 @@ export async function runMeeting(
       successorAllowed,
       successors,
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
+      // Only the slots the model was shown (the reference list is bounded) can be named, as with the threads.
+      machine: context.machine?.slice(0, REFERENCE_MOST.machine),
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
@@ -323,7 +351,8 @@ export async function runMeeting(
         moves: moves.map((m) => ({
           kind: m.kind,
           params: m.params,
-          demand: m.demand,
+          // A favor has no demand, and the key is left out rather than sent as null (the queue's column takes none or an object).
+          ...(m.demand ? { demand: m.demand } : {}),
           go_live_at: new Date(m.goLiveAt).toISOString(),
           expires_in_hours: m.expiresInHours,
           why: m.why,

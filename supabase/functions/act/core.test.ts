@@ -98,24 +98,27 @@ test('a play its card refuses is never written by the service', async () => {
   assert.ok(!calls.some((c) => c.startsWith('service:') && !c.startsWith('service:instance_settings:')), calls.join('\n'));
 });
 
-test('a purchase is the service\'s, for whoever the session is', async () => {
-  const { dbs, calls } = pair({ whoami, buy_card: { card: 'whoops', balance: 0 } });
-  await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
-  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 100, who: whoami })}`), calls.join('\n'));
+const slot = '55555555-5555-4555-8555-555555555555';
+
+test('a purchase is the service\'s, for whoever the session is, at the price the screen showed', async () => {
+  const { dbs, calls } = pair({ whoami, buy_card: { card: 'whoops', balance: 0 }, buy_pack: { pack: 'p', contents: [], balance: 0 } });
+  await runAction(dbs, instance, { action: 'buyCard', slot, price: 250 });
+  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ slot, price: 250, who: whoami })}`), calls.join('\n'));
+  await runAction(dbs, instance, { action: 'buyPack', slot, price: 300 });
+  assert.ok(calls.includes(`service:buy_pack:${JSON.stringify({ slot, price: 300, who: whoami })}`), calls.join('\n'));
+  assert.ok(!calls.some((c) => c.includes('instance_settings')), 'a purchase reads no settings: its slot is the database\'s');
 });
 
-test('a card is sold and played at the prices the settings rows hold', async () => {
-  const { dbs, calls } = pair({ instance_settings: { economy: { ...instance.settings.economy, 'whoops.price': 150, 'whoops.perLength': 50 } }, whoami, buy_card: { card: 'whoops', balance: 0 },
+test('a play is priced at the prices the settings rows hold', async () => {
+  const { dbs, calls } = pair({ instance_settings: { economy: { ...instance.settings.economy, 'whoops.perLength': 50 } }, whoami,
     card_target_reach: { act: target, kind: 'post', length: 1000, body: 'x'.repeat(1000), effects: [] }, play_card: { id: 'k' } });
-  await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
-  assert.ok(calls.includes(`service:buy_card:${JSON.stringify({ card: 'whoops', price: 150, who: whoami })}`), calls.join('\n'));
   await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } });
   assert.ok(calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":100')), calls.join('\n'));
 });
 
 test('a session with no account behind it acts as nobody', async () => {
   const { dbs, calls } = pair({ whoami: null });
-  const out = await runAction(dbs, instance, { action: 'buyCard', card: 'whoops' });
+  const out = await runAction(dbs, instance, { action: 'buyCard', slot, price: 100 });
   assert.equal(out.status, 401);
   assert.equal(calls.length, 1);
 });
@@ -144,12 +147,16 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { pending: true, class: 'heel', loudness: 'silent' } }, []],
     [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { pending: true, class: 'heel', loudness: 'announced' } }, []],
     [{ action: 'withdrawTurn', character: id }, { withdraw_turn: { withdrawn: true } }, []],
-    [{ action: 'buyCard', card: 'whoops' }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
+    [{ action: 'buyCard', slot: id, price: 100 }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
+    [{ action: 'buyPack', slot: id, price: 300 }, { whoami: id, buy_pack: { pack: 'p', contents: ['whoops'], balance: 0 } }, []],
     [{ action: 'saveEffect', play: id, character: id, state: { strokes: [] } }, { whoami: id, card_of_play: 'whoops', save_effect_state: { play: id, thread, state: { strokes: [] }, saved_at: 't1' } },
       [{ topic: `thread:${thread}`, event: 'effect', payload: { play: id, saved_at: 't1' } }]],
     [{ action: 'edit', post: id, character: id, body: 'y' }, { edit_post: { id: 'e', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'e', thread } }]],
     [{ action: 'spin', origin: id, character: id, title: 't', body: '' }, { spin: { thread: { id: thread, board }, act: { id: 's', thread } } },
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 's', thread } }]],
+    // An apology is a spin of the move's Act: heard as a spin is.
+    [{ action: 'apologize', move: id, character: id, title: 't', body: 'b' }, { apologize: { thread: { id: thread, board }, act: { id: 'p', thread } } },
+      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'p', thread } }]],
     [{ action: 'playCard', card: 'whoops', character: id, target: id, config: { color: 'red' } },
       { whoami: id, card_target_reach: { act: id, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'c', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'c', thread } }]],
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
@@ -225,7 +232,7 @@ test('a refused or failed action sends nothing live', async () => {
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
   for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
-  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'react', 'turn', 'withdraw_turn', 'buy_card', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'buy_pack', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
 
 test('a write whose answer was lost says plainly it may have gone through', async () => {
@@ -258,10 +265,10 @@ test('the act function\'s connections send a post once after a 504, and a read a
 // Engine test cards beside the instance's own, so a Set and a Use are decided without naming an instance's cards.
 const ok = <T>(value: T) => ({ ok: true as const, value });
 const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => ok(undefined) };
-const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, priceKey: 'whoops.price', validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
-const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
-const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, priceKey: 'whoops.price', play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
-const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
+const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
+const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
+const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
+const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
 const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
 const setAct = { id: 'k', kind: 'set', thread: 'th', payload: {} };
 
@@ -336,7 +343,7 @@ test('a spring, and a strike\'s card, go out live as Acts of their own', async (
 
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): the engine's test card, beside the instance's.
 const sparkle = { ...instance.cards.find((c) => c.key === 'stick-around')!, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, play: 'cast' as const,
-  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, priceKey: 'stickAround.price',
+  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
   canApply: (t: Parameters<typeof landsOn>[1], e: Parameters<typeof landsOn>[2]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e) };
 const reaching = { ...instance, cards: [...instance.cards, sparkle] };
 
@@ -705,7 +712,7 @@ test('a session the database does not take is refused at whoami(), with nothing 
   for (const [name, world] of [['a bad bearer', { refuse: 'whoami' }], ['no account', { whoami: null }]] as const) {
     const { dbs, calls } = gated(world);
     let later = 0;
-    const out = await handleAction({ dbs, instance, body: { action: 'buyCard', card: 'whoops' }, send: async () => {}, drain: async () => {}, after: () => { later++; } });
+    const out = await handleAction({ dbs, instance, body: { action: 'buyCard', slot: id, price: 100 }, send: async () => {}, drain: async () => {}, after: () => { later++; } });
     assert.deepEqual({ status: out.status, body: out.body }, { status: 401, body: { error: 'sign in to act' } }, name);
     assert.deepEqual(calls, ['player:whoami'], `${name}: the service received no call`);
     assert.equal(later, 0, `${name}: no drain and no hint check`);

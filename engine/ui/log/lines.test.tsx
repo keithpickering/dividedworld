@@ -10,13 +10,13 @@ import { actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, ty
 import { mergeLogs } from './useLog.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
 
-const empty: Log = { infractions: [], bans: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
+const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z', pronouns: PronounSet = ENGINE_DEFAULT_PRONOUNS): MyCharacter =>
   ({ id, name, pronouns, class: cls, classSince, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
 const words: Words = {
   instance: testInstance,
-  ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: '' } },
+  ui: { reasonWords: (r) => ({ 'heel.drewHeat': 'Drew heat: x', 'face.cheered': 'Cheered: y' } as Record<string, string>)[r] ?? r, quadrantLabels: { excitedNegative: 'Heat', excitedPositive: 'Hype', boredNegative: 'Groan', calmPositive: 'Calm' }, cards: [], copy: { siteName: '', siteTagline: '', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: '' }, packs: {} },
   postsPerPage: 20,
   economy: {},
 };
@@ -567,5 +567,91 @@ describe('the Mod Bots\' lines', () => {
     const rows = rowsOf({ infractions: [inf({ at: '2099-10-30T12:00:00.000Z' }), inf({ infraction: 'i2', at: '2099-10-31T12:00:00.000Z' })] });
     expect(rows.map((r) => r.key)).toEqual(['infraction:i2', 'infraction:i1']);
     for (const r of rows) expect(said(r)).not.toMatch(/react|class|heel|face/iu);
+  });
+});
+
+/**
+ * The group lines (member groups, Task 11): a staff move into a group, how it ended and an appeal's ruling on it, in plain and true words, the role word from the move's office, each
+ * linked to the move, no alert and no other member named.
+ */
+describe('the group lines', () => {
+  const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Spritey', 'heel')];
+  const move = (over: Partial<Log['groupMoves'][number]> = {}): Log['groupMoves'][number] => ({
+    move: 'm1', character: 'p', at: '2099-11-06T12:00:00.000Z', thread: 'ann', seq: 7, group: 'trialMembers', board: 'b1', boardName: 'General', expiresAt: '2099-11-13T12:00:00.000Z', landedUntil: '2099-11-13T12:00:00.000Z', checkAt: null,
+    demand: 'apologyAccepted', office: 'boss', endedWhy: null, endedBy: null, endedAt: null, ruling: null, ruledAt: null, ruledUntil: null, ...over,
+  });
+  const groupWords: Words = { ...words, instance: { ...testInstance, groups: { ...testInstance.groups, conferred: [
+    { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', color: '#c2408f', tone: 'favor' },
+  ] } } };
+  const rowsOf = (groupMoves: Log['groupMoves'], tab: string | null = null) => logRows(data({ log: { ...empty, groupMoves }, mine }), groupWords, 600, tab);
+  const said = (r: { readonly details: readonly (string | { readonly text: string })[] }) => r.details.map((d) => (typeof d === 'string' ? d : d.text)).join('');
+  const name = 'Trial Members';
+
+  test('a punishment that bars a board says who, what, where and until when, and links to the move', () => {
+    const [row] = rowsOf([move()]);
+    expect(row).toMatchObject({ kind: 'grouped', characters: ['p'], aura: 0, wallet: null, at: '2099-11-06T12:00:00.000Z' });
+    expect(said(row!)).toBe(`The Boss put Pipewrench in ${name} and barred it from posting on General until Nov 13.`);
+    expect(row!.details[1]).toEqual({ text: `put Pipewrench in ${name}`, href: '/t/ann?page=1#post-7' });
+  });
+
+  test('says no "barred" where no board is, and a Mod\'s role word where a Mod moved it', () => {
+    expect(said(rowsOf([move({ board: null, boardName: null })])[0]!)).toBe(`The Boss put Pipewrench in ${name} until Nov 13.`);
+    expect(said(rowsOf([move({ office: 'mod' })])[0]!)).toMatch(/^A Mod put Pipewrench/u);
+  });
+
+  test('names the end the move landed with, not the ruled one; the ruling line carries the change', () => {
+    const [put] = rowsOf([move({ expiresAt: '2099-11-10T12:00:00.000Z', ruling: 'reduced', ruledAt: '2099-11-07T00:00:00.000Z', ruledUntil: '2099-11-10T12:00:00.000Z' })]).filter((r) => r.key === 'grouped:m1');
+    expect(said(put!)).toContain('until Nov 13.');
+  });
+
+  test('a favor says the check it must meet to stay', () => {
+    const fav = { key: 'teachersPet', name: 'Teacher\'s Pet' };
+    expect(said(rowsOf([move({ group: fav.key, board: null, boardName: null, checkAt: '2099-11-09T00:00:00.000Z' })])[0]!)).toBe(`The Boss put Pipewrench in ${fav.name} until Nov 13. It stays if Pipewrench meets the demand by Nov 9.`);
+  });
+
+  test('each end says why the character left, at the time it ended', () => {
+    const left = (over: Partial<Log['groupMoves'][number]>) => rowsOf([move({ endedAt: '2099-11-08T00:00:00.000Z', ...over })]).find((r) => r.key === 'grouped:m1:left')!;
+    expect(said(left({ endedWhy: 'met' }))).toBe(`Pipewrench left ${name}: an apology was accepted.`);
+    expect(said(left({ endedWhy: 'expired', endedBy: 'expiry' }))).toBe(`Pipewrench left ${name}: it expired.`);
+    expect(said(left({ endedWhy: 'reversed', endedBy: 'admin' }))).toBe(`Pipewrench left ${name}: an admin reversed it.`);
+    expect(said(left({ endedWhy: 'unmet', endedBy: 'check' }))).toBe(`Pipewrench left ${name}: the demand wasn't met by its check.`);
+    expect(said(left({ endedWhy: 'overturned', endedBy: 'appeal' }))).toBe(`Pipewrench left ${name}: overturned on appeal.`);
+    expect(left({ endedWhy: 'expired' })).toMatchObject({ kind: 'grouped', at: '2099-11-08T00:00:00.000Z', characters: ['p'] });
+    expect(left({ endedWhy: 'expired' }).details[0]).toEqual({ text: `Pipewrench left ${name}`, href: '/t/ann?page=1#post-7' });
+    expect(rowsOf([move()]).map((r) => r.key)).toEqual(['grouped:m1']);
+  });
+
+  test('an appeal of a group move says what it was of, by the group\'s name and linked to the move, the ruling and the price; the lines for the move itself are Task 11\'s', () => {
+    const appeal = { appeal: 'a9', character: 'p', at: '2099-11-06T13:00:00.000Z', punishment: 'm1', punishmentKind: 'move', postSeq: null, thread: 'ann', verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
+    const paidFor = (kind: 'appeal' | 'refund', change: number): Log['wallet'][number] => ({ settlement: null, kind, change, overflow: 0, floored: 0, balanceAfter: 100, ref: 'a9', at: '2099-11-06T13:00:00.000Z' });
+    const mineRows = (appeals: Log['appeals'], wallet: Log['wallet'] = [paidFor('appeal', -50)]) => logRows(data({ log: { ...empty, groupMoves: [move()], appeals, wallet }, mine }), groupWords, 600, null).filter((r) => r.kind === 'appeal');
+    const open = mineRows([appeal])[0]!;
+    expect(open).toMatchObject({ kind: 'appeal', characters: ['p'], aura: -50 });
+    expect(said(open)).toBe(`Pipewrench appealed the move into ${name}, for 0.50 Aura. The plea is public. It has not been ruled on yet. If it cannot be, your Aura comes back by itself.`);
+    expect(open.details[1]).toEqual({ text: `the move into ${name}`, href: '/t/ann?page=1#post-7' });
+    expect(said(mineRows([{ ...appeal, verdict: 'overturned', hearer: 'The Director' }], [paidFor('appeal', -50), paidFor('refund', 50)])[0]!)).toContain('The Director overturned it, and the 0.50 Aura came back.');
+    expect(said(mineRows([{ ...appeal, verdict: 'reduced', hearer: 'The Director' }])[0]!)).toContain('The Director reduced it.');
+    expect(said(mineRows([{ ...appeal, verdict: 'upheld', hearer: 'The Director' }])[0]!)).toContain('The Director upheld it. Nothing changed.');
+    /* Not in the page of moves the log holds: the line still reads, without the group's name or a link. */
+    const lone = logRows(data({ log: { ...empty, appeals: [appeal], wallet: [paidFor('appeal', -50)] }, mine }), groupWords, 600, null).find((r) => r.kind === 'appeal')!;
+    expect(said(lone)).toMatch(/^Pipewrench appealed a group move, for 0\.50 Aura\./u);
+  });
+
+  test('each appeal ruling says what the hearer did and where the end now is', () => {
+    const ruled = (ruling: NonNullable<Log['groupMoves'][number]['ruling']>, over: Partial<Log['groupMoves'][number]> = {}) =>
+      rowsOf([move({ ruling, ruledAt: '2099-11-07T00:00:00.000Z', ...over })]).find((r) => r.key === 'grouped:m1:ruling')!;
+    expect(said(ruled('reduced', { ruledUntil: '2099-11-10T00:00:00.000Z' }))).toBe(`The Boss reduced Pipewrench's ${name} on appeal: it now ends Nov 10.`);
+    expect(said(ruled('increased', { ruledUntil: '2099-11-16T00:00:00.000Z' }))).toBe(`The Boss increased Pipewrench's ${name} on appeal: it now ends Nov 16.`);
+    expect(said(ruled('upheld'))).toBe(`The Boss upheld Pipewrench's ${name} on appeal: nothing changed.`);
+    expect(said(ruled('overturned'))).toBe(`The Boss overturned Pipewrench's ${name} on appeal: it ended.`);
+    expect(said(ruled('reduced', { ruledUntil: '2099-11-06T00:00:00.000Z' }))).toBe(`The Boss reduced Pipewrench's ${name} on appeal: it ended at once.`);
+    expect(said(ruled('upheld', { office: 'mod' }))).toMatch(/^A Mod upheld /u);
+    expect(ruled('upheld')).toMatchObject({ kind: 'grouped', at: '2099-11-07T00:00:00.000Z', aura: 0 });
+  });
+
+  test('is in its own character\'s tab and in All, and names no one else', () => {
+    expect(rowsOf([move()], 'p')).toHaveLength(1);
+    expect(rowsOf([move()], 'q')).toHaveLength(0);
+    expect(said(rowsOf([move()], null)[0]!)).not.toMatch(/Spritey|others|members of/iu);
   });
 });

@@ -15,6 +15,9 @@
  *  - A move is drawn in the build's fuller words (the board's are shorter: a demand's sentence, the why's name, the progress line "5 of 12, counted …"), so
  *    its article is taller than the board's, and its countdown and button stand lower in it, as the grid centers them: the shifts below are what the
  *    first run measured. The count of the move in force is the build's own world's (5 of 12), not the board's 7.
+ *  - The build draws the admin pages' strip (Moves, The machine: engine/ui/admin/AdminPages.tsx) under the lead, which the board does not: the booster packs design's
+ *    amendment of 2026-11-07 ("the admin pages share sub-navigation"), whose own board, 05, draws it. The strip is a small button (36px) and the 28px above it, so
+ *    what stands below it stands 64px lower, and the first group is held from the lead's bottom with that as part of its shift. On the phone the strip is 32px and 28px, so the phone's first part stands 60px lower.
  *  - The build also draws the Mod Bots' cards group between In force and Ended (a heading and its empty line), which the board does not draw; Ended is
  *    held from In force's REVERSE with that group's height as its shift. Ended's head carries its count in the build (the board's carries none).
  *  - A waiting rename also carries Replace description, a button under HOLD (shut until pressed, so the row keeps the board's width and wrapping), which
@@ -43,7 +46,7 @@ const manifest: BoardManifest = {
     { id: 'menu', role: 'navigation', name: 'Menu', type: false, box: 'height' },
     { id: 'title', role: 'heading', name: "THE SYSTEM'S MOVES", buildName: "The System's moves", box: 'position' },
     at('lead', 'text', 'Moves that reshape a board wait here before they land, and land unless you hold them. Anything in force can be reversed. Players never see a held move.', { type: false, buildShift: { y: 30 } }),
-    at('todo-head', 'heading', 'TO DO 0', { buildName: 'To do 0', buildSize: 40, buildShift: { y: 11 }, origin: 'lead', originEdge: 'bottom' }),
+    at('todo-head', 'heading', 'TO DO 0', { buildName: 'To do 0', buildSize: 40, buildShift: { y: 75 }, origin: 'lead', originEdge: 'bottom' }),
     at('todo-empty', 'text', 'Nothing to do.', { origin: 'todo-head' }),
     at('waiting-head', 'heading', 'WAITING TO LAND 1', { buildName: 'Waiting to land 1', buildSize: 40, origin: 'todo-empty', originEdge: 'bottom' }),
     at('countdown', 'text', 'IN 17 HOURS', { origin: 'waiting-head', type: false, buildShift: { y: 23.2 } }),
@@ -97,7 +100,7 @@ export const phone: BoardManifest = {
   build: { story: 'boards-00-admin-queue--admin-queue-phone' },
   landmarks: [
     ...bar(0),
-    on('waiting-head', 'heading', 'WAITING TO LAND 1', { buildName: 'Waiting to land 1', buildShift: { y: 541.4 } }),
+    on('waiting-head', 'heading', 'WAITING TO LAND 1', { buildName: 'Waiting to land 1', buildShift: { y: 601.4 } }),
     on('countdown', 'text', 'IN 17 HOURS', { origin: 'waiting-head', buildShift: { y: 11 } }),
     on('why', 'text', 'Changes back when 8 different characters post there, or Nov 14.', { buildName: "Why, in The Director's words: “Games has gone soft. Time for discipline.”", origin: 'waiting-head', box: 'none' }),
     on('hold', 'button', 'HOLD', { buildName: 'Hold: Small Soldiers Situation Room', origin: 'why', originEdge: 'bottom' }),

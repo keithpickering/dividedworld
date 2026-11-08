@@ -3,6 +3,7 @@
  * before it is trusted to settle anything. Each returns problems as sentences; [] is whole.
  */
 import { QUADRANTS } from './types.ts';
+import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
 import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
@@ -13,6 +14,7 @@ import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from 
 import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, INT4_MAX, OUTCOMES, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, spanMs } from './cards.ts';
 import type { CardRules } from './cards.ts';
+import type { Pull, SlotSeed } from './packs.ts';
 
 /**
  * What a Mod Bot's bribe may cost, in hundredths of an orb, for every bot in every instance: dear enough to be a
@@ -182,6 +184,20 @@ function warnBarRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The member groups' settings (`Settings.apology`): exactly the fields of ApologySettings, each a whole number, at least 1. Mirrors `setting_apology` in
+ * supabase/migrations/0130_bars_apologies.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const APOLOGY_KEYS = ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const;
+function apologyRule(v: unknown): string | null {
+  const shape = 'an object giving apologyEveryHours (the hours between a character\'s apologies to one move), apologyJudgeBatch (the most apologies one run of the judge hears) and apologyRulingMaxWords (the most words of a ruling), each a whole number, at least 1';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(APOLOGY_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const k of APOLOGY_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -234,6 +250,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   pool: poolRule,
   modBots: modBotsRule,
   warnBar: warnBarRule,
+  apology: apologyRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),
@@ -295,6 +312,38 @@ function developerProblems(d: Instance['developer']): string[] {
   return out;
 }
 
+/** Problems with the packs and the machine's slots, each a sentence naming what is wrong. */
+function packProblems(instance: Instance): string[] {
+  const out: string[] = [];
+  const packs = Array.isArray(instance.packs) ? instance.packs : (out.push('the instance has no packs list'), []);
+  const machine = Array.isArray(instance.machine) ? instance.machine : (out.push('the instance has no machine list'), []);
+  for (const k of duplicates(packs, (p) => p.key)) out.push(`pack key "${k}" is used twice`);
+  for (const pack of packs) {
+    if (!Array.isArray(pack.pulls) || !pack.pulls.length) { out.push(`pack "${pack.key}" has no pulls`); continue; }
+    for (const k of pack.leaves ?? []) if (!instance.cards.some((c) => c.key === k)) out.push(`pack "${pack.key}" leaves out "${k}", and the instance has no such card`);
+    (pack.pulls as readonly Pull[]).forEach((pull, i) => {
+      const where = `pack "${pack.key}", pull ${i + 1}`;
+      const weights = Object.entries(pull.weights ?? {});
+      if (!weights.length) out.push(`${where} has no weights`);
+      for (const [rarity, w] of weights) {
+        if (!isWhole(w, 1)) out.push(`${where} has a weight of ${JSON.stringify(w)} for ${rarity}; a weight is a positive whole number`);
+        const eligible = instance.cards.some((c) => c.rarity === rarity && !(pack.leaves ?? []).includes(c.key));
+        if (!eligible) out.push(`${where} names ${rarity}, and the pack has no eligible card of that rarity`);
+      }
+    });
+  }
+  const names = (s: SlotSeed) => ('card' in s.item ? `card "${s.item.card}"` : `pack "${s.item.pack}"`);
+  for (const slot of machine) {
+    const who = `the slot for ${names(slot)}`;
+    if ('card' in slot.item) { if (!instance.cards.some((c) => c.key === (slot.item as { card: string }).card)) out.push(`${who} names a card, and the instance has no such card`); }
+    else if (!packs.some((p) => p.key === (slot.item as { pack: string }).pack)) out.push(`${who} names a pack, and the instance has no such pack`);
+    if (!isWhole(slot.price, 1) || slot.price > INT4_MAX) out.push(`${who} has a price of ${JSON.stringify(slot.price)}; a price is a whole number of hundredths from 1 to ${INT4_MAX}`);
+    if (!['onSale', 'soldOut', 'hidden'].includes(slot.availability)) out.push(`${who} has the availability ${JSON.stringify(slot.availability)}; it is onSale, soldOut or hidden`);
+  }
+  for (const k of duplicates(machine, names)) out.push(`two slots sell ${k}`);
+  return out;
+}
+
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
   const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;
@@ -318,7 +367,8 @@ export function instanceProblems(instance: Instance): string[] {
   if (!systems.length) out.push('no board is The System\'s: exactly one board sets system: true, where The System posts');
   if (systems.length > 1) out.push(`${systems.length} boards are The System's (${systems.map((b) => b.slug).join(', ')}); exactly one is`);
   if (instance.boards.length && systems.length === instance.boards.length) out.push('the instance has no board for players: every board is The System\'s');
-  out.push(...developerProblems(instance.developer));
+  out.push(...developerProblems(instance.developer), ...packProblems(instance));
+  out.push(...groupsProblems(instance.groups));
   if (!instance.ranks.length) out.push('the instance has no rank');
   instance.ranks.forEach((r, i) => {
     if (typeof r.name !== 'string' || r.name.trim() === '') out.push('a rank has no name');
@@ -350,8 +400,6 @@ export function instanceProblems(instance: Instance): string[] {
     };
     for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }
     for (const c of instance.cards) {
-      const price = economy[c.priceKey];
-      if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) out.push(`card "${c.key}" is priced by economy "${c.priceKey}", which the settings do not hold as a whole number above 0`);
       for (const r of c.reads ?? []) { const why = check(`card "${c.key}"`, r); if (why) out.push(why); }
     }
   }
@@ -505,8 +553,6 @@ function systemProblems(instance: Instance): string[] {
     if (!rosterKeys.has(k)) out.push(`firstStaff names "${k}", which is not in the roster`);
     else if (k === sys.firstBoss) out.push(`firstStaff names "${k}", who is firstBoss; the first season's Boss is not also on staff from the start`);
   }
-  const groupName = sys.staffGroup?.name;
-  if (typeof groupName !== 'string' || groupName.length < 1 || groupName.length > 40) out.push(`staffGroup.name must be 1 to 40 characters (it is ${typeof groupName === 'string' ? groupName.length : 'missing'})`);
   const duties = sys.duties ?? ({} as SystemContent['duties']);
   for (const d of DUTIES) {
     const who = duties[d];

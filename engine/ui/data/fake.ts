@@ -13,6 +13,7 @@
  * the live events a post or a reaction sends and deliver them twice and out of order.
  *
  * Where it differs from the server, and says so:
+ *  - A bar is not refused by post, start thread or spin (the database's `barred()` does); `myApologies` and `apologize` are, and `myCharacters` carries `bars`.
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
@@ -20,8 +21,10 @@
  */
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
-import { atOrBelow, basePrice, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
+import { rollPack } from '../../rules/packs.ts';
+import { atOrBelow, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
@@ -38,11 +41,11 @@ import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -131,8 +134,15 @@ export interface Seed {
    * page could show. It writes no Act and counts toward the account's open invites like a made one (`createInvite` is the action).
    */
   invite(account: Id, invite?: { at?: number; used?: boolean }): number;
-  /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player, refused as it is, with its wallet event and card ledger row. */
+  /** A purchase from the Vending Machine by an account, dated `at`: `buyCard` as that player from the card's on-sale slot, refused as it is, with its wallet event and card ledger row. */
   buy(account: Id, card: string, options?: { at?: number }): void;
+  /**
+   * An admin's change to the slot that sells a card or a pack (`item`): whether it is for sale, hidden or sold out, and its price in hundredths.
+   * The machine reads it at once, as the database's rows are read at the next look. `move` is the Boss's move the slot shows (`Slot.move`):
+   * the fake applies no move, so it only says what the machine shows beside it, and a test that draws a pulled slot seeds the availability
+   * and price the move would have made as well (the database's `machine_now` has the move already applied to both).
+   */
+  slot(item: { readonly card: string } | { readonly pack: string }, change: { availability?: 'onSale' | 'soldOut' | 'hidden'; price?: number; move?: SlotMove | null }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
   turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
   /** What the account's next estimate holds; its times are the ask's. */
@@ -166,7 +176,16 @@ export interface Seed {
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
   staffProfile(key: string, profile: { interests?: readonly string[]; favorites?: readonly Id[]; mood?: string; signature?: string; at?: number }): void;
   /** A staff character's post in a thread (The System's board for the Boss; any board for a persona's pool post, which presence lists it for). */
-  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number }): Id;
+  staffPost(staff: Id, thread: Id, body: string, options?: { at?: number; ruling?: { readonly verdict: 'accepted' | 'rejected'; readonly apology: Id } }): Id;
+  /**
+   * A conferGroup move that has landed (what `apply_mod_move`/`apply_meeting` write): `staff` moved `character` into `group` (a key of the instance's groups), barring it from `board` (a
+   * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on; null: it has no end date). Returns the move's Act.
+   */
+  groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number | null; readonly demand?: boolean }): Id;
+  /** A staff character's office changes (a handover, a reassignment): moves it made before keep the office stamped on them. */
+  setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched'): void;
+  /** An apology a character wrote to a move (`apologize`): the spin Act is written as the server writes it, and the row is in `state` (default `pending`) from `at`. Returns the row's apology Act. */
+  apology(character: Id, move: Id, state?: 'pending' | 'accepted' | 'rejected' | 'returned', options?: { at?: number }): Id;
   /**
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
    * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
@@ -215,9 +234,9 @@ export interface Seed {
   verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
   /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on). */
   infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
-  /** A character's appeal of an infraction (`open_appeal`), and the Mod's ruling on it. */
+  /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
-  ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number }): Id;
+  ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number; until?: number }): Id;
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
@@ -377,10 +396,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
-    staffGroup: options.settings?.staffGroup ?? { name: options.instance.system.staffGroup.name },
+    /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
+    groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
     ...(options.settings?.toastMs === undefined ? {} : { toastMs: options.settings.toastMs }),
     /* What screen_settings's cardEconomy holds (0039): the economy this backend prices with, cut to what the cards' prices read. */
-    cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => c.priceKey === key || (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
+    cardEconomy: Object.fromEntries(Object.entries(settings.economy).filter(([key]) => instance.cards.some((c) => (c.reads ?? []).some((r) => (typeof r === 'string' ? r : r.key) === key)))),
     /* What screen_settings's economy holds (0073): the whole economy row. */
     economy: settings.economy,
   };
@@ -418,7 +438,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
-  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by: string; at: number }>();
+  /** The apologies barred characters wrote (`apologies`, 0129). */
+  const apologies: { move: Id; apology: Id; character: Id; state: 'pending' | 'accepted' | 'rejected' | 'returned'; at: number }[] = [];
+  const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
   interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
@@ -653,12 +675,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       ...(warnOf(c.id) > 0 ? { warnPoints: warnOf(c.id) } : {}),
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
+      group: groupOf(c),
     };
+  }
+  /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
+  function groupOf(c: CharRec): string {
+    const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id).length;
+    return earnedGroup(instance.groups.ladder, { posts, seasons: 0, staff: c.staff !== undefined && c.staff !== null });
   }
 
   /* ---------------------------------------------------------------------- moves ---- */
   /** The moves in force, newest first: a landed `move` Act with no end. */
   const inForce = () => [...acts.values()].filter((a) => a.kind === 'move' && !moveEnds.has(a.id)).sort((a, b) => b.at - a.at || b.order - a.order);
+  /** The boards a character is barred from posting on now (bars_now, less a move past its expiry that the tick has not ended). */
+  /** When a move ends by itself (`move_expires_at`): the latest appeal ruling's `until`, else the move's own expiry; null for a move with no end of its own. */
+  const moveEndsAt = (a: ActRec): string | null => {
+    const ruled = [...acts.values()].filter((r) => r.kind === 'appeal_ruling' && typeof r.payload['until'] === 'string' && acts.get(r.target ?? '')?.target === a.id).sort((x, y) => y.at - x.at)[0];
+    return typeof ruled?.payload['until'] === 'string' ? ruled.payload['until'] : typeof a.payload['expires_at'] === 'string' ? a.payload['expires_at'] : null;
+  };
+  const barsOf = (character: Id): Bar[] => inForce().filter((a) => {
+    const params = (a.payload['params'] ?? {}) as Record<string, unknown>;
+    const end = moveEndsAt(a);
+    return a.payload['kind'] === 'conferGroup' && params['character'] === character && typeof params['board'] === 'string' && (end === null || Date.parse(end) > now());
+  }).map((a): Bar => {
+    const params = a.payload['params'] as Record<string, unknown>;
+    return { board: String(params['board']), move: a.id, group: String(params['group']), expiresAt: moveEndsAt(a) };
+  });
+  const apologyEveryMs = (): number => 3_600_000 * (settings.apology.apologyEveryHours);
   /** A board as it is called now: its latest rename in force, else its own row (boards_now). */
   function boardNow(b: Board): Board {
     const m = inForce().find((a) => a.payload['kind'] === 'renameBoard' && (a.payload['params'] as Record<string, unknown>)['board'] === b.id);
@@ -1127,9 +1170,85 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number>>; readonly shares: readonly LogShare[] }
   const settlements: SettlementRec[] = [];
   const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
+  const packLedger: { readonly account: Id; readonly order: number; readonly event: PackEvent; readonly ms: number }[] = [];
   const cardLedger: { readonly account: Id; readonly order: number; readonly event: CardEvent; readonly ms: number }[] = [];
   let logOrder = 0;
   const recordWallet = (account: Id, at: number, e: Omit<WalletEvent, 'at'>) => { walletEvents.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
+  /*
+   * The Vending Machine's slots (machine_slots, 0139_machine.sql), seeded from the instance in its order and changed only by `seed.slot`, as the
+   * database keeps an admin's choices. Their ids are their own count, so the ids of everything else are as they were. A pack is rolled with a
+   * fixed-seed generator: the fake is deterministic, and a test that wants other cards seeds the hand.
+   */
+  interface SlotRec { readonly id: Id; position: number; readonly item: Slot['item']; availability: 'onSale' | 'soldOut' | 'hidden'; price: number; move: SlotMove | null }
+  const slotRecs: SlotRec[] = instance.machine.map((m, i): SlotRec => ({ id: `00000000-0000-4000-9000-${(i + 1).toString(16).padStart(12, '0')}`, position: i + 1, item: m.item, availability: m.availability, price: m.price, move: null }));
+  let rolls = 0x9e3779b9;
+  const random = (): number => { rolls = (rolls + 0x6d2b79f5) | 0; let t = Math.imul(rolls ^ (rolls >>> 15), 1 | rolls); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const rarityOf = (item: Slot['item']): Slot['rarity'] => ('card' in item ? instance.cards.find((c) => c.key === item.card)?.rarity ?? null : null);
+  const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').sort((x, y) => x.position - y.position).map((r): Slot => ({
+    id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: r.move,
+  }));
+  /** A price as the server's refusals say it: hundredths of an orb as orbs (`orbs`, 0139). */
+  const orbsOf = (hundredths: number): string => (hundredths / 100).toFixed(2);
+  /** What is wrong with a slot's availability and price (`machine_apply_slot`, 0141), in the server's words, and which of the two. */
+  function slotWords(availability: unknown, price: unknown): { readonly error: string; readonly field: 'availability' | 'price' } | null {
+    if (availability !== 'onSale' && availability !== 'soldOut' && availability !== 'hidden') return { error: 'a slot is on sale, sold out or hidden', field: 'availability' };
+    if (typeof price !== 'number' || !Number.isInteger(price) || price < 1) return { error: 'a price is at least 0.01', field: 'price' };
+    if (price > 100000000) return { error: 'a price is at most 1000000.00', field: 'price' };
+    return null;
+  }
+  /** The availability and price an admin sees on a slot: a Pull's sold out and a Boss's price are the Boss's, not the admin's. */
+  const adminAvailability = (r: SlotRec): SlotRec['availability'] => (r.move?.kind === 'pullSlot' && r.availability === 'soldOut' ? 'onSale' : r.availability);
+  const adminPrice = (r: SlotRec): number => (r.move ? r.move.was : r.price);
+  /** Writes what an admin changed on a slot, and only what changed, so a Boss's move over it stays. True where a pack just left sale. */
+  function applySlot(rec: SlotRec, availability: SlotRec['availability'], price: number): boolean {
+    const was = adminAvailability(rec);
+    if (availability !== was) rec.availability = availability;
+    if (price !== adminPrice(rec)) {
+      rec.price = price;
+      if (rec.move) rec.move = { ...rec.move, was: price };
+    }
+    return 'pack' in rec.item && was === 'onSale' && availability !== 'onSale';
+  }
+  /** `card_in_open_pack` (0139): whether a pack on sale can still give the card. */
+  function cardInOpenPack(card: string): boolean {
+    const rarity = instance.cards.find((c) => c.key === card)?.rarity;
+    if (!rarity) return false;
+    return slotRecs.some((r) => {
+      if (!('pack' in r.item) || r.availability !== 'onSale') return false;
+      const key = r.item.pack;
+      const pack = instance.packs.find((p) => p.key === key);
+      return pack !== undefined && !(pack.leaves ?? []).includes(card) && pack.pulls.some((pull) => rarity in pull.weights);
+    });
+  }
+  /** After a pack leaves sale: ends, as reversed by the admin, every Pull whose card is then in no pack on sale. Returns how many. */
+  function endUnfloored(): number {
+    let ended = 0;
+    for (const r of [...slotRecs].sort((x, y) => x.position - y.position)) {
+      const m = r.move;
+      if (!m || m.kind !== 'pullSlot' || !('card' in r.item) || cardInOpenPack(r.item.card)) continue;
+      const a = acts.get(m.act);
+      if (a && a.kind === 'move' && !moveEnds.has(m.act)) {
+        moveEnds.set(m.act, { why: 'reversed', by: 'admin', at: now() });
+        write({ character: null, kind: 'move_end', thread: a.thread, target: m.act, payload: { why: 'reversed', by: 'admin' } });
+      }
+      r.availability = adminAvailability(r);
+      r.move = null;
+      ended += 1;
+    }
+    return ended;
+  }
+  /** `slot_for_sale` (0139): the slot as the machine shows it now, from the slot alone and in the same words for every caller, or a refusal. */
+  function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
+    const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
+    if (!seen) return refuse('the machine has no such slot');
+    if (wants === 'card' && !('card' in seen.item)) return refuse('this slot sells a pack, not a card');
+    if (wants === 'pack' && !('pack' in seen.item)) return refuse('this slot sells a card, not a pack');
+    if (seen.availability === 'soldOut') return refuse('this slot is sold out');
+    if (shown.price !== seen.price) return refuse(`the price is now ${orbsOf(seen.price)}, not ${orbsOf(shown.price)}`);
+    return seen;
+  }
+  /** Whether a purchase is at a price the Boss moved: a Reprice in force whose result is not the admin's price (as buy_card and buy_pack, 0139, write it). */
+  const movedPrice = (seen: SlotRec): boolean => seen.move?.kind === 'repriceSlot' && seen.price !== seen.move.was;
   const recordCard = (account: Id, at: number, e: Omit<CardEvent, 'at'>) => { cardLedger.push({ account, order: ++logOrder, ms: at, event: { ...e, at: iso(at) } }); };
 
   function saveEffect(play: Id, character: Id, state: Readonly<Record<string, unknown>>): Answer<{ play: Id; savedAt: string }> {
@@ -1189,17 +1308,40 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
   const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
 
-  /** `buy_card` (0006_cards.sql): the card's base price from the settled wallet, and one more of it in the hand. */
-  function buyCard(card: string): Answer<Bought> {
-    const bad = request({ action: 'buyCard', card });
+  /** `buy_card` (0139_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
+  function buyCard(shown: Slot): Answer<Bought> {
+    const bad = request({ action: 'buyCard', slot: shown.id, price: shown.price });
     if (bad) return bad;
     const account = me()!;
-    const price = basePrice(instance.cards.find((c) => c.key === card)!, settings);
-    const left = spend(account, price, 'purchase', null);
+    const seen = slotForSale(shown, 'card');
+    if (isRefusal(seen)) return seen;
+    const card = (seen.item as { card: string }).card;
+    const left = spend(account, seen.price, 'purchase', null);
     if (typeof left !== 'number') return left;
     account.cards[card] = (account.cards[card] ?? 0) + 1;
-    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price });
+    recordCard(account.id, stamp ?? now(), { card, kind: 'bought', act: null, price: seen.price, ...(movedPrice(seen) ? { repriced: true } : {}) });
     return ok({ card, balance: left, held: account.cards[card]! });
+  }
+
+  /** `buy_pack` (0139_machine.sql): the same checks, then the roll; the cards it gave, in pull order, are in the hand. */
+  function buyPack(shown: Slot): Answer<Opened> {
+    const bad = request({ action: 'buyPack', slot: shown.id, price: shown.price });
+    if (bad) return bad;
+    const account = me()!;
+    const seen = slotForSale(shown, 'pack');
+    if (isRefusal(seen)) return seen;
+    const pack = instance.packs.find((p) => p.key === (seen.item as { pack: string }).pack);
+    if (!pack) return refuse('the machine has no such slot');
+    const contents = rollPack(pack, instance.cards, random);
+    const left = spend(account, seen.price, 'purchase', null);
+    if (typeof left !== 'number') return left;
+    for (const card of contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
+    /* The pack's row and one pulled row per card, in pull order, at the purchase's instant, as buy_pack writes them. */
+    const made = uuid();
+    const at = stamp ?? now();
+    packLedger.push({ account: account.id, order: ++logOrder, ms: at, event: { pack: made, kind: pack.key, price: seen.price, repriced: movedPrice(seen), contents, at: iso(at) } });
+    for (const card of contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack: made, price: 0 });
+    return ok({ pack: made, contents, balance: left });
   }
 
   /**
@@ -1587,7 +1729,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return out;
       }, []).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
+      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, group: groupOf(characters.get(id)!), ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
   }
   /** The rule an infraction was filed under, in the glass's words (punishment_words). */
   function ruleOf(inf: ActRec): string | null {
@@ -1604,7 +1746,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account: Id | undefined,
     newest: <T extends { readonly ms: number; readonly order: number }>(rows: T[]) => T[],
     fits: (ms: number) => boolean,
-  ): { infractions: LogInfraction[]; bans: LogBan[]; reports: LogReport[]; appeals: LogAppeal[] } {
+  ): { infractions: LogInfraction[]; bans: LogBan[]; groupMoves: LogGroupMove[]; reports: LogReport[]; appeals: LogAppeal[] } {
     const owned = (id: unknown): boolean => typeof id === 'string' && account !== undefined && characters.get(id)?.owner === account;
     const all = [...acts.values()];
     const seqOf = (post: unknown): number | null => (typeof post === 'string' ? acts.get(post)?.seq ?? null : null);
@@ -1625,6 +1767,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ban: b.id, character: b.payload.character as Id, at: iso(b.at), days: b.payload.days as number, until: (rulingOn(b.id)?.payload.until ?? b.payload.until) as string,
           infraction: b.payload.infraction_act as Id, rule: ((i) => (i ? ruleWords(i) : null))(acts.get(String(b.payload.infraction_act))), thread: b.thread,
         })),
+      /* my_group_moves (0134): the conferGroup moves on the account's own characters, each with its end and the ruling of the appeal on it; the end is read through the ruling's `until`. */
+      groupMoves: newest(all.filter((m) => m.kind === 'move' && m.payload['kind'] === 'conferGroup' && owned((m.payload['params'] as Record<string, unknown> | undefined)?.['character']) && fits(m.at)).map((m) => ({ ms: m.at, order: m.order, m })))
+        .map(({ m }): LogGroupMove => {
+          const params = (m.payload['params'] ?? {}) as Record<string, unknown>;
+          const end = all.find((e) => e.kind === 'move_end' && e.target === m.id);
+          const ruling = all.find((r) => r.kind === 'appeal_ruling' && all.some((a) => a.id === r.target && a.kind === 'appeal' && a.target === m.id));
+          const boardId = typeof params['board'] === 'string' ? params['board'] : null;
+          return {
+            move: m.id, character: params['character'] as Id, at: iso(m.at), thread: m.thread, seq: m.seq ?? null, group: String(params['group'] ?? ''), board: boardId,
+            boardName: boardId ? boards.find((b) => b.id === boardId)?.name ?? null : null,
+            expiresAt: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : typeof m.payload['expires_at'] === 'string' ? m.payload['expires_at'] : null,
+            landedUntil: typeof m.payload['expires_at'] === 'string' ? m.payload['expires_at'] : null,
+            checkAt: typeof params['checkAt'] === 'string' ? params['checkAt'] : null,
+            demand: typeof (m.payload['demand'] as { kind?: unknown } | undefined)?.kind === 'string' ? String((m.payload['demand'] as { kind: string }).kind) : null,
+            office: m.payload['office'] === 'mod' ? 'mod' as const : 'boss' as const, endedWhy: (end?.payload['why'] as LogGroupMove['endedWhy'] | undefined) ?? null, endedBy: (end?.payload['by'] as string | undefined) ?? null,
+            endedAt: end ? iso(end.at) : null, ruling: (ruling?.payload['verdict'] as AppealVerdict | undefined) ?? null, ruledAt: ruling ? iso(ruling.at) : null,
+            ruledUntil: typeof ruling?.payload['until'] === 'string' ? ruling.payload['until'] : null,
+          };
+        }),
       reports: newest(all.filter((r) => r.kind === 'report' && owned(r.character) && fits(r.at)).map((r) => ({ ms: r.at, order: r.order, r })))
         .map(({ r }): LogReport => {
           const v = all.find((x) => x.kind === 'report_verdict' && x.target === r.id);
@@ -1639,7 +1800,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const r = all.find((x) => x.kind === 'appeal_ruling' && x.target === a.id);
           const about = p?.kind === 'ban' ? acts.get(String(p.payload.infraction_act))?.payload.about_act : p?.payload.about_act;
           return {
-            appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : 'infraction', postSeq: seqOf(about), thread: a.thread,
+            appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : p?.kind === 'move' ? 'move' : 'infraction', postSeq: seqOf(about), thread: a.thread,
             verdict: (r?.payload.verdict as AppealVerdict | undefined) ?? null, ruledAt: r ? iso(r.at) : null, pointsDelta: typeof r?.payload.points_delta === 'number' ? r.payload.points_delta : null,
             hearer: named(r?.character ?? null), refund: refundedAppeals.has(a.id) ? 'failed' : null,
           };
@@ -1875,6 +2036,41 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const a = acts.get(id);
       if (!a || a.kind !== 'move') return null;
       return buildMoveNotice(publicAct(a), tallyOf(id), progressOf(a));
+    },
+    myApologies(character) {
+      const account = me();
+      if (!account || characters.get(character)?.owner !== account.id) return [];
+      const every = apologyEveryMs();
+      return apologies.filter((a) => a.character === character).sort((x, y) => y.at - x.at)
+        .map((a): Apology => ({ move: a.move, state: a.state, at: iso(a.at), nextAt: a.state === 'returned' ? null : iso(a.at + every) }));
+    },
+    appealedMoves(character) {
+      const account = me();
+      if (!account || characters.get(character)?.owner !== account.id) return [];
+      return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
+    },
+    apologize(move, character, title, body, framing) {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+      const banned = bannedUntilOf(character);
+      if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+      const m = acts.get(move);
+      const params = (m?.payload['params'] ?? {}) as Record<string, unknown>;
+      const demand = (m?.payload['demand'] ?? {}) as Record<string, unknown>;
+      const live = m !== undefined && m.kind === 'move' && !moveEnds.has(move) && m.payload['kind'] === 'conferGroup' && params['character'] === character && demand['kind'] === 'apologyAccepted'
+        && Date.parse(String(m.payload['expires_at'])) > now();
+      if (!live) return refuse('there is no move of this character\'s that an apology can answer');
+      const mine = apologies.filter((a) => a.move === move);
+      if (mine.some((a) => a.state === 'pending')) return refuse('an apology to that move is still waiting for a ruling');
+      const next = Math.max(0, ...mine.filter((a) => a.character === character && a.state !== 'returned' && a.at > now() - apologyEveryMs()).map((a) => a.at + apologyEveryMs()));
+      if (next > 0) return refuse(`this character has already apologized to that move in the last ${apologyEveryMs() / 3_600_000} hours; the next apology opens at ${iso(next).slice(0, 16).replace('T', ' ')} UTC`);
+      const t = openThread(threads.get(m.thread)!.board, title, move);
+      const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title, body } });
+      apologies.push({ move, apology: written.id, character, state: 'pending', at: written.at });
+      sendThread(t);
+      sendAct(written);
+      writeFramed(body, framing, written);
+      return ok({ thread: summary(t), act: publicAct(written) });
     },
     movesLog(staff, before) {
       const who = [...characters.values()].find((c) => c.staff?.key === staff);
@@ -2149,9 +2345,18 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (said === '') return refuse('say why this punishment should change', 'plea');
       if (said.length > 1000) return refuse('a plea is at most 1000 characters', 'plea');
       const pun = acts.get(punishment);
-      if (!pun || (pun.kind !== 'infraction' && pun.kind !== 'ban') || pun.payload.character !== through) return refuse('that is not a punishment of this character');
+      /* A group move that punishes (its group's tone, the instance's) and has not ended, of this character's: appealed by the character it moved (params.character). */
+      const params = (pun?.payload['params'] ?? {}) as Record<string, unknown>;
+      const movePunishes = pun?.kind === 'move' && pun.payload['kind'] === 'conferGroup' && params['character'] === through
+        && instance.groups.conferred.find((g) => g.key === params['group'])?.tone === 'punishment';
+      if (!pun || !((pun.kind === 'infraction' || pun.kind === 'ban') && pun.payload.character === through) && !movePunishes) return refuse('that is not a punishment of this character');
+      if (movePunishes) {
+        const end = moveEndsAt(pun);
+        if (moveEnds.has(pun.id) || (end !== null && Date.parse(end) <= now())) return refuse('that punishment has already run out');
+      }
       if ([...acts.values()].some((a) => a.kind === 'appeal' && a.target === punishment && !refundedAppeals.has(a.id))) return refuse('this punishment has already been appealed; each punishment is appealed once');
-      const hearer = [...characters.values()].find((c) => c.staff && c.staff.office === (pun.kind === 'ban' ? 'boss' : 'mod') && c.debutedAt !== null && c.retiredAt === null)
+      const hearer = (movePunishes ? characters.get(pun.character ?? '') : undefined)
+        ?? [...characters.values()].find((c) => c.staff && c.staff.office === (pun.kind === 'ban' ? 'boss' : 'mod') && c.debutedAt !== null && c.retiredAt === null)
         ?? [...characters.values()].find((c) => c.staff && c.debutedAt !== null && c.retiredAt === null && c.staff.office !== 'developer');
       if (!hearer) return refuse('there is no one on duty to hear an appeal right now');
       const account = me()!;
@@ -2170,7 +2375,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const line = `${hearer.name} has heard it: ${verdict}.`;
       /* A ban's ruling names its new end (close_appeal): overturned ends it now, reduced halves it from its start, increased runs it half again. */
       let until: string | undefined;
-      if (pun.kind === 'ban') {
+      if (movePunishes) {
+        /* A move's length is from its landing to its own end; none has no length, so reduced and increased are upheld (close_appeal). Increased adds half the length, never past moveExpiryMostDays from landing. Overturned ends it now, why overturned. */
+        const own = typeof pun.payload['expires_at'] === 'string' ? Date.parse(pun.payload['expires_at']) : null;
+        const length = own === null ? null : own - pun.at;
+        const end = verdict === 'overturned' ? now() : length === null ? null : verdict === 'reduced' ? pun.at + length / 2 : verdict === 'increased' ? own! + Math.min(length / 2, Math.max(0, settings.moveExpiryMostDays * DAY - length)) : null;
+        if (end !== null) until = iso(end);
+      } else if (pun.kind === 'ban') {
         const days = Number(pun.payload.days);
         const start = pun.at;
         const was = Date.parse(String(pun.payload.until));
@@ -2178,6 +2389,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         if (end !== null) until = iso(end);
       }
       write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}) } });
+      if (movePunishes) {
+        if (verdict === 'overturned') {
+          moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
+          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'overturned', by: 'appeal' } });
+        } else if (verdict === 'reduced' && until !== undefined && Date.parse(until) <= now()) {
+          moveEnds.set(pun.id, { why: 'expired', by: 'appeal', at: now() });
+          write({ character: null, kind: 'move_end', thread: pun.thread, target: pun.id, payload: { why: 'expired', by: 'appeal' } });
+        }
+      }
       const refunded = verdict === 'overturned' ? settings.modBots.appealPrice : 0;
       giveBack(account, refunded, appeal.id);
       return ok<AppealResult>({ appeal: appeal.id, verdict, line, pointsDelta: delta, refunded });
@@ -2271,6 +2491,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
+          packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
@@ -2307,6 +2528,58 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     releaseEffect,
     saveEffect,
     buyCard: lossy(buyCard),
+    buyPack: lossy(buyPack),
+    machine: () => machine(),
+    adminMachine() {
+      if (!me()?.admin) throw new Error('only an admin reads the machine');
+      /* The admin's own availability and price: a seeded move is already applied to the slot's (see `seed.slot`), so a Pull reads on sale again here and `was` is the price. */
+      return [...slotRecs].sort((x, y) => x.position - y.position).map((r): AdminSlot => ({
+        id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: adminAvailability(r),
+        price: adminPrice(r), move: r.move ? { kind: r.move.kind, act: r.move.act, ends: r.move.ends, percent: r.move.percent, hours: r.move.hours } : null,
+      }));
+    },
+    setSlot(slot, availability, price) {
+      if (!me()?.admin) return refuse('only an admin changes the machine');
+      const words = slotWords(availability, price);
+      if (words) return refuse(words.error);
+      const rec = slotRecs.find((r) => r.id === slot);
+      if (!rec) return refuse('the machine has no such slot');
+      const left = applySlot(rec, availability, price);
+      return ok({ slot, ended: left ? endUnfloored() : 0 });
+    },
+    saveMachine(changes) {
+      if (!me()?.admin) return refuse('only an admin changes the machine');
+      if (!Array.isArray(changes)) return refuse('the machine is saved as a list of its slots');
+      /* All of it or none: every word is checked before anything is written. */
+      const seen = new Set<string>();
+      for (const c of changes) {
+        const words = slotWords(c.availability, c.price);
+        if (words) return refuse(words.error, `${c.slot}/${words.field}`);
+        if (!slotRecs.some((r) => r.id === c.slot)) return refuse('the machine has no such slot');
+        if (seen.has(c.slot)) return refuse('a slot is named once');
+        seen.add(c.slot);
+      }
+      if (seen.size !== slotRecs.length) return refuse('the machine has changed since this page was read: reload the page');
+      const places = slotRecs.map((r) => r.position).sort((x, y) => x - y);
+      let left = false;
+      changes.forEach((c, i) => {
+        const rec = slotRecs.find((r) => r.id === c.slot)!;
+        rec.position = places[i]!;
+        if (applySlot(rec, c.availability, c.price)) left = true;
+      });
+      return ok({ ended: left ? endUnfloored() : 0 });
+    },
+    moveSlot(slot, direction) {
+      if (!me()?.admin) return refuse('only an admin moves a slot');
+      if (direction !== 'up' && direction !== 'down') return refuse('a slot moves up or down');
+      const grid = [...slotRecs].sort((x, y) => x.position - y.position);
+      const at = grid.findIndex((r) => r.id === slot);
+      if (at < 0) return refuse('the machine has no such slot');
+      const other = grid[direction === 'up' ? at - 1 : at + 1];
+      if (!other) return ok({ slot, moved: false });
+      [grid[at]!.position, other.position] = [other.position, grid[at]!.position];
+      return ok({ slot, moved: true });
+    },
     playCard: lossy(playCard),
     setCard: lossy(setCard),
     useCard: lossy(useCard),
@@ -2411,6 +2684,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
           presenceHidden: c.presenceHidden,
           ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
+          ...(barsOf(c.id).length > 0 ? { bars: barsOf(c.id) } : {}),
         };
       });
     },
@@ -3134,7 +3408,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       invites.push({ id, owner: account, code: newCode(id), createdAt: at, issuedAt: at, usedBy: o?.used === true ? account : null });
       return id;
     },
-    buy(account, card, o) { accepted(asAt(account, o?.at, () => buyCard(card))); },
+    buy(account, card, o) {
+      const slot = machine().find((m) => 'card' in m.item && m.item.card === card);
+      accepted(asAt(account, o?.at, () => (slot ? buyCard(slot) : refuse(`the machine has no slot for card ${card}`))));
+    },
+    slot(item, change) {
+      const rec = slotRecs.find((r) => ('card' in item ? 'card' in r.item && r.item.card === item.card : 'pack' in r.item && r.item.pack === item.pack));
+      if (!rec) throw new Error(`the machine has no slot for ${JSON.stringify(item)}`);
+      if (change.availability) rec.availability = change.availability;
+      if (change.price !== undefined) rec.price = change.price;
+      if (change.move !== undefined) rec.move = change.move;
+    },
     turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
@@ -3205,7 +3489,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     staffPost(staff, thread, body, o) {
       if (!threads.has(thread)) throw new Error(`no such thread ${thread}`);
       if (!characters.get(staff)?.staff) throw new Error('only a staff character posts as staff');
-      return write({ character: staff, kind: 'post', thread, payload: { body }, at: o?.at }).id;
+      return write({ character: staff, kind: 'post', thread, payload: { body, ...(o?.ruling ? { ruling: o.ruling.verdict, apology: o.ruling.apology } : {}) }, at: o?.at }).id;
+    },
+    setOffice(staff, office) {
+      const c = characters.get(staffId(staff));
+      if (!c?.staff) throw new Error(`no staff member ${staff}`);
+      c.staff = { ...c.staff, office };
+    },
+    groupMove(staff, m) {
+      const at = m.at ?? now();
+      const held = characters.get(staffId(staff))?.staff?.office;
+      const office = m.office === undefined ? (held === 'boss' || held === 'mod' ? held : null) : m.office;
+      const board = m.board === undefined ? undefined : boards.find((b) => b.slug === m.board)?.id;
+      if (m.board !== undefined && !board) throw new Error(`no board ${m.board}`);
+      return write({
+        character: staffId(staff), kind: 'move', thread: announcements(),
+        payload: {
+          kind: 'conferGroup', ...(office ? { office } : {}), body: m.body ?? 'You have been moved.', params: { character: m.character, group: m.group, ...(board ? { board } : {}) },
+          ...(m.demand === false ? {} : { demand: { kind: 'apologyAccepted', params: {} } }), ...(m.expiresAt === null ? {} : { expires_at: iso(m.expiresAt ?? at + 3 * DAY) }),
+        }, at,
+      }).id;
+    },
+    apology(character, move, state = 'pending', o) {
+      const m = acts.get(move);
+      if (!m || m.kind !== 'move') throw new Error(`no such move ${move}`);
+      const at = o?.at ?? now();
+      const t = openThread(threads.get(m.thread)!.board, 'An apology', move, at);
+      const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title: 'An apology', body: 'I am sorry.' }, at });
+      apologies.push({ move, apology: written.id, character, state, at });
+      return written.id;
     },
     move(staff, m) {
       const at = m.at ?? now();
@@ -3368,13 +3680,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     appeal(character, infraction, plea, o) {
       const i = acts.get(infraction);
-      if (!i || i.kind !== 'infraction') throw new Error(`no such infraction ${infraction}`);
+      if (!i || (i.kind !== 'infraction' && !(i.kind === 'move' && i.payload['kind'] === 'conferGroup'))) throw new Error(`no such infraction ${infraction}`);
       return write({ character, kind: 'appeal', thread: i.thread, target: infraction, at: o?.at, payload: { plea } }).id;
     },
     ruling(appeal, mod, verdict, o) {
       const a = acts.get(appeal);
       if (!a || a.kind !== 'appeal') throw new Error(`no such appeal ${appeal}`);
-      return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '' } }).id;
+      return write({ character: mod, kind: 'appeal_ruling', thread: a.thread, target: appeal, at: o?.at, payload: { appeal_act: appeal, verdict, line: o?.line ?? '', ...(o?.until !== undefined ? { until: iso(o.until) } : {}) } }).id;
     },
     ban(character, until, o) {
       const inf = o?.infraction ? acts.get(o.infraction) : [...acts.values()].filter((a) => a.kind === 'infraction' && a.payload.character === character).sort((x, y) => y.at - x.at)[0];

@@ -13,7 +13,6 @@ begin
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'developer', jsonb_build_object('name', 'Ht Gabe', 'title', 'Made this.', 'avatar', 'gabe'),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'ht-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'ht-boss', 'name', 'Ht Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'ht-mod', 'name', 'Ht Mod', 'title', 'Mod', 'signature', 'b'),

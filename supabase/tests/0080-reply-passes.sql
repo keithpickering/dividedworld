@@ -4,11 +4,10 @@
 
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"hook.price": 100, "quoter.price": 100, "bluffy.price": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
-    ('quoter', 'Quoter', 'salty', 'quoter.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}'),
-    ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null)
+  insert into card_kinds (key, name, alignment, rarity, play, trap) values
+    ('hook', 'Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
+    ('quoter', 'Quoter', 'salty', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}'),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null)
   on conflict (key) do nothing;
 end $$;
 
@@ -42,10 +41,9 @@ declare
   t uuid; x uuid; said text[]; round integer;
 begin
   perform tests.commit($sql$
-    update settings set value = value || '{"rvhook.price": 100, "rvcatch.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-      ('rvhook', 'RV Hook', 'salty', 'rvhook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
-      ('rvcatch', 'RV Catch', 'salty', 'rvcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values
+      ('rvhook', 'RV Hook', 'salty', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
+      ('rvcatch', 'RV Catch', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
   $sql$);
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'rv1@test.invalid'), (%2$L, 'rv2@test.invalid'), (%3$L, 'rv3@test.invalid');

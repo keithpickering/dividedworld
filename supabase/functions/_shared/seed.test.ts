@@ -21,13 +21,19 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.reactions, instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })));
   const readKeys = (c: (typeof instance.cards)[number]) => (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key));
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
-    key: c.key, name: c.name, alignment: c.alignment, priceSetting: c.priceKey, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
+    key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
     rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts, reaches: c.reaches ?? ['post'], pins: c.pins === true,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
-    key: 'whoops', name: 'Whoops!', alignment: 'salty', priceSetting: 'whoops.price', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostInAll'],
+    key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
     rarity: 'common', play: 'cast', trap: undefined, ward: false, lasts: undefined, reaches: ['post'], pins: false,
-  }, 'the stack, the seed, the economy numbers its price reads, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
+  }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
+  // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
+  assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
+  assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 75, rare: 25 } }, 'the hit pull reaches the SQL as written');
+  assert.deepEqual(seed.machine.map((m) => ('card' in m ? m.card : m.pack)), instance.machine.map((m) => ('card' in m.item ? m.item.card : m.item.pack)));
+  assert.deepEqual(seed.machine.find((m) => 'pack' in m), { pack: 'booster', availability: 'onSale', price: 300 });
+  assert.deepEqual(seed.machine.find((m) => 'card' in m && m.card === 'main-event'), { card: 'main-event', availability: 'hidden', price: 300 });
   assert.deepEqual(seed.boards, instance.boards.map((b) => ({ ...b, system: b.system === true })));
   assert.deepEqual(seed.boards.filter((b) => b.system).map((b) => b.slug), ['announcements'], 'one board is The System\'s, said in the seed');
   assert.deepEqual(seed.pipStyles, instance.pipStyles, 'the pip styles a profile may name');
@@ -35,11 +41,21 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.equal(seed.reactions.length, 16);
 });
 
+test('the seed carries the groups: the ladder with its rung indexes and conditions, then the conferred groups with their tones (0128)', () => {
+  const { groups } = instanceSeed(instance);
+  const ladder = groups.filter((g) => g.source === 'ladder');
+  assert.deepEqual(ladder.map((g) => [g.key, 'rung' in g ? g.rung : null, 'condition' in g ? g.condition : null]),
+    instance.groups.ladder.map((r, i) => [r.key, i, r.when.kind]), 'lowest first, each rung numbered by its place');
+  assert.deepEqual(groups.find((g) => g.key === 'regulars'), { key: 'regulars', name: 'Regulars', badge: 'Regular', color: '#2f6fb0', stripe: false, source: 'ladder', rung: 1, condition: 'posts', atLeast: 100 });
+  assert.deepEqual(groups.find((g) => g.key === 'trialMembers'), { key: 'trialMembers', name: 'Trial Members', badge: 'Trial Member', color: '#d2691e', stripe: true, source: 'conferred', tone: 'punishment' });
+  assert.equal(groups.length, instance.groups.ladder.length + instance.groups.conferred.length);
+});
+
 test('the seed carries the roster as staff characters, one kind of persona, the first staff named, and no prompt', () => {
   const seed = instanceSeed(instance);
-  const { roster, firstStaff, staffGroup } = instance.system;
+  const { roster, firstStaff } = instance.system;
   assert.deepEqual(seed.system.staff.map((s) => s.key), roster.map((p) => p.key));
-  assert.deepEqual(seed.system.staffGroup, { name: staffGroup.name });
+  assert.equal('staffGroup' in seed.system, false, 'the staff rung is a group of the ladder (seed.groups), not a setting');
   assert.deepEqual(seed.system.firstStaff, [...firstStaff]);
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
@@ -72,13 +88,17 @@ test('a roster entry carries pronouns only when its persona declares them, and t
   assert.ok(!('pronouns' in instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer), 'a developer who names none carries none');
 });
 
-test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it) and demands', () => {
+test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it, and the tokens SQL derives for its words) and demands', () => {
   const { moves, demands } = instanceSeed(instance).system;
-  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: m.offices })));
+  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: m.offices, derived: m.derived ?? [] })));
   assert.deepEqual(moves, [
-    { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'] },
-    { key: 'nameSuccessor', structural: true, shapesBoard: false, offices: ['boss'] },
-    { key: 'setRule', structural: false, shapesBoard: false, offices: ['boss', 'mod'] },
+    { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'], derived: [] },
+    { key: 'nameSuccessor', structural: true, shapesBoard: false, offices: ['boss'], derived: [] },
+    { key: 'setRule', structural: false, shapesBoard: false, offices: ['boss', 'mod'], derived: [] },
+    { key: 'conferGroup', structural: false, shapesBoard: false, offices: ['boss', 'mod'], derived: ['groupName'] },
+    { key: 'pullSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
+    { key: 'repriceSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
+    { key: 'flashSale', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);

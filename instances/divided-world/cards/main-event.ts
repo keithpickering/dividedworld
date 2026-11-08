@@ -12,7 +12,6 @@ export const mainEvent: CardRules<Record<string, never>> = {
   reaches: ['thread'],
   lasts: { unit: 'day', count: 1 },
   pins: true,
-  priceKey: 'mainEvent.price',
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(mainEvent, target, effects, now),
   validateConfig: () => ok({}),

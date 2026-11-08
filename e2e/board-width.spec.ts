@@ -135,6 +135,11 @@ for (const scheme of ['light', 'dark'] as const) {
         await vignette.evaluate((e) => { (e as HTMLElement).style.display = ''; });
         await page.evaluate(() => document.documentElement.setAttribute('data-kb-contrast', 'high'));
         expect(await vignette.evaluate((e) => getComputedStyle(e).display)).toBe('none');
+        /* Smoke Off draws none either (it is the same glow, the player turned the glass's haze off); Low keeps it. */
+        await page.evaluate(() => { const r = document.documentElement; r.removeAttribute('data-kb-contrast'); r.setAttribute('data-kb-smoke-level', 'low'); });
+        expect(await vignette.evaluate((e) => getComputedStyle(e).display), 'Smoke Low keeps the vignette').not.toBe('none');
+        await page.evaluate(() => document.documentElement.setAttribute('data-kb-smoke-level', 'off'));
+        expect(await vignette.evaluate((e) => getComputedStyle(e).display), 'Smoke Off draws no vignette').toBe('none');
       });
     });
   }

@@ -256,8 +256,10 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * first kind it hides, and the same mark again closes it. One Lens is open on a page, so a strip subscribes to whether it is
  * the one and is redrawn for its own opening and closing alone.
  */
-export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null }: {
+export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', compare = true, moments = true, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null }: {
   readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+  /** A character's picture URL, or null for none: the Lens draws it by the name. */
+  readonly faceOf: (character: Id | null) => string | null;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */
   readonly moments?: boolean;
   readonly tallies: Tallies; readonly mine: Mine;
@@ -296,7 +298,7 @@ export function PostMarks({ post, plays, to, nameOf, tallies, mine, ghost, reach
     <span className="kb-marks-anchor" ref={anchor}>
       <MarkStrip post={post} plays={plays} tallies={tallies} ghost={ghost} reachAt={reachAt} where={where} compare={compare} open={open?.card ?? null} onOpen={onOpen} nameOf={nameOf} visit={current ? { visit: current, mod: nameOf(current.mod), pronouns: modPronouns } : undefined} />
       <Layers>
-      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
+      {open && <Lens open={open} store={store} post={post} plays={plays} tallies={tallies} mine={mine} compare={compare} to={to} nameOf={nameOf} faceOf={faceOf} modPronouns={modPronouns} strip={strip} onSpin={onSpin} where={where} moments={moments} visit={current && thread ? { visit: current, thread, author, onSpinAct, onEnded: setSeen } : undefined} form={form} />}
       </Layers>
     </span>
   );

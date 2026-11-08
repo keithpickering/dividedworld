@@ -28,8 +28,11 @@ describe('the markup: no component draws a dialog frame', () => {
       .filter((f) => !/\.(test|stories|board\.stories)\.tsx$/u.test(f) && !/\.stories\.tsx$/u.test(f))
       .filter((f) => /role="dialog"/u.test(fs.readFileSync(f, 'utf8')))
       .map(rel).sort();
-    /* The board's own 2003 modal (modal.tsx) and the tour's tip (Spotlight) are not glass dialogs; the other two are the frame's. */
-    expect(own).toEqual(['engine/ui/glass/Float.tsx', 'engine/ui/glass/Overlay.tsx', 'engine/ui/modal.tsx', 'engine/ui/tips/Spotlight.tsx']);
+    /*
+     * The board's own 2003 modal (modal.tsx), the tour's tip (Spotlight) and the pack's reveal (a full-window layer over the machine with no frame at
+     * all, as its boards draw it: engine/ui/vending/PackOpening.tsx, on the glass's modal layer) are not glass dialogs; the other two are the frame's.
+     */
+    expect(own).toEqual(['engine/ui/glass/Float.tsx', 'engine/ui/glass/Overlay.tsx', 'engine/ui/modal.tsx', 'engine/ui/tips/Spotlight.tsx', 'engine/ui/vending/PackOpening.tsx']);
     for (const f of ['engine/ui/glass/Float.tsx', 'engine/ui/glass/Overlay.tsx']) expect(fs.readFileSync(path.join(root, f), 'utf8')).toContain('FRAME');
   });
 

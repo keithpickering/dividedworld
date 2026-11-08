@@ -15,14 +15,13 @@ end $$;
 
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"glint.price": 100, "marquee.price": 100, "quake.price": 100, "quoter.price": 100, "catcher.price": 100, "jumpy.price": 100, "sweetie.price": 10}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, reaches, lasts, trap) values
-    ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', '{character}', interval '7 days', null),
-    ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day', null),
-    ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', '{board}', interval '1 day', null),
-    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{post}', null, '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
-    ('jumpy', 'Jumpy', 'salty', 'jumpy.price', 'common', 'set', '{post}', null, '{"trigger": {"on": "reaction", "quadrant": "boredNegative"}, "outcome": {"do": "nullify"}}'),
-    ('quoter', 'Quoter', 'salty', 'quoter.price', 'uncommon', 'set', '{post}', null, '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}')
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, trap) values
+    ('glint', 'Glint', 'pepperoni', 'uncommon', 'cast', '{character}', interval '7 days', null),
+    ('marquee', 'Marquee', 'sweet', 'rare', 'cast', '{thread}', interval '1 day', null),
+    ('quake', 'Quake', 'salty', 'legendary', 'cast', '{board}', interval '1 day', null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{post}', null, '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
+    ('jumpy', 'Jumpy', 'salty', 'common', 'set', '{post}', null, '{"trigger": {"on": "reaction", "quadrant": "boredNegative"}, "outcome": {"do": "nullify"}}'),
+    ('quoter', 'Quoter', 'salty', 'uncommon', 'set', '{post}', null, '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}')
   on conflict (key) do nothing;
 end $$;
 

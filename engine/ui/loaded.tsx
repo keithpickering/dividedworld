@@ -33,6 +33,7 @@ import { WelcomeScreen } from './welcome/Welcome.tsx';
 import { AlertsScreen } from './alerts/Alerts.tsx';
 import { UpdatesScreen } from './updates/Updates.tsx';
 import { QueueScreen } from './admin/Queue.tsx';
+import { MachineScreen } from './admin/Machine.tsx';
 import { LogScreen } from './log/Log.tsx';
 import { SettlementScreen } from './log/Settlement.tsx';
 import type { GlassEnv } from './glass-docs.ts';
@@ -99,7 +100,7 @@ const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => (
 const SCREENS: GlassScreens = {
   signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
   settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
-  guide: direct(GuideScreen), contact: direct(ContactScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), log: direct(LogScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), machine: direct(MachineScreen), log: direct(LogScreen),
   settlement: direct(SettlementScreen),
 };
 

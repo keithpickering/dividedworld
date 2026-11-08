@@ -197,7 +197,7 @@ test('an instance missing the Technician\'s age, or holding it at 0 or 2.5, is r
 
 /* ---- through the settlement ---- */
 /* A Salty card of the test's own, so these cases need no card of the instance's. */
-const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
+const world = { ...instance, cards: [{ key: 'whoops', name: 'Whoops!', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) }] };
 const H = 3_600_000;
 function board(lurkerClass = 'lurker'): SettlementInput {
   return {
@@ -556,7 +556,7 @@ test('a Pepperoni card that read as Sweet lifts another\'s post for a Face; one 
   assert.equal(total(face, input({ cardsPlayed: [card({ ...lift, readsAs: 'salty' })] }), 'face.liftedAPost'), 0);
 });
 test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells the L; drawing cheers, it does not', () => {
-  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   const pepWorld = { ...world, cards: [...world.cards, pep] };
   const b = board();
   const onJa = (kind: string): SettlementInput => ({
@@ -569,7 +569,7 @@ test('settled whole: a Pepperoni card drawing groans on a Jabroni\'s post sells 
   assert.equal(sold(settle(onJa('fire'), pepWorld)), 0);
 });
 test('settled whole: a Jabroni\'s own second mask groaning at a Pepperoni card on the Jabroni\'s post sells no L (#170)', () => {
-  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   const pepWorld = { ...world, cards: [...world.cards, pep] };
   const b = board();
   const r = settle({
@@ -584,7 +584,7 @@ test('a Pepperoni card that stayed Pepperoni (a tie) lifts nothing for a Face', 
   assert.equal(total(face, input({ cardsPlayed: [card({ alignment: 'pepperoni', readsAs: 'pepperoni', targetAfter: { ...none, excitedPositive: 2 } })] }), 'face.liftedAPost'), 0);
 });
 test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a Heel; one cheered pays a Face for the lift after it', () => {
-  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, priceKey: 'whoops.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const pep = { key: 'pep', name: 'Pep', alignment: 'pepperoni' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
   const pepWorld = { ...world, cards: [...world.cards, pep] };
   const b = board();
   const cast = (by: string, kind: string, lift: boolean): SettlementInput => ({
