@@ -54,10 +54,11 @@
 --                           character (its author, retired_at, debuted_at, owner, staff); (2) the card's kind; (3) the Act that met the back (kind, character, thread, board, words), the thread's first post and the announcements
 --                           thread; (4) the stack at the would-be target and reach: the plays of the back's own card up on the Act (a post's stack and its next layer) AND, whatever the reach, up on the Act's character, thread and
 --                           board (a play beyond a post's), counted as place_cast counts them; the reach the card takes is chosen from values already read, never by which query runs; (5) the board's live card; (6) the named
---                           catch (a back with none reads its own card's row, so the read finds one row either way), compared with the incoming card; (7) phrase_in over the Act's words (with an empty phrase for a back with none,
---                           which matches nothing and is asked all the same: the words are folded and scanned only for a back that has one, a cost bounded by the post's length, stated at a busy instance's scale in the phrase section).
+--                           catch (a back with none reads its own card's row, so the read finds one row either way), compared with the incoming card; (7) phrase_probe over the Act's words (phrase_in returns early for no phrase, so a back with
+--                           none would skip the fold and the pattern compile a back with one pays; phrase_probe folds the words and builds, compiles and runs a pattern of one shape for every back, a no-phrase back's built around its own id with a contradiction no text can satisfy, so it never matches and answers false: the work is the same whether a back holds a phrase or which, so its time says nothing of the card; its cost is bounded by the post's length, stated at a busy instance's scale in the phrase section).
 --                           Only then is anything decided, and only a spring writes more, and a spring is a public Act. The time a write takes is never computed from what is face down ("A response never proves a private fact");
 --                           supabase/tests/0135-face-down-moves.sql counts the reads of a Bluff, a Trap Card naming another card, a Move that cannot land, a Move whose phrase is absent and a back that springs, as 0077-trap-locks.sql does.
+--                           (4b) A live Ward on the Act that would turn away a cast of the back's card (place_cast's rule: the highest live Ward's rarity, read for every back) makes a Move unable to land, and the back stays set.
 --   lay_sprung(setter, card, config, target, reach, spring, from_post)   writes the card Act as place_cast would, through the setter's character: no payer, no price, no message, `payload.spring` set to the spring. It refuses nothing:
 --                           every check that could refuse was a read in spring_facts, and a failed one returned null before anything was written, leaving the back set. (A seventh argument, the quoting post, is the post a card on a
 --                           character hangs on; the plan's six had no place for it.) A sprung card does not call distract_visits (place_cast's thread reach talks down a Mod's open visit for its caster's attempt): a spring is not
@@ -271,9 +272,22 @@ language sql immutable parallel safe set search_path = public, pg_temp as $$
   end
 $$;
 
+-- phrase_probe(plain, phrase, token): phrase_in's answer, by the same work whether or not there is a phrase. It folds the text, builds a pattern from the folded phrase (or, for no phrase, from the token, the back's own id) between the
+-- same word-edge assertions, and runs it; a pattern with no phrase carries a contradiction (an assertion that 'a' is and is not next) that no text can satisfy, so it never matches, and its answer is ANDed with whether there is a phrase.
+create or replace function phrase_probe(plain text, phrase text, token text) returns boolean
+language sql immutable parallel safe set search_path = public, pg_temp as $$
+  select case when plain is null then false else
+    (phrase_fold(plain) ~ ('(?<!' || phrase_word_class() || ')' || case when r.real then '' else '(?=a)(?!a)' end
+                           || regexp_replace(phrase_fold(case when r.real then phrase else token end), '([.*+?^${}()|\[\]\\])', '\\\1', 'g')
+                           || '(?!' || phrase_word_class() || ')')) and r.real end
+  from (select phrase is not null and phrase ~ phrase_word_class() as real) r
+$$;
+
 -- Called by the write that springs a back, never by the API's anonymous or digest roles (0117 granted bbcode_plain the same way).
 revoke execute on function phrase_word_class(), phrase_fold(text), phrase_in(text, text) from public, anon;
 grant execute on function phrase_word_class(), phrase_fold(text), phrase_in(text, text) to authenticated, service_role;
+-- phrase_probe is spring_facts' alone (a definer function that runs it as its owner), so no API role holds it.
+revoke execute on function phrase_probe(text, text, text) from public, anon, authenticated, service_role;
 
 -- ------------------------------------------------------------------------------------------------------- setting a Move ----
 
@@ -435,7 +449,7 @@ create type spring_facts as (
   by_kind text, by_character uuid, by_thread uuid, by_board uuid, by_body text, first_post uuid, announce_thread uuid,
   reach text, target uuid,
   up integer, layer integer, reach_up integer, live_board timestamptz,
-  caught boolean, phrase_hit boolean
+  warded boolean, caught boolean, phrase_hit boolean
 );
 
 create function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
@@ -447,6 +461,7 @@ declare
   in_character integer;
   in_thread integer;
   in_board integer;
+  ward_rank integer;
 begin
   -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
   select a.character into f.setter_character from acts a where a.id = fd.play;
@@ -478,13 +493,18 @@ begin
         from play_reach r join acts k2 on k2.id = r.play
         where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
   f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 4b. The live Ward on the Act, the highest one's rarity, whatever the card: place_cast turns a cast away at or below it, and a Move does not land through it either.
+  select max(rarity_rank(wk.rarity)) into ward_rank from acts w join card_kinds wk on wk.key = w.payload ->> 'card'
+  where w.kind = 'card' and w.target_act_id = by_act and wk.ward and not (w.payload ? 'caught') and coalesce(w.payload ->> 'reach', 'post') = 'post'
+    and (w.payload ->> 'ends' is null or (w.payload ->> 'ends')::timestamptz > now()) and not card_ended(w.id);
+  f.warded := ward_rank is not null and rarity_rank(k.rarity) <= ward_rank;
   -- 5. A board's live card, whatever the card's reach.
   select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
   -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
   select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
   f.caught := fd.catches is not null and fd.catches = incoming_card and named is not null;
-  -- 7. The phrase against the Act's own words (an empty phrase is in nothing, and is asked all the same).
-  f.phrase_hit := coalesce(phrase_in(bbcode_plain(f.by_body), coalesce(fd.phrase, '')), false);
+  -- 7. The phrase against the Act's own words: phrase_probe folds the words and compiles and runs a pattern of one shape for every back, a back with no phrase included (its pattern is built around its own id and cannot match).
+  f.phrase_hit := coalesce(phrase_probe(bbcode_plain(f.by_body), fd.phrase, fd.play::text), false);
   return f;
 end $$;
 revoke execute on function spring_facts(face_down, text, uuid, text) from public, anon, authenticated, service_role;
@@ -578,7 +598,7 @@ begin
     and case trigger when 'quote' then fd.phrase is null or f.phrase_hit when 'cast' then f.caught when 'visit' then true else false end;
   -- A Move lands on what quoted it, at its first reach, if it can: its stack there has room, a board has no live card, the thread has its first post and a board card its thread.
   lands := coalesce(f.by_kind = 'post' and case f.reach
-      when 'post' then f.up < f.kind_stack
+      when 'post' then f.up < f.kind_stack and not f.warded
       when 'character' then f.by_character is not null and f.reach_up < f.kind_stack
       when 'thread' then f.first_post is not null and f.reach_up < f.kind_stack
       else f.by_board is not null and f.announce_thread is not null and f.live_board is null and f.reach_up < f.kind_stack end, false);

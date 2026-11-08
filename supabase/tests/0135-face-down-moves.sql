@@ -17,7 +17,7 @@ end $$;
 do $$
 begin
   perform tests.commit($sql$
-    update settings set value = value || '{"spxwhoops.price": 100, "spxbomb.price": 100, "spxtrap.price": 100, "spxrare.price": 100, "spxauto.price": 100, "spxpass.price": 100, "spxbluff.price": 25, "spxthread.price": 100, "spxboard.price": 100}' where key = 'economy';
+    update settings set value = value || '{"spxwhoops.price": 100, "spxbomb.price": 100, "spxtrap.price": 100, "spxrare.price": 100, "spxauto.price": 100, "spxpass.price": 100, "spxward.price": 100, "spxbluff.price": 25, "spxthread.price": 100, "spxboard.price": 100}' where key = 'economy';
     insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
       ('spxwhoops', 'Spx Whoops', 'salty', 'spxwhoops.price', 'common', 'cast', null, '{post}', null),
       ('spxbomb', 'Spx Bomb', 'salty', 'spxbomb.price', 'uncommon', 'cast', null, '{character}', interval '7 days'),
@@ -28,6 +28,8 @@ begin
       ('spxtrap', 'Spx Trap', 'salty', 'spxtrap.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
       ('spxpass', 'Spx Pass', 'sweet', 'spxpass.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
       ('spxbluff', 'Spx Bluff', 'pepperoni', 'spxbluff.price', 'common', 'set', null, '{post}', null);
+    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts, ward) values
+      ('spxward', 'Spx Ward', 'sweet', 'spxward.price', 'uncommon', 'use', null, '{post}', interval '7 days', true);
     insert into characters (id, name, staff, staff_kind, debuted_at) values ('00000000-0000-4000-8000-0000000fd001', 'Spx Race Mod', 'spx-race-mod', 'persona', now()) on conflict do nothing;
   $sql$);
 end $$;
@@ -853,7 +855,7 @@ declare
   t uuid := tests.thread('Even work');
   p_bluff uuid := tests.post(bluffer, t, 'Bluffed.'); p_trap uuid := tests.post(trapper, t, 'Trapped.'); p_phrase uuid := tests.post(phrasey, t, 'Phrased.');
   p_bomb uuid := tests.post(bomber, t, 'Bombed.'); p_retired uuid := tests.post(retiree, t, 'Retired.'); p_spring uuid := tests.post(springer, t, 'Springing.');
-  quoting uuid := tests.post(q, t, 'Quoting everything, and saying nothing of stripes.');
+  quoting uuid := tests.post(q, t, 'Quoting everything, and saying nothing of stripes.'); free uuid := tests.post(q, t, 'Quoting the last, unwarded.');
   s_bluff uuid; s_trap uuid; s_phrase uuid; s_bomb uuid; s_retired uuid; s_spring uuid;
   fd face_down; backs uuid[]; one uuid; n integer;
   before bigint;
@@ -875,6 +877,8 @@ begin
   perform tests.act(bomber, 'card', t, jsonb_build_object('card', 'spxbomb', 'message', '', 'config', '{}', 'reach', 'character', 'character', q, 'ends', now() + interval '3 days', 'targetName', 'Even Quoter'), quoting);
   insert into play_reach (play, reach, character, ends_at) select a.id, 'character', q, now() + interval '3 days' from acts a where a.kind = 'card' and a.payload ->> 'card' = 'spxbomb' and a.payload ->> 'character' = q::text;
   update characters set retired_at = now() where id = retiree;
+  -- The quoting post is warded too: a Ward is read for every back, and the Whoops back (common) is turned away by it as a cast would be.
+  perform tests.act(q, 'card', t, jsonb_build_object('card', 'spxward', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), quoting);
 
   backs := array[p_bluff, p_trap, p_phrase, p_bomb, p_retired, p_spring];
   -- Warm: each statement planned, so a call's reads are its execution's alone.
@@ -906,7 +910,8 @@ begin
   end loop;
   if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that cannot spring wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
   if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that cannot spring read differently: Bluff, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
-  said := spring_traps('quote', p_spring, quoting);
+  if spring_traps('quote', p_spring, quoting) is not null then raise exception 'the last back sprang through a Ward'; end if;
+  said := spring_traps('quote', p_spring, free);
   if said is null then raise exception 'the last back did not spring'; end if;
   perform set_config('enable_seqscan', 'on', true);
 end $$;
@@ -930,4 +935,67 @@ begin
   if not exists (select 1 from face_down f where f.play = the_set and f.ends_at > now()) or pg_temp.sprung_of(the_set) is not null then raise exception 'the old back is not still set'; end if;
   why := pg_temp.refusal(format('update face_down set catches = %L where play = %L', 'spxrare', the_set));
   if why is null then raise exception 'a face_down row was edited'; end if;
+end $$;
+
+-- ---- A sprung Move does not land through a live Ward that would turn away a cast of the same card; the back stays set ----
+do $$
+declare
+  ann uuid := tests.account('sp-ward-ann'); bob uuid := tests.account('sp-ward-bob');
+  a uuid := tests.character(ann, 'Sp Ward Ann'); b uuid := tests.character(bob, 'Sp Ward Bob');
+  t uuid := tests.thread('Wards');
+  p uuid := tests.post(a, t, 'A Move under this.');
+  warded uuid := tests.post(b, t, 'Warded quoting post.'); free uuid := tests.post(b, t, 'Unwarded quoting post.');
+  the_set uuid;
+begin
+  perform pg_temp.hand(ann, 'spxwhoops'); perform pg_temp.hand(bob, 'spxward');
+  the_set := (set_card(ann, 'spxwhoops', a, p, '{}', 0) ->> 'id')::uuid;
+  perform pg_temp.cast(bob, 'spxward', b, warded);
+  if spring_traps('quote', p, warded) is not null or pg_temp.sprung_of(the_set) is not null then raise exception 'a Move landed through a Ward that turns its card away'; end if;
+  if not exists (select 1 from face_down f where f.play = the_set and f.ends_at > now()) then raise exception 'the back was lost'; end if;
+  if spring_traps('quote', p, free) is null or pg_temp.sprung_of(the_set) is null then raise exception 'an unwarded quote did not land the Move'; end if;
+end $$;
+
+-- ---- The phrase is folded and matched by the same work for every back, a back with none included ----
+do $$
+declare
+  fd face_down;
+begin
+  if phrase_probe('Come to HEEL, please.', 'heel', 'tok') is distinct from true then raise exception 'a phrase back did not match'; end if;
+  if phrase_probe('Come to heel, please.', null, 'tok') is distinct from false or phrase_probe('Come to heel, please.', '', 'tok') is distinct from false then raise exception 'a back with no phrase matched'; end if;
+  if phrase_probe('tok and tok', null, 'tok') is distinct from false then raise exception 'a no-phrase back matched its own token'; end if;
+  if phrase_probe('a heeler', 'heel', 'tok') is distinct from phrase_in('a heeler', 'heel') or phrase_probe('--', '--', 'tok') is distinct from phrase_in('--', '--') or phrase_probe(null, 'heel', 'tok') is distinct from false then
+    raise exception 'phrase_probe parts from phrase_in';
+  end if;
+end $$;
+
+-- ---- What a spring puts out, and what it leaves, tells nothing private ----
+do $$
+declare
+  ann uuid := tests.account('sp-pub-ann'); bob uuid := tests.account('sp-pub-bob');
+  a uuid := tests.character(ann, 'Sp Pub Ann'); a2 uuid := tests.character(ann, 'Sp Pub Ann Two'); b uuid := tests.character(bob, 'Sp Pub Bob');
+  t uuid := tests.thread('Public');
+  p uuid := tests.post(a, t, 'A phrase and a seed under this.'); p2 uuid := tests.post(a2, t, 'A seeded Move under this.');
+  made jsonb; made2 jsonb; spring jsonb; laid uuid; k text;
+begin
+  perform pg_temp.hand(ann, 'spxauto', 'blot');
+  perform set_card(ann, 'spxauto', a, p, '{"ink": "plumsecret"}', 0, null, 'heel');
+  perform set_card(ann, 'blot', a2, p2, '{"color": "red", "seed": 1}', 0);
+  delete from broadcasts_due where topic like 'account:%';
+  made := pg_temp.quote(b, t, 'Come to heel.', p);
+  spring := made -> 'sprung';
+  -- The projection that goes out is the spring's public one: its payload has the card, trigger, did, set and by, nothing else, and not the phrase or the card's settings.
+  if (select array_agg(kk order by kk) from jsonb_object_keys(spring -> 'payload') kk) is distinct from array['by', 'card', 'did', 'set', 'trigger'] then raise exception 'the spring says more than it did: %', spring -> 'payload'; end if;
+  if (spring - 'struck')::text like '%plumsecret%' or (spring - 'struck')::text like '%heel%' then raise exception 'the spring carries the phrase or the settings (the card it landed shows its settings, as a cast does): %', spring; end if;
+  if (select count(*) from play_moments where play = (spring ->> 'id')::uuid) is distinct from 1::bigint then raise exception 'a spring takes no moment'; end if;
+  -- The alerts it queued carry the public projection alone and name neither the quoter nor their account.
+  if exists (select 1 from broadcasts_due where topic like 'account:%' and (payload::text like '%' || bob::text || '%' or payload::text like '%' || b::text || '%' and topic <> 'account:' || bob)) then raise exception 'an alert names the quoter or their account'; end if;
+  if exists (select 1 from alerts where account = ann and (to_jsonb(alerts)::text like '%' || bob::text || '%' or to_jsonb(alerts)::text like '%' || b::text || '%')) then raise exception 'the setter''s alert names the quoter'; end if;
+  for k in select distinct jsonb_object_keys(payload) from broadcasts_due where topic = 'account:' || ann loop
+    if k not in ('id', 'kind', 'sub', 'act', 'character', 'at') then raise exception 'a broadcast carries %', k; end if;
+  end loop;
+  -- A seeded Move gets a fresh seed when it lands, and its config holds none.
+  made2 := pg_temp.quote(b, t, 'Quoting the seeded one.', p2);
+  select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = made2 -> 'sprung' ->> 'id';
+  if jsonb_typeof((select payload -> 'seed' from acts where id = laid)) is distinct from 'number' or (select payload -> 'config' ? 'seed' from acts where id = laid) then raise exception 'the sprung seed: %', (select payload from acts where id = laid); end if;
+  if (select payload -> 'config' ->> 'color' from acts where id = laid) is distinct from 'red' then raise exception 'the setter''s ink was lost'; end if;
 end $$;
