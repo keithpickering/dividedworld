@@ -207,7 +207,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1}>
         <p className="kb-origin-head">
-          <span className="kb-origin-head-text"><b>ORIGIN</b> · Spun from {from}</span>
+          {/* A play's moment is the box's content, framed by the box: the head says it is the post as the play found it, where a ring and a tag would say it again. */}
+          <span className="kb-origin-head-text"><b>ORIGIN</b> · Spun from {from}{cardPlay && !cardPlay.reach && <> · as it landed</>}</span>
           {/* The strip hangs on the box's head, as it does on a post's date row. A card play's is compared with nothing: the post it landed on is in another thread. */}
           {marks}
         </p>

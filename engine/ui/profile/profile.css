@@ -76,6 +76,21 @@
   display: block;
 }
 
+/*
+ * A portrait is any shape from 1:1 to 1:2, whatever the player cropped. The slot is 1:2 only until the
+ * picture loads; then the picture's own shape sets the height, and `cover` crops nothing.
+ */
+.kb-profile-avatar[data-kb-slot="portrait"] {
+  height: auto;
+  aspect-ratio: auto;
+  align-self: flex-start;
+}
+
+.kb-profile-avatar[data-kb-slot="portrait"] img {
+  height: auto;
+  aspect-ratio: auto 1 / 2;
+}
+
 .kb-profile-none {
   font: bold 2.5em / 1 var(--kb-font-mono);
 }
@@ -233,6 +248,12 @@
     width: 76px;
     height: 152px;
     aspect-ratio: auto;
+  }
+
+  /* The box is 1:2 for a square or an initial; a portrait's takes its own shape, as above. */
+  .kb-about .kb-profile-avatar[data-kb-slot="portrait"] {
+    height: auto;
+    align-self: start;
   }
 
   .kb-table.kb-about tr[data-kb-lead-row] > td:not(.kb-about-avatar) {

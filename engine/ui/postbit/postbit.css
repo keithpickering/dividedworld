@@ -116,6 +116,26 @@
   aspect-ratio: 1;
 }
 
+/*
+ * A portrait is any shape from 1:1 to 1:2, whatever the player cropped. The slot is 1:2 only until the
+ * picture loads, so nothing jumps far; then the picture's own shape sets the height, and `cover` crops
+ * nothing. The phone shows the square instead (the picture's source, below), so it keeps its own rule.
+ */
+@media not all and (max-width: 40em) {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] {
+    aspect-ratio: auto;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] picture {
+    height: auto;
+  }
+
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] img {
+    height: auto;
+    aspect-ratio: auto 1 / 2;
+  }
+}
+
 @media (max-width: 40em) {
   .kb-postbit[data-kb-postbit="side"] {
     flex-direction: row;

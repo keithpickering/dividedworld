@@ -151,6 +151,8 @@ begin
   if (select e ->> 'last_thread' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from ts::text
      or (select e ->> 'last_character' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from a1::text then
     raise exception 'side board newest thread: %', got -> 'boards'; end if;
+  if (select e ->> 'last_title' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side')
+     is distinct from (select l.title from thread_list l where l.id = ts) then raise exception 'side board newest thread title: %', got -> 'boards'; end if;
   if (select (e ->> 'thread_count')::integer from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'side') is distinct from 2 then raise exception 'side count'; end if;
   if (select e ->> 'last_thread' from jsonb_array_elements(got -> 'boards') e where e ->> 'slug' = 'bp-main')
      is distinct from (select l.id::text from thread_list l where l.board = gen order by l.last_at desc limit 1) then raise exception 'bp-main newest thread'; end if;

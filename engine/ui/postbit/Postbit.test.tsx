@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { Character } from '../data/api.ts';
@@ -77,6 +78,11 @@ describe('the postbit', () => {
     expect(screen.getByRole('group')).toHaveAttribute('data-kb-postbit', 'side');
     expect(slot().querySelector('img')).toHaveAttribute('src', 'tall.webp');
     expect(slot().querySelector('source')).toHaveAttribute('srcset', 'sq.webp');
+  });
+
+  test('a real portrait is marked as one, so its slot can take the portrait\'s own shape', () => {
+    show(person());
+    expect(slot()).toHaveAttribute('data-kb-slot', 'portrait');
   });
 
   test('the square fills the tall slot where there is no portrait', () => {
@@ -297,6 +303,30 @@ describe('the warn meter and BANNED (the Mod Bots design, section 9)', () => {
     show(person({}, { warnPoints: 6, bannedUntil: new Date(Date.now() + 3_600_000).toISOString() }));
     const bad = await axeViolations(screen.getByRole('group', { name: 'About Pipewrench' }));
     expect(bad, describeViolations(bad)).toEqual([]);
+  });
+});
+
+describe('the side by side avatar slot, in the stylesheet', () => {
+  const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  /* The declarations of the first rule whose selector contains `selector`, in any media block. */
+  const rule = (selector: string) => {
+    const at = css.indexOf(selector);
+    if (at < 0) return null;
+    return css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
+  };
+
+  /* A portrait is any shape from 1:1 to 1:2 (profile-edit/frames.ts). A slot fixed at 1:2 with `cover` crops every
+     portrait shorter than that, so the slot must take the picture's own shape once it loads. */
+  test('a portrait\'s slot takes the portrait\'s own shape, not a fixed 1:2 crop', () => {
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] {')).toMatch(/aspect-ratio:\s*auto\s*;/u);
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] img')).toMatch(/aspect-ratio:\s*auto 1 \/ 2\s*;/u);
+    expect(rule('.kb-postbit-avatar[data-kb-slot="portrait"] img')).toMatch(/height:\s*auto\s*;/u);
+  });
+
+  test('the phone keeps its small square, which the portrait\'s rules must not reach', () => {
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(phone).not.toContain('data-kb-slot="portrait"');
+    expect(css).toMatch(/@media not all and \(max-width: 40em\)\s*\{[^@]*data-kb-slot="portrait"/u);
   });
 });
 
