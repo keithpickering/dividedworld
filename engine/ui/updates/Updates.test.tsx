@@ -442,6 +442,8 @@ describe('a change of update is the body\'s (docs/plans/2026-11-08-glass-in-page
     expect(holder).not.toBeNull();
     expect(holder.children).toHaveLength(2);
     expect(holder.querySelector('[data-kb-exiting]')).toHaveAttribute('inert');
+    /* An older update is lower in the archive, so the body moves down. */
+    expect(holder).toHaveAttribute('data-kb-dir', '1');
     expect(press).toHaveAttribute('aria-current', 'page');
     expect(press).toHaveFocus();
   });
