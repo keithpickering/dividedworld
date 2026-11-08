@@ -103,9 +103,12 @@ describe('a page and the router\'s key', () => {
   const entered = () => vi.mocked(enter.enterScreen);
   beforeEach(() => entered().mockClear());
 
-  test('a change of key within one path swaps the screen and plays the entrance again', async () => {
-    const routes: Route[] = [{ path: '/log', load: async () => 'doc', key: (_p, q) => q.get('p') ?? '1', render: () => <p>log</p> }];
-    renderInWorld(<><Page surface="log"><p>page</p></Page><Routes routes={routes} /><Link to="/log?p=2">next</Link></>, { path: '/log', seed: signedIn });
+  test('a change of path and key swaps the screen and plays the entrance again', async () => {
+    const routes: Route[] = [
+      { path: '/log', load: async () => 'doc', key: () => 'log', render: () => <p>log</p> },
+      { path: '/log/2', load: async () => 'doc', key: () => 'log2', render: () => <p>log two</p> },
+    ];
+    renderInWorld(<><Page surface="log"><p>page</p></Page><Routes routes={routes} /><Link to="/log/2">next</Link></>, { path: '/log', seed: signedIn });
     await screen.findByText('log');
     const before = entered().mock.calls.length;
     await userEvent.click(screen.getByRole('link', { name: 'next' }));
@@ -125,6 +128,41 @@ describe('a page and the router\'s key', () => {
     await userEvent.click(screen.getByRole('link', { name: 'edit' }));
     expect(entered().mock.calls.length).toBe(before);
     expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1);
+  });
+
+  describe('screens are counted by path', () => {
+    const routes: Route[] = [
+      { path: '/settings', load: async () => 'doc', key: (_p, q) => q.get('section') ?? 'top', render: () => <p>settings body</p> },
+      { path: '/season', load: async () => 'doc', key: () => 'season', render: () => <p>season body</p> },
+    ];
+    const mountSettings = () => renderInWorld(
+      <><Page surface="settings"><p>page</p></Page><Routes routes={routes} /><Link to="/settings?section=board">board</Link><Link to="/season">season</Link></>,
+      { path: '/settings', seed: signedIn },
+    );
+
+    test('a change of key within one path keeps the one screen node: no second screen, no focus move, no scroll to the top', async () => {
+      mountSettings();
+      await screen.findByText('settings body');
+      const node = document.querySelector('.kb-glass-screen');
+      await userEvent.click(screen.getByRole('link', { name: 'board' }));
+      await screen.findByText('settings body');
+      expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1);
+      expect(document.querySelector('.kb-glass-screen[data-kb-exiting]')).toBeNull();
+      expect(document.querySelector('.kb-glass-screen')).toBe(node);
+      expect(screen.getByRole('main')).not.toHaveFocus();
+      expect(scrolled).not.toHaveBeenCalled();
+    });
+
+    test('a change of path replaces the screen and puts focus on main', async () => {
+      mountSettings();
+      await screen.findByText('settings body');
+      const node = document.querySelector('.kb-glass-screen');
+      await userEvent.click(screen.getByRole('link', { name: 'season' }));
+      await screen.findByText('season body');
+      expect(document.querySelector('.kb-glass-screen:not([data-kb-exiting])')).not.toBe(node);
+      expect(screen.getByRole('main')).toHaveFocus();
+      expect(scrolled).toHaveBeenCalledWith(0, 0);
+    });
   });
 });
 

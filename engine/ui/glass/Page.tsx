@@ -21,6 +21,7 @@ import { enterScreen } from './enter.ts';
 import { Leaving } from './Held.tsx';
 import { MenuBar, tabIndex } from './MenuBar.tsx';
 import { screen, useFeel } from './motion.ts';
+import { ScreenKeyContext } from './ScreenBody.tsx';
 import { Smoke, useSurfaceStyle } from './Smoke.tsx';
 import { useBoard } from './useBoard.ts';
 import './shell.css';
@@ -66,10 +67,12 @@ export function Page({ surface, menu = true, children }: PageProps) {
    * route's own key at the address the window opened at is the same screen settling, not a change.
    */
   const address = addressOf(shown.location);
-  const [now, setNow] = useState({ key: resolved, address, ready: shown.ready, n: 0 });
-  if (now.key !== resolved || now.ready !== shown.ready) {
+  const [now, setNow] = useState({ key: resolved, path, address, ready: shown.ready, n: 0 });
+  if (now.key !== resolved || now.path !== path || now.ready !== shown.ready) {
     const settling = !now.ready && shown.ready && now.address === address;
-    setNow({ key: resolved, address, ready: shown.ready, n: now.n + (settling || now.key === resolved ? 0 : 1) });
+    /* A screen is a path: a change of key within one path (a section, a page number) is the same screen, swapped in place by its ScreenBody. */
+    const changed = now.path !== path && now.key !== resolved && !settling;
+    setNow({ key: resolved, path, address, ready: shown.ready, n: now.n + (changed ? 1 : 0) });
   }
   const screenKey = now.n;
   /* The wait: `main` is busy while a load is out, and a hidden status says so when one lands (nothing at rest). */
@@ -113,7 +116,9 @@ export function Page({ surface, menu = true, children }: PageProps) {
           {menu && <MenuBar />}
           <main ref={main} className="kb-glass-content" tabIndex={-1} aria-busy={pending ? true : undefined}>
             <AnimatePresence initial={false} custom={dir}>
-              <Leaving key={screenKey} custom={dir} className="kb-glass-screen" {...screen(feel)}>{children}</Leaving>
+              <Leaving key={screenKey} custom={dir} className="kb-glass-screen" {...screen(feel)}>
+                <ScreenKeyContext.Provider value={{ key: resolved, popped }}>{children}</ScreenKeyContext.Provider>
+              </Leaving>
             </AnimatePresence>
           </main>
           <div role="status" className="kb-visually-hidden">{landed && !pending ? 'Screen loaded' : ''}</div>
