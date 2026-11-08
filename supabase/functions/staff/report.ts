@@ -33,7 +33,7 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { learnMod, said } from './core.ts';
+import { instanceSet, learnMod, postFor, pronounsOfCharacter, said, threadFor, type ThreadRead } from './core.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type ReportAnswer = DoorAnswer;
@@ -50,11 +50,6 @@ interface Opened {
   readonly reason: string;
   readonly board: { readonly id: string; readonly name: string; readonly premise: string };
   readonly reporter: { readonly id: string; readonly name: string };
-}
-
-interface ThreadRead {
-  readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly body: string }[];
 }
 
 interface Closed {
@@ -119,13 +114,14 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
 
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
   const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
-  const post = read.posts.find((p) => p.act === opened.post) ?? { name: 'a character', body: '' };
+  const fallback = instanceSet(settings);
+  const post = postFor(read, opened.post, fallback, { name: 'a character' });
   const context = { allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules };
   const frame = reportPrompt({
-    persona: mod.persona, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
+    persona: mod.persona, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
     ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-    board: opened.board, thread: { title: read.title, posts: read.posts.map((p) => ({ name: p.name, body: p.body })) }, post: { name: post.name, body: post.body },
-    reporter: { name: opened.reporter.name }, reason: opened.reason,
+    board: opened.board, thread: threadFor(read, fallback), post,
+    reporter: { name: opened.reporter.name, pronouns: await pronounsOfCharacter(db, opened.reporter.id, fallback) }, reason: opened.reason,
     limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
   });
 

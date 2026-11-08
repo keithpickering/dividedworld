@@ -7,6 +7,7 @@
  * It overrides nothing, so it runs on the instance's ordinary curve.
  */
 import type { Persona } from '../../../../engine/rules/types.ts';
+import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
 
 const name = 'MEGA-MC 9000 (placeholder)';
@@ -25,7 +26,8 @@ export const hypeMan: Persona = {
   strictness: { visitHours: { least: 2, most: 4 }, bands: ['moderate', 'severe'] },
   weakness: { kind: 'bribe', price: 150 },
   voice: 'chat',
-  persuadedBy: 'DRAFT: a promo cut with real energy that makes its own case sound like the main event.',
+  pronouns: PRONOUN_PRESETS.it,
+  persuadedBy: 'DRAFT: a promo cut with real energy that makes the case sound like the main event.',
   persona: persona({
     name,
     title,

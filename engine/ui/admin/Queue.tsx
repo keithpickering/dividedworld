@@ -29,6 +29,7 @@
  * tick stored (so each says when it was counted, or that it has not been) and none counted by the read itself.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, words, type PronounSet } from '../../rules/pronouns.ts';
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
 import { demandNeeds } from '../board/move-words.ts';
@@ -63,7 +64,7 @@ export function countdown(at: string, now: number): string {
 }
 
 /** A Boss of the roster: its staff key and its name. */
-type Roster = { readonly staff: string; readonly name: string };
+type Roster = { readonly staff: string; readonly name: string; readonly pronouns: PronounSet };
 
 type Asked = { readonly kind: 'hold'; readonly row: QueuedMove } | { readonly kind: 'reverse'; readonly row: MoveInForce };
 
@@ -167,6 +168,7 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
   const [refusal, setRefusal] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const choices = roster.filter((b) => b.staff !== row.staff && b.staff !== row.params['boss']);
+  const named = bosses.find((b) => b.staff === row.params['boss']);
   if (choices.length === 0) return null;
   const submit = async () => {
     if (!pick || busy) return;
@@ -188,7 +190,7 @@ function Replace({ row, roster, bosses, onReplaced }: { readonly row: QueuedMove
   };
   return (
     <div className="kb-queue-replace">
-      <label htmlFor={`queue-replace-${row.id}`}>Put another Boss in its place</label>
+      <label htmlFor={`queue-replace-${row.id}`}>Put another Boss in {words(named?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).their} place</label>
       <select id={`queue-replace-${row.id}`} className="kb-queue-select" value={pick} onChange={(e) => setPick(e.target.value)}>
         <option value="">Choose a Boss</option>
         {choices.map((b) => <option key={b.staff} value={b.staff}>{b.name}</option>)}
@@ -484,6 +486,7 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
   const [refusal, setRefusal] = useState<string | null>(null);
   const hold = asked.kind === 'hold';
   const row = asked.row;
+  const bw = words(row.bossPronouns);
   const once = useRef(false);
   const submit = async () => {
     if (busy || once.current) return;
@@ -507,10 +510,10 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
         <p className="kb-queue-sentence"><MoveSentence kind={row.kind} params={row.params} boards={boards} bosses={bosses} tense={hold ? 'plan' : 'done'} was={hold ? (row as QueuedMove).boardName : undefined} /></p>
         <p>
           {hold
-            ? `It will never land, and no player will see it. A hold cannot be taken back. ${role} chooses its next move at its next meeting, and learns of the hold only then.`
+            ? `It will never land, and no player will see it. A hold cannot be taken back. ${role} chooses ${bw.their} next move at ${bw.their} next meeting, and learns of the hold only then.`
             : row.kind === 'nameSuccessor'
-              ? `It ends now, as reversed by an admin, and the roster's rotation chooses the successor at the handover. ${role} says so in the move's thread, and learns of it at its next meeting.`
-              : `It ends now, as reversed by an admin, and the old name returns at once. ${role} says so in the move's thread, and learns of it at its next meeting.`}
+              ? `It ends now, as reversed by an admin, and the roster's rotation chooses the successor at the handover. ${role} says so in the move's thread, and learns of it at ${bw.their} next meeting.`
+              : `It ends now, as reversed by an admin, and the old name returns at once. ${role} says so in the move's thread, and learns of it at ${bw.their} next meeting.`}
         </p>
         {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
         <ButtonRow align="end">

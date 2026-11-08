@@ -1,8 +1,9 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { seedMoves } from '../board/move-world.ts';
 import { MOVES_LOG_PAGE } from '../data/api.ts';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ProfileScreen } from './Profile.tsx';
 import { LoadedProfile } from '../loaded.tsx';
@@ -22,6 +23,18 @@ const careerCell = async () => (await screen.findByRole('rowheader', { name: 'Ca
 const log = () => screen.findByRole('table', { name: 'Moderation log' });
 const rows = async () => within(await log()).getAllByRole('row').filter((r) => r.parentElement?.tagName === 'TBODY');
 
+describe('a staff profile\'s pronouns', () => {
+  test('shows a persona\'s set in a Pronouns row under the title, the default for one with none, and a custom persona\'s own', async () => {
+    const { fake } = open('director');
+    expect(await screen.findByText('she/her')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+    expect(screen.getByRole('rowheader', { name: 'Pronouns' }).closest('tr')).toHaveTextContent('she/her');
+    cleanup();
+    const sage = fake.seed.staff('sage', 'Sage', 'mod', { pronouns: PRONOUN_PRESETS.they });
+    renderIn(fake, <LoadedProfile id={sage} />, { path: `/c/${sage}` });
+    expect(await screen.findByText('they/them')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+  });
+});
+
 describe('a Boss\'s profile', () => {
   test('is the ordinary profile with an admin\'s fields: name, an ADMINISTRATOR badge, its title and the table the Boss wrote about itself', async () => {
     const { w } = open('director');
@@ -39,17 +52,17 @@ describe('a Boss\'s profile', () => {
     expect(row('Posts')).toHaveTextContent(/^Posts0/u);
     expect(row('Joined')).toHaveTextContent(/^Joined[A-Z][a-z]{2} \d{4}$/u);
     expect(card).toHaveTextContent('A forum is like a loaf of bread. Somebody has to slice it.');
-    expect(card).toHaveTextContent('what it says about itself, in character, and it may bluff');
+    expect(card).toHaveTextContent('what she says about herself, in character, and she may bluff');
   });
 
-  test('is one table under an About band: the badges, title, interests, favorite members, mood, career, posts and joined each a label row, the signature and the plain note closing it', async () => {
+  test('is one table under an About band: the badges, title, pronouns, interests, favorite members, mood, career, posts and joined each a label row, the signature and the plain note closing it', async () => {
     open('director');
     const card = await screen.findByRole('table', { name: 'About The Director' });
     await waitFor(() => expect(card).toHaveTextContent('No office held yet.'));
     await waitFor(() => expect(card).toHaveTextContent('Joined'));
     expect(within(card).getByRole('columnheader', { name: 'About The Director' })).toBeInTheDocument();
     expect(card.querySelector('caption')).toBeNull();
-    expect(within(card).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Staff', 'Title', 'Interests', 'Favorite Members', 'Current Mood', 'Career', 'Posts', 'Joined']);
+    expect(within(card).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Staff', 'Title', 'Pronouns', 'Interests', 'Favorite Members', 'Current Mood', 'Career', 'Posts', 'Joined']);
     expect(card.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
     const rows = within(card).getAllByRole('row');
     const last = rows[rows.length - 1]!;
@@ -58,14 +71,14 @@ describe('a Boss\'s profile', () => {
     expect(card.querySelectorAll('tr:not([role="row"]), th:not([role="columnheader"]):not([role="rowheader"])')).toHaveLength(0);
   });
 
-  test('its moderation log is one full-width table under the card, headed When, What it did, How it ended, with its own band', async () => {
+  test('its moderation log is one full-width table under the card, headed When, What she did, How it ended, with its own band', async () => {
     open('director');
     const card = await screen.findByRole('table', { name: 'About The Director' });
     const table = await log();
     expect(card.contains(table)).toBe(false);
     expect(table.contains(card)).toBe(false);
     expect(card.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['When', 'What it did', 'How it ended']);
+    expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['When', 'What she did', 'How it ended']);
     /* One name, once: the table is named by its own heading, and there is no region around it. */
     const h = within(table).getByRole('heading', { level: 2, name: 'Moderation log' });
     expect(table).toHaveAttribute('aria-labelledby', h.id);
@@ -134,7 +147,7 @@ describe('a staff profile\'s career', () => {
     await waitFor(() => expect(within(career).getAllByRole('listitem')).toHaveLength(3));
     const items = await within(career).findAllByRole('listitem');
     expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent('Boss in Season 5, from 2026-06-07 until now, named by the Boss before it.');
+    expect(items[0]).toHaveTextContent('Boss in Season 5, from 2026-06-07 until now, named by the previous Boss.');
     expect(items[1]).toHaveTextContent('Mod Bot from 2026-03-29 to 2026-06-07, at a handover.');
     expect(items[2]).toHaveTextContent('Boss in Season 2, from 2026-02-01 to 2026-03-29 (8 weeks), by rotation.');
   });
@@ -147,6 +160,17 @@ describe('a staff profile\'s career', () => {
   });
 });
 
+describe('a Boss who has made no move', () => {
+  test('says so in the Boss\'s own set: "They have not made a move", with the profile\'s lines in the same words', async () => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('x'));
+    const quiet = fake.seed.staff('quiet', 'Quiet Boss', 'boss', { pronouns: PRONOUN_PRESETS.they });
+    renderIn(fake, <LoadedProfile id={quiet} />, { path: `/c/${quiet}` });
+    expect(await screen.findByText('Nothing here yet. They have not made a move.')).toBeInTheDocument();
+    expect(screen.getByText(/what they say about themself, in character, and they may bluff/u)).toBeInTheDocument();
+  });
+});
+
 describe('a Mod Bot\'s profile', () => {
   test('is the same screen with a MODERATOR badge and its own title, and says plainly that its log is empty until it has made a visit', async () => {
     open('bot');
@@ -156,7 +180,7 @@ describe('a Mod Bot\'s profile', () => {
     expect(within(card).getByText('Test Cores')).toBeInTheDocument();
     expect(within(card).queryByText('ADMINISTRATOR')).toBeNull();
     expect(card).toHaveTextContent('Keeper of the Hall');
-    expect(await screen.findByText(/Nothing here yet\. A Mod Bot's log lists its visits, the reports it judged and the appeals it heard, once it has any\./u)).toBeInTheDocument();
+    expect(await screen.findByText(/Nothing here yet\. A Mod Bot's log lists their visits, the reports they judged and the appeals they heard, once they have any\./u)).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'Moderation log' })).toBeNull();
   });
 });
@@ -179,7 +203,7 @@ describe('the career\'s loading and failure', () => {
   test('a failed load is announced in an alert region', async () => {
     open('director', (f) => { f.staffCareer = () => Promise.reject(new Error('down')); });
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Its career could not be loaded');
+    expect(alert).toHaveTextContent('Her career could not be loaded');
     expect(within(await careerCell()).getByRole('alert')).toBe(alert);
   });
   test('loading is announced in a status region, and goes when the career arrives', async () => {

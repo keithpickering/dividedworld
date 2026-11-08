@@ -61,7 +61,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft }: {
   if (!hudCharacter) {
     return (
       <div className="kb-spin-form kb-box" role="group" aria-label={label}>
-        <p>None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; one waiting to debut can post once it has.</p>
+        <p>None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; a character waiting to debut can post after the debut.</p>
       </div>
     );
   }

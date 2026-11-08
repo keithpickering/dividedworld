@@ -14,6 +14,7 @@
  * to it when it is the infraction's character, both of which the reader's own screen knows.
  */
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, KayfaApi, Visit, VisitEnd, VisitStory } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -55,15 +56,15 @@ function Stopwatch() {
 }
 
 /** The visit's mark: first in the post's strip. */
-export const VisitMark = memo(function VisitMark({ visit, mod, expanded, onOpen }: {
-  readonly visit: Visit; readonly mod: string; readonly expanded: boolean; readonly onOpen: (kind: string, opener: HTMLElement) => void;
+export const VisitMark = memo(function VisitMark({ visit, mod, pronouns, expanded, onOpen }: {
+  readonly visit: Visit; readonly mod: string; readonly pronouns: PronounSet; readonly expanded: boolean; readonly onOpen: (kind: string, opener: HTMLElement) => void;
 }) {
   const state = visitState(visit);
   const now = useMinute(state === 'open' ? visit.endsAt : null);
   return (
     <button
       type="button" className="kb-mark kb-visit-mark kb-meta-tile" data-kb-card={VISIT_KIND} data-kb-visit={state}
-      aria-label={markLabel(mod, state, visit.endsAt, now)} aria-haspopup="dialog" aria-expanded={expanded}
+      aria-label={markLabel(mod, pronouns, state, visit.endsAt, now)} aria-haspopup="dialog" aria-expanded={expanded}
       onClick={(e) => onOpen(VISIT_KIND, e.currentTarget)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true"><Stopwatch /><span className="kb-visit-time">{markText(state, visit.endsAt, now)}</span></span>
@@ -88,7 +89,7 @@ interface Row {
 }
 
 /** The visit's Acts as rows, in the order they happened: the report and its verdict, the visit's start, each attempt, the end, the appeal and its ruling. */
-function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string): readonly Row[] {
+function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string, modPronouns: PronounSet): readonly Row[] {
   const out: Row[] = [];
   const mod = name(visit.mod);
   if (story.report) out.push({ act: story.report.id, at: story.report.createdAt, character: story.report.character, did: 'reported this post', quote: said(story.report.payload['reason'] as string | undefined), label: `${name(story.report.character)}'s report` });
@@ -96,7 +97,7 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string)
     const v = story.verdict.payload['verdict'];
     out.push({
       act: story.verdict.id, at: story.verdict.createdAt, character: story.verdict.character, staff: true, quote: said(story.verdict.payload['line'] as string | undefined), label: `${mod}'s verdict`,
-      did: v === 'visit' ? 'judged the report: it sent a visit' : v === 'dismissed' ? 'judged the report: dismissed it' : 'judged the report: it backfired on the reporter',
+      did: v === 'visit' ? `judged the report: ${words(modPronouns).they} sent a visit` : v === 'dismissed' ? 'judged the report: dismissed it' : 'judged the report: it backfired on the reporter',
     });
   }
   out.push({ act: visit.id, at: visit.at, character: visit.mod, staff: true, did: 'began the visit', quote: visit.line, label: `${mod}'s visit` });
@@ -170,6 +171,8 @@ export interface VisitPanelProps {
   /** The post's author: whose warn bar the visit's filing lands on. */
   readonly author: Id | null;
   readonly nameOf: (character: Id | null) => string;
+  /** The Mod's pronouns, as the thread knows them (the character holding the office now). */
+  readonly modPronouns: PronounSet;
   readonly tallies: Tallies;
   readonly mine: Mine;
   /** Spin a thread from one of the visit's Acts: the Lens has closed. */
@@ -224,7 +227,7 @@ function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
   );
 }
 
-export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpin, onEnded, first }: VisitPanelProps) {
+export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies, mine, onSpin, onEnded, first }: VisitPanelProps) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const know = useContext(ThreadCtx)?.know;
@@ -314,7 +317,7 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
 
   const heading: ReactNode = {
     open: <>is on a visit</>,
-    filed: <>filed its report</>,
+    filed: <>filed {words(modPronouns).their} report</>,
     intercepted: <>was talked down</>,
     trapped: <>was stopped by a trap</>,
     reversed: <>was ended by an admin</>,
@@ -323,7 +326,7 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
   const marked = top ? markedAs(top) : 'a rule';
   const timeIsUp = Date.parse(visit.endsAt) <= now;
   const charges = visit.charges.map((c) => chargeWords(c, bands[c.band])).join('; ');
-  const rows = useMemo(() => (story ? rowsOf(visit, story, name) : []), [visit, story, name]);
+  const rows = useMemo(() => (story ? rowsOf(visit, story, name, modPronouns) : []), [visit, story, name, modPronouns]);
   const appealable = state === 'filed' && inf !== null && mask !== null && mask.id === inf.character && story?.appeal === null && stillCounts(inf, now);
   const appealWaiting = story?.appeal && !story.ruling;
 
@@ -361,7 +364,7 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
           <button type="button" className="kb-kit-tile kb-visit-appeal" onClick={(e) => openAppeal?.(inf.act, e.currentTarget)}>
             <span className="kb-kit-tile-label">Appeal · {auraWords(instance.settings.modBots.appealPrice)}</span>
           </button>
-          <p className="kb-visit-terms">{appealTerms(mod, inf)}</p>
+          <p className="kb-visit-terms">{appealTerms(mod, modPronouns, inf)}</p>
         </div>
       )}
       {failed && <p className="kb-visit-terms" role="alert">How it went could not be read. Close this and open it again.</p>}

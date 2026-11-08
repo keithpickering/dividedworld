@@ -27,7 +27,7 @@ describe('the composer of a banned mask', () => {
     openThread(w);
     await replyBox();
     const note = await screen.findByText(/is banned until/u);
-    expect(note.closest('p')).toHaveTextContent(/^Pipewrench is banned until .+\. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as it\. Appeal to the Boss · 0.50 Aura$/u);
+    expect(note.closest('p')).toHaveTextContent(/^Pipewrench is banned until .+\. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as her\. Appeal to the Boss · 0.50 Aura$/u);
     expect(note.closest('p')).toHaveAttribute('role', 'status');
   });
 

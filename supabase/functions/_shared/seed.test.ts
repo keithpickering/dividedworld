@@ -6,6 +6,8 @@ import { MOVE_KINDS } from '../../../engine/system/moves.ts';
 import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
+import { PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
+import type { Persona } from '../../../engine/rules/types.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance);
@@ -42,7 +44,8 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
     const p = roster.find((r) => r.key === s.key)!;
-    assert.deepEqual(Object.keys(s).sort(), p.weakness.kind === 'quiz' ? ['beats', 'challenge', 'key', 'name', 'quiz', 'signature', 'title', 'visitHours'] : ['beats', 'challenge', 'key', 'name', 'signature', 'title', 'visitHours']);
+    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['beats', 'challenge', 'key', 'name', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['beats', 'challenge', 'key', 'name', 'pronouns', 'signature', 'title', 'visitHours']));
+    assert.deepEqual((s as { pronouns?: unknown }).pronouns, p.pronouns, 'a persona\'s pronouns travel on its roster entry');
     assert.deepEqual(s.beats, [...p.beats], 'the beat preferences travel, for beat_of (0103)');
     // A quiz persona's questions travel as a list of their own, beside the challenge (never in it), for seed_instance to keep where no client can read them (0108).
     if (p.weakness.kind === 'quiz') assert.deepEqual((s as { quiz?: unknown }).quiz, p.weakness.questions.map((q) => ({ question: q.question, choices: [...q.choices], answer: q.answer })), 'a quiz persona\'s questions and answers travel');
@@ -54,6 +57,19 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   }
   const bytes = JSON.stringify(seed);
   for (const b of roster) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
+});
+
+test('a roster entry carries pronouns only when its persona declares them, and the developer when he does', () => {
+  const [first, second] = instance.system.roster;
+  const { pronouns: _dropped, ...undeclared } = second!;
+  const seed = instanceSeed({
+    ...instance,
+    system: { ...instance.system, roster: [{ ...first!, pronouns: PRONOUN_PRESETS.she }, undeclared as unknown as Persona, ...instance.system.roster.slice(2)] },
+  });
+  const [a, b] = seed.system.staff as { pronouns?: unknown }[];
+  assert.deepEqual(a!.pronouns, PRONOUN_PRESETS.she, 'she/her travels on the entry that declares it');
+  assert.ok(!('pronouns' in b!), 'an entry whose persona names none carries no key, so the instance default applies in SQL');
+  assert.ok(!('pronouns' in instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer), 'a developer who names none carries none');
 });
 
 test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it) and demands', () => {
@@ -97,7 +113,7 @@ test('a card\'s trap, ward and time up travel in the seed as the engine holds th
 });
 
 test('the seed carries the developer persona: the instance\'s, or the engine\'s plain default, and no prompt (a model never writes it)', () => {
-  assert.deepEqual(instanceSeed(instance).developer, { name: 'Gabe', title: 'Made this. Sorry.', avatar: 'gabe' }, 'Divided World\'s is Gabe, with his tagline as the profile title');
+  assert.deepEqual(instanceSeed(instance).developer, { name: 'Gabe', title: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he }, 'Divided World\'s is Gabe, with his tagline as the profile title');
   assert.deepEqual(instanceSeed({ ...instance, developer: undefined }).developer, { name: 'The developers', title: '' }, 'an instance with no persona gets the engine\'s plain one, with no avatar key');
   assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer, { name: 'Dev', title: 'Hi.' });
   assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');

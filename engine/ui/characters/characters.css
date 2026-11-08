@@ -1532,3 +1532,50 @@
     background: linear-gradient(90deg, ButtonText 50%, transparent 50%);
   }
 }
+
+/* ---- pronouns (PronounPicker.tsx) ---- */
+
+.kb-pronouns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* The five cards share a row and wrap; each is a .kb-choice-option (its panel, lit edge and radio), centered on its radio. */
+.kb-pronoun-cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr));
+}
+
+.kb-pronoun-card {
+  align-items: center;
+  font-weight: 700;
+}
+
+.kb-pronoun-card input {
+  margin: 0;
+}
+
+.kb-pronoun-custom {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12em), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.kb-pronoun-verbs {
+  grid-column: 1 / -1;
+}
+
+/* The picker's live sentence, set a little apart from the choices it reads. */
+.kb-pronoun-preview {
+  margin-top: 0.75em;
+}
+
+.kb-pronoun-problem {
+  margin: 6px 0 0;
+  color: var(--kb-glass-hurt);
+}
+
+.kb-pronoun-field .kb-glass-input[aria-invalid='true'] {
+  border-color: var(--kb-glass-over);
+}

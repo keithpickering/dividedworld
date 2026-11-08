@@ -53,8 +53,8 @@ function fakeDbs(w: World = {}) {
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return [] as T;
-        case 'pool_names': return {} as T;
-        case 'pool_thread': return { title: 'Best Mario game?', posts: [{ act: POST, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;
+        case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true } }])) as T;
+        case 'pool_thread': return { title: 'Best Mario game?', posts: [{ act: POST, name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: 'Odyssey. Odyssey.' }] } as T;
         case 'record_staff_call': { state.records.push(args); return { recorded: true } as T; }
         case 'close_appeal': {
           state.closed.push(args);
@@ -236,6 +236,8 @@ test('no judgment reads who owns a mask: no owner, class or reactor is read, and
     assert.ok(!/\bowner|\breactor|\bclass\b|\bclasses\b|\baccount\b/i.test(text), text.slice(0, 200));
     for (const needle of ['Bob', 'Rule 2 does not cover this.', 'Odyssey. Odyssey.', 'Talk about games.', 'Rule 2: no double posting', 'moderate band (4 points)']) assert.ok(text.includes(needle), needle);
     assert.ok(!text.includes(THROUGH), 'the appellant\'s character id is not told to the model');
+    assert.ok(text.includes('The appeal, from Bob (they/them)') && text.includes('The post it is about, by Bob (they/them)'), 'the appellant and the post, with their pronouns');
+    assert.ok(text.includes('Your pronouns are'), 'the hearer is told its own');
   }
 });
 

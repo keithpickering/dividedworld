@@ -300,25 +300,25 @@ describe('the News tab', () => {
     show(w.fake);
     const debut = await waitFor(() => itemOf('Thwompson debuted'));
     expect(within(debut).getByRole('link', { name: 'Thwompson' })).toHaveAttribute('href', `/c/${w.thwomp}`);
-    expect(debut).toHaveTextContent('Its class is its own secret until it says otherwise.');
+    expect(debut).toHaveTextContent('The class stays a secret until the player says otherwise.');
     const turn = itemOf('Pipewrench turned');
     expect(turn).toHaveTextContent('Pipewrench was a Heel');
-    expect(turn).toHaveTextContent('What it is now, it isn’t saying.');
+    expect(turn).toHaveTextContent('What Pipewrench is now isn’t being said.');
   });
 
-  test('the Boss\'s arrival quotes its first words and links its post on The System\'s board; the farewell does the same with its last', async () => {
+  test('the Boss\'s arrival quotes the Boss\'s first words and links the post on The System\'s board; the farewell does the same with the last', async () => {
     const w = world();
     show(w.fake);
     const arrived = await waitFor(() => itemOf('Mister Spreadsheet has arrived'));
     expect(arrived).toHaveTextContent('Mister Spreadsheet runs the board for Season 2.');
     expect(within(arrived).getByText(/Efficiency is a virtue\. So is fear\./u).tagName).toBe('BLOCKQUOTE');
-    const post = within(arrived).getByRole('link', { name: 'Read its post on the board' });
+    const post = within(arrived).getByRole('link', { name: 'Read the post on the board' });
     expect(post.getAttribute('href')).toMatch(new RegExp(`^/t/${w.announcements.thread}\\?page=1#post-\\d+$`, 'u'));
     const left = itemOf('Lady Ledger has left');
     expect(within(left).getByText(/My ledger is closed\. Goodbye\./u)).toBeInTheDocument();
     expect(left).toHaveTextContent('Lady Ledger has left');
     expect(left).toHaveTextContent("Season 1's Boss has left.");
-    expect(within(left).getByRole('link', { name: 'Read its last post on the board' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.announcements.thread}`));
+    expect(within(left).getByRole('link', { name: 'Read the last post on the board' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.announcements.thread}`));
     /* The glass quotes; it does not speak as the Boss. */
     expect(arrived).not.toHaveTextContent(/^Mister Spreadsheet:/u);
   });

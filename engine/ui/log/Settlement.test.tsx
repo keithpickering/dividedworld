@@ -5,6 +5,7 @@
  * change and a Turn that took effect, with Open my log and Back to the board. It reads the same rows
  * as the log and says nothing the log does not; the last settlement seen is kept on the account (alerts plan, Task 2), so a second device does not show it again.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -19,18 +20,19 @@ import { SettlementOnLoad, startLoad } from './Settlement.tsx';
 
 const at = (day: number, hour = 12, minute = 0) => Date.UTC(2026, 9, day, hour, minute);
 
-function world() {
+function world(o: { hooTurns?: boolean } = {}) {
   const fake = buildWorld();
   const { seed } = fake;
   seed.season({ number: 1, startsAt: new Date(at(1, 0)).toISOString() });
   const me = seed.account('me');
-  const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
-  const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3) });
+  const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2), pronouns: PRONOUN_PRESETS.she });
+  const hoo = seed.character(me, 'Mrs. Hooligan', 'face', { at: at(3), pronouns: PRONOUN_PRESETS.they });
   const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.', { at: at(2) });
   const { thread } = seed.thread('general', pipe, 'a thread', 'Opening.', { at: at(27) });
   const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
   seed.wallet(me, 290);
   seed.turn(pipe, 'face', { loudness: 'announced', showFrom: true });
+  if (o.hooTurns) seed.turn(hoo, 'heel', { loudness: 'announced', showFrom: true });
   seed.settle({
     at: at(29, 8, 17), debut: false, turns: true,
     ledger: [
@@ -39,6 +41,7 @@ function world() {
     ],
   });
   seed.announceTurn(pipe, turns.thread, { was: 'heel', at: at(29, 8, 17) });
+  if (o.hooTurns) seed.announceTurn(hoo, turns.thread, { was: 'face', at: at(29, 8, 17) });
   fake.signInAs(me);
   return { fake, me, pipe, hoo };
 }
@@ -80,8 +83,8 @@ describe('the settlement\'s summary', () => {
     expect(screen.getByRole('heading', { name: 'Why, in plain words · scored as a Heel' })).toBeInTheDocument();
     const lines = within(screen.getByRole('list', { name: 'Why, in plain words · scored as a Heel' })).getAllByRole('listitem').map((li) => li.textContent);
     expect(lines).toEqual([
-      'Drew heat: excited, negative reactions to its posts and cards+3.30',
-      'Shrugged off: calm, positive reactions to its posts and cards−0.05',
+      "Drew heat: excited, negative reactions to the character's posts and cards+3.30",
+      "Shrugged off: calm, positive reactions to the character's posts and cards−0.05",
     ]);
     /* 2.90 + 3.25 is past the cap: the summary says what the log says. */
     expect(screen.getByText('Your wallet holds at most 6.00, so 0.15 of this was not added.')).toBeInTheDocument();
@@ -98,7 +101,14 @@ describe('the settlement\'s summary', () => {
     const turn = screen.getByRole('region', { name: 'Turn' });
     expect(within(turn).getByText('Heel')).toBeInTheDocument();
     expect(within(turn).getByText('Face')).toBeInTheDocument();
-    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement it scores as a Face. Its own Promo announced it, with the old class, in Season 1: Who Turned.');
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. Her own Promo announced it, with the old class, in Season 1: Who Turned.');
+  });
+
+  test('a they/them character\'s Turn line agrees with the plural: "they score as", never "they scores"', async () => {
+    const { fake, me, hoo } = world({ hooTurns: true });
+    openSummary(fake, me, hoo);
+    const turn = await screen.findByRole('region', { name: 'Turn' });
+    expect(turn.textContent).toContain('Mrs. Hooligan\'s Turn took effect. From the Oct 29 settlement they score as a Heel.');
   });
 
   test('each line is the log\'s line for the same reason: the same name and the same amount', async () => {

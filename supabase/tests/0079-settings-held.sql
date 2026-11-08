@@ -656,7 +656,17 @@ insert into poisons (key, value) values
   ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7], "other": 1}'),
   ('warnBar', '"x"'),
   ('warnBar', '[]'),
-  ('warnBar', 'null');
+  ('warnBar', 'null'),
+  ('pronouns', '{"subject": "abcdefghijklm", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '{"subject": "", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself"}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": "no"}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "plural": false}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false, "extra": "x"}'),
+  ('pronouns', '{"subject": "a b", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '"it"'),
+  ('pronouns', 'null'),
+  ('pronouns', '[]');
 
 create temp table goods (key text, value text);
 insert into goods (key, value) values
@@ -784,7 +794,9 @@ insert into goods (key, value) values
   ('modBots', '{"allowanceMost": 1, "ruleDaysMost": 7, "visitHours": {"least": 1, "most": 1}, "patrolsPerDay": 0, "patrolSample": 25, "reportPrice": 0, "reportsPerDay": 3, "judgmentsPerDay": 60, "filingLinesPerDay": 60, "appealPrice": 50, "tailHours": 24, "cap": {"punishments": 1, "days": 1}, "filingCron": "0 4 * * 1", "filingGraceMinutes": 10}'),
   ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}'),
   ('warnBar', '{"size": 1, "bands": {"minor": 1, "moderate": 1, "severe": 1}, "decay": {"unit": "minute", "count": 1}, "banDays": [30]}'),
-  ('warnBar', '{"size": 10, "bands": {"minor": 10, "moderate": 10, "severe": 10}, "decay": {"unit": "month", "count": 1000}, "banDays": [1, 3, 7]}');
+  ('warnBar', '{"size": 10, "bands": {"minor": 10, "moderate": 10, "severe": 10}, "decay": {"unit": "month", "count": 1000}, "banDays": [1, 3, 7]}'),
+  ('pronouns', '{"subject": "it", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}'),
+  ('pronouns', '{"subject": "she", "object": "her", "determiner": "her", "possessive": "hers", "reflexive": "herself", "plural": false}');
 
 do $$
 declare r record; refused boolean; seen integer; first_good text;

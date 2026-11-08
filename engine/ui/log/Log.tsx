@@ -19,6 +19,7 @@
  * anyone it reached.
  */
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import { BanAppeal } from '../cards/Forms.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
@@ -156,20 +157,20 @@ function Row({ row, data, words, tab, open, onToggle, entering }: { readonly ent
  * a line when a settlement scores it, never that the next one writes it; the next settlement's time is said where it is known and still ahead. `name` is the
  * open tab's character; All says "you" and "one of your characters".
  */
-export function nothingSettled(name: string | null, next: string | null): string {
+export function nothingSettled(name: string | null, next: string | null, pronouns: PronounSet | null = null): string {
   const until = next === null ? null : untilWords(next);
   const head = name === null ? 'Nothing has settled for you yet.' : `Nothing has settled for ${name} yet.`;
-  const scored = name === null ? 'one of your characters' : 'it';
+  const scored = name === null || pronouns === null ? 'one of your characters' : pronounWords(pronouns).them;
   return until === null ? `${head} A line comes here when a settlement scores ${scored}.` : `${head} A line comes here when a settlement scores ${scored}; the next is ${until}.`;
 }
 
 /** The one row of a log with nothing in it (board 30): the table keeps its shape, and the row says when the next settlement is and what a line here will be. */
-function NothingYet({ name, next }: { readonly name: string | null; readonly next: string | null }) {
+function NothingYet({ name, next, pronouns }: { readonly name: string | null; readonly next: string | null; readonly pronouns: PronounSet | null }) {
   return (
     <tr data-kb-kind="nothing">
       <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null ? utcWhen(next) : '—'}</td>
       <td className="kb-log-what" data-kb-label="What">Nothing yet</td>
-      <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next)}</td>
+      <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next, pronouns)}</td>
       <td className="kb-log-num" data-kb-label="Aura" />
       <td className="kb-log-num" data-kb-label="Wallet">—</td>
     </tr>
@@ -246,11 +247,11 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
             </tr>
           </thead>
           <tbody>
-            {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} next={data.nextSettlement} />}
+            {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} pronouns={current?.pronouns ?? null} next={data.nextSettlement} />}
             {rows.map((r) => <Row key={r.key} entering={added.entering(r.key)} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
           </tbody>
         </table>
-        {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement)}</p>}
+        {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement, current?.pronouns ?? null)}</p>}
         {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
         {onOlder && data.log.before !== null && (
           <p className="kb-log-older">

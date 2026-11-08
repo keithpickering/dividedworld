@@ -77,7 +77,7 @@ begin
   if doc -> 'people' is distinct from (
       select coalesce(jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
         select to_jsonb(p) from (
-          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name), '[]'::jsonb)
       from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c
             where c.id in (select a.character from acts_public a where a.id in (

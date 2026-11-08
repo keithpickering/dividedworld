@@ -3,7 +3,10 @@
  * or fails (design, section 2), so cost never grows without bound and nothing stalls. In the
  * board's world, so they may bluff; they carry no fact the glass does not show plainly. Each key
  * may use only the tokens the engine gives it (engine/system/stock.ts): `{move}` a move's plain
- * name, `{boss}` a Boss's name, `{board}` a board's name, `{rule}` a rule's number and words. Several lines a key, so one is not
+ * name, `{boss}` a Boss's name, `{board}` a board's name, `{rule}` a rule's number and words. Where a line may use `{boss}` or `{mod}`, it may add that staff
+ * character's pronouns, filled from its own set: `{mod.they} {mod.them} {mod.their} {mod.theirs} {mod.themself}`, each capitalized too
+ * (`{mod.They}`), and the verbs `{mod.is} {mod.was} {mod.has} {mod.does}` and `{mod.s}` ("{mod.they} {mod.is}" reads "they are" or
+ * "it is"); `{boss.they}` and the rest likewise. A reporter's or an appellant's are never tokens. Several lines a key, so one is not
  * heard every time.
  */
 import type { StockLines } from '../../../engine/rules/types.ts';
@@ -72,7 +75,7 @@ export const stockLines: StockLines = Object.freeze({
     'Inspection over. {mod} files this post under {rule}.',
     '{mod} found this post in violation of {rule}, and has written it down.',
     '{mod} has stamped this post. The stamp says {rule}, and the stamp is heavy.',
-    'Case closed by {mod}, with the finding {rule}. {mod} has already forgotten how it felt about this.',
+    'Case closed by {mod}, with the finding {rule}. {mod} has already forgotten how {mod.they} felt about this.',
     '{mod} came, saw and filed. The finding is {rule}, and {mod} would do it again.',
   ]),
   // A report dismissed (the Aura is spent, the Mod grumbles) and one that backfired on the reporter. DRAFT for the owner.

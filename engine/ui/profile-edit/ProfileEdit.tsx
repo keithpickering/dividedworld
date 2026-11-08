@@ -22,6 +22,8 @@ import { useLocation, useRouterInternals } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { useFaces } from '../characters/faces.ts';
 import { GlassLink } from '../glass/Link.tsx';
+import { PronounPicker, pronounsHold } from '../characters/PronounPicker.tsx';
+import { words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { AvatarEditor } from './Cropper.tsx';
 import { factsOf, ProfilePreview } from './ProfilePreview.tsx';
 import type { PictureIo } from './crops.ts';
@@ -62,6 +64,7 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
   const [title, setTitle] = useState(profile?.title ?? '');
   const [signature, setSignature] = useState(profile?.signature ?? '');
   const [pip, setPip] = useState(profile?.pipStyle ?? 'default');
+  const [pronouns, setPronouns] = useState<PronounSet | null>(profile?.pronouns ?? null);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
@@ -71,6 +74,7 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
     setTitle(profile?.title ?? '');
     setSignature(profile?.signature ?? '');
     setPip(profile?.pipStyle ?? 'default');
+    setPronouns(profile?.pronouns ?? null);
     setSaved('');
     setRefusal(null);
   }
@@ -110,21 +114,21 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
     </div>
   );
   if (mine.retiredAt !== null) {
-    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is retired. An admin can restore it; until then its profile cannot be edited.</CalmRegion>{back}</>);
+    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is retired. An admin can restore {pronounWords(mine.pronouns).them}; until then {pronounWords(mine.pronouns).their} profile cannot be edited.</CalmRegion>{back}</>);
   }
   if (mine.debutedAt === null) {
-    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is waiting to debut at the next settlement. It has no profile to edit until it has debuted.</CalmRegion>{back}</>);
+    return shell(<><CalmRegion as="p" className="kb-notice">{mine.name} is waiting to debut at the next settlement. {pronounWords(mine.pronouns).They} {pronounWords(mine.pronouns).has} no profile to edit until {pronounWords(mine.pronouns).they} {pronounWords(mine.pronouns).has} debuted.</CalmRegion>{back}</>);
   }
   /* A debuted character whose face the document did not hold: nothing to edit, and said plainly. */
   if (profile === null) return shell(<CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">The profile could not be loaded. Reload the page to try again.</CalmRegion>);
 
   const save = async () => {
-    if (busy) return;
+    if (busy || pronouns === null || !pronounsHold(pronouns)) return;
     setBusy(true);
     setRefusal(null);
     setSaved('');
     try {
-      const answer = await api.setProfile(id, title, signature, pip);
+      const answer = await api.setProfile(id, title, signature, pip, pronouns);
       if (!answer.ok) { setRefusal(answer.error); return; }
       setFace(answer.value);
       reload();
@@ -159,8 +163,9 @@ function Editor({ page, io }: { readonly page: MyCharactersPage; readonly io?: P
             {instance.pipStyles.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
           </select>
         </label>
+        {pronouns && <PronounPicker key={profile.id} name={mine.name} value={pronouns} onChange={setPronouns} />}
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-        <ButtonRow><GlassButton type="submit" kind="primary" busy={busy}>Save the profile</GlassButton></ButtonRow>
+        <ButtonRow><GlassButton type="submit" kind="primary" busy={busy} disabled={pronouns === null || !pronounsHold(pronouns)}>Save the profile</GlassButton></ButtonRow>
         <div role="status">{saved && <p className="kb-notice">{saved}</p>}</div>
       </CalmRegion>
       <CalmRegion><AvatarEditor character={profile} onSaved={(c) => { setFace(c); reload(); }} io={io} /></CalmRegion>

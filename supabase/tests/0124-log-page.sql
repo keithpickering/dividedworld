@@ -187,7 +187,7 @@ begin
   if doc -> 'people' is distinct from (
       select jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
         select to_jsonb(p) from (
-          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style
+          select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name, cp.id)
       from (select c.id, c.name, c.joined, c.staff, c.office from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;
   if exists (select 1 from jsonb_array_elements(doc -> 'people') x where x ?| array['warn_points', 'banned_until']) then raise exception 'a face holds the columns characters() reads and no others: %', doc -> 'people' -> 0; end if;
