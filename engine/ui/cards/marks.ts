@@ -90,7 +90,7 @@ export function wardWords(rarity: Rarity, ends: string | undefined, now: Date = 
 export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
 
 /** A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). */
-export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card is spent.`;
+export const caughtWords = (trap: string | null): string => `Caught by ${trap ? article(trap) : 'a trap'}. It did nothing, and its card went to the trap\'s setter.`;
 
 /** The Lens's state for a play an admin ended: plain words, never in character. Its layer is off for everyone and nothing was refunded. */
 export const endedWords = (): string => 'Ended by an admin';

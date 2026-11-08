@@ -30,7 +30,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, FaceDownPass, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -64,7 +64,6 @@ export interface LogRead {
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
-  readonly setPasses: readonly FaceDownPass[];
   readonly caught: readonly CaughtPlay[];
   readonly ended: readonly CardEnded[];
   readonly infractions: readonly LogInfraction[];
@@ -94,7 +93,6 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.playsOnMine, () => read.playsOnMine[read.playsOnMine.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
-    ...reached(read.setPasses, () => read.setPasses[read.setPasses.length - 1]!.passedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
     ...reached(read.ended, () => read.ended[read.ended.length - 1]!.at),
     ...reached(read.infractions, () => read.infractions[read.infractions.length - 1]!.at),
@@ -135,7 +133,6 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
-    setPasses: read.setPasses.filter((e) => keep(e.passedAt)),
     caught: read.caught.filter((e) => keep(e.at)),
     ended: read.ended.filter((e) => keep(e.at)),
     infractions: read.infractions.filter((e) => keep(e.at)),

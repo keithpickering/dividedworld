@@ -41,6 +41,8 @@ export interface CardPlay {
   readonly faceDown?: true;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
+  /** A play a back laid when it sprang (a Move landing on a quote), by the spring that laid it: the Lens says who set it and what set it off. */
+  readonly spring?: Id;
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */

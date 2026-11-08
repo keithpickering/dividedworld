@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigation } from '../router.tsx';
+import { readTrapActs } from './trap-reads.ts';
 import { ALERTS_PAGE, type Act, type Alert, type AlertsPage, type Id, type KayfaApi, type MyCharacter } from '../data/api.ts';
 
 export interface AlertsRead {
@@ -84,6 +85,10 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
   await read(ended.map((p) => p?.targetActId).filter((id): id is Id => typeof id === 'string'));
   const authors = ended.map((p) => (p?.targetActId ? acts.get(p.targetActId)?.character : undefined)).filter((c): c is Id => typeof c === 'string' && !names.has(c));
   for (const part of await Promise.all(inChunks([...new Set(authors)]).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
+  /* A face-down card that struck names its spring and its set, and the setter's character. */
+  const trap = await readTrapActs(api, rows, acts, names);
+  for (const [id, a] of trap.acts) acts.set(id, a);
+  for (const [id, n] of trap.names) names.set(id, n);
   return { acts, names };
 }
 
@@ -119,6 +124,17 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
     marked.current = doc;
     const newest = doc.alerts[0]?.at;
     if (newest !== undefined && (doc.seenAt === null || Date.parse(newest) > Date.parse(doc.seenAt))) void Promise.resolve(api.seeAlerts(newest)).catch(() => { /* seen again next time */ });
+  }, [api, doc]);
+
+  /* The page's first rows: a trapStruck alert's spring, set and setter are read beside the document, and fill in when they arrive. */
+  useEffect(() => {
+    if (!doc.alerts.some((r) => r.kind === 'trapStruck')) return;
+    let live = true;
+    void readTrapActs(api, doc.alerts, new Map(doc.acts.map((a) => [a.id, a])), new Map(doc.people.map((c) => [c.id, c.name]))).then((got) => {
+      if (!live || (got.acts.size === 0 && got.names.size === 0)) return;
+      setHeld((now) => (now.doc === doc ? { ...now, acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]) } : now));
+    });
+    return () => { live = false; };
   }, [api, doc]);
 
   const older = useCallback(() => {

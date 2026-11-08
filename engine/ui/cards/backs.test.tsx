@@ -114,6 +114,27 @@ describe('a card back', () => {
   });
 });
 
+describe('a card a back laid', () => {
+  test('its Lens says who set it, when, and whose quote set it off, above the card\'s own rows', async () => {
+    const w = await world();
+    const set = w.set.ok ? w.set.value.id : '';
+    const spring = w.fake.seed.spring(set, { trigger: 'quote', by: w.mine });
+    w.fake.seed.card(w.spritey, w.mine, 'blot', { spring });
+    await open(w);
+    const mark = await within(post(4)).findByRole('button', { name: /^Blot, 1 play/u });
+    const user = userEvent.setup();
+    await user.click(mark);
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+    await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
+    const row = lens.querySelector('.kb-lens-row')!;
+    await waitFor(() => expect(row.querySelector('.kb-lens-sprung')).not.toBeNull());
+    expect(row.querySelector('.kb-lens-sprung')!.textContent).toMatch(/^Set face down by Spritey on [A-Z][a-z]+ \d+; sprang when Pipewrench quoted it\.$/u);
+    /* Above the card's own rows: the line comes before the play's by-line. */
+    expect(row.firstElementChild).toBe(row.querySelector('.kb-lens-sprung'));
+    expect(row.textContent).not.toMatch(/account/iu);
+  });
+});
+
 describe('a caught play', () => {
   test('draws no effect, and its mark says it was caught', async () => {
     const w = await world();
@@ -130,7 +151,7 @@ describe('a caught play', () => {
     expect(heading).toBe('Caught, did nothing');
     expect(wordsProblems('state', heading)).toEqual([]);
     await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
-    expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card is spent.');
+    expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card went to the trap\'s setter.');
     await user.keyboard('{Escape}');
     expect(within(post(2)).queryByTestId('splash')).toBeNull();
     /* The back sprang: it shows the card it was, in its place. */

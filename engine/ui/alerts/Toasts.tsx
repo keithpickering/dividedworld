@@ -28,6 +28,7 @@ import { Link } from '../router.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
 import { useToastKinds } from './toast-kinds.ts';
 import { remember, type Arrival } from './useAlertFeed.ts';
+import { readTrapActs } from './trap-reads.ts';
 import { plainText, wordsFor, type Way, type WordsContext } from './words.ts';
 import './toasts.css';
 
@@ -87,6 +88,12 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
         a.character ? api.characters([a.character]).then((cs) => cs[0]?.name ?? null, () => null) : null,
       ]);
       row = { ...row, thread: about?.thread ?? null, title, name: who };
+      /* A face-down card that struck: its spring, its set and the setter's character (its own catch inside). */
+      if (a.kind === 'trapStruck') {
+        const got = await readTrapActs(api, [row], acts, names);
+        for (const [id, x] of got.acts) acts.set(id, x);
+        for (const [id, n] of got.names) names.set(id, n);
+      }
     } else if (a.kind === 'settlement') {
       /* Its row is the player's own and says all it needs. */
     } else if (a.character !== null) {

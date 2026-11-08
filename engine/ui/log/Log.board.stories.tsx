@@ -73,7 +73,7 @@ function LogEmptyView({ doc }: { readonly doc: LogDoc }) {
   const [tab, setTab] = useState<string | null | undefined>(undefined);
   const bare: LogData = {
     ...data,
-    log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null },
+    log: { settlements: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null },
     estimate: null, turns: [], nextSettlement: new Date(Date.now() + SETTLEMENT_IN).toISOString(),
   };
   const hooligan = bare.mine.find((c) => c.name === 'Mrs. Hooligan')?.id ?? null;

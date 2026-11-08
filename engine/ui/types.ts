@@ -151,6 +151,23 @@ export interface AlertCopy {
    * undefined for one the instance has no words for, which is then said in the engine's plain words. The link to the Season page is the engine's.
    */
   readonly seasonNews?: (sub: string, row: Alert) => { readonly line: string; readonly detail: string } | undefined;
+  /**
+   * A `trapStruck` alert's line and detail, for the player whose post a face-down card landed on after a quote (`how: 'quote'`), or whose cast a
+   * Trap Card caught (`how: 'caught'`), in the instance's voice. It is handed only what the spring already shows everyone: the setter's character
+   * (null where it could not be read), the setter's card (the quote's `card`; for a caught cast, the caster's own card), the card laid (null for a
+   * caught cast) and how long the card was set face down before it sprang ("two days"; null where unknown). It may gloat and may not bluff:
+   * what it says happened did. Undefined for one the instance has no words for, which is then said in the engine's plain words.
+   */
+  readonly trapStruck?: (facts: TrapStruckFacts) => { readonly line: string; readonly detail: string } | undefined;
+}
+
+/** What a `trapStruck` alert's words may say (AlertCopy.trapStruck): public facts of the spring, never an account or a class. */
+export interface TrapStruckFacts {
+  readonly how: 'quote' | 'caught';
+  readonly setter: string | null;
+  readonly card: string | null;
+  readonly laid: string | null;
+  readonly span: string | null;
 }
 
 /**

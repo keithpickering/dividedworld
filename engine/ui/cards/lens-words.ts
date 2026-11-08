@@ -39,3 +39,28 @@ export function viewProblems(view: CardView, kind: ViewKind): string[] {
   if (needs !== null && (view.ends === undefined || view.ends.trim() === '')) out.push(`the view "${view.state}" ${needs} and has no ends, its way out`);
   return out;
 }
+
+/** What the Lens says of a card that landed from a back: who set it, when, and what set it off (`sprungWords`). Every part is a public fact of the spring. */
+export interface SprungFacts {
+  /** The setter's character, as the spring names it; null where it could not be read. */
+  readonly setter: string | null;
+  /** When the back was set (an ISO time); null where the set could not be read. */
+  readonly setAt: string | null;
+  /** The character whose post quoted it, for a spring that a quote or a reply set off; null where it could not be read. */
+  readonly quoter: string | null;
+  /** What set it off: the spring's trigger (`quote`, or one written before the face-down Moves: `reply`, `reaction`). */
+  readonly trigger: string | null;
+}
+
+/**
+ * The line above a card's own rows in the Lens when the card landed from a back: "Set face down by Pipewrench on November 5; sprang when
+ * Spritey quoted it." It names characters and a date and nothing private. A reaction names no one (who reacted is private): "sprang on a reaction".
+ * `zone` is the reader's own zone (the default), a test's UTC.
+ */
+export function sprungWords(f: SprungFacts, zone?: string): string {
+  const day = f.setAt === null ? null : new Date(f.setAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', ...(zone ? { timeZone: zone } : {}) });
+  const set = `Set face down by ${f.setter ?? 'someone'}${day ? ` on ${day}` : ''}`;
+  const by = f.quoter ?? 'a post';
+  const did = f.trigger === 'quote' ? `sprang when ${by} quoted it` : f.trigger === 'reply' ? `sprang when ${by} replied to it` : f.trigger === 'reaction' ? 'sprang on a reaction' : 'sprang';
+  return `${set}; ${did}.`;
+}

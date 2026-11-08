@@ -13,6 +13,8 @@
  *    rows by layer, top first, since which layer a stroke washes is what the rows explain; every other card in billing order.
  *    Every play of the kind has its row, so each can be reacted to, spun from and gone to.
  *
+ * A card that landed from a back opens its spring's Acts for one line above its rows (sprung.ts), the one read the Lens makes when it draws.
+ *
  * It is not modal (glass/Float.tsx): it dims and blocks nothing and makes nothing inert, so the ink can be scrubbed with it
  * open; a press on the post leaves it open. It closes by Esc, its ×, its mark again, another post's Lens, or leaving the
  * page, and focus goes back to the mark. One is open on a page (`LensProvider`); a post subscribes to whether it is the
@@ -49,6 +51,7 @@ import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase,
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
+import { useSprungWords } from './sprung.ts';
 import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
 import { PREPARED_FAILED, usePrepared, useRest } from '../glass/prepared.ts';
 import { Spinner } from '../glass/Spinner.tsx';
@@ -419,6 +422,8 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   const { characters } = usePlayer();
   const name = playName(caster, card);
   const note = view.notes[play.id];
+  /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
+  const sprung = useSprungWords(play.spring);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
@@ -445,6 +450,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   }, []);
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+      {sprung && <p className="kb-lens-note kb-lens-sprung">{sprung}</p>}
       {note && <p className="kb-lens-note">{note}</p>}
       <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}

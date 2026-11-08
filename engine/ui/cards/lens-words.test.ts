@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, STATUS_MAX_WORDS } from './lens-words.ts';
 import type { CardView } from './types.ts';
 
 const view = (over: Partial<CardView> = {}): CardView => ({ progress: null, state: 'Holding you on this post', yours: false, controls: [], notes: {}, ...over });
@@ -54,5 +54,21 @@ describe('a view that holds the reader or covers the post names its way out', ()
   });
   test("the view's own state is checked too", () => {
     assert.equal(viewProblems(view({ state: 'Top: yellow', ends: 'x' }), { holds: true, covers: false }).length, 1);
+  });
+});
+
+describe('sprungWords', () => {
+  const at = '2026-11-05T12:00:00.000Z';
+  test('a quote spring: who set it, on what day, and whose quote set it off', () => {
+    assert.equal(sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'quote' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey quoted it.');
+  });
+  test('what could not be read is left out, never guessed', () => {
+    assert.equal(sprungWords({ setter: null, setAt: null, quoter: null, trigger: 'quote' }, 'UTC'), 'Set face down by someone; sprang when a post quoted it.');
+  });
+  test('a spring written before the face-down Moves: a reply names its post\'s character, a reaction names no one', () => {
+    assert.equal(sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reply' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey replied to it.');
+    const said = sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reaction' }, 'UTC');
+    assert.equal(said, 'Set face down by Pipewrench on November 5; sprang on a reaction.');
+    assert.ok(!said.includes('Spritey'));
   });
 });

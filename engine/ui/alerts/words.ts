@@ -128,6 +128,62 @@ export function batchWords(rows: readonly Alert[], ctx: WordsContext): Said {
   };
 }
 
+const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+const count = (n: number): string => NUMBER_WORDS[n] ?? String(n);
+
+/** How long, in words: "less than a minute", "an hour", "five hours", "two days". */
+export function spanWords(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return 'a moment';
+  const unit = (n: number, one: string, many: string) => (n === 1 ? `${one === 'hour' ? 'an' : 'a'} ${one}` : `${count(n)} ${many}`);
+  if (ms < 60_000) return 'less than a minute';
+  if (ms < 3_600_000) return unit(Math.floor(ms / 60_000), 'minute', 'minutes');
+  if (ms < 86_400_000) return unit(Math.floor(ms / 3_600_000), 'hour', 'hours');
+  return unit(Math.floor(ms / 86_400_000), 'day', 'days');
+}
+
+/**
+ * A face-down card struck the player: it landed on their quoting post (the card Act names its spring), or a Trap Card caught their cast (the play
+ * names the set that caught it). Both are public Acts, so nothing here is computed from a private fact: the setter is the character the spring
+ * (or the set) names, never an account. A part that could not be read is left out, never guessed.
+ */
+function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
+  const who = row.name ?? 'Yours';
+  const springId = act && typeof act.payload.spring === 'string' ? act.payload.spring : null;
+  const spring = springId ? ctx.acts.get(springId) : undefined;
+  const caughtSet = act && typeof act.payload.caught === 'string' ? act.payload.caught : null;
+  const set = ctx.acts.get(caughtSet ?? (typeof spring?.payload.set === 'string' ? spring.payload.set : ''));
+  const setterId = spring?.character ?? set?.character ?? null;
+  const setter = setterId === null ? null : ctx.names?.get(setterId) ?? null;
+  const ended = spring ? Date.parse(spring.createdAt) : act ? Date.parse(act.createdAt) : NaN;
+  const span = set && Number.isFinite(ended) ? spanWords(ended - Date.parse(set.createdAt)) : null;
+  const laid = cardName(act?.payload.card, ctx);
+  if (caughtSet !== null) {
+    const post = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'caught', setter, card: laid, laid: null, span });
+    const when = `face down ${span ? `${span} before` : 'before'} you cast it`;
+    const named = `it named ${laid ?? 'your card'} exactly`;
+    return {
+      line: own ? [own.line] : [`${setter ? `${setter}'s` : 'A'} face-down trap caught your ${laid ?? 'card'}`],
+      detail: own ? [own.detail] : sentences(
+        [setter ? `${setter} set it ${when}, and ${named}.` : `It was set ${when}, and ${named}.`],
+        [`${laid ? `Your ${laid}` : 'The card'} is now ${setter ? `${setter}'s` : 'the setter\'s'}.`], inTitle(row)),
+      ways: postWay(post, row, ctx), who,
+    };
+  }
+  const card = cardName(spring?.payload.card, ctx);
+  const on = cardOn(row, ctx);
+  const place: Part[] = on ? on.place : [ownPost(row.name)];
+  const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'quote', setter, card, laid, span });
+  const subject = setter ? `${setter}'s face-down ${card ?? 'card'}` : card ? `A face-down ${card}` : 'A face-down card';
+  return {
+    line: own ? [own.line] : [`${subject} struck `, ...place],
+    detail: own ? [own.detail] : sentences(
+      [`${setter ? `${setter} set it face down${span ? ` ${span} before` : ' before'} your quote set it off.` : `${span ? `It was set face down ${span} before your quote set it off.` : 'Your quote set it off.'}`}`],
+      laid ? [`It laid ${laid} on it.`] : [], inTitle(row)),
+    ways: on ? on.ways : threadWay(row), who,
+  };
+}
+
 export function wordsFor(row: Alert, ctx: WordsContext): Said {
   const who = row.name ?? 'Yours';
   const act = row.act === null ? undefined : ctx.acts.get(row.act);
@@ -159,18 +215,16 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         detail: sentences(['Its cost and the card are not refunded.'], inTitle(row)), ways: on.ways, who,
       };
     }
-    case 'trapStruck': {
-      const post = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
-      const card = cardName(act?.payload.card, ctx);
-      return {
-        line: [`A trap struck ${postWords(row.name, post)}`],
-        detail: sentences(card ? [`It laid ${card} on it.`] : [], inTitle(row)),
-        ways: postWay(post, row, ctx), who,
-      };
-    }
+    case 'trapStruck': return trapStruck(row, act, ctx);
     case 'trapSprang': {
       const post = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
       const card = cardName(act?.payload.card, ctx);
+      /* A spring written before the face-down Moves has no `did`: its words stay as they were. */
+      const did = act?.kind === 'spring' ? act.payload.did : undefined;
+      if (did === 'landed' || did === 'caught' || did === 'ended') {
+        const set = did === 'landed' ? 'A quote set it off, and it landed.' : did === 'caught' ? 'A cast of the card it named set it off, and the card is now in your hand.' : 'A Mod Bot\'s visit set it off, and it ended the visit.';
+        return { line: [card ? `Your face-down ${card} sprang` : 'Your face-down card sprang'], detail: sentences([set], inTitle(row)), ways: postWay(post, row, ctx), who };
+      }
       return { line: ['Your trap sprang'], detail: sentences(card ? [`The trap was ${card}, in `, ...(row.title ? [{ em: row.title }] : ['a thread']), '.'] : inTitle(row)), ways: postWay(post ?? act, row, ctx), who };
     }
     case 'hint': {

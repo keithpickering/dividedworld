@@ -24,6 +24,7 @@ import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
 import { hintWords } from './hint-words.ts';
+import { trapStruckWords } from './trap-words.ts';
 import { onboarding } from './onboarding.ts';
 import { frontDoor } from './front-door.ts';
 import strategyGuide from '../guide/strategy-guide.md?raw';
@@ -158,8 +159,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
     /* What the glass calls a Mod Bot where the Lens names its role (the Mod Bots design, section 9). */
     modRole: 'A Moderator',
-    // Hints (the alerts design's section 5): playful, and never a bluff.
-    alerts: Object.freeze({ hint: hintWords }),
+    // Hints (the alerts design's section 5) and a face-down card that struck: playful, and never a bluff.
+    alerts: Object.freeze({ hint: hintWords, trapStruck: trapStruckWords }),
   }),
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
   /* The developer persona's picture, by the key the instance's rules name (index.ts, `developer`). */
