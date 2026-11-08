@@ -182,6 +182,21 @@
   border-color: var(--kb-glass-salty);
   background: var(--kb-glass-salty);
   color: var(--kb-glass-ink-salty);
+  /* Not by color alone: an inset ring and a check, which forced colors keep. */
+  box-shadow: inset 0 0 0 2px var(--kb-glass-ink-salty);
+}
+
+.kb-play-choice-opt:has(input:checked) span::before {
+  content: '\2713\00a0';
+}
+
+@media (forced-colors: active) {
+  .kb-play-choice-opt:has(input:checked) span {
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+    box-shadow: inset 0 0 0 2px HighlightText;
+  }
 }
 
 .kb-play-choice-opt:has(input:focus-visible) span {

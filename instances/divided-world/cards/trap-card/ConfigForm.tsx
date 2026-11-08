@@ -20,11 +20,11 @@ export function ConfigForm({ config, onChange, id, castable = [] }: ConfigFormPr
       <div className="kb-trap-faces">
         {castable.map((f) => (
           <label key={f.key} className="kb-trap-face" style={{ '--kb-card-color': f.art.color } as CSSProperties}>
-            <input type="radio" name={`${id}-catch`} value={f.key} aria-label={f.name} checked={chosen === f.key} onChange={() => onChange({ card: f.key })} />
+            <input type="radio" name={`${id}-catch`} value={f.key} checked={chosen === f.key} onChange={() => onChange({ card: f.key })} />
             <span className="kb-trap-face-in">
               {f.art.mark ? <img className="kb-trap-face-mark" src={f.art.mark} alt="" draggable={false} /> : <span className="kb-trap-face-mark" aria-hidden="true" />}
-              <span className="kb-trap-face-name">{f.name}</span>
-              <span className="kb-trap-face-tag">{f.kind}</span>
+              <span className="kb-trap-face-name">{f.name}</span>{' '}
+              <span className="kb-trap-face-tag">{f.kind}</span>{' '}
               <span className="kb-trap-face-rarity"><span aria-hidden="true">{gemOf(f.rarity)}</span> {rarityName(f.rarity)}</span>
             </span>
           </label>

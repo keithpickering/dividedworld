@@ -297,7 +297,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               )}
               <p className="kb-play-fine" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
             </div>}
-          {unsettled && <p className="kb-play-fine" id={`${id}-unsettled`}>Choose the card's settings above to set it.</p>}
+          {unsettled && <p className="kb-play-fine" id={`${id}-unsettled`} role="status">Choose the card's settings above to set it.</p>}
           <p className="kb-play-fine">
             {setting
               ? `Setting is a public Act${named ? ` under ${named.name}'s name` : ''}. Everyone sees a card back on the post; only you see which card it is.`

@@ -213,6 +213,7 @@ describe('a Gimmick', () => {
     expect(button).toBeDisabled();
     const hint = document.getElementById(button.getAttribute('aria-describedby')!)!;
     expect(hint).toHaveTextContent('Choose the card\'s settings above to set it.');
+    expect(hint).toHaveAttribute('role', 'status');
     await user.click(within(dialog).getByRole('radio', { name: 'Blot' }));
     expect(button).toBeEnabled();
     expect(button.getAttribute('aria-describedby')).toBeNull();

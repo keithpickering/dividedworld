@@ -30,7 +30,12 @@ describe('the card it waits for', () => {
   test('offers every card cast on a post, by name, and no Use, Gimmick or card beyond a post', () => {
     render(<Held onChange={() => {}} />);
     const group = screen.getByRole('group', { name: 'The card it waits for' });
-    const names = within(group).getAllByRole('radio').map((r) => r.getAttribute('aria-label'));
+    /* The wrapping label names each radio: the card's name, its kind tag and its rarity, in that order. */
+    const radios = within(group).getAllByRole('radio');
+    expect(radios.map((r) => r.getAttribute('aria-label'))).toEqual(radios.map(() => null));
+    expect(screen.getByRole('radio', { name: 'Whoops! Move Common' })).toBeInTheDocument();
+    const names = castable.map((f) => f.name);
+    expect(radios.map((r, i) => r.closest('label')!.textContent)).toEqual(castable.map((f) => expect.stringContaining(f.name)));
     expect(names).toEqual(cards.filter(castOnPost).map((c) => c.name));
     expect(names).toEqual(expect.arrayContaining(['Whoops!', 'Stick Around', 'Autocorrect', "Feelin' Fab"]));
     for (const not of ['Force Field', 'Trap Card', 'Hall Pass', 'Bluff', 'Glitter Bomb', 'Main Event']) expect(names).not.toContain(not);
@@ -38,7 +43,7 @@ describe('the card it waits for', () => {
 
   test('shows each face\'s kind tag and rarity as words', () => {
     render(<Held onChange={() => {}} />);
-    const whoops = screen.getByRole('radio', { name: 'Whoops!' }).closest('label')!;
+    const whoops = screen.getByRole('radio', { name: 'Whoops! Move Common' }).closest('label')!;
     expect(whoops).toHaveTextContent('Move');
     expect(whoops).toHaveTextContent('Common');
   });
@@ -49,10 +54,10 @@ describe('the card it waits for', () => {
     render(<Held onChange={onChange} />);
     expect(onChange).not.toHaveBeenCalled();
     for (const r of screen.getAllByRole('radio')) expect(r).not.toBeChecked();
-    await user.click(screen.getByRole('radio', { name: castable[0]!.name }));
+    await user.click(screen.getByRole('radio', { name: new RegExp(`^${castable[0]!.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u') }));
     expect(onChange).toHaveBeenLastCalledWith({ card: castable[0]!.key });
     await user.keyboard('{ArrowDown}');
-    expect(screen.getByRole('radio', { name: castable[1]!.name })).toBeChecked();
+    expect(screen.getByRole('radio', { name: new RegExp(`^${castable[1]!.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u') })).toBeChecked();
     expect(onChange).toHaveBeenLastCalledWith({ card: castable[1]!.key });
   });
 
@@ -60,7 +65,7 @@ describe('the card it waits for', () => {
     const onChange = vi.fn();
     render(<Held onChange={onChange} />);
     expect(trapCard.validateConfig(undefined).ok).toBe(false);
-    await userEvent.click(screen.getByRole('radio', { name: castable[0]!.name }));
+    await userEvent.click(screen.getByRole('radio', { name: new RegExp(`^${castable[0]!.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'u') }));
     const given = onChange.mock.calls.at(-1)![0];
     expect(trapCard.validateConfig(given).ok).toBe(true);
   });
