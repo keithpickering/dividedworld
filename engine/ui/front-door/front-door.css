@@ -32,11 +32,12 @@
 .kb-glass-cut-dialog.kb-front-door-note {
   display: grid;
   gap: 14px;
-  margin: 1.2em 0;
+  margin: 1.2em auto;
   padding: 28px 36px 32px;
   --kb-cut: 24px;
   --kb-border: 1px;
   background: color-mix(in srgb, var(--kb-glass-pale) 55%, var(--kb-glass-ground));
+  max-width: 800px;
 }
 
 /* The panel, one border in; the element above is the border's color (glass/base.css). */
@@ -45,7 +46,9 @@
 }
 
 .kb-front-door-prose > :first-child {
-  margin-top: 0;
+    margin-top: 0;
+    font-size: 3rem;
+    margin-bottom: 0;
 }
 
 .kb-front-door-prose > :last-child {
@@ -61,4 +64,10 @@
   .kb-glass-cut-dialog.kb-front-door-note {
     padding: 18px 16px;
   }
+}
+
+/* On the front door note, right-align it so it looks more signaturey */
+.kb-glass-cut-dialog.kb-front-door-note .kb-updates-by {
+  justify-content: flex-end;
+  margin-top: 2rem;
 }
