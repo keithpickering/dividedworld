@@ -119,6 +119,10 @@ describe('chrome and layers are not quoted (data-kb-quotable)', () => {
     expect(drawn('before [video]https://vimeo.com/123[/video] after').all()).toBe('before\nafter');
   });
 
+  test('code keeps its indent, first line included', () => {
+    expect(drawn('[code]    def f():\n    return 1[/code]').all()).toBe('    def f():\n    return 1');
+  });
+
   test('text a post shows although it is aria-hidden is read, and the words under it are not', () => {
     const [one] = page(
       'I said <span class="x"><span aria-hidden="true" data-kb-quotable="hidden">NAUGHTY</span><span aria-hidden="true" data-kb-quotable="shown">Hello</span></span> today',
@@ -200,6 +204,20 @@ describe('the Quote button on the thread', () => {
     expect(await replyBox()).toHaveValue(`[quote=${id}]quick[/quote]\n`);
     expect(window.getSelection()!.isCollapsed).toBe(true);
     expect(offer()).toBeNull();
+  });
+
+  test('a press dragged off the button, or cancelled, does not leave a stale button behind', async () => {
+    const w = threadWorld(3);
+    openThread(w);
+    const body = await bodyOf(2);
+    for (const end of [(b: Element) => { b.dispatchEvent(new Event('pointerout', { bubbles: true })); }, (b: Element) => { b.dispatchEvent(new Event('pointercancel', { bubbles: true })); }, () => { document.dispatchEvent(new Event('pointerup')); }]) {
+      select(body.firstChild!, 0, 4);
+      const button = await screen.findByRole('button', { name: 'Quote the selected text' });
+      act(() => { button.dispatchEvent(new Event('pointerdown', { bubbles: true })); });
+      act(() => end(button));
+      act(() => { window.getSelection()!.removeAllRanges(); document.dispatchEvent(new Event('selectionchange')); });
+      await waitFor(() => expect(offer()).toBeNull());
+    }
   });
 
   test('a selection across two posts offers none', async () => {

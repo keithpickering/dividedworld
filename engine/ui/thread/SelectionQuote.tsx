@@ -50,21 +50,26 @@ function bodyAt(node: Node): { readonly body: HTMLElement; readonly seq: number 
 /** The shown words of `range` inside `body`. */
 function shownWords(body: HTMLElement, range: Range): string {
   let out = '';
-  const line = () => { out = out.replace(/[ \t]+$/u, ''); if (out !== '' && !out.endsWith('\n')) out += '\n'; };
+  /* True while the last thing written is a line break the walk made itself (a block edge), not one the player typed. */
+  let fresh = false;
+  const line = () => { out = out.replace(/[ \t]+$/u, ''); if (out !== '' && !out.endsWith('\n')) { out += '\n'; fresh = true; } };
   const walk = (n: Node) => {
     if (n.nodeType === 3) {
       if (!range.intersectsNode(n)) return;
       const data = (n as Text).data;
       const part = data.slice(n === range.startContainer ? range.startOffset : 0, n === range.endContainer ? range.endOffset : data.length);
-      /* A line starts at its first word: the space a skipped element left behind is not the line's. */
-      out += out.endsWith('\n') ? part.replace(/^[ \t]+/u, '') : part;
+      /* A line the walk started begins at its first word: the space a skipped element left behind is not the line's. Words as typed keep
+         their spaces, and so does everything in preformatted text. */
+      const keep = !fresh || n.parentElement?.closest('pre') != null;
+      const add = keep ? part : part.replace(/^[ \t]+/u, '');
+      if (add !== '') { out += add; fresh = false; }
       return;
     }
     if (n.nodeType !== 1) return;
     const el = n as Element;
     const mark = quotable(el);
     if (mark === 'hidden' || (mark !== 'shown' && el.matches(SKIPPED)) || !range.intersectsNode(el)) return;
-    if (el.tagName === 'BR') { out += '\n'; return; }
+    if (el.tagName === 'BR') { out += '\n'; fresh = false; return; }
     const block = BLOCKS.has(el.tagName);
     if (block) line();
     /* A shut spoiler shows its title and hides its body. */
@@ -73,7 +78,7 @@ function shownWords(body: HTMLElement, range: Range): string {
     if (block) line();
   };
   walk(body);
-  return out.trim();
+  return out.replace(/^\n+/u, '').trimEnd();
 }
 
 /**
@@ -134,12 +139,20 @@ export function SelectionQuote({ actOf, quote }: {
   const key = offer?.key ?? null;
   useEffect(() => {
     if (key === null) return;
-    const away = () => { dismissed.current = key; setOffer(null); };
+    const away = () => { pressing.current = false; dismissed.current = key; setOffer(null); };
+    const release = () => { pressing.current = false; };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') away(); };
     const onPointer = (e: Event) => { if (!(e.target instanceof Element && e.target.closest('.kb-selection-quote'))) away(); };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onPointer, true);
-    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('pointerdown', onPointer, true); };
+    document.addEventListener('pointerup', release, true);
+    document.addEventListener('pointercancel', release, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPointer, true);
+      document.removeEventListener('pointerup', release, true);
+      document.removeEventListener('pointercancel', release, true);
+    };
   }, [key]);
 
   const press = useCallback(() => {
@@ -155,6 +168,7 @@ export function SelectionQuote({ actOf, quote }: {
     <button
       type="button" className="kb-button kb-selection-quote" aria-label="Quote the selected text" data-kb-size="small" style={{ left: offer.x, top: offer.y }}
       onMouseDown={(e) => e.preventDefault()} onPointerDown={() => { pressing.current = true; }} onPointerUp={() => { pressing.current = false; }}
+      onPointerCancel={() => { pressing.current = false; }} onPointerLeave={() => { pressing.current = false; }}
       onClick={press}
     >
       Quote
