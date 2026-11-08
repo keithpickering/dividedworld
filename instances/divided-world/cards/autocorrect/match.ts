@@ -10,20 +10,7 @@
  * the text, linear in its length.
  */
 
-/** A run of the visible text: from its first character to just past its last, in the string's own units. */
-export interface Occurrence {
-  readonly from: number;
-  readonly to: number;
-}
-
-const WORDISH = /[\p{L}\p{N}]/u;
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-/** Whether two strings are the same words as the matcher reads them: the same, case-folded as its `i` folds them. */
-export const sameWords = (a: string, b: string): boolean => new RegExp(`^${escape(a)}$`, 'iu').test(b);
-
-export function occurrences(text: string, phrase: string): Occurrence[] {
-  if (!WORDISH.test(phrase)) return [];
-  const find = new RegExp(`(?<![\\p{L}\\p{N}])${escape(phrase)}(?![\\p{L}\\p{N}])`, 'giu');
-  return [...text.matchAll(find)].map((m) => ({ from: m.index!, to: m.index! + m[0].length }));
-}
+// The finder itself lives in the engine (engine/bbcode/phrase.ts), unchanged, because the database asks the same question of a post
+// (`phrase_in`, supabase/migrations/0139_face_down_moves.sql) and the two are held together by one list of fixtures. Autocorrect imports it
+// through here so its rules, its screens and its effect keep one place to look.
+export { occurrences, sameWords, type Occurrence } from '../../../../engine/bbcode/phrase.ts';
