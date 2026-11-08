@@ -11,6 +11,6 @@
  */
 
 // The finder itself lives in the engine (engine/bbcode/phrase.ts), unchanged, because the database asks the same question of a post
-// (`phrase_in`, supabase/migrations/0139_face_down_moves.sql) and the two are held together by one list of fixtures. Autocorrect imports it
+// (`phrase_in`, supabase/migrations/0142_face_down_moves.sql) and the two are held together by one list of fixtures. Autocorrect imports it
 // through here so its rules, its screens and its effect keep one place to look.
 export { occurrences, sameWords, type Occurrence } from '../../../../engine/bbcode/phrase.ts';

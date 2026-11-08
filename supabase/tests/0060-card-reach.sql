@@ -14,14 +14,13 @@ end $$;
 -- The test cards beyond a post, each priced in the economy.
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"glint.price": 100, "marquee.price": 100, "quake.price": 100, "tremor.price": 100, "warder.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, reaches, lasts) values
-    ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', '{character}', interval '7 days'),
-    ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day'),
-    ('banner', 'Banner', 'sweet', 'marquee.price', 'rare', 'cast', '{thread}', interval '1 day'),
-    ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', '{board}', interval '1 day'),
-    ('tremor', 'Tremor', 'salty', 'tremor.price', 'legendary', 'cast', '{board}', interval '3 days'),
-    ('selfie', 'Selfie', 'sweet', 'warder.price', 'uncommon', 'use', '{character}', interval '2 days')
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values
+    ('glint', 'Glint', 'pepperoni', 'uncommon', 'cast', '{character}', interval '7 days'),
+    ('marquee', 'Marquee', 'sweet', 'rare', 'cast', '{thread}', interval '1 day'),
+    ('banner', 'Banner', 'sweet', 'rare', 'cast', '{thread}', interval '1 day'),
+    ('quake', 'Quake', 'salty', 'legendary', 'cast', '{board}', interval '1 day'),
+    ('tremor', 'Tremor', 'salty', 'legendary', 'cast', '{board}', interval '3 days'),
+    ('selfie', 'Selfie', 'sweet', 'uncommon', 'use', '{character}', interval '2 days')
   on conflict (key) do nothing;
   -- Banner pins its thread to the top of its board's list (Task 5), as an instance's card may.
   update card_kinds set pins = true where key = 'banner';
@@ -58,8 +57,7 @@ begin
     insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Race Quaker A', now(), now()), (%4$L, %2$L, 'Race Quaker B', now(), now());
     insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
     insert into boards (id, slug, name) values (%5$L, 'race-board', 'Race Board');
-    update settings set value = value || '{"racequake.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, reaches, lasts) values ('racequake', 'Race Quake', 'salty', 'racequake.price', 'legendary', '{board}', interval '1 day');
+    insert into card_kinds (key, name, alignment, rarity, reaches, lasts) values ('racequake', 'Race Quake', 'salty', 'legendary', '{board}', interval '1 day');
     insert into card_ledger (account, card, kind, price) values (%1$L, 'racequake', 'bought', 0), (%2$L, 'racequake', 'bought', 0);
     with t as (insert into threads (board, title) select id, 'Race Announcements' from boards where slug = 'the-system' returning id)
     insert into settings (key, value) select 'systemAnnouncements', to_jsonb(t.id::text) from t on conflict (key) do nothing;
@@ -285,26 +283,26 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
   if why is distinct from 'card "seedling" reaches a character, which takes a card of uncommon or rarer; it is common' then raise exception 'the seed holds reachRarity, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"]}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "uncommon", "reaches": ["character"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches beyond a post with no time up (lasts); every effect beyond a post ends at its time' then raise exception 'a card beyond a post has a time up, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "week", "count": 1}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "week", "count": 1}}]}')$s$);
   if why is distinct from 'card "seedling" lasts 1 week, longer than a thread effect may (reachLasts.thread, 1 day)' then raise exception 'a time up is at most its reach''s, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "play": "set", "reaches": ["post", "board"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "legendary", "play": "set", "reaches": ["post", "board"], "lasts": {"unit": "day", "count": 1}}]}')$s$);
   if why is distinct from 'card "seedling" is set face down, and a Set lands only on a post' then raise exception 'a Set lands on a post alone, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["room"]}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "reaches": ["room"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches ["room"]; a card reaches a list of post, character, thread or board, each once' then raise exception 'a reach is one of four, said %', why; end if;
   -- Quoted as JSON.stringify quotes it, so the seed and instanceProblems say the same words.
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "reaches": ["post", "post"]}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "reaches": ["post", "post"]}]}')$s$);
   if why is distinct from 'card "seedling" reaches ["post","post"]; a card reaches a list of post, character, thread or board, each once' then raise exception 'a reach is listed once, said %', why; end if;
   -- A time up that is no span is named, never a cast error.
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "day", "count": 1.5}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "legendary", "reaches": ["thread"], "lasts": {"unit": "day", "count": 1.5}}]}')$s$);
   if why !~ '^card "seedling" lasts \{"unit": "day", "count": 1.5\}; it must be a span' then raise exception 'a malformed time up is named, said %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}, "pins": true}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 1}, "pins": true}]}')$s$);
   if why is distinct from 'card "seedling" pins true; only a card that reaches a thread pins, and pins is true or left out' then raise exception 'only a thread card pins, said %', why; end if;
   -- One that holds is written with its reaches.
-  perform seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}}]}');
+  perform seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "uncommon", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}}]}');
   if (select reaches from card_kinds where key = 'seedling') is distinct from '{character}' then raise exception 'the seed writes a card''s reaches'; end if;
   -- reachRarity and reachLasts are held to their shapes.
   if pg_temp.refusal($s$update settings set value = '{"character": "uncommon"}' where key = 'reachRarity'$s$) is null then raise exception 'reachRarity names all three reaches'; end if;

@@ -16,7 +16,8 @@
  */
 import { useId, type CSSProperties } from 'react';
 import { useKayfa } from '../context.tsx';
-import { facesOf, priceOf, rarityName, withCardEconomy } from '../cards/faces.ts';
+import { facesOf, priceWords, rarityName, withCardEconomy } from '../cards/faces.ts';
+import { useMachine } from '../cards/machine.ts';
 import { classVars } from '../characters/ClassChip.tsx';
 import { Marks } from '../characters/ClassCards.tsx';
 import { readable } from '../reactions/Reactions.tsx';
@@ -103,6 +104,8 @@ export function Classes() {
 export function CardList() {
   const { instance, ui, settings } = useKayfa();
   const faces = facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
+  /* A price is the card's on-sale slot's, as the machine shows it now; a card the machine is not selling has none. */
+  const machine = useMachine();
   if (faces.length === 0) return null;
   return (
     <div className="kb-guide-table-wrap" tabIndex={0}>
@@ -116,7 +119,7 @@ export function CardList() {
               <th scope="row">{f.name}</th>
               <td data-kb-label="Kind">{`${f.tag} ${rarityName(f.rarity)}`}</td>
               <td data-kb-label="Played">{f.kind}</td>
-              <td className="kb-num" data-kb-label="Price in orbs">{priceOf(f)}</td>
+              <td className="kb-num" data-kb-label="Price in orbs">{priceWords(machine, f.key, f.extra)}</td>
               <td data-kb-label="What it does">
                 {f.tagline !== '' && <i className="kb-guide-flavor">{f.tagline}</i>}
                 {f.tagline !== '' && f.summary !== '' && ' '}

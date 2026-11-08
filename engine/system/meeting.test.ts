@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
@@ -97,7 +97,7 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
   assert.ok(r.ok);
   assert.equal(r.moves.length, 0);
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup, pullSlot, repriceSlot, flashSale)'), JSON.stringify(r.trims));
 });
 
 test('a demand only the code sets is dropped when the Boss chooses it, and recorded', () => {
@@ -391,6 +391,192 @@ test('an order with no line, no boards and no allowance is kept, not a reason to
   assert.deepEqual(r.orders.map((o) => [o.mod, o.boards, o.order, o.allowance]), [[M1, [], '', 0], [M2, [], '', 0]]);
 });
 
+/* ------------------------------------------------------------------------- the machine's moves ---- */
+
+const SLOT_A = '51000000-0000-4000-8000-00000000000a';
+const SLOT_B = '51000000-0000-4000-8000-00000000000b';
+const SLOT_C = '51000000-0000-4000-8000-00000000000c';
+const SLOT_PACK = '51000000-0000-4000-8000-0000000000ff';
+const SLOT_HIDDEN = '51000000-0000-4000-8000-000000000011';
+const SLOT_OUT = '51000000-0000-4000-8000-000000000022';
+const facts = (id: string, over: Partial<MachineSlotFacts> = {}): MachineSlotFacts => ({ id, position: 1, card: 'whoops', pack: null, availability: 'onSale', price: 100, pullable: true, move: null, ...over });
+const SHELF: MachineSlotFacts[] = [
+  facts(SLOT_A), facts(SLOT_B, { card: 'bluff' }), facts(SLOT_C, { card: 'trap' }),
+  facts(SLOT_PACK, { card: null, pack: 'booster', price: 300, pullable: false }),
+  facts(SLOT_HIDDEN, { card: 'main-event', availability: 'hidden', pullable: false }),
+  facts(SLOT_OUT, { card: 'glitter', availability: 'soldOut', pullable: false }),
+];
+const withMachine = (machine: readonly MachineSlotFacts[] | undefined = SHELF): RepairContext => ({ ...ctx(), machine });
+const PULL_DEMAND = { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } };
+const machineMove = (kind: string, params: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
+  kind, params, demand: PULL_DEMAND, go_live_at: new Date(NOW + 2 * H).toISOString(), expires_in_hours: 72, why: 'Because.', ...extra,
+});
+const withMoves = (...moves: unknown[]) => ({ ...answer(PULL_DEMAND), moves });
+const plan = (moves: unknown[], c: RepairContext = withMachine()) => {
+  const r = repairAnswer(withMoves(...moves), c);
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+const dropped = (r: ReturnType<typeof plan>, path: string, predicate: string) => assert.ok(r.trims.some((t) => t.path === path && t.predicate === predicate), `${path} ${predicate} in ${JSON.stringify(r.trims)}`);
+
+test('a pull of a slot whose card is in an on-sale pack is kept, with its demand', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A })]);
+  assert.equal(r.moves.length, 1);
+  assert.deepEqual(r.moves[0]!.params, { slot: SLOT_A });
+  assert.deepEqual(r.moves[0]!.demand, PULL_DEMAND);
+  assert.equal(r.moves[0]!.structural, false);
+});
+
+test('a pull over machine.pullMost is dropped and recorded, counting the pulls already in force', () => {
+  const three = plan([machineMove('pullSlot', { slot: SLOT_A }), machineMove('pullSlot', { slot: SLOT_B }), machineMove('pullSlot', { slot: SLOT_C })]);
+  assert.deepEqual(three.moves.map((m) => m.params['slot']), [SLOT_A, SLOT_B]);
+  dropped(three, 'moves[2].params.slot', 'pullsAtMost(2)');
+  const inForce = SHELF.map((s) => (s.id === SLOT_C ? { ...s, move: { kind: 'pullSlot', act: 'x' } } : s));
+  const one = plan([machineMove('pullSlot', { slot: SLOT_A }), machineMove('pullSlot', { slot: SLOT_B })], withMachine(inForce));
+  assert.deepEqual(one.moves.map((m) => m.params['slot']), [SLOT_A]);
+  dropped(one, 'moves[1].params.slot', 'pullsAtMost(2)');
+  // The bound is the instance's.
+  const retuned = { ...withMachine(), settings: { ...settings, economy: { 'machine.pullMost': 1 } } };
+  assert.equal(plan([machineMove('pullSlot', { slot: SLOT_A }), machineMove('pullSlot', { slot: SLOT_B })], retuned).moves.length, 1);
+});
+
+test('a pull of a pack, of a card in no on-sale pack, of a slot not on sale, or of a slot that does not exist is dropped', () => {
+  const r = plan([
+    machineMove('pullSlot', { slot: SLOT_PACK }), machineMove('pullSlot', { slot: SLOT_HIDDEN }), machineMove('pullSlot', { slot: SLOT_OUT }),
+    machineMove('pullSlot', { slot: '51000000-0000-4000-8000-0000000000ee' }), machineMove('pullSlot', { slot: SLOT_A }),
+  ], withMachine([...SHELF, facts('51000000-0000-4000-8000-0000000000dd', { card: 'orphan', pullable: false })]));
+  assert.deepEqual(r.moves.map((m) => m.params['slot']), [SLOT_A]);
+  dropped(r, 'moves[0].params.slot', 'pullable');
+  dropped(r, 'moves[1].params.slot', 'pullable');
+  dropped(r, 'moves[2].params.slot', 'pullable');
+  dropped(r, 'moves[3].params.slot', 'isSlot');
+  const orphan = plan([machineMove('pullSlot', { slot: '51000000-0000-4000-8000-0000000000dd' })], withMachine([facts('51000000-0000-4000-8000-0000000000dd', { card: 'orphan', pullable: false })]));
+  dropped(orphan, 'moves[0].params.slot', 'pullable');
+});
+
+test('with no machine given the repair cannot name a slot, so every machine move is dropped', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A })], ctx());
+  assert.equal(r.moves.length, 0);
+  dropped(r, 'moves[0].params.slot', 'isSlot');
+});
+
+test('one move per slot: a second move on a slot, in force or in the same answer, is dropped', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A }), machineMove('repriceSlot', { slot: SLOT_A, percent: 150 }), machineMove('repriceSlot', { slot: SLOT_B, percent: 70 }, { demand: undefined })]);
+  assert.deepEqual(r.moves.map((m) => m.kind), ['pullSlot', 'repriceSlot']);
+  dropped(r, 'moves[1].params.slot', 'oneMovePerSlot');
+  const busy = SHELF.map((s) => (s.id === SLOT_B ? { ...s, move: { kind: 'repriceSlot', act: 'x' } } : s));
+  const b = plan([machineMove('repriceSlot', { slot: SLOT_B, percent: 70 })], withMachine(busy));
+  dropped(b, 'moves[0].params.slot', 'oneMovePerSlot');
+});
+
+test('a reprice is on a slot that is on sale, packs included; its percent is held to the economy\'s bounds, and not 100', () => {
+  const r = plan([
+    machineMove('repriceSlot', { slot: SLOT_PACK, percent: 80 }), machineMove('repriceSlot', { slot: SLOT_OUT, percent: 80 }), machineMove('repriceSlot', { slot: SLOT_HIDDEN, percent: 80 }),
+    machineMove('repriceSlot', { slot: SLOT_B, percent: 250 }), machineMove('repriceSlot', { slot: SLOT_C, percent: 100 }),
+  ]);
+  assert.deepEqual(r.moves.map((m) => [m.params['slot'], m.params['percent']]), [[SLOT_PACK, 80], [SLOT_B, 200]]);
+  dropped(r, 'moves[1].params.slot', 'onSaleSlot');
+  dropped(r, 'moves[2].params.slot', 'onSaleSlot');
+  // A percent over its bound is clamped to it and recorded (the ordinary overshoot), never a lost answer; 100 changes nothing and is dropped.
+  assert.ok(r.trims.some((t) => t.path === 'moves[3].params.percent' && t.predicate === 'atMost(200)' && t.before === 250 && t.after === 200), JSON.stringify(r.trims));
+  dropped(r, 'moves[4].params.percent', 'notOneHundred');
+});
+
+test('a percent or hours one past its bound is clamped to the bound and recorded; a fraction stays refused', () => {
+  const up = plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 201 })]);
+  assert.equal(up.moves[0]!.params['percent'], 200);
+  assert.ok(up.trims.some((t) => t.path === 'moves[0].params.percent' && t.predicate === 'atMost(200)' && t.before === 201 && t.after === 200), JSON.stringify(up.trims));
+  const down = plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 49 }, { demand: undefined })]);
+  assert.equal(down.moves[0]!.params['percent'], 50);
+  assert.equal(down.moves[0]!.demand, null);
+  assert.ok(down.trims.some((t) => t.path === 'moves[0].params.percent' && t.predicate === 'atLeast(50)' && t.before === 49 && t.after === 50), JSON.stringify(down.trims));
+  const long = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 49 }, { demand: undefined })]);
+  assert.equal(long.moves[0]!.params['hours'], 48);
+  assert.equal(long.moves[0]!.expiresInHours, 48);
+  assert.ok(long.trims.some((t) => t.path === 'moves[0].params.hours' && t.predicate === 'atMost(48)' && t.before === 49 && t.after === 48), JSON.stringify(long.trims));
+  const short = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 23 }, { demand: undefined })]);
+  assert.equal(short.moves[0]!.params['hours'], 24);
+  dropped(plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 120.5 })]), 'moves[0].params.percent', 'isWhole');
+  dropped(plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 30.5 }, { demand: undefined })]), 'moves[0].params.hours', 'isWhole');
+});
+
+test('a slot id in capitals is found, lowercased, and the change is recorded', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A.toUpperCase() })]);
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.params['slot'], SLOT_A);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.slot' && t.predicate === 'lowercaseUuid'), JSON.stringify(r.trims));
+});
+
+test('a markup must carry a demand and a markdown carries none: a demand given to a markdown is dropped, a markup without one is dropped', () => {
+  const r = plan([
+    machineMove('repriceSlot', { slot: SLOT_A, percent: 150 }, { demand: undefined }),
+    machineMove('repriceSlot', { slot: SLOT_B, percent: 150 }),
+    machineMove('repriceSlot', { slot: SLOT_C, percent: 60 }),
+    machineMove('pullSlot', { slot: SLOT_PACK }, { demand: undefined }),
+  ]);
+  assert.deepEqual(r.moves.map((m) => [m.params['slot'], m.demand === null]), [[SLOT_B, false], [SLOT_C, true]]);
+  dropped(r, 'moves[0].demand', 'isObject');
+  dropped(r, 'moves[2].demand', 'noDemand');
+  const down = plan([machineMove('repriceSlot', { slot: SLOT_C, percent: 60 }, { demand: undefined })]);
+  assert.equal(down.moves.length, 1, 'a markdown with no demand is whole as it stands');
+  assert.equal(down.moves[0]!.demand, null);
+});
+
+test('a flash sale is on a hidden slot, one at a time; it lasts its hours, whatever expiry was asked', () => {
+  const r = plan([
+    machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 30 }, { demand: undefined, expires_in_hours: 100 }),
+    machineMove('flashSale', { slot: SLOT_A, hours: 30 }, { demand: undefined }),
+    machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 49 }, { demand: undefined }),
+  ]);
+  assert.equal(r.moves.length, 1);
+  assert.equal(r.moves[0]!.expiresInHours, 30, 'the window is the hours');
+  assert.equal(r.moves[0]!.demand, null);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].expires_in_hours' && t.before === 100 && t.after === 30), JSON.stringify(r.trims));
+  dropped(r, 'moves[1].params.slot', 'hiddenSlot');
+  dropped(r, 'moves[2].params.slot', 'oneMovePerSlot');
+  const two = SHELF.concat(facts('51000000-0000-4000-8000-000000000033', { card: 'second', availability: 'hidden', pullable: false }));
+  const second = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 24 }, { demand: undefined }), machineMove('flashSale', { slot: '51000000-0000-4000-8000-000000000033', hours: 24 }, { demand: undefined })], withMachine(two));
+  assert.equal(second.moves.length, 1);
+  dropped(second, 'moves[1].params.slot', 'oneFlashAtATime');
+  const running = two.map((s) => (s.id === '51000000-0000-4000-8000-000000000033' ? { ...s, move: { kind: 'flashSale', act: 'x' } } : s));
+  dropped(plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 24 }, { demand: undefined })], withMachine(running)), 'moves[0].params.slot', 'oneFlashAtATime');
+});
+
+test('a machine move lasts at most machine.moveDaysMost: a longer expiry is clamped and recorded', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A }, { expires_in_hours: 400 })]);
+  assert.equal(r.moves[0]!.expiresInHours, 7 * 24);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].expires_in_hours' && t.before === 400 && t.after === 168), JSON.stringify(r.trims));
+  const retuned = plan([machineMove('pullSlot', { slot: SLOT_A }, { expires_in_hours: 400 })], { ...withMachine(), settings: { ...settings, economy: { 'machine.moveDaysMost': 3 } } });
+  assert.equal(retuned.moves[0]!.expiresInHours, 72);
+});
+
+test('a machine move costs a move from the bank like any other, and the old kinds are untouched by the machine', () => {
+  const r = plan([machineMove('pullSlot', { slot: SLOT_A }), machineMove('pullSlot', { slot: SLOT_B })], { ...withMachine(), bank: 1 });
+  assert.equal(r.moves.length, 1);
+  const rename = repairAnswer(answer(PULL_DEMAND), ctx());
+  assert.ok(rename.ok && rename.moves.length === 1);
+});
+
+test('the reference text lists the machine\'s slots with their ids, and says the Boss reads no purchase', () => {
+  const text = referenceText({ boards: [], threads: [], characters: [], machine: SHELF });
+  assert.match(text, /## The machine/);
+  assert.ok(text.includes(SLOT_A) && text.includes(SLOT_HIDDEN) && text.includes(SLOT_PACK));
+  assert.match(text, /whoops.*1\.00.*on sale/);
+  assert.match(text, /hidden/);
+  const none = referenceText({ boards: [], threads: [], characters: [] });
+  assert.doesNotMatch(none, /The machine/);
+  const moved = referenceText({ boards: [], threads: [], characters: [], machine: [{ ...facts(SLOT_A), move: { kind: 'pullSlot', act: 'x' } }] });
+  assert.match(moved, /pullSlot in force/);
+});
+
+test('the prompt tells the Boss the machine\'s three moves, their bounds and which carry a demand', () => {
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  assert.match(served, /pullSlot/);
+  assert.match(served, /at most 2 slots pulled at once/);
+  assert.match(served, /50 to 200 percent/);
+  assert.match(served, /24 to 48 hours/);
+  assert.match(served, /carries no demand/);
+});
 
 // ---- Member groups (Task 8): the meeting confers groups ----
 

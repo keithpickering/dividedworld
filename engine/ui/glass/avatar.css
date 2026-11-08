@@ -1,0 +1,28 @@
+/*
+ * The avatar (Avatar.tsx): a square picture, or the name's first letter in the display face. Its size and border are the caller's class
+ * (the HUD's, a Lens row's); this sheet holds what every avatar shares.
+ */
+.kb-avatar {
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--kb-glass-field-2);
+}
+
+.kb-avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kb-avatar-none {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  line-height: 1;
+  font-family: var(--kb-glass-font-display);
+  /* The display face's one weight: the glass's 600 would draw it in a faux bold. */
+  font-weight: 400;
+  color: var(--kb-glass-text-2);
+}

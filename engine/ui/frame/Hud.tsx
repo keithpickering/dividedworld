@@ -46,6 +46,7 @@ import { overlay as overlayPreset, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
+import { Avatar } from '../glass/Avatar.tsx';
 import { publishHudTab } from './hud-tab.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useBoot } from '../boot.tsx';
@@ -118,7 +119,7 @@ export function Hud() {
   const [compact, setCompact] = useState(false);
   const menuWide = useRef(0);
   const drawerId = useId();
-  /* Priced as the server prices them now (withCardEconomy). */
+  /* Read with the economy as the server holds it now (withCardEconomy); a card in the hand has no buy price. */
   const faces = useMemo(() => facesOf(instance.cards, ui.cards, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds, settings.cardEconomy]);
   const selectId = useId();
   /* Each of the two surfaces here draws its own recipe's calm under its text (useSurfaceStyle, engine/ui/glass/Smoke.tsx). */
@@ -409,7 +410,7 @@ export function Hud() {
                         className="kb-hud-avatar"
                         aria-label="My characters"
                       >
-                        {face?.avatarSquare ? <img src={face.avatarSquare} alt="" /> : <span className="kb-hud-avatar-none" aria-hidden="true">{hud.name.slice(0, 1)}</span>}
+                        <Avatar src={face?.avatarSquare ?? null} name={hud.name} />
                         {avatarWait.pending && <span className="kb-hud-wait"><Spinner /></span>}
                       </Link>
                       <span className="kb-hud-who">

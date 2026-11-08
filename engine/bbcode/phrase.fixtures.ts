@@ -3,7 +3,7 @@
  * languages ("Two lists that must agree are one list"). `found` is `phraseIn(visibleText(parse(body)), phrase)`, which engine/bbcode/phrase.test.ts
  * holds against the engine's matcher (engine/bbcode/phrase.ts over engine/bbcode/visible.ts and parse.ts). tools/phrase-sql.mjs makes
  * supabase/tests/0136-phrase.sql from the same list, which holds the database's `phrase_in(bbcode_plain(body), phrase)`
- * (supabase/migrations/0139_face_down_moves.sql) to the same answers, and tools/check-phrase-sql.mjs holds that file to exactly what the list makes.
+ * (supabase/migrations/0142_face_down_moves.sql) to the same answers, and tools/check-phrase-sql.mjs holds that file to exactly what the list makes.
  *
  * The list is JSON after the marker line below, so tools/phrase-sql.mjs can read it without a TypeScript loader; add a fixture by adding an object,
  * then run `node tools/phrase-sql.mjs`. The bodies go through the same text on both sides (visibleText(parse(body)) and bbcode_plain(body)), so a

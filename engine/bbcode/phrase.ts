@@ -1,7 +1,7 @@
 /**
  * The phrase matcher: whether, and where, a phrase is in a post's visible text (engine/bbcode/visible.ts). It began as Autocorrect's finder
  * and moved here, unchanged, when a face-down Move came to need the same question asked in the database (the face-down Moves design,
- * section 6): the server checks it inside the write that springs a back, so `phrase_in` (supabase/migrations/0139_face_down_moves.sql)
+ * section 6): the server checks it inside the write that springs a back, so `phrase_in` (supabase/migrations/0142_face_down_moves.sql)
  * asks it of `bbcode_plain(body)` (0117), which mirrors `visibleText(parse(body))`. The two are one list in two languages: engine/bbcode/
  * phrase.fixtures.ts is read by phrase.test.ts against `phraseIn(visibleText(parse(body)), phrase)`, tools/phrase-sql.mjs makes
  * supabase/tests/0136-phrase.sql from it, which holds `phrase_in` to the same answers, and tools/check-phrase-sql.mjs holds that file to

@@ -69,11 +69,6 @@ const PENDING: Readonly<Record<string, string>> = {
   '2026-11-04-cosmetics/05-admin': 'docs/plans/2026-11-04-cosmetics-plan.md',
   '2026-11-05-card-template/01-layouts': 'docs/plans/2026-11-05-card-template-plan.md',
   '2026-11-05-backfill/34-vending-info': 'docs/plans/2026-11-05-card-template-plan.md (the card info, backfill Task 11)',
-  '2026-11-07-booster-packs/01-machine': 'docs/plans/2026-11-04-booster-packs-plan.md, Task 5',
-  '2026-11-07-booster-packs/02-reveal': 'docs/plans/2026-11-04-booster-packs-plan.md, Task 5',
-  '2026-11-07-booster-packs/03-hit': 'docs/plans/2026-11-04-booster-packs-plan.md, Task 5',
-  '2026-11-07-booster-packs/04-phone': 'docs/plans/2026-11-04-booster-packs-plan.md, Tasks 5 and 6',
-  '2026-11-07-booster-packs/05-admin': 'docs/plans/2026-11-04-booster-packs-plan.md, Task 6',
 };
 
 /**

@@ -6,6 +6,7 @@
  * profile or a settings row retunes it without a deploy.
  */
 import { deepFreeze, withOverrides } from '../../engine/rules/instance.ts';
+import { MACHINE_DEFAULTS } from '../../engine/rules/packs.ts';
 import type { Settings } from '../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../engine/rules/pronouns.ts';
 import { DEFAULT_STRENGTHS } from '../../engine/system/pool.ts';
@@ -170,26 +171,16 @@ export const defaults: Settings = deepFreeze<Settings>({
     'technician.evergreen': 5,
     /** How many whole days old a Technician's post is when a calm-positive vote on it first pays Evergreen. */
     'technician.evergreenDays': 3,
-    'stickAround.price': 100,
-    /** The card mechanic's first plays, at starting numbers the season review replaces: a Trap Card and a Force Field 1.50, a Bluff 0.25. */
-    'trapCard.price': 150,
-    'hallPass.price': 150,
-    'forceField.price': 150,
-    'bluff.price': 25,
-    'glitterBomb.price': 150,
-    'mainEvent.price': 300,
-    /** Feelin' Fab, the cheapest card in the shop: 0.20, below a Bluff's 0.25. */
-    'feelinFab.price': 20,
-    /** 1.00 to buy, plus 0.25 per 500 characters of the target when played, at most 3.00 in all. */
-    'whoops.price': 100,
+    /** Playing Whoops! on a long post costs 0.25 per 500 characters of the target, at most 2.00 on top of its price at the machine. */
     'whoops.perLength': 25,
     'whoops.lengthStep': 500,
-    'whoops.mostInAll': 300,
-    /** Autocorrect: 1.00 to buy, as in Minus World, plus 0.25 per 50 characters it covers when played, at most 3.00 in all. */
-    'autocorrect.price': 100,
+    'whoops.mostAdded': 200,
+    /** Autocorrect, as in Minus World: playing it costs 0.25 per 50 characters it covers, at most 2.00 on top of its price at the machine. */
     'autocorrect.perVolume': 25,
     'autocorrect.volumeStep': 50,
-    'autocorrect.mostInAll': 300,
+    'autocorrect.mostAdded': 200,
+    /** The Boss's moves on the machine, from the engine's own starting numbers. */
+    ...MACHINE_DEFAULTS,
   },
 });
 

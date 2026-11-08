@@ -12,7 +12,6 @@ export const hallPass: CardRules<Record<string, never>> = {
   rarity: 'uncommon',
   play: 'set',
   trap: { trigger: { on: 'visit' } },
-  priceKey: 'hallPass.price',
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

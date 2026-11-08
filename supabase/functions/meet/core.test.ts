@@ -72,6 +72,8 @@ interface World {
   mods?: { key: string; allowance: number; granted: number | null; boards: string[]; order: string | null }[];
   /** The rules in force as meeting_context() lists them (0103). */
   rules?: { board: string | null; predicate: string; param: unknown; number: number }[];
+  /** The machine's slots as meeting_context() lists them (0139); absent: an older database that holds no machine. */
+  machine?: unknown[];
   /** The groups as meeting_context() lists them (0131): the conferred catalog, and the characters that are capped or held. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
@@ -93,7 +95,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
@@ -700,6 +702,32 @@ test('no judgment reads who owns a mask: the meeting reads no owner, class or re
   assert.ok(!/owner|reactor/i.test(m.chats[0]!.system.slice(m.chats[0]!.system.indexOf('Your Mod Bots.'))));
 });
 
+
+test('the machine\'s slots are in the Boss\'s reference text, and its machine moves are queued with a demand only where they carry one', async () => {
+  const PULLED = '51000000-0000-4000-8000-00000000000a';
+  const HIDDEN_SLOT = '51000000-0000-4000-8000-000000000011';
+  const slot = (id: string, over: Record<string, unknown>) => ({ id, position: 1, card: 'whoops', pack: null, availability: 'onSale', price: 100, pullable: true, move: null, ...over });
+  const d = fakeDb({ machine: [slot(PULLED, {}), slot(HIDDEN_SLOT, { card: 'main-event', availability: 'hidden', pullable: false })] });
+  const m = fakeModels(answer([
+    { kind: 'pullSlot', params: { slot: PULLED }, demand: { kind: 'postsOnBoard', params: { board: BOARD, count: 10 } }, go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 72, why: 'Too popular.' },
+    { kind: 'flashSale', params: { slot: HIDDEN_SLOT, hours: 24 }, go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 24, why: 'A treat.' },
+  ]));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const text = m.chats[0]!.messages[0]!.content;
+  assert.match(text, /## The machine/);
+  assert.ok(text.includes(PULLED) && text.includes(HIDDEN_SLOT));
+  assert.doesNotMatch(text, /purchase.*(Ann|Bob)/);
+  const moves = d.state.applied[0]!.payload.moves;
+  assert.deepEqual(moves.map((x: any) => x.kind), ['pullSlot', 'flashSale']);
+  assert.equal(moves[0].demand.kind, 'postsOnBoard');
+  assert.ok(!('demand' in moves[1]), 'a favor is queued with no demand key at all, not a null');
+  // Against a database that holds no machine, a machine move names no slot and is dropped.
+  const old = fakeDb();
+  const dropped = await run(old.db, fakeModels(answer([{ kind: 'flashSale', params: { slot: HIDDEN_SLOT, hours: 24 }, go_live_at: new Date(NOW + 30 * H).toISOString(), expires_in_hours: 24, why: 'A treat.' }])).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(dropped.status, 'ok');
+  assert.equal(old.state.applied[0]!.payload.moves.length, 0);
+});
 
 test('the context\'s groups reach the prompt and the repair: a favor gets its check, a punishment its apology, a capped or held character is dropped', async () => {
   const groups = {

@@ -16,7 +16,7 @@ import type { CardUi, EffectProps } from './types.ts';
 import { wordsProblems } from './lens-words.ts';
 import { LoadedThread } from '../loaded.tsx';
 
-const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
 const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };

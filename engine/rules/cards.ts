@@ -148,9 +148,7 @@ export interface CardRules<Config = unknown> {
   readonly lasts?: Span;
   /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
   readonly pins?: true;
-  /** The economy setting that holds what the Vending Machine sells it for. */
-  readonly priceKey: string;
-  /** The economy numbers its rules read beside its price. */
+  /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
   readonly screenReads?: readonly EconomyRead[];
@@ -188,13 +186,6 @@ export interface CardRules<Config = unknown> {
 
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;
-
-/** What the Vending Machine sells a card for, under these settings. */
-export function basePrice(rules: CardRules, settings: Settings): Hundredths {
-  const price = settings.economy[rules.priceKey];
-  if (!Number.isSafeInteger(price) || price! <= 0 || price! > INT4_MAX) throw new Error(`card ${rules.key}'s price, economy "${rules.priceKey}", is ${price}`);
-  return price!;
-}
 
 /** One of the instance's economy numbers, which an instance must hold (instanceProblems). */
 export function economyOf(settings: Settings, key: string): number {
@@ -260,7 +251,7 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
  * `setPhrase` is returned too, for the landing to find in the quoting post's words, and an empty one is refused, since it is in no
  * post and the back could never land. A set costs nothing beyond the card, and a sprung card lands free. A ward never blocks a set, and a set carries no message, since its Act says nothing about its card.
  */
-/** The longest phrase a Move may be set to wait for, in characters; the server holds the same bound (supabase/migrations/0139_face_down_moves.sql, place_set), so every back's pattern there is one length. */
+/** The longest phrase a Move may be set to wait for, in characters; the server holds the same bound (supabase/migrations/0142_face_down_moves.sql, place_set), so every back's pattern there is one length. */
 export const SET_PHRASE_MOST = 100;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string }> {

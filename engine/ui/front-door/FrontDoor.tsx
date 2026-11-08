@@ -58,7 +58,8 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   const { act, person } = staged;
   const seq = act.seq!;
   const name = person?.character.name ?? 'A character';
-  const marks = <PostMarks post={act.id} plays={stores.plays} to={null} moments={false} nameOf={nameOf} tallies={stores.tallies} mine={stores.mine} onSpin={noSpin} />;
+  /* The sample cast has no pictures. */
+  const marks = <PostMarks post={act.id} plays={stores.plays} to={null} moments={false} nameOf={nameOf} faceOf={() => null} tallies={stores.tallies} mine={stores.mine} onSpin={noSpin} />;
   const body = typeof act.currentPayload.body === 'string' ? act.currentPayload.body : '';
   return (
     <article id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side">

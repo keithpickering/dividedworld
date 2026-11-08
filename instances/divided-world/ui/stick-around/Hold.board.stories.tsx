@@ -70,7 +70,7 @@ function HeldPost({ stage, long = false, inked = false }: { readonly stage: Hold
       }
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', pronounsOf: () => ENGINE_DEFAULT_PRONOUNS, observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', faceOf: () => null, pronounsOf: () => ENGINE_DEFAULT_PRONOUNS, observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, ui, thread, seq, tallies, mine, long, inked]);

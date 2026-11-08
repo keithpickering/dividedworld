@@ -5,13 +5,12 @@
 
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"snare.price": 100, "hook.price": 100, "glint.price": 100, "marquee.price": 100, "quake.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'cast', null, '{post}', null),
-    ('glint', 'Glint', 'pepperoni', 'glint.price', 'uncommon', 'cast', null, '{character}', interval '7 days'),
-    ('marquee', 'Marquee', 'sweet', 'marquee.price', 'rare', 'cast', null, '{thread}', interval '1 day'),
-    ('quake', 'Quake', 'salty', 'quake.price', 'legendary', 'cast', null, '{board}', interval '1 day')
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, '{post}', null),
+    ('glint', 'Glint', 'pepperoni', 'uncommon', 'cast', null, '{character}', interval '7 days'),
+    ('marquee', 'Marquee', 'sweet', 'rare', 'cast', null, '{thread}', interval '1 day'),
+    ('quake', 'Quake', 'salty', 'legendary', 'cast', null, '{board}', interval '1 day')
   on conflict (key) do nothing;
   if not exists (select 1 from settings where key = 'systemAnnouncements') then
     insert into settings (key, value) select 'systemAnnouncements', to_jsonb(tests.thread('Moments Announcements')::text);
@@ -341,7 +340,7 @@ declare
   one_play uuid; top uuid; small bigint; big bigint; stacked bigint; aged bigint;
 begin
   perform pg_temp.cards();
-  insert into card_kinds (key, name, alignment, price_setting, play) values ('bluffy', 'Bluffy', 'pepperoni', 'sweetie.price', 'set') on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, play) values ('bluffy', 'Bluffy', 'pepperoni', 'set') on conflict (key) do nothing;
   perform pg_temp.hand(ann, 'blot', 'blot', 'blot', 'blot', 'sweetie');
   perform pg_temp.hand(bob, 'bluffy');
   perform pg_temp.fill(t, b, 2000);

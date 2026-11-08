@@ -209,15 +209,14 @@ end $$;
 
 do $$
 begin
-  update settings set value = value || '{"cetwo.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, stack, ward, lasts, reaches, pins, trap) values
-    ('ce-wh', 'Ce Whoops', 'salty', 'cetwo.price', 'common', 'cast', 3, false, null, '{post}', false, null),
-    ('ce-wd', 'Ce Ward', 'sweet', 'cetwo.price', 'uncommon', 'use', 1, true, interval '7 days', '{post}', false, null),
-    ('ce-ch', 'Ce Character', 'sweet', 'cetwo.price', 'common', 'cast', 1, false, interval '7 days', '{character}', false, null),
-    ('ce-th', 'Ce Thread', 'sweet', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{thread}', false, null),
-    ('ce-pin', 'Ce Pin', 'sweet', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{thread}', true, null),
-    ('ce-bd', 'Ce Board', 'salty', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null),
-    ('ce-bd2', 'Ce Board Two', 'salty', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, stack, ward, lasts, reaches, pins, trap) values
+    ('ce-wh', 'Ce Whoops', 'salty', 'common', 'cast', 3, false, null, '{post}', false, null),
+    ('ce-wd', 'Ce Ward', 'sweet', 'uncommon', 'use', 1, true, interval '7 days', '{post}', false, null),
+    ('ce-ch', 'Ce Character', 'sweet', 'common', 'cast', 1, false, interval '7 days', '{character}', false, null),
+    ('ce-th', 'Ce Thread', 'sweet', 'common', 'cast', 1, false, interval '1 day', '{thread}', false, null),
+    ('ce-pin', 'Ce Pin', 'sweet', 'common', 'cast', 1, false, interval '1 day', '{thread}', true, null),
+    ('ce-bd', 'Ce Board', 'salty', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null),
+    ('ce-bd2', 'Ce Board Two', 'salty', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null);
 end $$;
 
 -- ---- card_target: the post's effects leave the reversed play out and keep the identical live one ----

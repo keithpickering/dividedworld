@@ -10,17 +10,15 @@
 --   card_kinds_problem      holds engine/rules/instance.ts's rules again, in its words: "has a trap, and only a Gimmick does" and "springs on <on>; a Gimmick springs on cast or visit". That a cast Gimmick
 --                           names a catch, and that a set phrase is a Move's, are functions of the engine's CardRules, so they stay with instanceProblems. seed_instance (0132) already writes
 --                           `trap` as the instance gave it, so it is not replaced.
---   card_ledger.kind        gains `caught`: a card a Trap Card took, in the setter's own ledger; `act` is the spring, and it costs nothing, as a bought row has no Act and a played row has its card's.
---   card_held(account, card)   is the one hand count: bought plus caught less played. It is security invoker, so a signed-in caller counts their own rows (card_ledger's `own` policy) and reads 0 for
---                           any other account's, while play_card, set_card and buy_card (definer) get the true count of the account they act for. play_card and set_card (0104) call it where they
---                           counted inline; so does my_cards. The booster packs plan (docs/plans/2026-11-04-booster-packs-plan.md) also gives the hand one function: whichever lands second adds its kind to the other's.
---   my_cards                reads the hand through card_held, still security_invoker and the caller's own rows.
---   my_face_down            returns `catches` and `phrase` (last) to the setter. my_card_ledger (0075) already returns every kind the caller's account holds, so a `caught` row reaches the log with
---                           no change to it.
+--   card_ledger.kind        gains `caught`: a card a Trap Card took, in the setter's own ledger; `act` is the spring, and it costs nothing, as a bought or pulled row has no Act and a played row has
+--                           its card's. The kinds 0139_machine.sql allows (bought, played, pulled) stay.
+--   card_held(who, card)    the one hand count, which the booster packs plan (docs/plans/2026-11-04-booster-packs-plan.md) landed first (0139_machine.sql: bought plus pulled less played), gains
+--                           `caught`: whichever plan landed second adds its kind to the other's. Its signature, grants and mode (security invoker) are 0139's; play_card, set_card, buy_card,
+--                           buy_pack and my_cards already count through it, so none of them is replaced for the count.
+--   my_face_down            returns `catches` and `phrase` (last) to the setter. my_card_ledger already returns every kind the caller's account holds, so a `caught` row reaches the log; it is
+--                           replaced only for `springs` (the springing section).
 --
--- Copied from their latest definitions: play_card (nine arguments) from 0104_warn_bar.sql (and set_card, in the setting section below), with the inline hand count replaced by card_held and nothing else changed, the lock order
--- (0075's header, steps 1 to 6) included: step 1 (the player's accounts row) is still taken before the count; card_held takes no lock. card_kinds_problem from 0108_interception.sql, my_face_down
--- from 0078_reply_passes.sql, my_cards from 0006_cards.sql. buy_card is 0006's, its reported `held` now from card_held; no inline count of a hand is left.
+-- Copied from their latest definitions: card_held from 0139_machine.sql, card_kinds_problem from 0108_interception.sql, my_face_down from 0078_reply_passes.sql. No inline count of a hand is left.
 -- Masks. A back's catch and phrase are the setter's alone: face_down is read through its `own` policy and my_face_down through the caller's account, and neither is in an Act, a projection or
 -- card_target. card_held answers a signed-in caller for their own account alone (row security: any other account's count reads 0) and the definer functions that spend a card for the account they act for; no anon role executes it.
 -- Ways out. Unchanged and none added by the schema: a back springs once or ends at setLasts; a caught card is a card in the setter's hand like any other.
@@ -37,7 +35,7 @@
 --   staff_set_card(staff_key, card, target, config, catches)   takes the named catch. A persona sets Gimmicks only ("<card> is not a Gimmick; a persona sets Gimmicks", and "<card> waits for a Mod Bot's visit; a persona sets none" for a visit Gimmick, which the pool never offers either: staffOffers), and the refusal of a trap that
 --                           pays out is gone with the payout.
 --
--- Copied from their latest definitions: set_card from 0104_warn_bar.sql (its hand counted by card_held, Task 3), place_set and staff_set_card from 0086_staff_cards.sql. Everything they do that is not named
+-- Copied from their latest definitions: set_card from 0139_machine.sql (0104's, its hand counted by card_held), place_set and staff_set_card from 0086_staff_cards.sql. Everything they do that is not named
 -- above stays as written, the lock order included (0075's header, steps 1 to 6): set_card takes the player's accounts row (1), place_set the target post's acts row (2), and nothing here takes a later lock before
 -- an earlier one. The new reads (card_kinds) take no lock. place_set refuses in its own order, which differs from decideSet's (the act function always runs decideSet first, so a player meets decideSet's words).
 -- Masks. A refusal reads the card's own kind and the named card's, public facts, and never who owns a character. The stored catch and phrase are the setter's alone (Task 3).
@@ -171,79 +169,21 @@ $$;
 -- ------------------------------------------------------------------------------------------------------- the hand ----
 
 alter table card_ledger drop constraint card_ledger_kind_check;
-alter table card_ledger add constraint card_ledger_kind_check check (kind in ('bought', 'played', 'caught'));
+alter table card_ledger add constraint card_ledger_kind_check check (kind in ('bought', 'played', 'pulled', 'caught'));
 -- A played card and a caught card each name their Act (the play, the spring); a bought card names none.
 alter table card_ledger drop constraint card_ledger_check;
 alter table card_ledger add constraint card_ledger_check check ((kind in ('played', 'caught')) = (act is not null));
 
--- The cards an account holds of one kind: bought and caught, less played. The one count every reader of a hand uses. It is security invoker: a signed-in caller
--- runs it under card_ledger's `own` policy, so they count their own rows and read 0 for another account's, a constant that says nothing of whose hand is whose; the definer
--- functions that spend a card (play_card, set_card, buy_card, and later spring_traps inside post(), where auth.uid() is the quoting player and not the setter) run it as the
--- function's owner and get the true count of the account they act for.
-create function card_held(who uuid, of_card text) returns integer
+-- card_held (0139_machine.sql): the one hand count, bought and pulled less played, gains `caught`, one line, as its header says a new kind of row in is. Its signature,
+-- its grants (authenticated and the service role, no anon) and its mode are 0139's: security invoker, so a signed-in caller runs it under card_ledger's `own` policy, counts
+-- their own rows and reads 0 for another account's, a constant that says nothing of whose hand is whose; the definer functions that spend a card (play_card, set_card,
+-- buy_card, buy_pack, and spring_traps inside post(), where auth.uid() is the quoting player and not the setter) run it as the function's owner and get the true count of the
+-- account they act for. my_cards, play_card, buy_card and buy_pack already count through it (0139, 0140), so none is replaced here.
+create or replace function card_held(who uuid, card text) returns integer
 language sql stable set search_path = public, pg_temp as $$
-  select (count(*) filter (where l.kind in ('bought', 'caught')) - count(*) filter (where l.kind = 'played'))::integer
-  from card_ledger l where l.account = who and l.card = of_card
+  select (count(*) filter (where l.kind in ('bought', 'pulled', 'caught')) - count(*) filter (where l.kind = 'played'))::integer
+  from card_ledger l where l.account = card_held.who and l.card = card_held.card
 $$;
-revoke execute on function card_held(uuid, text) from public, anon;
-grant execute on function card_held(uuid, text) to authenticated, service_role;
-
--- my_cards (0006), counting through card_held. Still security_invoker, still the caller's own rows.
-create or replace view my_cards with (security_invoker = true) as
-  select l.card, card_held(auth.uid(), l.card) as held
-  from (select distinct c.card from card_ledger c where c.account = auth.uid()) l;
-
--- play_card (0104), counting the hand with card_held. Everything else as 0104 wrote it.
-CREATE OR REPLACE FUNCTION public.play_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer, message text DEFAULT ''::text, reach text DEFAULT 'post'::text, from_post uuid DEFAULT NULL::uuid)
- RETURNS jsonb
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_temp'
-AS $function$
-declare
-  held integer;
-  said text := coalesce(message, '');
-  played jsonb;
-  written uuid;
-begin
-  perform played_by(through, who);
-  perform not_banned(through);
-  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
-  if char_length(said) > 200 then raise exception 'the message is at most 200 characters' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
-  if price is null or price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  if reach is null or reach not in ('post', 'character', 'thread', 'board') then
-    raise exception 'a card lands on a post, a character, a thread or a board' using hint = 'kayfabb.refusal', errcode = '22023';
-  end if;
-  -- One player's plays at a time, so two at once cannot both spend the last card.
-  perform 1 from accounts where id = who for no key update;
-  held := card_held(who, play_card.card);
-  if held < 1 then raise exception 'you hold no "%" card; the Vending Machine sells them', card using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
-  played := place_cast(through, card, target, config, said, reach, from_post, who, price);
-  written := (played ->> 'id')::uuid;
-  -- After the Act, so the wallet's record names what the Aura went on.
-  perform wallet_spend(who, price, 'play', written);
-  insert into card_ledger (account, card, kind, act, price) values (who, card, 'played', written, price);
-  return played;
-end $function$;
-
--- buy_card (0006), reporting the hand through card_held. Everything else as 0006 wrote it.
-create or replace function buy_card(who uuid, card text, price integer) returns jsonb
-language plpgsql security definer set search_path = public, pg_temp as $$
-declare
-  listed integer;
-  left_over integer;
-begin
-  if not exists (select 1 from card_kinds where key = card) then raise exception 'the Vending Machine has no card "%"', card using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  -- Its price is the economy setting the card names: what the settings rows hold now, a whole
-  -- number however it is written (20 and 20.0 alike), as the engine reads it.
-  select (setting('economy') ->> k.price_setting)::numeric::integer into listed from card_kinds k where k.key = card;
-  if listed is null or listed <= 0 then raise exception 'the settings give "%" no price', card using errcode = 'P0002'; end if;
-  if price is distinct from listed then raise exception 'the price is %, not %', listed, price using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  left_over := wallet_spend(who, listed, 'purchase', null);
-  insert into card_ledger (account, card, kind, price) values (who, card, 'bought', listed);
-  return jsonb_build_object('card', card, 'balance', left_over,
-    'held', card_held(who, buy_card.card));
-end $$;
 
 -- ------------------------------------------------------------------------------------------------------- the phrase matcher ----
 
@@ -370,7 +310,7 @@ begin
 end $$;
 revoke execute on function place_set(uuid, text, uuid, jsonb, uuid, integer, text, text) from public, anon, authenticated, service_role;
 
--- set_card (0104), counting the hand with card_held (Task 3) and passing the catch and the phrase on. Everything else as 0104 wrote it; the grants as 0054 gave them.
+-- set_card (0139_machine.sql, which is 0104's counting the hand with card_held), passing the catch and the phrase on. Everything else as 0139 wrote it; the grants as 0054 gave them.
 create function set_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer, catches text default null, phrase text default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -441,10 +381,12 @@ alter table acts add constraint acts_spring_payload check (kind <> 'spring' or (
   and coalesce(jsonb_typeof(payload -> 'caught'), 'null') in ('string', 'null')
   and payload - array['card', 'trigger', 'outcome', 'did', 'set', 'by', 'caught'] = '{}'::jsonb) is true);
 
--- my_card_ledger (0075), with `springs` true for a Move set face down too (it springs on a quote), and still null for a row that is not a set. Everything else as 0075 wrote it.
+-- my_card_ledger (0139_machine.sql), with `springs` true for a Move set face down too (it springs on a quote), and still null for a row that is not a set. Everything else,
+-- the pack a pulled row came from and whether a purchase was repriced included, as 0139 wrote it.
 create or replace view my_card_ledger as
   select l.card, l.kind, l.act, l.price, l.at,
-         case when l.kind = 'played' and a.kind = 'set' then k.trap is not null or k.play = 'cast' end as springs
+         case when l.kind = 'played' and a.kind = 'set' then k.trap is not null or k.play = 'cast' end as springs,
+         l.pack, l.repriced
   from card_ledger l
   left join card_kinds k on k.key = l.card
   left join acts a on a.id = l.act
@@ -759,7 +701,8 @@ begin
 end $$;
 
 -- ---- place_cast ----
--- place_cast (0108), the card's key given to spring_traps and neither a price nor a caster, since nothing pays out; and a caught caster told on the caught play. Everything else as 0108 wrote it. Create or replace
+-- place_cast (0139_machine.sql), the card's key given to spring_traps and neither a price nor a caster, since nothing pays out; and a caught caster told on the caught play. 0139 changed only
+-- a staff Cast's base price (its slot's), which went to spring_traps as a payout and goes with the payout here. Everything else as 0139 wrote it. Create or replace
 -- keeps 0108's grants (none to an API role); the revoke is stated again.
 create or replace function place_cast(caster uuid, card text, target uuid, config jsonb, message text, reach text, from_post uuid, payer uuid, price integer, marker jsonb default '{}')
 returns jsonb

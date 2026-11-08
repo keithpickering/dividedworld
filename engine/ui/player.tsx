@@ -17,7 +17,7 @@
  * is where the orbs' cascade runs from.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { Answer, Boot, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Session, Wallet } from './data/api.ts';
+import type { Answer, Boot, Bought, Estimate, HeldCard, Id, KayfaApi, MyCharacter, Opened, Session, Slot, Wallet } from './data/api.ts';
 import { clearDrafts } from './composer/draft.ts';
 
 export interface Player {
@@ -48,8 +48,10 @@ export interface Player {
   readonly reactionLanded: () => void;
   /** Read the player's own rows again, after an action of theirs that changes them. */
   readonly refresh: () => Promise<void>;
-  /** Buy a card from the Vending Machine; once it is bought the wallet and the hand are read again, so every screen shows the new ones. */
-  readonly buyCard: (card: string) => Promise<Answer<Bought>>;
+  /** Buy a card from its slot of the Vending Machine; once it is bought the wallet and the hand are read again, so every screen shows the new ones. */
+  readonly buyCard: (slot: Slot) => Promise<Answer<Bought>>;
+  /** Buy a pack from its slot, the same way: the wallet and the hand are read again, and the cards it gave come back in pull order. */
+  readonly buyPack: (slot: Slot) => Promise<Answer<Opened>>;
   readonly loaded: boolean;
 }
 
@@ -259,11 +261,16 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `initial` is the first load's, read for its own account only
   }, [account, ask, run]);
 
-  const buyCard = useCallback(async (card: string): Promise<Answer<Bought>> => {
-    const bought = await api.buyCard(card);
+  const buyCard = useCallback(async (slot: Slot): Promise<Answer<Bought>> => {
+    const bought = await api.buyCard(slot);
     /* A lost answer may have spent the Aura, so the rows are read again whatever came back. */
     if (bought.ok || bought.uncertain) await refresh();
     return bought;
+  }, [api, refresh]);
+  const buyPack = useCallback(async (slot: Slot): Promise<Answer<Opened>> => {
+    const opened = await api.buyPack(slot);
+    if (opened.ok || opened.uncertain) await refresh();
+    return opened;
   }, [api, refresh]);
 
   const actingCharacters = useMemo(() => characters.filter(canAct), [characters]);
@@ -290,8 +297,8 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
 
   const value = useMemo<Player>(() => ({
     session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
-    pending, estimate, cards, reactionLanded: ask, refresh, buyCard, loaded,
-  }), [session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, buyCard, loaded]);
+    pending, estimate, cards, reactionLanded: ask, refresh, buyCard, buyPack, loaded,
+  }), [session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, buyCard, buyPack, loaded]);
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }

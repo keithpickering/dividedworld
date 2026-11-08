@@ -1,4 +1,4 @@
--- Face-down Moves, the schema (supabase/migrations/0139_face_down_moves.sql): a back names the card its Trap Card waits for, or the
+-- Face-down Moves, the schema (supabase/migrations/0142_face_down_moves.sql): a back names the card its Trap Card waits for, or the
 -- phrase its Move waits for, and only the setter reads either; a Gimmick's trap shape is a cast or a visit; a card a Trap Card took is
 -- a `caught` row in the setter's card ledger; one function, card_held, is the hand. docs/plans/2026-11-07-face-down-moves-plan.md,
 -- Task 3, and Task 6's springing from 'Springing (Task 6)' on; the design is docs/plans/2026-11-07-face-down-moves-design.md, sections 4, 5 and 9. The cards are the engine's test set,
@@ -17,19 +17,18 @@ end $$;
 do $$
 begin
   perform tests.commit($sql$
-    update settings set value = value || '{"spxwhoops.price": 100, "spxbomb.price": 100, "spxtrap.price": 100, "spxrare.price": 100, "spxauto.price": 100, "spxpass.price": 100, "spxward.price": 100, "spxbluff.price": 25, "spxthread.price": 100, "spxboard.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
-      ('spxwhoops', 'Spx Whoops', 'salty', 'spxwhoops.price', 'common', 'cast', null, '{post}', null),
-      ('spxbomb', 'Spx Bomb', 'salty', 'spxbomb.price', 'uncommon', 'cast', null, '{character}', interval '7 days'),
-      ('spxthread', 'Spx Thread', 'salty', 'spxthread.price', 'rare', 'cast', null, '{thread}', interval '1 day'),
-      ('spxboard', 'Spx Board', 'salty', 'spxboard.price', 'legendary', 'cast', null, '{board}', interval '1 day'),
-      ('spxrare', 'Spx Rare', 'sweet', 'spxrare.price', 'rare', 'cast', null, '{post}', null),
-      ('spxauto', 'Spx Auto', 'salty', 'spxauto.price', 'common', 'cast', null, '{post}', null),
-      ('spxtrap', 'Spx Trap', 'salty', 'spxtrap.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
-      ('spxpass', 'Spx Pass', 'sweet', 'spxpass.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
-      ('spxbluff', 'Spx Bluff', 'pepperoni', 'spxbluff.price', 'common', 'set', null, '{post}', null);
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts, ward) values
-      ('spxward', 'Spx Ward', 'sweet', 'spxward.price', 'uncommon', 'use', null, '{post}', interval '7 days', true);
+    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
+      ('spxwhoops', 'Spx Whoops', 'salty', 'common', 'cast', null, '{post}', null),
+      ('spxbomb', 'Spx Bomb', 'salty', 'uncommon', 'cast', null, '{character}', interval '7 days'),
+      ('spxthread', 'Spx Thread', 'salty', 'rare', 'cast', null, '{thread}', interval '1 day'),
+      ('spxboard', 'Spx Board', 'salty', 'legendary', 'cast', null, '{board}', interval '1 day'),
+      ('spxrare', 'Spx Rare', 'sweet', 'rare', 'cast', null, '{post}', null),
+      ('spxauto', 'Spx Auto', 'salty', 'common', 'cast', null, '{post}', null),
+      ('spxtrap', 'Spx Trap', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
+      ('spxpass', 'Spx Pass', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
+      ('spxbluff', 'Spx Bluff', 'pepperoni', 'common', 'set', null, '{post}', null);
+    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, ward) values
+      ('spxward', 'Spx Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', true);
     insert into characters (id, name, staff, staff_kind, debuted_at) values ('00000000-0000-4000-8000-0000000fd001', 'Spx Race Mod', 'spx-race-mod', 'persona', now()) on conflict do nothing;
   $sql$);
 end $$;
@@ -268,12 +267,11 @@ declare
   s1 uuid; s2 uuid; s3 uuid; s4 uuid;
   why text;
 begin
-  update settings set value = value || '{"fdmtrap.price": 100, "fdmpass.price": 100, "fdmmove.price": 100, "fdmcatch.price": 100, "x.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-    ('fdmtrap', 'Fdm Trap', 'salty', 'fdmtrap.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}'),
-    ('fdmpass', 'Fdm Pass', 'sweet', 'fdmpass.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}'),
-    ('fdmmove', 'Fdm Move', 'salty', 'fdmmove.price', 'common', 'cast', null),
-    ('fdmcatch', 'Fdm Catch', 'salty', 'fdmcatch.price', 'rare', 'cast', null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap) values
+    ('fdmtrap', 'Fdm Trap', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}'),
+    ('fdmpass', 'Fdm Pass', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}'),
+    ('fdmmove', 'Fdm Move', 'salty', 'common', 'cast', null),
+    ('fdmcatch', 'Fdm Catch', 'salty', 'rare', 'cast', null);
   p1 := tests.post(a, t); p2 := tests.post(a, t); p3 := tests.post(a, t); p4 := tests.post(a, t);
   s1 := tests.act(a, 'set', t, '{}', p1); s2 := tests.act(a, 'set', t, '{}', p2); s3 := tests.act(a, 'set', t, '{}', p3); s4 := tests.act(a, 'set', t, '{}', p4);
 
@@ -324,15 +322,15 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('fdmbad1', 'Bad', 'salty', 'x.price', 'common', 'set', '{"trigger": {"on": "reply"}}')$q$);
+  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('fdmbad1', 'Bad', 'salty', 'common', 'set', '{"trigger": {"on": "reply"}}')$q$);
   if why is null or why not like '%card_kinds_trap_shape%' then raise exception 'a reply trigger was stored: %', why; end if;
-  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('fdmbad2', 'Bad', 'salty', 'x.price', 'common', 'set', '{"trigger": {"on": "quote"}}')$q$);
+  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('fdmbad2', 'Bad', 'salty', 'common', 'set', '{"trigger": {"on": "quote"}}')$q$);
   if why is null or why not like '%card_kinds_trap_shape%' then raise exception 'a quote trigger was stored (a Move''s is the engine''s): %', why; end if;
-  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('fdmbad3', 'Bad', 'salty', 'x.price', 'common', 'set', '{"trigger": {"on": "reaction", "quadrant": "calmPositive"}}')$q$);
+  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('fdmbad3', 'Bad', 'salty', 'common', 'set', '{"trigger": {"on": "reaction", "quadrant": "calmPositive"}}')$q$);
   if why is null or why not like '%card_kinds_trap_shape%' then raise exception 'a reaction trigger was stored: %', why; end if;
-  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('fdmbad4', 'Bad', 'salty', 'x.price', 'common', 'set', '{}')$q$);
+  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('fdmbad4', 'Bad', 'salty', 'common', 'set', '{}')$q$);
   if why is null or why not like '%card_kinds_trap_shape%' then raise exception 'a trap with no trigger was stored: %', why; end if;
-  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('fdmbad5', 'Bad', 'salty', 'x.price', 'common', 'cast', '{"trigger": {"on": "cast"}}')$q$);
+  why := pg_temp.refusal($q$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('fdmbad5', 'Bad', 'salty', 'common', 'cast', '{"trigger": {"on": "cast"}}')$q$);
   if why is null then raise exception 'a Move with a trap was stored'; end if;
 
   -- The seed's check says the same, naming the card, in the engine's words (engine/rules/instance.ts).
@@ -367,9 +365,9 @@ declare
 begin
   if card_held(ann, 'sweetie') is distinct from 0 then raise exception 'an empty hand holds %', card_held(ann, 'sweetie'); end if;
   insert into card_ledger (account, card, kind, price) select ann, 'sweetie', 'bought', 0 from generate_series(1, 2);
-  -- A purchase reports the hand through the same count.
+  -- A purchase from the card's slot (0139) reports the hand through the same count.
   insert into wallets (account, balance) values (ann, 500);
-  if (buy_card(ann, 'splat', 100) ->> 'held')::integer is distinct from 1 then raise exception 'buy_card reports the hand: %', buy_card(ann, 'splat', 100); end if;
+  if (buy_card(ann, (select s.id from machine_slots s where s.card = 'splat'), 100) ->> 'held')::integer is distinct from 1 then raise exception 'buy_card reports the hand'; end if;
   if card_held(ann, 'sweetie') is distinct from 2 then raise exception 'two bought hold %', card_held(ann, 'sweetie'); end if;
   insert into card_ledger (account, card, kind, act, price) values (ann, 'sweetie', 'caught', spring, 0);
   if card_held(ann, 'sweetie') is distinct from 3 then raise exception 'a caught card is a card held: %', card_held(ann, 'sweetie'); end if;
@@ -441,14 +439,13 @@ declare
   placed jsonb;
   why text;
 begin
-  update settings set value = value || '{"fdsmove.price": 100, "fdsgimmick.price": 100, "fdsuse.price": 100, "fdstrap.price": 100, "fdsvisit.price": 100, "fdsthread.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches, lasts) values
-    ('fdsmove', 'Set Move', 'salty', 'fdsmove.price', 'common', 'cast', null, '{post}', null),
-    ('fdsthread', 'Set Thread Move', 'salty', 'fdsthread.price', 'common', 'cast', null, '{thread}', '7 days'),
-    ('fdsgimmick', 'Set Gimmick', 'pepperoni', 'fdsgimmick.price', 'common', 'set', null, '{post}', null),
-    ('fdsuse', 'Set Use', 'sweet', 'fdsuse.price', 'common', 'use', null, '{post}', null),
-    ('fdstrap', 'Set Trap', 'salty', 'fdstrap.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
-    ('fdsvisit', 'Set Visit', 'sweet', 'fdsvisit.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
+    ('fdsmove', 'Set Move', 'salty', 'common', 'cast', null, '{post}', null),
+    ('fdsthread', 'Set Thread Move', 'salty', 'common', 'cast', null, '{thread}', '7 days'),
+    ('fdsgimmick', 'Set Gimmick', 'pepperoni', 'common', 'set', null, '{post}', null),
+    ('fdsuse', 'Set Use', 'sweet', 'common', 'use', null, '{post}', null),
+    ('fdstrap', 'Set Trap', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
+    ('fdsvisit', 'Set Visit', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
   insert into card_ledger (account, card, kind, price) select ann, k, 'bought', 0 from unnest(array['fdsmove', 'fdsgimmick', 'fdsuse', 'fdstrap', 'fdsvisit']) k, generate_series(1, 4);
 
   -- A Move is set face down, as a Gimmick is; the back holds neither a catch nor a phrase unless it was given one.
@@ -512,11 +509,10 @@ begin
       'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
-  update settings set value = value || '{"fdpmove.price": 100, "fdptrap.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-    ('fdpmove', 'Persona Move', 'salty', 'fdpmove.price', 'common', 'cast', null),
-    ('fdptrap', 'Persona Trap', 'salty', 'fdptrap.price', 'common', 'set', '{"trigger": {"on": "cast"}}'),
-    ('fdpvisit', 'Persona Visit', 'sweet', 'fdptrap.price', 'common', 'set', '{"trigger": {"on": "visit"}}');
+  insert into card_kinds (key, name, alignment, rarity, play, trap) values
+    ('fdpmove', 'Persona Move', 'salty', 'common', 'cast', null),
+    ('fdptrap', 'Persona Trap', 'salty', 'common', 'set', '{"trigger": {"on": "cast"}}'),
+    ('fdpvisit', 'Persona Visit', 'sweet', 'common', 'set', '{"trigger": {"on": "visit"}}');
 end $$;
 create function pg_temp.staff_post(k text, in_thread uuid, body text) returns uuid language sql as $$
   select (write_staff_act(k, 'post', in_thread, null, jsonb_build_object('body', body)) ->> 'id')::uuid

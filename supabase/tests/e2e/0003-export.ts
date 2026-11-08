@@ -104,26 +104,30 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- A trap of the export's own (#136 F1): Ann sets a Trap Card naming Blot on her post through set_card, and Bob's Blot cast on it
       -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
-      update settings set value = value || '{"expcatch.price": 100, "expauto.price": 100, "exppass.price": 100}' where key = 'economy';
-      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap)
-      values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}}');
+      insert into card_kinds (key, name, alignment, rarity, play, trap) values ('expcatch', 'Exported Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}');
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
       perform set_card(ann, 'expcatch', a, p, '{"card": "blot"}', 0, 'blot');
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
-      -- A Move set face down with a phrase (0139, Autocorrect's kind): its back holds the phrase and no catch, set on a post of its own.
-      -- A Hall Pass set face down on another post (0139): a Mod Bot's visit to that post springs it, and the visit ends (0105, 0110).
-      insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, reaches)
-      values ('expauto', 'Exported Autocorrect', 'pepperoni', 'expauto.price', 'common', 'cast', null, '{post}'),
-             ('exppass', 'Exported Hall Pass', 'sweet', 'exppass.price', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}');
+      -- A Move set face down with a phrase (0142, Autocorrect's kind): its back holds the phrase and no catch, set on a post of its own.
+      -- A Hall Pass set face down on another post (0142): a Mod Bot's visit to that post springs it, and the visit ends (0105, 0110).
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches)
+      values ('expauto', 'Exported Autocorrect', 'pepperoni', 'common', 'cast', null, '{post}'),
+             ('exppass', 'Exported Hall Pass', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}');
       insert into card_ledger (account, card, kind, price) values (ann, 'expauto', 'bought', 0), (ann, 'exppass', 'bought', 0);
       move_post := tests.post(a, t, 'Carried across, and phrased.');
       perform set_card(ann, 'expauto', a, move_post, '{"phrase": "carried across"}', 0, null, 'carried across');
-      -- Bob quotes the post through the real post(), with the phrase in his own words: the quote springs the Move onto his post (spring_traps, 0139).
+      -- Bob quotes the post through the real post(), with the phrase in his own words: the quote springs the Move onto his post (spring_traps, 0142).
       perform tests.become((select owner from characters where id = b));
       perform post(t, b, 'Carried across, quoted back.', move_post);
       perform tests.unbecome();
       pass_post := tests.post(a, t, 'Under a Hall Pass.');
       perform set_card(ann, 'exppass', a, pass_post, '{}', 0);
+      -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
+      insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
+      insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
+      insert into machine_slots (position, pack, availability, price) values (9500, 'exppack', 'onSale', 250);
+      update wallets set balance = 250 where account = ann;
+      perform buy_pack(ann, (select id from machine_slots where pack = 'exppack'), 250);
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
       insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
       -- What the screens keep: a release, reading, the mask read through, view counts, preferences, a profile with an
@@ -303,7 +307,7 @@ test('an instance exported and imported into a fresh database is the same instan
     join acts s on s.kind = 'spring' and s.payload ->> 'set' = f.play::text join acts k on k.kind = 'card' and k.payload ->> 'caught' = f.play::text`);
   const [setPlay, springAct, caughtAct] = trapIds.split('|');
   assert.ok(setPlay && springAct && caughtAct, `the cast holds a set, its spring and the card it caught: "${trapIds}"`);
-  // The Move set with its phrase, the Hall Pass a visit ended and its spring, and the caught card's ledger row, each read as the seed made it (0139).
+  // The Move set with its phrase, the Hall Pass a visit ended and its spring, and the caught card's ledger row, each read as the seed made it (0142).
   const moveSet = sql(`select play from face_down where card = 'expauto'`);
   const passSet = sql(`select play from face_down where card = 'exppass'`);
   assert.ok(moveSet && passSet, 'the Move and the Hall Pass are set face down');

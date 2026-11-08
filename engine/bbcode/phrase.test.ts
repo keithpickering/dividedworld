@@ -36,11 +36,11 @@ test('sameWords folds as the matcher does', () => {
   assert.equal(sameWords('cat', 'cats'), false);
 });
 
-/* "A letter or a digit" is JavaScript's \p{L}\p{N}. Postgres has no property classes, so supabase/migrations/0139_face_down_moves.sql writes the class out as
+/* "A letter or a digit" is JavaScript's \p{L}\p{N}. Postgres has no property classes, so supabase/migrations/0142_face_down_moves.sql writes the class out as
    `phrase_word_class()`. This reads it back out of the migration and holds it, over every code point, to /[\p{L}\p{N}]/u itself, so a Node that learns a new letter
    fails here until the migration carries it (the way plain.test.ts holds bbcode_plain_url_ok's format-character class). */
 test('the migration\'s word class is \\p{L}\\p{N}, code point for code point', () => {
-  const sql = readFileSync(new URL('../../supabase/migrations/0139_face_down_moves.sql', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../../supabase/migrations/0142_face_down_moves.sql', import.meta.url), 'utf8');
   const fn = sql.slice(sql.indexOf('function phrase_word_class'));
   const m = /select '\[([^\]]+)\]'/.exec(fn);
   assert.ok(m, 'the word class is not where the test looks');
@@ -64,7 +64,7 @@ test('the migration\'s word class is \\p{L}\\p{N}, code point for code point', (
 });
 
 test('the server holds the engine\'s bound on a set phrase, in its words', () => {
-  const sql = readFileSync(new URL('../../supabase/migrations/0139_face_down_moves.sql', import.meta.url), 'utf8');
+  const sql = readFileSync(new URL('../../supabase/migrations/0142_face_down_moves.sql', import.meta.url), 'utf8');
   const bound = /if char_length\(phrase\) > (\d+) then raise exception '% waits for a phrase of at most (\d+) characters'/u.exec(sql);
   assert.ok(bound, 'place_set bounds a set phrase');
   assert.deepEqual([Number(bound[1]), Number(bound[2])], [SET_PHRASE_MOST, SET_PHRASE_MOST]);

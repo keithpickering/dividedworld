@@ -22,7 +22,6 @@ export const trapCard: CardRules<TrapCardConfig> = {
   play: 'set',
   trap: { trigger: { on: 'cast' } },
   catches: (config) => config.card,
-  priceKey: 'trapCard.price',
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: (config) => {

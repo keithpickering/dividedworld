@@ -44,6 +44,7 @@ import {
   repairAnswer,
   ruleSchema,
   type InheritedMove,
+  type MachineSlotFacts,
   type ModFacts,
   type PlannedMove,
 } from '../../../engine/system/meeting.ts';
@@ -96,6 +97,11 @@ interface Context {
   readonly mods?: readonly { readonly key: string; readonly allowance: number; readonly granted: number | null; readonly boards: readonly string[]; readonly order: string | null }[];
   /** The rules in force (0103), so a rule that would leave no compliant post is dropped here; absent from an older database. */
   readonly rules?: readonly RuleInForce[];
+  /**
+   * The machine's slots in grid order (0140): the admin's price and availability (hidden ones too, for a flash sale), whether a pull could land, and the Boss's
+   * move in force on each. Nothing about a purchase or a buyer. Absent from an older database, where the Boss has no machine to move.
+   */
+  readonly machine?: readonly MachineSlotFacts[];
   /**
    * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
    * group it is in now. Absent from an older database, which confers none.
@@ -261,6 +267,7 @@ export async function runMeeting(
         boards: context.boards,
         threads: digest.threads.map((t) => ({ id: t.thread, title: t.title })),
         characters: shown.map((c) => ({ id: c.id, name: c.name, pronouns: c.pronouns, group: groupOf.get(c.id.toLowerCase()) })),
+        machine: context.machine,
       }),
       '',
       'Hold your meeting.',
@@ -312,6 +319,8 @@ export async function runMeeting(
       successorAllowed,
       successors,
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
+      // Only the slots the model was shown (the reference list is bounded) can be named, as with the threads.
+      machine: context.machine?.slice(0, REFERENCE_MOST.machine),
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
@@ -342,7 +351,8 @@ export async function runMeeting(
         moves: moves.map((m) => ({
           kind: m.kind,
           params: m.params,
-          demand: m.demand,
+          // A favor has no demand, and the key is left out rather than sent as null (the queue's column takes none or an object).
+          ...(m.demand ? { demand: m.demand } : {}),
           go_live_at: new Date(m.goLiveAt).toISOString(),
           expires_in_hours: m.expiresInHours,
           why: m.why,

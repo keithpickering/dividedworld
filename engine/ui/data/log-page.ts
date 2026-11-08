@@ -4,7 +4,7 @@
  * the same way.
  *
  * A backend reads each source of the log newest first, at or before the cursor, at most `LOG_ROWS`
- * rows: the ledger's lines by their settlement's end, the wallet's events, the card ledger and the
+ * rows: the ledger's lines by their settlement's end, the wallet's events, the card ledger, the packs and the
  * plays on the player's posts by when each happened, the effects' saves by when each was saved, the
  * player's face-down cards by when each sprang or ended, the player's caught plays by when each was played, the card plays an admin ended by when each was ended, and
  * the player's own infractions, bans, reports and appeals by when each was made.
@@ -30,7 +30,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PlayOnMine, WalletEvent } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, WalletEvent } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -61,6 +61,7 @@ export interface LogRead {
   readonly shares: readonly ShareRow[];
   readonly wallet: readonly WalletEvent[];
   readonly cards: readonly CardEvent[];
+  readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
@@ -90,6 +91,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.ledger, () => read.ledger[read.ledger.length - 1]!.endsAt),
     ...reached(read.wallet, () => read.wallet[read.wallet.length - 1]!.at),
     ...reached(read.cards, () => read.cards[read.cards.length - 1]!.at),
+    ...reached(read.packs, () => read.packs[read.packs.length - 1]!.at),
     ...reached(read.playsOnMine, () => read.playsOnMine[read.playsOnMine.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
@@ -130,6 +132,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     settlements: out,
     wallet: read.wallet.filter((e) => keep(e.at)),
     cards: read.cards.filter((e) => keep(e.at)),
+    packs: read.packs.filter((e) => keep(e.at)),
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),

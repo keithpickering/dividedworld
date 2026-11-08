@@ -374,9 +374,7 @@ declare
   i acts%rowtype;
   e acts%rowtype;
 begin
-  update settings set value = value || '{"ic.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, stack, ward, lasts, reaches, pins, trap)
-    values ('ic-th', 'Ic Thread', 'sweet', 'ic.price', 'common', 'cast', 3, false, interval '1 day', '{thread}', false, null) on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, rarity, play, stack, ward, lasts, reaches, pins, trap) values ('ic-th', 'Ic Thread', 'sweet', 'common', 'cast', 3, false, interval '1 day', '{thread}', false, null) on conflict (key) do nothing;
   v1 := pg_temp.visit(p1, 'ic-m3');
   v2 := pg_temp.visit(p2, 'ic-m1');
   v3 := pg_temp.visit(p3, 'ic-m3');
@@ -496,8 +494,8 @@ declare
   why text;
 begin
   update settings set value = value || '{"ic.trap": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts)
-    values ('ic-trap', 'Ic Trap', 'pepperoni', 'ic.trap', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts)
+    values ('ic-trap', 'Ic Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null);
   setting_ := tests.act(c, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'ic-trap', p, t, 1, now() + interval '1 day');
   v := start_visit(p, 'ic-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));
@@ -515,7 +513,7 @@ begin
   end if;
   -- A reply or a reaction is no trigger a card carries any more (a Move springs on a quote, which is the engine's).
   if card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]') is null then raise exception 'a reply trigger was accepted'; end if;
-  why := pg_temp.refusal($s$insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('ic-trap2', 'Ic Trap Two', 'pepperoni', 'ic.trap', 'common', 'set', '{"trigger": {"on": "reaction"}}')$s$);
+  why := pg_temp.refusal($s$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('ic-trap2', 'Ic Trap Two', 'pepperoni', 'common', 'set', '{"trigger": {"on": "reaction"}}')$s$);
   if why is null then raise exception 'the table took a reaction trigger'; end if;
   if exists (select 1 from pg_proc where proname = 'visit_traps_wired') then raise exception 'the check that stood in for the wiring is still there'; end if;
 end $$;

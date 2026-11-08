@@ -31,7 +31,7 @@ const isGlass = (path: string) => GLASS.has(path);
 /* What the backend says of the player's alerts: the count, and the channel the player's account hears (the test sends on it). */
 const alerts: { unread: number; account: AccountListener | null; subscribed: number; reads: number } = { unread: 0, account: null, subscribed: 0, reads: 0 };
 
-function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240) {
+function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240, face: (id: string) => Character = (id) => pub(id, id)) {
   const api = {
     session: async () => ({ signedIn, account: signedIn ? 'acc' : null }),
     onSession: () => () => {},
@@ -39,7 +39,7 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     wallet: async () => ({ balance, cap: 600 }),
     myCards: async () => [{ card: 'whoops', held: 2 }, { card: 'stick-around', held: 1 }],
     estimate: async () => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 85 }], lines: [], asOf: null, freshAfter: null }),
-    characters: vi.fn(async (ids: readonly string[]) => ids.map((id) => pub(id, id))),
+    characters: vi.fn(async (ids: readonly string[]) => ids.map((id) => face(id))),
     boards: async () => {
       if (!signedIn) throw new Error('reads answer only for a session');
       return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'announcements', name: 'The System' }];
@@ -63,8 +63,8 @@ function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b',
     instance: {
       /* Rules enough for the hand to price and draw each card (engine/ui/cards/faces.ts). */
       cards: [
-        { key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', playPrice: () => 0 },
-        { key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price', playPrice: () => 0 },
+        { key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', playPrice: () => 0 },
+        { key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', playPrice: () => 0 },
       ],
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
@@ -207,6 +207,12 @@ describe('the HUD: the glass, docked at the bottom', () => {
     await waitFor(() => expect(within(h).getByText('Pipewrench', { selector: '.kb-hud-name' })).toBeInTheDocument());
     expect(within(h).getByText('Heel')).toBeInTheDocument();
     expect(within(h).getByText('Only you see this')).toBeInTheDocument();
+  });
+  test('a character with no avatar shows its letter inside the link named "My characters"', async () => {
+    setup(true, [mine('a', 'Pipewrench')], <p>page</p>, 'invite', 240, (id) => ({ ...pub(id, id), avatarSquare: null }));
+    const link = await within(await hud()).findByRole('link', { name: 'My characters' });
+    await waitFor(() => expect(within(link).getByText('P')).toBeInTheDocument());
+    expect(link.querySelector('img')).toBeNull();
   });
   test('the swap is "Swap mask" from the width where the Main board\'s layout holds and "Posting as" below it, and it changes the HUD\'s character', async () => {
     /* testGlass's smallest phone size is 16px and its smallest Main board size 20px: 1440 × 16 / 20. */

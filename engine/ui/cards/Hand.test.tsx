@@ -5,7 +5,7 @@ import { Hand, drawn, fanSlot } from './Hand.tsx';
 import type { CardFace } from './faces.ts';
 
 const face = (key: string, name: string, alignment: 'sweet' | 'salty'): CardFace => ({
-  key, name, alignment, tag: alignment === 'sweet' ? 'Sweet' : 'Salty', price: 100, extra: 0, stack: 1,
+  key, name, alignment, tag: alignment === 'sweet' ? 'Sweet' : 'Salty', extra: 0, stack: 1,
   art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, tagline: '', summary: `${name} in a sentence.`, describe: `${name}, in plain words.`, rarity: 'common', play: 'cast', kind: 'Cast',
 });
 const stick = face('stick', 'Stick Around', 'sweet');

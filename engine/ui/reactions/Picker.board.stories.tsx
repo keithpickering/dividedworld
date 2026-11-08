@@ -54,7 +54,7 @@ function OnePost() {
       mine.merge(act.id, await api.myReactions([act.id]));
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', pronounsOf: () => ENGINE_DEFAULT_PRONOUNS, observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays: createPlays(), nameOf: () => 'A character', faceOf: () => null, pronounsOf: () => ENGINE_DEFAULT_PRONOUNS, observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, thread, seq, tallies, mine]);

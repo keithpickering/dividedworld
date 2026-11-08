@@ -10,11 +10,10 @@
 do $$
 begin
   perform tests.commit($sql$
-    update settings set value = value || '{"tlcatch.price": 100, "tlhook.price": 100, "tlbluff.price": 25}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-      ('tlcatch', 'Lock Catcher', 'salty', 'tlcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}}'),
-      ('tlhook', 'Lock Hook', 'salty', 'tlhook.price', 'uncommon', 'cast', null),
-      ('tlbluff', 'Lock Bluff', 'pepperoni', 'tlbluff.price', 'common', 'set', null);
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values
+      ('tlcatch', 'Lock Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}'),
+      ('tlhook', 'Lock Hook', 'salty', 'uncommon', 'cast', null),
+      ('tlbluff', 'Lock Bluff', 'pepperoni', 'common', 'set', null);
   $sql$);
 end $$;
 

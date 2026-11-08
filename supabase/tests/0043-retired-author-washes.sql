@@ -35,7 +35,7 @@ begin
   insert into wallets (account, balance) values (bob, 300);
   insert into admins (account) values (boss);
   perform tests.become_service();
-  perform buy_card(bob, 'splat', 100);
+  perform buy_card(bob, tests.slot('splat'), 100);
   the_play := (play_card(bob, 'splat', caster, p, '{"color": "red"}', 0) ->> 'id')::uuid;
   perform tests.unbecome();
 

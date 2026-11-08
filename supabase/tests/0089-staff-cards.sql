@@ -29,14 +29,13 @@ begin
   insert into staff_offices (staff, office, cause) values ('sc-bench', 'benched', 'admin');
   -- The pool plays up to uncommon.
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
-  update settings set value = value || '{"snare.price": 150, "catcher.price": 100, "bluffy.price": 25, "grandie.price": 100, "shield.price": 150, "hook.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{"trigger": {"on": "cast"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'grandie.price', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'shield.price', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'cast', null, false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', false, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', false, null),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, false, null);
 end $$;
 
 create function pg_temp.refused(stmt text) returns text language plpgsql as $$
@@ -268,7 +267,7 @@ begin
 end $$;
 
 -- ---- A trap set by staff springs on a player's cast without refusing it, and the staff flag closes behind it ----
--- The poison, planted and observed: with both `set_config('kayfabb.staff_writer', 'on', true)` lines removed from spring_traps in 0139
+-- The poison, planted and observed: with both `set_config('kayfabb.staff_writer', 'on', true)` lines removed from spring_traps in 0142
 -- (the flag left closed), this block fails at the player's cast with `a staff character acts only through the game's own moves` raised by
 -- acts_well_formed() inside spring_traps' insert of the spring; restored, it passes.
 do $$
