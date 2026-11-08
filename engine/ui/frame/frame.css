@@ -1826,18 +1826,29 @@ html[data-kb-float='sheet'] .kb-frame {
   justify-content: center;
 }
 
-.kb-hud-menu > :not(.kb-hud-wait) {
+.kb-hud-menu > :not(.kb-hud-wait),
+.kb-hud-alerts > :not(.kb-hud-wait) {
   transition: opacity 120ms ease;
 }
 
-.kb-hud-menu[data-kb-pending] > :not(.kb-hud-wait) {
+.kb-hud-menu[data-kb-pending] > :not(.kb-hud-wait),
+.kb-hud-alerts[data-kb-pending] > :not(.kb-hud-wait) {
   opacity: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .kb-hud-menu > :not(.kb-hud-wait) { transition: none; }
+/* Alerts' wait is the same: centered over the link (it is already a positioned box, on both boards), the bell, word and count faded beneath it. */
+.kb-hud-alerts > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
 }
 
-:root[data-kb-motion='reduce'] .kb-hud-menu > :not(.kb-hud-wait) {
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-hud-menu > :not(.kb-hud-wait),
+  :root:not([data-kb-motion='full']) .kb-hud-alerts > :not(.kb-hud-wait) { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-hud-menu > :not(.kb-hud-wait),
+:root[data-kb-motion='reduce'] .kb-hud-alerts > :not(.kb-hud-wait) {
   transition: none;
 }

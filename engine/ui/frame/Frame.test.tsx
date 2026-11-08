@@ -765,6 +765,29 @@ describe('the HUD\'s Alerts button and the toasts (the alerts plan, Task 10)', (
     expect(within(side.querySelector<HTMLElement>('.kb-hud-actions')!).getAllByRole('button').map((b) => b.className.split(' ')[0])).toEqual(['kb-hud-menu', 'kb-hud-hand']);
   });
 
+  test('pressed toward a loading page it keeps its name and its parts and shows one spinner over them, until it lands', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    alerts.unread = 3;
+    const calls: Array<(d: unknown) => void> = [];
+    const routes = [
+      { path: '/b/general', render: () => <p>the board</p> },
+      { path: '/alerts', load: () => new Promise<unknown>((resolve) => { calls.push(resolve); }), render: () => <p>the alerts</p> },
+    ];
+    setup(true, undefined, <Routes routes={routes} />);
+    const link = await alertsLink();
+    const parts = () => Array.from(link.children).map((c) => c.className);
+    const before = parts();
+    await userEvent.click(link);
+    expect(link).toHaveAttribute('data-kb-pending');
+    expect(link).toHaveAttribute('aria-busy', 'true');
+    expect(link).toHaveAccessibleName('Alerts 3 new');
+    expect(link.querySelectorAll('.kb-hud-wait .kb-spinner')).toHaveLength(1);
+    expect(parts().slice(0, before.length)).toEqual(before);
+    expect(link.lastElementChild!.className).toContain('kb-hud-wait');
+    await act(async () => { calls[0]!('alerts'); });
+    await waitFor(() => expect(link.querySelector('.kb-spinner')).toBeNull());
+  });
+
   test('on the Phone board it is a bell between "Posting as" and Menu', async () => {
     width(boardSwitch(testGlass) - 1);
     setup();

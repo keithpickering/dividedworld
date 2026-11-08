@@ -503,6 +503,7 @@ export function Hud() {
                     data-kb-pending={alertsWait.pending ? '' : undefined}
                     className="kb-hud-alerts kb-glass-skew"
                     data-kb-held={handOpen ? '' : undefined}
+                    aria-busy={alertsWait.pending || undefined}
                     aria-label={unread === null ? 'Alerts' : `Alerts ${unread} new`}
                   >
                     <svg className="kb-hud-bell kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="24" viewBox="0 0 22 24">
