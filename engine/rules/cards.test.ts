@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -9,10 +9,12 @@ const cast = (key: string, rarity: CardRules['rarity']): CardRules => ({ ...base
 const plain = cast('plain', 'common');
 const grand = cast('grand', 'legendary');
 const shield: CardRules = { ...base, key: 'shield', name: 'Test Shield', rarity: 'uncommon', play: 'use', ward: true, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
-const snare: CardRules = { ...base, key: 'snare', name: 'Test Snare', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'payout' } }, canApply: () => ok(undefined) };
+const snare: CardRules = { ...base, key: 'snare', name: 'Test Snare', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: (c) => (c as { card: string }).card, canApply: () => ok(undefined) };
 const pick = (c: unknown) => (typeof c === 'object' && c !== null && (c as { ink?: unknown }).ink === 'red' ? ok({ ink: 'red' }) : refuse('the ink is red'));
 const inky: CardRules = { ...base, key: 'inky', name: 'Test Inky', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'inky' }, t, e, now), validateConfig: pick };
-const striker: CardRules = { ...base, key: 'striker', name: 'Test Striker', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'reply' }, outcome: { do: 'strike', card: 'inky' } }, canApply: () => ok(undefined) };
+const hallway: CardRules = { ...base, key: 'hallway', name: 'Test Hallway', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
+const glue: CardRules = { ...base, key: 'glue', name: 'Test Glue', rarity: 'common', setPhrase: (c) => (c as { phrase: string }).phrase, canApply: (t, e, _config, now) => landsOn({ key: 'glue' }, t, e, now) };
+const ground: CardRules = { ...cast('ground', 'common'), reaches: ['thread'], lasts: { unit: 'day', count: 1 } };
 const bluff: CardRules = { ...base, key: 'bluffy', name: 'Test Bluffy', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 
 const settings = {} as Settings;
@@ -67,22 +69,47 @@ test('decideUse uses a Use and nothing else, and a ward does not stop a Use', ()
   assert.equal(decideUse(shield, settings, post, [], {}, '').ok, true);
 });
 
-test('decideSet sets a Set, one face-down card to a post', () => {
-  assert.match((decideSet(plain, settings, post, [], {}, []) as { why: string }).why, /cast/);
+test('decideSet sets a Gimmick, one face-down card to a post', () => {
   const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
-  assert.deepEqual(decideSet(snare, settings, post, [back], {}, []), { ok: false, why: 'this post already holds a card face down' });
-  assert.equal(decideSet(snare, settings, post, [{ ...back, ends: gone }], {}, []).ok, true);
+  assert.deepEqual(decideSet(snare, settings, post, [back], { card: 'inky' }, [inky]), { ok: false, why: 'this post already holds a card face down' });
+  assert.equal(decideSet(snare, settings, post, [{ ...back, ends: gone }], { card: 'inky' }, [inky]).ok, true);
   assert.equal(decideSet(bluff, settings, post, [], {}, []).ok, true);
   // A ward never blocks a Set.
-  assert.equal(decideSet(snare, settings, post, [{ card: 'shield', act: 'w', ward: 'legendary', ends: soon }], {}, []).ok, true);
-  assert.match((decideSet(snare, settings, { ...post, kind: 'spin' }, [], {}, []) as { why: string }).why, /post/);
+  assert.equal(decideSet(snare, settings, post, [{ card: 'shield', act: 'w', ward: 'legendary', ends: soon }], { card: 'inky' }, [inky]).ok, true);
+  assert.match((decideSet(snare, settings, { ...post, kind: 'spin' }, [], { card: 'inky' }, [inky]) as { why: string }).why, /post/);
 });
 
-test('a strike\'s configuration is checked by the struck card\'s own rules', () => {
-  assert.deepEqual(decideSet(striker, settings, post, [], { ink: 'blue' }, [inky]), { ok: false, why: 'the ink is red' });
-  const set = decideSet(striker, settings, post, [], { ink: 'red', extra: 1 }, [inky]);
-  assert.deepEqual(set, { ok: true, value: { price: 0, config: { ink: 'red' } } });
-  assert.match((decideSet(striker, settings, post, [], { ink: 'red' }, []) as { why: string }).why, /no card "inky"/);
+test('decideSet sets a Move that lands on a character, since the quote decides where it lands', () => {
+  const beyond: CardRules = { ...inky, key: 'beyond', reaches: ['character'], lasts: { unit: 'day', count: 7 }, canApply: (t, e, _c, now) => landsOn({ key: 'beyond', reaches: ['character'] }, t, e, now) };
+  assert.equal(decideSet(beyond, settings, post, [], { ink: 'red' }, [inky]).ok, true);
+})
+
+test('decideSet sets a Move, and returns the phrase its landing needs', () => {
+  assert.deepEqual(decideSet(inky, settings, post, [], { ink: 'red' }, [inky]), { ok: true, value: { price: 0, config: { ink: 'red' } } });
+  assert.deepEqual(decideSet(inky, settings, post, [], { ink: 'blue' }, [inky]), { ok: false, why: 'the ink is red' });
+  assert.deepEqual(decideSet(glue, settings, post, [], { phrase: 'soon' }, [glue]), { ok: true, value: { price: 0, config: { phrase: 'soon' }, phrase: 'soon' } });
+  const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
+  assert.deepEqual(decideSet(glue, settings, post, [back], { phrase: 'soon' }, [glue]), { ok: false, why: 'this post already holds a card face down' });
+  assert.match((decideSet(glue, settings, { ...post, kind: 'spin' }, [], { phrase: 'soon' }, [glue]) as { why: string }).why, /post/);
+  // An empty phrase is in no post, so the back could never land: it is refused before it is set.
+  assert.deepEqual(decideSet(glue, settings, post, [], { phrase: '' }, [glue]), { ok: false, why: 'Test Glue needs a phrase to wait for' });
+  assert.deepEqual(decideSet(glue, settings, post, [], { phrase: '  ' }, [glue]), { ok: false, why: 'Test Glue needs a phrase to wait for' });
+  // The engine's bound on a set phrase, which the server holds too, so every back's pattern is one length (0142's phrase_pattern).
+  assert.equal(decideSet(glue, settings, post, [], { phrase: 'é'.repeat(SET_PHRASE_MOST) }, [glue]).ok, true);
+  assert.deepEqual(decideSet(glue, settings, post, [], { phrase: 'x'.repeat(SET_PHRASE_MOST + 1) }, [glue]), { ok: false, why: `Test Glue waits for a phrase of at most ${SET_PHRASE_MOST} characters` });
+});
+
+test('a cast Gimmick names the card it catches, which must be cast on a post', () => {
+  const set = decideSet(snare, settings, post, [], { card: 'inky' }, [inky, snare]);
+  assert.deepEqual(set, { ok: true, value: { price: 0, config: { card: 'inky' }, catches: 'inky' } });
+  for (const named of ['shield', 'snare', 'nothing', 'ground']) {
+    assert.deepEqual(decideSet(snare, settings, post, [], { card: named }, [inky, shield, snare, ground]), { ok: false, why: 'Test Snare names a card that is cast on a post' }, named);
+  }
+  assert.deepEqual(decideSet(hallway, settings, post, [], {}, []), { ok: true, value: { price: 0, config: {} } });
+});
+
+test('decideSet refuses a Use, as it always did', () => {
+  assert.deepEqual(decideSet(shield, settings, post, [], {}, []), { ok: false, why: 'Test Shield is used on your own post' });
 });
 
 test('a post\'s stack counts the plays still up: an ended Use holds no place', () => {
@@ -106,7 +133,7 @@ test('a decision reads its effects on the clock it is given, and hands that cloc
   assert.equal(decidePlay(plain, settings, post, [mine], {}, '', { now: after }).ok, true);
   const seen: (Date | undefined)[] = [];
   const watcher: CardRules = { ...snare, key: 'watcher', canApply: (_t, _e, _config, now) => { seen.push(now); return ok(undefined); } };
-  decideSet(watcher, settings, post, [], {}, [], before);
+  decideSet(watcher, settings, post, [], { card: 'inky' }, [inky], before);
   assert.deepEqual(seen, [before]);
 });
 
@@ -244,4 +271,6 @@ test('staffOffers: a card with staffOptions and no default is offered, and a car
   assert.equal(staffOffers({ ...inky, staffOptions: options }), true, 'the persona chooses, so there is something to play');
   assert.equal(staffOffers({ ...inky, staffConfigs: [{ ink: 'red' }] }), true, 'the fallback list alone still offers it');
   assert.equal(staffOffers(plain), true, 'a default alone offers it');
+  assert.equal(staffOffers(hallway), false, 'a Gimmick that springs on a visit is never offered: a Mod Bot visits only players\' posts');
+  assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a Gimmick that springs on a cast is offered with its options');
 });

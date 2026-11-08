@@ -40,7 +40,7 @@ import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd, FaceDownPass,
+  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -539,7 +539,7 @@ function toAdminQueue(v: unknown): AdminQueue {
 const toBosses = (v: unknown): { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[] => rowsOf(v).flatMap((x) => (typeof x['staff'] === 'string' ? [{ staff: x['staff'], name: String(x['name'] ?? x['staff']), pronouns: pronounsOrDefault(x['pronouns']) }] : []));
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'saves' | 'setEnds' | 'setPasses' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[]): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'groupMoves' | 'reports' | 'appeals', Row[]>>, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -556,6 +556,9 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     cards: src['cards'].map((r): CardEvent => ({
       card: r['card'], kind: r['kind'], act: r['act'] ?? null, price: num(r['price']), at: r['at'],
       ...(typeof r['springs'] === 'boolean' ? { springs: r['springs'] } : {}),
+      /* What a card set face down waits for: the setter's own back (`my_face_down`), read beside the ledger. */
+      ...(typeof backs.get(r['act'])?.['catches'] === 'string' ? { catches: backs.get(r['act'])!['catches'] } : {}),
+      ...(typeof backs.get(r['act'])?.['phrase'] === 'string' ? { phrase: backs.get(r['act'])!['phrase'] } : {}),
       ...(typeof r['pack'] === 'string' ? { pack: r['pack'] } : {}),
       ...(r['kind'] === 'bought' && r['repriced'] === true ? { repriced: true } : {}),
     })),
@@ -566,7 +569,6 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     playsOnMine: src['playsOnMine'].map((r) => ({ play: r['play'], post: r['post'], at: r['at'], reach: r['reach'], targetName: r['target_name'] ?? null, targetCharacter: r['target_character'] ?? null })),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
     setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'] })),
-    setPasses: src['setPasses'].map((r): FaceDownPass => ({ play: r['play'], card: r['card'], post: r['post'], passedAt: r['passed_at'], endsAt: r['ends_at'] })),
     caught: src['caught'].map((r): CaughtPlay => ({
       play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
       boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
@@ -915,6 +917,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     return { thread: toNewThread(r['thread'], a), act: a };
   };
 
+  /*
+   * What each card set face down waits for (`my_face_down.catches` and `.phrase`, the setter's own row, 0142), by set: the ledger row of a set carries `springs` and
+   * names neither. Only the ledger rows of a set are asked for; a read that fails leaves the log's line to say "the card it names", never an unread page.
+   */
+  const readBacks = async (cards: readonly Row[]): Promise<ReadonlyMap<string, Row>> => {
+    const sets = cards.filter((r) => typeof r['springs'] === 'boolean' && typeof r['act'] === 'string').map((r) => r['act'] as string);
+    if (sets.length === 0) return new Map();
+    try {
+      return new Map((await byChunks(sets, (part) => list(() => client.from('my_face_down').select('play,catches,phrase').in('play', part)))).map((r) => [r['play'] as string, r]));
+    } catch { return new Map(); }
+  };
+
   /* The views the log is read from, one range of them: what `log` reads, and what `logPage` reads again for a page that would not move. */
   const readLogViews = async (range: LogRange): Promise<LogRead> => {
     /*
@@ -929,7 +943,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!('at' in range)) return list(() => page((range.before ? from().lte(column, range.before) : from()).order(column, { ascending: false })).limit(range.limit));
       return every((start, end) => whole.reduce((q: Q, c) => q.order(c, { ascending: true }), from().eq(column, range.at)).range(start, end));
     };
-    const [ledgerRows, walletRows, cardRows, packRows, playRows, saveRows, endRows, passRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
+    const [ledgerRows, walletRows, cardRows, packRows, playRows, saveRows, endRows, caughtRows, endedRows, infractionRows, banRows, groupMoveRows, reportRows, appealRows] = await Promise.all([
       rows(() => client.from('my_ledger').select('settlement,starts_at,ends_at,character,reason,amount,shares_kept,params'), 'ends_at',
         (q) => q.order('character', { ascending: true }).order('reason', { ascending: true }), ['settlement', 'character', 'reason']),
       rows(() => client.from('my_wallet_events').select('settlement,kind,change,overflow,floored,balance_after,ref,at'), 'at', (q) => q, ['settlement', 'kind', 'ref', 'change', 'overflow', 'floored', 'balance_after']),
@@ -940,8 +954,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
       rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
-      /* The player's own cards a reply passed by without springing, by when it did (0078); the log names the reply traps among them. */
-      rows(() => client.from('my_face_down').select('play,card,post,ends_at,passed_at').not('passed_at', 'is', null).is('spring', null), 'passed_at', (q) => q, ['play']),
       rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
       /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
       rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
@@ -962,7 +974,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     const shareRows = ids.length === 0 ? [] : await byChunks(ids, (part) => every((start, end) => client.from('my_ledger_shares').select('settlement,character,reason,act,quadrant,amount').in('settlement', part)
       .order('settlement', { ascending: false }).order('character', { ascending: true }).order('reason', { ascending: true }).order('act', { ascending: true }).order('quadrant', { ascending: true })
       .range(start, end)));
-    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, setPasses: passRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows);
+    return toLogRead({ ledger: ledgerRows, wallet: walletRows, cards: cardRows, packs: packRows, playsOnMine: playRows, saves: saveRows, setEnds: endRows, caught: caughtRows, ended: endedRows, infractions: infractionRows, bans: banRows, groupMoves: groupMoveRows, reports: reportRows, appeals: appealRows }, shareRows, await readBacks(cardRows));
   };
 
   const api: KayfaApi = {
@@ -1809,9 +1821,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), saves: rowsOf(sources['saves']),
-        setEnds: rowsOf(sources['setEnds']), setPasses: rowsOf(sources['setPasses']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
+        setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']),
-      }, rowsOf(d['shares']));
+      }, rowsOf(d['shares']), await readBacks(rowsOf(sources['cards'])));
       const log = await readLogPage((range) => ('at' in range ? readLogViews(range) : first), before ?? null);
       return {
         log, acts: rowsOf(d['acts']).map(toAct), states: toStates(rowsOf(d['states'])), people: rowsOf(d['people']).map(faceOf),

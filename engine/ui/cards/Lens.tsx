@@ -13,6 +13,8 @@
  *    rows by layer, top first, since which layer a stroke washes is what the rows explain; every other card in billing order.
  *    Every play of the kind has its row, so each can be reacted to, spun from and gone to.
  *
+ * A card that landed from a back opens its spring's Acts for one line above its rows (sprung.ts), the one read the Lens makes when it draws.
+ *
  * It is not modal (glass/Float.tsx): it dims and blocks nothing and makes nothing inert, so the ink can be scrubbed with it
  * open; a press on the post leaves it open. It closes by Esc, its ×, its mark again, another post's Lens, or leaving the
  * page, and focus goes back to the mark. One is open on a page (`LensProvider`); a post subscribes to whether it is the
@@ -50,6 +52,7 @@ import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase,
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
+import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
 import { PREPARED_FAILED, usePrepared, useRest } from '../glass/prepared.ts';
 import { Spinner } from '../glass/Spinner.tsx';
@@ -420,8 +423,15 @@ const endable = (play: CardPlay, now: number): boolean =>
 
 function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
+  const { instance } = useKayfa();
   const name = playName(caster, card);
-  const note = view.notes[play.id];
+  /* A caught play says where its card went, once the spring that caught it is read: the view's note, which claims nothing of the card, stands until then. */
+  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
+  const fate = useCaughtFate(springOfCatch);
+  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
+  const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
+  /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
+  const sprung = useSprungWords(play.spring);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
@@ -448,6 +458,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
   }, []);
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+      {sprung && <p className="kb-lens-note">{sprung}</p>}
       {note && <p className="kb-lens-note">{note}</p>}
       <div className="kb-lens-row-head">
         <Avatar className="kb-lens-row-avatar" src={face} name={caster} />

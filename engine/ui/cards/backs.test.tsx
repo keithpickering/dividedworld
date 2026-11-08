@@ -18,7 +18,7 @@ import { LoadedThread } from '../loaded.tsx';
 
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
-const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ok(undefined) };
+const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
 const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
   /* Long, because the screens read a back's end against the real clock and the fake's starts on a fixed date. */
@@ -114,6 +114,25 @@ describe('a card back', () => {
   });
 });
 
+describe('a card a back laid', () => {
+  test('its Lens says who set it, when, and whose quote set it off, above the card\'s own rows', async () => {
+    const w = await world();
+    const set = w.set.ok ? w.set.value.id : '';
+    const spring = w.fake.seed.spring(set, { trigger: 'quote', by: w.mine });
+    w.fake.seed.card(w.spritey, w.mine, 'blot', { spring });
+    await open(w);
+    const mark = await within(post(4)).findByRole('button', { name: /^Blot, 1 play/u });
+    const user = userEvent.setup();
+    await user.click(mark);
+    const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
+    await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
+    const row = lens.querySelector('.kb-lens-row')!;
+    /* Above the card's own rows: the line is the row's first, before the play's by-line. */
+    await waitFor(() => expect(row.firstElementChild!.textContent).toMatch(/^Set face down by Spritey on [A-Z][a-z]+ \d+; sprang when Pipewrench quoted it\.$/u));
+    expect(row.textContent).not.toMatch(/account/iu);
+  });
+});
+
 describe('a caught play', () => {
   test('draws no effect, and its mark says it was caught', async () => {
     const w = await world();
@@ -130,7 +149,8 @@ describe('a caught play', () => {
     expect(heading).toBe('Caught, did nothing');
     expect(wordsProblems('state', heading)).toEqual([]);
     await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
-    expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card is spent.');
+    /* The spring says it caught, and Spritey is a player: the card went to them (read once the row is drawn). */
+    await waitFor(() => expect(lens.querySelector('.kb-lens-note')).toHaveTextContent('Caught by a Snare. It did nothing, and its card went to Spritey.'));
     await user.keyboard('{Escape}');
     expect(within(post(2)).queryByTestId('splash')).toBeNull();
     /* The back sprang: it shows the card it was, in its place. */

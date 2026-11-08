@@ -494,7 +494,8 @@ declare
   why text;
 begin
   update settings set value = value || '{"ic.trap": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values ('ic-trap', 'Ic Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}, "outcome": {"do": "nullify"}}', false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts)
+    values ('ic-trap', 'Ic Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null);
   setting_ := tests.act(c, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'ic-trap', p, t, 1, now() + interval '1 day');
   v := start_visit(p, 'ic-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));
@@ -504,14 +505,16 @@ begin
   if exists (select 1 from visits_open where post = p) then raise exception 'a trapped visit is still open'; end if;
   if warn_points(c) is distinct from 0 then raise exception 'a trapped visit landed points'; end if;
   if not exists (select 1 from acts s where s.kind = 'spring' and s.payload ->> 'trigger' = 'visit' and s.payload ->> 'set' = setting_::text) then raise exception 'there is no spring'; end if;
+  -- The spring says what it did: the visit ended.
+  if (select s.payload ->> 'did' from acts s where s.kind = 'spring' and s.payload ->> 'trigger' = 'visit' and s.payload ->> 'set' = setting_::text) is distinct from 'ended' then raise exception 'the spring does not say it ended the visit'; end if;
   -- The card checks accept a visit trigger, in the table, the seed's check and the function that names it.
-  if card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "visit"}, "outcome": {"do": "nullify"}}}]') is not null then
-    raise exception 'a visit trigger is refused: %', card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "visit"}, "outcome": {"do": "nullify"}}}]');
+  if card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "visit"}}}]') is not null then
+    raise exception 'a visit trigger is refused: %', card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "visit"}}}]');
   end if;
-  if card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "visit"}, "outcome": {"do": "payout"}}}]') is null then raise exception 'a payout on a visit was accepted'; end if;
-  if card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "visit"}, "outcome": {"do": "strike", "card": "x"}}}]') is null then raise exception 'a strike on a visit was accepted'; end if;
-  why := pg_temp.refusal($s$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('ic-trap2', 'Ic Trap Two', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}, "outcome": {"do": "payout"}}')$s$);
-  if why is null then raise exception 'the table took a payout on a visit'; end if;
+  -- A reply or a reaction is no trigger a card carries any more (a Move springs on a quote, which is the engine's).
+  if card_kinds_problem('[{"key": "x", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]') is null then raise exception 'a reply trigger was accepted'; end if;
+  why := pg_temp.refusal($s$insert into card_kinds (key, name, alignment, rarity, play, trap) values ('ic-trap2', 'Ic Trap Two', 'pepperoni', 'common', 'set', '{"trigger": {"on": "reaction"}}')$s$);
+  if why is null then raise exception 'the table took a reaction trigger'; end if;
   if exists (select 1 from pg_proc where proname = 'visit_traps_wired') then raise exception 'the check that stood in for the wiring is still there'; end if;
 end $$;
 

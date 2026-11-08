@@ -52,15 +52,21 @@ export function GhostMark({ act }: { readonly act: Act }) {
   if (!play || !hudCharacter || !target || act.seq === null || !rules) return null;
   /* A Set and a Use go on a post of the reader's own characters alone: decided on the reader's screen, from their own characters, never sent. */
   const how = playOf(rules);
-  if ((how === 'set' || how === 'use') && !actingCharacters.some((c) => c.id === act.character)) return null;
-  if (!landing(rules, act, here.plays, { cards: instance.cards, setLasts: instance.settings.setLasts }).ok) return null;
-  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
+  const own = actingCharacters.some((c) => c.id === act.character);
+  if ((how === 'set' || how === 'use') && !own) return null;
+  const context = { cards: instance.cards, setLasts: instance.settings.setLasts };
+  /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. */
+  const casts = landing(rules, act, here.plays, context).ok;
+  const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
+  if (!casts && !sets) return null;
+  const down = sets && (play.faceDown || !casts);
+  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   return (
     <button
-      type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
+      type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, down ? 'set' : how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
       aria-busy={play.opening(rules.key, target) ? 'true' : undefined}
-      onClick={() => play.openForm(rules.key, target)}
+      onClick={() => { if (how === 'cast' && own) play.choose(down); play.openForm(rules.key, target); }}
       {...rest}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
@@ -124,7 +130,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
   if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, setLasts: instance.settings.setLasts, above }).ok) return null;
-  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy));
+  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (
     <button

@@ -6,7 +6,7 @@ import type { CardFace } from './faces.ts';
 
 const face = (key: string, name: string, alignment: 'sweet' | 'salty'): CardFace => ({
   key, name, alignment, tag: alignment === 'sweet' ? 'Sweet' : 'Salty', extra: 0, stack: 1,
-  art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, tagline: '', summary: `${name} in a sentence.`, describe: `${name}, in plain words.`, rarity: 'common', play: 'cast',
+  art: { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, tagline: '', summary: `${name} in a sentence.`, describe: `${name}, in plain words.`, rarity: 'common', play: 'cast', kind: 'Cast',
 });
 const stick = face('stick', 'Stick Around', 'sweet');
 const whoops = face('whoops', 'Whoops!', 'salty');

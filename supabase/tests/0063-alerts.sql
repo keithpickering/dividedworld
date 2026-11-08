@@ -3,7 +3,8 @@
 -- play, a play on a staff character and a play by the owner's own other mask write none. The caster's answer from post and
 -- play_card is the same projection, field for field, whatever owns the target, and never holds the alert. An account reads its
 -- own rows alone, and no API role can write one. docs/plans/2026-11-02-alerts-plan.md, Task 3; the design, sections 2 and 10.
--- The cards are the engine's test set, never an instance's.
+-- Rewritten for face-down Moves (docs/plans/2026-11-07-face-down-moves-plan.md, Task 6): a Move springs on a quote and lands on the quoting post, a Trap Card
+-- catches the card it names, and a reaction springs nothing. The cards are the engine's test set, never an instance's.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -19,9 +20,8 @@ begin
     ('glint', 'Glint', 'pepperoni', 'uncommon', 'cast', '{character}', interval '7 days', null),
     ('marquee', 'Marquee', 'sweet', 'rare', 'cast', '{thread}', interval '1 day', null),
     ('quake', 'Quake', 'salty', 'legendary', 'cast', '{board}', interval '1 day', null),
-    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{post}', null, '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
-    ('jumpy', 'Jumpy', 'salty', 'common', 'set', '{post}', null, '{"trigger": {"on": "reaction", "quadrant": "boredNegative"}, "outcome": {"do": "nullify"}}'),
-    ('quoter', 'Quoter', 'salty', 'uncommon', 'set', '{post}', null, '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}')
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{post}', null, '{"trigger": {"on": "cast"}}'),
+    ('quoter', 'Quoter', 'salty', 'uncommon', 'cast', '{post}', null, null)
   on conflict (key) do nothing;
 end $$;
 
@@ -143,7 +143,7 @@ begin
     raise exception 'a board play, a play on staff or a play by the owner''s own mask wrote an alert (%) or a broadcast (%)', (select count(*) from alerts), pg_temp.queued();
   end if;
 
-  -- A trap sprung and struck. Ann sets a Quoter on her post; Bob quotes it: the strike lands on Bob's own post, so he is told by his
+  -- A trap sprung and struck. Ann sets a Quoter on her post; Bob quotes it: the Move lands on Bob's own post, so he is told by his
   -- answer and Ann by an alert about the spring (trapSprang). Nothing is written for Bob: he is the actor.
   trapped := tests.post(a1, t, 'A trapped post.');
   perform set_card(ann, 'quoter', a1, trapped, '{}', 0);
@@ -175,13 +175,13 @@ begin
   if said -> 'sprung' is null then raise exception 'the quote did not spring the own-mask trap: %', said; end if;
   if exists (select 1 from alerts) or pg_temp.queued() <> 0 then raise exception 'a trap of one''s own mask set off by oneself wrote % alerts', (select count(*) from alerts); end if;
 
-  -- A strike that lands on a post whose author is not the one acting (a path the rules do not take today, but spring_traps takes
-  -- the post it strikes as given) is that author's trapStruck, about the card that struck.
+  -- A Move that lands on a post whose author is not the one acting (a path the rules do not take today, but spring_traps takes
+  -- the post it lands on as given) is that author's trapStruck, about the card that landed.
   trapped2 := tests.post(a1, t, 'Another trapped post.');
   perform set_card(ann, 'quoter', a1, trapped2, '{}', 0);
   reply := tests.post(c1, t, 'Cat quotes the trap.');
   said := spring_traps('quote', trapped2, reply);
-  if said is null or said -> 'struck' is null then raise exception 'the direct spring did not strike: %', said; end if;
+  if said is null or said -> 'struck' is null then raise exception 'the direct spring did not land: %', said; end if;
   select * into r from alerts where kind = 'trapStruck';
   if (select count(*) from alerts where kind = 'trapStruck') is distinct from 1 or r.account is distinct from cat or r.character is distinct from c1 or r.act is distinct from (said -> 'struck' ->> 'id')::uuid then
     raise exception 'a trap struck is the struck post''s author''s, about the card that struck: %', to_jsonb(r);
@@ -190,7 +190,7 @@ begin
   if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.account is distinct from ann or r.act is distinct from (said ->> 'id')::uuid then
     raise exception 'the same spring is also the setter''s trapSprang: %', to_jsonb(r);
   end if;
-  if pg_temp.queued() <> 2 then raise exception 'a strike and its spring queued % account broadcasts, not 2', pg_temp.queued(); end if;
+  if pg_temp.queued() <> 2 then raise exception 'a landing and its spring queued % account broadcasts, not 2', pg_temp.queued(); end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 end $$;
 
@@ -292,8 +292,8 @@ begin
   insert into wallets (account, balance) values (ann, 600), (bob, 600);
   anns := tests.post(a1, t, 'Ann''s trapped post.');
   bobs := tests.post(b2, t, 'Bob Two''s trapped post.');
-  perform set_card(ann, 'catcher', a1, anns, '{}', 0);
-  perform set_card(bob, 'catcher', b2, bobs, '{}', 0);
+  perform set_card(ann, 'catcher', a1, anns, '{"card": "sweetie"}', 0, 'sweetie');
+  perform set_card(bob, 'catcher', b2, bobs, '{"card": "sweetie"}', 0, 'sweetie');
 
   -- Bob's cast on Ann's trapped post springs her trap: her trapSprang (about the spring), beside her cardOnYours.
   said := play_card(bob, 'sweetie', b1, anns, '{}', 0);
@@ -324,7 +324,7 @@ begin
   if exists (select 1 from alerts where kind = 'trapStruck') then raise exception 'the setter''s owner was written a trapStruck for their own mask''s doing'; end if;
 end $$;
 
--- ---- A reaction that springs a trap, and a retired character ----
+-- ---- A quote that springs a Move, a reaction that springs nothing, and a retired character ----
 do $$
 declare
   ann uuid := tests.account('rx-ann'); bob uuid := tests.account('rx-bob'); cat uuid := tests.account('rx-cat');
@@ -334,28 +334,34 @@ declare
   anns uuid; cats uuid; bobs uuid; plain uuid; said jsonb; said_other jsonb; r record; why text;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'jumpy'); perform pg_temp.hand(cat, 'jumpy'); perform pg_temp.hand(bob, 'jumpy', 'sweetie');
+  perform pg_temp.hand(ann, 'quoter'); perform pg_temp.hand(cat, 'quoter'); perform pg_temp.hand(bob, 'quoter', 'sweetie');
   insert into wallets (account, balance) values (ann, 600), (bob, 600), (cat, 600);
   anns := tests.post(a1, t, 'Ann''s trapped post.');
   cats := tests.post(c1, t, 'Cat''s trapped post.');
   bobs := tests.post(b2, t, 'Bob Two''s trapped post.');
-  perform set_card(ann, 'jumpy', a1, anns, '{}', 0);
-  perform set_card(cat, 'jumpy', c1, cats, '{}', 0);
-  perform set_card(bob, 'jumpy', b2, bobs, '{}', 0);
+  perform set_card(ann, 'quoter', a1, anns, '{}', 0);
+  perform set_card(cat, 'quoter', c1, cats, '{}', 0);
+  perform set_card(bob, 'quoter', b2, bobs, '{}', 0);
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
-  -- Bob One's reaction springs Ann's trap: one trapSprang for Ann, about the spring, and a payload of the public projection alone.
+  -- A reaction springs nothing, whoever set the back: it writes no alert and queues no broadcast.
   perform tests.become(bob);
   said := react(anns, b1, 'meh');
   perform tests.unbecome();
-  if said -> 'sprung' is null then raise exception 'the reaction did not spring the trap: %', said; end if;
-  select * into r from alerts;
-  if (select count(*) from alerts) is distinct from 1 or r.kind is distinct from 'trapSprang' or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said -> 'sprung' ->> 'id')::uuid then
-    raise exception 'a reaction that springs a trap is the setter''s one trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
+  if said ? 'sprung' or exists (select 1 from alerts) or pg_temp.queued() <> 0 then raise exception 'a reaction sprang a back or wrote an alert: %', said; end if;
+
+  -- Bob One's quote springs Ann's Move: one trapSprang for Ann, about the spring, and a payload of the public projection alone.
+  perform tests.become(bob);
+  said := post(t, b1, 'Bob quotes the Move.', anns);
+  perform tests.unbecome();
+  if said -> 'sprung' is null then raise exception 'the quote did not spring the Move: %', said; end if;
+  select * into r from alerts where kind = 'trapSprang';
+  if (select count(*) from alerts where kind = 'trapSprang') is distinct from 1 or r.account is distinct from ann or r.character is distinct from a1 or r.act is distinct from (said -> 'sprung' ->> 'id')::uuid then
+    raise exception 'a quote that springs a Move is the setter''s one trapSprang: %', (select jsonb_agg(to_jsonb(x)) from alerts x);
   end if;
-  if (select count(*) from broadcasts_due where topic like 'account:%') is distinct from 1 then raise exception 'the spring queued % broadcasts, not 1', pg_temp.queued(); end if;
-  if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%') is distinct from array['act', 'at', 'character', 'id', 'kind', 'sub'] then
-    raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where topic like 'account:%');
+  if (select count(*) from broadcasts_due where topic = 'account:' || ann and payload ->> 'kind' = 'trapSprang') is distinct from 1 then raise exception 'the spring queued % broadcasts on the setter''s channel, not 1', pg_temp.queued(); end if;
+  if (select array_agg(k order by k) from broadcasts_due b, jsonb_object_keys(b.payload) k where b.topic like 'account:%' and b.payload ->> 'kind' = 'trapSprang') is distinct from array['act', 'at', 'character', 'id', 'kind', 'sub'] then
+    raise exception 'the broadcast holds more than the public projection: %', (select payload from broadcasts_due where topic like 'account:%' and payload ->> 'kind' = 'trapSprang');
   end if;
   -- Masks: an alert's id says nothing of how many alerts were written for others (a shared counter's gaps would count them, and
   -- a skipped alert, one for a target the actor owns, is a private fact). So it is not drawn from a sequence.
@@ -366,22 +372,21 @@ begin
   end if;
   if (select array_agg(c.column_name::text order by c.ordinal_position) from information_schema.columns c where c.table_name = 'alerts' and c.table_schema = 'public')
      is distinct from array['id', 'account', 'kind', 'sub', 'act', 'character', 'at'] then raise exception 'the alert row carries a column besides the account, kind, Act, character and time'; end if;
-  if r::text ~ (bob::text || '|' || b1::text) or (select payload::text from broadcasts_due where topic like 'account:%') ~ (bob::text || '|' || b1::text) then
-    raise exception 'an alert names the reactor or its account';
+  if r::text ~ (bob::text || '|' || b1::text) or exists (select 1 from broadcasts_due where topic = 'account:' || ann and payload::text ~ (bob::text || '|' || b1::text)) then
+    raise exception 'an alert names the quoter or its account';
   end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
-  -- The answer is the same shape whoever set the trap.
+  -- The answer is the same shape whoever set the Move.
   perform tests.become(bob);
-  said_other := react(cats, b1, 'meh');
+  said_other := post(t, b1, 'Bob quotes Cat''s Move.', cats);
   perform tests.unbecome();
   if (select array_agg(k order by k) from jsonb_object_keys(said) k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said_other) k)
      or (select array_agg(k order by k) from jsonb_object_keys(said -> 'sprung') k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said_other -> 'sprung') k)
-     or (select array_agg(k order by k) from jsonb_object_keys(said -> 'sprung' -> 'payload') k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said_other -> 'sprung' -> 'payload') k)
-     or said -> 'tally' is distinct from said_other -> 'tally' then
-    raise exception 'react''s answer differs in shape with who set the trap: % / %', said, said_other;
+     or (select array_agg(k order by k) from jsonb_object_keys(said -> 'sprung' -> 'payload') k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said_other -> 'sprung' -> 'payload') k) then
+    raise exception 'post''s answer differs in shape with who set the Move: % / %', said, said_other;
   end if;
-  if said::text ~* 'alert' or said_other::text ~* 'alert' then raise exception 'react''s answer holds the alert'; end if;
+  if said::text ~* 'alert' or said_other::text ~* 'alert' then raise exception 'post''s answer holds the alert'; end if;
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
   -- A reaction by the account that owns the setter is refused outright, so it springs nothing and writes nothing.

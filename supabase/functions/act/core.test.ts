@@ -266,7 +266,7 @@ test('the act function\'s connections send a post once after a 504, and a read a
 const ok = <T>(value: T) => ({ ok: true as const, value });
 const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => ok(undefined) };
 const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
-const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
+const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'visit' as const } }, validateConfig: inky.validateConfig };
 const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
 const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
 const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
@@ -284,7 +284,52 @@ test('a Set is decided by its card\'s rules and written by set_card; its answer 
   }
 });
 
-test('a strike\'s configuration is checked by the struck card\'s rules before SQL', async () => {
+const onPost = { whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, set_card: setAct };
+const setCalls = (calls: string[]) => calls.filter((c) => c.startsWith('service:set_card:'));
+
+test('a player sets a Move face down: Whoops! and Glitter Bomb pass the decision to set_card, with neither a catch nor a phrase', async () => {
+  for (const [card, config] of [['whoops', { color: 'red' }], ['glitter-bomb', {}]] as const) {
+    const { dbs, calls } = pair(onPost);
+    const out = await runAction(dbs, instance, { action: 'setCard', card, character: id, target, config });
+    assert.equal(out.status, 200, `${card}: ${JSON.stringify(out.body)}`);
+    const sent = setCalls(calls);
+    assert.equal(sent.length, 1, calls.join('\n'));
+    assert.ok(sent[0]!.includes(`"card":"${card}"`) && sent[0]!.includes('"catches":null') && sent[0]!.includes('"phrase":null'), sent[0]);
+  }
+});
+
+test('a Trap Card naming Whoops! sends the named catch, from the card\'s own rules', async () => {
+  const { dbs, calls } = pair(onPost);
+  // A request that also names a catch and a phrase of its own: the act function takes neither.
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'trap-card', character: id, target, config: { card: 'whoops' }, catches: 'glitter-bomb', phrase: 'smuggled' });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const sent = setCalls(calls);
+  assert.ok(sent[0]!.includes('"catches":"whoops"') && sent[0]!.includes('"phrase":null') && !sent[0]!.includes('smuggled') && !sent[0]!.includes('glitter-bomb'), sent[0]);
+});
+
+test('a Trap Card naming Force Field is refused in its own words, before SQL', async () => {
+  const { dbs, calls } = pair(onPost);
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'trap-card', character: id, target, config: { card: 'force-field' } });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Trap Card names a card that is cast on a post' } });
+  assert.equal(setCalls(calls).length, 0, calls.join('\n'));
+});
+
+test('an Autocorrect set sends its own phrase', async () => {
+  const { dbs, calls } = pair(onPost);
+  const out = await runAction(dbs, instance, { action: 'setCard', card: 'autocorrect', character: id, target, config: { phrase: 'Heel Turn', replacement: 'Face Turn' }, phrase: 'smuggled' });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const sent = setCalls(calls);
+  assert.ok(sent[0]!.includes('"phrase":"Heel Turn"') && sent[0]!.includes('"catches":null') && !sent[0]!.includes('smuggled'), sent[0]);
+});
+
+test('a Use is refused by the act function when it is set', async () => {
+  const { dbs, calls } = pair(onPost);
+  const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-shield', character: id, target, config: {} });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'Test Shield is used on your own post' } });
+  assert.equal(setCalls(calls).length, 0);
+});
+
+test('a Gimmick\'s configuration is checked by its own rules before SQL', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-snare', character: id, target, config: { ink: 'blue' } });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'the ink is red' } });

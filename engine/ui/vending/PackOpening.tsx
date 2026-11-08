@@ -42,7 +42,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSP
 import { createPortal, flushSync } from 'react-dom';
 import { animate, motion, useInstantTransition, usePresence } from 'motion/react';
 import { PostcardBack, Postcard } from '../cards/Postcard.tsx';
-import { playWord, rarityName, type CardFace } from '../cards/faces.ts';
+import { rarityName, type CardFace } from '../cards/faces.ts';
 import type { CardArt } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
 import { withArticle } from '../characters/format.ts';
@@ -72,7 +72,7 @@ export interface PackOpeningProps {
 const SPARKS = [[-12, 10, 18], [108, 5, 14], [115, 72, 20], [-11, 80, 12], [105, 100, 10], [-7, 43, 9]] as const;
 
 /** A card as it is said when it is turned: "Whoops!, Salty Cast, common". */
-export const saidOf = (face: CardFace): string => face.unknown ? face.name : `${face.name}, ${face.tag} ${playWord(face.play)}, ${face.rarity}`;
+export const saidOf = (face: CardFace): string => face.unknown ? face.name : `${face.name}, ${face.tag} ${face.kind}, ${face.rarity}`;
 
 /** A beat that has been finished by an input: whatever it still had to do is not done. */
 class Stop extends Error {}

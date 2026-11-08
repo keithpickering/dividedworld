@@ -25,6 +25,7 @@ import pipFull from './pips/default-full.svg?url';
 import pipEmpty from './pips/default-empty.svg?url';
 import gabe from './avatars/gabe.png?url';
 import { hintWords } from './hint-words.ts';
+import { trapStruckWords } from './trap-words.ts';
 import { onboarding } from './onboarding.ts';
 import { frontDoor } from './front-door.ts';
 import strategyGuide from '../guide/strategy-guide.md?raw';
@@ -149,6 +150,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     staffBoardTag: 'Staff post here; you react and spin',
     // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
     badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
+    // A card's kind tag: a Move is cast (or set face down), a Gimmick is only set, a Ward guards your own post.
+    cardKinds: Object.freeze({ cast: 'Move', set: 'Gimmick', use: 'Ward' }),
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).
@@ -157,8 +160,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     reducedMotionCard: 'Stick Around still snaps you back, only instantly.',
     /* What the glass calls a Mod Bot where the Lens names its role (the Mod Bots design, section 9). */
     modRole: 'A Moderator',
-    // Hints (the alerts design's section 5): playful, and never a bluff.
-    alerts: Object.freeze({ hint: hintWords }),
+    // Hints (the alerts design's section 5) and a face-down card that struck: playful, and never a bluff.
+    alerts: Object.freeze({ hint: hintWords, trapStruck: trapStruckWords }),
   }),
   pips: Object.freeze({ default: { full: pipFull, empty: pipEmpty } }),
   /* The developer persona's picture, by the key the instance's rules name (index.ts, `developer`). */

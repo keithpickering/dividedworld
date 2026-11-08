@@ -108,3 +108,21 @@ describe('a card\'s rarity and play on its face', () => {
     }
   });
 });
+
+/* The kind tag (docs/plans/2026-11-07-face-down-moves-design.md, section 4): the play's word in the instance's words, Cast, Set and Use where it gave none. */
+describe('a card\'s kind word', () => {
+  const kinds = { cast: 'Move', set: 'Gimmick', use: 'Ward' } as const;
+  test('is the instance\'s word for the play, and the face\'s spoken name says it', () => {
+    const set = { ...plain, key: 'snare', name: 'Snare', play: 'set' as const };
+    const use = { ...plain, key: 'shield', name: 'Shield', play: 'use' as const };
+    expect([faceOf(plain, undefined, settings, kinds).kind, faceOf(set, undefined, settings, kinds).kind, faceOf(use, undefined, settings, kinds).kind]).toEqual(['Move', 'Gimmick', 'Ward']);
+    expect(cardLabel(faceOf(set, undefined, settings, kinds), 'fan')).toBe('Snare, Sweet, Gimmick, common postcard');
+    render(<Postcard face={faceOf(plain, undefined, settings, kinds)} size="sheet" />);
+    expect(document.querySelector('.kb-postcard-play')?.textContent).toBe('Move');
+    expect(facesOf([plain], [], settings, kinds)[0]?.kind).toBe('Move');
+  });
+  test('is the capitalized play where the instance gave no words', () => {
+    const set = { ...plain, play: 'set' as const };
+    expect([faceOf(plain, undefined, settings).kind, faceOf(set, undefined, settings).kind, facesOf([plain], [], settings)[0]?.kind]).toEqual(['Cast', 'Set', 'Cast']);
+  });
+});

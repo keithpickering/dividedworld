@@ -25,7 +25,7 @@ const world: World = (fake, instance) => {
   const [first, second] = instance.cards;
   if (first && second) fake.seed.cards(me, { [first.key]: 1, [second.key]: 1 });
   const slot = (place: number) => instance.machine[place]?.item;
-  /* The second place is pulled (board 01's A2), the ninth marked up from its price to one and a half times it (E1). */
+  /* The second place is pulled (board 01's A2), Glitter Bomb marked up from its price to one and a half times it (the board's E1; Hall Pass stocks D2 now, so it stands one place later). */
   const pulled = slot(1);
   if (pulled) {
     fake.seed.slot(pulled, {
@@ -33,9 +33,10 @@ const world: World = (fake, instance) => {
       move: { kind: 'pullSlot', act: 'story-pull', ends: '2026-11-09T12:00:00Z', was: instance.machine[1]!.price, percent: null, hours: null, demand: { kind: 'distinctCharactersOnBoard', params: { board: 'general', count: 12 } }, progress: { done: 7, of: 12, met: false, checkedAt: '2026-11-07T10:00:00Z' } },
     });
   }
-  const marked = slot(8);
+  const bomb = Math.max(0, instance.machine.findIndex((m) => 'card' in m.item && m.item.card === 'glitter-bomb'));
+  const marked = slot(bomb);
   if (marked) {
-    const was = instance.machine[8]!.price;
+    const was = instance.machine[bomb]!.price;
     fake.seed.slot(marked, {
       price: Math.round(was * 1.5),
       move: { kind: 'repriceSlot', act: 'story-markup', ends: '2026-11-08T20:00:00Z', was, percent: 150, hours: null, demand: { kind: 'postsOnBoard', params: { board: 'general', count: 20 } }, progress: { done: 4, of: 20, met: false, checkedAt: '2026-11-07T10:00:00Z' } },

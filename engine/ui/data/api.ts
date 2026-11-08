@@ -1025,13 +1025,14 @@ export interface WalletEvent {
 }
 
 /**
- * A card the player bought, pulled from a pack or played (`my_card_ledger`), with its price: a play that cost nothing is here and has no wallet event,
- * and a pulled card costs nothing, since its pack holds the price (`PackEvent`).
+ * A card the player bought, pulled from a pack, played or caught (`my_card_ledger`), with its price: a play that cost nothing is here and has no
+ * wallet event, and a pulled card costs nothing, since its pack holds the price (`PackEvent`).
  */
 export interface CardEvent {
   readonly card: string;
-  readonly kind: 'bought' | 'played' | 'pulled';
-  /** The play's Act; null for a purchase and a pulled card. */
+  /** `caught`: a card a Trap Card of the player's took (0142); its `act` is the spring, and it cost nothing. */
+  readonly kind: 'bought' | 'played' | 'pulled' | 'caught';
+  /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */
   readonly pack?: Id;
@@ -1041,6 +1042,10 @@ export interface CardEvent {
   readonly at: string;
   /** For a card the player set face down, whether it carries a trap: false for a Bluff, which never springs. Absent on any other row. */
   readonly springs?: boolean;
+  /** For a card the player set face down, the card a Trap Card waits to catch (`my_face_down.catches`, the setter's own row), where it was read. */
+  readonly catches?: string;
+  /** For a Move the player set face down, the phrase the quote must hold for it to land (`my_face_down.phrase`), where it was read. */
+  readonly phrase?: string;
 }
 
 /** A pack the player bought (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order. */
@@ -1250,19 +1255,6 @@ export interface FaceDownEnd {
   readonly endedAt: string;
 }
 
-/**
- * A card the player set face down that a reply passed by (`my_face_down.passed_at`): the first post in its thread by another character,
- * which spends the back's reply moment. Read for the reply traps among them that it did not spring, which end by themselves at `endsAt`.
- */
-export interface FaceDownPass {
-  /** The set Act. */
-  readonly play: Id;
-  readonly card: string;
-  readonly post: Id;
-  readonly passedAt: string;
-  readonly endsAt: string;
-}
-
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
 export interface CaughtPlay {
   readonly play: Id;
@@ -1433,8 +1425,6 @@ export interface Log {
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
-  /** The player's cards set face down that a reply passed by without springing, by when it did. */
-  readonly setPasses: readonly FaceDownPass[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */

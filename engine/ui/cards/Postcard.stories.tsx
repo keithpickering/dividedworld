@@ -15,7 +15,7 @@ const row = { display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap'
 
 function Faces() {
   const { instance, ui } = useKayfa();
-  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings), [instance, ui.cards]);
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings, ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds]);
   return (
     <div style={{ display: 'grid', gap: 8 }}>
       {faces.map((face) => (

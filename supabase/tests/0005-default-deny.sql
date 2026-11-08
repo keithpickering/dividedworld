@@ -92,6 +92,8 @@ declare
                            'fold_text(text)', 'bbcode_plain(text)', 'bbcode_plain_u16len(text)', 'bbcode_plain_url_ok(text,text[],boolean)',
                            -- 0118: the helpers bbcode_plain calls for the tags it learned (quote heads, video addresses); each reads nothing but its arguments.
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',
+                           -- 0142: the phrase matcher a face-down Move's spring asks of a post's plain words, and the case fold it reads them through; each reads nothing but its arguments.
+                           'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_word_class()',
                            'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',
                            -- The search reads (0117): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,
                            -- and the id and name of a debuted character a prefix finds (all characters_public shows of one; `characters` is owner-only).
