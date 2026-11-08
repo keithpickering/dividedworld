@@ -1404,7 +1404,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
   /** The back of each card set face down: `catches` is the card a Trap Card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string }>();
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
     return null;
@@ -1508,7 +1508,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (short) return short;
     account.cards[card]! -= 1;
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
-    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }) });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     spend(account, decided.value.price, 'play', written.id);
     /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a Gimmick that carries a trap, or a Move (it springs on a quote). */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast' });

@@ -430,3 +430,166 @@ $$;
 
 revoke execute on function bbcode_plain(text), bbcode_walk(text, uuid), bbcode_plain_quote_act(text) from public, anon;
 grant execute on function bbcode_plain(text), bbcode_walk(text, uuid), bbcode_plain_quote_act(text) to authenticated, service_role;
+
+-- ============================================================================ Task 4: the schema and setting ====
+-- A Move's back may wait on two more conditions beside its Says (design sections 3 and 4; plan Task 4): a Quotes passage the quoted excerpt must contain, and a Who, a list of one to five characters
+-- the quoter must be ("Only these") or must not be ("Anyone but these"). They are the setter's alone before the back springs: they live in the setter's face_down row, are read through my_face_down, and are in no Act.
+--
+--   face_down.passage / .who / .who_except   passage is null or not blank; who and who_except are both null or both set; who holds 1 to 5 distinct ids (a list of characters, not references: a
+--                           retired or since-removed character leaves that part unmeetable and the back still ends at setLasts, the way out every back has); a back holds at most one of a catch and the
+--                           conditions (face_down_one_of widened: a Trap Card's catch excludes the phrase, the passage and the Who). No row is updated; the append-only triggers stay.
+--   place_set               refuses a condition on a Gimmick ("<card> takes no conditions"); a passage with no letter or digit, over 100 characters (SET_PHRASE_MOST, which keeps the SQL probe's
+--                           pattern one length for every back), or not in the post's current words, as phrase_in reads them (bbcode_plain of the latest edit's body, else the original's); a list without
+--                           its Only/Anyone-but flag or the flag without its list; a list of none, over five, or naming a character twice; and any named id that is not a debuted character, in ONE message
+--                           for a missing and an undebuted one: "<n> is not a character on the board", n the 1-based position in the list the setter sent (the first such). A retired character is
+--                           accepted (design section 4).
+--   set_card                passes the three on. Its first parameter `who` is the account, so the Who's ids are `named` here and in place_set (supabase/functions/act/core.ts sends them so); the stored
+--                           column is still face_down.who.
+--   my_face_down            returns passage, who and who_except, last.
+--
+-- Masks. No refusal reads characters.owner: the list is checked as suggest_characters (0117) reads `characters`, by id and `debuted_at` alone, so a refusal is the same for the setter's own undebuted mask, another
+-- player's, and one that does not exist, and naming one's own other mask is accepted without a word. What the refusal echoes is a position the caller sent. Nothing here is computed from a private fact.
+-- Lock order: place_set and set_card are 0142's, step for step (the setter's account row, then the target Act's `for no key update`, then the insert); the new reads (`characters`, the post's words through acts_public)
+-- take no row lock. Cost at a busy instance's scale: the checks are bounded by a list of five and a passage of 100 characters; the post's words are read once, as the Say's probe reads them.
+-- Ways out: a back with a condition ends by itself at setLasts like any back; nothing here adds a state a player can be put in.
+-- Overloads: place_set and set_card each gain parameters, and create or replace would leave 0142's signature beside the new one, so the old signatures are dropped here and the grants made again
+-- (supabase/tests/0145-quote-conditions.sql asserts one signature each; staff_set_card's positional call to place_set binds to the new one through its defaults).
+
+alter table face_down
+  add column passage text,
+  add column who uuid[],
+  add column who_except boolean,
+  drop constraint face_down_one_of,
+  add constraint face_down_one_of check (catches is null or (phrase is null and passage is null and who is null)),
+  add constraint face_down_passage check (passage is null or btrim(passage) <> ''),
+  add constraint face_down_who check ((who is null) = (who_except is null) and (who is null or (cardinality(who) between 1 and 5 and array_position(who, null) is null
+    -- no id twice: each id differs from every one after it (a check constraint may hold no subquery, and a function it called would have to be executable by everyone: 0082)
+    and who[1] <> all (who[2:5]) and who[2] <> all (who[3:5]) and who[3] <> all (who[4:5]) and who[4] <> all (who[5:5]))));
+
+-- my_face_down (0142), with the passage, the Who and its flag last. The setter's own row.
+create or replace view my_face_down as
+  select f.play, f.card, f.config, f.post, f.thread, a.created_at as set_at, f.ends_at, s.id as spring, s.created_at as sprung_at,
+    coalesce(s.created_at, case when f.ends_at <= now() then f.ends_at end) as ended_at, null::timestamptz as passed_at, f.catches, f.phrase, f.passage, f.who, f.who_except
+  from face_down f join acts a on a.id = f.play left join acts s on s.kind = 'spring' and (s.payload ->> 'set') = f.play::text
+  where f.account = auth.uid();
+
+drop function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text);
+drop function place_set(uuid, text, uuid, jsonb, uuid, integer, text, text);
+
+-- place_set (0142), taking the conditions decideSet returned. The new refusals sit with the phrase's, before the target is locked (they read no Act and take no lock); the passage is held to the post's words once
+-- the target is found to be the setter's own post. Everything else as 0142 wrote it. The variable 0142 called `named` is `caught_kind` now, since `named` is a parameter. Callable by no API role.
+create function place_set(setter uuid, card text, target uuid, config jsonb, payer uuid, price integer, catches text default null, phrase text default null,
+                          passage text default null, named uuid[] default null, who_except boolean default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  kind_of card_kinds%rowtype;
+  caught_kind card_kinds%rowtype;
+  target_kind text;
+  author uuid;
+  in_thread uuid;
+  written uuid;
+  rounds integer;
+  staff_setter boolean;
+  body text;
+  off_board integer;
+begin
+  select c.staff is not null into staff_setter from characters c where c.id = setter;
+  if staff_setter is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
+  if staff_setter is distinct from (payer is null) then
+    raise exception 'a staff character''s card is paid by no one, and a player''s by its player' using errcode = '22023';
+  end if;
+  if payer is null and coalesce(price, 0) <> 0 then raise exception 'a staff character''s card costs nothing' using errcode = '22023'; end if;
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  select * into kind_of from card_kinds k where k.key = place_set.card;
+  if kind_of.key is null then raise exception 'there is no such card' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if kind_of.play is distinct from 'cast' and kind_of.play is distinct from 'set' then
+    raise exception '% is %', kind_of.name, case kind_of.play when 'use' then 'used on your own post' else 'kept in the hand' end using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A Gimmick that waits for a cast waits for a card; one set with none could catch nothing, and its setter would not know (the spring, Task 6, reads only a named catch).
+  if catches is null and kind_of.play = 'set' and kind_of.trap #>> '{trigger,on}' = 'cast' then
+    raise exception '% names no card to catch', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if catches is not null then
+    if kind_of.play is distinct from 'set' or kind_of.trap #>> '{trigger,on}' is distinct from 'cast' then
+      raise exception '% catches no card', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    select * into caught_kind from card_kinds k where k.key = place_set.catches;
+    if caught_kind.key is null or caught_kind.play is distinct from 'cast' or not ('post' = any (caught_kind.reaches)) then
+      raise exception '% names a card that is cast on a post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+  end if;
+  if phrase is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- The engine's bound (SET_PHRASE_MOST, engine/rules/cards.ts, which decideSet holds in the same words): phrase_pattern is one length for every back only up to it.
+    if char_length(phrase) > 100 then raise exception '% waits for a phrase of at most 100 characters', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  -- The conditions of a Move (design sections 3 and 4). A Gimmick takes none.
+  if passage is not null or named is not null or who_except is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% takes no conditions', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if passage is not null then
+    if btrim(passage) = '' or phrase_norm(passage) = '' then raise exception 'the passage needs a letter or a digit' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if char_length(passage) > 100 then raise exception 'the passage is at most 100 characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if (named is null) is distinct from (who_except is null) then
+    raise exception 'a list of characters comes with Only these or Anyone but these' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if named is not null then
+    if cardinality(named) not between 1 and 5 then raise exception 'a list names one to five characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- The same message for an id that is missing and one that has not debuted: what is read is the debut alone, as suggest_characters reads `characters`, never the owner.
+    select min(i) into off_board from generate_subscripts(named, 1) i
+    where named[i] is null or not exists (select 1 from characters c where c.id = named[i] and c.debuted_at is not null);
+    if off_board is not null then raise exception '% is not a character on the board', off_board using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if (select count(distinct x) from unnest(named) x) <> cardinality(named) then raise exception 'a character is named once in a list' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
+  if target_kind is distinct from 'post' then raise exception 'a card is set face down on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if author is distinct from setter then raise exception 'a card is set face down on a post of your own character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+  -- The passage must be in the post's current words (its latest edit's body, else its own), read as the probe reads them. The post is public, so the refusal reads nothing private.
+  if passage is not null then
+    select p.current_payload ->> 'body' into body from acts_public p where p.id = target;
+    if not phrase_in(bbcode_plain(coalesce(body, '')), passage) then raise exception 'that passage is not in this post''s words' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  -- Public, since the back is.
+  if exists (select 1 from face_down f where f.post = target and f.ends_at > now()
+             and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)) then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  select count(*) into rounds from face_down f where f.post = target;
+  insert into acts (character, kind, thread, target_act_id, payload) values (setter, 'set', in_thread, target, '{}') returning id into written;
+  begin
+    insert into face_down (play, account, card, config, post, thread, round, ends_at, catches, phrase, passage, who, who_except)
+    values (written, payer, card, coalesce(config, '{}'), target, in_thread, rounds + 1, now() + span_interval(setting('setLasts')), place_set.catches, place_set.phrase,
+            place_set.passage, place_set.named, place_set.who_except);
+  exception when unique_violation then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end;
+  return act_projection(written);
+end $$;
+revoke execute on function place_set(uuid, text, uuid, jsonb, uuid, integer, text, text, text, uuid[], boolean) from public, anon, authenticated, service_role;
+
+-- set_card (0142), passing the passage, the list and its flag on. Everything else as 0142 wrote it; the grants as 0142 gave them.
+create function set_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer, catches text default null, phrase text default null,
+                         passage text default null, named uuid[] default null, who_except boolean default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  held integer;
+  placed jsonb;
+  written uuid;
+begin
+  perform played_by(through, who);
+  perform not_banned(through);
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  if price is null or price < 0 or price > (setting('walletCap'))::integer then raise exception 'a play costs between 0 and the wallet''s cap' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  perform 1 from accounts where id = who for no key update;
+  held := card_held(who, set_card.card);
+  if coalesce(held, 0) < 1 then raise exception 'you hold no "%" card; the Vending Machine sells them', card using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
+  placed := place_set(through, card, target, config, who, price, set_card.catches, set_card.phrase, set_card.passage, set_card.named, set_card.who_except);
+  written := (placed ->> 'id')::uuid;
+  perform wallet_spend(who, price, 'play', written);
+  insert into card_ledger (account, card, kind, act, price) values (who, card, 'played', written, price);
+  return placed;
+end $$;
+revoke execute on function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text, text, uuid[], boolean) from public, anon, authenticated;
+grant execute on function set_card(uuid, text, uuid, uuid, jsonb, integer, text, text, text, uuid[], boolean) to service_role;

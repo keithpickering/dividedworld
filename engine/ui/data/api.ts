@@ -1048,6 +1048,11 @@ export interface CardEvent {
   readonly catches?: string;
   /** For a Move the player set face down, the phrase the quote must hold for it to land (`my_face_down.phrase`), where it was read. */
   readonly phrase?: string;
+  /** For a Move set face down, the passage the quoted excerpt must hold (`my_face_down.passage`, the setter's own row), where it was read. */
+  readonly passage?: string;
+  /** For a Move set face down, the characters (ids) its Who names (`my_face_down.who`), where it was read; `whoExcept` says whether the quoter must be none of them. */
+  readonly who?: readonly Id[];
+  readonly whoExcept?: boolean;
 }
 
 /** A pack the player bought (`my_packs`): its kind, its price, whether the Boss had moved that price, and the cards it gave in pull order. */
