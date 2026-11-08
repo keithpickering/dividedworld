@@ -19,7 +19,7 @@ import { useKayfa } from '../context.tsx';
 import type { Act, Id, PlayMoment } from '../data/api.ts';
 import { when } from '../thread/lines.tsx';
 import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from './body.ts';
-import { MomentEffects, inkOf, momentParts } from './Effects.tsx';
+import { MomentEffects, inkOf, momentParts, useOnInk } from './Effects.tsx';
 import { useLensStore, type LensStore } from './Lens.tsx';
 import type { CardPlay, EffectPlace } from './types.ts';
 import './moment.css';
@@ -64,7 +64,8 @@ export function MomentFrame({ play, place, at, read, back, named, words, unrecor
   const { instance, ui } = useKayfa();
   /* A card back is drawn in no card's ink: which card it is stays the setter's. */
   const rules = play.faceDown ? undefined : instance.cards.find((c) => c.key === play.card);
-  const ink = play.faceDown ? undefined : inkOf(ui, play, [play]);
+  const onInk = useOnInk();
+  const ink = play.faceDown ? undefined : inkOf(ui, play, [play], onInk);
   const ring = useRing(place);
   return (
     <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
@@ -73,7 +74,7 @@ export function MomentFrame({ play, place, at, read, back, named, words, unrecor
       <p ref={ring.tag} className="kb-moment-tag">
         <span>As it landed</span>
         {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
-        {read !== 'read' && <><span aria-hidden="true"> · </span><span>{read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.'}</span></>}
+        {read !== 'read' && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.'}</span></>}
         {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
       </p>
       {(named.length > 0 || words.length > 0 || unrecorded) && (

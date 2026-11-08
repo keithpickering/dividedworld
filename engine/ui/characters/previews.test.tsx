@@ -2,7 +2,8 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { Act } from '../data/api.ts';
 import { renderInWorld } from '../test-world.tsx';
-import { Debuts, UnmaskLine } from '../thread/lines.tsx';
+import { AnnounceLine, UnmaskLine } from '../thread/lines.tsx';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { debutPreview, revealPreview, turnPreview } from './previews.ts';
 
 afterEach(cleanup);
@@ -10,7 +11,7 @@ afterEach(cleanup);
 const text = (lines: readonly { text: string }[]) => lines.map((l) => l.text);
 
 describe('the preview of a debut', () => {
-  const base = { name: 'Pipewrench', className: 'Face' };
+  const base = { name: 'Pipewrench', className: 'Face', pronouns: PRONOUN_PRESETS.it };
 
   test('silent says nothing is posted, and names no class', () => {
     for (const timing of ['tally', 'now'] as const) {
@@ -21,18 +22,25 @@ describe('the preview of a debut', () => {
     }
   });
 
+  test('a silent debut names the character\'s own pronouns, verbs agreeing, and no other set', () => {
+    expect(debutPreview({ ...base, pronouns: PRONOUN_PRESETS.she, timing: 'now', loudness: 'silent' }).nothing).toBe('Nothing is posted. Pipewrench is on the board at once, and her first post is her entrance.');
+    expect(debutPreview({ ...base, pronouns: PRONOUN_PRESETS.they, timing: 'now', loudness: 'silent' }).nothing).toBe('Nothing is posted. Pipewrench is on the board at once, and their first post is their entrance.');
+    expect(debutPreview({ ...base, timing: 'now', loudness: 'silent' }).nothing).toBe('Nothing is posted. Pipewrench is on the board at once, and its first post is its entrance.');
+  });
+
   test('announced names the character and never its class', () => {
     for (const timing of ['tally', 'now'] as const) {
       const p = debutPreview({ ...base, timing, loudness: 'announced' });
-      expect(text(p.lines)).toEqual(['Pipewrench debuts']);
-      expect(p.lines[0]!.by).toBe('The System');
+      expect(text(p.lines)).toEqual(['Pipewrench debuts.']);
+      expect(p.lines[0]!.by).toBe('Pipewrench');
       expect(JSON.stringify(p)).not.toContain('Face');
     }
   });
 
-  test('with its class names the class in the tally and in the reveal that follows it', () => {
+  test('with its class names the class in the one Promo, which is also the reveal', () => {
     const p = debutPreview({ ...base, timing: 'tally', loudness: 'with_class' });
-    expect(text(p.lines)).toEqual(['Pipewrench debuts as Face', 'Pipewrench revealed: Face']);
+    expect(text(p.lines)).toEqual(['Pipewrench debuts as a Face.']);
+    expect(p.lines[0]!.by).toBe('Pipewrench');
   });
 
   test('says where and when it appears', () => {
@@ -53,13 +61,13 @@ describe('the preview of a Turn', () => {
 
   test('announced says only that it has Turned', () => {
     const p = turnPreview({ ...base, loudness: 'announced', showFrom: false, showTo: false });
-    expect(text(p.lines)).toEqual(['Pipewrench has Turned']);
+    expect(text(p.lines)).toEqual(['Pipewrench has Turned.']);
   });
 
-  test('may name the old class, the new one, or both; the new one is also revealed', () => {
-    expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: true, showTo: false }).lines)).toEqual(['Pipewrench has Turned from Heel']);
-    expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: false, showTo: true }).lines)).toEqual(['Pipewrench has Turned to Face', 'Pipewrench revealed: Face']);
-    expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: true, showTo: true }).lines)).toEqual(['Pipewrench has Turned from Heel to Face', 'Pipewrench revealed: Face']);
+  test('may name the old class, the new one, or both; one Promo says it all', () => {
+    expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: true, showTo: false }).lines)).toEqual(['Pipewrench has Turned, leaving Heel.']);
+    expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: false, showTo: true }).lines)).toEqual(['Pipewrench has Turned to Face.']);
+    expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: true, showTo: true }).lines)).toEqual(['Pipewrench has Turned from Heel to Face.']);
   });
 
   test('a silent Turn never carries the names, whatever the flags say', () => {
@@ -67,41 +75,30 @@ describe('the preview of a Turn', () => {
   });
 });
 
-/* The preview promises what the tally will say: it must be the words the thread draws, or it is a lie. */
+/* The preview promises what the Promo will say: it must be the words the thread draws, or it is a lie. */
 describe('the preview and the thread say the same words', () => {
   const lineOf = (payload: Act['payload']) => {
-    renderInWorld(<Debuts payload={payload} />);
-    const out = document.querySelector('li')!.textContent!;
+    renderInWorld(<AnnounceLine act={{ payload } as unknown as Act} name="Pipewrench" />);
+    const out = document.querySelector('p')!.textContent!;
     cleanup();
     return out;
   };
 
   test('a debut', () => {
-    const named = lineOf({ debuts: [{ name: 'Pipewrench' }] });
-    const classed = lineOf({ debuts: [{ name: 'Pipewrench', class: 'face' }] });
-    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', timing: 'tally', loudness: 'announced' }).lines)[0]).toBe(named);
-    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', timing: 'tally', loudness: 'with_class' }).lines)[0]).toBe(classed);
+    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', pronouns: PRONOUN_PRESETS.it, timing: 'tally', loudness: 'announced' }).lines)[0]).toBe(lineOf({ what: 'debut' }));
+    expect(text(debutPreview({ name: 'Pipewrench', className: 'Face', pronouns: PRONOUN_PRESETS.it, timing: 'tally', loudness: 'with_class' }).lines)[0]).toBe(lineOf({ what: 'debut', class: 'face' }));
   });
 
-  test('a Turn', () => {
+  test('a Turn, naming neither class, one or both', () => {
     const cases = [
-      [{ name: 'Pipewrench' }, false, false],
-      [{ name: 'Pipewrench', was: 'heel' }, true, false],
-      [{ name: 'Pipewrench', class: 'face' }, false, true],
-      [{ name: 'Pipewrench', was: 'heel', class: 'face' }, true, true],
+      [{ what: 'turn' }, false, false],
+      [{ what: 'turn', was: 'heel' }, true, false],
+      [{ what: 'turn', class: 'face' }, false, true],
+      [{ what: 'turn', was: 'heel', class: 'face' }, true, true],
     ] as const;
-    for (const [entry, showFrom, showTo] of cases) {
-      const said = lineOf({ turns: [entry] });
-      expect(text(turnPreview({ name: 'Pipewrench', was: 'Heel', to: 'Face', loudness: 'announced', showFrom, showTo }).lines)[0]).toBe(said);
+    for (const [payload, showFrom, showTo] of cases) {
+      expect(text(turnPreview({ name: 'Pipewrench', was: 'Heel', to: 'Face', loudness: 'announced', showFrom, showTo }).lines)[0]).toBe(lineOf(payload));
     }
-  });
-
-  test('a reveal', () => {
-    renderInWorld(<UnmaskLine act={{ payload: { class: 'face', message: '' } } as unknown as Act} name="Pipewrench" />);
-    const said = document.querySelector('p')!.textContent;
-    expect(text(turnPreview({ name: 'Pipewrench', was: 'Heel', to: 'Face', loudness: 'announced', showFrom: false, showTo: true }).lines)[1]).toBe(said);
-    render(<span />);
-    expect(screen.queryByText('x')).toBeNull();
   });
 
   test('the character\'s own reveal, with and without its words', () => {
@@ -137,7 +134,7 @@ describe('the preview of a reveal', () => {
 
 describe('from the Task 9 spec review', () => {
   test('a preview that names a class before one is chosen says so, never a blank', () => {
-    const p = debutPreview({ name: 'Spritey', className: '', timing: 'tally', loudness: 'with_class' });
-    expect(p.lines.map((l) => l.text)).toEqual(['Spritey debuts as (the class you choose)', 'Spritey revealed: (the class you choose)']);
+    const p = debutPreview({ name: 'Spritey', className: '', pronouns: PRONOUN_PRESETS.it, timing: 'tally', loudness: 'with_class' });
+    expect(p.lines.map((l) => l.text)).toEqual(['Spritey debuts as a (the class you choose).']);
   });
 });

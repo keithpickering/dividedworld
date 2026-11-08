@@ -3,7 +3,7 @@
  * docs/research/2026-11-02-onboarding/01-welcome.html and 04-phone.html): a glass page in the Updates page's frame. The instance's developer
  * persona's letter (`InstanceUi.onboarding.letter`, Markdown through the guide's renderer, so the letter is written once and the Strategy
  * Guide's first section reads the same words) stands on a post with the persona's picture, name and tagline; under it, Before you start
- * (theme, motion and text size: the rows Settings › Accessibility draws, saved as they change); then Make your first character, and a
+ * (the theme tiles Settings › The board draws, without its preview, and the motion and text size rows Settings › Accessibility draws, saved as they change); then Make your first character, and a
  * quieter link to the Strategy Guide. A column beside says what happens next, plainly.
  *
  * It shows once. The page marks the welcome seen when it opens (`seeWelcome`), and `SendToWelcome` sends an account here only while it has
@@ -18,7 +18,8 @@
  */
 import { useEffect, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
-import { ThemeRow, MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
+import { MotionRow, TextSizeRow } from '../account/appearanceRows.tsx';
+import { ThemeRow } from '../account/ThemePicker.tsx';
 import { usePreferenceSaves } from '../account/preferences.ts';
 import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
@@ -37,7 +38,7 @@ export const WELCOME_PATH = '/welcome';
 
 /** What happens next, in the glass's own words: out of character, plain and true of the game as it stands. */
 const NEXT: readonly { readonly title: string; readonly line: string }[] = [
-  { title: 'Your first character', line: 'A name, a class, and when it arrives on the board. Once it has arrived, it can post.' },
+  { title: 'Your first character', line: 'A name, a class, and when the character arrives on the board. Then it can post.' },
   { title: 'A short tour', line: 'On the board, three short notes point out your mask, your orbs and your hand. Skip all tips ends them.' },
   { title: 'Change anything later', line: 'These settings live in Settings › Accessibility, and this letter is the first section of the Strategy Guide.' },
 ];
@@ -46,7 +47,9 @@ export function Welcome() {
   const { api, instance, ui, settings } = useKayfa();
   const { session } = usePlayer();
   const { path } = useLocation();
-  const { prefs, refusal, saved, change } = usePreferenceSaves(session.account);
+  const boot = useBoot();
+  /* The preferences are boot's (the page's start); none is read for them while boot has them. */
+  const { prefs, refusal, saved, change } = usePreferenceSaves(session.account, boot ? boot.preferences : undefined);
   const setup = useId();
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
   const picture = persona.avatar === undefined ? undefined : ui.avatars?.[persona.avatar];
@@ -93,7 +96,7 @@ export function Welcome() {
               <div aria-busy={refusal === null || undefined}>{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</div>
             ) : (
               <>
-                <ThemeRow legend="Theme" level={4} value={prefs.theme} onChange={(v) => change({ theme: v })} />
+                <ThemeRow level={4} value={prefs} onChange={(theme) => change({ theme })} />
                 <MotionRow level={4} value={prefs.motion} onChange={(v) => change({ motion: v })} />
                 <TextSizeRow level={4} value={prefs.textSize} onChange={(v) => change({ textSize: v })} />
                 {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}

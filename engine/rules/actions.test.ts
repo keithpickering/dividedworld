@@ -2,9 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decide } from './actions.ts';
 import type { Instance } from './types.ts';
-import { systemSettings, testSystem } from './test-system.ts';
+import { systemSettings, testSystem, testGroups } from './test-system.ts';
 
-const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, priceKey: 'splat.price', playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
 const sparkle = { ...splat, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 1 } };
 const instance: Instance = {
@@ -13,10 +13,11 @@ const instance: Instance = {
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
     settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-    postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
+    postMaxLength: 50, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
   },
-  ranks: [{ name: 'Rookie', from: 0 }], pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
+  ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
+  packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }],
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -33,8 +34,26 @@ test('each action is decided into the SQL function that writes it, with that fun
     { ok: true, rpc: 'edit_post', args: { target: other, through: id, body: 'Fixed.' } });
   assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '' }, instance),
     { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'Spun', body: '' } });
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'I was wrong.' }, instance),
+    { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'I was wrong.' } });
   assert.deepEqual(decide({ action: 'react', act: other, character: id, kind: 'fire' }, instance),
     { ok: true, rpc: 'react', args: { target: other, through: id, reaction: 'fire' } });
+});
+
+test('framing passes through on a post, a thread start, a spin and an apology: the first five distinct ids, and nothing when there are none', () => {
+  const six = [id, other, '33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444444', '55555555-5555-4555-8555-555555555555', '66666666-6666-4666-8666-666666666666'];
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [other, other, id] }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null, framing: [other, id] } });
+  assert.deepEqual(decide({ action: 'startThread', board: 'general', character: id, title: 'T', body: 'B', framing: six }, instance),
+    { ok: true, rpc: 'start_thread', args: { board_slug: 'general', through: id, title: 'T', body: 'B', framing: six.slice(0, 5) } });
+  assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'S', body: '', framing: [id] }, instance),
+    { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'S', body: '', framing: [id] } });
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', framing: [id, id] }, instance),
+    { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'B', framing: [id] } });
+  assert.deepEqual(decide({ action: 'post', thread: other, character: id, body: 'R.', framing: [] }, instance),
+    { ok: true, rpc: 'post', args: { in_thread: other, through: id, body: 'R.', quoting: null } });
+  assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: ['nope'] }) ?? '', /^framing:/);
+  assert.match(refusal({ action: 'post', thread: other, character: id, body: 'R.', framing: 'x' }) ?? '', /^framing:/);
 });
 
 test('a request that is not one of the actions is refused', () => {
@@ -72,13 +91,34 @@ test('a spin\'s own words may be empty, and are bounded like a post\'s', () => {
   assert.match(refusal({ action: 'spin', origin: other, character: id, title: 'Spun', body: 'x'.repeat(51) }) ?? '', /^body:/);
 });
 
+test('an apology names a move, and has a title and words of its own, bounded like a spin\'s', () => {
+  assert.equal(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'x' }), null);
+  assert.match(refusal({ action: 'apologize', character: id, title: 'Sorry', body: 'x' }) ?? '', /^move:/);
+  assert.match(refusal({ action: 'apologize', move: 'nope', character: id, title: 'Sorry', body: 'x' }) ?? '', /^move:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: ' ', body: 'x' }) ?? '', /^title:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'x'.repeat(11), body: 'x' }) ?? '', /^title:.*10/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: '' }) ?? '', /^body:/);
+  assert.match(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'x'.repeat(51) }) ?? '', /^body:/);
+});
+
 test('a reaction the instance does not have is refused', () => {
   assert.match(refusal({ action: 'react', act: other, character: id, kind: 'shrug' }) ?? '', /^kind:.*shrug/);
 });
 
-test('a card is bought at the Vending Machine\'s price, by the service, for the caller', () => {
-  assert.deepEqual(decide({ action: 'buyCard', card: 'splat' }, instance), { ok: true, rpc: 'buy_card', args: { card: 'splat', price: 100 }, asService: true });
-  assert.match(refusal({ action: 'buyCard', card: 'nothing' }) ?? '', /^card:/);
+test('a card is bought from a slot at the price the screen showed, by the service, for the caller', () => {
+  assert.deepEqual(decide({ action: 'buyCard', slot: other, price: 250 }, instance), { ok: true, rpc: 'buy_card', args: { slot: other, price: 250 }, asService: true });
+  assert.match(refusal({ action: 'buyCard', slot: 'nothing', price: 250 }) ?? '', /^slot:/);
+  assert.match(refusal({ action: 'buyCard', slot: other }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', slot: other, price: 0 }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', slot: other, price: 1.5 }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyCard', card: 'splat' }) ?? '', /^slot:/, 'a card is no longer bought by its key');
+});
+
+test('a pack is bought from a slot and names the slot and the price the screen showed', () => {
+  assert.deepEqual(decide({ action: 'buyPack', slot: other, price: 300 }, instance), { ok: true, rpc: 'buy_pack', args: { slot: other, price: 300 }, asService: true });
+  assert.match(refusal({ action: 'buyPack', slot: 'nothing', price: 300 }) ?? '', /^slot:/);
+  assert.match(refusal({ action: 'buyPack', slot: other }) ?? '', /^price:/);
+  assert.match(refusal({ action: 'buyPack', slot: other, price: -3 }) ?? '', /^price:/);
 });
 
 test('a play names the card, the character, the post and the caster\'s configuration; its price waits on the post', () => {
@@ -139,11 +179,11 @@ test('a waiting Turn is withdrawn by naming its character', () => {
 
 test('a character drops now or debuts at the tally, silent or announced; a waiting one is dropped or its loudness changed', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent', pronouns: null } });
   assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'later' }) ?? '', /^timing:/);
   assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', loudness: 'revealed' }) ?? '', /^loudness: a debut is silent, announced, or announced with its class/);
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class', pronouns: null } });
   assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'tally', loudness: 'with_class' }, instance),
     { ok: true, rpc: 'set_debut', args: { through: id, timing: 'tally', loudness: 'with_class' } });
   assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' }, instance),
@@ -155,9 +195,18 @@ test('a character drops now or debuts at the tally, silent or announced; a waiti
   assert.match(refusal({ action: 'setDebut', timing: 'now', loudness: 'silent' }) ?? '', /^character:/);
 });
 
+test('a character is made with pronouns the way they are stored: lowered, or refused plainly', () => {
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  assert.deepEqual(decide({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, subject: ' SHE ' } }, instance),
+    { ok: true, rpc: 'create_character', args: { name: 'Hers', class: 'a', timing: 'now', loudness: 'announced', pronouns: she } });
+  assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, subject: 'abcdefghijklm' } }) ?? '', /^pronouns: the subject has 13 characters; at most 12/);
+  assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, object: '' } }) ?? '', /^pronouns: the object is empty/);
+  assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: 'she/her' }) ?? '', /^pronouns: the pronouns are not an object/);
+});
+
 test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'now', loudness: 'announced' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'now', loudness: 'announced', pronouns: null } });
   assert.match(refusal({ action: 'createCharacter', name: 'Masked One', class: 'z' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'createCharacter', name: ' \u200b ', class: 'a' }) ?? '', /^name: is empty/);
   assert.match(refusal({ action: 'createCharacter', name: 'n'.repeat(41), class: 'a' }) ?? '', /^name: is longer than 40/);
@@ -171,7 +220,7 @@ test('a character is made with a name and one of the instance\'s classes; invite
   assert.match(refusal({ action: 'openAccount', invite: 7 }) ?? '', /^invite:/);
   // Trimmed as the database trims it, and held to the same hidden characters.
   assert.deepEqual(decide({ action: 'createCharacter', name: ` ${'n'.repeat(40)}  `, class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'now', loudness: 'announced' } });
+    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'now', loudness: 'announced', pronouns: null } });
   for (const name of ['Mas\u200bk', 'Mask\u00a01', 'Mask  1', 'Mask\u202e1', 'Mask\t1', 'Mask\ufeff1', 'Mask\u3164', 'Mask\u{e0041}', 'Mask\u2800', 'Mask\u{1d173}']) {
     assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
   }

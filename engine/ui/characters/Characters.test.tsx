@@ -1,10 +1,13 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { axeViolations, describeViolations } from '../a11y.ts';
 import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Instance } from '../../rules/types.ts';
-import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 import { Characters } from './Characters.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -22,9 +25,9 @@ function world(options: { readonly per?: number; readonly instance?: Instance } 
   vi.useFakeTimers({ shouldAdvanceTime: true, now: fake.clock.now() });
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
-  const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0 });
+  const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0, pronouns: PRONOUN_PRESETS.she });
   const hoolie = fake.seed.character(me, 'Mrs. Hooligan', 'heel', { at: T0 + DAY });
-  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, loudness: 'announced' });
+  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, loudness: 'announced', pronouns: PRONOUN_PRESETS.they });
   const stranger = fake.seed.character(other, 'Stranger', 'heel', { at: T0 });
   fake.seed.settle({ at: T0 + 2 * DAY, debut: false, standings: { [pipe]: 1420, [hoolie]: 685, [stranger]: 100 } });
   fake.signInAs(me);
@@ -32,7 +35,7 @@ function world(options: { readonly per?: number; readonly instance?: Instance } 
 }
 type World = ReturnType<typeof world>;
 
-const open = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+const open = (w: World) => renderIn(w.fake, <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 /*
  * On the glass, My characters is the Roster board's: a card per character, and the selected one's
  * panel, which holds what a table row held. So a character's "row" is its panel, reached as a
@@ -47,6 +50,15 @@ const row = (name: string) => {
 };
 /* Before the glass this waited for the name, which the card and the panel now both show. */
 const ready = async () => { await screen.findByRole('heading', { level: 1, name: /Your characters/u }); await within(await screen.findByRole('tablist', { name: /^Roster, /u })).findByText('Pipewrench'); };
+
+/** Types into the Thread field and chooses the option by its title. */
+const pickThread = async (dialog: HTMLElement, typed: string, title: string) => {
+  await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), typed);
+  await userEvent.click((await offered(dialog)).find((o) => o.textContent?.startsWith(title))!);
+};
+
+/** The thread options on offer: the list's, not the board filter's. */
+const offered = async (dialog: HTMLElement) => within(await within(dialog).findByRole('listbox')).findAllByRole('option');
 
 /** Mrs. Hooligan has Turned once, today, so she cannot Turn for 30 days. */
 async function cooldown(w: World) {
@@ -71,18 +83,47 @@ describe('My characters', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
   });
 
-  test('the roster reads its standings in one read of the amounts, never a place per character', async () => {
+  test('its whole page is in the first render, from the document, and nothing is read for it', async () => {
     const w = world();
-    const amounts = vi.spyOn(w.fake, 'standingAmounts');
-    const place = vi.spyOn(w.fake, 'standingPlace');
-    const ranking = vi.spyOn(w.fake, 'standingsPage');
+    const boot = await w.fake.boot();
+    const doc = await w.fake.myCharactersPage();
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <Characters doc={doc} />, { path: '/characters', settings: { charactersPerPlayer: w.per }, boot });
+    /* No wait: the faces, standings, counts and Turns are the document's. */
+    expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
+    const r = row('Pipewrench');
+    expect(within(r).getByText('14.20')).toBeInTheDocument();
+    expect(r).toHaveTextContent(/Posts\s*\d+ · joined/u);
+    expect(within(roster()).getAllByTestId('kb-roster-rank')).toHaveLength(2);
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
+  });
+
+  test('the roster is one document: faces, standings, counts, reveals and Turns come with myCharactersPage, and no read of its own is made', async () => {
+    const w = world();
+    const page = vi.spyOn(w.fake, 'myCharactersPage');
+    const own = ['standingAmounts', 'standingPlace', 'standingsPage', 'characterCounts', 'characters', 'turnsAnnounced', 'nextSettlementAt'] as const;
+    const spies = own.map((n) => vi.spyOn(w.fake, n));
     open(w);
     await ready();
     expect(await within(row('Mrs. Hooligan')).findByText('6.85')).toBeInTheDocument();
-    expect(amounts).toHaveBeenCalledTimes(1);
-    expect([...(amounts.mock.calls[0]?.[0] ?? [])].sort()).toEqual([w.pipe, w.hoolie].sort());
-    expect(place).not.toHaveBeenCalled();
-    expect(ranking).not.toHaveBeenCalled();
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(spies.map((spy) => spy.mock.calls.length)).toEqual(own.map(() => 0));
+  });
+
+  test('Characters to Edit profile makes no read: they are one document', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const read = holdReads(w.fake, ['session']);
+    const page = vi.spyOn(w.fake, 'myCharactersPage');
+    await userEvent.click(within(row('Mrs. Hooligan')).getByRole('link', { name: 'Edit profile' }));
+    expect(await screen.findByLabelText('Title')).toBeInTheDocument();
+    expect(screen.getByLabelText('Character')).toHaveValue(w.hoolie);
+    expect(window.location.pathname).toBe('/characters/edit');
+    expect(page).not.toHaveBeenCalled();
+    expect(read).toEqual([]);
   });
 
   test('no link or navigation on the page puts a character in the address: Edit profile carries it in history.state', async () => {
@@ -133,6 +174,10 @@ describe('My characters', () => {
     const r = row('Spritey');
     expect(within(r).getByText(/waiting to debut at the next settlement/iu)).toBeInTheDocument();
     expect(within(r).getByText(/announced/iu)).toBeInTheDocument();
+    /* A they/them character: the verbs agree, and no "it" is left. */
+    expect(within(r).getByText('They will debut announced.', { exact: false })).toBeInTheDocument();
+    expect(within(r).getByText('They can Turn once they have debuted.')).toBeInTheDocument();
+    expect(within(r).getByText(/\(chosen when they were made\)/u)).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Drop Spritey now…' })).toBeInTheDocument();
     expect(within(r).getByRole('button', { name: 'Change how Spritey debuts…' })).toBeInTheDocument();
     /* No aria-label: each is named by what is drawn on it (the label in the name, WCAG 2.5.3). */
@@ -147,6 +192,26 @@ describe('My characters', () => {
     const board = (await w.fake.boards()).find((b) => b.slug === 'general')!;
     expect((await w.fake.threads(board.id, { offset: 0, limit: 20 })).threads.flatMap((t) => [t.firstCharacter, t.lastCharacter])).not.toContain(w.waiting);
     expect((await w.fake.boards()).map((b) => b.lastCharacter)).not.toContain(w.waiting);
+  });
+
+  test('Save how it debuts is a busy button while the save is out: aria-busy, its name kept, and a second press saves once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.setDebut.bind(w.fake);
+    const setDebut = vi.spyOn(w.fake, 'setDebut').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
+    const save = within(dialog).getByRole('button', { name: 'Save how Spritey debuts' });
+    await userEvent.click(save);
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Save how Spritey debuts' })).toBe(save);
+    await userEvent.click(save);
+    expect(setDebut).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(within(row('Spritey')).getByText(/silently/iu)).toBeInTheDocument());
   });
 
   test('Drop now debuts it at once; Change how it debuts changes only the announcement', async () => {
@@ -186,6 +251,22 @@ describe('My characters', () => {
     await ready();
     expect(screen.getByRole('link', { name: 'New character' })).toHaveAttribute('href', '/characters/new');
     expect(screen.getByText(/1 open slot/u)).toBeInTheDocument();
+  });
+
+  test('a retired she/her character says an admin can restore her', async () => {
+    const w = world();
+    w.fake.seed.retire(w.pipe);
+    open(w);
+    await ready();
+    expect(within(row('Pipewrench')).getByText('Retired. An admin can restore her.')).toBeInTheDocument();
+  });
+
+  test('a waiting they/them character announced with a class says the class is theirs', async () => {
+    const w = world();
+    w.fake.seed.character(w.me, 'Wobbly', 'face', { debuted: false, loudness: 'with_class', pronouns: PRONOUN_PRESETS.they });
+    open(w);
+    await ready();
+    expect(within(row('Wobbly')).getByText('They will debut announced, with their class.', { exact: false })).toBeInTheDocument();
   });
 
   test('a retired character says an admin can restore it, and offers nothing', async () => {
@@ -257,10 +338,9 @@ describe('the Turn', () => {
     expect(within(dialog).getByText(/takes effect at the next settlement/iu)).toBeInTheDocument();
 
     await userEvent.click(within(dialog).getByRole('checkbox', { name: /Name the old class/u }));
-    expect(preview).toHaveTextContent('Pipewrench has Turned from Face');
+    expect(preview).toHaveTextContent('Pipewrench has Turned, leaving Face.');
     await userEvent.click(within(dialog).getByRole('checkbox', { name: /Name the new class/u }));
     expect(preview).toHaveTextContent('Pipewrench has Turned from Face to Heel');
-    expect(preview).toHaveTextContent('Pipewrench revealed: Heel');
 
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     expect(preview).toHaveTextContent(/Nobody is told/u);
@@ -302,7 +382,7 @@ describe('the Turn', () => {
     expect(within(loud).getByRole('checkbox', { name: /^Name the new class/u })).not.toBeChecked();
   });
 
-  /* A name quotes the words it adds to The System's post; the preview below is the post, so the two are held together. */
+  /* A name quotes the words it adds to the character's own Promo; the preview below is the post, so the two are held together. */
   test('says in each name the words it adds to the post, and the preview then shows them', async () => {
     const w = world();
     open(w);
@@ -316,18 +396,27 @@ describe('the Turn', () => {
       return found![1]!;
     };
 
+    /* The quoted words are the whole line the post will carry, the one the thread draws: not a fragment of it. */
+    const posted = () => Array.from(preview.querySelectorAll('.kb-preview-line')).map((p) => p.textContent);
+
     const old = within(dialog).getByRole('checkbox', { name: /^Name the old class/u });
-    expect(preview).not.toHaveTextContent(quoted(old));
+    expect(posted()).not.toContain(quoted(old));
+    expect(quoted(old)).toBe('Pipewrench has Turned, leaving Face.');
     await userEvent.click(old);
-    expect(preview).toHaveTextContent(quoted(old));
+    expect(posted()).toEqual([quoted(old)]);
     await userEvent.click(old);
 
     const now = within(dialog).getByRole('checkbox', { name: /^Name the new class/u });
-    expect(preview).not.toHaveTextContent(quoted(now));
+    expect(posted()).not.toContain(quoted(now));
+    expect(quoted(now)).toBe('Pipewrench has Turned to Heel.');
     await userEvent.click(now);
-    expect(preview).toHaveTextContent(quoted(now));
+    expect(posted()).toEqual([quoted(now)]);
     expect(now.closest('label')).toHaveTextContent(/reveals/u);
-    expect(preview).toHaveTextContent('Pipewrench revealed: Heel');
+
+    /* With the other name on, each option quotes the line the post will carry once it is on too. */
+    expect(quoted(old)).toBe('Pipewrench has Turned from Face to Heel.');
+    await userEvent.click(old);
+    expect(posted()).toEqual(['Pipewrench has Turned from Face to Heel.']);
   });
 
   test('cannot be confirmed until a class is chosen', async () => {
@@ -355,9 +444,10 @@ describe('the Turn', () => {
     expect(within(r).getByText(/to Heel/u)).toBeInTheDocument();
     expect(within(r).getByText(/takes effect at the next settlement/iu)).toBeInTheDocument();
     expect(within(r).queryByRole('button', { name: 'Turn Pipewrench' })).toBeNull();
-    /* Focus is not lost to the page's top when the button it came from is replaced. */
+    /* Focus is not lost to the page's top when the button it came from is replaced: it ends on Change, where the Turn button was, once the page's
+       document has been read again in place (the dialog closes on the old button, which the new document replaces). */
+    await waitFor(() => expect(within(r).getByRole('button', { name: 'Change Pipewrench\'s Turn' })).toHaveFocus());
     expect(document.body).not.toHaveFocus();
-    expect(r.contains(document.activeElement)).toBe(true);
 
     await userEvent.click(within(r).getByRole('button', { name: 'Change Pipewrench\'s Turn' }));
     dialog = await screen.findByRole('dialog', { name: 'Change Pipewrench\'s Turn' });
@@ -376,6 +466,67 @@ describe('the Turn', () => {
     expect((await w.fake.myCharacters()).find((c) => c.id === w.pipe)!.pendingTurn).toBeNull();
   });
 
+  test('focus ends on Change when the page\'s document lands after the dialog has closed, and on Turn after a withdrawal that lands late', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    /* The document is read again in place after the Turn: held, so the dialog closes first and the new page replaces the old one under focus. */
+    let land: () => void = () => undefined;
+    const real = w.fake.myCharactersPage.bind(w.fake);
+    const hold = () => vi.spyOn(w.fake, 'myCharactersPage').mockImplementationOnce(async () => { await new Promise<void>((resolve) => { land = resolve; }); return real(); });
+    const dialog = await openTurn();
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    hold();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toHaveFocus();
+    await act(async () => { land(); });
+    await waitFor(() => expect(within(row('Pipewrench')).getByRole('button', { name: 'Change Pipewrench\'s Turn' })).toHaveFocus());
+
+    hold();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));
+    expect(await screen.findByText('Pipewrench\'s Turn is withdrawn.')).toBeInTheDocument();
+    await act(async () => { land(); });
+    await waitFor(() => expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toHaveFocus());
+  });
+
+  test('Confirm Turn is a busy button while the Turn is out: aria-busy, its name kept, and a second press Turns once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.turn.bind(w.fake);
+    const turn = vi.spyOn(w.fake, 'turn').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm Turn' });
+    await userEvent.click(confirm);
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Confirm Turn' })).toBe(confirm);
+    await userEvent.click(confirm);
+    expect(turn).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  test('Withdraw is a busy button while the withdrawal is out: aria-busy, its name kept, and a second press withdraws once', async () => {
+    const w = world();
+    await w.fake.turn(w.pipe, 'heel', 'announced', false, false);
+    let release!: () => void;
+    const real = w.fake.withdrawTurn.bind(w.fake);
+    const withdraw = vi.spyOn(w.fake, 'withdrawTurn').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    open(w);
+    await ready();
+    const button = within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' })).toBe(button);
+    await userEvent.click(button);
+    expect(withdraw).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(within(row('Pipewrench')).queryByText(/Turn waiting/u)).toBeNull());
+  });
+
   test('a Turn the settlement has no window for yet says "at the next settlement"; one with a window says when', async () => {
     const w = world();
     open(w);
@@ -390,6 +541,14 @@ describe('the Turn', () => {
     open(w);
     await ready();
     expect(within(row('Pipewrench')).getByText(/Takes effect at the next settlement, Oct 30/u)).toBeInTheDocument();
+  });
+
+  test('the Turn dialog says, in the character\'s own pronouns, when she can Turn again', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openTurn();
+    expect(dialog).toHaveTextContent(/After a Turn she can Turn again in /u);
   });
 
   test('a refusal is shown in the server\'s words, in the dialog, which stays open', async () => {
@@ -427,6 +586,41 @@ describe('Reveal', () => {
     expect(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' })).toHaveFocus();
   });
 
+  test('with boot, the overlay opens at once with its boards and reads none', async () => {
+    const w = world();
+    general(w);
+    const boot = await w.fake.boot();
+    const doc = await w.fake.myCharactersPage();
+    const boards = vi.spyOn(w.fake, 'boards');
+    renderIn(w.fake, <Characters doc={doc} />, { path: '/characters', settings: { charactersPerPlayer: w.per }, boot });
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = screen.getByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    /* The first render holds its boards: no wait, no read of them. */
+    expect(within(dialog).getByRole('option', { name: 'General' })).toBeInTheDocument();
+    expect(boards).not.toHaveBeenCalled();
+  });
+
+  test('the reveal is a busy button while it is out: aria-busy, its name kept, and a second press reveals once', async () => {
+    const w = world();
+    const { thread } = general(w);
+    let release!: () => void;
+    const real = w.fake.unmask.bind(w.fake);
+    const unmask = vi.spyOn(w.fake, 'unmask').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await pickThread(dialog, 'tea', 'The tea thread');
+    const reveal = within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' });
+    await userEvent.click(reveal);
+    expect(reveal).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBe(reveal);
+    await userEvent.click(reveal);
+    expect(unmask).toHaveBeenCalledTimes(1);
+    expect(unmask).toHaveBeenCalledWith(w.pipe, thread, '');
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
   test('is made in a thread the player chooses, with an optional line of the character\'s words', async () => {
     const w = world();
     const { thread } = general(w);
@@ -434,8 +628,7 @@ describe('Reveal', () => {
     open(w);
     await ready();
     const dialog = await openReveal();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
-    await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
+    await pickThread(dialog, 'tea', 'The tea thread');
     await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
     await waitFor(() => expect(unmask).toHaveBeenCalledWith(w.pipe, thread, 'It was me.'));
@@ -452,8 +645,7 @@ describe('Reveal', () => {
     await ready();
     const dialog = await openReveal();
     expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeDisabled();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
-    await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
+    await pickThread(dialog, 'tea', 'The tea thread');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal once it has run, or withdraw the Turn');
   });
@@ -472,54 +664,121 @@ describe('Reveal: choosing a thread', () => {
     return screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
   };
 
-  test('shows twenty threads of a board and offers the older ones, a page at a time', async () => {
+  test('empty, the field lists the newest threads, each naming its board', async () => {
     const w = world();
-    for (let i = 1; i <= 25; i++) w.fake.seed.thread('general', w.stranger, `Thread ${String(i).padStart(2, '0')}`, 'x', { at: T0 + i * 1000 });
+    for (let i = 1; i <= 12; i++) w.fake.seed.thread('general', w.stranger, `Thread ${String(i).padStart(2, '0')}`, 'x', { at: T0 + i * 1000 });
     open(w);
     await ready();
     const dialog = await openReveal();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
-    const select = await within(dialog).findByLabelText('Thread');
-    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(21));
-    expect(within(select).queryByRole('option', { name: 'Thread 01' })).toBeNull();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Show older threads' }));
-    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(26));
-    expect(within(select).getByRole('option', { name: 'Thread 01' })).toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: 'Show older threads' })).toBeNull();
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Thread' }));
+    const options = await offered(dialog);
+    expect(options).toHaveLength(10);
+    expect(options[0]).toHaveTextContent('Thread 12');
+    expect(options[0]).toHaveTextContent('General');
+    expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeDisabled();
   });
 
-  test('a page of older threads that comes after the board was changed is not added to the new board\'s list', async () => {
+  test('a thread is found by typing, chosen, and its title feeds the preview', async () => {
     const w = world();
-    for (let i = 1; i <= 25; i++) w.fake.seed.thread('general', w.stranger, `Thread ${String(i).padStart(2, '0')}`, 'x', { at: T0 + i * 1000 });
-    const threads = w.fake.threads.bind(w.fake);
-    let release: () => void = () => {};
-    vi.spyOn(w.fake, 'threads').mockImplementation(async (board, page) => {
-      const answer = await threads(board, page);
-      if ((page?.offset ?? 0) > 0) await new Promise<void>((done) => { release = done; });
-      return answer;
-    });
+    w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');
+    w.fake.seed.thread('general', w.stranger, 'Other business', 'x');
     open(w);
     await ready();
     const dialog = await openReveal();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
-    const select = await within(dialog).findByLabelText('Thread');
-    await waitFor(() => expect(within(select).getAllByRole('option')).toHaveLength(21));
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Show older threads' }));
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'Off Topic');
-    expect(await within(dialog).findByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
-    await act(async () => { release(); });
-    expect(within(select).getAllByRole('option')).toHaveLength(1);
-    expect(within(dialog).getByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
+    const field = within(dialog).getByRole('combobox', { name: 'Thread' });
+    await userEvent.type(field, 'tea');
+    const options = await offered(dialog);
+    expect(options).toHaveLength(1);
+    await userEvent.click(options[0]!);
+    expect(field).toHaveValue('The tea thread');
+    expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeEnabled();
+    expect(dialog).toHaveTextContent('The tea thread');
   });
 
-  test('says plainly when a board has no threads', async () => {
+  test('typing again after a choice unchooses it', async () => {
+    const w = world();
+    w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await pickThread(dialog, 'tea', 'The tea thread');
+    const submit = within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' });
+    expect(submit).toBeEnabled();
+    await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'x');
+    expect(submit).toBeDisabled();
+  });
+
+  test('the open dialog with the Thread list open is axe clean', async () => {
+    const w = world();
+    w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.click(within(dialog).getByRole('combobox', { name: 'Thread' }));
+    await offered(dialog);
+    const found = await axeViolations(dialog);
+    expect(describeViolations(found)).toBe('');
+  });
+
+  test('the open dialog with "No threads found." showing is axe clean', async () => {
     const w = world();
     open(w);
     await ready();
     const dialog = await openReveal();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'Off Topic');
-    expect(await within(dialog).findByText('No threads on this board yet; choose another board.')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: 'Show older threads' })).toBeNull();
+    await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'zzzz');
+    expect(await within(dialog).findByText('No threads found.')).toBeInTheDocument();
+    const found = await axeViolations(dialog);
+    expect(describeViolations(found)).toBe('');
+  });
+
+  test('the board filter lists All boards first, without The System\'s, and narrows the threads', async () => {
+    const w = world();
+    w.fake.seed.thread('general', w.stranger, 'Tea in general', 'x');
+    w.fake.seed.thread('off-topic', w.stranger, 'Tea off topic', 'x');
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    const filter = within(dialog).getByLabelText('Board (optional)');
+    await waitFor(() => expect(within(filter).getAllByRole('option').length).toBeGreaterThan(1));
+    const names = within(filter).getAllByRole('option').map((o) => o.textContent);
+    expect(names[0]).toBe('All boards');
+    const system = (await w.fake.boards()).filter((b) => b.isSystem).map((b) => b.name);
+    expect(system.length).toBeGreaterThan(0);
+    for (const n of system) expect(names).not.toContain(n);
+    const field = within(dialog).getByRole('combobox', { name: 'Thread' });
+    await userEvent.type(field, 'tea');
+    expect(await offered(dialog)).toHaveLength(2);
+    await userEvent.selectOptions(filter, 'Off Topic');
+    await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'tea');
+    const narrowed = await offered(dialog);
+    expect(narrowed).toHaveLength(1);
+    expect(narrowed[0]).toHaveTextContent('Tea off topic');
+  });
+
+  test('The System\'s board threads are never offered, typed for or listed', async () => {
+    const w = world();
+    const sys = (await w.fake.boards()).find((b) => b.isSystem)!;
+    w.fake.seed.thread(sys.slug, null, 'Tea at The System', 'x');
+    w.fake.seed.thread('general', w.stranger, 'Tea in general', 'x');
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    const field = within(dialog).getByRole('combobox', { name: 'Thread' });
+    await userEvent.click(field);
+    await offered(dialog);
+    expect(within(dialog).queryByRole('option', { name: /Tea at The System/u })).toBeNull();
+    await userEvent.type(field, 'tea');
+    await waitFor(async () => expect(await offered(dialog)).toHaveLength(1));
+    expect(within(dialog).queryByRole('option', { name: /Tea at The System/u })).toBeNull();
+  });
+
+  test('says plainly when nothing is found', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const dialog = await openReveal();
+    await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'zzzz');
+    expect(await within(dialog).findByText('No threads found.')).toBeInTheDocument();
   });
 });
 
@@ -557,22 +816,30 @@ describe('My characters: stale words', () => {
     expect(within(row('Pipewrench')).queryByText('there is nothing to withdraw')).toBeNull();
   });
 
-  test('a failed load is not kept once the characters are read again', async () => {
+  test('a failed load is the glass\'s, and Try again reads the document again', async () => {
     const w = world();
-    const read = vi.spyOn(w.fake, 'characters').mockRejectedValueOnce(new Error('network'));
-    function Again() { const { refresh } = usePlayer(); return <button type="button" onClick={() => void refresh()}>Again</button>; }
-    renderIn(w.fake, <><Characters /><Again /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
-    expect(await screen.findByText(/could not be loaded/u)).toBeInTheDocument();
-    /* Another character debuts, so the characters read changes and is read again. */
-    w.fake.seed.settle({ at: w.fake.clock.now(), debut: true });
-    await userEvent.click(screen.getByRole('button', { name: 'Again' }));
-    await waitFor(() => expect(screen.queryByText(/could not be loaded/u)).toBeNull());
-    expect(read).toHaveBeenCalled();
+    vi.spyOn(w.fake, 'myCharactersPage').mockRejectedValueOnce(new Error('network'));
+    open(w);
+    expect(await screen.findByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await ready();
+    expect(screen.queryByRole('heading', { name: 'The page cannot be displayed' })).toBeNull();
+  });
+
+  test('an action reads the page\'s document again, in place, and the roster follows it', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    const page = vi.spyOn(w.fake, 'myCharactersPage');
+    expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toBeEnabled();
+    await turnIt();
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(await within(row('Pipewrench')).findByText(/Turn waiting/u)).toBeInTheDocument();
   });
 });
 
 describe('A pending Turn and a reveal', () => {
-  const NOTE = 'If its settlement is due, a reveal waits until it has run.';
+  const NOTE = 'If the settlement is due, a reveal waits until it has run.';
 
   test('the row\'s note on a pending Turn says so, and the reveal dialog says it too', async () => {
     const w = world();
@@ -583,6 +850,18 @@ describe('A pending Turn and a reveal', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
     const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
     expect(within(dialog).getByText(new RegExp(NOTE.replace('.', '\\.'), 'u'))).toBeInTheDocument();
+    expect(within(dialog).getByText(/This reveals the class she holds now, /u)).toBeInTheDocument();
+  });
+
+  test('the reveal dialog\'s pending-Turn line agrees with a they/them character: "the class they hold now"', async () => {
+    const w = world();
+    const wobbly = w.fake.seed.character(w.me, 'Wobbly', 'face', { at: T0, pronouns: PRONOUN_PRESETS.they });
+    expect((await w.fake.turn(wobbly, 'heel', 'announced', false, false)).ok).toBe(true);
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Wobbly')).getByRole('button', { name: 'Reveal Wobbly\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Wobbly\'s class' });
+    expect(within(dialog).getByText(/This reveals the class they hold now, /u)).toBeInTheDocument();
   });
 
   test('a character without a pending Turn is told nothing of the kind', async () => {
@@ -623,7 +902,8 @@ describe('My characters on the glass (the Roster board)', () => {
   test('the roster is one tablist with one tab per character, the selected one marked, and the panel is its tabpanel', async () => {
     const w = world();
     await cooldown(w);
-    open(w);
+    /* The player's rows come with boot, as in the app, so the HUD's character is chosen before the page is drawn and no panel swaps for it. */
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, boot: await w.fake.boot() });
     await ready();
     const tabs = within(roster()).getAllByRole('tab');
     expect(tabs).toHaveLength(3);
@@ -686,7 +966,7 @@ describe('My characters on the glass (the Roster board)', () => {
 
   test('opens on the character a navigation carried, else on the HUD\'s', async () => {
     const w = world();
-    renderIn(w.fake, <Characters />, { path: '/characters', state: { character: w.hoolie }, settings: { charactersPerPlayer: w.per } });
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', state: { character: w.hoolie }, settings: { charactersPerPlayer: w.per } });
     await ready();
     expect(card('Mrs. Hooligan')).toHaveAttribute('aria-selected', 'true');
     cleanup();
@@ -710,7 +990,7 @@ describe('My characters on the glass (the Roster board)', () => {
 
   test('a character that Turned, announced with its old class, says what it was', async () => {
     const w = world();
-    const turns = w.fake.seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn.');
+    const turns = w.fake.seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn.');
     w.fake.seed.announceTurn(w.pipe, turns.thread, { was: 'heel' });
     open(w);
     await ready();
@@ -751,7 +1031,7 @@ describe('the class, in its own color, to its own player only', () => {
 });
 
 describe('the Turn modal over My characters (the Turn board)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 
   test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
     const w = world();
@@ -827,7 +1107,7 @@ describe('the Turn modal over My characters (the Turn board)', () => {
 });
 
 describe('the Reveal over My characters (the glass)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
   const general = (w: World) => w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
 
   test('is a glass overlay on the turn smoke, with the menu bar left in view, dimmed and inert', async () => {
@@ -875,8 +1155,7 @@ describe('the Reveal over My characters (the glass)', () => {
     expect(within(preview).getByText('At once, in the thread you choose.')).toBeInTheDocument();
     await userEvent.type(within(dialog).getByLabelText(/In the character.s words/u), 'It was me.');
     expect(within(preview).getByText('Pipewrench revealed: Face — “It was me.”')).toBeInTheDocument();
-    await userEvent.selectOptions(within(dialog).getByLabelText('Board'), 'General');
-    await userEvent.selectOptions(await within(dialog).findByLabelText('Thread'), 'The tea thread');
+    await pickThread(dialog, 'tea', 'The tea thread');
     expect(within(preview).getByText('At once, in The tea thread.')).toBeInTheDocument();
   });
 });
@@ -884,7 +1163,7 @@ describe('the Reveal over My characters (the glass)', () => {
 describe('the panel\'s pip style (the Roster board)', () => {
   /* Two styles, so a choice can change one. */
   const twoStyles: Instance = { ...testInstance, pipStyles: [...testInstance.pipStyles, { key: 'stars', name: 'Stars', full: 's.svg', empty: 'se.svg' }] };
-  const openTwo = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', instance: twoStyles, settings: { charactersPerPlayer: w.per } });
+  const openTwo = (w: World) => renderIn(w.fake, <LoadedCharacters />, { path: '/characters', instance: twoStyles, settings: { charactersPerPlayer: w.per } });
   const champ = async () => {
     const w = world({ instance: twoStyles });
     expect((await w.fake.setProfile(w.pipe, 'Champ', 'Belts and all.', 'default')).ok).toBe(true);
@@ -948,7 +1227,7 @@ describe('the panel\'s pip style (the Roster board)', () => {
 });
 
 describe('the Reveal over My characters: its fields and its foot (the Reveal board)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
   const reveal = async (w: World) => {
     page(w);
     await ready();
@@ -956,10 +1235,12 @@ describe('the Reveal over My characters: its fields and its foot (the Reveal boa
     return screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
   };
 
-  test('Board and Thread are one row of two fields, and the character\'s words count on their own line, the hint at its left', async () => {
+  test('The board filter and Thread are one row of two fields, in the board\'s places, and the character\'s words count on their own line, the hint at its left', async () => {
     const dialog = await reveal(world());
     const where = dialog.querySelector('.kb-reveal-where')!;
-    expect([...where.children].map((f) => f.textContent?.replace(/Choose.*/u, ''))).toEqual(['Board', 'Thread']);
+    expect([...where.querySelectorAll('label')].map((f) => f.querySelector('input,select')!.getAttribute('role') ?? f.querySelector('select')!.tagName)).toEqual(['SELECT', 'combobox']);
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('combobox', { name: 'Board (optional)' })).toBeInTheDocument();
     const words = within(dialog).getByLabelText(/In the character.s words/u);
     const count = document.getElementById(words.getAttribute('aria-describedby')!)!;
     expect(count).toHaveClass('kb-glass-field-count');
@@ -973,14 +1254,14 @@ describe('the Reveal over My characters: its fields and its foot (the Reveal boa
   test('says in one plain line, beside Cancel and the reveal, what will happen', async () => {
     const dialog = await reveal(world());
     const foot = dialog.querySelector('.kb-glass-form-foot')!;
-    expect(foot.children[0]).toHaveTextContent('The reveal is checked by The System and posted at once.');
+    expect(foot.children[0]).toHaveTextContent('The reveal is checked by the game and posted at once.');
     expect(within(foot as HTMLElement).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(within(foot as HTMLElement).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeInTheDocument();
   });
 });
 
 describe('the Debut dialog\'s foot (the Debut boards)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><Characters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
 
   test('changing how it debuts says when it debuts, how far off, and that it can be dropped now', async () => {
     const w = world();
@@ -989,7 +1270,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     await ready();
     await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('It debuts at the next settlement, in 7 h 42 min. Until then you can drop it now instead.');
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('They debut at the next settlement, in 7 h 42 min. Until then you can drop them now instead.');
     /* How loud is the dialog\'s only choice, one row of three. */
     expect(within(dialog).getAllByRole('radio')).toHaveLength(3);
     expect(dialog.querySelector('fieldset.kb-choice-loud')).not.toBeNull();
@@ -1002,7 +1283,7 @@ describe('the Debut dialog\'s foot (the Debut boards)', () => {
     await ready();
     await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
     const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^It debuts at the next settlement\. Until then you can drop it now instead\.$/u);
+    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^They debut at the next settlement\. Until then you can drop them now instead\.$/u);
   });
 
   test('dropping it now says it goes on the board and can post at once', async () => {
@@ -1031,51 +1312,79 @@ describe('the class cards\' radios', () => {
 
 /*
  * Choose a class as a carousel (the Technician plan's Task 4). A test in engine/ui may not import an
- * instance, so this is an instance of five classes in Divided World's order, which is what the
+ * instance, so this is an instance of six classes in Divided World's order, which is what the
  * engine must draw with no count of its own. jsdom lays nothing out, so the row is given the Turn
  * board's lengths: 216px cards in a 972px row, overflowing.
  */
-const five: Instance = {
+const six: Instance = {
   ...testInstance,
-  classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })),
+  classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Tweener', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })),
 };
+/** Every class's key in the instance's order, and those the held Heel leaves to turn to: the tests read them, never a literal list. */
+const sixKeys = six.classes.map((c) => c.key);
+const sixTurnTo = sixKeys.filter((k) => k !== 'heel');
 function overflowingRow() {
   const grid = (el: HTMLElement) => el.classList.contains('kb-class-grid');
-  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 5 * 216 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? six.classes.length * 216 : 0; });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 972 : 0; });
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-class-card') ? 216 : 0; });
 }
 
 describe('the Turn\'s classes, as a carousel', () => {
-  const openFive = (w: World) => renderIn(w.fake, <Characters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: five });
+  const openSix = (w: World) => renderIn(w.fake, <LoadedCharacters />, { path: '/characters', settings: { charactersPerPlayer: w.per }, instance: six });
   const openTurn = async (name: string) => {
     await userEvent.click(within(row(name)).getByRole('button', { name: `Turn ${name}` }));
     return screen.findByRole('dialog', { name: `Turn ${name}` });
   };
 
   test('draws every class in the instance\'s order, the one held marked Now, the rest radios of one group', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     const dialog = await openTurn('Mrs. Hooligan');
     const group = within(dialog).getByRole('group', { name: 'Turn to' });
     const cards = [...group.querySelectorAll<HTMLElement>('.kb-class-card')];
-    expect(cards.map((c) => c.dataset.kbClass)).toEqual(['face', 'heel', 'jabroni', 'technician', 'lurker']);
+    expect(cards.map((c) => c.dataset.kbClass)).toEqual(sixKeys);
     expect(within(cards[1]!).getByText('Now')).toBeInTheDocument();
     const radios = within(group).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual(['face', 'jabroni', 'technician', 'lurker']);
+    expect(radios.map((r) => r.getAttribute('value'))).toEqual(sixTurnTo);
     expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
   });
 
+  test('counts and fades by the cards\' real sub-pixel width: the phone\'s 291.375px cards, scrolled to the fifth, read "5–5" with no fade before it', async () => {
+    const w = world({ instance: six });
+    openSix(w);
+    await ready();
+    // The phone's row: 355px wide, cards calc(100% - 64px) = 291.375px, 14px apart. offsetWidth rounds a card to 291; the computed width does not.
+    const CARD = 291.375;
+    const STEP = CARD + 14;
+    const SCROLLED = 4 * STEP; // 1221.5: the fifth card (the Tweener) at the row's start
+    const grid = (el: HTMLElement) => el.classList.contains('kb-class-grid');
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? six.classes.length * STEP - 14 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? 355 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'get').mockImplementation(function (this: HTMLElement) { return grid(this) ? SCROLLED : 0; });
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-class-card') ? Math.round(CARD) : 0; });
+    // The computed box is what layout reports, fractions and all.
+    const computed = window.getComputedStyle.bind(window);
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((el: Element, pseudo?: string | null) => {
+      if (el.classList.contains('kb-class-card')) return { width: `${CARD}px` } as CSSStyleDeclaration;
+      if (el.classList.contains('kb-class-grid')) return { columnGap: '14px' } as CSSStyleDeclaration;
+      return computed(el, pseudo);
+    });
+    const dialog = await openTurn('Mrs. Hooligan');
+    expect(await within(dialog).findByText(`5–5 of ${six.classes.length}`)).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-class-grid')).not.toHaveAttribute('data-kb-peek-before');
+  });
+
   test('hides no class from the accessibility tree while the row overflows', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     overflowingRow();
     const dialog = await openTurn('Mrs. Hooligan');
-    await within(dialog).findByText('1–4 of 5');
+    await within(dialog).findByText(`1–4 of ${six.classes.length}`);
     // getAllByRole leaves out what the accessibility tree leaves out (aria-hidden, display, visibility).
-    expect(within(within(dialog).getByRole('group', { name: 'Turn to' })).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(['face', 'jabroni', 'technician', 'lurker']);
+    expect(within(within(dialog).getByRole('group', { name: 'Turn to' })).getAllByRole('radio').map((r) => r.getAttribute('value'))).toEqual(sixTurnTo);
     for (const card of dialog.querySelectorAll<HTMLElement>('.kb-class-card')) {
       for (let el: HTMLElement | null = card; el && el !== dialog; el = el.parentElement) {
         expect(el.hidden || el.inert || el.getAttribute('aria-hidden') === 'true', card.dataset.kbClass).toBe(false);
@@ -1084,12 +1393,12 @@ describe('the Turn\'s classes, as a carousel', () => {
   });
 
   test('names its arrows and its count while the row overflows, "Earlier classes" disabled at the start', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     overflowingRow();
     const dialog = await openTurn('Mrs. Hooligan');
-    expect(await within(dialog).findByText('1–4 of 5')).toBeInTheDocument();
+    expect(await within(dialog).findByText(`1–4 of ${six.classes.length}`)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Earlier classes' })).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: 'More classes' })).toBeEnabled();
     // The arrows are buttons, never a form's submit.
@@ -1097,21 +1406,21 @@ describe('the Turn\'s classes, as a carousel', () => {
   });
 
   test('draws no arrows and no count when every class fits', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     const dialog = await openTurn('Mrs. Hooligan');
     expect(within(dialog).queryByRole('button', { name: 'More classes' })).toBeNull();
-    expect(within(dialog).queryByText(/ of 5$/u)).toBeNull();
+    expect(within(dialog).queryByText(/ of \d+$/u)).toBeNull();
   });
 
   test('still opens with focus on the first class card, before the arrows', async () => {
-    const w = world({ instance: five });
-    openFive(w);
+    const w = world({ instance: six });
+    openSix(w);
     await ready();
     overflowingRow();
     const dialog = await openTurn('Mrs. Hooligan');
-    await within(dialog).findByText('1–4 of 5');
+    await within(dialog).findByText(`1–4 of ${six.classes.length}`);
     expect(within(dialog).getAllByRole('radio')[0]).toHaveFocus();
   });
 });
@@ -1127,12 +1436,12 @@ describe('the panel\'s online status', () => {
   test('shows the character\'s state; choosing Hidden hides it, and the player\'s own characters say so after the refresh', async () => {
     const w = world();
     const hide = vi.spyOn(w.fake, 'setPresenceHidden');
-    renderIn(w.fake, <><HudHidden /><Characters /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
+    renderIn(w.fake, <><HudHidden /><LoadedCharacters /></>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
     await ready();
     const select = await status();
     expect(select).toHaveValue('shown');
     expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: none');
-    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. While you post as it, only you see it there\./u)).toBeInTheDocument();
+    expect(within(row('Pipewrench')).getByText(/A hidden character isn't listed in Who is online or Users browsing\. While you post as her, only you see her there\./u)).toBeInTheDocument();
     await userEvent.selectOptions(select, 'hidden');
     await waitFor(() => expect(hide).toHaveBeenCalledWith(w.pipe, true));
     await waitFor(() => expect(select).toHaveValue('hidden'));

@@ -12,6 +12,7 @@
  * return to My characters with focus where it was (the web plan's 2026-10-30 amendment to Task 9).
  */
 import { useState } from 'react';
+import { words } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, MyCharacter } from '../data/api.ts';
@@ -25,7 +26,7 @@ import { ClassChip } from './ClassChip.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, spanWords, withArticle } from './format.ts';
 import { PreviewBox } from './PreviewBox.tsx';
-import { turnNamedWords, turnPreview } from './previews.ts';
+import { turnPreview } from './previews.ts';
 import './characters.css';
 
 export interface TurnDialogProps {
@@ -53,12 +54,16 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
 
   const nameOf = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const now = nameOf(character.class);
+  const pw = words(character.pronouns);
   /* A silent Turn names nothing: the boxes are off and clear while it is chosen. */
   const showFrom = loudness === 'announced' && named.was;
   const showTo = loudness === 'announced' && named.to;
   const when = pending?.takesEffectAt ?? nextSettlement;
   const index = standing === undefined ? null : rankIndex(instance.ranks, standing);
   const rank = index === null ? undefined : instance.ranks[index];
+  /* The line the post will carry with the given names on: the preview's own function, so an option quotes what is posted. */
+  const postedWith = (was: boolean, toName: boolean) =>
+    turnPreview({ name: character.name, was: now, to: to ? nameOf(to) : '', loudness: 'announced', showFrom: was, showTo: toName && to !== null }).lines[0]?.text ?? '';
   const label = (q: (typeof MAP)[number]) => ui.quadrantLabels[q];
 
   const submit = async () => {
@@ -104,7 +109,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
             <dt>Who can see it</dt><dd>Only you</dd>
           </dl>
           <p className="kb-turn-line">
-            {character.name} is {withArticle(now)} (since {shortDate(character.classSince)}). After a Turn it can Turn again in {spanWords(settings.turnCooldown)}.
+            {character.name} is {withArticle(now)} (since {shortDate(character.classSince)}). After a Turn {pw.they} can Turn again in {spanWords(settings.turnCooldown)}.
           </p>
         </aside>
         <div className="kb-turn-choice">
@@ -123,7 +128,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
             </label>
             <label className="kb-choice-option" data-kb-chosen={loudness === 'announced' || undefined}>
               <input type="radio" name="turn-loudness" checked={loudness === 'announced'} onChange={() => setLoudness('announced')} />
-              <span><b>Announced.</b> The System posts that {character.name} has Turned.</span>
+              <span><b>Announced.</b> {character.name}&apos;s own Promo says {pw.they} {pw.has} Turned.</span>
             </label>
             {/*
               The board's third tile, lit where the post names a class: the two names an announced
@@ -133,11 +138,11 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <legend className="kb-visually-hidden">Name in the post</legend>
               <label className="kb-turn-toggle" data-kb-chosen={showFrom || undefined}>
                 <input type="checkbox" checked={showFrom} onChange={(e) => setNamed({ ...named, was: e.target.checked })} />
-                <span><b>Name the old class.</b> Adds “{turnNamedWords({ was: now, to: '' }).old}” to the post.</span>
+                <span><b>Name the old class.</b> Adds “{postedWith(true, showTo)}” to the post.</span>
               </label>
               <label className="kb-turn-toggle" data-kb-chosen={showTo || undefined}>
                 <input type="checkbox" checked={showTo} onChange={(e) => setNamed({ ...named, to: e.target.checked })} />
-                <span><b>Name the new class.</b> {to ? `Adds “${turnNamedWords({ was: now, to: nameOf(to) }).new}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
+                <span><b>Name the new class.</b> {to ? `Adds “${postedWith(showFrom, true)}” to the post, and reveals it.` : 'Adds the class you choose to the post, and reveals it.'}</span>
               </label>
             </fieldset>
           </fieldset>
@@ -154,7 +159,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
           {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
           <ButtonRow>
             <GlassButton onClick={onClose}>Cancel</GlassButton>
-            <GlassButton type="submit" kind="primary" disabled={!to || busy}>{pending ? 'Change the Turn' : 'Confirm Turn'}</GlassButton>
+            <GlassButton type="submit" kind="primary" busy={busy} disabled={!to}>{pending ? 'Change the Turn' : 'Confirm Turn'}</GlassButton>
           </ButtonRow>
         </div>
       </form>

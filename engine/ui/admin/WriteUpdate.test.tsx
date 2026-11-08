@@ -197,6 +197,23 @@ describe('Write an update', () => {
     expect(post).not.toHaveAccessibleDescription();
   });
 
+  test('Post update is a busy button while the post is out: aria-busy, its name kept, and a second press posts once', async () => {
+    const fake = world();
+    let release!: () => void;
+    const real = fake.postUpdate.bind(fake);
+    const post = vi.spyOn(fake, 'postUpdate').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    renderIn(fake, <WriteUpdate />, { instance });
+    await fill('Traps bite', 'The trap was offended.');
+    const button = within(form()).getByRole('button', { name: 'Post update' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(within(form()).getByRole('button', { name: 'Post update' })).toBe(button);
+    await userEvent.click(button);
+    expect(post).toHaveBeenCalledTimes(1);
+    release();
+    expect(await screen.findByText('Posted. Every player has it in their alerts.')).toBeInTheDocument();
+  });
+
   test('a lost answer is not resent: it says to look before posting again, and keeps what was written', async () => {
     const fake = world();
     vi.spyOn(fake, 'postUpdate').mockResolvedValue({ ok: false, error: 'No answer came back. It may have gone through: look at Updates before you post it again.', uncertain: true });
@@ -209,7 +226,7 @@ describe('Write an update', () => {
   });
 
   describe('opened from a handover (`initial`)', () => {
-    const initial = { title: 'Season 4 opens with Comptroller', words: 'Season 4\'s Boss: Comptroller (was a Moderator).\n\nHype Man is now a member.' };
+    const initial = { title: 'Season 4 opens with Comptroller', words: 'Season 4: The Boss is Comptroller (was a Moderator).\n\nHype Man is now a member.' };
 
     test('opens filled in, says the lines are for the admin to replace, and holds the post until they are', async () => {
       renderIn(world(), <WriteUpdate initial={initial} />, { instance });

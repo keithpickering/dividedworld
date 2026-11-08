@@ -28,7 +28,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' blob: data: https:; frame-src https://www.youtube-nocookie.com https://player.vimeo.com https://clips.twitch.tv https://streamable.com https://embed.nicovideo.jp https://w.soundcloud.com; media-src 'self' https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     Referrer-Policy = "strict-origin"
     X-Content-Type-Options = "nosniff"
     X-Frame-Options = "DENY"
@@ -38,3 +38,12 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# The email's fonts and images, the same for every recipient. Mail already sent names them, so their
+# names are stable and they are cached for a day; any origin may load the fonts (web/headers.ts,
+# MAIL_HEADERS).
+[[headers]]
+  for = "/mail/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=86400"

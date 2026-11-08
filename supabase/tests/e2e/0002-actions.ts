@@ -51,8 +51,13 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
 
   // The Vending Machine, a play priced by its post, and the author washing the ink away.
   sql(`insert into wallets (account, balance) values ('${ann.account}', 300) on conflict (account) do update set balance = 300`);
-  const bought = await runAction(asAnn, instance, { action: 'buyCard', card: 'whoops' });
+  // A purchase names the slot and the price the screen showed (machine_now), and the database holds the slot.
+  const [slot, shown] = sql(`select slot || ' ' || price from machine_now where card = 'whoops'`).split(' ');
+  const bought = await runAction(asAnn, instance, { action: 'buyCard', slot, price: Number(shown) });
   assert.equal(bought.status, 200, JSON.stringify(bought));
+  const stale = await runAction(asAnn, instance, { action: 'buyCard', slot, price: Number(shown) + 1 });
+  assert.equal(stale.status, 400, JSON.stringify(stale));
+  assert.match(String((stale.body as { error: string }).error), /the price is now/);
   const played = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'Teal', seed: 1 }, message: ' Oops. ' });
   assert.equal(played.status, 200, JSON.stringify(played));
   const { seed, ...payload } = (played.body as { payload: { seed: unknown } }).payload;

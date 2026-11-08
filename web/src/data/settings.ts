@@ -4,11 +4,15 @@
  * hotReplies until it is seeded again).
  */
 import type { ScreenSettings } from '../../../engine/ui/data/api.ts';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../../engine/rules/pronouns.ts';
 import { defaults } from '../../../instances/divided-world/settings.ts';
 import { system } from '../../../instances/divided-world/system/index.ts';
+import { groups } from '../../../instances/divided-world/groups.ts';
 
 export const fallbackSettings: ScreenSettings = Object.freeze({
   postsPerPage: defaults.postsPerPage,
+  searchLanguage: defaults.searchLanguage,
+  searchRankPool: defaults.searchRankPool,
   hotReplies: defaults.hotReplies,
   editGrace: defaults.editGrace,
   reactionCap: defaults.reactionCap,
@@ -25,8 +29,10 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   presencePollSeconds: defaults.presencePollSeconds,
   presenceWindow: defaults.presenceWindow,
   toastDefaults: defaults.toastDefaults,
-  /* The group's name is the instance's; the database holds it as the setting staffGroup once seeded (0084 shows it to the screens). */
-  staffGroup: { name: system.staffGroup.name },
+  /* Until the view holds the setting pronouns, a new character starts on the engine's it/its. */
+  pronouns: ENGINE_DEFAULT_PRONOUNS,
+  /* The groups' looks are the instance's too; the database holds them in group_kinds once seeded (0128 shows them to the screens). */
+  groups: [...groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
   /* None held: every price is the compiled economy's until the view says otherwise. */
   cardEconomy: {},
   /* None held: every class's numbers are the compiled economy's until the view says otherwise. */

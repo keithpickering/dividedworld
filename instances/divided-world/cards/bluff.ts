@@ -10,7 +10,6 @@ export const bluff: CardRules<Record<string, never>> = {
   alignment: 'pepperoni',
   rarity: 'common',
   play: 'set',
-  priceKey: 'bluff.price',
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

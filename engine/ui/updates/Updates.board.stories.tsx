@@ -8,7 +8,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { UpdatesScreen } from './Updates.tsx';
+import { LoadedUpdates } from '../loaded.tsx';
 
 const utc = (month: number, day: number, hour = 8) => Date.UTC(2026, month - 1, day, hour);
 
@@ -20,7 +20,7 @@ const updates: World = (fake, instance) => {
   seed.character(me, 'Pipewrench', cls);
   seed.update({
     title: 'Welcome to the playtest', at: utc(10, 28),
-    body: 'The doors are open. Be kind to the System; it has been alone a long time.',
+    body: 'The doors are open. Be kind to the staff; they have been alone a long time.',
     changes: [{ label: 'Everything', text: 'is new, and some of it works.' }],
   });
   seed.update({
@@ -49,7 +49,7 @@ const updates: World = (fake, instance) => {
 
 /** The screen at /updates, in its page shell. */
 function UpdatesStory() {
-  return <Page surface="settings"><UpdatesScreen /></Page>;
+  return <Page surface="settings"><LoadedUpdates /></Page>;
 }
 
 const meta: Meta<typeof UpdatesStory> = {

@@ -49,10 +49,9 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,
     'technician.evergreen': 5, 'technician.evergreenDays': 3,
-    'stickAround.price': 100,
-    'trapCard.price': 150, 'forceField.price': 150, 'bluff.price': 25, 'glitterBomb.price': 150, 'mainEvent.price': 300, 'feelinFab.price': 20,
-    'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostInAll': 300,
-    'autocorrect.price': 100, 'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostInAll': 300,
+    'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostAdded': 200,
+    'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200,
+    'machine.pullMost': 2, 'machine.moveDaysMost': 7, 'machine.repriceLeast': 50, 'machine.repriceMost': 200, 'machine.flashHoursLeast': 24, 'machine.flashHoursMost': 48,
   });
   assert.ok(Object.isFrozen(defaults.economy));
 });
@@ -100,8 +99,9 @@ test('the system settings are the plan\'s numbers, and the System ships switched
   assert.equal(defaults.demandChecksPerTick, 40);
   assert.deepEqual(defaults.modBots, { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 });
   assert.deepEqual(defaults.warnBar, { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] });
+  assert.deepEqual(defaults.apology, { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 });
   assert.deepEqual(defaults.modelTiers, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });
-  assert.ok(Object.isFrozen(defaults.phases) && Object.isFrozen(defaults.phases.reign) && Object.isFrozen(defaults.modelTiers) && Object.isFrozen(defaults.warnBar.banDays));
+  assert.ok(Object.isFrozen(defaults.phases) && Object.isFrozen(defaults.phases.reign) && Object.isFrozen(defaults.modelTiers) && Object.isFrozen(defaults.warnBar.banDays) && Object.isFrozen(defaults.apology));
 });
 
 test('the new settings validate, in the defaults and the playtest, and reject what is out of range', () => {

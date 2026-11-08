@@ -13,7 +13,6 @@ export const forceField: CardRules<Record<string, never>> = {
   play: 'use',
   ward: true,
   lasts: { unit: 'day', count: 7 },
-  priceKey: 'forceField.price',
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(forceField, target, effects, now),
   validateConfig: () => ok({}),

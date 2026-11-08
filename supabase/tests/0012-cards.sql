@@ -26,7 +26,7 @@ begin
   perform tests.become_service();
 
   -- Buying with too little Aura is refused and writes nothing.
-  why := pg_temp.refusal(format('select buy_card(%L, %L, %L)', bob, 'splat', 100));
+  why := pg_temp.refusal(format('select buy_card(%L, %L, %L)', bob, tests.slot('splat'), 100));
   if why is null then raise exception 'a card was bought with an empty wallet'; end if;
   if why not like '%holds 0%' then raise exception 'the refusal should say what the wallet holds: %', why; end if;
   if exists (select 1 from card_ledger where account = bob) or exists (select 1 from wallet_events where account = bob) then
@@ -34,9 +34,9 @@ begin
   end if;
 
   -- A card is bought at the Vending Machine's price, and no other.
-  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, 'splat', 1)) is null then raise exception 'a card was bought at a price of the caller''s choosing'; end if;
-  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, 'nothing', 100)) is null then raise exception 'a card that does not exist was bought'; end if;
-  if (buy_card(ann, 'splat', 100) ->> 'balance')::integer <> 50 then raise exception 'buying debits the wallet'; end if;
+  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, tests.slot('splat'), 1)) is null then raise exception 'a card was bought at a price of the caller''s choosing'; end if;
+  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, gen_random_uuid(), 100)) is null then raise exception 'a card that does not exist was bought'; end if;
+  if (buy_card(ann, tests.slot('splat'), 100) ->> 'balance')::integer <> 50 then raise exception 'buying debits the wallet'; end if;
   if (select change from wallet_events where account = ann and kind = 'purchase') is distinct from -100 then raise exception 'the purchase is recorded'; end if;
 
   -- Playing: a card held, through a character played, on a post, once per post, from a wallet that covers it.
@@ -52,13 +52,13 @@ begin
     raise exception 'a played card is no longer held';
   end if;
   update wallets set balance = 300 where account = ann;
-  perform buy_card(ann, 'splat', 100);
+  perform buy_card(ann, tests.slot('splat'), 100);
   why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, p, '{}', 0));
   if why is null then raise exception 'a post took the same card twice'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, the_play, '{}', 0)) is null then raise exception 'a card was played on a card'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, '{}', 0)) is not null then raise exception 'a card on another post should land'; end if;
   if (select ref from wallet_events where account = ann and kind = 'play' order by id limit 1) is distinct from the_play then raise exception 'a play''s wallet event names the card''s Act'; end if;
-  perform buy_card(ann, 'sweetie', 100);
+  perform buy_card(ann, tests.slot('sweetie'), 100);
   if coalesce(pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'sweetie', a, q, jsonb_build_object('sentence', repeat('x', 5000)), 0)), '') not like '%4 KB%' then
     raise exception 'an oversize configuration was stored';
   end if;
@@ -81,7 +81,7 @@ begin
   -- A player reads their own cards; every reader reads the author's version; nobody but the service writes.
   perform tests.become(ann);
   if (select held from my_cards where card = 'splat') is distinct from 0 then raise exception 'my_cards: %', (select jsonb_agg(m) from my_cards m); end if;
-  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, 'splat', 100)) is null then raise exception 'a player called buy_card directly'; end if;
+  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', ann, tests.slot('splat'), 100)) is null then raise exception 'a player called buy_card directly'; end if;
   if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, %L)', ann, 'splat', a, q, '{}', 0)) is null then raise exception 'a player called play_card directly'; end if;
   if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', ann, a, the_play, '{}')) is null then raise exception 'a player called save_effect_state directly'; end if;
   if whoami() <> ann then raise exception 'whoami() is the caller'; end if;
@@ -93,36 +93,27 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- The price is a setting: the economy row an admin tunes is what the Vending Machine charges ----
+-- ---- The price is the slot's: the price an admin sets is what the Vending Machine charges ----
 do $$
 declare
   eve uuid := tests.account('card-eve');
 begin
   insert into wallets (account, balance) values (eve, 100);
-  update settings set value = jsonb_set(value, '{splat.price}', '40') where key = 'economy';
+  update machine_slots set price = 40 where card = 'splat';
   perform tests.become_service();
-  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', eve, 'splat', 100)) is null then raise exception 'a card was bought at a price the settings no longer hold'; end if;
-  if (buy_card(eve, 'splat', 40) ->> 'balance')::integer is distinct from 60 then raise exception 'a card is bought at the price its setting holds'; end if;
+  if pg_temp.refusal(format('select buy_card(%L, %L, %L)', eve, tests.slot('splat'), 100)) is distinct from 'the price is now 0.40, not 1.00' then raise exception 'a card was bought at a price the slot no longer holds'; end if;
+  if (buy_card(eve, tests.slot('splat'), 40) ->> 'balance')::integer is distinct from 60 then raise exception 'a card is bought at the price its slot holds'; end if;
   perform tests.unbecome();
-  -- A whole number written with a decimal point is the same price, as the engine reads it.
-  update settings set value = jsonb_set(value, '{splat.price}', '20.0') where key = 'economy';
-  perform tests.become_service();
-  if (buy_card(eve, 'splat', 20) ->> 'balance')::integer is distinct from 40 then raise exception 'a price written 20.0 is 20'; end if;
-  perform tests.unbecome();
-  -- The economy row holds only numbers, a price for every card, each a whole number above 0: a
-  -- row that would leave a card with no price, or a number that is not one, is refused when it is
-  -- written, not when a settlement or a purchase meets it later.
-  if coalesce(pg_temp.refusal($q$update settings set value = value - 'splat.price' where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a card''s price was taken out of the economy'; end if;
-  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '"lots"') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price that is not a number was written'; end if;
-  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '2.5') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price that is not whole was written'; end if;
+  -- The economy row holds only numbers: a row with one that is not is refused when it is written, not when a settlement meets it later.
+  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{whoops.perLength}', '"lots"') where key = 'economy'$q$), '') not like '%whoops.perLength%' then raise exception 'a number that is not one was written'; end if;
   if coalesce(pg_temp.refusal($q$update settings set value = '[1]' where key = 'economy'$q$), '') not like '%economy%' then raise exception 'an economy that is not an object was written'; end if;
-  if coalesce(pg_temp.refusal($q$insert into card_kinds (key, name, alignment, price_setting) values ('nada', 'Nada', 'sweet', 'nada.price')$q$), '') not like '%nada.price%' then raise exception 'a card with no price in the economy was added'; end if;
-  if coalesce(pg_temp.refusal($q$update settings set value = jsonb_set(value, '{splat.price}', '2147483648') where key = 'economy'$q$), '') not like '%splat.price%' then raise exception 'a price no integer holds was written'; end if;
-  if coalesce(pg_temp.refusal($q$delete from settings where key = 'economy'$q$), '') not like '%replace it%' then raise exception 'the economy, which holds the cards'' prices, was deleted'; end if;
-  -- A card the code no longer sells keeps its price when the instance is seeded again without it.
-  perform seed_instance(jsonb_build_object('settings', jsonb_build_object('economy', jsonb_build_object('sweetie.price', 100)), 'classes', '[]'::jsonb,
+  if coalesce(pg_temp.refusal($q$delete from settings where key = 'economy'$q$), '') not like '%replace it%' then raise exception 'the economy, which the cards read, was deleted'; end if;
+  -- A card the code no longer sells keeps its slot, and its numbers, when the instance is seeded again without it.
+  update settings set value = value || '{"splat.perLength": 7}' where key = 'economy';
+  perform seed_instance(jsonb_build_object('settings', jsonb_build_object('economy', jsonb_build_object('sweetie.perLength', 100)), 'classes', '[]'::jsonb,
     'cards', '[]'::jsonb, 'boards', '[]'::jsonb));
-  if (select value ->> 'splat.price' from settings where key = 'economy') is distinct from '20.0' then raise exception 'a reseed took a retired card''s price away'; end if;
+  if (select value ->> 'splat.perLength' from settings where key = 'economy') is distinct from '7' then raise exception 'a reseed took a retired card''s number away'; end if;
+  if (select price from machine_slots where card = 'splat') is distinct from 40 then raise exception 'a reseed changed a slot'; end if;
 end $$;
 
 -- ---- Two plays of one card on one post at once: one lands, the other is refused in words ----

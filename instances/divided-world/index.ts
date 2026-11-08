@@ -4,17 +4,21 @@
  * composition root (supabase/functions/) is the one place this is imported beside the engine.
  */
 import type { Instance } from '../../engine/rules/types.ts';
+import { PRONOUN_PRESETS } from '../../engine/rules/pronouns.ts';
 import { deepFreeze } from '../../engine/rules/instance.ts';
 import { cards } from './cards/index.ts';
 import { classes } from './classes/index.ts';
+import { machine } from './machine.ts';
+import { packs } from './packs.ts';
+import { groups } from './groups.ts';
 import { reactions } from './reactions.ts';
 import { defaults, playtest } from './settings.ts';
 import { system } from './system/index.ts';
 
 const boards = deepFreeze([
-  { slug: 'general', name: 'General', description: 'Anything and everything. The System is watching.' },
-  // Only the staff and The System post here: the Boss's arrivals and farewells, the characters' Promos. The description is the owner's copy to give.
-  { slug: 'the-system', name: 'The System', description: 'What The System says. Reply by spinning a thread.', system: true },
+  { slug: 'general', name: 'General', description: 'Anything and everything. The staff are watching.' },
+  // Only the staff and the game post here: the Boss's arrivals and farewells, the characters' Promos (the board look design, section 7).
+  { slug: 'announcements', name: 'Staff Announcements', description: 'Where the staff post. Reply by spinning a thread.', system: true },
 ]);
 
 /** The System's words, in its own voice. */
@@ -37,14 +41,14 @@ const ranks = deepFreeze([
  * the game". His tagline is instance content and travels in the seed as his profile title; `avatar` is the key of his picture in
  * ui/avatars (InstanceUi.avatars). The voice is the admins' to write: it is never a model's, and what it says is always true.
  */
-const developer = deepFreeze({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' });
+const developer = deepFreeze({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he });
 
 /** The pips a postbit draws beside a rank: the default for now; more come with the gacha and trophies. */
 const pipStyles = deepFreeze([
   { key: 'default', name: 'Default', full: 'pips/default-full.svg', empty: 'pips/default-empty.svg' },
 ]);
 
-export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer });
+export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer, groups, packs, machine });
 
 /** The same instance on the playtest's shorter season and Turn cooldown. */
 export const playtestInstance: Instance = Object.freeze({ ...instance, settings: playtest });

@@ -51,7 +51,7 @@ test('signing out puts the page back to the device\'s look', async () => {
   document.documentElement.removeAttribute('data-kb-mode');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  await fake.setPreferences({ theme: 'dark' });
+  await fake.setPreferences({ theme: 'default', mode: 'dark' });
   render(<App api={fake} />);
   await waitFor(() => expect(document.documentElement.getAttribute('data-kb-mode')).toBe('dark'));
   await fake.signOut();
@@ -136,23 +136,25 @@ for (const path of ['/characters', '/characters/edit']) {
   });
 }
 
-test('a signed-in load of /characters asks for the next settlement once', async () => {
+test('a signed-in load of /characters is one myCharactersPage, and the screen reads no settlement of its own', async () => {
   window.history.pushState(null, '', '/characters');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  const asked = vi.spyOn(fake, 'nextSettlementAt');
+  const asked = vi.spyOn(fake, 'myCharactersPage');
+  const settlement = vi.spyOn(fake, 'nextSettlementAt');
   render(<App api={fake} />);
   await screen.findByRole('heading', { level: 1, name: /^Your characters/u });
   await waitFor(() => expect(asked).toHaveBeenCalled());
   await new Promise((r) => setTimeout(r, 50));
   expect(asked).toHaveBeenCalledTimes(1);
+  expect(settlement).not.toHaveBeenCalled();
 });
 
 test('a signed-in page load mounts its screen once: each of its reads is asked once, not again when the session becomes known', async () => {
   window.history.pushState(null, '', '/standings');
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
-  const asked = vi.spyOn(fake, 'standingsPage');
+  const asked = vi.spyOn(fake, 'seasonPage');
   render(<App api={fake} />);
   await screen.findByRole('heading', { level: 1 });
   await waitFor(() => expect(asked).toHaveBeenCalled());
@@ -415,8 +417,8 @@ test('the account\'s tilt choice reaches the light on a glass page, from boot', 
  * Back to the board itself (#90). The set is read from the app, so a page added to it is held here too.
  */
 const STATES: readonly [string, (fake: ReturnType<typeof createFake>) => void][] = [
-  ['loading', (fake) => { seedDemo(fake); vi.spyOn(fake, 'log').mockReturnValue(new Promise(() => {})); }],
-  ['failed', (fake) => { seedDemo(fake); vi.spyOn(fake, 'log').mockRejectedValue(new Error('down')); }],
+  ['loading', (fake) => { seedDemo(fake); vi.spyOn(fake, 'logPage').mockReturnValue(new Promise(() => {})); }],
+  ['failed', (fake) => { seedDemo(fake); vi.spyOn(fake, 'logPage').mockRejectedValue(new Error('down')); }],
   ['empty', (fake) => { const me = fake.seed.account('me'); fake.seed.character(me, 'Pipewrench', 'heel'); fake.signInAs(me); }],
   ['signed out', () => {}],
 ];
@@ -427,14 +429,26 @@ for (const path of NO_MENU) {
       window.history.pushState(null, '', path);
       const fake = createFake({ instance, settings: fallbackSettings });
       make(fake);
-      render(<App api={fake} />);
-      await screen.findByRole('main');
-      /* Every page passes through loading first: each state is waited for itself, so loading's link cannot answer for it. */
-      if (state === 'loading') await waitFor(() => expect(document.querySelector('main [aria-busy="true"]')).not.toBeNull());
-      else await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
-      const back = await screen.findByRole('link', { name: 'Back to the board' });
-      expect(back.closest('[aria-busy="true"]')).toBeNull();
-      expect(back).toHaveAttribute('href', '/');
+      /* The router lets a load that never answers go for 20 seconds, then draws the glass's "This screen didn't load" with its Back to the board;
+         a load that fails draws it at once. The ready, empty and signed-out pages carry the link themselves. */
+      if (state === 'loading') vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        render(<App api={fake} />);
+        await screen.findByRole('main');
+        if (state === 'loading') {
+          await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).not.toBeNull());
+          await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+        }
+        if (state === 'loading' || state === 'failed') {
+          await screen.findByRole('heading', { name: 'This screen didn\'t load' });
+          expect(await screen.findByRole('button', { name: 'Back to the board' })).toBeInTheDocument();
+        } else {
+          await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
+          const back = await screen.findByRole('link', { name: 'Back to the board' });
+          expect(back.closest('[aria-busy="true"]')).toBeNull();
+          expect(back).toHaveAttribute('href', '/');
+        }
+      } finally { vi.useRealTimers(); }
       expect(screen.queryByRole('navigation', { name: 'Menu' })).toBeNull();
     }, 15_000);
   }
@@ -877,8 +891,9 @@ describe('the crossing', () => {
     const bar = await screen.findByRole('navigation', { name: 'Menu' });
     await screen.findByRole('heading', { level: 1 });
     await userEvent.click(within(bar).getByRole('link', { name: 'Settings' }));
+    /* The move waits for Settings' chunk and document, so the second screen arrives a moment after the press; the first is held, inert, until its exit ends. */
+    await waitFor(() => expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(2));
     const screens = Array.from(document.querySelectorAll<HTMLElement>('.kb-glass-screen'));
-    expect(screens).toHaveLength(2);
     expect(screens[0]).toHaveAttribute('inert');
     expect(screens[0]).toHaveAttribute('aria-hidden', 'true');
     expect(screens[0]!.querySelector('h1')).not.toHaveTextContent(/Settings/u);

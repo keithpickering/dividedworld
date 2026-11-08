@@ -8,17 +8,20 @@
  * Cancel are its ways out. Its surface draws no class's large text (engine/ui/glass/apply.ts), so
  * the class cards name each class in the glass's text, the class's color on the card.
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { DebutLoudness, DebutTiming } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { useClaim } from '../glass/claims.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { FormFoot } from '../glass/FormFoot.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt, useSignedIn } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
-import { useNavigate } from '../router.tsx';
+import { usePendingFrom, useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
+import { PronounPicker, pronounsHold } from './PronounPicker.tsx';
+import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { DebutChoice } from './DebutChoice.tsx';
 import { newCharacterFooter } from './footers.ts';
 import './characters.css';
@@ -36,8 +39,14 @@ export function NewCharacter() {
   const [cls, setCls] = useState<string | null>(null);
   const [timing, setTiming] = useState<DebutTiming>('now');
   const [loudness, setLoudness] = useState<DebutLoudness>('announced');
+  /* The instance's default (`Settings.pronouns`), which the screen settings carry. */
+  const [pronouns, setPronouns] = useState<PronounSet>(settings.pronouns);
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* The create's move names this button as its source: the button stays busy through the move, and the menu bar draws no second wait. */
+  const source = useId();
+  useClaim(source);
+  const pendingFromMe = usePendingFrom(source);
 
   if (signedIn === null || (signedIn && !loaded)) return <div className="kb-new-character" aria-busy="true" />;
   if (!signedIn) return <div className="kb-new-character"><SignInPrompt /></div>;
@@ -58,15 +67,15 @@ export function NewCharacter() {
   const className = instance.classes.find((c) => c.key === cls)?.name ?? '';
 
   const submit = async () => {
-    if (!cls || name.trim() === '' || [...name].length > NAME_MAX || busy) return;
+    if (!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns) || busy) return;
     setBusy(true);
     setRefusal(null);
     try {
-      const answer = await api.createCharacter(name, cls, timing, loudness);
+      const answer = await api.createCharacter(name, cls, timing, loudness, pronouns);
       if (!answer.ok) { setRefusal(answer.error); return; }
       await refresh();
       /* My characters opens on the new one, carried in history.state, never in the address. */
-      navigate('/characters', { state: { character: answer.value.id } });
+      navigate('/characters', { state: { character: answer.value.id }, source });
     } catch {
       setRefusal('The character could not be made. Check your connection and try again.');
     } finally {
@@ -87,14 +96,15 @@ export function NewCharacter() {
         </div>
         <div className="kb-new-classes">
           <ClassCards legend="Class" value={cls} onChange={setCls} />
-          <p className="kb-roster-line">Only you will know its class, unless you choose to reveal it.</p>
+          <p className="kb-roster-line">Only you will know {words(pronouns).their} class, unless you choose to reveal it.</p>
         </div>
-        <DebutChoice name={name} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
+        <PronounPicker name={name} value={pronouns} onChange={setPronouns} />
+        <DebutChoice name={name} pronouns={pronouns} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
-        <FormFoot line={newCharacterFooter({ name, className, timing, loudness })}>
+        <FormFoot line={newCharacterFooter({ name, pronouns, className, timing, loudness })}>
           <GlassButton to="/characters">Cancel</GlassButton>
-          <GlassButton type="submit" kind="primary" disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || busy}>Make the character</GlassButton>
+          <GlassButton type="submit" kind="primary" busy={busy || pendingFromMe} disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns)}>Make the character</GlassButton>
         </FormFoot>
       </CalmRegion>
     </div>

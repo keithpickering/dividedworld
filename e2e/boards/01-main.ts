@@ -21,53 +21,14 @@
  * and "React" and "1 of 3 left" on #41 and #42, which are the player's own characters' posts
  * (section 3, the first departure).
  *
- * The thread's type and the postbit are the board's in face, weight and color: the two-worlds design decides Verdana and bold
- * Courier New in black and white, and the board how they look (docs/research/2026-10-29-two-worlds/
- * README.md). The sizes are the board's at 1.25 times (the glass polish, design section 7: the owner's decision after the boards
- * were drawn, held by `buildSize`), so the build sets 15px Verdana words where the board draws 12px, a 22.5px Courier New title
- * where it draws 18px, 13.75px nav, crumb and pager where it draws 11px, bold Verdana names with the rank under them, and a
- * 12.5px post line in the muted ink where it draws 10px (engine/ui/tokens.css). What the larger words move is held by
- * `buildShift`, as measured.
+ * The thread's type, its postbit, post line, crumb and pager moved to `2026-11-06-board-look/04-thread` and `05-reply` (the board-look plan, Task 6), which
+ * hold the thread as the Silver board draws it, each with the shifts the larger type scale and the period table made. What this board still holds is the
+ * game's: the HUD, the hand, the postcards, the armed tag and the armed card's button on #42. The boards' bar's links each carry their 16 by 14 icon in
+ * the build (the board-look plan, Task 5), which this older board does not draw: the first link is 7px taller than the board's 13px line, and the next two stand 22px and 44px further from
+ * it than before the icons (12.4 and 28.2 from the type scale alone, so 34.4 and 72.2 now): each link before them is 22px wider, its 16px
+ * icon and its 6px gap, measured by hiding the icons and the gap on the same page.
  */
-import type { BoardManifest, Landmark } from '../board-match.ts';
-
-/** The type scale's sizes, in px, for the words the board draws at 12px (a post) and 10px (its permalink): 1.25 times each. */
-const POST_SIZE = 15;
-const POST_LINE_SIZE = 12.5;
-/** The nav row's, the crumb's and the pager's, drawn at 11px, and the title's, drawn at 18px. */
-const SMALL_SIZE = 13.75;
-const TITLE_SIZE = 22.5;
-
-/** A post's article, its author link, its rank and its permalink, found inside the article. */
-function post(n: number, index: number, author: string, pips: number, rank: string, box: Landmark['box']): Landmark[] {
-  const id = `post-${n}`;
-  /*
-   * The board is drawn at 1440 across the whole window; the build stands in the board's column, at most 1200px wide and
-   * centered (the owner: "we need a smaller max width for the 2003 board in general", the glass plan's section 8 amendment of
-   * 2026-10-30). So a post's x and width differ by that word, and the landmarks inside it are compared as they sit in it
-   * (from the post's own corner, `origin`) with the permalink, which the board sets at the right edge of a post a different
-   * width, by its y and height. The post's own box is not compared: its body wraps in the narrower column (the build's #41 is
-   * 342px tall to the board's 275), which is that word and no fault of the post's. Where `box` is 'none', no landmark in the
-   * post is compared by place at all.
-   */
-  const placed = box === 'none' ? undefined : id;
-  const inside = box === 'none' ? 'none' : 'position';
-  /*
-   * The type scale (the glass polish, design section 7: the owner's decision, after these boards, to set every board size token at 1.25
-   * times) sets the post's words at 15px where the board draws 12px, and its permalink at 12.5px where the board draws 10px. So the
-   * rank under the author name stands 10.5px lower in the post, and #41's permalink, which sits below the nav, crumb, title and
-   * pager rows the scale made taller, 38.8px lower on the page, as measured; and 11.1px more (49.9) since the thread head always reserves
-   * the 2.25rem meta tile where its title was 27px tall (9px), and the date bar is 29.6px where it was 25.4px, its permalink centered in it
-   * (half of the 4.2px growth, 2.1px) (docs/plans/2026-11-06-meta-acts-plan.md, Task 2).
-   */
-  return [
-    { id, role: 'article', name: '', nth: index, buildName: `Post ${n} by ${author}`, buildNth: 0, box: 'none', buildSize: POST_SIZE },
-    { id: `${id}-author`, role: 'link', name: author, within: id, origin: placed, box: inside, buildSize: POST_SIZE },
-    /* The rank's name is the postbit's (web Task 5), which says the rank's title where the board says pips. */
-    { id: `${id}-rank`, role: 'img', name: `Rank: ${pips} of 6 pips`, buildName: `Rank ${pips} of 6: ${rank}`, within: id, origin: placed, box: inside, type: false, buildShift: { y: 10.5 } },
-    { id: `${id}-permalink`, role: 'link', name: `#${n}`, buildName: `Permalink to post #${n}`, within: id, box: box === 'none' ? 'none' : 'height', buildSize: POST_LINE_SIZE, buildShift: { y: 49.9 } },
-  ];
-}
+import type { BoardManifest } from '../board-match.ts';
 
 /*
  * The fanned cards' names in the build. The board names them "Stick Around, Sweet postcard", but the
@@ -75,8 +36,8 @@ function post(n: number, index: number, author: string, pips: number, rank: stri
  * (WCAG 2.5.3, cardLabel in engine/ui/cards/Postcard.tsx), so the build's name holds the tagline
  * between the tag and the word "postcard".
  */
-const STICK = 'Stick Around, Sweet, Cast. Hold a reader on a post., common postcard';
-const WHOOPS = 'Whoops!, Salty, Cast. Splat a post in ink., common postcard';
+const STICK = 'Stick Around, Sweet, Move. Hold a reader on a post., common postcard';
+const WHOOPS = 'Whoops!, Salty, Move. Splat a post in ink., common postcard';
 /* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Task 7) adds each card's play and rarity to its name: a departure from the board. */
 
 const manifest: BoardManifest = {
@@ -91,45 +52,22 @@ const manifest: BoardManifest = {
      * So the links row is compared by its y and height, Index by its y and height too (its x is the column's edge), and the links
      * after it from Index, where they sit in the row.
      */
-    { id: 'nav', role: 'navigation', name: 'Main', box: 'height', buildSize: SMALL_SIZE },
-    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', buildSize: SMALL_SIZE },
-    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', buildSize: SMALL_SIZE, buildShift: { x: 12.4 } },
-    { id: 'nav-system', role: 'link', name: 'The System', within: 'nav', origin: 'nav-index', box: 'position', buildSize: SMALL_SIZE, buildShift: { x: 28.2 } },
-
     /*
-     * The breadcrumb over the thread's head, by its type: the board's words lead from the instance
-     * through the board, and the build's crumb is Index and the title (Thread.tsx).
+     * The boards' bar is the Silver house theme's (the board-look plan, Task 3): white words on a dark band under the banner's block, where the
+     * black-and-white board draws black on white, so its type is not compared here (its color is the theme's, held by 01-index of
+     * docs/research/2026-11-06-board-look/), and it stands 33px lower (the banner's top margin, its 16px padding, the 31px name and the
+     * frame, 9.4px more in the bar's own height).
      */
-    { id: 'crumb', role: 'text', name: 'Divided World » General » who keeps splatting my posts', buildName: 'Index › who keeps splatting my posts', box: 'none', buildSize: SMALL_SIZE },
-
-    /* The thread's head: its type only (section 7). */
-    { id: 'title', role: 'heading', name: 'who keeps splatting my posts', box: 'none', buildSize: TITLE_SIZE },
-    { id: 'page-1', role: 'link', name: '1', buildName: 'Page 1', box: 'none', buildSize: SMALL_SIZE },
-    { id: 'jump', role: 'link', name: 'Jump to latest', box: 'none', buildSize: SMALL_SIZE },
+    { id: 'nav', role: 'navigation', name: 'Main', box: 'height', type: false, buildShift: { y: 33, height: 9.4 } },
+    { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36, height: 7 } },
+    { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 34.4 } },
+    { id: 'nav-system', role: 'link', name: 'The System', buildName: 'Staff Announcements', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 72.2 } },
 
     /*
-     * The posts. A card play takes no number and shows as its tag on its post (cards Task 3), so the page holds #41 to #46 and
-     * nothing else. #41 is splatted (cards Task 5): its words are laid out at natural size in the post body, so it breaks its lines
-     * as any post does, and its splat covers the body edge to edge (the owner's word, the cards
-     * plan's Task 5 amendment of 2026-10-30). The board is drawn across the 1440px window and the build stands in a 1200px
-     * column, so a post's x and width, and the heights of #41 (its words wrap more in the narrower column) are the owner's word
-     * and not compared (see `post`); what is inside a post is compared from the post's own corner. #42 and #43 are compared by
-     * type: #42's post is 92px shorter than the board's (the board's has a 160px avatar slot under the postbit, which the build
-     * has no portrait to fill, web Task 5), which is nothing of Whoops!'s.
-     */
-    ...post(41, 0, 'Spritey', 4, 'Main Eventer', 'position'),
-    ...post(42, 1, 'Mrs. Hooligan', 3, 'Midcarder', 'none'),
-    ...post(43, 2, 'Pipewrench', 2, 'Enhancement Talent', 'none'),
-    /*
-     * The row of actions under each post. The board draws it bare, over the post's ink or ground, with "Play card" among Quote
-     * and the rest; the build draws it on an opaque footer bar of its own, like the header bar, and without "Play card". Both
-     * differ by the owner's word and neither is compared: "I think we will likely need to put Quote, Spin, Edit, etc on a
-     * solid-color bar of their own, a footer bar similar to the header bar ... There's no way the current #000 text against
-     * that magenta ink passes contrast, and that ink color is totally variable too." (the footer bar's amendment of 2026-10-31,
-     * the screens-and-cards plan), and "why do we have "Play card" in this row at all anymore? It's a game act so it should be
-     * Glass, right? ... Hand -> Select a card -> glass-styled button appears on each applicable post?" A card is played from
-     * the hand and the armed card's tile alone. The bar adds its own height to every post, so a post's box is not compared
-     * below its line either (as `post` says for its box).
+     * The thread's own landmarks (the crumb, the title and its pager, and each post's author, rank, post line, permalink and actions) are
+     * `2026-11-06-board-look/04-thread`'s and `05-reply`'s (the board-look plan, Task 6): the thread is drawn there as the Silver board draws it,
+     * where this older black-and-white board's crumb, pager and postbit are not the build's look any more. What stays here is what a board of the
+     * game's own pieces draws on that page: the HUD, the hand, the postcards and the armed card's button on a post.
      */
     /*
      * The armed card's button on #42. The board draws it as a link in the post's row of actions; the build draws a real
@@ -138,7 +76,7 @@ const manifest: BoardManifest = {
      * 2026-10-30). So it differs from the board in kind and in place, and is found
      * by its name within the post and compared by neither its box nor its type.
      */
-    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildName: 'Play Whoops! on post 42', buildRole: 'button', within: 'post-42', box: 'none', type: false },
+    { id: 'post-42-play', role: 'link', name: 'Play Whoops! here', buildName: 'Play Whoops! on post 42', buildRole: 'button', box: 'none', type: false },
     /*
      * Whoops!'s keyboard path. The board draws #41's scrub sentence, "Scrub with the keyboard" in the 2003 button, inside the
      * post's 2003 body. The build has no plate: "Hold to scrub" is a control of the Lens, which a mark on the post opens

@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLayoutEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Id, ThreadListener } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
@@ -219,9 +219,9 @@ describe('pages and permalinks', () => {
 
   test('a thread that is not there is the router\'s "cannot be found" (no document), which leads back', async () => {
     const w = world(3);
-    renderIn(w.fake, <LoadedThread thread="00000000-0000-4000-8000-00000000ffff" />);
-    expect(await screen.findByRole('heading', { level: 1, name: 'The page cannot be found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+    renderIn(w.fake, <LoadedThread thread="00000000-0000-4000-8000-00000000ffff" />, { path: '/t/00000000-0000-4000-8000-00000000ffff' });
+    expect(await screen.findByRole('heading', { level: 1, name: 'The thread you requested does not exist.' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Click here to return to the index' })).toHaveAttribute('href', '/');
   });
 
   test('a visitor who is not signed in sees the front door', async () => {
@@ -264,6 +264,65 @@ describe('the thread\'s head, as the Main board draws it', () => {
   });
 });
 
+describe('the thread\'s crumb, post cells and bottom row (the board look, Task 6)', () => {
+  test('the crumb is Index, the thread\'s board as a link, then the thread', async () => {
+    const w = world(3);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    const crumb = document.querySelector('.kb-crumb')!;
+    expect(crumb).toHaveTextContent('Index › General › A long thread');
+    expect(within(crumb as HTMLElement).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(within(crumb as HTMLElement).getByRole('link', { name: 'Index' })).toHaveAttribute('href', '/');
+  });
+
+  test('with no board on the thread\'s document, the crumb\'s board comes from the frame\'s board list by the thread\'s board', async () => {
+    const w = world(3);
+    const boot = await w.fake.boot();
+    const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+    renderIn(w.fake, <ThreadScreen thread={w.thread} doc={{ ...doc, board: null }} />, { path: `/t/${w.thread}?page=1`, boot });
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    const crumb = document.querySelector<HTMLElement>('.kb-crumb')!;
+    const general = boot.boards.find((b) => b.id === doc.thread.board)!;
+    expect(crumb).toHaveTextContent(`Index › ${general.name} › A long thread`);
+    expect(within(crumb).getByRole('link', { name: general.name })).toHaveAttribute('href', `/b/${general.slug}`);
+  });
+
+  test('a post is three cells beside its postbit: the post line holds the time and permalink and none of the words, the words hold the words, the actions the buttons', async () => {
+    const w = world(3);
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    const cells = [...second.children].filter((c) => c.hasAttribute('data-kb-cell'));
+    expect(cells.map((c) => c.getAttribute('data-kb-cell'))).toEqual(['line', 'words', 'actions']);
+    const [line, words, actions] = cells as HTMLElement[];
+    expect(line).toContainElement(within(second).getByRole('link', { name: 'Permalink to post #2' }));
+    expect(line!.querySelector('time')).not.toBeNull();
+    expect(line).not.toHaveTextContent('post 2');
+    expect(words).toHaveTextContent('post 2');
+    expect(within(actions!).getByRole('button', { name: 'Quote' })).toBeInTheDocument();
+    expect(second.querySelector('.kb-postbit')!.parentElement).toBe(second);
+  });
+
+  test('a post\'s row color follows its seq, not its place on the page: an odd page opened at 41 starts on odd', async () => {
+    const w = world(45);
+    open(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 41 /u });
+    expect(post(41)).toHaveAttribute('data-kb-parity', 'odd');
+    expect(post(42)).toHaveAttribute('data-kb-parity', 'even');
+    expect(post(45)).toHaveAttribute('data-kb-parity', 'odd');
+  });
+
+  test('Unfollow shares the bottom pager\'s row, after it', async () => {
+    const w = world(45);
+    open(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 41 /u });
+    const pager = screen.getByRole('navigation', { name: 'Pages, bottom' });
+    const follow = screen.getByRole('button', { name: /^(Un)?[Ff]ollow this thread$/u });
+    expect(follow.closest('.kb-thread-controls')!.parentElement).toBe(pager.parentElement);
+    expect(pager.parentElement).toHaveClass('kb-thread-below');
+    expect(pager.compareDocumentPosition(follow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe('the postbit in a thread', () => {
   test('side by side by default, stacked by the reader\'s preference', async () => {
     const w = world(3);
@@ -302,13 +361,23 @@ describe('the postbit in a thread', () => {
     expect(bit).toHaveTextContent('Revealed: Heel (Oct 3)');
   });
 
-  test('The System has a name and no postbit', async () => {
+  test('a null-character Act has the staff word for a name (staffWord) and no postbit', async () => {
     const w = world(1);
-    const sys = w.fake.seed.thread('the-system', null, 'Tally', 'Tonight, the board turns.');
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', 'Tonight, the board turns.');
     renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
-    const article = await screen.findByRole('article', { name: /^Post 1 by The System/u });
+    const article = await screen.findByRole('article', { name: /^Post 1 by the staff/u });
     expect(within(article).queryByRole('group')).toBeNull();
     expect(article).toHaveTextContent('Tonight, the board turns.');
+  });
+
+  test('a staff post\'s reaction picker reads "React to the staff\'s post", the name slot staying "The staff"', async () => {
+    const w = world(1);
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', 'Tonight, the board turns.');
+    renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
+    const article = await screen.findByRole('article', { name: /^Post 1 by the staff/u });
+    expect(article.querySelector('.kb-postbit-name')).toHaveTextContent(/^The staff$/u);
+    await userEvent.click(within(article).getByRole('button', { name: /React/u }));
+    expect(await screen.findByRole('dialog', { name: "React to the staff's post" })).toBeInTheDocument();
   });
 });
 
@@ -388,10 +457,10 @@ describe('Acts that are not posts', () => {
 
   test('The System\'s tally lists debuts and announced Turns by name and class', async () => {
     const w = world(1);
-    const sys = w.fake.seed.thread('the-system', null, 'Tally', '');
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', '');
     w.fake.seed.post(sys.thread, null, '', { payload: { debuts: [{ character: w.spritey, name: 'Spritey', class: 'face' }, { character: w.pipe, name: 'Pipewrench' }], turns: [{ character: w.pipe, name: 'Pipewrench', loudness: 'announced', was: 'face', class: 'heel' }] } });
     renderIn(w.fake, <LoadedThread thread={sys.thread} />, { path: `/t/${sys.thread}` });
-    const line = await screen.findByRole('article', { name: /^Post 2 by The System/u });
+    const line = await screen.findByRole('article', { name: /^Post 2 by the staff/u });
     expect(line).toHaveTextContent('Spritey debuts as Face');
     expect(line).toHaveTextContent('Pipewrench debuts');
     expect(line).toHaveTextContent('Pipewrench has Turned from Face to Heel');
@@ -506,6 +575,64 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     deliver(() => tapped().onAct?.(late));
     await waitFor(() => expect(billed(2)).toHaveLength(3));
     expect(billed(2)).toEqual(['whoops:2', 'stick-around:1', 'late-card:1']);
+  });
+});
+
+describe('quote heads', () => {
+  const GHOST = '33333333-3333-4333-8333-333333333333';
+
+  test('a real quote names its author and links both the profile and the post', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${w.ids[0]}]post 1[/quote]I agree.`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const head = await waitFor(() => {
+      const h = reply.querySelector('blockquote cite')!;
+      expect(within(h as HTMLElement).getByRole('link', { name: 'Spritey' })).toBeInTheDocument();
+      return h as HTMLElement;
+    });
+    expect(within(head).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);
+    expect(within(head).getByRole('link', { name: 'Post #1' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
+  });
+
+  test('a counterfeit names the character, has no link and carries the mark', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=Geno user=${w.spritey}]never said it[/quote]`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const quote = reply.querySelector('blockquote')!;
+    expect(quote).toHaveAttribute('data-kb-counterfeit');
+    await waitFor(() => expect(quote.querySelector('cite')).toHaveTextContent('Spritey'));
+    expect(quote.querySelector('cite')).not.toHaveTextContent('Geno');
+    expect(quote.querySelector('cite a')).toBeNull();
+  });
+
+  test('an unknown user and an undebuted one both fall back to the typed name, alike', async () => {
+    const w = world(2);
+    const shy = w.fake.seed.character(w.other, 'Shy', 'face', { debuted: false });
+    w.fake.seed.post(w.thread, w.pipe, `[quote=Geno user=${GHOST}]a[/quote][quote=Geno user=${shy}]b[/quote]`);
+    const read = vi.spyOn(w.fake, 'characters');
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(read).toHaveBeenCalled());
+    await waitFor(() => expect(reply.querySelectorAll('blockquote cite .kb-byline-name')).toHaveLength(2));
+    const names = [...reply.querySelectorAll('blockquote cite')].map((c) => c.innerHTML);
+    expect(names[0]).toBe(names[1]);
+    expect(names[0]).toContain('Geno');
+    expect(reply.querySelector('blockquote cite a')).toBeNull();
+    expect(reply).not.toHaveTextContent('Shy');
+  });
+
+  test('a page of ten counterfeit quotes asks for characters once', async () => {
+    const w = world(2);
+    const others = Array.from({ length: 10 }, (_, i) => w.fake.seed.character(w.other, `Extra ${i}`, 'face'));
+    for (const c of others) w.fake.seed.post(w.thread, w.pipe, `[quote=Geno user=${c}]x[/quote]`);
+    const read = vi.spyOn(w.fake, 'characters');
+    open(w);
+    await screen.findByRole('article', { name: /^Post 12 /u });
+    await waitFor(() => expect(screen.getAllByText(/^Extra \d$/u)).toHaveLength(10));
+    const asked = read.mock.calls.filter(([ids]) => ids.some((id) => others.includes(id)));
+    expect(asked).toHaveLength(1);
   });
 });
 
@@ -1028,6 +1155,9 @@ describe('a card\'s effect on a post', () => {
   });
 
   test('a card can choose the ink of its mark\'s edge and border from its top-billed play (Whoops!\'s top layer takes its ink)', async () => {
+    /* The glass's key resolves the tab's words on the root, as the app's stylesheet does (web/src/main.tsx); a test page has none. */
+    document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000');
+    onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
     const w = world(2);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'under', layer: 1 });
     w.fake.clock.advance(60_000);
@@ -1083,12 +1213,22 @@ describe('the announcer', () => {
     deliver(() => tapped().onAct?.(live(w.thread, 0, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[1]!, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' } })));
     deliver(() => tapped().onAct?.(live(w.thread, 6, w.pipe, { kind: 'unmask', payload: { class: 'heel', message: '' }, currentPayload: { class: 'heel', message: '' } })));
     deliver(() => tapped().onAct?.(live(w.thread, 7, null, { kind: 'tally', payload: { body: 'x' }, currentPayload: { body: 'x' } })));
-    await screen.findByRole('article', { name: /^Post 7 by The System/u });
+    await screen.findByRole('article', { name: /^Post 7 by the staff/u });
     expect(post(6)).toBeInTheDocument();
     expect(await within(post(2)).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' })).toBeInTheDocument();
     expect(announcer()).toBeEmptyDOMElement();
     deliver(() => tapped().onAct?.(live(w.thread, 8, w.spritey)));
     await waitFor(() => expect(announcer()).toHaveTextContent('New post by Spritey'));
+  });
+
+  test('names the staff in lower case mid-sentence: "New post by the staff"', async () => {
+    const w = world(5);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 5 /u });
+    deliver(() => tapped().onAct?.(live(w.thread, 6, null)));
+    await waitFor(() => expect(announcer()).toHaveTextContent('New post by the staff'));
+    expect(announcer()).not.toHaveTextContent('The staff');
   });
 
   test('says it for a post held back by the bar too, since the reader cannot see it', async () => {

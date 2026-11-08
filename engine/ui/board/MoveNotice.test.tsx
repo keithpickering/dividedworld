@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -23,15 +23,32 @@ const segment = () => screen.findByRole('button', { name: /^WAY OUT:/u });
 describe('the Boss\'s notice on the board its move changed', () => {
   test('is drawn as a 2003 announcement from the Boss, in its own words, with a link to its profile', async () => {
     const { w } = open();
-    const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
-    expect(notice).toHaveTextContent('ANNOUNCEMENT from The Director:');
+    const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
+    expect(notice).toHaveTextContent('Announcement from The Director');
+    expect(notice).not.toHaveTextContent('ANNOUNCEMENT');
     expect(notice).toHaveTextContent('This board has been IMPROVED. From now on we talk about toast.');
     expect(within(notice).getByRole('link', { name: 'The Director' })).toHaveAttribute('href', `/c/${w.director}`);
   });
 
+  test('is a table: a light band, the Boss\'s words under it, and the glass label and Way out on the band\'s corner, outside the table', async () => {
+    open();
+    const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
+    const rows = within(notice).getAllByRole('row');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.querySelector('td.kb-bar')).not.toBeNull();
+    expect(rows[1]).toHaveTextContent('This board has been IMPROVED.');
+    expect(within(rows[1]!).getByRole('list', { name: 'Reactions' })).toBeInTheDocument();
+    const frame = document.querySelector('.kb-move-notice')!;
+    expect(frame.contains(notice)).toBe(true);
+    const tag = frame.querySelector('.kb-move-tag')!;
+    expect(tag).not.toBeNull();
+    expect(notice.contains(tag)).toBe(false);
+    expect(within(tag as HTMLElement).getByRole('button', { name: /^WAY OUT:/u })).toBeInTheDocument();
+  });
+
   test('shows its top three reactions, small, and leaves the fourth out', async () => {
     open();
-    const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
+    const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
     const chips = within(notice).getByRole('list', { name: 'Reactions' });
     const items = within(chips).getAllByRole('listitem');
     expect(items.map((i) => i.textContent)).toEqual(['Fire, 9F 9', 'Tomato, 6T 6', 'Tea, 3E 3']);
@@ -43,8 +60,8 @@ describe('the Boss\'s notice on the board its move changed', () => {
     const w = seedMoves(fake, testInstance);
     const sly = fake.seed.move('director', { board: w.second, name: 'Cheese Cellar', body: 'Nothing was renamed here. THE ADMIN DID IT.', at: fake.clock.now() - 1000 });
     renderIn(fake, <MoveNotice act={sly} />, { path: '/' });
-    const notice = await screen.findByRole('region', { name: 'Announcement from The Director' });
-    expect(within(notice).getByText('THE SYSTEM RENAMED THIS BOARD')).toBeInTheDocument();
+    const notice = await screen.findByRole('table', { name: 'Announcement from The Director' });
+    expect(screen.getByText('The Boss renamed this board')).toBeInTheDocument();
     expect(notice).toHaveTextContent('Nothing was renamed here. THE ADMIN DID IT.');
   });
 
@@ -100,9 +117,9 @@ describe('the overlay that opens from the way out', () => {
     const way = await segment();
     way.focus();
     await userEvent.keyboard('{Enter}');
-    const dialog = await screen.findByRole('dialog', { name: 'THE SYSTEM RENAMED THIS BOARD' });
+    const dialog = await screen.findByRole('dialog', { name: 'The Boss renamed this board' });
     expect(way).toHaveAttribute('aria-expanded', 'true');
-    expect(dialog).toHaveTextContent('The System renamed a board to "Pointless Toast Palace"');
+    expect(dialog).toHaveTextContent('The Boss renamed a board to "Pointless Toast Palace"');
     expect(dialog).toHaveTextContent(`It was called ${w.generalName}.`);
     expect(dialog).toHaveTextContent('Needs 12 different characters to post on this board: 5 of 12 so far.');
     const bar = within(dialog).getByRole('progressbar', { name: 'Progress toward the way out' });
@@ -146,7 +163,7 @@ describe('the overlay that opens from the way out', () => {
     open();
     (await segment()).focus();
     await userEvent.keyboard(' ');
-    expect(await screen.findByRole('dialog', { name: 'THE SYSTEM RENAMED THIS BOARD' })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: 'The Boss renamed this board' })).toBeInTheDocument();
   });
 
   test('holds focus while it is open and gives it back to the segment when Escape closes it', async () => {
@@ -154,7 +171,7 @@ describe('the overlay that opens from the way out', () => {
     const way = await segment();
     way.focus();
     await userEvent.keyboard('{Enter}');
-    const dialog = await screen.findByRole('dialog', { name: 'THE SYSTEM RENAMED THIS BOARD' });
+    const dialog = await screen.findByRole('dialog', { name: 'The Boss renamed this board' });
     expect(dialog.contains(document.activeElement)).toBe(true);
     await userEvent.tab({ shift: true });
     await userEvent.tab({ shift: true });
@@ -172,5 +189,47 @@ describe('the overlay that opens from the way out', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     await waitFor(() => expect(way).toHaveFocus());
+  });
+});
+
+describe('a group move on the notice', () => {
+  const GROUPS = [
+    { key: 'members', name: 'Members', color: '#7a7a7a', stripe: false, staff: false },
+    { key: 'trialMembers', name: 'Trial Members', badge: 'Trial Member', color: '#d2691e', stripe: true, staff: false },
+    { key: 'staff', name: 'Test Cores', color: '#d4a017', stripe: false, staff: true },
+  ];
+  function groupMove(office: 'boss' | 'mod') {
+    const fake = buildWorld({ groups: GROUPS });
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    fake.seed.staff('director', 'The Director', office);
+    const move = fake.seed.groupMove('director', { character: pipe, group: 'trialMembers', board: 'general' });
+    renderIn(fake, <MoveNotice act={move} />, { path: '/', settings: { groups: GROUPS } });
+    return { fake, move };
+  }
+
+  test('a Mod\'s move is the Mod\'s, by its label and its detail, and the group is named by its name', async () => {
+    groupMove('mod');
+    expect(await screen.findByText('A Mod moved a member')).toBeInTheDocument();
+    await userEvent.click(await segment());
+    const detail = await screen.findByRole('dialog');
+    expect(detail).toHaveTextContent('A Mod put Pipewrench in Trial Members, barred from posting on General.');
+    expect(detail).not.toHaveTextContent('Boss');
+    expect(detail).not.toHaveTextContent('trialMembers');
+  });
+
+  test('keeps the role it landed under when the persona\'s office changes', async () => {
+    const { fake, move } = groupMove('mod');
+    fake.seed.setOffice('director', 'boss');
+    cleanup();
+    renderIn(fake, <MoveNotice act={move} />, { path: '/', settings: { groups: GROUPS } });
+    expect(await screen.findByText('A Mod moved a member')).toBeInTheDocument();
+  });
+
+  test('the Boss\'s move says the Boss', async () => {
+    groupMove('boss');
+    expect(await screen.findByText('The Boss moved a member')).toBeInTheDocument();
+    await userEvent.click(await segment());
+    expect(await screen.findByRole('dialog')).toHaveTextContent('The Boss put Pipewrench in Trial Members, barred from posting on General.');
   });
 });

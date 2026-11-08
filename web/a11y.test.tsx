@@ -21,7 +21,7 @@ const modules = import.meta.glob<Record<string, unknown>>(
   { eager: true },
 );
 
-type Composed = { storyName?: string; id: string; play?: (ctx: { canvasElement: HTMLElement }) => Promise<void>; (): unknown };
+type Composed = { storyName?: string; parameters?: { a11y?: { frames?: boolean } }; id: string; play?: (ctx: { canvasElement: HTMLElement }) => Promise<void>; (): unknown };
 const stories = Object.entries(modules).flatMap(([file, mod]) =>
   Object.entries(composeStories(mod as never) as Record<string, Composed>).map(([key, Story]) => ({
     file,
@@ -49,7 +49,7 @@ async function settled(container: HTMLElement, floor: number): Promise<void> {
   let last = '';
   let since = Date.now();
   await waitFor(() => {
-    expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(container.querySelector('[aria-busy="true"]:not(button, a, [role="button"])')).toBeNull();
     expect((container.textContent ?? '').trim().length).toBeGreaterThan(floor);
     const now = container.innerHTML;
     if (now !== last) { last = now; since = Date.now(); }
@@ -86,7 +86,7 @@ describe('stories', () => {
         if (!shown.has(dir)) shown.set(dir, new Set());
         shown.get(dir)!.add(name);
       }
-      expect(describeViolations(await axeViolations(document.body))).toBe('');
+      expect(describeViolations(await axeViolations(document.body, { frames: Story.parameters?.a11y?.frames }))).toBe('');
     });
   });
 

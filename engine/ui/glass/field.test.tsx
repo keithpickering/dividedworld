@@ -7,9 +7,10 @@
  * jsdom has no canvas, so the rasterizer here is a stand-in that makes a URL the way the real one
  * does (`URL.createObjectURL`), and `URL`'s two functions are mocked to count.
  */
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FieldLayer } from '../types.ts';
-import { createRasters, GRACE_MS, rasterize, rasterSize, type Rasterize } from './field.ts';
+import { createRasters, fieldLayerSvg, GRACE_MS, rasterize, rasterSize, useFieldEnv, type Rasterize } from './field.ts';
 
 const layer = (seed: number, travel = 100): FieldLayer => ({ alpha: [0, 0, 0, 1, 0], frequency: [0.01, 0.02], octaves: 2, seed, blur: 5, drift: { seconds: 30, travel } });
 const WIDE = [layer(1, 80), layer(2, 120), layer(3, 160)];
@@ -278,5 +279,57 @@ describe('the real rasterizer', () => {
     expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 1440, 900);
     expect(url).toBe('blob:test/1');
     expect(revoked).toEqual(['blob:test/0']);
+  });
+
+  it('draws the SVG fieldLayerSvg returns, so the mail bake and the page draw a layer one way', async () => {
+    stage({ getContext: () => ({ drawImage: vi.fn() }), toBlob: (done: (b: Blob) => void) => done(new Blob()), width: 0, height: 0 });
+    const blobs: Blob[] = [];
+    vi.mocked(URL.createObjectURL).mockImplementation((b) => { blobs.push(b as Blob); return `blob:test/${blobs.length - 1}`; });
+    const l = layer(7);
+    await rasterize(l, VIEW, 1);
+    const drawn = await blobs[0]!.text();
+    expect(drawn).toContain('<feTurbulence');
+    expect(drawn).toBe(fieldLayerSvg(l, VIEW, rasterSize(VIEW, 1)));
+  });
+});
+
+describe('the viewport the field is drawn to', () => {
+  /* The probe is the one element field.ts lays out at 100lvh; jsdom lays out nothing, so its height is stubbed here. */
+  let lvh: number;
+  beforeEach(() => {
+    /* The raster tests' stand-ins (their URL, the canvas the real rasterizer is handed) are not wanted here: rendering needs jsdom's own. */
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    lvh = 0;
+    const real = Element.prototype.getBoundingClientRect;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+      return this.hasAttribute('data-kb-field-probe') ? new DOMRect(0, 0, 0, lvh) : real.call(this);
+    });
+  });
+  afterEach(() => { vi.restoreAllMocks(); document.querySelectorAll('[data-kb-field-probe]').forEach((e) => e.remove()); });
+
+  const frame = () => act(async () => { window.dispatchEvent(new Event('resize')); await vi.advanceTimersByTimeAsync(50); });
+
+  it('is the large viewport\'s height, so a phone\'s address bar showing or hiding neither stretches the clouds nor redraws a window', async () => {
+    lvh = 900;
+    vi.stubGlobal('innerHeight', 844);
+    const seen: number[] = [];
+    const { result } = renderHook(() => { const e = useFieldEnv(); seen.push(e.view.height); return e; });
+    expect(result.current.view.height).toBe(900);
+    const before = result.current;
+    /* The bar hides: the visible viewport grows to the large one. */
+    vi.stubGlobal('innerHeight', 900);
+    await frame();
+    /* And shows again. */
+    vi.stubGlobal('innerHeight', 844);
+    await frame();
+    expect(result.current).toBe(before);
+    expect(new Set(seen)).toEqual(new Set([900]));
+  });
+
+  it('is the window\'s inner height where the large viewport cannot be read (no lvh)', () => {
+    vi.stubGlobal('innerHeight', 768);
+    const { result } = renderHook(() => useFieldEnv());
+    expect(result.current.view.height).toBe(768);
   });
 });

@@ -1,10 +1,11 @@
 -- The staff card path (supabase/migrations/0086_staff_cards.sql; the staff roster design, section 7; its plan, Task 7).
 -- A pool persona plays a card through staff_play_card and staff_set_card, which take the same rules a player's play does (place_cast and
 -- place_set, the inner halves of play_card and set_card), pay nothing, and refuse a persona that is waiting or benched, a card above
--- `pool.cardRarityMost`, and a Set whose trap pays out. A player's trap that catches a staff Cast pays the card's base price as a wallet
--- event of kind 'trapSystem'. A trap set by staff springs on a player's write without refusing it, and the staff flag the spring opens is
+-- `pool.cardRarityMost`, and a Trap Card that names no card. A player's Trap Card that catches a staff Cast takes a copy of the card: a new
+-- row in the trapper's own ledger, and no wallet moves (face-down Moves, docs/plans/2026-11-07-face-down-moves-plan.md, Task 6). A trap set by staff
+-- springs on a player's write without refusing it, takes the player's card and spends it, and the staff flag the spring opens is
 -- closed again before the player's own Act is checked. The poisons: a staff Cast with a payer is refused (the staff writer passes none),
--- and a spring on a staff trap with the flag left closed refuses the player's reply (red before spring_traps opens it).
+-- and a spring on a staff trap with the flag left closed refuses the player's cast (red before spring_traps opens it).
 
 do $$
 begin
@@ -15,7 +16,6 @@ begin
         'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'sc-boss',
-      'staffGroup', jsonb_build_object('name', 'Test Cores'),
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'sc-boss', 'name', 'Sc Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'sc-mod', 'name', 'Sc Mod', 'title', 'Mod', 'signature', 'b'),
@@ -29,14 +29,13 @@ begin
   insert into staff_offices (staff, office, cause) values ('sc-bench', 'benched', 'admin');
   -- The pool plays up to uncommon.
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
-  update settings set value = value || '{"snare.price": 150, "catcher.price": 100, "bluffy.price": 25, "grandie.price": 100, "shield.price": 150, "hook.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'grandie.price', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'shield.price', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', false, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', false, null),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, false, null);
 end $$;
 
 create function pg_temp.refused(stmt text) returns text language plpgsql as $$
@@ -45,6 +44,15 @@ create function pg_temp.hand(who uuid, variadic keys text[]) returns void langua
   insert into card_ledger (account, card, kind, price) select who, k, 'bought', 0 from unnest(keys) k
 $$;
 create function pg_temp.staff_char(k text) returns uuid language sql as $$ select id from characters where staff = k $$;
+-- A player casts through the real play_card, as the service role acts for them.
+create function pg_temp.cast_as(by_account uuid, card text, by_character uuid, target uuid) returns jsonb language plpgsql as $$
+declare made jsonb;
+begin
+  perform tests.become_service();
+  made := play_card(by_account, card, by_character, target, '{}', 0, '');
+  perform tests.unbecome();
+  return made;
+end $$;
 create function pg_temp.staff_post(k text, in_thread uuid, body text) returns uuid language sql as $$
   select (write_staff_act(k, 'post', in_thread, null, jsonb_build_object('body', body)) ->> 'id')::uuid
 $$;
@@ -129,7 +137,6 @@ begin
   if (select f.card || ':' || coalesce(f.account::text, 'none') from face_down f where f.play = (r ->> 'id')::uuid) is distinct from 'bluffy:none' then
     raise exception 'a staff Set is a face-down row with no account';
   end if;
-  if not exists (select 1 from face_down_reply fr where fr.play = (r ->> 'id')::uuid) then raise exception 'a staff Set has no reply moment'; end if;
   if exists (select 1 from card_ledger where act = (r ->> 'id')::uuid) then raise exception 'a staff Set was charged'; end if;
   -- One card face down to a post; and only on the persona's own post.
   perform tests.become_service();
@@ -140,16 +147,16 @@ begin
   said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'bluffy', pp));
   perform tests.unbecome();
   if said is null or said !~ '^42501' then raise exception 'a staff Set on a player''s post: %', said; end if;
-  -- A trap that pays out is not offered: a staff character has no wallet. Nothing is written.
+  -- A Trap Card that names no card catches nothing and is refused in plain words. Nothing is written.
   select count(*) into before_acts from acts where kind = 'set';
   perform tests.become_service();
   said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'snare', sp2));
   perform tests.unbecome();
-  if said is null or said !~ '^55000 Snare pays out' then raise exception 'a staff Set of Trap Card (a payout trap): %', said; end if;
+  if said is null or said !~ '^22023 Snare names no card to catch' then raise exception 'a staff Set of Trap Card naming nothing: %', said; end if;
   if (select count(*) from acts where kind = 'set') is distinct from before_acts then raise exception 'a refused staff Set wrote an Act'; end if;
-  -- A nullify trap is allowed: it pays nobody. Rare is above uncommon.
+  -- Rare is above uncommon.
   perform tests.become_service();
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'catcher', sp2));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-mod', 'catcher', sp2, '{"card": "sweetie"}', 'sweetie'));
   perform tests.unbecome();
   if said is null or said !~ '^55000 Catcher is above the rarity the pool plays' then raise exception 'a rare Set under an uncommon cap: %', said; end if;
   perform tests.become_service();
@@ -159,9 +166,9 @@ begin
   -- The cap moves with the setting: at common, an uncommon card is refused and a common one is not.
   update settings set value = jsonb_set(value, '{cardRarityMost}', '"common"') where key = 'pool';
   perform tests.become_service();
-  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L)', 'sc-mod', 'hook', sp2));
+  said := pg_temp.refused(format('select staff_set_card(%L, %L, %L, %L, %L)', 'sc-mod', 'snare', sp2, '{"card": "sweetie"}', 'sweetie'));
   perform tests.unbecome();
-  if said is null or said !~ '^55000 Hook is above' then raise exception 'an uncommon Set under a common cap: %', said; end if;
+  if said is null or said !~ '^55000 Snare is above' then raise exception 'an uncommon Set under a common cap: %', said; end if;
   perform tests.become_service();
   perform staff_set_card('sc-mod', 'bluffy', sp2);
   perform tests.unbecome();
@@ -210,7 +217,7 @@ begin
   if said is null or said !~ '^42501' then raise exception 'the service role called place_set directly: %', said; end if;
 end $$;
 
--- ---- A player's trap that catches a staff Cast pays the card's base price as trapSystem, whatever the trapper holds ----
+-- ---- A player's trap that catches a staff Cast takes a copy of the card, and no wallet moves ----
 do $$
 declare
   ann uuid := tests.account('sc-trapper-a'); a uuid := tests.character(ann, 'Sc Trapper A');
@@ -222,9 +229,9 @@ declare
 begin
   perform pg_temp.hand(ann, 'snare'); perform pg_temp.hand(bob, 'snare'); perform pg_temp.hand(cat, 'catcher');
   insert into wallets (account, balance) values (ann, 0), (bob, 300), (cat, 0);
-  perform set_card(ann, 'snare', a, pa, '{}', 0);
-  perform set_card(bob, 'snare', b, pb, '{}', 0);
-  perform set_card(cat, 'catcher', c, pc, '{}', 0);
+  perform set_card(ann, 'snare', a, pa, '{"card": "sweetie"}', 0, 'sweetie');
+  perform set_card(bob, 'snare', b, pb, '{"card": "sweetie"}', 0, 'sweetie');
+  perform set_card(cat, 'catcher', c, pc, '{"card": "sweetie"}', 0, 'sweetie');
   perform tests.become_service();
   ra := staff_play_card('sc-mod', 'sweetie', pa, '{}', '');
   rb := staff_play_card('sc-mod', 'sweetie', pb, '{}', '');
@@ -233,100 +240,71 @@ begin
   if ra -> 'payload' ->> 'caught' is null or rb -> 'payload' ->> 'caught' is null or rc -> 'payload' ->> 'caught' is null then
     raise exception 'a staff Cast was not caught: % / % / %', ra, rb, rc;
   end if;
-  -- The base price of Sweetie (the economy's 100), to a trapper holding nothing and to one holding 300: the same.
-  if (select w.change || ':' || w.ref::text || ':' || coalesce(w.settlement::text, 'none') from wallet_events w where w.account = ann and w.kind = 'trapSystem')
-       is distinct from '100:' || (ra -> 'sprung' ->> 'id') || ':none'
-     or (select w.change from wallet_events w where w.account = bob and w.kind = 'trapSystem') is distinct from 100 then
-    raise exception 'a caught staff Cast pays its base price: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.kind like 'trap%');
+  -- Each trapper took one copy of Sweetie, whatever they hold in their wallet: a caught row of the spring's, costing nothing.
+  if (select count(*) from card_ledger l where l.kind = 'caught' and l.card = 'sweetie' and l.account = ann and l.act = (ra -> 'sprung' ->> 'id')::uuid and l.price = 0) is distinct from 1::bigint
+     or (select count(*) from card_ledger l where l.kind = 'caught' and l.card = 'sweetie' and l.account = bob and l.act = (rb -> 'sprung' ->> 'id')::uuid) is distinct from 1::bigint
+     or (select count(*) from card_ledger l where l.kind = 'caught' and l.card = 'sweetie' and l.account = cat and l.act = (rc -> 'sprung' ->> 'id')::uuid) is distinct from 1::bigint then
+    raise exception 'a caught staff Cast is not a copy for each trapper: %', (select jsonb_agg(to_jsonb(l)) from card_ledger l where l.kind = 'caught');
   end if;
-  if (select balance from wallets where account = ann) is distinct from 100 or (select balance from wallets where account = bob) is distinct from 400 then
-    raise exception 'the payout reached the wallets: % / %', (select balance from wallets where account = ann), (select balance from wallets where account = bob);
+  if card_held(ann, 'sweetie') is distinct from 1 or card_held(bob, 'sweetie') is distinct from 1 or card_held(cat, 'sweetie') is distinct from 1 then raise exception 'the copy is not in each hand'; end if;
+  -- No wallet paid for it and none was paid: no trap event of any kind, and the wallets are as they were.
+  if exists (select 1 from wallet_events where kind in ('trap', 'trapSystem') and account in (ann, bob, cat)) then raise exception 'a staff catch moved a wallet'; end if;
+  if (select balance from wallets where account = ann) is distinct from 0 or (select balance from wallets where account = bob) is distinct from 300 then
+    raise exception 'a catch reached the wallets: % / %', (select balance from wallets where account = ann), (select balance from wallets where account = bob);
   end if;
-  -- No wallet paid it, no kind 'trap' event, no ledger row for the staff play; a nullify trap pays nothing.
-  if exists (select 1 from wallet_events where kind = 'trap' and account in (ann, bob, cat)) then raise exception 'a staff catch wrote a player-paid trap event'; end if;
-  if exists (select 1 from wallet_events where account = cat and kind = 'trapSystem') then raise exception 'a nullify trap was paid'; end if;
   if exists (select 1 from card_ledger where act in ((ra ->> 'id')::uuid, (rb ->> 'id')::uuid, (rc ->> 'id')::uuid)) then raise exception 'a caught staff play has a ledger row'; end if;
-  -- The trapper reads it from their own wallet events; nobody else does.
+  -- The trapper reads it from their own ledger; nobody else does.
   perform tests.become(ann);
-  if (select change from my_wallet_events where kind = 'trapSystem') is distinct from 100 then raise exception 'the trapper does not read the payout'; end if;
+  if (select count(*) from my_card_ledger where kind = 'caught' and card = 'sweetie') is distinct from 1::bigint then raise exception 'the trapper does not read the caught card'; end if;
   perform tests.unbecome();
   perform tests.become(bob);
-  if exists (select 1 from my_wallet_events where kind = 'trapSystem' and change = 100 and balance_after = 100) then raise exception 'another player reads the first trapper''s payout'; end if;
+  if exists (select 1 from my_card_ledger where kind = 'caught' and act = (ra -> 'sprung' ->> 'id')::uuid) then raise exception 'another player reads the first trapper''s caught card'; end if;
   perform tests.unbecome();
   -- The cast was caught: it took no layer, so the same card lands on that post again.
   perform tests.become_service();
-  if (staff_play_card('sc-mod', 'sweetie', pc, '{}', '') -> 'payload' ->> 'caught') is not null then raise exception 'a spent nullify trap caught a second cast'; end if;
+  if (staff_play_card('sc-mod', 'sweetie', pc, '{}', '') -> 'payload' ->> 'caught') is not null then raise exception 'a spent trap caught a second cast'; end if;
   perform tests.unbecome();
 end $$;
 
--- ---- A trapper at the wallet cap is credited what the wallet took, and the event says so ----
-do $$
-declare
-  ann uuid := tests.account('sc-capped'); a uuid := tests.character(ann, 'Sc Capped');
-  t uuid := tests.thread('Caught staff at the cap');
-  pa uuid := tests.post(a, t, 'Trapped at the cap.');
-  cap integer := (setting('walletCap'))::integer; r jsonb;
-begin
-  perform pg_temp.hand(ann, 'snare');
-  insert into wallets (account, balance) values (ann, cap - 30);
-  perform set_card(ann, 'snare', a, pa, '{}', 0);
-  perform tests.become_service();
-  r := staff_play_card('sc-mod', 'sweetie', pa, '{}', '');
-  perform tests.unbecome();
-  if (select w.change || ':' || w.overflow || ':' || w.balance_after from wallet_events w where w.account = ann and w.kind = 'trapSystem')
-       is distinct from '30:70:' || cap then
-    raise exception 'a capped trapper is credited what fit, with the rest as overflow: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.account = ann);
-  end if;
-end $$;
-
--- ---- A trap set by staff springs on a player's reply without refusing it, and the staff flag closes behind it ----
--- The poison, planted and observed: with both `set_config('kayfabb.staff_writer', 'on', true)` lines removed from spring_traps in 0086
--- (the flag left closed), this block fails at the player's reply with `a staff character acts only through The System` raised by
--- acts_well_formed() inside spring_traps' insert of the spring (psql line 330 of the file as then run); restored, it passes.
+-- ---- A trap set by staff springs on a player's cast without refusing it, and the staff flag closes behind it ----
+-- The poison, planted and observed: with both `set_config('kayfabb.staff_writer', 'on', true)` lines removed from spring_traps in 0142
+-- (the flag left closed), this block fails at the player's cast with `a staff character acts only through the game's own moves` raised by
+-- acts_well_formed() inside spring_traps' insert of the spring; restored, it passes.
 do $$
 declare
   bob uuid := tests.account('sc-replier'); b uuid := tests.character(bob, 'Sc Replier');
   t uuid := tests.thread('A staff trap');
-  sp uuid := pg_temp.staff_post('sc-mod', t, 'A staff post with a hook under it.');
+  sp uuid := pg_temp.staff_post('sc-mod', t, 'A staff post with a Trap Card under it.');
   mod uuid := pg_temp.staff_char('sc-mod');
-  set_act uuid; replied jsonb; struck jsonb; said text;
+  set_act uuid; cast_act jsonb; said text;
 begin
+  perform pg_temp.hand(bob, 'sweetie', 'sweetie');
   perform tests.become_service();
-  set_act := (staff_set_card('sc-mod', 'hook', sp, '{"color": "red"}') ->> 'id')::uuid;
+  set_act := (staff_set_card('sc-mod', 'snare', sp, '{"card": "sweetie"}', 'sweetie') ->> 'id')::uuid;
   perform tests.unbecome();
-  perform tests.become(bob);
-  replied := post(t, b, 'A reply to the staff post.');
-  perform tests.unbecome();
-  if replied ->> 'id' is null then raise exception 'the reply was not written: %', replied; end if;
-  if replied -> 'sprung' -> 'payload' ->> 'card' is distinct from 'hook' or replied -> 'sprung' -> 'payload' ->> 'set' is distinct from set_act::text then
-    raise exception 'the staff trap did not spring on the reply: %', replied;
+  cast_act := pg_temp.cast_as(bob, 'sweetie', b, sp);
+  if cast_act ->> 'id' is null then raise exception 'the cast was not written: %', cast_act; end if;
+  if cast_act -> 'sprung' -> 'payload' ->> 'card' is distinct from 'snare' or cast_act -> 'sprung' -> 'payload' ->> 'set' is distinct from set_act::text
+     or cast_act -> 'payload' ->> 'caught' is distinct from set_act::text then
+    raise exception 'the staff trap did not catch the cast: %', cast_act;
   end if;
-  struck := replied -> 'sprung' -> 'struck';
-  if struck is null then struck := replied -> 'sprung'; end if;
-  if (select x.kind || ':' || x.character::text || ':' || x.target_act_id::text || ':' || (x.payload ->> 'card') from acts x
-      where x.kind = 'card' and x.payload ->> 'spring' = replied -> 'sprung' ->> 'id')
-       is distinct from 'card:' || mod::text || ':' || (replied ->> 'id') || ':blot' then
-    raise exception 'the strike is a staff Blot on the reply: %', replied;
-  end if;
-  if (select x.character from acts x where x.id = (replied -> 'sprung' ->> 'id')::uuid) is distinct from mod then raise exception 'the spring is the staff setter''s'; end if;
+  if (select x.character from acts x where x.id = (cast_act -> 'sprung' ->> 'id')::uuid) is distinct from mod then raise exception 'the spring is the staff setter''s'; end if;
+  -- The caster's card is spent: a staff setter has no hand, so nobody takes it.
+  if card_held(bob, 'sweetie') is distinct from 1 or exists (select 1 from card_ledger where kind = 'caught' and act = (cast_act -> 'sprung' ->> 'id')::uuid) then raise exception 'a Mod Bot''s Trap Card gave the caught card to someone'; end if;
   -- The flag is shut again: a staff character still cannot be written as, by anything that did not open it.
   if coalesce(current_setting('kayfabb.staff_writer', true), '') = 'on' then raise exception 'the staff flag was left open after a spring'; end if;
   said := pg_temp.refused(format('insert into acts (character, kind, thread, payload) values (%L, ''post'', %L, ''{"body": "Passing as staff."}'')', mod, t));
-  if said is null or said !~ 'a staff character acts only through The System' then raise exception 'a write passed as staff after a spring: %', said; end if;
-  -- The struck post's author is alerted that a trap struck (trapStruck goes to the struck post's author, a player, whoever set the
-  -- trap); the staff setter has no owner, so nothing is written for it.
-  if (select count(*) from alerts where kind = 'trapStruck' and account = bob
-        and act = (select x.id from acts x where x.payload ->> 'spring' = replied -> 'sprung' ->> 'id')) is distinct from 1 then
-    raise exception 'the player a staff trap struck was not alerted: %', (select jsonb_agg(to_jsonb(al)) from alerts al where al.account = bob);
+  if said is null or said !~ 'a staff character acts only through the game''s own moves' then raise exception 'a write passed as staff after a spring: %', said; end if;
+  -- The caster whose card was caught is alerted, about the caught play; the staff setter has no owner, so nothing is written for it.
+  if (select count(*) from alerts where kind = 'trapStruck' and account = bob and act = (cast_act ->> 'id')::uuid) is distinct from 1 then
+    raise exception 'the player a staff trap caught was not alerted: %', (select jsonb_agg(to_jsonb(al)) from alerts al where al.account = bob);
   end if;
   if exists (select 1 from alerts where kind in ('trapStruck', 'trapSprang') and account is distinct from bob
-               and act in ((replied -> 'sprung' ->> 'id')::uuid, (select x.id from acts x where x.payload ->> 'spring' = replied -> 'sprung' ->> 'id'))) then
-    raise exception 'a staff trap wrote an alert for someone but the struck player';
+               and act in ((cast_act -> 'sprung' ->> 'id')::uuid, (cast_act ->> 'id')::uuid)) then
+    raise exception 'a staff trap wrote an alert for someone but the caught player';
   end if;
-  -- It sprang once: the hook is spent.
-  perform tests.become(bob);
-  if (post(t, b, 'And another.') -> 'sprung') is not null then raise exception 'the staff trap sprang twice'; end if;
-  perform tests.unbecome();
+  -- It sprang once: the trap is spent.
+  if pg_temp.cast_as(bob, 'sweetie', b, sp) -> 'sprung' is not null then raise exception 'the staff trap sprang twice'; end if;
 end $$;
 
 -- ---- The staff flag a spring opens is put back to what it was: inside a staff write it stays open ----
@@ -338,15 +316,15 @@ declare
   bp uuid := pg_temp.staff_post('sc-boss', t, 'A staff post carrying a Bluff.');
   r jsonb;
 begin
-  -- Plant a nullify trap of the staff's own for the staff to meet (catcher is rare: lifted for this setup alone).
+  -- Plant a Trap Card of the staff's own for the staff to meet (catcher is rare: lifted for this setup alone).
   update settings set value = jsonb_set(value, '{cardRarityMost}', '"rare"') where key = 'pool';
   perform tests.become_service();
-  perform staff_set_card('sc-mod', 'catcher', sp);
+  perform staff_set_card('sc-mod', 'catcher', sp, '{"card": "sweetie"}', 'sweetie');
   update settings set value = jsonb_set(value, '{cardRarityMost}', '"uncommon"') where key = 'pool';
   r := staff_play_card('sc-boss', 'sweetie', sp, '{}', '');
   perform tests.unbecome();
   if r -> 'payload' ->> 'caught' is null then raise exception 'a staff Cast did not meet the staff trap: %', r; end if;
-  if exists (select 1 from wallet_events where kind = 'trapSystem' and ref = (r -> 'sprung' ->> 'id')::uuid) then raise exception 'a staff trap on a staff Cast was paid'; end if;
+  if exists (select 1 from card_ledger where act = (r -> 'sprung' ->> 'id')::uuid) or exists (select 1 from wallet_events where ref = (r -> 'sprung' ->> 'id')::uuid) then raise exception 'a staff trap on a staff Cast gave something to someone'; end if;
   if coalesce(current_setting('kayfabb.staff_writer', true), '') = 'on' then raise exception 'the staff flag stayed open after staff_play_card'; end if;
 end $$;
 
@@ -420,8 +398,9 @@ begin
   if said is null or said !~ 'set face down on your own post' then raise exception 'a Set played as a Cast: %', said; end if;
   said := pg_temp.refused(format('select set_card(%L, %L, %L, %L, %L, 25)', ann, 'bluffy', a, p, '{}'));
   if said is null or said !~ '^42501' then raise exception 'a Set on another''s post: %', said; end if;
-  said := pg_temp.refused(format('select set_card(%L, %L, %L, %L, %L, 25)', ann, 'sweetie', a, mine2, '{}'));
-  if said is null or said !~ 'is not set face down' then raise exception 'a Cast set face down: %', said; end if;
+  perform pg_temp.hand(ann, 'shield');
+  said := pg_temp.refused(format('select set_card(%L, %L, %L, %L, %L, 25)', ann, 'shield', a, mine2, '{}'));
+  if said is null or said !~ 'is used on your own post' then raise exception 'a Use set face down: %', said; end if;
   if (select balance from wallets where account = ann) is distinct from 200 or (select count(*) from wallet_events where account = ann) is distinct from events
      or (select count(*) from card_ledger where account = ann and kind = 'played') is distinct from ledger then
     raise exception 'a refused play charged: wallet %, events %, ledger %', (select balance from wallets where account = ann), (select count(*) from wallet_events where account = ann), (select count(*) from card_ledger where account = ann and kind = 'played');

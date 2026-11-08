@@ -1,6 +1,8 @@
 -- Card plays, traps and wards (supabase/migrations/0054_card_plays.sql): a Set writes a card back that names no card, a Use goes
 -- on the caller's own post, a ward turns away casts at or below it, and a trap springs once on its trigger, never refusing the write
--- that springs it. docs/plans/2026-11-01-card-plays-plan.md, Tasks 2 and 3. The cards are the engine's test set, never an instance's.
+-- that springs it. docs/plans/2026-11-01-card-plays-plan.md, Tasks 2 and 3; rewritten for face-down Moves (docs/plans/2026-11-07-face-down-moves-plan.md,
+-- Task 6): a Trap Card names the card it catches and takes it, a Move set face down lands on what quotes it, and nothing pays out, strikes by outcome,
+-- or springs on a reaction or a reply. The cards are the engine's test set, never an instance's.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -13,17 +15,15 @@ end $$;
 -- The test cards, each priced in the economy (card_kinds_priced, 0006).
 create function pg_temp.cards() returns void language plpgsql as $$
 begin
-  update settings set value = value || '{"snare.price": 150, "catcher.price": 100, "bluffy.price": 25, "grandie.price": 100, "shield.price": 150, "hook.price": 100, "quoter.price": 100, "jumpy.price": 100, "lowtrap.price": 100}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'snare.price', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "payout"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'catcher.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'bluffy.price', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'grandie.price', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'shield.price', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'hook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}', false, null),
-    ('quoter', 'Quoter', 'salty', 'quoter.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "sweetie"}}', false, null),
-    ('jumpy', 'Jumpy', 'salty', 'jumpy.price', 'common', 'set', '{"trigger": {"on": "reaction", "quadrant": "boredNegative"}, "outcome": {"do": "nullify"}}', false, null),
-    ('lowtrap', 'Low Trap', 'salty', 'lowtrap.price', 'common', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}', false, null)
+  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', false, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', false, null),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, false, null),
+    ('quoter', 'Quoter', 'salty', 'uncommon', 'cast', null, false, null),
+    ('lowtrap', 'Low Trap', 'salty', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null)
   on conflict (key) do nothing;
 end $$;
 
@@ -51,13 +51,12 @@ begin
     insert into accounts (id) values (%1$L), (%2$L), (%3$L);
     insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Race Trapper', now(), now()), (%5$L, %2$L, 'Race Caster B', now(), now()), (%6$L, %3$L, 'Race Caster C', now(), now());
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
-    update settings set value = value || '{"racecatch.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values ('racecatch', 'Race Catcher', 'salty', 'racecatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values ('racecatch', 'Race Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}');
     insert into card_ledger (account, card, kind, price) values (%1$L, 'racecatch', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'sweetie', 'bought', 0);
   $sql$, ann, bob, cat, a, b, c));
   -- The post and the set, committed, then the two casts race.
   perform tests.commit(format($sql$
-    do $d$ begin perform set_card(%1$L, 'racecatch', %2$L, tests.post(%2$L, tests.thread('Race trap'), 'Trapped.'), '{}', 0); end $d$;
+    do $d$ begin perform set_card(%1$L, 'racecatch', %2$L, tests.post(%2$L, tests.thread('Race trap'), 'Trapped.'), '{"card": "sweetie"}', 0, 'sweetie'); end $d$;
   $sql$, ann, a));
   select f.post, f.thread into p, t from face_down f where f.account = ann;
   said := tests.race_service(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'sweetie', b, p, '{}', ''), format('select play_card(%L, %L, %L, %L, %L, 0, %L)', cat, 'sweetie', c, p, '{}', ''));
@@ -68,7 +67,7 @@ begin
   if (select count(*) from acts where kind = 'spring' and target_act_id = p) is distinct from 1::bigint then raise exception 'two casts at once sprang twice'; end if;
 end $$;
 
--- ---- A post and a cast by one player, and a post and a strike whose setter is the poster: no deadlock ----
+-- ---- A post and a cast by one player, and a post and a landing Move whose setter is the poster: no deadlock ----
 -- Every write that may spring locks in the one order 0075_trap_locks.sql wrote (a back's face_down row, the thread, then the count rows
 -- of the writer and of the setters, then the Act it inserts), and 0078_reply_passes.sql keeps it while post() locks fewer backs.
 -- Statement order the other way round leaves each pair below holding one lock the other wants. 0077-trap-locks.sql drives the same
@@ -88,11 +87,10 @@ begin
     insert into accounts (id) values (%1$L), (%2$L), (%3$L);
     insert into characters (id, owner, name, created_at, debuted_at) values (%4$L, %1$L, 'Pair Setter', now(), now()), (%5$L, %2$L, 'Pair Poster', now(), now()), (%6$L, %3$L, 'Pair Bluffer', now(), now());
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
-    update settings set value = value || '{"pairhook.price": 100, "pairbluff.price": 100, "paircatch.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-      ('paircatch', 'Pair Catcher', 'salty', 'paircatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}'),
-      ('pairhook', 'Pair Hook', 'salty', 'pairhook.price', 'uncommon', 'set', '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}'),
-      ('pairbluff', 'Pair Bluff', 'pepperoni', 'pairbluff.price', 'common', 'set', null);
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values
+      ('paircatch', 'Pair Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}'),
+      ('pairhook', 'Pair Hook', 'salty', 'uncommon', 'cast', null),
+      ('pairbluff', 'Pair Bluff', 'pepperoni', 'common', 'set', null);
     insert into card_ledger (account, card, kind, price) values (%1$L, 'paircatch', 'bought', 0), (%1$L, 'pairhook', 'bought', 0), (%2$L, 'sweetie', 'bought', 0), (%3$L, 'pairbluff', 'bought', 0);
     insert into threads (id, board, title) select %7$L, b.id, 'Pair one' from boards b where b.slug = 'general';
     insert into threads (id, board, title) select %8$L, b.id, 'Pair two' from boards b where b.slug = 'general';
@@ -103,7 +101,7 @@ begin
   $sql$, ann, bob, cat, a, b, c, t, t2, p, pa, pc, t3));
   perform tests.commit(format($sql$
     do $d$ begin
-      perform set_card(%1$L, 'paircatch', %2$L, %3$L, '{}', 0);
+      perform set_card(%1$L, 'paircatch', %2$L, %3$L, '{"card": "sweetie"}', 0, 'sweetie');
       perform set_card(%1$L, 'pairhook', %2$L, %4$L, '{"color": "red"}', 0);
       perform set_card(%5$L, 'pairbluff', %6$L, %7$L, '{}', 0);
     end $d$;
@@ -120,15 +118,15 @@ begin
   if said[1] is not null or said[2] is not null then raise exception 'a quoting post and a cast by one player on a trapped post: %', said; end if;
   if (select count(*) from acts where kind = 'post' and target_act_id = p) is distinct from 1::bigint then raise exception 'the quoting post did not land'; end if;
   if (select count(*) from acts where kind = 'card' and target_act_id = p and payload ? 'caught') is distinct from 1::bigint then raise exception 'the cast was not caught'; end if;
-  -- A post by the setter of a reply trap, and another character's reply that springs that trap: the strike lays a card by the setter,
+  -- A post by the setter of a Move, and another character's quote that springs it: the Move lands as a card by the setter,
   -- whose count row the setter's own post holds. The setter's post is in another thread (posts of one thread already wait on each
   -- other for their place in it) and quotes the post that carries a back in the reply's thread. The sleeping trigger now follows the setter.
   perform tests.commit(format($sql$
     drop trigger race_sleep on character_post_counts;
     create trigger race_sleep after insert or update on character_post_counts for each row when (new.character = %1$L) execute function public.race_sleep();
   $sql$, a));
-  said := tests.race_as(ann, format('select post(%L, %L, %L, %L)', t3, a, 'A post by the setter, quoting from the other thread.', pc), bob, format('select post(%L, %L, %L, null)', t2, b, 'A reply that springs the setter''s trap.'));
-  if said[1] is not null or said[2] is not null then raise exception 'a post and a strike whose setter is the poster: %', said; end if;
+  said := tests.race_as(ann, format('select post(%L, %L, %L, %L)', t3, a, 'A post by the setter, quoting from the other thread.', pc), bob, format('select post(%L, %L, %L, %L)', t2, b, 'A quote that springs the setter''s Move.', pa));
+  if said[1] is not null or said[2] is not null then raise exception 'a post and a landing Move whose setter is the poster: %', said; end if;
   if (select count(*) from acts where kind = 'spring' and target_act_id = pa) is distinct from 1::bigint then raise exception 'the hook did not spring'; end if;
   perform tests.commit($sql$
     drop trigger race_sleep on character_post_counts;
@@ -142,7 +140,7 @@ begin
 end $$;
 
 -- ---- A back set while a post waits to insert its Act is not sprung by that post: the set it locked is the set it springs ----
--- Reply passes (0078): post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
+-- Face-down Moves: post() reads the quoted post's live back and locks it with the setters' count rows before its Act. A trigger that
 -- sleeps after the poster's Act insert holds the post there while a set_card lands a quote trap on the quoted post; the post never locked
 -- that back, so it must not spring it (it was set after the post, and the next quote springs it). Committed rows, as above.
 do $$
@@ -157,9 +155,8 @@ begin
     insert into accounts (id) values (%1$L), (%2$L);
     insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Late Setter', now(), now()), (%4$L, %2$L, 'Late Quoter', now(), now());
     insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
-    update settings set value = value || '{"latequote.price": 100}' where key = 'economy';
-    insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap) values
-      ('latequote', 'Late Quote', 'salty', 'latequote.price', 'uncommon', 'set', '{"trigger": {"on": "quote"}, "outcome": {"do": "strike", "card": "blot"}}');
+    insert into card_kinds (key, name, alignment, rarity, play, trap) values
+      ('latequote', 'Late Quote', 'salty', 'uncommon', 'cast', null);
     insert into card_ledger (account, card, kind, price) values (%1$L, 'latequote', 'bought', 0);
     insert into threads (id, board, title) select %5$L, b.id, 'Late set' from boards b where b.slug = 'general';
     insert into acts (id, character, kind, thread, payload) values (%6$L, %3$L, 'post', %5$L, '{"body": "Quoted while the trap goes on."}');
@@ -206,21 +203,21 @@ begin
   perform tests.become_service();
 
   -- Through a character that did not write the post: refused, and through another of the same player's masks the same.
-  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'snare', a, q, '{}'));
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'snare', a, q, '{}', 'sweetie'));
   if why is distinct from 'a card is set face down on a post of your own character''s' then raise exception 'a Set on another''s post: %', why; end if;
-  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'snare', a2, p, '{}'));
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'snare', a2, p, '{}', 'sweetie'));
   if why is distinct from 'a card is set face down on a post of your own character''s' then raise exception 'a Set through another mask: %', why; end if;
   -- A Cast card is not set.
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'sweetie', a, p, '{}'));
   if why is distinct from 'you hold no "sweetie" card; the Vending Machine sells them' then raise exception 'a Set of a card not held: %', why; end if;
 
-  set_snare := set_card(ann, 'snare', a, p, '{}', 0);
+  set_snare := set_card(ann, 'snare', a, p, '{"card": "sweetie"}', 0, 'sweetie');
   -- A second Set on the post is refused in plain words, whichever card it is.
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'bluffy', a, p, '{}'));
   if why is distinct from 'this post already holds a card face down' then raise exception 'a second Set: %', why; end if;
   set_bluff := set_card(ann, 'bluffy', a, r, '{}', 0);
   -- No card left: the second snare was never spent, so one remains; spend it, then a Set with none in hand is refused.
-  perform set_card(ann, 'snare', a, (select tests.post(a, t, 'Third.')), '{}', 0);
+  perform set_card(ann, 'snare', a, (select tests.post(a, t, 'Third.')), '{"card": "sweetie"}', 0, 'sweetie');
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'snare', a, (select tests.post(a, t, 'Fourth.')), '{}'));
   if why is distinct from 'you hold no "snare" card; the Vending Machine sells them' then raise exception 'a Set with no card in hand: %', why; end if;
 
@@ -295,7 +292,7 @@ begin
   if why is distinct from 'this post''s Shield turns away cards up to uncommon' then raise exception 'a common cast under an uncommon ward: %', why; end if;
   perform play_card(bob, 'grandie', b, p, '{}', 0, '');
   -- A ward never blocks its own player's Set.
-  perform set_card(ann, 'snare', a, p, '{}', 0);
+  perform set_card(ann, 'snare', a, p, '{"card": "sweetie"}', 0, 'sweetie');
   -- Once the ward ends, it refuses nothing. (A ward that ended a week ago: written as play_card would have written it then.)
   perform tests.unbecome();
   perform tests.act(a, 'card', t, jsonb_build_object('card', 'shield', 'layer', 1, 'message', '', 'config', '{}', 'ends', now() - interval '1 second'), o, now() - interval '7 days');
@@ -307,7 +304,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- A trap catches a cast, and a payout moves exactly the play's price ----
+-- ---- A Trap Card catches the card it names and takes it: nothing pays out, and the card is the setter's ----
 do $$
 declare
   ann uuid := tests.account('trap-ann');
@@ -325,7 +322,7 @@ begin
   perform pg_temp.hand(bob, 'blot');
   insert into wallets (account, balance) values (ann, 590), (bob, 300);
   perform tests.become_service();
-  set_act := (set_card(ann, 'snare', a, p, '{}', 0) ->> 'id')::uuid;
+  set_act := (set_card(ann, 'snare', a, p, '{"card": "blot"}', 0, 'blot') ->> 'id')::uuid;
   played := play_card(bob, 'blot', b, p, '{"color": "red"}', 75, '');
   -- The cast is written, caught: its Act names the set, it takes no layer, and the answer carries the spring.
   if played -> 'payload' ->> 'caught' is distinct from set_act::text or played -> 'payload' ? 'layer' then raise exception 'a caught cast: %', played; end if;
@@ -333,21 +330,20 @@ begin
      or played -> 'sprung' -> 'payload' ->> 'set' is distinct from set_act::text then
     raise exception 'the spring names the card, the play it caught and the set it ends: %', played -> 'sprung';
   end if;
-  -- No response carries the amount or the setter's account.
+  -- No response carries the setter's account, and the spring says what it did.
   if played::text like '%' || ann || '%' or played::text like '%balance%' or played::text like '%wallet%'
-     or (select array_agg(k order by k) from jsonb_object_keys(played -> 'sprung' -> 'payload') k) is distinct from array['by', 'card', 'caught', 'outcome', 'set', 'trigger'] then
-    raise exception 'the caster''s answer carries the payout: %', played;
+     or (select array_agg(k order by k) from jsonb_object_keys(played -> 'sprung' -> 'payload') k) is distinct from array['by', 'card', 'caught', 'did', 'set', 'trigger']
+     or played -> 'sprung' -> 'payload' ->> 'did' is distinct from 'caught' then
+    raise exception 'the caster''s answer carries more than the spring: %', played;
   end if;
-  -- Spent all the same: the caster's ledger and wallet, and the setter's wallet by exactly the price, capped at the cap.
+  -- Spent all the same: the caster's ledger and wallet. Nothing is paid to the setter: the card is hers.
   select price into caught_ledger from card_ledger where account = bob and act = (played ->> 'id')::uuid and kind = 'played';
   if caught_ledger is distinct from 75 then raise exception 'the caught play is in the caster''s ledger at its price: %', caught_ledger; end if;
   if (select balance from wallets where account = bob) is distinct from 225 then raise exception 'the caster paid the play''s price'; end if;
-  if (select change from wallet_events where account = ann and kind = 'trap') is distinct from 10
-     or (select overflow from wallet_events where account = ann and kind = 'trap') is distinct from 65
-     or (select ref from wallet_events where account = ann and kind = 'trap') is distinct from (played -> 'sprung' ->> 'id')::uuid then
-    raise exception 'the payout is the play''s price, capped at the cap, recorded as the spring''s: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.account = ann);
+  if exists (select 1 from wallet_events where account = ann) or (select balance from wallets where account = ann) is distinct from 590 then
+    raise exception 'a catch moved the setter''s wallet: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.account = ann);
   end if;
-  if (select balance from wallets where account = ann) is distinct from 600 then raise exception 'the setter''s wallet is at the cap'; end if;
+  if card_held(ann, 'blot') is distinct from 1 or card_held(bob, 'blot') is distinct from 0 then raise exception 'the caught card is not the setter''s'; end if;
   -- The caster's log reads the catch from their own rows: the trap's card, the play's price and the card's at the machine.
   perform tests.unbecome();
   perform tests.become(bob);
@@ -374,7 +370,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- The rarity bound, a Bluff, a trap on another trigger, and an ended trap: the cast lands, and the reads are alike ----
+-- ---- A card the trap did not name, a Bluff, a Move, and an ended trap: the cast lands, and the reads are alike ----
 do $$
 declare
   ann uuid := tests.account('pass-ann');
@@ -382,9 +378,9 @@ declare
   a uuid := tests.character(ann, 'Setter Of Many');
   b uuid := tests.character(bob, 'Big Caster');
   t uuid := tests.thread();
-  p_low uuid := tests.post(a, t, 'A common trap.');
+  p_low uuid := tests.post(a, t, 'A trap naming another card.');
   p_bluff uuid := tests.post(a, t, 'A bluff.');
-  p_hook uuid := tests.post(a, t, 'A reply trap.');
+  p_hook uuid := tests.post(a, t, 'A Move under this.');
   p_old uuid := tests.post(a, t, 'An ended trap.');
   played jsonb;
   set_old uuid;
@@ -396,36 +392,37 @@ begin
   perform pg_temp.hand(ann, 'snare', 'bluffy', 'hook');
   perform pg_temp.hand(bob, 'grandie', 'sweetie', 'sweetie', 'sweetie');
   perform tests.become_service();
-  perform set_card(ann, 'snare', a, p_low, '{}', 0);
+  perform set_card(ann, 'snare', a, p_low, '{"card": "blot"}', 0, 'blot');
   perform set_card(ann, 'bluffy', a, p_bluff, '{}', 0);
   perform set_card(ann, 'hook', a, p_hook, '{}', 0);
   perform tests.unbecome();
   -- A trap set eight days ago, ended a day since: written as set_card would have written it then.
   set_old := tests.act(a, 'set', t, '{}', p_old, now() - interval '8 days');
-  insert into face_down (play, account, card, post, thread, round, ends_at) values (set_old, ann, 'catcher', p_old, t, 1, now() - interval '1 day');
+  insert into face_down (play, account, card, post, thread, round, ends_at, catches) values (set_old, ann, 'catcher', p_old, t, 1, now() - interval '1 day', 'sweetie');
   perform tests.become_service();
-  -- A legendary passes over an uncommon trap, which stays set.
+  -- A card the trap does not name passes over it, whatever its rarity, and the trap stays set.
   played := play_card(bob, 'grandie', b, p_low, '{}', 0, '');
-  if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a legendary was caught by an uncommon trap: %', played; end if;
+  if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a card the trap did not name was caught: %', played; end if;
   if (card_target(p_low) -> 'effects' -> 0 ->> 'ends')::timestamptz <= now() then raise exception 'the passed-over trap is no longer set'; end if;
-  -- A Bluff, a trap waiting on a reply and an ended trap leave a cast untouched.
+  -- A Bluff, a Move and an ended trap leave a cast untouched.
   foreach before in array array[to_jsonb(p_bluff), to_jsonb(p_hook), to_jsonb(p_old)] loop
     played := play_card(bob, 'sweetie', b, (before #>> '{}')::uuid, '{}', 0, '');
-    if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a cast was caught by no cast trap: %', played; end if;
+    if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a cast was caught by no trap that names it: %', played; end if;
   end loop;
   if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_low, p_bluff, p_hook, p_old)) then raise exception 'something sprang'; end if;
   perform tests.unbecome();
-  -- The same reads for a Bluff as for a trap waiting on another trigger: each table read the same number of times, the same way.
+  -- The same reads for a Bluff as for a Move: each table read the same number of times, the same way.
   before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  perform spring_traps('cast', p_bluff, gen_random_uuid(), null, 'common', bob, 0);
+  perform spring_traps('cast', p_bluff, gen_random_uuid(), 'sweetie');
   reads_bluff := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
   before := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan, idx_scan)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  perform spring_traps('cast', p_hook, gen_random_uuid(), null, 'common', bob, 0);
+  perform spring_traps('cast', p_hook, gen_random_uuid(), 'sweetie');
   reads_hook := (select jsonb_object_agg(relname, jsonb_build_array(seq_scan - (before -> relname ->> 0)::bigint, idx_scan - (before -> relname ->> 1)::bigint)) from pg_stat_xact_user_tables where relname in ('face_down', 'card_kinds', 'acts'));
-  if reads_bluff is distinct from reads_hook then raise exception 'a Bluff and a waiting trap read differently: % / %', reads_bluff, reads_hook; end if;
+  if reads_bluff is distinct from reads_hook then raise exception 'a Bluff and a Move read differently: % / %', reads_bluff, reads_hook; end if;
 end $$;
 
--- ---- Each trigger springs its trap once, and only once, and never refuses the write ----
+-- ---- Each trigger springs its back once, and only once, and never refuses the write ----
+-- A cast springs a Trap Card that names it; a quote springs a Move. A reaction and a reply spring nothing (the reaction's who is private, and a reply is not an answer to any one post).
 do $$
 declare
   ann uuid := tests.account('trig-ann');
@@ -442,62 +439,62 @@ declare
   reply jsonb;
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'catcher', 'jumpy', 'quoter', 'hook');
+  perform pg_temp.hand(ann, 'catcher', 'quoter', 'hook', 'bluffy');
   perform pg_temp.hand(bob, 'sweetie', 'sweetie');
   perform tests.become_service();
-  perform set_card(ann, 'catcher', a, p_cast, '{}', 0);
-  perform set_card(ann, 'jumpy', a, p_react, '{}', 0);
+  perform set_card(ann, 'catcher', a, p_cast, '{"card": "sweetie"}', 0, 'sweetie');
+  perform set_card(ann, 'bluffy', a, p_react, '{}', 0);
   perform set_card(ann, 'quoter', a, p_quote, '{}', 0);
   perform set_card(ann, 'hook', a, p_reply, '{"color": "green"}', 0);
   -- cast
   answer := play_card(bob, 'sweetie', b, p_cast, '{}', 0, '');
   if answer -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'cast' then raise exception 'a cast trap on a cast: %', answer; end if;
   perform tests.unbecome();
-  -- reaction: one of another quadrant does nothing, the trap's own quadrant springs it, and a second reaction does not again.
+  -- reaction: none of them springs anything, a Bluff's or a Move's.
   perform tests.become(bob);
   answer := react(p_react, b, 'up');
-  if answer ? 'sprung' then raise exception 'a reaction of another quadrant sprang a trap: %', answer; end if;
-  answer := react(p_react, b, 'meh');
-  if answer -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'reaction' or answer -> 'sprung' -> 'payload' ? 'caught' then raise exception 'a reaction trap: %', answer; end if;
-  if answer -> 'tally' ->> 'meh' is distinct from '1' then raise exception 'the reaction that sprang a trap landed: %', answer; end if;
-  answer := react(p_react, b, 'calm');
-  if answer ? 'sprung' then raise exception 'a reaction trap sprang twice'; end if;
-  -- quote: a post quoting it springs it, and strikes its card on the quoting post.
+  if answer ? 'sprung' then raise exception 'a reaction sprang a back: %', answer; end if;
+  answer := react(p_quote, b, 'meh');
+  if answer ? 'sprung' or answer -> 'tally' ->> 'meh' is distinct from '1' then raise exception 'a reaction sprang a Move, or did not land: %', answer; end if;
+  -- quote: a post quoting it springs it, and lands its card on the quoting post.
   answer := post(t, b, 'As you said.', p_quote);
   if answer -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'quote' then raise exception 'a quote trap: %', answer; end if;
-  if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (answer ->> 'id')::uuid and k.payload ->> 'card' = 'sweetie' and k.character = a
+  if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (answer ->> 'id')::uuid and k.payload ->> 'card' = 'quoter' and k.character = a
                    and k.payload ->> 'spring' = answer -> 'sprung' ->> 'id') then
-    raise exception 'a quote trap''s strike laid its card on the quoting post';
+    raise exception 'a Move landed its card on the quoting post';
   end if;
-  if answer -> 'sprung' -> 'struck' ->> 'target_act_id' is distinct from answer ->> 'id' or answer -> 'sprung' -> 'struck' -> 'payload' ->> 'card' is distinct from 'sweetie' then
-    raise exception 'the answer carries the struck card''s play, to be sent live: %', answer -> 'sprung';
+  if answer -> 'sprung' -> 'struck' ->> 'target_act_id' is distinct from answer ->> 'id' or answer -> 'sprung' -> 'struck' -> 'payload' ->> 'card' is distinct from 'quoter' then
+    raise exception 'the answer carries the landed card''s play, to be sent live: %', answer -> 'sprung';
   end if;
   answer := post(t, b, 'And again.', p_quote);
-  if answer ? 'sprung' then raise exception 'a quote trap sprang twice'; end if;
+  if answer ? 'sprung' then raise exception 'a Move sprang twice'; end if;
   perform tests.unbecome();
-  -- reply: its own author's post does not spring it; another character's does, once, laying a seeded Blot with the setter's ink.
+  -- reply: a reply to the thread, by its own author or another character's, springs nothing; the quote that names the post springs it, laying a seeded Hook in the setter's ink.
   perform tests.become(ann);
   answer := post(t2, a, 'Me again.');
-  if answer ? 'sprung' then raise exception 'a reply trap sprang on its own author''s post'; end if;
+  if answer ? 'sprung' then raise exception 'a plain post sprang a back on its own author''s post'; end if;
   perform tests.unbecome();
   perform tests.become(bob);
   reply := post(t2, b, 'A reply.');
-  if reply -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'reply' then raise exception 'a reply trap: %', reply; end if;
-  if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (reply ->> 'id')::uuid and k.payload ->> 'card' = 'blot'
-                   and k.payload -> 'config' ->> 'color' = 'green' and jsonb_typeof(k.payload -> 'seed') = 'number' and (k.payload ->> 'layer')::integer = 1) then
-    raise exception 'a reply trap''s strike laid a seeded Blot in the setter''s ink on the reply';
+  if reply ? 'sprung' then raise exception 'a reply sprang a back: %', reply; end if;
+  reply := post(t2, b, 'A quote.', p_reply);
+  if reply -> 'sprung' -> 'payload' ->> 'trigger' is distinct from 'quote' then raise exception 'a quote of the post with a Move: %', reply; end if;
+  if not exists (select 1 from acts k where k.kind = 'card' and k.target_act_id = (reply ->> 'id')::uuid and k.payload ->> 'card' = 'hook'
+                   and k.payload -> 'config' ->> 'color' = 'green' and (k.payload ->> 'layer')::integer = 1) then
+    raise exception 'a Move landed in the setter''s ink on the quote';
   end if;
-  answer := post(t2, b, 'Another reply.');
-  if answer ? 'sprung' then raise exception 'a reply trap sprang twice'; end if;
+  answer := post(t2, b, 'Another quote.', p_reply);
+  if answer ? 'sprung' then raise exception 'a Move sprang twice'; end if;
   perform tests.unbecome();
-  if (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply)) is distinct from 4::bigint then
-    raise exception 'each trigger sprang its trap once: %', (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply));
+  if (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply)) is distinct from 3::bigint then
+    raise exception 'each trigger sprang its back once, and a Bluff never: %', (select count(*) from acts where kind = 'spring' and target_act_id in (p_cast, p_react, p_quote, p_reply));
   end if;
   -- A spring is no post: it takes no place and counts nowhere.
   if exists (select 1 from acts where kind = 'spring' and seq is not null) then raise exception 'a spring took a place in its thread'; end if;
 end $$;
 
--- ---- A strike that cannot land leaves the trap set ----
+-- ---- A Move that cannot land leaves its back set ----
+-- The quoting post already carries its one Sweetie, the most it takes: the quote is treated as if no card were there.
 do $$
 declare
   ann uuid := tests.account('full-ann');
@@ -509,28 +506,25 @@ declare
   q uuid := tests.post(b, t, 'Already sweet.');
 begin
   perform pg_temp.cards();
-  perform pg_temp.hand(ann, 'quoter', 'sweetie');
+  perform pg_temp.hand(ann, 'sweetie', 'sweetie');
   perform tests.become_service();
-  perform set_card(ann, 'quoter', a, p, '{}', 0);
+  perform set_card(ann, 'sweetie', a, p, '{}', 0);
   perform play_card(ann, 'sweetie', a, q, '{}', 0, '');
   perform tests.unbecome();
-  -- q carries its one Sweetie, the most it takes: a quote from q springs nothing, and the trap stays set.
-  if spring_traps('quote', p, q) is not null then raise exception 'a strike onto a full stack sprang'; end if;
-  if exists (select 1 from acts where kind = 'spring' and target_act_id = p) then raise exception 'a strike onto a full stack wrote a spring'; end if;
-  if (card_target(p) -> 'effects' -> 0 ->> 'ends')::timestamptz <= now() then raise exception 'the trap is no longer set'; end if;
+  if spring_traps('quote', p, q) is not null then raise exception 'a Move onto a full stack sprang'; end if;
+  if exists (select 1 from acts where kind = 'spring' and target_act_id = p) then raise exception 'a Move onto a full stack wrote a spring'; end if;
+  if (card_target(p) -> 'effects' -> 0 ->> 'ends')::timestamptz <= now() then raise exception 'the back is no longer set'; end if;
 end $$;
 
 -- ---- The seed: the pairings instanceProblems refuses, refused naming the card ----
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}, "rarity": "common"}]}')$s$);
-  if why is distinct from 'card "seedling" has a trap, and only a Set card does' then raise exception 'a trap on a Cast seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price"}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "trap": {"trigger": {"on": "cast"}}, "rarity": "common"}]}')$s$);
+  if why is distinct from 'card "seedling" has a trap, and only a Gimmick does' then raise exception 'a trap on a Cast seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet"}]}')$s$);
   if why is distinct from 'card "seedling" has no rarity; a rarity is common, uncommon, rare or legendary' then raise exception 'a card with no rarity seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "nothing"}}}]}')$s$);
-  if why is distinct from 'card "seedling" strikes with "nothing", which the instance does not have' then raise exception 'a strike of no card seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": 7}}]}')$s$);
   if why is not null then raise exception 'a ward was refused: %', why; end if;
   if (select lasts from card_kinds where key = 'seedling') is distinct from interval '7 days' or not (select ward from card_kinds where key = 'seedling') then raise exception 'the seed wrote the ward and its time up'; end if;
   why := pg_temp.refusal($s$insert into settings (key, value) values ('setLasts', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
@@ -559,7 +553,7 @@ begin
   insert into acts (character, kind, thread, payload) values (boss, 'post', t, '{"body": "A decree."}') returning id into decree;
   perform set_config('kayfabb.staff_writer', '', true);
   perform tests.become_service();
-  perform set_card(ann, 'catcher', a, p, '{}', 0);
+  perform set_card(ann, 'catcher', a, p, '{"card": "sweetie"}', 0, 'sweetie');
   played := play_card(bob, 'sweetie', b, p, '{}', 0, '');
   perform play_card(bob, 'splat', b, decree, '{}', 0, '');
   perform tests.unbecome();
@@ -592,7 +586,7 @@ begin
   perform pg_temp.hand(ann, 'catcher', 'hook');
   perform pg_temp.hand(bob, 'sweetie');
   perform tests.become_service();
-  perform set_card(ann, 'catcher', a, p_cast, '{}', 0);
+  perform set_card(ann, 'catcher', a, p_cast, '{"card": "sweetie"}', 0, 'sweetie');
   perform tests.unbecome();
   perform tests.become_service();
   perform set_card(ann, 'hook', a, p_reply, '{"color": "red"}', 0);
@@ -603,8 +597,8 @@ begin
   if answer ? 'sprung' or answer -> 'payload' ? 'caught' then raise exception 'a retired setter''s trap caught a cast: %', answer; end if;
   perform tests.unbecome();
   perform tests.become(bob);
-  answer := post(t2, b, 'A reply.');
-  if answer ? 'sprung' then raise exception 'a retired setter''s trap struck a reply: %', answer; end if;
+  answer := post(t2, b, 'A quote.', p_reply);
+  if answer ? 'sprung' then raise exception 'a retired setter''s Move landed on a quote: %', answer; end if;
   perform tests.unbecome();
 end $$;
 
@@ -612,19 +606,14 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true}]}')$s$);
   if why is distinct from 'card "seedling" is a ward with no time up (lasts); a ward ends at its time' then raise exception 'a ward with no time up seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "payout"}}}]}')$s$);
-  if why is distinct from 'card "seedling" pays out on a reply; it pays out only on a cast, since only a cast is paid for' then raise exception 'a payout on a reply seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}, "outcome": {"do": "nullify"}}}]}')$s$);
-  if why is distinct from 'card "seedling" springs on "sneeze"; a trap springs on cast, reaction, reply, quote, visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}, "outcome": {"do": "strike", "card": "sweetie"}}}]}')$s$);
-  if why is distinct from 'card "seedling" strikes on a cast; a strike lays its card on a reply or a quote, until cards reach characters' then raise exception 'a strike on a cast seeded: %', why; end if;
-  -- A struck card already in the table, rarer than the trap, is refused as one in the seed is.
-  update card_kinds set rarity = 'legendary' where key = 'blot';
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "blot"}}}]}')$s$);
-  if why is distinct from 'card "seedling" strikes with "blot", which is rarer than the trap (common)' then raise exception 'a strike of a rarer card in the table seeded: %', why; end if;
-  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "priceSetting": "sweetie.price", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "sneeze"}}}]}')$s$);
+  if why is distinct from 'card "seedling" springs on "sneeze"; a Gimmick springs on cast or visit' then raise exception 'a trap on no trigger seeded: %', why; end if;
+  -- A Move's trigger is the engine's, never a card's: a trap on a reply, a reaction or a quote is refused as any trigger but a cast or a visit is.
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]}')$s$);
+  if why is distinct from 'card "seedling" springs on "reply"; a Gimmick springs on cast or visit' then raise exception 'a trap on a reply seeded: %', why; end if;
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "ward": true, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
   if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
   -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
   why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);

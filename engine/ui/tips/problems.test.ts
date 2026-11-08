@@ -23,10 +23,10 @@ const looks = (): Record<string, unknown> => ({
   face: { description: () => 'The crowd favorite. Earns from cheers.', hurtsBy: () => 'Hurt by boos.' },
   heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.' },
 });
-const copy = { siteName: 'S', siteTagline: 't', shopName: 'Shop', reducedMotionCard: 'x' };
-const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown) => ({
+const copy = { siteName: 'S', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'x' };
+const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown, badges?: unknown) => ({
   onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
-  copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }) },
+  copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }), ...(badges === undefined ? {} : { badges: badges as InstanceUi['copy']['badges'] }) },
 });
 const good = { tips: tips(), letter: 'Hi.' };
 const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }) => void) => {
@@ -36,6 +36,14 @@ const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }
 };
 
 describe('instanceUiProblems', () => {
+  test('holds a theme\'s modes to the keys of its preview', () => {
+    const withThemes = (themes: unknown) => instanceUiProblems({ ...ui(good), themes: themes as InstanceUi['themes'] }, rules);
+    const t = (modes: string, preview: unknown) => [{ key: 'night', name: 'Night', href: '/n.css', modes, preview }];
+    assert.deepEqual(withThemes(t('dark', { dark: {} })), []);
+    assert.deepEqual(withThemes(t('both', { light: {}, dark: {} })), []);
+    assert.deepEqual(withThemes(t('both', { dark: {} })), ['the theme "night" says it holds light and dark, and its file holds dark']);
+    assert.deepEqual(withThemes(t('dark', { light: {}, dark: {} })), ['the theme "night" says it holds dark, and its file holds light and dark']);
+  });
   test('refuses a shine tip with no action label, or a blank one', () => {
     for (const action of [undefined, '  ']) {
       const t = tips();
@@ -54,6 +62,21 @@ describe('instanceUiProblems', () => {
     const withLooks = (l: Record<string, unknown>) => ({ ...ui(good), classLooks: l as unknown as InstanceUi['classLooks'] });
     const problems = instanceUiProblems(withLooks({ ...looks(), face: { description: () => 'The crowd favorite. Earns from cheers. Hurt by boos.', hurtsBy: () => 'Hurt by boos.' } }), rules);
     assert.deepEqual(problems, ['the class "face" has a description that still says "Hurt by"; what hurts it belongs in hurtsBy']);
+  });
+  test("refuses a class whose splits is not a pair of side-by-side quadrants of the instance, none also earned, hurt or called", () => {
+    const withSplits = (marks: unknown) => instanceUiProblems({ ...ui(good), classLooks: { ...looks(), heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.', marks } } as unknown as InstanceUi['classLooks'] }, rules);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'] }), []);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['boredNegative', 'calmPositive'] }), []);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'calmPositive'] }), ['the class "heel" splits excitedNegative and calmPositive, which do not sit side by side in one row of the map']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['boredNegative', 'boredNegative'] }), ['the class "heel" splits boredNegative with itself, and a split needs two quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], hurts: ['excitedPositive'] }), ['the class "heel" splits excitedPositive and also hurts it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], earns: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also earns it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive'], calls: ['excitedNegative'] }), ['the class "heel" splits excitedNegative and also calls it']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'boredNegative'] }), ['the class "heel" splits excitedNegative and boredNegative, which do not sit side by side in one row of the map']);
+    assert.deepEqual(withSplits({ label: 'x', splits: 'excitedNegative' }), ['the class "heel" has a splits that is not a pair of quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative'] }), ['the class "heel" has a splits that is not a pair of quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'excitedPositive', 'boredNegative'] }), ['the class "heel" has a splits that is not a pair of quadrants']);
+    assert.deepEqual(withSplits({ label: 'x', splits: ['excitedNegative', 'sleepy'] }), ['the class "heel" splits "sleepy", which is not a quadrant']);
   });
   test("refuses a card's status that is a sentence or runs past six words, naming the card (the Lens's roles)", () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
@@ -139,6 +162,21 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['AURA-MATIC 3000', 'NO FOOD, ONLY CARDS']), rules), []);
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(20)]), rules), []);
   });
+  test('passes badges of two short words each, and none at all', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', 'On'], ['Kilter', 'Off']]), rules), []);
+  });
+  test('refuses an empty badge list, a badge that is not a pair of words, and one too wide for 80 pixels', () => {
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, []), rules), ['the copy has a badges list with nothing in it']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game']]), rules), ['the badge 1 is not a pair of words']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', ' ']]), rules), ['the badge 1 is not a pair of words']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Masks', 'On'], ['Kilterrr', 'Offffff']]), rules), ['the badge "Kilterrr Offffff" is 16 characters, over the 12 an 80 by 15 badge holds']);
+  });
+  test('refuses more than 6 badges, and a pair listed twice', () => {
+    const six = ['A', 'B', 'C', 'D', 'E', 'F'].map((w) => [w, 'On']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, six), rules), []);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [...six, ['G', 'On']]), rules), ['the copy has 7 badges, over the 6 a footer row holds']);
+    assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), undefined, [['Game', 'On'], ['Kilter', 'Off'], ['Game', 'On']]), rules), ['the badge 3 repeats the badge 1 ("Game On")']);
+  });
   test('refuses an empty marquee list', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), []), rules), ['the copy has a marquees list with nothing in it']);
   });
@@ -148,5 +186,32 @@ describe('instanceUiProblems', () => {
   });
   test('refuses a marquee over 20 characters, naming it', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(21)]), rules), [`the marquee "${'X'.repeat(21)}" is 21 characters, over the 20 the sign holds`]);
+  });
+  test('refuses a copy that names no one who speaks for the board', () => {
+    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
+      const poisoned = ui(good);
+      (poisoned.copy as Record<string, unknown>)[key] = ' ';
+      assert.deepEqual(instanceUiProblems(poisoned, rules), [`the copy has no ${key}`]);
+    }
+  });
+  test('refuses a card kind word that is empty, missing or not text, and takes the three words', () => {
+    const words = { cast: 'Move', set: 'Gimmick', use: 'Ward' };
+    const withKinds = (kinds: unknown) => { const u = ui(good); (u.copy as Record<string, unknown>).cardKinds = kinds; return u; };
+    assert.deepEqual(instanceUiProblems(withKinds(words), rules), []);
+    for (const key of ['cast', 'set', 'use']) {
+      for (const value of [' ', undefined, 7]) assert.deepEqual(instanceUiProblems(withKinds({ ...words, [key]: value }), rules), [`the copy's cardKinds has no ${key}`]);
+    }
+  });
+  test('refuses a copy key that is missing, and one that is not a string', () => {
+    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
+      const missing = ui(good);
+      delete (missing.copy as Record<string, unknown>)[key];
+      assert.deepEqual(instanceUiProblems(missing, rules), [`the copy has no ${key}`]);
+      for (const value of [7, null, ['The staff'], {}]) {
+        const odd = ui(good);
+        (odd.copy as Record<string, unknown>)[key] = value;
+        assert.deepEqual(instanceUiProblems(odd, rules), [`the copy has no ${key}`]);
+      }
+    }
   });
 });

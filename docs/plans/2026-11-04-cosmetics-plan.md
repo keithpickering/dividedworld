@@ -347,7 +347,7 @@ Model: sonnet
 **Files:** `engine/ui/postbit/Postbit.tsx` and `postbit.css`; `engine/ui/profile/Profile.tsx` and `profile.css`; their
 tests and stories.
 
-The look is boards 01 and 03.
+The look is boards 01 and 03; the profile's, in the house theme, `docs/research/2026-11-06-board-look/08-profile.html` (the Wearing row, the trophy case table and the belt's lineage as that board draws them).
 - **The postbit**, side layout: under the rank, the shown trophies and any held belt, each an `<img>` with its name as
   `alt` and `title`. Stacked and on a phone: a held belt only, beside the name.
 - **The profile:** "Wearing:" naming each piece's gear in words; the trophy case (`trophies(character)`), newest first,

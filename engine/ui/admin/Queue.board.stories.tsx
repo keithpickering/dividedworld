@@ -8,7 +8,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { seedMoves } from '../board/move-world.ts';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { QueueScreen } from './Queue.tsx';
+import { LoadedQueue } from '../loaded.tsx';
 
 /** The in-memory world's clock is fixed at the start of its season (engine/ui/data/fake.ts), so the countdown is read against it. */
 const START = Date.UTC(2026, 9, 29, 12);
@@ -24,7 +24,7 @@ const queue: World = (fake, instance) => {
 };
 
 function QueueStory() {
-  return <Page surface="settings"><QueueScreen now={START} /></Page>;
+  return <Page surface="settings"><LoadedQueue now={START} /></Page>;
 }
 
 const meta: Meta<typeof QueueStory> = {

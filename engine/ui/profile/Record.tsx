@@ -4,6 +4,7 @@
  * Acts (posts, spins, card plays); its reveals and announced Turns are the "Class statements"
  * filter and its past seasons the "Seasons" filter, short lists read whole and paged here. Out of character and plain.
  */
+import { words as pronounWords } from '../../rules/pronouns.ts';
 import { useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { ActKind, CharacterCounts, Id, RecordPage } from '../data/api.ts';
@@ -62,13 +63,19 @@ function Record({ id, doc }: { readonly id: Id; readonly doc: RecordPage }) {
     <div className="kb-record">
       <p className="kb-crumb"><Link to="/">Index</Link> › <Link to={`/c/${id}`}>{name}</Link> › Public record</p>
       <h1 className="kb-heading">{name}’s public record</h1>
-      <nav className="kb-record-kinds kb-small" aria-label="Kind of row">
-        {RECORD_KINDS.map((k) => (k === kind
-          ? <span key={k} className="kb-record-kind" aria-current="true">{RECORD_LABELS[k]}</span>
-          : <Link key={k} className="kb-record-kind" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>))}
+      <nav aria-label="Kind of row">
+        <ul className="kb-record-kinds">
+          {RECORD_KINDS.map((k) => (
+            <li key={k}>
+              {k === kind
+                ? <span className="kb-button kb-record-kind" data-kb-size="small" aria-current="page">{RECORD_LABELS[k]}</span>
+                : <Link className="kb-button kb-record-kind" data-kb-size="small" to={recordHref(id, k)}>{RECORD_LABELS[k]}</Link>}
+            </li>
+          ))}
+        </ul>
       </nav>
       {kind === 'seasons' && <p className="kb-small kb-muted">The latest {SEASONS_SHOWN} seasons.</p>}
-      {kind === 'all' && <p className="kb-small kb-muted">Its Acts with its reveals, announced Turns and past seasons, newest first.</p>}
+      {kind === 'all' && <p className="kb-small kb-muted">{pronounWords(doc.character.pronouns).Their} Acts with {pronounWords(doc.character.pronouns).their} reveals, announced Turns and past seasons, newest first.</p>}
       <Rows id={id} kind={kind} page={page} rows={loaded.rows} total={loaded.total} />
     </div>
   );
@@ -81,14 +88,14 @@ function Rows({ id, kind, page, rows, total }: { readonly id: Id; readonly kind:
       {rows.length === 0
         ? <p>{total === 0 ? 'Nothing yet.' : 'Nothing on this page.'}</p>
         : (
-          <table className="kb-table kb-record-table">
+          <table className="kb-table kb-record-table" role="table">
             <caption className="kb-visually-hidden">Public record, newest first</caption>
-            <thead><tr><th scope="col">When</th><th scope="col">What</th></tr></thead>
-            <tbody>
+            <thead role="rowgroup"><tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What</th></tr></thead>
+            <tbody role="rowgroup">
               {rows.map((r) => (
-                <tr key={r.key}>
-                  <td className="kb-small"><Ago at={r.at} /></td>
-                  <td>{r.href ? <Link to={r.href}>{r.text}</Link> : r.text}</td>
+                <tr key={r.key} role="row">
+                  <td role="cell" className="kb-small"><Ago at={r.at} /></td>
+                  <td role="cell">{r.href ? <Link to={r.href}>{r.text}</Link> : r.text}</td>
                 </tr>
               ))}
             </tbody>

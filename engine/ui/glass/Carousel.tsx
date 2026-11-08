@@ -1,6 +1,6 @@
 /**
  * The carousel: one row of cards, as many as fit at the theme's card width, the next peeking under
- * a fade, with arrows and a count ("1–4 of 5") while the row overflows. How many show comes from
+ * a fade, with arrows and a count ("1–4 of 6") while the row overflows. How many show comes from
  * the width, never from how many items there are. The row scrolls the chosen card whole into view,
  * gliding, or at once under reduced motion. A card scrolled out of view is never hidden or inert,
  * so a screen reader reaches every one (docs/plans/2026-11-04-glass-polish-design.md, section 4).
@@ -22,7 +22,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type HTMLAttributes, type KeyboardEvent, type ReactNode } from 'react';
 import { motionReduced } from '../appearance.ts';
-import { shownRange } from '../characters/carousel.ts';
+import { peeks, shownRange } from '../characters/carousel.ts';
 import { CalmRegion } from './Calm.tsx';
 
 /** The ids a tablist's tabs and its panel carry, from the `id` the caller gave the carousel. */
@@ -51,27 +51,43 @@ export interface CarouselProps<T extends { readonly key: string }> {
 /**
  * Where the row stands: whether it overflows, the cards it shows whole, whether cards lie before or
  * past it (the arrows), and how much of a card only peeks in at each edge (the fades, drawn over
- * that much and no more, so a card shown whole is never faded).
+ * that much and no more, so a card shown whole is never faded). The row's inline padding is the
+ * glow's room (characters.css, `--kb-class-glow`): the cards are counted whole, and peek, in the column
+ * inside it, and the stylesheet hides the room at an end with cards past it, as `before` and `after`
+ * say (docs/plans/2026-11-07-carousel-edges-design.md, section 1).
  */
 interface RowState { readonly overflow: boolean; readonly first: number; readonly last: number; readonly before: boolean; readonly after: boolean; readonly peekBefore: number; readonly peekAfter: number }
 const STILL: RowState = { overflow: false, first: 0, last: 0, before: false, after: false, peekBefore: 0, peekAfter: 0 };
 
-/** The row's cards, its card width and the gap between them, as laid out now. */
-function measure(row: HTMLElement): { cards: HTMLElement[]; card: number; gap: number } {
+/**
+ * The row's cards, its card width, the gap and the step from one card's start to the next, as laid out now, in the
+ * row's own CSS pixels (the units of its `scrollLeft` and `clientWidth`). The width is the computed one,
+ * never `offsetWidth`: a card's width is often a fraction (a phone's `calc(100% - 64px)` is 291.375px), and
+ * a rounded width puts every card after the first off by its rounding. Nor is it a bounding box, which is
+ * in viewport pixels and so is scaled by the Turn dialog's `zoom`. Where layout reports no width (a test's
+ * DOM), `offsetWidth` stands in.
+ */
+function measure(row: HTMLElement): { cards: HTMLElement[]; card: number; gap: number; step: number; room: number } {
   const cards = [...row.querySelectorAll<HTMLElement>('[data-kb-item]')];
-  const gap = parseFloat(getComputedStyle(row).columnGap);
-  return { cards, card: cards[0]?.offsetWidth ?? 0, gap: Number.isFinite(gap) ? gap : 0 };
+  const style = getComputedStyle(row);
+  const columnGap = parseFloat(style.columnGap);
+  const padding = parseFloat(style.paddingLeft);
+  const laid = cards[0] ? parseFloat(getComputedStyle(cards[0]).width) : 0;
+  const card = Number.isFinite(laid) ? laid : cards[0]?.offsetWidth ?? 0;
+  const gap = Number.isFinite(columnGap) ? columnGap : 0;
+  /* The glow's room, the same at both ends. */
+  const room = Number.isFinite(padding) ? padding : 0;
+  return { cards, card, gap, step: card + gap, room };
 }
 
 function read(row: HTMLElement): RowState {
-  const { cards, card, gap } = measure(row);
+  const { cards, card, gap, room } = measure(row);
   const { scrollLeft, clientWidth, scrollWidth } = row;
   if (scrollWidth <= clientWidth + 1 || card <= 0) return STILL;
-  const { first, last } = shownRange(scrollLeft, clientWidth, card, gap, cards.length);
-  const step = card + gap;
-  /* What of the card before the first whole one shows (its end past the viewport's start), and of the card after the last. */
-  const peekBefore = first > 1 ? Math.max(0, Math.round((first - 2) * step + card - scrollLeft)) : 0;
-  const peekAfter = last < cards.length ? Math.max(0, Math.round(scrollLeft + clientWidth - last * step)) : 0;
+  /* The column the cards are counted in is the row's box less the room at each end; scrolled by `scrollLeft`, the first card stands at its start. */
+  const column = clientWidth - 2 * room;
+  const { first, last } = shownRange(scrollLeft, column, card, gap, cards.length);
+  const { before: peekBefore, after: peekAfter } = peeks(scrollLeft, column, card, gap, cards.length);
   return { overflow: true, first, last, before: scrollLeft > 1, after: scrollLeft + clientWidth < scrollWidth - 1, peekBefore, peekAfter };
 }
 
@@ -80,6 +96,12 @@ const same = (a: RowState, b: RowState) => (Object.keys(a) as (keyof RowState)[]
 export function Carousel<T extends { readonly key: string }>({ role, label, items, value, onChange, renderItem, after, id = '', className }: CarouselProps<T>) {
   const rowRef = useRef<HTMLDivElement>(null);
   const [row, setRow] = useState<RowState>(STILL);
+  /* The fade eases only once the row has been read: a frame after it first is, so its first fade is drawn at once. */
+  const [eased, setEased] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setEased(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const update = useCallback(() => {
     const el = rowRef.current;
     if (!el) return;
@@ -132,8 +154,8 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
   const move = (direction: 1 | -1) => {
     const el = rowRef.current;
     if (!el) return;
-    const { card, gap } = measure(el);
-    el.scrollBy({ left: direction * (card + gap), behavior: motionReduced() ? 'auto' : 'smooth' });
+    const { step } = measure(el);
+    el.scrollBy({ left: direction * step, behavior: motionReduced() ? 'auto' : 'smooth' });
   };
 
   /* A tablist's keys: the arrows wrap, Home and End go to the ends; focus moves with the choice. */
@@ -164,15 +186,24 @@ export function Carousel<T extends { readonly key: string }>({ role, label, item
 
   const body = (
     <div className="kb-class-rail">
-      <div
-        ref={rowRef} className="kb-class-grid"
-        data-kb-peek-before={row.peekBefore > 0 || undefined} data-kb-peek-after={row.peekAfter > 0 || undefined}
-        style={{ '--kb-class-peek-before': `${row.peekBefore}px`, '--kb-class-peek-after': `${row.peekAfter}px` } as CSSProperties}
+      {/*
+        * The row of a radiogroup is a calm of its own: a card that peeks shows its words in the glow's room past the column, outside
+        * the page's or the dialog's calm. A tablist's own box is that calm already.
+        */}
+      <CalmRegion
+        ref={rowRef} calm={!tabs} className="kb-class-grid"
+        data-kb-peek-before={row.peekBefore > 0 || undefined} data-kb-peek-after={row.peekAfter > 0 || undefined} data-kb-eased={eased || undefined}
+        data-kb-before={row.before || undefined} data-kb-after={row.after || undefined}
+        style={{
+          '--kb-class-peek-before': `${row.peekBefore}px`, '--kb-class-peek-after': `${row.peekAfter}px`,
+          /* How many items and cards the row holds, for a stylesheet that lays it as a grid and places the card that is no item in the next slot. */
+          '--kb-carousel-items': items.length, '--kb-carousel-count': count,
+        } as CSSProperties}
       >
         {/* The tablist holds the tabs and is a box of its own (a link is no tab, so New character stands beside it in the row). */}
         {tabs ? <CalmRegion role="tablist" aria-label={label} className="kb-carousel-tablist">{drawn}</CalmRegion> : drawn}
         {after && <div className="kb-carousel-after" data-kb-item="after">{after}</div>}
-      </div>
+      </CalmRegion>
       {row.overflow && (
         <CalmRegion className="kb-class-nav">
           <span className="kb-class-count">{`${row.first}–${row.last} of ${count}`}</span>

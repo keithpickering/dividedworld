@@ -2,7 +2,7 @@
  * What a character's player made public about its class, read from a season-reveal post's `shown`
  * list ("A response never proves a private fact": a player may make one of their own private facts
  * public, as of its date, and nothing else about it is). A statement is a reveal ("Heel, as of
- * Oct 3") or a Turn announced with its old class ("Face, until its Turn on Oct 20"); a Turn that
+ * Oct 3") or a Turn announced with its old class ("Face, until the Turn on Oct 20"); a Turn that
  * named no class is still listed, and names none here. A Turn says the class it left as of the
  * Turn, never since when (#23): since when could date a silent Turn before it, so a `since` a
  * reveal written before 0073 still carries is not read.
@@ -52,11 +52,11 @@ export function statements(shown: unknown): readonly Statement[] {
   return rest.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
-/** One statement in words: "Heel, revealed Oct 3", "Face, until its Turn on Oct 20", "a Turn on Oct 20". */
+/** One statement in words: "Heel, revealed Oct 3", "Face, until the Turn on Oct 20", "a Turn on Oct 20". */
 export function wording(s: Statement, className: (key: string) => string): string {
-  if (s.kind === 'reveal') return `${className(s.class!)}, revealed ${shortDate(s.at)}${s.until ? `, until its Turn on ${shortDate(s.until)}` : ''}`;
+  if (s.kind === 'reveal') return `${className(s.class!)}, revealed ${shortDate(s.at)}${s.until ? `, until the Turn on ${shortDate(s.until)}` : ''}`;
   if (s.class === null) return `a Turn on ${shortDate(s.at)}`;
-  return `${className(s.class)}, until its Turn on ${shortDate(s.at)}`;
+  return `${className(s.class)}, until the Turn on ${shortDate(s.at)}`;
 }
 
 /**

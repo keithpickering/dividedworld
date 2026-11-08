@@ -1,16 +1,18 @@
 /**
- * Reading the player's Alerts for Alerts.tsx: the newest page of `KayfaApi.alerts`, each older page when asked for, the account's mark as it stood
- * when the page opened (the divider is drawn at it, and stays there while the page is open), the player's own characters (the filters), and what the
- * words need beside the rows: the Acts they name and, for a card played on a post or a trap, the post it landed on, and where each followed thread was
- * read to. Opening the page moves the mark to the newest row's time, forward only.
+ * The player's Alerts for Alerts.tsx: the newest page is the route's document (`alertsPage`, the glass-load plan, Task 12: the rows, the account's mark as it
+ * stood when the page opened, the Acts the words need and where each followed thread was read to), each older page is read when asked for, and the
+ * player's own characters (the filters) are the player's. The divider is drawn at the mark as it stood when the page opened, and stays there while the
+ * page is open. Opening the page moves the mark to the newest row's time, forward only, once the page has landed (a write, never part of the load).
  *
  * Every read is the signed-in account's own, or a public Act: nothing here is asked about anyone but because a row of the player's names it. A read that
  * only decorates a row (an Act, a reading place) fails to plain words, never to an unread page.
  *
  * The reading is the signed-in account's: another account signing in reads afresh, and nothing of the last account's is drawn meanwhile.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ALERTS_PAGE, type Act, type Alert, type Id, type KayfaApi, type MyCharacter } from '../data/api.ts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigation } from '../router.tsx';
+import { readTrapActs } from './trap-reads.ts';
+import { ALERTS_PAGE, type Act, type Alert, type AlertsPage, type Id, type KayfaApi, type MyCharacter } from '../data/api.ts';
 
 export interface AlertsRead {
   readonly rows: readonly Alert[];
@@ -28,6 +30,8 @@ export interface AlertsRead {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Public names of the authors of the posts a card an admin ended was played on. */
   readonly names: ReadonlyMap<Id, string>;
+  /** The staff characters among them: a staff Trap Card takes nothing, and its alert says the card is spent. */
+  readonly staff: ReadonlySet<Id>;
   /** The furthest seq read in each followed thread; null where it could not be read. */
   readonly reading: Readonly<Record<Id, number>> | null;
   /** Followed thread -> the player's own character that started it (from the thread's first post, a public fact); a thread followed by choice is absent. */
@@ -36,10 +40,19 @@ export interface AlertsRead {
   readonly more: boolean;
 }
 
-type State =
-  | { readonly status: 'loading' }
-  | { readonly status: 'failed'; readonly key: string }
-  | { readonly status: 'ready'; readonly key: string; readonly data: AlertsRead; readonly older: 'idle' | 'loading' | 'failed' };
+/** What the screen holds of the pages read: the document's, and each older page's. The player's characters are not in it: they are the player's, read at each render. */
+interface Held {
+  readonly doc: AlertsPage;
+  readonly rows: readonly Alert[];
+  readonly acts: ReadonlyMap<Id, Act>;
+  readonly names: ReadonlyMap<Id, string>;
+  readonly staff: ReadonlySet<Id>;
+  /** Followed thread -> the character that wrote its first post. */
+  readonly openings: ReadonlyMap<Id, Id>;
+  readonly reading: Readonly<Record<Id, number>> | null;
+  readonly more: boolean;
+  readonly older: 'idle' | 'loading' | 'failed';
+}
 
 /** A row's identity: what it is about and when, so a row read twice is one. */
 export const rowKey = (a: Alert): string => `${a.kind}|${a.sub ?? ''}|${a.act ?? ''}|${a.thread ?? ''}|${a.at}`;
@@ -48,8 +61,21 @@ const CHUNK = 100;
 const inChunks = <T,>(xs: readonly T[]) => Array.from({ length: Math.ceil(xs.length / CHUNK) }, (_, i) => xs.slice(i * CHUNK, (i + 1) * CHUNK));
 const orElse = <T,>(read: Promise<T>, fallback: T) => read.catch(() => fallback);
 
-/** The Acts the rows name, and the posts those Acts landed on (a card's, a trap's), beyond those already held. */
-async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyMap<Id, Act>, heldNames: ReadonlyMap<Id, string>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string> }> {
+const heldFrom = (doc: AlertsPage): Held => ({
+  doc,
+  rows: doc.alerts,
+  acts: new Map(doc.acts.map((a) => [a.id, a])),
+  names: new Map(doc.people.map((c) => [c.id, c.name])),
+  staff: new Set(doc.people.filter((c) => c.staff !== undefined).map((c) => c.id)),
+  openings: new Map(doc.openings.flatMap((a) => (a.character === null ? [] : [[a.thread, a.character] as const]))),
+  reading: doc.reading,
+  more: doc.alerts.length >= ALERTS_PAGE,
+  older: 'idle',
+});
+
+/** The Acts the rows name, and the posts those Acts landed on (a card's, a trap's), beyond those already held; used for an older page. */
+async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyMap<Id, Act>, heldNames: ReadonlyMap<Id, string>): Promise<{ acts: Map<Id, Act>; names: Map<Id, string>; staff: Set<Id> }> {
+  const staff = new Set<Id>();
   const acts = new Map(held);
   const names = new Map(heldNames);
   const read = async (ids: readonly Id[]) => {
@@ -64,104 +90,98 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
   await read(ended.map((p) => p?.targetActId).filter((id): id is Id => typeof id === 'string'));
   const authors = ended.map((p) => (p?.targetActId ? acts.get(p.targetActId)?.character : undefined)).filter((c): c is Id => typeof c === 'string' && !names.has(c));
   for (const part of await Promise.all(inChunks([...new Set(authors)]).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
-  return { acts, names };
+  /* A face-down card that struck names its spring and its set, and the setter's character. */
+  const trap = await readTrapActs(api, rows, acts);
+  for (const [id, a] of trap.acts) acts.set(id, a);
+  for (const [id, n] of trap.names) names.set(id, n);
+  for (const id of trap.staff) staff.add(id);
+  return { acts, names, staff };
 }
 
-/** The followed threads among these rows that one of the player's characters started, from one read of their first posts. A failed read leaves them tagged "Followed". */
-async function startedAmong(api: KayfaApi, rows: readonly Alert[], mine: readonly MyCharacter[], held: ReadonlyMap<Id, Id>): Promise<Map<Id, Id>> {
-  const started = new Map(held);
-  const threads = [...new Set(rows.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
-  if (threads.length === 0) return started;
-  const own = new Set(mine.map((c) => c.id));
-  for (const a of await orElse(api.openingActs(threads), [] as readonly Act[])) if (a.character !== null && own.has(a.character)) started.set(a.thread, a.character);
-  return started;
-}
-
-export function useAlerts(api: KayfaApi, on: boolean | null, account: Id | null) {
-  const [read, setRead] = useState<State>({ status: 'loading' });
-  const [attempt, setAttempt] = useState(0);
-  const key = account ?? '';
-  const state: State = read.status !== 'loading' && read.key === key ? read : { status: 'loading' };
+/** The player's Alerts: the document's page, `older()` to read the next page below it, and `dropFollowed` for an Unfollow. */
+export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyCharacter[]) {
+  const { track } = useNavigation();
+  const [held, setHeld] = useState<Held>(() => heldFrom(doc));
+  /* A document read again (a retry, another account's) replaces what was held; an older page read before it is not carried over. */
+  const current = held.doc === doc ? held : heldFrom(doc);
+  if (current !== held) setHeld(current);
 
   /** Threads unfollowed on this page: a page read before the unfollow must not bring their rows back. */
   const unfollowed = useRef(new Set<Id>());
+  const docRef = useRef(doc);
+  if (docRef.current !== doc) { docRef.current = doc; unfollowed.current = new Set(); }
   const withoutUnfollowed = (rows: readonly Alert[]) => rows.filter((r) => !(r.kind === 'followed' && r.thread !== null && unfollowed.current.has(r.thread)));
 
+  const data = useMemo<AlertsRead>(() => {
+    const own = new Set(mine.map((c) => c.id));
+    return {
+      rows: current.rows, mark: current.doc.seenAt, markKnown: true, joined: current.doc.openedAt ?? null, mine, acts: current.acts, names: current.names, staff: current.staff, reading: current.reading,
+      started: new Map([...current.openings].filter(([, c]) => own.has(c))), more: current.more,
+    };
+  }, [current, mine]);
+
+  /*
+   * Opening the page moves the mark to the newest row's time, never backward (the server keeps it so as well), and only once the page has landed: this
+   * runs when the screen is drawn, never in the loader, so a hover is not a visit. Without a mark nothing moves; once for each document.
+   */
+  const marked = useRef<AlertsPage | null>(null);
   useEffect(() => {
-    if (!on) return undefined;
+    if (marked.current === doc) return;
+    marked.current = doc;
+    const newest = doc.alerts[0]?.at;
+    if (newest !== undefined && (doc.seenAt === null || Date.parse(newest) > Date.parse(doc.seenAt))) void Promise.resolve(api.seeAlerts(newest)).catch(() => { /* seen again next time */ });
+  }, [api, doc]);
+
+  /* The page's first rows: a trapStruck alert's spring, set and setter are read beside the document, and fill in when they arrive. */
+  useEffect(() => {
+    if (!doc.alerts.some((r) => r.kind === 'trapStruck')) return;
     let live = true;
-    setRead({ status: 'loading' });
-    unfollowed.current = new Set();
-    (async () => {
-      /* The rows are the page; the mark and the characters only dress it: a failed read of either is a page without them. */
-      const [rows, prefs, joined, mine] = await Promise.all([
-        api.alerts(), orElse(api.preferences(), null), orElse<string | null | undefined>(api.accountOpenedAt(), undefined), orElse(api.myCharacters(), [] as readonly MyCharacter[]),
-      ]);
-      const [{ acts, names }, started, reading] = await Promise.all([
-        actsAround(api, rows, new Map(), new Map()),
-        startedAmong(api, rows, mine, new Map()),
-        (async () => {
-          const threads = [...new Set(rows.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
-          return threads.length === 0 ? {} : orElse(api.reading(threads), null);
-        })(),
-      ]);
-      return { rows, mark: prefs === null ? null : prefs.alertsSeenAt, markKnown: prefs !== null && joined !== undefined, joined: joined ?? null, mine, acts, names, started, reading, more: rows.length >= ALERTS_PAGE } satisfies AlertsRead;
-    })().then(
-      (data) => {
-        if (!live) return;
-        setRead({ status: 'ready', key, data, older: 'idle' });
-        /* Opening the page moves the mark to the newest row's time, never backward (the server keeps it so as well), and only once the page is
-           there to be seen: a page left before it was read, or a pass a StrictMode remount cancelled, moves nothing. Without a mark, nothing moves. */
-        const newest = data.rows[0]?.at;
-        if (newest !== undefined && data.markKnown && (data.mark === null || Date.parse(newest) > Date.parse(data.mark))) void Promise.resolve(api.seeAlerts(newest)).catch(() => { /* seen again next time */ });
-      },
-      () => { if (live) setRead({ status: 'failed', key }); },
-    );
+    void readTrapActs(api, doc.alerts, new Map(doc.acts.map((a) => [a.id, a]))).then((got) => {
+      if (!live || (got.acts.size === 0 && got.names.size === 0)) return;
+      setHeld((now) => (now.doc === doc ? { ...now, acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]), staff: new Set([...now.staff, ...got.staff]) } : now));
+    });
     return () => { live = false; };
-  }, [api, on, key, attempt]);
+  }, [api, doc]);
 
   const older = useCallback(() => {
-    if (state.status !== 'ready' || state.older === 'loading' || !state.data.more) return;
-    const { data } = state;
-    const last = data.rows.at(-1);
+    if (current.older === 'loading' || !current.more) return;
+    const last = current.rows.at(-1);
     if (!last) return;
-    setRead({ ...state, older: 'loading' });
-    (async () => {
+    setHeld({ ...current, older: 'loading' });
+    /* The read is the router's to count (the meter), and the button is busy while it is out. */
+    track((async () => {
       const page = await api.alerts(last.at);
-      const held = new Set(data.rows.map(rowKey));
-      const fresh = page.filter((r) => !held.has(rowKey(r)));
-      const [{ acts, names }, started, reading] = await Promise.all([
-        actsAround(api, fresh, data.acts, data.names),
-        startedAmong(api, fresh, data.mine, data.started),
-        (async () => {
-          const threads = [...new Set(fresh.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
-          return threads.length === 0 ? {} : orElse(api.reading(threads), null);
-        })(),
+      const have = new Set(current.rows.map(rowKey));
+      const fresh = page.filter((r) => !have.has(rowKey(r)));
+      const threads = [...new Set(fresh.filter((r) => r.kind === 'followed' && r.thread !== null).map((r) => r.thread!))];
+      const [{ acts, names, staff }, openings, reading] = await Promise.all([
+        actsAround(api, fresh, current.acts, current.names),
+        threads.length === 0 ? [] : orElse(api.openingActs(threads), [] as readonly Act[]),
+        threads.length === 0 ? {} : orElse(api.reading(threads), null),
       ]);
-      return { page, fresh, acts, names, started, reading };
-    })().then(
-      (got) => setRead((now) => {
-        if (now.status !== 'ready' || now.key !== key) return now;
+      return { page, fresh, acts, names, staff, openings, reading };
+    })()).then(
+      (got) => setHeld((now) => {
+        if (now.doc !== doc) return now;
         /* Merged into the page as it stands now, not as it stood at the click: a row unfollowed meanwhile stays gone. */
-        const have = new Set(now.data.rows.map(rowKey));
+        const have = new Set(now.rows.map(rowKey));
         const fresh = withoutUnfollowed(got.fresh).filter((r) => !have.has(rowKey(r)));
-        const reading = got.reading === null || now.data.reading === null ? null : { ...now.data.reading, ...got.reading };
-        const data: AlertsRead = {
-          ...now.data, rows: [...now.data.rows, ...fresh], acts: new Map([...now.data.acts, ...got.acts]), names: new Map([...now.data.names, ...got.names]),
-          started: new Map([...now.data.started, ...got.started]), reading, more: got.page.length >= ALERTS_PAGE,
+        const reading = got.reading === null || now.reading === null ? null : { ...now.reading, ...got.reading };
+        return {
+          ...now, rows: [...now.rows, ...fresh], acts: new Map([...now.acts, ...got.acts]), names: new Map([...now.names, ...got.names]), staff: new Set([...now.staff, ...got.staff]),
+          openings: new Map([...now.openings, ...got.openings.flatMap((a) => (a.character === null ? [] : [[a.thread, a.character] as const]))]), reading, more: got.page.length >= ALERTS_PAGE, older: 'idle',
         };
-        return { status: 'ready', key, data, older: 'idle' };
       }),
-      () => setRead((now) => (now.status === 'ready' && now.key === key ? { ...now, older: 'failed' } : now)),
+      () => setHeld((now) => (now.doc === doc ? { ...now, older: 'failed' } : now)),
     );
-  }, [api, key, state]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- withoutUnfollowed reads a ref
+  }, [api, doc, current, track]);
 
   /** Takes a followed thread's rows off the list, once it is unfollowed. */
   const dropFollowed = useCallback((thread: Id) => {
     unfollowed.current.add(thread);
-    setRead((now) => (now.status === 'ready' ? { ...now, data: { ...now.data, rows: now.data.rows.filter((r) => !(r.kind === 'followed' && r.thread === thread)) } } : now));
+    setHeld((now) => ({ ...now, rows: now.rows.filter((r) => !(r.kind === 'followed' && r.thread === thread)) }));
   }, []);
 
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { state, older, dropFollowed, retry };
+  return { data, older: current.older, onOlder: older, dropFollowed };
 }

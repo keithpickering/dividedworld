@@ -1,7 +1,7 @@
 /**
  * phpBB's "Users browsing this thread", "Users browsing this board" and "Who is online", in the
  * board's world (the staff design, section 2; mock docs/research/2026-10-31-the-staff/mock-p1-presence.html):
- * a ruled box with a bold mono header and the names, joined by commas, each linked to its profile,
+ * a period table (engine/ui/base.css) with an h2 on the light band and the names, joined by commas, each linked to its profile,
  * and past the cap "and N others".
  *
  * The viewer's own HUD mask, when it is hidden, is added in italics, "(hidden, only you see this)":
@@ -14,6 +14,7 @@ import { useId, type ReactNode } from 'react';
 import type { Presence, PresencePlace } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useKayfa } from '../context.tsx';
+import { Icon } from '../board/Icons.tsx';
 import { StaffGroup } from '../postbit/StaffBadge.tsx';
 import { Link } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -38,6 +39,8 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
   const { settings } = useKayfa();
   const id = useId();
   if (presence === null) return null;
+  /* A staff name's chip is the staff rung's name (screen_settings.groups marks which rung that is), whatever else the name's own group is. */
+  const staffRung = settings.groups.find((g) => g.staff);
 
   /* A Mod on a visit carries a glass tag after its name, linking to the post it visits (a visit is a public Act); on a thread's box only, which is where the answer names one. */
   const tag = (n: (typeof presence.names)[number]): ReactNode =>
@@ -45,8 +48,8 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
       ? <Link className="kb-presence-visit" to={threadHref(place.thread, pageOf(n.visitPost, settings.postsPerPage), n.visitPost)}>On a visit · post #{n.visitPost}</Link>
       : null;
   const items: ReactNode[] = presence.names.map((n) =>
-    n.staff && settings.staffGroup
-      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link><span className="kb-visually-hidden">, </span><StaffGroup name={settings.staffGroup.name} />{tag(n)}</span>
+    n.staff && staffRung
+      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link><span className="kb-visually-hidden">, </span><StaffGroup name={staffRung.name} />{tag(n)}</span>
       : <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link>{tag(n)}</span>);
   const hud = player.hudCharacter;
   if (hud?.presenceHidden) {
@@ -61,14 +64,28 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
 
   return (
     <section className="kb-presence" aria-labelledby={id}>
-      <h2 id={id} className="kb-presence-head">
-        {lead ? <><span className="kb-presence-wide">{heading}</span><span className="kb-presence-narrow">{lead[1]![0]!.toUpperCase()}{lead[1]!.slice(1)}</span></> : heading}
-      </h2>
-      <p className="kb-presence-names">
-        {items.length === 0 && others === 0 ? 'No characters right now.' : items.flatMap((item, i) => (i === 0 ? [item] : [', ', item]))}
-        {others > 0 && <>{items.length > 0 ? ' and ' : ''}{others} {others === 1 ? 'other' : 'others'}</>}
-        {note !== undefined && <><br /><span className="kb-small kb-muted">{note}</span></>}
-      </p>
+      {/* A period table of one column: the heading is an h2 in a cell on the light band, the names under it. It is layout, not data. */}
+      <table className="kb-table" role="presentation">
+        <tbody>
+          <tr>
+            <td className="kb-bar" colSpan={2}>
+              <h2 id={id}>
+                {lead ? <><span className="kb-presence-wide">{heading}</span><span className="kb-presence-narrow">{lead[1]![0]!.toUpperCase()}{lead[1]!.slice(1)}</span></> : heading}
+              </h2>
+            </td>
+          </tr>
+          <tr>
+            <td className="kb-presence-icon" aria-hidden="true"><Icon name="who" /></td>
+            <td>
+              <p className="kb-presence-names">
+                {items.length === 0 && others === 0 ? 'No characters right now.' : items.flatMap((item, i) => (i === 0 ? [item] : [', ', item]))}
+                {others > 0 && <>{items.length > 0 ? ' and ' : ''}{others} {others === 1 ? 'other' : 'others'}</>}
+                {note !== undefined && <><br /><span className="kb-small kb-muted">{note}</span></>}
+              </p>
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
   );
 }

@@ -292,6 +292,7 @@ function quadOf(el: Element): [number, number][] | undefined {
 
 const inRow = (el: Element): ControlInRow => ({
   path: pathOf(el), rect: toBox(el.getBoundingClientRect()), fontSize: parseFloat(getComputedStyle(el).fontSize) * zoomOf(el), glass: el.classList.contains('kb-glass-button'),
+  ...(el.matches('.kb-button[data-kb-primary]') ? { primary: true } : {}),
 });
 
 function rowsOf(all: readonly Element[]): RowFact[] {

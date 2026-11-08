@@ -26,7 +26,7 @@ import { LoadedThread } from '../loaded.tsx';
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
 
 const whoopsRules: CardRules<{ color: string }> = {
-  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', priceKey: 'whoops.price', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
+  key: 'whoops', name: 'Whoops!', alignment: 'salty', rarity: 'common', stack: 3, reads: ['whoops.perLength', 'whoops.lengthStep'],
   playPrice: (settings, target) => settings.economy['whoops.perLength']! * Math.floor((target.reach === 'post' ? target.length : 0) / settings.economy['whoops.lengthStep']!),
   canApply: (target, effects, _config, now) => landsOn(whoopsRules, target, effects, now),
   validateConfig: (config) => {
@@ -35,7 +35,7 @@ const whoopsRules: CardRules<{ color: string }> = {
   },
 };
 const stickRules: CardRules = {
-  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', priceKey: 'stick.price',
+  key: 'stick-around', name: 'Stick Around', alignment: 'sweet', rarity: 'common', 
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn({ key: 'stick-around' }, target, effects, now),
   validateConfig: (config) => ok(config),
@@ -179,6 +179,79 @@ describe('where the ghost mark stands', () => {
     await arm(user);
     await user.click(here(2)!);
     expect(await screen.findByRole('dialog', { name: /Whoops!/u })).toBeInTheDocument();
+  });
+});
+
+describe('the form opens whole', () => {
+  test('the ghost mark is busy while the post is read, nothing opens until it lands, and the form\'s first render holds its content', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    let release!: () => void;
+    const real = w.fake.actsById.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'actsById').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+    await user.click(here(2)!);
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); });
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+    expect(form.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(here(2)).not.toHaveAttribute('aria-busy');
+  });
+
+  test('Escape while the read is out cancels it: the mark stops spinning and no form opens', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(() => new Promise(() => undefined));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Escape}');
+    expect(document.querySelector('.kb-ghost-mark[aria-busy]')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+  });
+
+  test('the form opens at once from the answer read before it and reads the post again, so an edit in the gap reaches the price', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    const real = w.fake.actsById.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'actsById').mockImplementationOnce(async (...args) => (await real(...args)).map((a) => ({ ...a, currentPayload: { ...a.currentPayload, body: 'short' } })));
+    await user.click(here(2)!);
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    await waitFor(() => expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.25'));
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('Escape during the wait cancels the read and leaves the card armed', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(() => new Promise(() => undefined));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Escape}');
+    expect(here(2)).not.toHaveAttribute('aria-busy');
+    expect(here(2)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+  });
+
+  test('a read that fails opens nothing and says so plainly', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockRejectedValue(new Error('down'));
+    await user.click(here(2)!);
+    expect(await screen.findByRole('status', { name: 'Playing a card' })).toHaveTextContent('That didn\u2019t load. Try again.');
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
   });
 });
 
@@ -352,10 +425,10 @@ describe('the play form', () => {
   });
 
   /* #86: the hand's postcards say their rules with the numbers the server prices with now, an admin's tuning included. */
-  test('a price an admin has tuned is the one a hand\'s postcard says', async () => {
+  test('a number an admin has tuned is the one a hand\'s postcard says', async () => {
     const user = userEvent.setup();
-    const w = world({ ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.price': 150 } } });
-    const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.price']! / 100).toFixed(2)}.` } : c));
+    const w = world({ ...instance, settings: { ...instance.settings, economy: { ...economy, 'whoops.perLength': 150 } } });
+    const saying = cards.map((c) => (c.key === 'whoops' ? { ...c, describe: (st: Instance['settings']) => `Splats a post for ${(st.economy['whoops.perLength']! / 100).toFixed(2)}.` } : c));
     await open(w, saying);
     await user.click(handButton());
     expect(within(drawer()).getAllByRole('button', { name: /^Whoops!, Salty, Cast, common postcard/u })[0]).toHaveAccessibleDescription('Splats a post for 1.50.');
@@ -384,6 +457,21 @@ describe('the play form', () => {
     await user.click(within(post(1)).getByRole('button', { name: 'Play Whoops! on post 1' }));
     const theirs = await screen.findByRole('dialog', { name: 'Whoops!' });
     expect(theirs).not.toHaveTextContent('You play both');
+  });
+
+  test('a play on a staff post names it in lower case mid-sentence: "on the staff\'s post #1"', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const sys = w.fake.seed.thread('announcements', null, 'Tally', 'the staff speak', { kind: 'post' });
+    for (const i of [2, 3, 4]) w.fake.seed.post(sys.thread, null, `staff ${i}`, { kind: 'post' });
+    await open({ ...w, thread: sys.thread });
+    const form = await playHere(user, 1);
+    expect(form).toHaveTextContent("the staff's post #1");
+    expect(form).not.toHaveTextContent("The staff's post");
+    await user.type(within(form).getByRole('textbox', { name: 'Your message' }), 'hello');
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent("Played Whoops! on the staff's post #1.");
   });
 
   test('playing lands the play as a tag on its post, takes a card out of the hand, drains the wallet and puts the card away', async () => {

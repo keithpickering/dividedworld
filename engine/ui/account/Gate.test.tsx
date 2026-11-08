@@ -1,13 +1,13 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Frame } from '../frame/Frame.tsx';
 import { TEST_CODE } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
 import { AccountGate } from './OpenAccount.tsx';
 import { safeNext, signInHref } from './next.ts';
 import { clearWhy } from './session.ts';
-import { SettingsScreen } from './Settings.tsx';
+import { LoadedSettings } from '../loaded.tsx';
 import { SignInScreen } from './SignIn.tsx';
 
 beforeEach(() => { localStorage.clear(); clearWhy(); });
@@ -52,6 +52,37 @@ describe('A player signed in with no account', () => {
     expect(await screen.findByText('The page')).toBeInTheDocument();
   });
 
+  test('Open the account is a busy button while the server answers: aria-busy, its name kept, a second press opens once', async () => {
+    const fake = await linked();
+    let release!: () => void;
+    const real = fake.openAccount.bind(fake);
+    const spy = vi.spyOn(fake, 'openAccount').mockImplementation((invite) => new Promise((resolve) => { release = () => resolve(real(invite)); }));
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    const open = await screen.findByRole('button', { name: 'Open the account' });
+    await userEvent.click(open);
+    expect(open).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Open the account' })).toBe(open);
+    await userEvent.click(open);
+    expect(spy).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(open).not.toHaveAttribute('aria-busy'));
+  });
+
+  test('Sign out is a busy button while the sign-out is out: aria-busy, its name kept, and a second press signs out once', async () => {
+    const fake = await linked();
+    let release!: () => void;
+    const real = fake.signOut.bind(fake);
+    const spy = vi.spyOn(fake, 'signOut').mockImplementation(() => new Promise<void>((resolve) => { release = () => { real(); resolve(); }; }));
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    const out = await screen.findByRole('button', { name: 'Sign out' });
+    await userEvent.click(out);
+    expect(out).toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(out);
+    expect(spy).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(async () => expect((await fake.session()).signedIn).toBe(false));
+  });
+
   test('Use another address signs out and opens the sign-in page', async () => {
     const fake = await linked();
     renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
@@ -78,7 +109,7 @@ describe('Signing out', () => {
     const me = fake.seed.account('me');
     fake.seed.character(me, 'Pipewrench', 'face');
     fake.signInAs(me);
-    renderIn(fake, <Frame><SettingsScreen /></Frame>, { path: '/settings?section=account' });
+    renderIn(fake, <Frame><LoadedSettings /></Frame>, { path: '/settings?section=account' });
     await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByRole('combobox', { name: 'Swap mask' })).toBeInTheDocument());
     localStorage.setItem(`kb-draft:${me}:thread-1`, JSON.stringify({ text: 'half a thought', as: null }));
     await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));

@@ -10,6 +10,9 @@
  * Departure by the glass polish (docs/plans/2026-11-04-glass-polish-plan.md, Task 4): the heading is a PageHead (engine/ui/glass/PageHead.tsx), which
  * stands 36px clear of what follows (the lead and the items stand 15px lower than the board draws them), and the tabs are GlassButtons, 48px tall where the
  * board's are 54. The tabs are held to their y and height (the board's place plus the shift, 19px down and 6px shorter), not their x or width.
+ *
+ * Departure by the pronouns plan (docs/plans/2026-11-07-pronouns-plan.md): the Turn item names the character where the board says "It is now a",
+ * so its line wraps once more and the Boss's item under it stands a further 32px lower (47px in all).
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -52,7 +55,7 @@ const manifest: BoardManifest = {
     /* The feed, newest first: each item's heading. */
     { id: 'item-debut', role: 'heading', name: 'Thwompson debuted', buildShift: { y: 15 } },
     { id: 'item-turn', role: 'heading', name: 'Pipewrench turned', buildShift: { y: 15 } },
-    { id: 'item-boss', role: 'heading', name: 'The Boss has arrived', buildName: 'Mister Spreadsheet has arrived', buildShift: { y: 15 } },
+    { id: 'item-boss', role: 'heading', name: 'The Boss has arrived', buildName: 'Mister Spreadsheet has arrived', buildShift: { y: 47 } },
     /*
      * The board draws Season 1's results above the old Boss leaving; both happened at the same instant, and the build lists the leaving first (its
      * news query's order among equal times), so these two are found and compared by their type, not their places.

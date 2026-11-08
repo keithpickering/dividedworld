@@ -22,13 +22,17 @@ import { usePlayer } from '../player.tsx';
 import { useMeet } from './Callout.tsx';
 import { useHoldScreen } from '../tips/Tips.tsx';
 import { useLensStore } from './Lens.tsx';
+import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
 import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
+import { glassInk } from './ink.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
+/** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
+export const SAMPLE = 'this is a sample post';
 
 /**
  * Wraps a post's words in the effect of each card played on it, in play order, and in the effects of the live plays above it (the
@@ -62,17 +66,20 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * post's player answers for what is on it (#85); casting and releasing stay with the masks that can act.
    */
   const author = writingCharacters.find((c) => c.id === post.character) ?? null;
+  const staged = useStaged();
   const save = useCallback<EffectProps['save']>(async (play, state) => {
+    if (staged) return { ok: false, error: SAMPLE };
     if (!author) return { ok: false, error: NOT_AUTHOR };
     const saved = await api.saveEffect(play, author.id, state);
     if (saved.ok) plays.setStates({ [play]: { state, savedAt: saved.value.savedAt } });
     return saved;
-  }, [api, author, plays]);
+  }, [api, author, plays, staged]);
   const release = useCallback<EffectProps['release']>(async (play) => {
+    if (staged) return { ok: false, error: SAMPLE };
     const released = await api.releaseEffect(play);
     if (released.ok) plays.setReleased([play]);
     return released;
-  }, [api, plays]);
+  }, [api, plays, staged]);
   /* The layers above the post, each its own reach's plays still live, redrawn at the soonest end (useUntil). */
   const above = [
     { reach: 'board' as const, drawn: board === null ? [] : onBoard.plays, of: onBoard },
@@ -287,36 +294,36 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
   return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} /></Suspense>;
 }
 
-/** The thread's narrow width (thread.css's 40em, where a post is stacked): a post's marks are fewer there. */
-const NARROW = '(max-width: 40em)';
-/** The Lens is a sheet up to a tablet's width (64em, 1024px) and a dock at the right above it: below that the thread's column, narrowed by the dock, would be too narrow to read. */
-const SHEET = '(max-width: 64em)';
-/* One query each for the page, however many posts ask it, with one listener behind every post's subscription; asked again only if the window's `matchMedia` is another. */
-const queries = new Map<string, { readonly source: typeof globalThis.matchMedia; readonly list: MediaQueryList }>();
-const watchers = new Map<string, Set<() => void>>();
-const queryOf = (query: string): MediaQueryList | null => {
-  const source = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia : null;
-  if (!source) return null;
-  const known = queries.get(query);
-  if (known?.source === source) return known.list;
-  const list = source(query);
-  list.addEventListener?.('change', () => { for (const w of [...(watchers.get(query) ?? [])]) w(); });
-  queries.set(query, { source, list });
-  return list;
-};
-const watching = (query: string) => (changed: () => void) => {
-  const set = watchers.get(query) ?? new Set<() => void>();
-  watchers.set(query, set);
-  set.add(changed);
-  return () => { set.delete(changed); };
-};
-const watchNarrow = watching(NARROW);
-const watchSheet = watching(SHEET);
-/** Whether the window is at the thread's narrow width; a screen with no `matchMedia` is wide. */
-export const useNarrow = (): boolean => useSyncExternalStore(watchNarrow, () => queryOf(NARROW)?.matches ?? false, () => false);
-/** Whether the Lens is a sheet in this window (a tablet's width or less); a screen with no `matchMedia` is wide. */
-export const useSheet = (): boolean => useSyncExternalStore(watchSheet, () => queryOf(SHEET)?.matches ?? false, () => false);
+export { useNarrow, useSheet } from '../media.ts';
 
-/** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
-export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined =>
-  ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+/**
+ * The words on a filled tab, `--kb-glass-ink-neon`, as the glass root resolves it now: the instance's key sets it there
+ * (engine/ui/glass/apply.ts, on the document's root), and a change of key (high contrast) re-reads it. Empty where nothing
+ * resolves it, and then no ink can be measured.
+ */
+const ON_INK = '--kb-glass-ink-neon';
+const readOnInk = (): string => (typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(ON_INK).trim());
+/* One observer of the root for the page, however many marks ask, started with the first and stopped with the last. */
+const onInkWatchers = new Set<() => void>();
+let onInkObserver: MutationObserver | null = null;
+const watchOnInk = (changed: () => void) => {
+  onInkWatchers.add(changed);
+  if (!onInkObserver && typeof MutationObserver === 'function' && typeof document !== 'undefined') {
+    onInkObserver = new MutationObserver(() => { for (const w of [...onInkWatchers]) w(); });
+    onInkObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-kb-glass-key', 'data-kb-contrast', 'data-kb-mode'] });
+  }
+  return () => {
+    onInkWatchers.delete(changed);
+    if (onInkWatchers.size === 0) { onInkObserver?.disconnect(); onInkObserver = null; }
+  };
+};
+export const useOnInk = (): string => useSyncExternalStore(watchOnInk, readOnInk, () => '');
+
+/**
+ * A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order: lifted
+ * to read on the glass where it is too dark to (`glassInk`, against `onInk` from `useOnInk`), and none where it cannot be read.
+ */
+export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[], onInk: string): string | undefined => {
+  const chosen = ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+  return chosen === undefined ? undefined : glassInk(chosen, onInk);
+};

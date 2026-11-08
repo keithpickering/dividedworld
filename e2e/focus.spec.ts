@@ -60,27 +60,29 @@ test('the spin form: its fields show a focus indicator', async ({ page }) => {
 test('the check finds a link with outline: none, and only that link', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline: none !important; box-shadow: none !important; }' });
+  await page.addStyleTag({ content: 'a[href="/b/announcements"] { outline: none !important; box-shadow: none !important; }' });
   const bare = await controlsWithoutFocusIndicator(page);
   expect(bare).toHaveLength(1);
-  expect(bare[0]).toContain('The System');
+  expect(bare[0]).toContain('Staff Announcements');
 });
 
 test('the check finds an outline that is transparent or the color of the page', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline-color: transparent !important; } .kb-nav a[href="/"] { outline-color: rgb(255, 255, 255) !important; }' });
+  /* The color of the page is the theme's own (the Silver house's gray, not white), read where the check reads it. */
+  const ground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.addStyleTag({ content: `a[href="/b/announcements"] { outline-color: transparent !important; } .kb-nav a[href="/"] { outline-color: ${ground} !important; }` });
   const bare = await controlsWithoutFocusIndicator(page);
-  expect(bare.some((b) => b.includes('The System'))).toBe(true);
+  expect(bare.some((b) => b.includes('Staff Announcements'))).toBe(true);
   expect(bare.some((b) => b.includes('Index'))).toBe(true);
 });
 
 test('the check does not count a box-shadow the control always has', async ({ page }) => {
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  await page.addStyleTag({ content: 'a[href="/b/the-system"] { outline: none !important; box-shadow: 0 0 0 2px red !important; }' });
+  await page.addStyleTag({ content: 'a[href="/b/announcements"] { outline: none !important; box-shadow: 0 0 0 2px red !important; }' });
   const bare = await controlsWithoutFocusIndicator(page);
-  expect(bare.some((b) => b.includes('The System'))).toBe(true);
+  expect(bare.some((b) => b.includes('Staff Announcements'))).toBe(true);
 });
 
 test('Tab cycles back to the start on a page, and the check throws when it cannot', async ({ page }) => {
@@ -127,6 +129,8 @@ test('Esc pressed the moment the menu opens, at full motion, returns to the same
   await post.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await expect.poll(() => post.evaluate((el) => Math.round(el.getBoundingClientRect().top))).toBeLessThan(40);
   await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+  /* The moment the glass is in (the board still held under it): an Esc before that stops the load and leaves the board where it was, which is another test's. */
+  await expect(page.locator('[data-kb-world="glass"]')).toBeAttached();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('heading', { level: 1, name: 'The long one' })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe(thread);
@@ -142,6 +146,8 @@ for (const feel of ['smooth', 'snappy'] as const) {
     await page.goto('/b/general');
     await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
     await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    /* The world changes when the load lands, not at the press: wait for the glass, then for the board to have left. */
+    await expect(page.locator('[data-kb-world="glass"]')).toBeAttached();
     await expect(page.locator('.kb-world')).toHaveCount(1);
     for (const sel of ['.kb-world', '.kb-glass-screen']) {
       await expect.poll(() => page.locator(sel).evaluate((el) => { const c = getComputedStyle(el); return [c.filter, c.transform, c.clipPath].join('|'); })).toBe('none|none|none');
@@ -156,6 +162,8 @@ for (const feel of ['smooth', 'snappy'] as const) {
     await page.goto('/b/general');
     await page.evaluate((f) => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', f); }, feel);
     await page.getByRole('region', { name: 'Game HUD' }).getByRole('button', { name: 'Menu' }).click();
+    /* The world changes when the load lands, not at the press: wait for the glass, then for the board to have left. */
+    await expect(page.locator('[data-kb-world="glass"]')).toBeAttached();
     await expect(page.locator('.kb-world')).toHaveCount(1);
     await expect.poll(() => page.locator('.kb-world').evaluate((el) => getComputedStyle(el).clipPath)).toBe('none');
     await page.evaluate(() => {
@@ -169,8 +177,11 @@ for (const feel of ['smooth', 'snappy'] as const) {
       requestAnimationFrame(tick);
     });
     await page.getByRole('link', { name: 'Back to the board' }).click();
-    await expect(page.locator('.kb-world')).toHaveCount(1);
-    const clips = await page.evaluate(() => (globalThis as unknown as { __clips: string[] }).__clips);
+    /* The glass has left: the exit ran, and the clips were read while it did (it starts when the board's load lands, not at the press). */
+    await expect(page.locator('[data-kb-world="glass"]')).toHaveCount(0);
+    const sampled = await page.evaluate(() => (globalThis as unknown as { __clips: string[] }).__clips);
+    /* The frame that marks the exit may be drawn before Motion's first write of the clip (the open shape, as `none` is); the clip never stays `none`. */
+    const clips = sampled.slice(sampled.findIndex((c) => c !== 'none'));
     expect(clips.length).toBeGreaterThan(2);
     expect(clips).not.toContain('none');
     expect(new Set(clips).size).toBeGreaterThan(2);
@@ -437,7 +448,7 @@ test('the Vending Machine\'s Buy, a chamfered button, shows its focus ring insid
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?fixture=boards&moment=07-vending');
   /* The board's state: Whoops! picked by its slot, then the machine's own Buy, the chamfered one. */
-  await page.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }).click({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Move' }).click({ timeout: 10_000 });
   const buy = page.locator('.kb-vending-buy');
   await expect(buy).toBeEnabled();
   expect(await ringShows(page, buy)).toBe(true);

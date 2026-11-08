@@ -35,6 +35,7 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
 import { instance } from '../../../../instances/divided-world/index.ts';
+import { cardPrice } from '../../../../engine/rules/packs.ts';
 import { fallbackSettings } from '../settings.ts';
 
 export type Account = 'player' | 'rival' | 'reader';
@@ -226,7 +227,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   const gloomba = seed.character(rival, 'Gloomba', 'heel', { at: utc(4, 12, 0) });
   const thwompson = seed.character(reader, 'Thwompson', 'lurker', { at: utc(5, 12, 0) });
   const fans = crowd.map((account, i) => seed.character(account, `Ringside ${i + 1}`, 'lurker', { at: utc(6, 12, i) }));
-  const turns = seed.thread('the-system', null, 'Season 1: Who Turned', 'Every Turn, as it was announced.', { at: utc(1, 12, 0) });
+  const turns = seed.thread('announcements', null, 'Season 1: Who Turned', 'Every Turn, as it was announced.', { at: utc(1, 12, 0) });
   seed.season({ number: 1, turnsThread: turns.thread });
 
   /* ---- the thread: #1 to #40 as filler, then page 3 ---- */
@@ -297,7 +298,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
    * The Whoops! Mrs. Hooligan plays on #41, bought on Oct 20 so the card ledger holds the card it plays; then the wallet as it stood
    * before the Oct 29 settlement, seeded with no history behind it.
    */
-  seed.wallet(player, economy['whoops.price']!);
+  seed.wallet(player, cardPrice(instance.machine, 'whoops'));
   seed.buy(player, 'whoops', { at: utc(20, 19, 0) });
   seed.wallet(player, WALLET_START - SCORED_OCT_28.reduce((sum, [, , amount]) => sum + amount, 0));
   when(SETTLE_1, (at) => {

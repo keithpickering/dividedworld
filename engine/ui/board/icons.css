@@ -1,0 +1,47 @@
+/*
+ * The pixel icons' tones (Icons.tsx; the drawing is docs/research/2026-11-06-board-look/gen.mjs's). Only color lives here: an icon's size is
+ * its SVG's own width and height, which no rule below sets, so no icon is ever scaled and its half-pixel strokes land on the screen's pixels.
+ */
+.kb-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex: none;
+}
+
+.kb-icon path,
+.kb-icon circle {
+  stroke: var(--kb-icon-ink);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+
+.kb-icon .back { fill: var(--kb-icon-back); }
+.kb-icon .front { fill: var(--kb-icon-front); }
+.kb-icon .front-new { fill: var(--kb-icon-new); }
+.kb-icon .paper { fill: var(--kb-icon-hi); }
+.kb-icon .line { stroke: var(--kb-icon-line); fill: none; }
+.kb-icon .shine { stroke: var(--kb-icon-hi); fill: none; }
+.kb-icon .hot { fill: var(--kb-icon-hot); }
+.kb-icon .hi { fill: var(--kb-icon-hi); stroke: none; }
+/* A line icon (the boards' bar's, Start a thread's) is drawn in the ink of the control it sits in. */
+.kb-icon .s { fill: none; stroke: currentColor; }
+
+/*
+ * Forced colors replace the page's palette with the user's, and the icons' tones are tokens it may flatten into one: a new, an old and a hot
+ * folder must stay apart, so each part takes a system color by what it is (outline CanvasText, the old folder's back and front Canvas, the
+ * new folder's front CanvasText with its sheet in Canvas, the flame Highlight).
+ */
+@media (forced-colors: active) {
+  .kb-icon path,
+  .kb-icon circle { stroke: CanvasText; }
+  .kb-icon .back,
+  .kb-icon .front,
+  .kb-icon .paper,
+  .kb-icon .hi { fill: Canvas; }
+  .kb-icon .front-new { fill: CanvasText; }
+  .kb-icon .hot { fill: Highlight; }
+  .kb-icon .line,
+  .kb-icon .shine { stroke: CanvasText; fill: none; }
+  .kb-icon .hi { stroke: none; }
+  .kb-icon .s { stroke: currentColor; fill: none; }
+}

@@ -5,7 +5,7 @@
  * the screen and the server agree because they ask the same function. The server decides again at
  * the play (`decidePlay`), whatever this said.
  */
-import { decidePlay, decideSet, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
@@ -39,6 +39,8 @@ export interface LandingContext {
   readonly cards: readonly CardRules[];
   readonly setLasts: Span;
   readonly above?: EffectsAbove;
+  /** Ask whether a Move can be set face down on the post, which is `decideSet`, instead of whether it can be cast. */
+  readonly faceDown?: true;
 }
 
 /**
@@ -62,9 +64,33 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
   /* Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. */
   const lenient: CardRules = { ...rules, validateConfig: (c) => ({ ok: true, value: c }), playPrice: () => 0 };
-  const play = playOfRules(rules);
-  const decided = play === 'set' ? decideSet({ ...lenient, trap: undefined }, {} as never, target, effects, {}, context.cards)
+  const play = context.faceDown ? 'set' : playOfRules(rules);
+  const decided = play === 'set' ? decideSet({ ...lenient, trap: undefined, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
     : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf });
   return decided.ok ? { ok: true, value: undefined } : decided;
 }
+
+/** Where a sprung Move lands, by the reach it lists first, as the form says it. */
+const LANDS_ON: Readonly<Record<'post' | BeyondPost, string>> = {
+  post: 'the quoting post',
+  character: "the quoting post's writer",
+  thread: "the quoting post's thread",
+  board: "the quoting post's board",
+};
+
+/**
+ * What a card set face down does, in one plain sentence, from the card's rules and never its name: a Move springs on a quote and lands on
+ * what its first reach says; a Gimmick waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
+ * post to start (and ends it), or does nothing.
+ */
+export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap'>): string {
+  if (playOfRules(rules) === 'cast') return `Springs when someone quotes this post, and lands on ${LANDS_ON[reachesOf(rules)[0] ?? 'post']}.`;
+  const on = rules.trap?.trigger.on;
+  if (on === 'cast') return 'Waits for the card it names to be cast on this post, and takes it.';
+  if (on === 'visit') return 'Ends the next Mod Bot visit to this post when the visit starts.';
+  return 'Does nothing.';
+}
+
+/** How long a Set lasts, as the form says it: "Ends by itself in 7 days." */
+export const endsWords = (lasts: Span): string => `Ends by itself in ${lasts.count} ${lasts.unit}${lasts.count === 1 ? '' : 's'}.`;

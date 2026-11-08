@@ -12,22 +12,23 @@
  * character's reply with these words: if it is there the draft is cleared and the post shown; if
  * not, the draft stays and the next press says "Send again anyway".
  *
- * On The System's board there is no reply box; a plain note says replies there are spins.
+ * On The System's board there is no reply box; a plain note says replies there are spins. A mask barred from the thread's board (a group move, `bars_now`) has the barred box in its place
+ * (BarredNote.tsx), with the way out; the box is per acting character, so swapping masks swaps it away.
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
-import { dayAndTime } from '../characters/format.ts';
-import { BanAppeal } from '../cards/Forms.tsx';
 import { RevealModal } from '../characters/RevealModal.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { text as textOf } from '../thread/lines.tsx';
+import { BannedNote } from './BannedNote.tsx';
+import { BarredNote, useBar } from './BarredNote.tsx';
 import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
-import { quoteText } from './text.ts';
+import { framingArgs, quoteText } from './text.ts';
 import { Layers } from '../glass/layer.tsx';
 
 export interface ComposerHandle {
@@ -37,6 +38,8 @@ export interface ComposerHandle {
 
 export interface ComposerProps {
   readonly thread: Id;
+  /** The board the thread is on, so a mask barred from it is told so where the box would be. */
+  readonly board: Id;
   /** The last post shown, for the toolbar's Quote. */
   readonly latest: { readonly id: Id; readonly body: string } | null;
   /** The thread's last known seq now: where to look for a reply whose answer was lost. */
@@ -61,7 +64,7 @@ export function Composer(props: ComposerProps) {
   return <ComposerBody key={`${session.account}:${props.thread}`} {...props} account={session.account} />;
 }
 
-function ComposerBody({ thread, latest, since, onPosted, ref, account }: ComposerProps & { readonly account: Id }) {
+function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: ComposerProps & { readonly account: Id }) {
   const { api, settings } = useKayfa();
   const { hudCharacter, characters, refresh } = usePlayer();
   const key = draftKey(account, thread);
@@ -79,6 +82,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
   const bannedUntil = useBannedUntil(hudCharacter);
+  const bar = useBar(hudCharacter, board);
 
   const { adopt } = who;
   const as = who.as;
@@ -114,10 +118,12 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   if (!hudCharacter) {
     return (
       <p className="kb-composer-note kb-notice">
-        None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; one waiting to debut can post once it has.
+        None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; a character waiting to debut can post after the debut.
       </p>
     );
   }
+  /* A mask barred from this board holds this box in place of the reply box, unless it is banned too: the ban's note says so first, and no apology is offered while it holds. */
+  if (bar !== null && bannedUntil === null) return <BarredNote key={bar.move} character={hudCharacter} bar={bar} />;
   const nameOf = (id: Id | null) => characters.find((c) => c.id === id)?.name ?? 'another character';
   const blank = text.trim() === '';
 
@@ -157,7 +163,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
     setRefusal(null);
     try {
       let answer;
-      try { answer = await api.post(thread, character, sent, firstQuote(sent)); } catch { await look(null, from, sent, character); return; }
+      try { answer = await api.post(thread, character, sent, firstQuote(sent), ...framingArgs(sent)); } catch { await look(null, from, sent, character); return; }
       if (answer.ok) landed(answer.value, sent);
       else if (answer.uncertain) await look(answer.error, from, sent, character);
       else setRefusal(answer.error);
@@ -167,15 +173,10 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   };
 
   return (
-    <form className="kb-composer kb-box" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
-      <div className="kb-box-head" id={`composer-head-${thread}`}>Reply</div>
+    <form className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
+      <h2 className="kb-box-head" id={`composer-head-${thread}`}>Reply</h2>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
-      {bannedUntil !== null && (
-        <p className="kb-notice kb-composer-ban" role="status">
-          <strong>{hudCharacter.name}</strong> is banned until {dayAndTime(bannedUntil)}. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as it.
-          {' '}<BanAppeal character={hudCharacter.id} />
-        </p>
-      )}
+      {bannedUntil !== null && <BannedNote character={hudCharacter} until={bannedUntil} />}
       <div className="kb-composer-now-region" role="status">
         {who.changed && (
           <p className="kb-notice kb-composer-now">
@@ -197,7 +198,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
         <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
-        <button type="button" className="kb-button kb-composer-reveal" onClick={() => setRevealing(true)}>Reveal…</button>
+        <button type="button" className="kb-button kb-composer-reveal" data-kb-size="small" onClick={() => setRevealing(true)}>Reveal…</button>
       </Editor>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <Layers>{revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}</Layers>

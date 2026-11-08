@@ -5,6 +5,7 @@ import type { Fake } from '../engine/ui/data/fake.ts';
 import { boardSwitch, MAIN_BOARD_WIDTH } from '../engine/ui/glass/board.ts';
 import type { Demo } from '../web/src/demo.ts';
 import { boardStoryIds, routeStoryIds } from './board-stories.ts';
+import { settled } from './settled.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
@@ -43,7 +44,7 @@ export async function pageViolations(page: Page): Promise<string[]> {
 test.use({ bypassCSP: true });
 
 /* A glass page is ready when its menu bar is; a board page when its Game HUD is. */
-const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/invites', '/sign-in', '/register', '/season?tab=rankings&season=1', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending', '/admin/queue']);
+const GLASS = new Set(['/characters', '/characters/new', '/characters/edit', '/settings', '/settings?section=board', '/invites', '/sign-in', '/register', '/season?tab=rankings&season=1', '/season?tab=news', '/alerts', '/updates', '/guide', '/contact', '/vending', '/admin/queue']);
 const ready = (page: import('@playwright/test').Page, path: string) => (GLASS.has(path)
   ? page.getByRole('navigation', { name: 'Menu' })
   : page.getByRole('region', { name: 'Game HUD' }));
@@ -102,7 +103,7 @@ const ABOVE_SWITCH = SWITCH + 8;
 const BELOW_SWITCH = SWITCH - 8;
 
 const PAGES: readonly [string, string][] = [
-  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings&season=1'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['invites', '/invites'], ['admin queue', '/admin/queue'],
+  ['index', '/'], ['board', '/b/general'], ['characters', '/characters'], ['season rankings', '/season?tab=rankings&season=1'], ['season news', '/season?tab=news'], ['alerts', '/alerts'], ['updates', '/updates'], ['guide', '/guide'], ['contact', '/contact'], ['vending', '/vending'], ['settings', '/settings'], ['settings board', '/settings?section=board'], ['invites', '/invites'], ['admin queue', '/admin/queue'],
 ];
 
 /** Opens a page; the admin queue is the demo player made an admin in the app (a load starts the demo over), then moved to. */
@@ -247,7 +248,7 @@ for (const scheme of ['light', 'dark'] as const) {
       test('a profile and its record have none, reached through a character link', async ({ page }) => {
         await page.goto('/season?tab=rankings');
         await page.getByRole('link', { name: 'Pipewrench' }).click();
-        await expect(page.getByRole('region', { name: 'About Pipewrench' })).toBeVisible();
+        await expect(page.getByRole('table', { name: 'About Pipewrench' })).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
         await page.getByRole('link', { name: 'See the full record' }).click();
         await expect(page.getByRole('table')).toBeVisible();
@@ -305,9 +306,13 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(page.getByRole('region', { name: 'Game HUD' }).getByRole('link', { name: 'Sign in' })).toBeVisible();
         await page.getByRole('link', { name: 'Sign in' }).first().click();
         await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+        /* Each move here is made in the app, so its screen is read once it has entered: a screen drawn whole on its first render staggers its head
+           in from transparent (engine/ui/glass/enter.ts), and contrast read mid-entrance is of a title the player sees only for a moment. */
+        await settled(page, { loops: true });
         expect(await pageViolations(page)).toEqual([]);
         await page.evaluate(() => { history.pushState(null, '', '/register?invite=ab12cd34'); window.dispatchEvent(new PopStateEvent('popstate')); });
         await expect(page.getByRole('heading', { level: 1, name: /register|create|join/iu })).toBeVisible();
+        await settled(page, { loops: true });
         expect(await pageViolations(page)).toEqual([]);
       });
     });

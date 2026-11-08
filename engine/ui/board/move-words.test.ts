@@ -7,8 +7,10 @@ const demand = { kind: 'distinctCharactersOnBoard', params: { board, count: 12 }
 const local = (m: number, d: number) => new Date(2026, m, d, 12).toISOString();
 
 test('the long label comes from the move kind\'s catalog entry, and an unknown kind is still said plainly', () => {
-  assert.equal(moveLabel('renameBoard'), 'THE SYSTEM RENAMED THIS BOARD');
-  assert.equal(moveLabel('shout'), 'THE SYSTEM MADE A MOVE');
+  assert.equal(moveLabel('renameBoard', 'The Boss'), 'The Boss renamed this board');
+  assert.equal(moveLabel('nameSuccessor', 'The Boss'), 'The Boss named its successor');
+  assert.equal(moveLabel('renameBoard', 'The Director'), 'The Director renamed this board');
+  assert.equal(moveLabel('shout', 'The Boss'), 'The Boss made a move');
 });
 
 test('the way out says the count and what is counted, in the singular for one, and never guesses at a demand it cannot read', () => {
@@ -46,4 +48,10 @@ test('a move is a sentence in pieces, and a move this build has no words for is 
   assert.match(String(moveParts('shout', {}, null, 'plan')[0]), /no words for \(shout\)/u);
   assert.equal(demandNeeds(demand), 'Needs 12 different characters to post on this board.');
   assert.match(demandNeeds(null), /asks nothing/u);
+});
+
+test('a stripped, apologized and overturned move each say so plainly', () => {
+  assert.equal(endedWords({ why: 'unmet', by: 'tick', at: local(9, 31) }, null), 'Stripped: the demand was not met by its check');
+  assert.equal(endedWords({ why: 'met', by: 'tick', at: local(9, 31) }, { kind: 'apologyAccepted', params: {} }), 'Ended: an apology was accepted');
+  assert.equal(endedWords({ why: 'overturned', by: 'admin', at: local(9, 31) }, null), 'Ended: overturned on appeal');
 });

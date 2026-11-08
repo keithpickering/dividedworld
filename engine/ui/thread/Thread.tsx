@@ -30,12 +30,14 @@
  * re-renders the posts it lands on and not the page.
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import type { Act, Id, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
 import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
@@ -160,7 +162,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   /* A character's name as the thread knows it: read before the posts that name it are drawn. */
-  const nameOf = useCallback((id: Id | null) => (id === null ? 'The System' : people.current.get(id)?.character.name ?? 'A character'), []);
+  const nameOf = useCallback((id: Id | null) => (id === null ? ui.copy.staffWord : people.current.get(id)?.character.name ?? 'A character'), [ui.copy.staffWord]);
+  const faceOf = useCallback((id: Id | null) => (id === null ? null : people.current.get(id)?.character.avatarSquare ?? null), []);
+  const pronounsOf = useCallback((id: Id | null) => (id === null ? ENGINE_DEFAULT_PRONOUNS : people.current.get(id)?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS), []);
 
   /*
    * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
@@ -399,7 +403,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       /* New posts only: an unmask or a tally still appears, and is not announced. */
       if (a.kind !== 'post' || announcedIds.current.has(a.id)) return;
       announcedIds.current.add(a.id);
-      const name = a.character === null ? 'The System' : people.current.get(a.character)?.character.name ?? 'a character';
+      const name = a.character === null ? lowerFirst(ui.copy.staffWord) : people.current.get(a.character)?.character.name ?? 'a character';
       setLines((l) => [...l, { key: ++lineKey.current, text: `New post by ${name}` }].slice(-ANNOUNCED));
     };
     const listener: ThreadListener = {
@@ -450,7 +454,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       },
     };
     return api.subscribeThread(thread, listener);
-  }, [api, thread, ensurePeople, tallies, plays, effects]);
+  }, [api, thread, ensurePeople, tallies, plays, effects, ui.copy.staffWord]);
 
   /*
    * The window between the server reading the document and the subscription above being set up: a post written in it is neither in the
@@ -551,8 +555,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const canReply = systemBoard === false;
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, ensurePeople, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, faceOf, pronounsOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, mine, plays, visits, nameOf, faceOf, pronounsOf, ensurePeople, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
 
@@ -616,6 +620,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
   }
 
+  /* The board's name for the crumb: the page's own board, or the frame's list of boards (boot's) by the thread's board. Neither known, the crumb leaves it out. */
+  const crumbBoard = doc.board ?? boot?.boards.find((b) => b.id === summary.board) ?? null;
+
   const pager = (where: 'top' | 'bottom') => lastPage > 1 && (
     <nav className="kb-pager kb-small" aria-label={`Pages, ${where}`}>
       <span className="kb-pager-where">{feed.lastPage > feed.firstPage ? `Pages ${feed.firstPage} to ${feed.lastPage}` : `Page ${feed.firstPage}`} of {lastPage}</span>
@@ -630,7 +637,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
 
   return (
     <div className="kb-thread" data-kb-thread={thread} data-kb-known={feed.knownLast} aria-busy={busy || undefined}>
-      <p className="kb-crumb"><Link to="/">Index</Link> › {summary.title}</p>
+      <p className="kb-crumb"><Link to="/">Index</Link> › {crumbBoard && <><Link to={`/b/${crumbBoard.slug}`}>{crumbBoard.name}</Link> › </>}{summary.title}</p>
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
@@ -659,13 +666,15 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           >Continue to page {feed.lastPage + 1}</Link>
         </p>
       )}
-      {pager('bottom')}
-      {/* Follow sits after the last post, where a reader decides whether to keep up: the board draws no control above the thread, so a strip there would push it down. */}
-      {player.session.signedIn && <FollowControl thread={thread} following={doc.following} />}
+      {/* Follow sits after the last post, where a reader decides whether to keep up (the board draws no control above the thread), in the bottom pager's row, at its right. */}
+      <div className="kb-thread-below">
+        {pager('bottom')}
+        {player.session.signedIn && <FollowControl thread={thread} following={doc.following} />}
+      </div>
       {systemBoard !== null && (
         <ActIndex.Provider value={index}>
           <ThreadCtx.Provider value={context}>
-            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
+            {systemBoard ? <SystemBoardNote /> : <Composer ref={composer} thread={thread} board={summary.board} latest={latest} since={() => feedRef.current.knownLast} onPosted={(a) => void posted(a)} />}
           </ThreadCtx.Provider>
         </ActIndex.Provider>
       )}

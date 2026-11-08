@@ -17,7 +17,7 @@ begin
   update settings set value = '300' where key = 'walletCap';
   -- A wallet left above a lowered cap can still be spent from, down toward it.
   perform tests.become_service();
-  if (buy_card(ann, 'splat', 100) ->> 'balance')::integer is distinct from 400 then raise exception 'a purchase from a wallet above a lowered cap'; end if;
+  if (buy_card(ann, tests.slot('splat'), 100) ->> 'balance')::integer is distinct from 400 then raise exception 'a purchase from a wallet above a lowered cap'; end if;
   perform tests.unbecome();
   perform apply_settlement(w2, w3, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 10)));
   if (select balance from wallets where account = ann) is distinct from 300 then raise exception 'a credit after the cap was lowered should land at the new cap'; end if;

@@ -8,41 +8,46 @@ import { STROKES, whoops } from './whoops.ts';
 import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { basePrice, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 
+/** What the machine sells a card for: its slot's price. */
+const priceOf = (key: string): number => instance.machine.find((m) => 'card' in m.item && m.item.card === key)!.price;
+
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, basePrice(c, settings)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
 
-test('a card\'s prices are settings: an override reaches what it sells for and what it costs to play', () => {
-  const tuned = withOverrides(settings, { economy: { 'whoops.price': 150, 'whoops.perLength': 50, 'whoops.mostInAll': 400 } });
-  assert.equal(basePrice(whoops, tuned), 150);
-  assert.equal(basePrice(stickAround, withOverrides(settings, { economy: { 'stickAround.price': 75 } })), 75);
+test('what a play adds is a setting: an override reaches what it costs to play', () => {
+  const tuned = withOverrides(settings, { economy: { 'whoops.perLength': 50, 'whoops.mostAdded': 300 } });
   assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.lengthStep': 250 } }), post(500), { color: 'red' }), 50, 'the step is a setting too');
-  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostInAll': 50 } }), post(6000), { color: 'red' }), 0, 'a cap at or below the price never makes a play pay back');
+  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostAdded': 0 } }), post(6000), { color: 'red' }), 0, 'a cap of nothing adds nothing');
   assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'whoops.lengthStep': 0 } }) }).join('\n'), /whoops\.lengthStep/);
   assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }), 100);
-  assert.equal(basePrice(whoops, tuned) + whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 400);
+  assert.equal(whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 300);
 });
 
-test('Whoops! costs 0.25 more per 500 characters of its target, at most 3.00 in all', () => {
+test('the machine sells every card, and no card carries a price of its own', () => {
+  assert.deepEqual(instance.machine.filter((m) => 'card' in m.item).map((m) => (m.item as { card: string }).card).sort(), cards.map((c) => c.key).sort());
+  assert.ok(cards.every((c) => !('priceKey' in c)));
+});
+
+test('Whoops! costs 0.25 more per 500 characters of its target, at most 2.00 added', () => {
   const config = { color: '#ff00aa' };
   assert.equal(whoops.playPrice(settings, post(499), config), 0);
   assert.equal(whoops.playPrice(settings, post(500), config), 25);
   assert.equal(whoops.playPrice(settings, post(999), config), 25);
   assert.equal(whoops.playPrice(settings, post(1000), config), 50);
-  assert.equal(whoops.playPrice(settings, post(6000), config), 200, 'twelve steps would be 3.00 on top; with the 1.00 paid, 3.00 is all');
-  assert.equal(basePrice(whoops, settings) + whoops.playPrice(settings, post(6000), config), 300);
-  assert.equal(basePrice(whoops, settings) + whoops.playPrice(settings, post(1_000_000), config), 300);
+  assert.equal(whoops.playPrice(settings, post(6000), config), 200, 'twelve steps would be 3.00 on top; 2.00 is the most a play adds');
+  assert.equal(whoops.playPrice(settings, post(1_000_000), config), 200);
 });
 
 test('Stick Around costs nothing more to play', () => {
@@ -174,14 +179,14 @@ test('Stick Around holds no state to save', () => {
 /* The card mechanic's first cards (docs/plans/2026-11-01-card-plays-plan.md, Task 8): Trap Card, Force Field and Bluff. */
 test('the instance sells Trap Card, Force Field and Bluff, each with its rarity and play, and stays whole', () => {
   const by = (key: string) => cards.find((c) => c.key === key)!;
-  assert.deepEqual(['trap-card', 'force-field', 'bluff', 'whoops', 'stick-around'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, basePrice(by(k), settings)]), [
+  assert.deepEqual(['trap-card', 'force-field', 'bluff', 'whoops', 'stick-around'].map((k) => [k, by(k).rarity, by(k).play ?? 'cast', by(k).alignment, priceOf(k)]), [
     ['trap-card', 'uncommon', 'set', 'salty', 150],
     ['force-field', 'uncommon', 'use', 'sweet', 150],
     ['bluff', 'common', 'set', 'pepperoni', 25],
     ['whoops', 'common', 'cast', 'salty', 100],
     ['stick-around', 'common', 'cast', 'sweet', 100],
   ]);
-  assert.deepEqual(by('trap-card').trap, { trigger: { on: 'cast' }, outcome: { do: 'payout' } });
+  assert.deepEqual(by('trap-card').trap, { trigger: { on: 'cast' } });
   assert.equal(by('bluff').trap, undefined, 'a Set card with no trap is a bluff');
   assert.deepEqual([by('force-field').ward, by('force-field').lasts], [true, { unit: 'day', count: 7 }]);
   assert.deepEqual(settings.setLasts, { unit: 'day', count: 7 });
@@ -196,7 +201,7 @@ test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, 
   assert.deepEqual({ ...trap, args: { ...trap.args, card: null } }, { ...bluff, args: { ...bluff.args, card: null } });
   assert.equal(trap.ok && trap.asService, true, 'written by the service, so the key reaches SQL and no client');
   const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10, text: '' };
-  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), decideSet(by('bluff'), settings, target, [], {}, cards));
+  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], { card: 'whoops' }, cards), { ok: true, value: { ...(decideSet(by('bluff'), settings, target, [], {}, cards) as { value: object }).value, config: { card: 'whoops' }, catches: 'whoops' } });
 });
 const by = (key: string) => cards.find((c) => c.key === key)!;
 
@@ -206,8 +211,8 @@ test('Glitter Bomb is an uncommon Pepperoni Cast on a character, for a week; Mai
   const { mainEvent } = await import('./main-event.ts');
   assert.deepEqual([glitterBomb.rarity, glitterBomb.alignment, glitterBomb.play ?? 'cast', glitterBomb.reaches, glitterBomb.lasts], ['uncommon', 'pepperoni', 'cast', ['character'], { unit: 'day', count: 7 }]);
   assert.deepEqual([mainEvent.rarity, mainEvent.alignment, mainEvent.play ?? 'cast', mainEvent.reaches, mainEvent.lasts, mainEvent.pins], ['rare', 'sweet', 'cast', ['thread'], { unit: 'day', count: 1 }, true]);
-  assert.equal(basePrice(glitterBomb, settings), 150);
-  assert.equal(basePrice(mainEvent, settings), 300);
+  assert.equal(priceOf('glitter-bomb'), 150);
+  assert.equal(priceOf('main-event'), 300);
   const character = { reach: 'character' as const, character: 'c1' };
   assert.equal(glitterBomb.canApply(character, []).ok, true);
   assert.deepEqual(glitterBomb.canApply(post(10), []), { ok: false, why: 'this card lands on a character' });
@@ -229,8 +234,8 @@ test('the instance, with its cards beyond a post, has no problems, and its reach
 test("Feelin' Fab is a common Sweet Cast on a post, three to a post, that lasts until the post goes; it costs 0.20 and nothing more to play", async () => {
   const { feelinFab } = await import('./feelin-fab.ts');
   assert.deepEqual([feelinFab.key, feelinFab.name, feelinFab.alignment, feelinFab.rarity, feelinFab.play ?? 'cast', feelinFab.reaches, feelinFab.stack, feelinFab.lasts], ['feelin-fab', "Feelin' Fab", 'sweet', 'common', 'cast', ['post'], 3, undefined]);
-  assert.equal(basePrice(feelinFab, settings), 20);
-  assert.ok(basePrice(feelinFab, settings) < basePrice(by('bluff'), settings), 'below Bluff');
+  assert.equal(priceOf('feelin-fab'), 20);
+  assert.ok(priceOf('feelin-fab') < priceOf('bluff'), 'below Bluff');
   assert.equal(feelinFab.playPrice(settings, post(6000), {}), 0);
   assert.equal(feelinFab.playPrice(settings, post(10), {}), 0);
   assert.equal(feelinFab.validateConfig({ anything: 1 }).ok, true);
@@ -285,7 +290,7 @@ test('Autocorrect lands only where its phrase is, whole and in any case, never i
   assert.equal(decidePlay(autocorrect as CardRules, settings, on('cats'), [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` })), { phrase: 'cats', replacement: 'dogs' }, '').ok, false, 'three deep already');
 });
 
-test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 3.00 in all', () => {
+test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 2.00 added', () => {
   const price = (body: string, phrase: string) => autocorrect.playPrice(settings, on(body), { phrase, replacement: 'x' });
   assert.equal(price('cats', 'cats'), 0, '4 characters covered');
   assert.equal(price(Array(12).fill('cats').join(' '), 'cats'), 0, '48 characters covered');
@@ -348,11 +353,12 @@ const answers: Record<string, Record<string, unknown>> = {
   whoops: { color: '#12ab9f' },
   autocorrect: { phrase: 'the same old', replacement: 'something new' },
   'stick-around': { sentence: 'I have read every word of this' },
+  'trap-card': { card: 'whoops' },
 };
 
 test('each card that lets the model set options gives an object schema its own validateConfig accepts for a sample answer', () => {
   const keys = cards.filter((c) => c.staffOptions).map((c) => c.key).sort();
-  assert.deepEqual(keys, ['autocorrect', 'stick-around', 'whoops']);
+  assert.deepEqual(keys, ['autocorrect', 'stick-around', 'trap-card', 'whoops']);
   for (const card of cards) {
     if (!card.staffOptions) continue;
     const { prompt, schema } = card.staffOptions;
@@ -384,4 +390,44 @@ test('every property a staffOptions schema names survives that card\'s validateC
     const kept = Object.keys(result.value as object);
     for (const name of Object.keys(card.staffOptions.schema.properties as object)) assert.ok(kept.includes(name), `${card.key}: "${name}" is dropped by validateConfig`);
   }
+});
+
+/* Face-down Moves (docs/plans/2026-11-07-face-down-moves-design.md, section 4), Task 2. */
+test('Trap Card catches the card it names, and Hall Pass is a Gimmick on a visit', () => {
+  const trap = by('trap-card') as CardRules<{ card: string }>;
+  assert.deepEqual(trap.trap, { trigger: { on: 'cast' } });
+  assert.equal(trap.catches?.({ card: 'autocorrect' }), 'autocorrect');
+  assert.deepEqual(trap.validateConfig({ card: 'whoops' }), { ok: true, value: { card: 'whoops' } });
+  for (const card of ['', 'x'.repeat(65), 7, null, undefined]) assert.equal(trap.validateConfig({ card }).ok, false, String(card));
+  assert.equal(trap.validateConfig(null).ok, false);
+  assert.deepEqual(trap.validateConfig({ card: 'whoops', more: 1 }), { ok: true, value: { card: 'whoops' } });
+  const options = trap.staffOptions as unknown as { schema: { properties: { card: { enum: string[] } } } };
+  // A persona is offered only the cards a Trap Card can name, so no pick is one decideSet refuses.
+  assert.deepEqual(options.schema.properties.card.enum, cards.filter((c) => (c.play ?? 'cast') === 'cast' && (c.reaches ?? ['post']).includes('post')).map((c) => c.key));
+  for (const card of options.schema.properties.card.enum) assert.equal(decideSet(trap, settings, on('a post'), [], { card }, cards).ok, true, card);
+  const pass = by('hall-pass');
+  assert.deepEqual([pass.alignment, pass.rarity, pass.play, priceOf('hall-pass')], ['sweet', 'uncommon', 'set', 150]);
+  assert.deepEqual(pass.trap, { trigger: { on: 'visit' } });
+  assert.equal(pass.catches, undefined, 'a visit Gimmick names no card');
+  assert.equal(pass.playPrice(settings, post(10), {}), 0);
+  assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('Autocorrect\'s phrase is its set phrase', () => {
+  assert.equal(autocorrect.setPhrase?.({ phrase: 'Mario', replacement: 'Wario' }), 'Mario');
+  assert.equal(by('bluff').setPhrase, undefined);
+});
+
+test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the ten cards', async () => {
+  const { packOdds } = await import('../../../engine/rules/packs.ts');
+  const booster = instance.packs.find((p) => p.key === 'booster')!;
+  const hit = packOdds(booster, cards).at(-1)!;
+  const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
+  // Hall Pass (the face-down Moves design) joined the Booster by its rarity, as a new card does: four uncommons share the 75.
+  assert.equal(cards.length, 10);
+  assert.ok(Math.abs(chance.get('main-event')! - 0.25) < 1e-9, `Main Event at ${chance.get('main-event')}`);
+  const uncommons = cards.filter((c) => c.rarity === 'uncommon');
+  assert.equal(uncommons.length, 4);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.75 / 4) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(chance.size, uncommons.length + 1);
 });

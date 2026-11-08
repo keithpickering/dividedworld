@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { testSystem } from '../rules/test-system.ts';
 import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, type OfferedCard, type RepairFacts } from './chatter.ts';
 import { noteMost } from './memory.ts';
+import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 import { repair } from './validate.ts';
 
 const persona = testSystem.roster[0]!;
+const she = PRONOUN_PRESETS.she;
+const they = PRONOUN_PRESETS.they;
 const CAST: OfferedCard = { key: 'whoops', name: 'Whoops!', play: 'cast' };
 const SET: OfferedCard = { key: 'bluffy', name: 'Bluffy', play: 'set' };
 const facts = (change: Partial<RepairFacts> = {}): RepairFacts => ({ postMaxLength: 200, titleMaxLength: 40, askedTitle: false, offered: [CAST, SET], ...change });
@@ -156,11 +159,12 @@ test('the provider schema asks for a title only for a thread start, and offers o
 const base = {
   premise: 'You are posting on your own today. Nobody asked you to.',
   persona,
+  pronouns: PRONOUN_PRESETS.he,
   career: { led: [], offices: [] },
   memory: null,
   notes: [] as string[],
-  thread: { title: 'Pineapple', posts: [{ name: 'Ann', body: 'Pineapple is fine.' }, { name: 'Bob', body: 'It is not.' }] },
-  quoting: { name: 'Bob', body: 'It is not.' },
+  thread: { title: 'Pineapple', posts: [{ name: 'Ann', pronouns: she, body: 'Pineapple is fine.' }, { name: 'Bob', pronouns: they, body: 'It is not.' }] },
+  quoting: { name: 'Bob', pronouns: they, body: 'It is not.' },
   trigger: 'quoted' as const,
   offeredCards: [CAST, SET],
   startThread: false,
@@ -171,7 +175,7 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
   const p = chatterPrompt({
     ...base,
     notes: ['Ann is up to something.'],
-    thread: { title: 'Pineapple', posts: Array.from({ length: 12 }, (_, i) => ({ name: `P${i}`, body: `post number ${i} ${'y'.repeat(60)}` })) },
+    thread: { title: 'Pineapple', posts: Array.from({ length: 12 }, (_, i) => ({ name: `P${i}`, pronouns: she, body: `post number ${i} ${'y'.repeat(60)}` })) },
   });
   assert.ok(p.system.includes(persona.persona));
   assert.ok(p.system.includes(base.premise));
@@ -182,7 +186,13 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
   assert.ok(p.message.includes('P11') && p.message.includes('P4') && !p.message.includes('P3:') && !p.message.includes('P0'), 'the newest eight');
   assert.ok(!p.message.includes('y'.repeat(30)), 'each post cut to 20 characters');
   assert.ok(p.system.includes('replied to or quoted'), 'the reason');
-  assert.ok(p.message.includes('You are replying to Bob'), 'the post it replies to');
+  assert.ok(p.message.includes('You are replying to Bob (they/them)'), 'the post it replies to, with its pronouns');
+});
+
+test('the prompt tells the persona its own pronouns after its persona, and tags each thread post and the quoted post with its author\'s', () => {
+  const p = chatterPrompt({ ...base, names: (id) => (id === 'x' ? 'Cy (she/her)' : id) });
+  assert.ok(p.system.includes(`${persona.persona}\n\nYour pronouns are he/him (he, him, his, his, himself).`), 'the self line follows the persona');
+  assert.ok(p.message.includes('Ann (she/her): Pineapple is fine.') && p.message.includes('Bob (they/them): It is not.'), 'the thread posts');
 });
 
 test('the prompt says no card is on offer when none is, and asks for a title only for a thread start', () => {
@@ -197,7 +207,8 @@ test('the prompt says no card is on offer when none is, and asks for a title onl
 test('the oldVoice completion is one document that ends where the persona\'s words begin, and stops at the line end', () => {
   const c = chatterCompletion({ name: 'Old Timer', thread: base.thread, limits: base.limits });
   assert.ok(c.prompt.endsWith('Old Timer:'));
-  assert.ok(c.prompt.includes('Ann: Pineapple is fine.'));
+  assert.ok(c.prompt.includes('Ann: Pineapple is fine.'), 'the frame carries no pronoun tag');
+  assert.ok(!/\(she\/her\)|\(they\/them\)/.test(c.prompt));
   assert.ok(c.stop.includes('\n'));
 });
 
@@ -220,7 +231,7 @@ test('the schema carries card.config.<key> only for an offered card with options
 
 test('the prompt puts a card\'s options on the line after it, and names where they go', () => {
   const { system } = chatterPrompt({
-    premise: 'p', persona, career: { led: [], offices: [] } as any, memory: null, notes: [], thread: null, quoting: { name: 'Ann', body: 'Hello.' },
+    premise: 'p', persona, pronouns: she, career: { led: [], offices: [] } as any, memory: null, notes: [], thread: null, quoting: { name: 'Ann', pronouns: she, body: 'Hello.' },
     trigger: 'named', offeredCards: [INKED, PLAIN], startThread: false, limits: { threadPosts: 3, excerptChars: 100, postMaxLength: 200, titleMaxLength: 40 },
   });
   const lines = system.split('\n');

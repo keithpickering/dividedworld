@@ -18,24 +18,30 @@
  * A settlement's row says the player's characters' lines; its wallet is the account's, every
  * character's lines together, and the summary says so beside one character's reasons.
  */
+import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
+import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance } from '../../rules/types.ts';
-import type { Act, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
+import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
+import { upperFirst } from '../copy-words.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'played' | 'onMine' | 'saved'
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
-  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'passed' | 'caught' | 'struck' | 'wardEnded'
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
   | 'ended'
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
-  | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe';
+  | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe'
+  /* Member groups, Task 11: a staff move into a group, how it ended and an appeal's ruling on it. */
+  | 'grouped';
 
 /** One row of the log. */
 export interface LogRow {
@@ -73,6 +79,8 @@ export interface LogData {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Names of the characters whose posts the lines name. */
   readonly names: ReadonlyMap<Id, string>;
+  /** The staff characters among them (a public fact of a character): a staff setter's Trap Card takes nothing. Absent, none is known to be staff. */
+  readonly staff?: ReadonlySet<Id>;
   /** Titles of the threads the lines name (The System's Turn announcements). */
   readonly titles: ReadonlyMap<Id, string>;
   /** The state each play's effect was last saved with, for the saves the log reads (`effectStates`, public). */
@@ -81,7 +89,7 @@ export interface LogData {
 
 export interface Words {
   readonly instance: Instance;
-  readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy'>;
+  readonly ui: Pick<InstanceUi, 'reasonWords' | 'quadrantLabels' | 'cards' | 'copy' | 'packs'>;
   readonly postsPerPage: number;
   /** The economy as the server holds it now (`economyNow`): the numbers a line with none of its own is said with. */
   readonly economy: Readonly<Record<string, number>>;
@@ -164,6 +172,25 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
     case 'board': { const b = id('board'); const name = said ?? (b ? data.titles?.get(b) : undefined); return name ? `the ${name} board` : 'a board'; }
     default: return null;
   }
+}
+
+/**
+ * What a card set face down waits for, in the words after "It waits": "to spring on a quote", "for a Whoops!", "for a Mod Bot's visit". A Move waits for a
+ * quote (and the phrase it needs, where it was set with one); a Gimmick waits for its trigger, and a Trap Card for the card it names. Null for a Bluff,
+ * which waits for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
+ */
+export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase'>, words: Pick<Words, 'instance'>): string | null {
+  if (e.springs === false) return null;
+  const rules = words.instance.cards.find((c) => c.key === e.card);
+  if (!rules) return null;
+  if (playKindOf(rules) === 'cast') return e.phrase ? `to spring on a quote that says “${e.phrase}”` : 'to spring on a quote';
+  const on = rules.trap?.trigger.on as string | undefined;
+  if (on === 'visit') return 'for a Mod Bot\'s visit';
+  if (on === 'cast') {
+    const named = e.catches ? words.instance.cards.find((c) => c.key === e.catches)?.name : undefined;
+    return named ? `for ${withArticle(named)}` : 'for the card it names';
+  }
+  return null;
 }
 
 /** "your post #43" for the post of the character whose line it is, as the Settlement board says it; "Gloomba's post #46" otherwise. */
@@ -259,6 +286,7 @@ function scoredWords(lines: readonly LogLine[], words: Words): string {
 export function logRows(data: LogData, words: Words, cap: number, tab: Id | null): readonly LogRow[] {
   const { instance } = words;
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const inTab = (ids: readonly Id[]) => tab === null || ids.length === 0 || ids.includes(tab);
   const settlementWallet = new Map<number, WalletEvent>();
   for (const e of data.log.wallet) if (e.kind === 'settlement' && e.settlement !== null) settlementWallet.set(e.settlement, e);
@@ -298,8 +326,8 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
       if (t.announced) {
         const act = data.acts.get(t.announced.act);
         const title = act ? data.titles.get(act.thread) : undefined;
-        const where: Segment = act && title ? { text: title, href: act.seq !== null ? threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) : threadHref(act.thread, 1) } : 'The System\'s board';
-        details.push(` Announced ${t.announced.was ? 'with its old class ' : ''}in `, where, '.');
+        const where: Segment = act && title ? { text: title, href: act.seq !== null ? threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) : threadHref(act.thread, 1) } : 'the board';
+        details.push(` Announced ${t.announced.was ? `with ${pronounsOf(t.character).their} old class ` : ''}in `, where, '.');
       } else {
         details.push(' A silent Turn: no one else was told.');
       }
@@ -320,13 +348,64 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The group lines (docs/plans/2026-11-06-member-groups-plan.md, Task 11): a staff member put one of the player's characters in a group, how that ended, and an appeal's ruling on it, in
+ * plain and true words ("The fiction may lie; the log never does"), the role word from the move's office. Each links to the move's Act. The rows are the player's own
+ * (`my_group_moves`), so no line names who else is in a group, and no alert goes with them. A group is named by the instance's own name for it.
+ */
+function groupRows(data: LogData, words: Words): LogRow[] {
+  const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const groups = [...words.instance.groups.ladder, ...words.instance.groups.conferred];
+  const rows: LogRow[] = [];
+  for (const g of data.log.groupMoves) {
+    const name = nameOf(g.character);
+    const group = groups.find((x) => x.key === g.group)?.name ?? g.group;
+    const to = g.seq === null ? undefined : threadHref(g.thread, pageOf(g.seq, words.postsPerPage), g.seq);
+    const linked = (text: string): Segment => (to === undefined ? text : { text, href: to });
+    const role = officeRole(words.ui.copy, g.office ?? undefined);
+    const until = g.landedUntil === null ? '' : ` until ${utcDay(g.landedUntil)}`;
+    const check = g.checkAt === null ? '' : ` It stays if ${name} meets the demand by ${utcDay(g.checkAt)}.`;
+    rows.push({
+      key: `grouped:${g.move}`, kind: 'grouped', at: g.at, what: `${name} was put in ${group}`,
+      details: [`${role} `, linked(`put ${name} in ${group}`), g.boardName === null ? `${until}.${check}` : ` and barred it from posting on ${g.boardName}${until}.${check}`],
+      aura: 0, wallet: null, characters: [g.character],
+    });
+    if (g.endedWhy !== null && g.endedAt !== null) {
+      const why = g.endedWhy === 'met' ? (g.demand === 'apologyAccepted' ? 'an apology was accepted' : 'its demand was met')
+        : g.endedWhy === 'expired' ? 'it expired'
+        : g.endedWhy === 'reversed' ? (g.endedBy === 'admin' ? 'an admin reversed it' : 'it was reversed')
+        : g.endedWhy === 'unmet' ? 'the demand wasn\'t met by its check'
+        : g.endedWhy === 'overturned' ? 'overturned on appeal'
+        : g.endedWhy === 'superseded' ? 'it ended at the handover' : 'it was used up at the handover';
+      rows.push({
+        key: `grouped:${g.move}:left`, kind: 'grouped', at: g.endedAt, what: `${name} left ${group}`,
+        details: [linked(`${name} left ${group}`), `: ${why}.`], aura: 0, wallet: null, characters: [g.character],
+      });
+    }
+    if (g.ruling !== null && g.ruledAt !== null) {
+      const hearer = role;
+      const ruled = g.ruledUntil === null ? Number.NaN : Date.parse(g.ruledUntil);
+      const result = g.ruling === 'upheld' ? 'nothing changed'
+        : g.ruling === 'overturned' ? 'it ended'
+        : Number.isNaN(ruled) ? null
+        : ruled <= Date.parse(g.ruledAt) ? 'it ended at once' : `it now ends ${utcDay(g.ruledUntil!)}`;
+      rows.push({
+        key: `grouped:${g.move}:ruling`, kind: 'grouped', at: g.ruledAt, what: `Appeal ${g.ruling}`,
+        details: [`${hearer} ${g.ruling} `, linked(`${name}'s ${group}`), ` on appeal${result === null ? '' : `: ${result}`}.`], aura: 0, wallet: null, characters: [g.character],
+      });
+    }
+  }
+  return rows;
+}
 
 /**
  * The Mod Bots' lines (the design, section 9): the warn points filed against the player's characters, the bans laid on them, and the reports and appeals they made, each in
@@ -337,6 +416,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 function modRows(data: LogData, words: Words): LogRow[] {
   const now = Date.now();
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
   const rows: LogRow[] = [];
 
@@ -357,7 +437,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
     const over = Date.parse(b.until) <= now;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
-      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so it was banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. It can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
+      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
       aura: 0, wallet: null, characters: [b.character],
       ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
     });
@@ -387,7 +467,10 @@ function modRows(data: LogData, words: Words): LogRow[] {
   for (const a of data.log.appeals) {
     const price = paid('appeal', a.appeal);
     const gone = back(a.appeal);
-    const what = a.punishmentKind === 'ban' ? 'the ban' : 'the warn points';
+    /* A group move is named by its group, and linked to the move's own line in the announcements, where the log holds that move; else it is "a group move". */
+    const moved = a.punishmentKind === 'move' ? data.log.groupMoves.find((g) => g.move === a.punishment) : undefined;
+    const movedGroup = moved ? ([...words.instance.groups.ladder, ...words.instance.groups.conferred].find((x) => x.key === moved.group)?.name ?? moved.group) : null;
+    const what = a.punishmentKind === 'ban' ? 'the ban' : a.punishmentKind === 'move' ? (movedGroup === null ? 'a group move' : `the move into ${movedGroup}`) : 'the warn points';
     const came = price === null ? '' : `, and the ${plain(price)} Aura came back`;
     const ruling = a.verdict === null
       ? (a.refund !== null ? ' No one could hear it, so your Aura came back and you can appeal again.' : ' It has not been ruled on yet. If it cannot be, your Aura comes back by itself.')
@@ -397,7 +480,9 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : ` ${a.hearer ?? 'The hearer'} increased it${a.pointsDelta ? `: ${plural(a.pointsDelta, 'more point', 'more points')} landed` : ''}.`;
     rows.push({
       key: `appeal:${a.appeal}`, kind: 'appeal', at: a.at, what: 'You made an appeal',
-      details: [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
+      details: a.punishmentKind === 'move'
+        ? [`${nameOf(a.character)} appealed `, moved?.seq == null ? what : { text: what, href: threadHref(moved.thread, pageOf(moved.seq, words.postsPerPage), moved.seq) }, `${forPrice(price)}. The plea is public.${ruling}`]
+        : [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
       aura: -(price ?? 0) + gone, wallet: null, characters: [a.character],
     });
   }
@@ -445,12 +530,46 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     used.add(i);
     return data.log.wallet[i];
   };
+  /* What a purchase at the machine says after its price: the Boss's markup or markdown, when the slot was moved when it was bought (recorded with the purchase). */
+  const bossSaid = (repriced: boolean | undefined) => (repriced ? ' The Boss had repriced it.' : '');
+  /* A pack is one line: its pulled rows (one per card) with the pack row that holds its kind, its price and the cards in pull order. */
+  const packsDone = new Set<Id>();
   data.log.cards.forEach((e, i) => {
     if (e.kind === 'bought') {
       const spent = take((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
       rows.push({
-        key: `bought:${i}`, kind: 'bought', at: e.at, what: `You bought ${cardName(e.card)}`, details: [`From the ${ui.copy.shopName}, for ${plain(e.price)}.`],
+        key: `bought:${i}`, kind: 'bought', at: e.at, what: `You bought ${cardName(e.card)}`, details: [`From the ${ui.copy.shopName}, for ${plain(e.price)}.${bossSaid(e.repriced)}`],
         aura: -e.price, wallet: spent?.balanceAfter ?? null, characters: [],
+      });
+      return;
+    }
+    /* A card a Trap Card of the player's took: the card went to the player's hand, and cost nothing (the spring's line says what sprang). */
+    if (e.kind === 'caught') {
+      const spring = e.act ? data.acts.get(e.act) : undefined;
+      const took = typeof spring?.payload.caught === 'string' ? data.acts.get(spring.payload.caught) : undefined;
+      const trapped = spring?.targetActId ? data.acts.get(spring.targetActId) : undefined;
+      const setter = nameOf(spring?.character, 'your character');
+      rows.push({
+        key: `caught:${e.act}`, kind: 'caught', at: e.at, what: `You caught ${cardName(e.card)}`,
+        details: spring
+          ? [`${setter}'s ${cardName(spring.payload.card)} caught ${nameOf(took?.character, 'someone')}'s ${cardName(e.card)} on `, (trapped && actLink(trapped, data, words, spring.character ?? undefined)) ?? 'a post', `; the ${cardName(e.card)} went to ${setter}'s hand.`]
+          : [`A card set face down caught a ${cardName(e.card)}; it went to your hand.`],
+        aura: 0, wallet: null, characters: spring?.character ? [spring.character] : [],
+      });
+      return;
+    }
+    if (e.kind === 'pulled') {
+      if (!e.pack || packsDone.has(e.pack)) return;
+      packsDone.add(e.pack);
+      const bought = data.log.packs.find((p) => p.pack === e.pack);
+      /* Pull order is the pack row's; the pulled rows only say which pack, since they are read at one instant in no order of their own. */
+      const names = (bought?.contents ?? data.log.cards.filter((c) => c.kind === 'pulled' && c.pack === e.pack).map((c) => c.card)).map(cardName);
+      const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names.join('');
+      const spent = bought ? take((w) => w.kind === 'purchase' && at(w.at) === at(bought.at) && w.change === -bought.price) : undefined;
+      rows.push({
+        key: `pack:${e.pack}`, kind: 'pack', at: e.at, what: `You bought ${withArticle(ui.packs[bought?.kind ?? '']?.name ?? 'pack')}`,
+        details: [`${list}. From the ${ui.copy.shopName}${bought ? `, for ${plain(bought.price)}` : ''}.${bossSaid(bought?.repriced)}`],
+        aura: bought ? -bought.price : 0, wallet: spent?.balanceAfter ?? null, characters: [],
       });
       return;
     }
@@ -464,10 +583,12 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const paid = take((w) => w.kind === 'play' && w.ref === e.act);
     /* A card set face down: its card is the setter's own row, said only to them. */
     if (play?.kind === 'set') {
+      const waits = setWaits(e, words);
       rows.push({
         key: `set:${e.act}`, kind: 'set', at: e.at, what: `You set ${cardName(e.card)} face down`,
         /* A Bluff carries no trap (my_card_ledger's `springs`); a row with no `springs` keeps the trap's words. */
-        details: [`${cardName(e.card)} set face down on `, link ?? 'your post', e.springs === false ? '. It never springs, and ends by itself.' : '. It springs once, or ends by itself.'],
+        details: [`${cardName(e.card)} set face down on `, link ?? 'your post',
+          e.springs === false ? '. It never springs, and ends by itself.' : waits ? `. It waits ${waits}, and ends by itself if none comes.` : '. It springs once, or ends by itself.'],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
       });
       return;
@@ -476,9 +597,14 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const catchOf = data.log.caught.find((c) => c.play === e.act);
     if (catchOf) {
       const cost = catchOf.boughtPrice === null ? plain(e.price) : `${plain(catchOf.boughtPrice)} and ${plain(e.price)}`;
+      /* Where the card went, only for a spring that says it caught (`did`, from the face-down Moves on): a play caught before had its card spent, and keeps its old words.
+         The setter is the spring's character, public with it, never an account; a staff setter takes nothing. */
+      const spring = data.acts.get(catchOf.spring);
+      const setter = spring?.payload.did === 'caught' ? spring.character : null;
+      const fate = setter ? (data.staff?.has(setter) ? ', and the card is spent' : `, and went to ${nameOf(setter, 'the setter')}`) : '';
       rows.push({
         key: `caught:${e.act}`, kind: 'caught', at: e.at, what: `Your ${cardName(e.card)} was caught`,
-        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}; it cost ${cost}, and nothing came back.`],
+        details: [`Your ${cardName(e.card)} on `, link ?? 'a post', ` was caught by ${withArticle(cardName(catchOf.trap))}${fate}; it cost ${cost}, and nothing came back${setter ? ' to you' : ''}.`],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
       });
       return;
@@ -511,6 +637,18 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const spring = typeof play?.payload.spring === 'string' ? data.acts.get(play.payload.spring) : undefined;
     if (spring) {
       const trapped = spring.targetActId ? data.acts.get(spring.targetActId) : undefined;
+      const landedOn = (play ? placeOf(play, data) : null) ?? (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post';
+      /* A face-down card sprang on a quote: the setter's character is the spring's, public with it; the line names no account. */
+      if (spring.payload.did === 'landed') {
+        const by = typeof spring.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
+        rows.push({
+          key: `struck:${p.play}`, kind: 'struck', at: p.at, what: 'A face-down card struck your post',
+          details: [`${nameOf(spring.character, 'Someone')}'s face-down ${cardName(spring.payload.card)} on `, (trapped && actLink(trapped, data, words)) ?? 'a post', ' sprang when ',
+            (by && actLink(by, data, words, post?.character ?? undefined)) ?? 'a post', ' quoted it, and landed on ', landedOn, '.'],
+          aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+        });
+        continue;
+      }
       rows.push({
         key: `struck:${p.play}`, kind: 'struck', at: p.at, what: 'A trap struck your post',
         details: [`${withArticle(cardName(spring.payload.card)).replace(/^a/u, 'A')} on `, (trapped && actLink(trapped, data, words)) ?? 'a post',
@@ -594,25 +732,14 @@ function endedRows(data: LogData, words: Words): LogRow[] {
 const TRIGGERED: Readonly<Record<string, string>> = { cast: 'a cast', reaction: 'a reaction', reply: 'a reply', quote: 'a quote', visit: 'a visit' };
 
 /**
- * The end of each card the player set face down: a spring (what it caught, what it laid, what it paid), or its time with nothing
- * springing it. A payout's line says what reached the wallet, from the player's own wallet event for the spring.
+ * The end of each card the player set face down: a spring (what it landed on, what it caught, or the visit it ended), or its time with nothing
+ * springing it. A spring written before the face-down Moves has an `outcome` and no `did`, and keeps its old words: a payout's line says what
+ * reached the wallet, from the player's own wallet event for the spring; a strike says what it laid.
  */
 function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) => boolean) => WalletEvent | undefined): LogRow[] {
   const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
   const nameOf = (id: Id | null | undefined) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'someone' : 'someone');
   const rows: LogRow[] = [];
-  /* A reply trap a reply passed by without springing it: its moment is spent, and it ends by itself at its time. */
-  for (const e of data.log.setPasses) {
-    if (words.instance.cards.find((c) => c.key === e.card)?.trap?.trigger.on !== 'reply') continue;
-    if (Date.parse(e.passedAt) >= Date.parse(e.endsAt)) continue;
-    const post = data.acts.get(e.post);
-    const own = post?.character ?? undefined;
-    rows.push({
-      key: `passed:${e.play}`, kind: 'passed', at: e.passedAt, what: `A reply passed ${cardName(e.card)} by`,
-      details: [`A reply passed ${cardName(e.card)} by on `, (post && actLink(post, data, words, own)) ?? 'your post', ` without springing it; it ends by itself ${utcDay(e.endsAt)}.`],
-      aura: 0, wallet: null, characters: own ? [own] : [],
-    });
-  }
   for (const e of data.log.setEnds) {
     const post = data.acts.get(e.post);
     const own = post?.character ?? undefined;
@@ -621,6 +748,35 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
     const spring = e.spring ? data.acts.get(e.spring) : undefined;
     if (!e.spring) {
       rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `${cardName(e.card)} ended`, details: [`${cardName(e.card)} on `, on, ' ended; nothing sprang it.'], aura: 0, wallet: null, characters });
+      continue;
+    }
+    const did = spring?.payload.did;
+    if (did === 'landed' || did === 'caught' || did === 'ended') {
+      const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
+      if (did === 'ended') {
+        rows.push({ key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`, details: [`${cardName(e.card)} on `, on, ' sprang when a Mod Bot\'s visit began, and ended the visit.'], aura: 0, wallet: null, characters });
+        continue;
+      }
+      if (did === 'caught') {
+        const took = typeof spring?.payload.caught === 'string' ? data.acts.get(spring.payload.caught) : undefined;
+        const card = cardName(took?.payload.card);
+        rows.push({
+          key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(took?.character)} cast ${card} on it. It caught the ${card}, which is in your hand now.`],
+          aura: 0, wallet: null, characters,
+        });
+        continue;
+      }
+      /* A Move lands at its card's first reach: on the quoting post, its character, its thread or its board. */
+      const reach = reachesOf(words.instance.cards.find((c) => c.key === e.card) ?? {})[0] ?? 'post';
+      const quoter = by?.character ? nameOf(by.character) : null;
+      const landed: Segment[] = reach === 'post' ? [(by && actLink(by, data, words)) ?? 'the post that quoted it']
+        : reach === 'character' ? [quoter ?? 'the quoting post\'s character'] : [reach === 'thread' ? 'the thread it quoted in' : 'the board it quoted on'];
+      rows.push({
+        key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+        details: [`${cardName(e.card)} on `, on, ` sprang when ${quoter ?? 'a post'} quoted it, and landed on `, ...landed, '.'],
+        aura: 0, wallet: null, characters,
+      });
       continue;
     }
     const outcome = (spring?.payload.outcome as { do?: string } | undefined)?.do;
@@ -634,7 +790,7 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       rows.push({
         key: `sprung:${e.play}`, kind: paid ? 'payout' : 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
         details: bySystem
-          ? [`Your ${cardName(e.card)} caught ${nameOf(caught.character)}'s ${stop(cardName(caught.payload.card))} The System paid you ${plain(paid.change)} Aura.`]
+          ? [`Your ${cardName(e.card)} caught ${nameOf(caught.character)}'s ${stop(cardName(caught.payload.card))} ${upperFirst(words.ui.copy.gameWord)} paid you ${plain(paid.change)} Aura.`]
           : [`${cardName(e.card)} caught ${nameOf(caught.character)}'s ${cardName(caught.payload.card)} on `, on, paid ? `; ${signed(paid.change)} to your wallet.` : '.'],
         aura: paid?.change ?? 0, wallet: paid?.balanceAfter ?? null, characters,
       });
@@ -688,8 +844,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
-  for (const e of log.setPasses) ids.add(e.post);
-  for (const c of log.caught) { ids.add(c.play); ids.add(c.post); }
+  for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }
   for (const e of log.ended) ids.add(e.play);
   for (const w of log.wallet) if (w.kind === 'bribe' && w.ref) ids.add(w.ref);
   return [...ids];

@@ -23,6 +23,7 @@
  * does not show again after either way out.
  */
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react';
+import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
@@ -32,10 +33,13 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { isLeaving } from '../glass/Held.tsx';
 import { pageEscape, plainClick } from '../glass/keys.ts';
 import { PageHead } from '../glass/PageHead.tsx';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
+import type { LogDoc } from '../glass-docs.ts';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link, useNavigate } from '../router.tsx';
+import { useNavigate } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, utcDay, utcWhen, type LogData, type Words } from './lines.ts';
 import { tabsOf, type LogOpening } from './Log.tsx';
@@ -139,9 +143,9 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
                 <span className="kb-settled-turn-now kb-glass-display">{className(turn.classNow)}</span>
               </div>
               <p className="kb-settled-card-words">
-                {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement it scores as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
+                {current?.name}'s Turn took effect. From the {utcDay(s.endsAt)} settlement {pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).they} score{pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).s} as {/^[aeiou]/iu.test(className(turn.classNow)) ? 'an' : 'a'} {className(turn.classNow)}.{' '}
                 {turn.announced
-                  ? <>The System announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <Link to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</Link> : 'its board'}.</>
+                  ? <>{pronounWords(current?.pronouns ?? ENGINE_DEFAULT_PRONOUNS).Their} own Promo announced it{turn.announced.was ? ', with the old class,' : ''} in {turnAct && turnTitle ? <GlassLink to={turnAct.seq !== null ? threadHref(turnAct.thread, pageOf(turnAct.seq, settings.postsPerPage), turnAct.seq) : threadHref(turnAct.thread, 1)}>{turnTitle}</GlassLink> : 'the board'}.</>
                   : 'It was a silent Turn: no one else was told.'}
               </p>
             </section>
@@ -153,12 +157,16 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
   );
 }
 
+/** A document for a screen that is signed out and so draws none of it. */
+const EMPTY_DOC: LogDoc = { estimate: null, page: { log: { settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], before: null }, acts: [], states: {}, people: [], threads: [], boards: [], standings: {}, turns: [], season: null } };
+
 /** The summary at /log/settlement: the newest settlement of the player's, the HUD's character's tab first; Esc goes back. */
-export function SettlementScreen() {
+export function SettlementScreen({ doc }: { readonly doc: ScreenDoc<LogDoc> }) {
+  const signedOut = isSignedOutDoc(doc);
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session, hudCharacter } = usePlayer();
-  const { state } = useLog(api, signedIn, session.account);
+  const { session, hudCharacter, characters } = usePlayer();
+  const boot = useBoot();
+  const { data } = useLog(api, signedOut ? EMPTY_DOC : doc, characters, boot?.nextSettlementAt ?? null);
   const [picked, setPicked] = useState<Id | undefined>(undefined);
   const back = useBackToBoard();
   const root = useRef<HTMLDivElement>(null);
@@ -174,27 +182,25 @@ export function SettlementScreen() {
     return () => document.removeEventListener('keydown', onKey);
   }, [back]);
 
-  const newest = state.status === 'ready' ? state.data.log.settlements[0] : undefined;
+  /* Seen once the summary is drawn: a write on landing, never part of the load, so a hover on the Log tab marks nothing. */
+  const newest = signedOut ? undefined : data.log.settlements[0];
+  const newestEnds = newest?.endsAt;
   useEffect(() => {
-    if (newest && session.account) void api.seeSettlement(newest.endsAt).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
-  }, [api, newest, session.account]);
+    if (newestEnds && session.account) void api.seeSettlement(newestEnds).catch(() => { /* unmarked, it shows again on a later load: no harm */ });
+  }, [api, newestEnds, session.account]);
 
   /*
    * The page owns its ways out, so every state draws Back to the board: with no menu bar here, and no Esc on a touch screen, a
    * state without it would be a dead end (#90). Open my log joins it once there is a settlement to open.
    */
   const tab = picked ?? hudCharacter?.id ?? null;
-  const ready = state.status === 'ready' && newest ? state.data : undefined;
+  const ready = newest ? data : undefined;
   const opening: LogOpening | undefined = ready && newest ? { open: newest.id, character: shownTab(ready, tab)?.id } : undefined;
-  const content = signedIn === false
+  const content = signedOut
     ? <CalmRegion><SignInPrompt /></CalmRegion>
-    : signedIn === null || state.status === 'loading'
-      ? <div className="kb-settled-wait" aria-busy="true" />
-      : state.status === 'failed'
-        ? <CalmRegion as="p">The settlement could not be loaded. Reload the page to try again.</CalmRegion>
-        : ready
-          ? <Summary data={ready} tab={tab} onTab={setPicked} />
-          : <CalmRegion as="p">Nothing has settled for you yet.</CalmRegion>;
+    : ready
+      ? <Summary data={ready} tab={tab} onTab={setPicked} />
+      : <CalmRegion as="p">Nothing has settled for you yet.</CalmRegion>;
   return (
     <div ref={root} className="kb-settled">
       {content}

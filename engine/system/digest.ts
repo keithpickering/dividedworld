@@ -11,6 +11,7 @@
  *
  * Pure: it reads its arguments and nothing else.
  */
+import { pronounsOr, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Memory } from './memory.ts';
 
 export interface DigestThread {
@@ -58,6 +59,8 @@ export interface DigestCharacter {
   readonly id: string;
   readonly name: string;
   readonly staff: boolean;
+  /** Its pronouns, resolved by the caller (a character with no profile row reads the persona's, else the instance's, else the it-set); the renderer writes it `Name (she/her)`. */
+  readonly pronouns: PronounSet;
 }
 
 /**
@@ -85,6 +88,14 @@ export interface Digest {
    * characters (dropping `staff` ones if the Boss should hold no opinion of staff).
    */
   readonly characters: readonly DigestCharacter[];
+}
+
+/** The digest as `system_digest` returns it: a character with no profile row reads `pronouns: null`. */
+export type RawDigest = Omit<Digest, 'characters'> & { readonly characters: readonly (Omit<DigestCharacter, 'pronouns'> & { readonly pronouns: PronounSet | null })[] };
+
+/** The digest with each character's pronouns settled: its own, else `fallback` (the instance's default, else the engine's it-set). */
+export function withPronouns(raw: RawDigest, fallback: PronounSet): Digest {
+  return { ...raw, characters: raw.characters.map((c) => ({ ...c, pronouns: pronounsOr(c.pronouns, fallback) })) };
 }
 
 /**
@@ -157,7 +168,7 @@ function memoryText(memory: Memory | null, names: (id: string) => string): strin
  */
 export function renderDigest(digest: Digest, memory: Memory | null, feed: readonly string[]): string {
   const { threads: T, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
-  const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E).map((c) => [c.id, clip(line(c.name), CLIPS.name)]));
+  const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E).map((c) => [c.id, taggedName(clip(line(c.name), CLIPS.name), c.pronouns)]));
   const name = (id: string): string => known.get(id) ?? 'someone';
   const out: string[] = [];
   const section = (title: string, rows: readonly string[], none: string): void => {
@@ -201,7 +212,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   section(
     'Top posts',
-    digest.excerpts.slice(0, E).map((e) => `${name(e.character)} (${e.reactions} reactions): ${clip(line(e.text), C)}`),
+    digest.excerpts.slice(0, E).map((e) => `${name(e.character)}, ${e.reactions} reactions: ${clip(line(e.text), C)}`),
     'No post drew attention.',
   );
   section('Outside', feed.slice(0, F).map((f) => `- ${clip(line(f), CLIPS.feedItem)}`), 'Nothing from outside.');

@@ -68,6 +68,7 @@ export function playOf(act: Act): CardPlay | null {
     post: act.targetActId ?? '',
     ...(beyond ? { reach: beyond, on: on as Id } : {}),
     ...(typeof act.payload.caught === 'string' ? { caught: act.payload.caught } : {}),
+    ...(typeof act.payload.spring === 'string' ? { spring: act.payload.spring } : {}),
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
   };
 }

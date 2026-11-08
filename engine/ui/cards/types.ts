@@ -12,6 +12,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { Settings } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { Act, Answer, EffectState, Id } from '../data/api.ts';
+import type { CardFace } from './faces.ts';
 
 /**
  * A card played on a post, read from its card Act: the Act itself is the record, this is its payload
@@ -40,6 +41,8 @@ export interface CardPlay {
   readonly faceDown?: true;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
+  /** A play a back laid when it sprang (a Move landing on a quote), by the spring that laid it: the Lens says who set it and what set it off. */
+  readonly spring?: Id;
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
@@ -181,6 +184,8 @@ export interface ConfigFormProps {
   readonly post: Act;
   /** Unique on the page, to hang the form's labels on. */
   readonly id: string;
+  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a Gimmick that waits for a card). */
+  readonly castable?: readonly CardFace[];
 }
 
 /**
@@ -214,9 +219,10 @@ export interface CardUi {
   readonly Effect?: ComponentType<EffectProps>;
   /**
    * The ink of a play's tag where the card chooses it (Whoops!'s top layer takes the ink it splatted),
-   * given the play and all of this card's plays on its post in play order: any CSS color, drawn as the
-   * tag's border and glow on the same glass, the text unchanged. A play it gives none keeps the tag its
-   * alignment draws.
+   * given the play and all of this card's plays on its post in play order: a `#rrggbb` hex or an opaque
+   * `rgb()`, drawn as the tag's border and glow on the same glass, the text unchanged, and lifted toward
+   * white where it is too dark to read there (`glassInk`, ink.ts). A play it gives none, or a color the
+   * engine cannot read, keeps the tag its alignment draws.
    */
   readonly tag?: (play: CardPlay, plays: readonly CardPlay[]) => string | undefined;
   /** The card's own settings in the play form, when it has any (Whoops!'s ink). A card with none gives none. */
@@ -241,7 +247,7 @@ export interface CardUi {
   readonly hint?: string;
   /**
    * The status a card with no live view of its own shows as the Lens's heading (`CardView.state`), in place of `summary`: a short
-   * status of at most 6 words, never a sentence ("Sparkling every post of theirs"). A card whose status depends on how many of
+   * status of at most 6 words, never a sentence ("Sparkling every post by that character"). A card whose status depends on how many of
    * its plays are on the post (Feelin' Fab's "2 of 3 stacked") gives a function of those plays. A card face down has the engine's
    * own, the same for every card that can be face down ("Face down on this post"), so one card's cannot be told from another's.
    * `instanceUiProblems` holds every card to having one, and to these words (lens-words.ts): the heading falls back to `summary`,

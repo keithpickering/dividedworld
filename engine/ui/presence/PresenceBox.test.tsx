@@ -56,6 +56,17 @@ describe('the presence box', () => {
     expect(box).not.toHaveTextContent('other');
   });
 
+  test('its icon cell is aria-hidden, and the heading spans both columns', async () => {
+    const { seeded, show } = crowd(['Pipewrench']);
+    show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+    const box = await screen.findByRole('region', { name: HEADING });
+    const cell = box.querySelector('.kb-presence-icon') as HTMLElement;
+    expect(cell).not.toBeNull();
+    expect(cell).toHaveAttribute('aria-hidden', 'true');
+    expect(cell.querySelector('svg')).not.toBeNull();
+    expect(within(box).getByRole('heading', { name: HEADING }).closest('td')).toHaveAttribute('colspan', '2');
+  });
+
   test('past the cap it says how many others; one past says "1 other"', async () => {
     const many = crowd(['A1', 'B2', 'C3', 'D4'], { presenceNames: 2 });
     many.show(<PresenceBox place={{ kind: 'thread', thread: many.seeded.thread }} heading={HEADING} />);
@@ -370,6 +381,16 @@ describe('a snapshot from the page\'s document', () => {
     vi.spyOn(fake, 'here').mockImplementation(() => new Promise(() => {}));
     renderIn(fake, <PresenceBox place={place(seeded.thread)} heading={HEADING} snapshot={snapshot} />, { boot });
     expect(screen.getByRole('region', { name: HEADING })).toHaveTextContent(/A1, B2 and 3 others$/u);
+  });
+
+  test('a staff name\'s chip is the staff rung\'s name from the settings, not the group key the name carries', async () => {
+    const { seeded, fake } = crowd(['Pipewrench']);
+    fake.seed.staffPost(fake.seed.staff('bot-a', 'Hall Monitor', 'mod'), seeded.thread, 'Order.');
+    const groups = [{ key: 'members', name: 'Members', color: '#7a7a7a', stripe: false, staff: false }, { key: 'elite', name: 'Elite Cores', color: '#d4a017', stripe: false, staff: true }];
+    renderIn(fake, <PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />, { settings: { groups } });
+    const box = await screen.findByRole('region', { name: HEADING });
+    await within(box).findByRole('link', { name: 'Hall Monitor' });
+    expect(box).toHaveTextContent('Hall Monitor, Elite Cores');
   });
 
   test('signed out, a snapshot shows nothing', () => {

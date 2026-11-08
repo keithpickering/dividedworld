@@ -3,11 +3,13 @@
  * the cap and expiry said plainly before the cap is hit, a row for each invite (which one it is, its state and when, and Reissue while
  * it is unused), then Make an invite (a link to copy). A code is shown once, when it is made or reissued; the server never shows it
  * again, so a row never carries it. An admin holds any number, and the row says so instead of a cap. Settings shows it only to a
- * signed-in account.
+ * signed-in account. The invites are the page's document (the glass-load plan, Task 11), read again through the router after each write.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LOST_ANSWER } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
+import { useIsAdmin } from '../mini.tsx';
+import { useRouterInternals } from '../router.tsx';
 import type { MyInvite } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { spanWords } from './words.ts';
@@ -39,32 +41,22 @@ function whenWords(i: MyInvite): string {
   return `${i.expired ? 'since' : 'expires'} ${day(at)}`;
 }
 
-export function Invites() {
+export function Invites({ invites: rows }: { readonly invites: readonly MyInvite[] }) {
   const { api, settings } = useKayfa();
-  const [rows, setRows] = useState<readonly MyInvite[] | null>(null);
-  const [admin, setAdmin] = useState(false);
+  const { retry: reload } = useRouterInternals();
+  const admin = useIsAdmin(api, true);
   const [shown, setShown] = useState<Shown | null>(null);
-  const [busy, setBusy] = useState(false);
+  /* The write out: 'make' for a new invite, or the invite's id for its Reissue. Only that control spins; another write waits behind it. */
+  const [pending, setPending] = useState<'make' | number | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const justShown = useRef(false);
   const linkField = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    const [list, isAdmin] = await Promise.all([api.invites(), api.isAdmin()]);
-    setRows(list);
-    setAdmin(isAdmin);
-  }, [api]);
   /* A new link is where the player's attention goes next: it holds the code that will not come again. */
   useEffect(() => {
     if (shown && justShown.current) { justShown.current = false; linkField.current?.focus(); linkField.current?.select(); }
   }, [shown]);
-  useEffect(() => {
-    void load().catch(() => setRefusal('Your invites could not be read right now. Reload the page to try again.'));
-  }, [load]);
-
-  if (rows === null) return <div className="kb-invites" aria-busy="true">{refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}</div>;
-
   /* A row is numbered by the player's own count, oldest first: the id is one sequence for every account, so it would show the gaps other players' invites leave. */
   const ordinal = new Map([...rows].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id - b.id).map((i, n) => [i.id, n + 1]));
   const cap = settings.invitesPerPlayer;
@@ -72,9 +64,9 @@ export function Invites() {
   const atCap = !admin && open >= cap;
   const lifetime = spanWords(settings.inviteLifetime);
 
-  const run = async (make: () => ReturnType<typeof api.createInvite>, reissued: boolean) => {
-    if (busy) return;
-    setBusy(true);
+  const run = async (key: 'make' | number, make: () => ReturnType<typeof api.createInvite>, reissued: boolean) => {
+    if (pending !== null) return;
+    setPending(key);
     setRefusal(null);
     setNote('');
     try {
@@ -90,9 +82,10 @@ export function Invites() {
     } catch {
       setRefusal(LOST_ANSWER);
     } finally {
-      setBusy(false);
+      setPending(null);
     }
-    await load().catch(() => undefined);
+    /* The list is read again, in place, through the page's own load. */
+    reload();
   };
 
   const copy = async () => {
@@ -131,7 +124,7 @@ export function Invites() {
                 <span title={whenIso(i) ? new Date(whenIso(i)!).toLocaleString('en-US') : undefined}>{whenWords(i)}</span>
               </span>
               <span className="kb-invite-actions">
-                {!i.used && <GlassButton size="s" disabled={busy} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(() => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
+                {!i.used && <GlassButton size="s" busy={pending === i.id} disabled={pending !== null && pending !== i.id} aria-label={`Reissue invite ${ordinal.get(i.id)}`} onClick={() => void run(i.id, () => api.reissueInvite(i.id), true)}>Reissue</GlassButton>}
               </span>
             </li>
           ))}
@@ -139,7 +132,7 @@ export function Invites() {
       )}
 
       <ButtonRow>
-        <GlassButton kind="primary" disabled={busy || atCap} aria-describedby="kb-invite-count" onClick={() => void run(() => api.createInvite(), false)}>Make an invite</GlassButton>
+        <GlassButton kind="primary" busy={pending === 'make'} disabled={atCap || (pending !== null && pending !== 'make')} aria-describedby="kb-invite-count" onClick={() => void run('make', () => api.createInvite(), false)}>Make an invite</GlassButton>
       </ButtonRow>
       {refusal && <p role="alert" className="kb-acct-refusal">{refusal}</p>}
       <p role="status" className="kb-acct-note">{note}</p>

@@ -4,19 +4,24 @@
  * kit) and Who (a play's row: the #97 panel's content, reached for every play of the kind). It never dims or blocks the
  * page, and closes by Esc, its ×, its mark, another post's Lens or leaving the page, giving focus back to the mark.
  */
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useEffect } from 'react';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
-import { fadeOf, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
+import { createPlays } from './plays.ts';
+import { createTallies } from '../thread/tallies.ts';
+import { createMine } from '../reactions/mine.ts';
+import { fadeOf, Lens, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
 import lensCss from './lens.css?raw';
 import type { CardUi, EffectProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
+import { glassInk } from './ink.ts';
 
 /* These tests close a Lens and open another in the same step and look at the one page that results, as under Off: at full motion the closed one stays, inert, until its exit ends (glass/layer.test.tsx). */
 beforeEach(() => {
@@ -234,6 +239,127 @@ describe('what the Lens says and offers', () => {
     expect(rows()).toEqual([]);
   });
 
+  describe('the faces in Who', () => {
+    /** Pipewrench has a picture, Spritey and Gloomba have none. */
+    function faced() {
+      const w = world();
+      w.fake.seed.avatar(w.pipe, { square: 'data:image/webp;base64,AAAA' });
+      return w;
+    }
+    const squares = (root: ParentNode) => [...root.querySelectorAll<HTMLElement>('.kb-lens-row-avatar')];
+
+    test('folded, the button holds one face per distinct caster, up to three, in the words\' order, and its name is unchanged', async () => {
+      width(false);
+      const w = faced();
+      w.play('k2', w.spritey);
+      w.play('k2', w.gloomba);
+      w.play('k2', w.spritey);
+      w.play('k2', w.pipe);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      const who = whoButton();
+      expect(who).toHaveAccessibleName('4 plays · Pipewrench, Spritey, Gloomba');
+      const faces = [...who.querySelectorAll<HTMLElement>('.kb-lens-face')];
+      expect(faces.map((f) => f.textContent)).toEqual(['', 'S', 'G']);
+      expect(faces[0]!.querySelector('img')).toHaveAttribute('src', 'data:image/webp;base64,AAAA');
+      faces.forEach((f) => expect(f).toHaveAttribute('aria-hidden', 'true'));
+    });
+
+    test('a fourth distinct caster gets no face in the fold', async () => {
+      width(false);
+      const w = faced();
+      const fourth = w.fake.seed.character(w.me, 'Fourth', 'face');
+      [w.spritey, w.gloomba, w.pipe, fourth].forEach((c) => w.play('k2', c));
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      expect(whoButton().querySelectorAll('.kb-lens-face')).toHaveLength(3);
+    });
+
+    test('unfolded, each row has a square: the picture, or the first letter', async () => {
+      width(false);
+      const w = faced();
+      const a = w.play('k2', w.spritey);
+      const b = w.play('k2', w.pipe);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      const row = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+      const first = row(a).querySelector<HTMLElement>('.kb-lens-row-head .kb-lens-row-avatar')!;
+      expect(first).toHaveAttribute('aria-hidden', 'true');
+      expect(first).toHaveTextContent('S');
+      expect(first.querySelector('img')).toBeNull();
+      const second = row(b).querySelector<HTMLElement>('.kb-lens-row-head .kb-lens-row-avatar')!;
+      expect(second.querySelector('img')).toHaveAttribute('src', 'data:image/webp;base64,AAAA');
+      expect(row(a).querySelector('.kb-lens-row-head .kb-lens-by')).not.toBeNull();
+    });
+
+    test('a staff play\'s square is the first letter of the staff word', async () => {
+      width(false);
+      const w = world();
+      const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+      const id = w.play('k2', clerk);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      const row = lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+      const name = row.querySelector('.kb-lens-who')!.textContent!;
+      expect(row.querySelector('.kb-lens-row-avatar')).toHaveTextContent([...name][0]!);
+    });
+
+    test('a play with no caster (the staff\'s own) gets the staff word\'s first letter, folded and unfolded', async () => {
+      width(false);
+      const w = world();
+      const plays = createPlays();
+      plays.add([{ id: 'staff-play', character: null, kind: 'card', thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', payload: { card: 'k2' }, currentPayload: { card: 'k2' }, editedAt: null, shownEditedAt: null }]);
+      plays.setBilling(w.second, ['staff-play']);
+      function Staffed() {
+        const store = useLensStore();
+        return <Lens open={{ owner: 'o', card: 'k2', opener: document.body }} store={store} post={w.second} plays={plays} tallies={createTallies()} mine={createMine()} compare={false} to={null}
+          nameOf={(id) => (id === null ? 'The staff' : 'someone')} faceOf={() => null} onSpin={() => {}} />;
+      }
+      renderIn(w.fake, <LensProvider><Staffed /></LensProvider>, { path: '/', instance, cards });
+      const who = await screen.findByRole('button', { name: /^1 play · / });
+      expect(who).toHaveAccessibleName('1 play · The staff');
+      const faces = who.querySelectorAll('.kb-lens-faces .kb-lens-face');
+      expect(faces).toHaveLength(1);
+      expect(faces[0]).toHaveTextContent('T');
+      await userEvent.click(who);
+      expect(document.querySelector('[data-kb-play="staff-play"] .kb-lens-row-avatar')).toHaveTextContent('T');
+    });
+
+    test('each row\'s square, and each face in the fold, carries its play\'s ink', async () => {
+      width(false);
+      document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000');
+      onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
+      const w = faced();
+      const a = w.play('k2', w.spritey);
+      w.play('k2', w.gloomba);
+      open(w, cards.map((c) => (c.key === 'k2' ? { ...c, tag: () => '#ff9f43' } : c)));
+      await userEvent.click(await markOf(2, 'Card 2'));
+      const ink = (el: Element) => el.closest<HTMLElement>('[style*="--kb-play-ink"]')?.style.getPropertyValue('--kb-play-ink');
+      const faces = [...whoButton().querySelectorAll('.kb-lens-face')];
+      expect(faces).toHaveLength(2);
+      faces.forEach((f) => expect(ink(f)).toBe('#ff9f43'));
+      await userEvent.click(whoButton());
+      expect(squares(lens())).toHaveLength(2);
+      squares(lens()).forEach((s) => expect(ink(s)).toBe('#ff9f43'));
+      expect(ink(lens().querySelector(`[data-kb-play="${a}"] .kb-lens-row-avatar`)!)).toBe('#ff9f43');
+    });
+
+    test('two characters that share a name show two faces and one name in the words', async () => {
+      width(false);
+      const w = world();
+      const twin = w.fake.seed.character(w.me, 'Spritey', 'heel');
+      w.play('k2', w.spritey);
+      w.play('k2', twin);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      const who = whoButton();
+      expect(who).toHaveAccessibleName('2 plays · Spritey');
+      expect(who.querySelectorAll('.kb-lens-face')).toHaveLength(2);
+    });
+  });
+
   test('a card whose rules stack lists its rows by layer, top first, whatever was billed first', async () => {
     width(false);
     const w = world();
@@ -266,8 +392,31 @@ describe('what the Lens says and offers', () => {
     expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
   });
 
+  test('an ink too dark for the glass is drawn lifted, on the open tab and the row, so their words and edges read', async () => {
+    width(false);
+    /* The glass's key puts the tab's words on the root (applyGlass); this one writes them in Divided World's dark teal. */
+    document.documentElement.style.setProperty('--kb-glass-ink-neon', '#03141a');
+    onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
+    const w = world();
+    const first = w.play('k1', w.spritey, w.second, 1);
+    open(w, cards.map((c) => (c.key === 'k1' ? { ...c, tag: () => '#14030a' } : c)));
+    await userEvent.click(await markOf(2, 'Card 1'));
+    await userEvent.click(whoButton());
+    const lifted = glassInk('#14030a', '#03141a')!;
+    expect(lifted).not.toBe('#14030a');
+    expect(lens().style.getPropertyValue('--kb-lens-ink')).toBe(lifted);
+    expect(lens().querySelector<HTMLElement>(`[data-kb-play="${first}"]`)!.style.getPropertyValue('--kb-play-ink')).toBe(lifted);
+    /* A change of key (high contrast) writes the tab's words in another ink, and the lift is measured again against it. */
+    act(() => { document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000'); });
+    await waitFor(() => expect(lens().style.getPropertyValue('--kb-lens-ink')).toBe(glassInk('#14030a', '#000000')));
+    expect(glassInk('#14030a', '#000000')).not.toBe(lifted);
+  });
+
   test('a row carries its play\'s ink as a bar, and its note stands above its caster', async () => {
     width(false);
+    /* The glass's key resolves the tab's words on the root, as the app's stylesheet does (web/src/main.tsx); a test page has none. */
+    document.documentElement.style.setProperty('--kb-glass-ink-neon', '#000000');
+    onTestFinished(() => { document.documentElement.style.removeProperty('--kb-glass-ink-neon'); });
     const w = world();
     const first = w.play('k1', w.spritey, w.second, 1);
     open(w, cards.map((c) => (c.key === 'k1' ? { ...c, tag: () => '#ff9f43' } : c)));
@@ -747,26 +896,40 @@ describe('As it landed', () => {
     expect(tab('Card 2')).toHaveAttribute('aria-selected', 'true');
   });
 
-  test('a moment that does not load says so plainly, with Try again, and Back to now still works', async () => {
+  test('As it landed is a busy button while the moment is read, shows the moment whole once it lands, and "Loading the moment" is gone', async () => {
+    const { w, k1b } = await landed();
+    let release!: () => void;
+    const real = w.fake.playMoment.bind(w.fake);
+    vi.spyOn(w.fake, 'playMoment').mockImplementationOnce((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
+    await userEvent.click(landedButton(k1b));
+    expect(landedButton(k1b)).toHaveAttribute('aria-busy', 'true');
+    expect(landedButton(k1b)).toHaveAccessibleName('As it landed');
+    expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(screen.queryByText('Loading the moment…')).toBeNull();
+    await act(async () => { release(); });
+    const box = await frame();
+    expect(box.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(within(box).queryByText(/Loading/u)).toBeNull();
+    expect(landedButton(k1b)).not.toHaveAttribute('aria-busy');
+  });
+
+  test('a moment that does not load shows nothing in the post and says so plainly under the button, which is pressed again to ask again', async () => {
     const { w, k1b } = await landed();
     const read = vi.spyOn(w.fake, 'playMoment').mockRejectedValueOnce(new Error('offline'));
     await userEvent.click(landedButton(k1b));
-    const box = await frame();
-    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
-    await userEvent.click(within(box).getByRole('button', { name: 'Try again' }));
-    expect(await within(box).findByText('post 2')).toBeInTheDocument();
-    expect(read).toHaveBeenCalledTimes(2);
-    read.mockRejectedValueOnce(new Error('offline'));
-    await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
+    expect(await within(lens()).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
+    expect(landedButton(k1b)).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(landedButton(k1b));
+    expect(await within(await frame()).findByText('post 2')).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(within(lens()).queryByText('That didn\u2019t load. Try again.')).toBeNull();
   });
 
-  test('Back to now gives focus back to the play\'s As it landed, and works while the moment has not loaded', async () => {
-    const { w, k1b } = await landed();
-    vi.spyOn(w.fake, 'playMoment').mockRejectedValue(new Error('offline'));
+  test('Back to now gives focus back to the play\'s As it landed', async () => {
+    const { k1b } = await landed();
     await userEvent.click(landedButton(k1b));
     const box = await frame();
-    expect(await within(box).findByText('The moment did not load.')).toBeInTheDocument();
     await userEvent.click(within(box).getByRole('button', { name: 'Back to now' }));
     expect(within(await article(2)).queryByRole('group', { name: /^As it landed/u })).toBeNull();
     await waitFor(() => expect(landedButton(k1b)).toHaveFocus());
@@ -936,6 +1099,28 @@ describe('End this card', () => {
     expect(w.fake.broadcast.log.some((e) => e.event === 'act')).toBe(true);
   });
 
+  test('End it is a busy button while the end is out: aria-busy, its name kept, and a second press ends once', async () => {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    w.play('k2');
+    let release!: () => void;
+    const real = w.fake.reverseCard.bind(w.fake);
+    const reverse = vi.spyOn(w.fake, 'reverseCard').mockImplementation((play) => new Promise((resolve) => { release = () => resolve(real(play)); }));
+    open(w);
+    await openKind(2, 'Card 2');
+    await userEvent.click(endButton()!);
+    const dialog = screen.getByRole('dialog', { name: 'End this card?' });
+    const end = within(dialog).getByRole('button', { name: 'End it' });
+    await userEvent.click(end);
+    expect(end).toHaveAttribute('aria-busy', 'true');
+    expect(within(dialog).getByRole('button', { name: 'End it' })).toBe(end);
+    await userEvent.click(end);
+    expect(reverse).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'End this card?' })).toBeNull());
+  });
+
   test('cancel leaves the play as it was, and a refusal\'s words are shown in the dialog', async () => {
     width(false);
     const w = world();
@@ -966,7 +1151,7 @@ describe('a visit\'s tab', () => {
   /** A visit on Spritey's post 2, and on Pipewrench's post 4 where `mine` is set: the reader plays Pipewrench. */
   function visited(o: { challenge?: Parameters<Fake['seed']['visit']>[2] extends infer T ? T extends { challenge?: infer C } ? C : never : never; mine?: boolean; endsInMs?: number } = {}) {
     const w = world();
-    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod', { pronouns: PRONOUN_PRESETS.they });
     const post = o.mine ? w.fake.seed.post(w.thread, w.pipe, 'post 4') : w.second;
     const visit = w.fake.seed.visit(clerk, post, { at: Date.now(), endsInMs: o.endsInMs ?? 161 * 60_000, line: 'Routine inspection.', ...(o.challenge ? { challenge: o.challenge } : {}) });
     return { ...w, clerk, post, visit, seq: o.mine ? 4 : 2 };
@@ -989,6 +1174,72 @@ describe('a visit\'s tab', () => {
     w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Stamped, initialed, and filed under D.' });
     return w.fake.seed.infraction(w.visit, { points: 2 });
   };
+
+  test('the visit\'s tab is busy while the story is read, and its panel then enters whole: no aria-busy block, no "Reading"', async () => {
+    const w = visited();
+    openVisit(w);
+    let release!: () => void;
+    const real = w.fake.visitStory.bind(w.fake);
+    vi.spyOn(w.fake, 'visitStory').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.click(await visitMark(w.seq));
+    const l = visitLens();
+    expect(within(l).getByRole('tab', { name: /^On a visit/u })).toHaveAttribute('aria-busy', 'true');
+    expect(l.querySelector('.kb-visit')).toBeNull();
+    await act(async () => { release(); });
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    expect(l.querySelector('.kb-visit')).not.toHaveAttribute('aria-busy');
+    expect(l.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(within(l).getByRole('tab', { name: /^On a visit/u })).not.toHaveAttribute('aria-busy');
+  });
+
+  /** The Lens opened on the card's tab, the visit's tab among the others. */
+  const onCardTab = async (w: ReturnType<typeof visited>) => {
+    width(false);
+    w.play('k1');
+    openVisit(w);
+    await userEvent.click(await markOf(w.seq, 'Card 1'));
+    const l = visitLens();
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    return l;
+  };
+
+  test('a visit read that fails from another tab says so plainly and stays on that tab', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    vi.spyOn(w.fake, 'visitStory').mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    expect(await within(l).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true'));
+    expect(within(l).queryByText('That didn\u2019t load. Try again.')).toBeNull();
+  });
+
+  test('pressing another tab while the visit is read does not take the reader back when it lands', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    let release!: () => void;
+    const real = w.fake.visitStory.bind(w.fake);
+    vi.spyOn(w.fake, 'visitStory').mockImplementationOnce((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'Card 1' }));
+    await act(async () => { release(); });
+    await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).not.toHaveAttribute('aria-busy'));
+    expect(within(l).getByRole('tab', { name: 'Card 1' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  test('the tab read again after leaving it is a fresh story, not the one drawn before', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    const read = vi.spyOn(w.fake, 'visitStory');
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    await userEvent.click(within(l).getByRole('tab', { name: 'Card 1' }));
+    await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
+    await waitFor(() => expect(l.querySelector('.kb-visit')).not.toBeNull());
+    expect(read).toHaveBeenCalledTimes(2);
+  });
 
   test('is first of the Lens\'s tabs, ahead of the card kinds, and is the one open', async () => {
     width(false);
@@ -1183,7 +1434,7 @@ describe('a visit\'s tab', () => {
       await userEvent.click(mark);
       const l = visitLens();
       expect(within(l).getByRole('tab', { name: 'Filed' })).toHaveAttribute('aria-selected', 'true');
-      expect(within(l).getByRole('heading', { name: 'The Clerk filed its report' })).toBeInTheDocument();
+      expect(within(l).getByRole('heading', { name: 'The Clerk filed their report' })).toBeInTheDocument();
       await waitFor(() => expect(l).toHaveTextContent(/Rule 2: No double posting: a minor breach\. Spritey's warn bar gained 2 points; they drop off on [A-Z][a-z]{2} \d{1,2}\. The bar now stands at 2 of 10\. The post keeps its words under the notice\./u));
       /* Nothing to talk down any more. */
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
@@ -1222,7 +1473,7 @@ describe('a visit\'s tab', () => {
       w.fake.seed.visitEnd(w.visit, { outcome: 'filed', line: 'Filed.' });
       openVisit(w);
       const l = await press(w);
-      expect(l).toHaveTextContent('The Clerk filed its report');
+      expect(l).toHaveTextContent('The Clerk filed their report');
       expect(l).toHaveTextContent('The visit filed.');
       expect(l).not.toHaveTextContent(/\d+ (warn )?points?/u);
       expect(l).not.toHaveTextContent(/of 10/u);
@@ -1235,7 +1486,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       const l = await press(w);
       const appeal = await within(l).findByRole('button', { name: 'Appeal · 0.50 Aura' });
-      expect(l).toHaveTextContent('The Clerk hears it, or whoever has taken its place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
+      expect(l).toHaveTextContent('The Clerk hears it, or whoever has taken their place. It is refunded if overturned. It may be upheld, reduced, or increased by up to 2 warn points. One appeal per filing, and your plea is public.');
       appeal.focus();
       await userEvent.keyboard('{Enter}');
       /* The post provides AppealCtx (Task 13): the same panel moves to the Appeal form, whose tab takes the focus. */
@@ -1343,7 +1594,7 @@ describe('a visit\'s tab', () => {
       expect(rows).toHaveLength(4);
       expect(rows[0]).toHaveTextContent('Gloomba · reported this post');
       expect(rows[0]).toHaveTextContent('“Third time this week.”');
-      expect(rows[1]).toHaveTextContent('The Clerk · A Moderator · judged the report: it sent a visit');
+      expect(rows[1]).toHaveTextContent('The Clerk · A Moderator · judged the report: they sent a visit');
       expect(rows[1]).toHaveTextContent('“Noted. Inspecting.”');
       expect(rows[2]).toHaveTextContent('began the visit');
       expect(rows[2]).toHaveTextContent('“Routine inspection.”');

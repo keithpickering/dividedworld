@@ -11,7 +11,7 @@
  * into the glass; the board's place for Back is kept by that move, as by every move into the glass
  * (keepBoardPlace, engine/ui/glass/back.ts), not by the link.
  *
- * The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
+ * The page ends in the footer (the credit and the instance's badges). The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
  * hand is open and for which post, and the play form, so the HUD's hand and every post's own buttons read
  * one state. It also holds the page's one tip (engine/ui/tips/Tips.tsx), above the HUD and the page both so a spotlight can cut out either.
  */
@@ -21,8 +21,11 @@ import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
+import { Icon, type IconName } from '../board/Icons.tsx';
 import { Link, searchOf, useLocation, useNavigation } from '../router.tsx';
+import { Wobble } from '../bbcode/Wobble.tsx';
 import { PlayProvider } from '../cards/play.tsx';
+import { BannerSearch } from '../search/BannerSearch.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
 import { Hud } from './Hud.tsx';
 import { Loading } from './Loading.tsx';
@@ -70,21 +73,36 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   }, [api, session.signedIn, booted]);
   const shownBoards = boot ? boot.boards : boards;
 
+  const badges = ui.copy.badges ?? [];
   const here = searchOf(query);
-  const links: readonly { readonly to: string; readonly label: string }[] = [
-    { to: '/', label: 'Index' },
-    ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name })),
+  const links: readonly { readonly to: string; readonly label: string; readonly icon?: IconName }[] = [
+    { to: '/', label: 'Index', icon: 'home' },
+    ...shownBoards.map((b) => ({ to: `/b/${b.slug}`, label: b.name, icon: 'board' as const })),
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
+  /*
+   * Search (the search design, section 7, as amended by the owner): signed in, the banner's right side is a column, the host line with its
+   * loading meter on top and the search box on a row of its own under it (section 7 had the box take the host line's place; the host line
+   * now always shows). The boards bar ends in a Search link. On /search the page has its own keyword field, so the box is not drawn there.
+   * Signed out there is neither (a visitor reads no thread).
+   */
+  const onSearch = path === '/search';
+  const box = session.signedIn && !onSearch;
 
   return (
     <TipsProvider>
       <PlayProvider>
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
+          <Wobble />
           <header className="kb-banner">
             <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
-            <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
-            <Loading />
+            <div className="kb-banner-side">
+              <div className="kb-banner-host">
+                <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+                <Loading />
+              </div>
+              {box && <BannerSearch />}
+            </div>
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
               Boards
             </button>
@@ -92,11 +110,27 @@ export function Frame({ children }: { readonly children: ReactNode }) {
           <nav id={navId} className="kb-nav" aria-label="Main" data-kb-open={open || undefined}>
             <ul>
               {links.map((l) => (
-                <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.label}</Link></li>
+                <li key={l.to}><Link to={l.to} onClick={() => setOpen(false)}>{l.icon && <Icon name={l.icon} />}{l.label}</Link></li>
               ))}
+              {session.signedIn && (
+                <li className="kb-nav-search">
+                  <Link to="/search" aria-current={onSearch ? 'page' : undefined} onClick={() => setOpen(false)}>
+                    <Icon name="search" />Search
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
           <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>
+          {/* The footer ends every board page: the credit and the instance's badges, which are decoration, and it links nothing. */}
+          <footer className="kb-footer">
+            Powered by KayfaBB
+            {badges.length > 0 && (
+              <div className="kb-badges" aria-hidden="true">
+                {badges.map(([a, b]) => <span key={`${a} ${b}`} className="kb-badge"><span>{a}</span><span>{b}</span></span>)}
+              </div>
+            )}
+          </footer>
           {/* The glass's violet laid toward the window's edges (frame.css); it is paint, so it is out of the reading order. */}
           <div className="kb-vignette" aria-hidden="true" />
           <Hud />

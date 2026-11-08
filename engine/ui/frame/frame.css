@@ -17,8 +17,11 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 0.4em 1.2em;
-  border-bottom: 1px solid var(--kb-rule);
-  padding: 12px 0;
+  /* The banner and the boards' bar are one block (the board-look design): the banner's ground, then the bar's, one frame round both. */
+  background: var(--kb-banner-bg);
+  border: 1px solid var(--kb-frame);
+  padding: 16px 18px;
+  margin-top: 18px;
 }
 
 .kb-banner,
@@ -86,47 +89,179 @@
  */
 @media (max-width: 40em) {
   .kb-banner > .kb-menu-button { order: 1; }
-  .kb-banner > .kb-address { order: 2; flex: 1 0 100%; }
+  .kb-banner > .kb-banner-side { order: 2; flex: 1 0 100%; align-items: flex-start; }
 }
 
 .kb-logo {
   /*
    * The site's name is one line wherever it fits: the banner wraps what is beside it first, and a flex line breaks before it shrinks an
    * item. Only when the name alone is wider than the banner does it fold, at its spaces, as the 2003 board's folds at a large text size
-   * (the name at 1.5625rem is 50px of type at 200% text, wider than a 390px phone); `anywhere` keeps one long word from running past
+   * (the name at 1.9375rem is 62px of type at 200% text, wider than a 390px phone); `anywhere` keeps one long word from running past
    * the window.
    */
   overflow-wrap: anywhere;
-  font: bold var(--kb-size-logo) / 1.2 var(--kb-font-mono);
-  letter-spacing: 0.06em;
+  font: bold var(--kb-size-logo) / var(--kb-logo-leading) var(--kb-font-mono);
+  letter-spacing: var(--kb-logo-spacing);
   text-transform: uppercase;
   text-decoration: none;
-  color: var(--kb-fg);
+  color: var(--kb-logo-fg);
+  text-shadow: var(--kb-logo-shadow);
 }
 
 .kb-nav {
-  padding: 5px 0;
-  border-bottom: 1px solid var(--kb-rule);
+  padding: 8px 12px;
+  background: var(--kb-nav-bg);
+  border: 1px solid var(--kb-frame);
+  border-top: 0;
+  margin-bottom: 0.5em;
   font-size: var(--kb-size-small);
+}
+
+.kb-nav a,
+.kb-nav a:visited {
+  color: var(--kb-nav-fg);
+}
+
+/* A board link is its 16 by 14 icon (Icons.tsx), drawn in the link's ink, then its name; its item is as tall as the link, so the bar is. */
+.kb-nav li {
+  display: flex;
+}
+
+.kb-nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kb-nav a:hover {
+  color: var(--kb-nav-hover);
+}
+
+/* The bar has its own ground, which the page's focus color may not stand out on: the ring is the bar's own ink. */
+.kb-nav a:focus-visible {
+  outline-color: var(--kb-nav-fg);
 }
 
 .kb-nav ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 0.4em;
+  gap: 0 18px;
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.kb-nav li + li::before {
-  content: "·";
-  margin-right: 0.4em;
+/* The boards bar ends in Search, at the right as the board draws it, with a magnifier that takes the link's color. */
+.kb-nav li.kb-nav-search {
+  margin-left: auto;
+}
+
+/* The banner's right side: the host line with its meter, and under it the search box on a row of its own. */
+.kb-banner-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.kb-banner-host {
+  line-height: 1.2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 1.2em;
+  min-width: 0;
+}
+
+/*
+ * With the box's row the right column is taller than the name, so the banner's own padding gives that height back: the name keeps its
+ * place (centered) and the banner keeps the board's height.
+ */
+@media (min-width: 40.0625em) {
+  .kb-banner:has(.kb-banner-search) {
+    align-items: center;
+    padding-block: 8px;
+  }
+}
+
+/* A phone's banner has no room for the search box, and its Boards menu holds the Search link. */
+.kb-banner-search {
+  position: relative; /* the suggest list hangs from this, so its right edge is the button's */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.kb-banner-search .kb-search-combo {
+  position: static;
+}
+
+/* The row is a 24px target (WCAG 2.5.8) so the stacked column fits the height the name gives the banner. */
+.kb-banner-search .kb-search-input {
+  min-height: 1.5rem;
+  padding-block: 0.1em;
+}
+
+@media (max-width: 40em) {
+  .kb-banner-search {
+    display: none;
+  }
 }
 
 .kb-menu-button {
   display: none;
   margin-left: auto;
+}
+
+/*
+ * The footer ends every board page: the credit, and the instance's 80 by 15 badges (5 by 0.9375 rem, so they grow with the text size) (Frame.tsx, `UiCopy.badges`) in a pixel face the
+ * instance serves (`--kb-font-badge`; the engine names no file). It stands in the page's column and clears the HUD at its real height,
+ * as the page used to.
+ */
+.kb-footer {
+  box-sizing: border-box;
+  width: min(96%, var(--kb-board-max));
+  margin: 18px auto 0;
+  padding: 0 0 calc(var(--kb-hud-measured, 9em) + 1.5em);
+  text-align: center;
+  font-size: var(--kb-size-fine);
+  color: var(--kb-muted);
+}
+
+.kb-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.kb-badge {
+  box-sizing: border-box;
+  display: inline-flex;
+  width: 5rem;
+  height: 0.9375rem;
+  border: 1px solid var(--kb-frame);
+  font: var(--kb-size-badge) / 0.8125rem var(--kb-font-badge);
+  text-transform: uppercase;
+  overflow: hidden;
+}
+
+.kb-badge > :first-child {
+  background: var(--kb-badge-a);
+  color: var(--kb-badge-a-fg);
+  padding: 0 3px;
+}
+
+.kb-badge > :last-child {
+  flex: 1;
+  background: var(--kb-badge-b);
+  color: var(--kb-badge-b-fg);
+  text-align: center;
 }
 
 /*
@@ -149,41 +284,49 @@ html[data-kb-float='sheet'] .kb-frame {
   max-width: none;
   padding-left: 0;
   padding-right: 0;
-  padding-bottom: calc(var(--kb-hud-measured, 9em) + 1.5em);
+  padding-bottom: 0;
 }
 
 /*
- * The vignette (the glass-polish design's section 8, changed by the owner on 2026-11-05: "lay the vignette over the '03 board itself,
- * perhaps by pulling it back a bit so it doesn't encroach on posts too much; the idea is to bridge the HUD/settings and the '03
- * board", and behind the board it "makes more of a sandwich"): the glass's violet laid toward the edges of the window, heaviest at
- * the corners and the foot above the HUD, so the HUD's glow seems to fall onto the page. One fixed element over the whole window,
- * posts included, under the HUD (z-index 30), that takes no click. The edge is an elliptical radial gradient to the window's
- * corners, where it reaches the full edge opacity, clear until 150px short of the column's edge (half of `--kb-board-max`, or the
- * 48% of the window the column takes where the window is narrower) so over the posts it reaches only the column's outer edge, the
- * postbit cells and the line ends; the foot is a linear gradient over 220px, on phones too. A mask holds both to
- * `--kb-vignette-column` of their strength inside the column and leaves the gutters whole, so text under it keeps its contrast
- * (e2e/board-width.spec.ts measures 4.5:1 at the strongest points). High contrast draws none. Colors and opacities are the
- * instance's (engine/ui/tokens.css); the engine's defaults draw nothing.
+ * The vignette (the glass-polish design's section 8; the owner took its mask away on 2026-11-07 and had the glow lie outward instead):
+ * the glass's violet laid toward the edges of the window, heaviest at the corners and the foot above the HUD, so the HUD's glow
+ * seems to fall onto the page. One fixed element over the whole window, under the HUD (z-index 30), that takes no click.
  *
- * The mask reads alpha only, so its stops are `--kb-vignette-mask` (black: engine/ui/tokens.css) and never the page's ground, which a
- * transparent theme could empty. `48vw` includes the scrollbar's width, so the mask's edge sits slightly outside the column, which
- * is the safe side.
+ * The side glow lies in the gutters and the whole column is clear of it, at every height. It is built from pieces that each end
+ * transparent at the column's edge, so the column's own edge is never a step: a horizontal gradient from each side of the window,
+ * half the edge opacity at the window's edge and clear at the column; and, at each of the four corners, an ellipse as wide as the
+ * gutter and 40% of the window tall that deepens the corner to the full edge opacity. `--kb-gutter` is the window's half width less
+ * `--kb-column-half` (half of `--kb-board-max`, or the 48% of the window the column takes where the window is narrower) less 8px:
+ * `50vw` includes the scrollbar's width, and 8px is the safe side of a classic scrollbar's half. Where the window is too narrow to
+ * have gutters, there is next to no side glow. (The first version was one radial gradient to the farthest corner, whose clear center
+ * was an ellipse scaled to the window, so at a wide window it was shorter than the column: at 1920x1080 the column's top and bottom
+ * ~135px were tinted.) The foot is a linear gradient over 220px, on phones too, and does lie over the posts. Nothing masks. Text
+ * under it keeps its contrast (e2e/board-width.spec.ts measures 4.5:1 at the strongest points, and that the column above the foot is
+ * untouched at four window sizes). High contrast draws none, and so does Smoke Off (the player's setting for the glass's haze;
+ * Low keeps it, as Low keeps the smoke). Colors and opacities are the instance's (engine/ui/tokens.css); the
+ * engine's defaults draw nothing.
  */
 .kb-vignette {
   --kb-column-half: min(48vw, calc(var(--kb-board-max) / 2));
-  --kb-column-mask: color-mix(in srgb, var(--kb-vignette-mask) calc(var(--kb-vignette-column) * 100%), transparent);
+  --kb-gutter: max(1px, calc(50vw - var(--kb-column-half) - 8px));
+  --kb-vignette-full: color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent);
+  --kb-vignette-side: color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 50%), transparent);
   position: fixed;
   inset: 0;
   z-index: 20;
   pointer-events: none;
   background:
     linear-gradient(to top, color-mix(in srgb, var(--kb-vignette-foot-color) calc(var(--kb-vignette-foot) * 100%), transparent), transparent 220px),
-    radial-gradient(ellipse farthest-corner at 50% 50%, transparent max(0px, calc(var(--kb-column-half) - 150px)), color-mix(in srgb, var(--kb-vignette-color) calc(var(--kb-vignette-edge) * 100%), transparent) 100%);
-  -webkit-mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
-  mask-image: linear-gradient(to right, var(--kb-vignette-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% - var(--kb-column-half)), var(--kb-column-mask) calc(50% + var(--kb-column-half)), var(--kb-vignette-mask) calc(50% + var(--kb-column-half)));
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 0 0, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 100% 0, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 0 100%, var(--kb-vignette-full), transparent),
+    radial-gradient(ellipse var(--kb-gutter) 40vh at 100% 100%, var(--kb-vignette-full), transparent),
+    linear-gradient(to right, var(--kb-vignette-side), transparent var(--kb-gutter)),
+    linear-gradient(to left, var(--kb-vignette-side), transparent var(--kb-gutter));
 }
 
-:root[data-kb-contrast='high'] .kb-vignette {
+:root[data-kb-contrast='high'] .kb-vignette,
+:root[data-kb-smoke-level='off'] .kb-vignette {
   display: none;
 }
 
@@ -344,22 +487,13 @@ html[data-kb-float='sheet'] .kb-frame {
   background: var(--kb-glass-field-2);
 }
 
-.kb-hud-avatar img {
-  display: block;
+.kb-hud-avatar .kb-avatar {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
-.kb-hud-avatar-none {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  font-family: var(--kb-glass-font-display);
-  /* The display face's one weight: the glass's 600 would draw it in a faux bold. */
-  font-weight: 400;
+.kb-hud-avatar .kb-avatar-none {
   font-size: var(--kb-glass-size-display-s);
-  color: var(--kb-glass-text-2);
 }
 
 .kb-hud-name {
@@ -1556,6 +1690,11 @@ html[data-kb-float='sheet'] .kb-frame {
     padding: 6px 16px;
   }
 
+  /* The name at the phone board's size (the board-look design: 22px in the house theme). */
+  .kb-logo {
+    font-size: var(--kb-size-logo-phone);
+  }
+
   /* Boards is set in the board's words, as the Phone board draws it, not at a control's smaller size. */
   .kb-menu-button {
     display: inline-block;
@@ -1582,8 +1721,8 @@ html[data-kb-float='sheet'] .kb-frame {
     gap: 0.3em;
   }
 
-  .kb-nav li + li::before {
-    content: none;
+  .kb-nav li.kb-nav-search {
+    margin-left: 0;
   }
 }
 
@@ -1623,4 +1762,52 @@ html[data-kb-float='sheet'] .kb-frame {
 
 .kb-hud-orbs:hover {
   background: var(--kb-glass-panel-soft);
+}
+
+/*
+ * A HUD control waiting on its load shows the Signal spinner (Hud.tsx). On the avatar it covers the picture, on the orbs it sits at the
+ * link's corner, and on Alerts and Menu it follows the words. The color is the control's own.
+ */
+.kb-hud-wait {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.kb-hud-wait > .kb-spinner {
+  height: 14px;
+  gap: 2px;
+}
+
+.kb-hud-avatar {
+  position: relative;
+}
+
+.kb-hud-avatar > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-ground) 70%, transparent);
+}
+
+.kb-hud-avatar > .kb-hud-wait > .kb-spinner {
+  height: 18px;
+  gap: 3px;
+}
+
+.kb-hud-orbs {
+  position: relative;
+}
+
+.kb-hud-orbs > .kb-hud-wait {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-hud-menu[data-kb-pending],
+.kb-hud-alerts[data-kb-pending] {
+  cursor: progress;
 }

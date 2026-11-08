@@ -15,14 +15,16 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Alert, Id } from '../data/api.ts';
+import type { Alert, AlertsPage, Id } from '../data/api.ts';
 import { utcWhen } from '../log/lines.ts';
-import { SignInPrompt, useSignedIn } from '../mini.tsx';
+import { SignInPrompt } from '../mini.tsx';
+import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
-import { Link } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { AlertIcon } from './AlertIcon.tsx';
+import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { rowKey, useAlerts, type AlertsRead } from './useAlerts.ts';
 import { batchWords, targetKey, wordsFor, type Part, type Said, type WordsContext } from './words.ts';
 import './alerts.css';
@@ -58,12 +60,14 @@ interface RowProps {
   readonly character: Id | null;
   readonly note: string | undefined;
   readonly onUnfollow: (thread: Id) => void;
+  /** True in the render that adds the row on a press of Older (found by `useEnterAdded`, which makes it enter). */
+  readonly entering?: true;
 }
 
-function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
+function Row({ item, said, fresh, character, note, onUnfollow, entering }: RowProps) {
   const row = item.rows[0]!;
   return (
-    <li className="kb-alerts-row" tabIndex={-1} data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key}>
+    <li className="kb-alerts-row" tabIndex={-1} data-kb-kind={row.kind} data-kb-new={fresh ? '' : undefined} data-kb-key={item.key} {...(entering ? { [ENTERING]: '' } : {})}>
       <AlertIcon kind={row.kind} className="kb-alerts-ico" />
       <div>
         <p className="kb-alerts-line"><Words parts={said.line} /></p>
@@ -72,7 +76,7 @@ function Row({ item, said, fresh, character, note, onUnfollow }: RowProps) {
           {said.ways.map((w, i) => (
             <span key={w.to + w.text}>
               {i === 0 && said.detail.length > 0 ? ' ' : i > 0 ? ' · ' : ''}
-              <Link to={w.to} state={w.state}>{w.text}</Link>
+              <GlassLink to={w.to} state={w.state}>{w.text}</GlassLink>
             </span>
           ))}
           {row.kind === 'followed' && row.thread !== null && (
@@ -109,7 +113,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
   const startedBy = new Map([...data.started].flatMap(([thread, c]) => { const name = data.mine.find((m) => m.id === c)?.name; return name === undefined ? [] : [[thread, name] as const]; }));
   const characterOf = (r: Alert): Id | null => r.character ?? (r.kind === 'followed' && r.thread !== null ? data.started.get(r.thread) ?? null : null);
   const ctx: WordsContext = {
-    instance, ui, acts: data.acts, names: data.names, reading: data.reading, startedBy, perPage: settings.postsPerPage,
+    instance, ui, acts: data.acts, names: data.names, staff: data.staff, reading: data.reading, startedBy, perPage: settings.postsPerPage,
     newestSettlement: data.rows.find((r) => r.kind === 'settlement')?.sub ?? null,
   };
   const shown = current === null ? data.rows : data.rows.filter((r) => characterOf(r) === current.id);
@@ -129,6 +133,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
    */
   const list = useRef<HTMLDivElement>(null);
   const known = useRef<ReadonlySet<string> | null>(null);
+  const added = useEnterAdded(list, older === 'loading');
   const pending = useRef<{ readonly key: string | null } | null>(null);
   useEffect(() => {
     const root = list.current;
@@ -163,7 +168,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
       {group.map((item) => {
         const first = item.rows[0]!;
         const said = item.rows.length > 1 ? batchWords(item.rows, ctx) : wordsFor(first, ctx);
-        return <Row key={item.key} item={item} said={said} fresh={fresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={(t) => void unfollow(t)} />;
+        return <Row key={item.key} entering={added.entering(item.key)} item={item} said={said} fresh={fresh} character={characterOf(first)} note={first.thread === null ? undefined : notes.get(first.thread)} onUnfollow={(t) => void unfollow(t)} />;
       })}
     </ul>
   );
@@ -204,7 +209,7 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
         )}
         {data.more && (
           <p className="kb-alerts-older">
-            <GlassButton size="s" onClick={() => { known.current = new Set(items.map((i) => i.key)); onOlder(); }} aria-disabled={older === 'loading' || undefined}>Older</GlassButton>
+            <GlassButton size="s" busy={older === 'loading'} onClick={() => { known.current = new Set(items.map((i) => i.key)); added.arm(known.current); onOlder(); }}>Older</GlassButton>
             {older === 'failed' && <span className="kb-alerts-older-failed" role="alert"> The older alerts could not be read. Try again.</span>}
           </p>
         )}
@@ -213,12 +218,16 @@ export function Alerts({ data, older, onOlder, onUnfollow, notes }: AlertsProps)
   );
 }
 
-/** Alerts at /alerts: the newest page, with the mark moved to its newest row. */
-export function AlertsScreen() {
+/** Alerts at /alerts: the document's newest page, with the mark moved to its newest row once it is drawn. */
+export function AlertsScreen({ doc }: { readonly doc: ScreenDoc<AlertsPage> }) {
+  if (isSignedOutDoc(doc)) return <div className="kb-alerts"><CalmRegion className="kb-alerts-empty"><SignInPrompt /></CalmRegion></div>;
+  return <AlertsPageView page={doc} />;
+}
+
+function AlertsPageView({ page }: { readonly page: AlertsPage }) {
   const { api } = useKayfa();
-  const signedIn = useSignedIn(api);
-  const { session } = usePlayer();
-  const { state, older, dropFollowed, retry } = useAlerts(api, signedIn, session.account);
+  const { characters } = usePlayer();
+  const { data, older, onOlder, dropFollowed } = useAlerts(api, page, characters);
   const [notes, setNotes] = useState<ReadonlyMap<Id, string>>(new Map());
   const note = (thread: Id, text: string | null) => setNotes((was) => { const next = new Map(was); if (text === null) next.delete(thread); else next.set(thread, text); return next; });
   const unfollow = async (thread: Id): Promise<boolean> => {
@@ -230,18 +239,5 @@ export function AlertsScreen() {
     } catch { note(thread, 'That did not go through. Try again.'); }
     return false;
   };
-  if (signedIn === false) return <div className="kb-alerts"><CalmRegion className="kb-alerts-empty"><SignInPrompt /></CalmRegion></div>;
-  if (signedIn === null || state.status === 'loading') return <div className="kb-alerts" role="status"><p className="kb-visually-hidden">Reading your alerts</p></div>;
-  if (state.status === 'failed') {
-    return (
-      <div className="kb-alerts">
-        <PageHead title="Alerts" />
-        <CalmRegion as="p" className="kb-alerts-empty" role="alert">
-          Your alerts could not be read. Nothing is lost; they are still in your log and on the board.{' '}
-          <button type="button" className="kb-alerts-unfollow" onClick={retry}>Try again</button>
-        </CalmRegion>
-      </div>
-    );
-  }
-  return <Alerts data={state.data} older={state.older} onOlder={older} onUnfollow={unfollow} notes={notes} />;
+  return <Alerts data={data} older={older} onOlder={onOlder} onUnfollow={unfollow} notes={notes} />;
 }

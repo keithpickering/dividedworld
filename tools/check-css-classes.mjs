@@ -86,7 +86,6 @@ export const ALLOWED_HOOKS = new Set([
   'kb-spin-now-region',
   'kb-origin-update-title',
   'kb-settled-wallet',
-  'kb-settled-wait',
   'kb-acct-choice',
   'kb-board-link',
   'kb-thread-last-link',
@@ -96,13 +95,9 @@ export const ALLOWED_HOOKS = new Set([
   /* A profile's, a postbit's or a staff page's named part: text that takes the surrounding block's type and color,
   named so a theme can restyle it alone. */
   'kb-profile-name',
-  'kb-profile-title',
-  'kb-profile-standing',
-  'kb-profile-counts',
-  'kb-profile-class',
+  'kb-profile-pronouns',
   'kb-postbit-title',
   'kb-postbit-rank-name',
-  'kb-staff-career',
   'kb-career',
   'kb-preview-line',
   'kb-preview-nothing',
@@ -111,10 +106,8 @@ export const ALLOWED_HOOKS = new Set([
 
   /* A state or kind a component marks on an element for a theme or a test, where the state's look is already drawn by
   the element's own class or its data attribute. */
-  'kb-flag-hot',
   'kb-move-counted',
   'kb-orb--full',
-  'kb-new-thread-body',
   'kb-new-thread-none',
   'kb-new-thread-title',
   'kb-new-thread-toggle',

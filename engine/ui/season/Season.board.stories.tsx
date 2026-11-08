@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { SeasonScreen } from './Season.tsx';
+import { LoadedSeason } from '../loaded.tsx';
 
 const utc = (month: number, day: number, hour = 8, minute = 17) => Date.UTC(2026, month - 1, day, hour, minute);
 
@@ -29,7 +29,7 @@ const news: World = (fake, instance) => {
 
   const board = instance.boards.find((b) => !b.system) ?? instance.boards[0]!;
   const system = instance.boards.find((b) => b.system) ?? board;
-  const announcements = seed.thread(system.slug, null, 'Announcements', 'The System is open.', { at: utc(10, 1) });
+  const announcements = seed.thread(system.slug, null, 'Announcements', 'The board is open.', { at: utc(10, 1) });
   const said = seed.thread(board.slug, spritey, 'for the record', 'Here it is.', { at: utc(10, 12) });
   const revealed = seed.reveal(spritey, said.thread, { at: utc(10, 12, 9), class: cls(0) });
   const hooliganSaid = seed.thread(board.slug, hooligan, 'lurkers rule', 'Quiet.', { at: utc(10, 14) });
@@ -58,7 +58,7 @@ const empty: World = (fake) => {
 
 /** The screen at /season?tab=news, in its page shell. */
 function SeasonStory() {
-  return <Page surface="rankings"><SeasonScreen /></Page>;
+  return <Page surface="rankings"><LoadedSeason /></Page>;
 }
 
 const meta: Meta<typeof SeasonStory> = {

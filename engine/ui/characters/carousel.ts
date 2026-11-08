@@ -1,6 +1,6 @@
 /**
  * The class cards' carousel, as numbers: which cards a row shows whole at a scroll position, for
- * its count ("1–4 of 5"). Pure, so it is tested without layout; ClassCards.tsx reads the four
+ * its count ("1–4 of 6"). Pure, so it is tested without layout; ClassCards.tsx reads the four
  * lengths from the row. Nothing here knows how many classes an instance has.
  */
 
@@ -19,4 +19,19 @@ export function shownRange(scrollLeft: number, viewport: number, card: number, g
   const first = clamp(Math.ceil((scrollLeft - SLACK) / step));
   const last = clamp(Math.floor((scrollLeft + viewport - card + SLACK) / step));
   return { first: first + 1, last: Math.max(first, last) + 1 };
+}
+
+/**
+ * How far, from each end of the column the cards are counted in, a card that only peeks in reaches: the fade is drawn over
+ * that much and no more, so a card shown whole is never faded. At the start it is the card before the first whole one, to
+ * its end; at the end, the card after the last whole one, from its start. Whole pixels, never below none.
+ */
+export function peeks(scrollLeft: number, viewport: number, card: number, gap: number, count: number): { before: number; after: number } {
+  if (count <= 0 || card <= 0) return { before: 0, after: 0 };
+  const step = card + gap;
+  const { first, last } = shownRange(scrollLeft, viewport, card, gap, count);
+  /* `first` and `last` count from 1: the card before the first whole one is index first - 2, the one after the last is index last. */
+  const before = first > 1 ? Math.max(0, Math.round((first - 2) * step + card - scrollLeft)) : 0;
+  const after = last < count ? Math.max(0, Math.round(scrollLeft + viewport - last * step)) : 0;
+  return { before, after };
 }

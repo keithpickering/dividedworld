@@ -27,7 +27,7 @@ describe('the composer of a banned mask', () => {
     openThread(w);
     await replyBox();
     const note = await screen.findByText(/is banned until/u);
-    expect(note.closest('p')).toHaveTextContent(/^Pipewrench is banned until .+\. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as it\. Appeal to the Boss · 0.50 Aura$/u);
+    expect(note.closest('p')).toHaveTextContent(/^Pipewrench is banned until .+\. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as her\. Appeal to the Boss · 0.50 Aura$/u);
     expect(note.closest('p')).toHaveAttribute('role', 'status');
   });
 
@@ -38,6 +38,36 @@ describe('the composer of a banned mask', () => {
     expect(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Switch to Zed' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Appeal to the Boss/u })).toBeNull());
+  });
+
+  test('the appeal reads the ban before it opens: the button is busy meanwhile, the form is whole when it appears, and "Reading the ban" is gone', async () => {
+    const w = banned();
+    openThread(w);
+    await replyBox();
+    let release!: () => void;
+    const real = w.fake.myBan.bind(w.fake);
+    vi.spyOn(w.fake, 'myBan').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    const button = await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText('Reading the ban.')).toBeNull();
+    await act(async () => { release(); });
+    const form = await screen.findByRole('dialog', { name: 'Appeal the ban' });
+    expect(within(form).getByRole('textbox')).toBeInTheDocument();
+    expect(form).toHaveTextContent('The punishment: a ban of');
+    expect(form.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(button).not.toHaveAttribute('aria-busy');
+  });
+
+  test('a ban that cannot be read opens nothing and says so plainly beside the button', async () => {
+    const w = banned();
+    openThread(w);
+    await replyBox();
+    vi.spyOn(w.fake, 'myBan').mockRejectedValue(new Error('offline'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' }));
+    expect(await screen.findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   test('cannot send, however much is written', async () => {

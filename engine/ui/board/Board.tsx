@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
+import { lowerFirst } from '../copy-words.ts';
 import type { Act, Board, BoardPage, Character, Id, PinnedThread, ThreadSummary } from '../data/api.ts';
 import { useUntil } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
@@ -24,13 +25,14 @@ import { OriginLink } from '../spin/OriginLink.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
-import { Ago, Mini, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
+import { Ago, Byline, pageList, useIsAdmin, useSignedIn } from '../mini.tsx';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Link } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { MoveNotice } from './MoveNotice.tsx';
 import { PresenceBox } from '../presence/PresenceBox.tsx';
 import { NewThread } from './NewThread.tsx';
+import { Icon, folderIcon, folderState } from './Icons.tsx';
 import './board.css';
 
 /** Threads to a page of a board's list. */
@@ -134,12 +136,13 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   const pages = Math.max(1, Math.ceil(total / THREADS_PER_PAGE));
   const pager = (where: 'top' | 'bottom') => pages > 1 && <Pager slug={slug} page={page} pages={pages} where={where} />;
 
-  const nameOf = (id: Id | null) => (id === null ? 'The System' : characters.get(id)?.name ?? 'A character');
+  const nameOf = (id: Id | null) => (id === null ? ui.copy.staffWord : characters.get(id)?.name ?? 'A character');
+  const faceOf = (id: Id | null) => (id === null ? null : characters.get(id)?.avatarSquare ?? null);
   return (
     <div className="kb-board" data-kb-board={board.slug}>
       <LensProvider admin={admin}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
-      <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} heading={heading} onSpin={setSpinOrigin} />
+      <BoardBanner board={board} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} heading={heading} onSpin={setSpinOrigin} />
       {spinOrigin && (
         <SpinForm
           key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
@@ -150,8 +153,8 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
       <p className="kb-board-description kb-muted">{board.description}</p>
       {board.moveAct !== null && <MoveNotice key={board.moveAct} act={board.moveAct} />}
       {board.isSystem
-        ? <p className="kb-board-readonly kb-small">Only The System posts here. You can react to what it says, and spin a thread from it.</p>
-        : <NewThread key={board.slug} board={board.slug} />}
+        ? <p className="kb-board-readonly kb-small">Only {lowerFirst(ui.copy.staffWord)} post here. You can react to what they say, and spin a thread from it.</p>
+        : <NewThread key={board.slug} board={board.slug} boardId={board.id} />}
       {threads.length === 0 && state.pins.length === 0 ? (
         <p className="kb-board-empty">No threads here yet.</p>
       ) : (
@@ -169,12 +172,13 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
                 <th role="columnheader" scope="col">Last post</th>
               </tr>
             </thead>
-            <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
+            <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
             <tbody role="rowgroup">
               {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
           </table>
           </div>
+          <Legend hot={settings.hotReplies} />
           {pager('bottom')}
         </>
       )}
@@ -189,8 +193,8 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
  * mechanic's design, section 7). A board card's Act sits in The System's announcements thread; its Lens offers Spin, whose form opens
  * under the banner.
  */
-function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
-  readonly board: Board; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string;
+function BoardBanner({ board, plays, tallies, mine, nameOf, faceOf, heading, onSpin }: {
+  readonly board: Board; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string; readonly faceOf: (id: Id | null) => string | null;
   readonly heading: React.RefObject<HTMLHeadingElement | null>; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const to = `/b/${board.slug}`;
@@ -200,7 +204,7 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
         <h1 ref={heading} tabIndex={-1} className="kb-heading kb-board-title">{board.name}</h1>
         {shown && <span className="kb-board-banner-marks">
           <PostMarks
-            post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
+            post={board.id} plays={plays} compare={false} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
             reachAt={{ reach: 'board', target: board.id, name: board.name, fromPost: null, thread: null, board: null, title: board.name, to, plays, know: async () => {}, focusBack: () => heading.current }}
             onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })}
           />
@@ -214,8 +218,8 @@ function BoardBanner({ board, plays, tallies, mine, nameOf, heading, onSpin }: {
  * (its way out). They take none of the page's slots and move none of the pager's numbers: a pinned thread is still in its bump place on
  * the page that holds it, and only moved up here when that is page 1.
  */
-function Pinned({ loaded, plays, tallies, mine, nameOf, perPage, hot, onSpin }: {
-  readonly loaded: Loaded; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string;
+function Pinned({ loaded, plays, tallies, mine, nameOf, faceOf, perPage, hot, onSpin }: {
+  readonly loaded: Loaded; readonly plays: Plays; readonly tallies: Tallies; readonly mine: Mine; readonly nameOf: (id: Id | null) => string; readonly faceOf: (id: Id | null) => string | null;
   readonly perPage: number; readonly hot: number; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const pins = useMemo(() => loaded.pins.map((p) => playOf(p.act)).filter((p) => p !== null), [loaded.pins]);
@@ -235,14 +239,37 @@ function Pinned({ loaded, plays, tallies, mine, nameOf, perPage, hot, onSpin }: 
       {shown.map((p) => (
         <ThreadRow
           key={p.thread.id} t={p.thread} loaded={loaded} perPage={perPage} hot={hot}
-          mark={<PostMarks post={p.thread.id} where="thread" plays={plays} compare={false} to={threadHref(p.thread.id, 1)} nameOf={nameOf} tallies={tallies} mine={mine} onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })} />}
+          mark={<PostMarks post={p.thread.id} where="thread" plays={plays} compare={false} to={threadHref(p.thread.id, 1)} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, label, opener) => onSpin({ id: play.id, label, opener })} />}
         />
       ))}
+      {/* A 4px row in the third gray splits the pins from the rest; it is paint, so it is out of the reading order. */}
+      <tr role="presentation" aria-hidden="true" className="kb-thread-gap"><td role="presentation" colSpan={5} /></tr>
     </tbody>
   );
 }
 
+/**
+ * The key under the list: the folders, in plain words, on a row in the third gray. "Hot" takes its number from the setting. The pin has no
+ * line here: a mark in the legend would say what pressing it says, and break the illusion in the board's own world. It is layout, not data.
+ */
+function Legend({ hot }: { readonly hot: number }) {
+  return (
+    <table className="kb-table kb-thread-legend" role="presentation">
+      <tbody>
+        <tr>
+          <td className="kb-legend">
+            <span><Icon name="new" /> New posts</span>
+            <span><Icon name="old" /> No new posts</span>
+            <span><Icon name="hot" /> Hot: {hot} {hot === 1 ? 'reply' : 'replies'} this week</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: ThreadSummary; readonly loaded: Loaded; readonly perPage: number; readonly hot: number; readonly mark?: React.ReactNode }) {
+  const { ui } = useKayfa();
   const { reading, views, characters } = loaded;
   const read = reading[t.id] ?? 0;
   const isNew = read < t.lastSeq;
@@ -257,8 +284,8 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
   return (
     <tr role="row" className="kb-thread-row" data-kb-new={isNew ? '' : undefined} data-kb-hot={isHot ? '' : undefined}>
       <td role="cell" className="kb-thread-flags">
-        {isNew && <span className="kb-flag kb-flag-new">NEW</span>}
-        {isHot && <span className="kb-flag kb-flag-hot">HOT</span>}
+        <Icon name={folderIcon(isNew, isHot)} />
+        <span className="kb-visually-hidden">{folderState(isNew, isHot)}</span>
       </td>
       <td role="cell" className="kb-thread-main">
         <Link to={threadHref(t.id, 1)} className="kb-thread-title"><b>{t.title}</b></Link>
@@ -270,8 +297,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         )}
         <div className="kb-thread-meta kb-small">
           <span className="kb-thread-started">
-            <Mini character={t.firstCharacter ? characters.get(t.firstCharacter) : undefined} name={starter ?? 'S'} />
-            {t.firstCharacter ? <Link to={`/c/${encodeURIComponent(t.firstCharacter)}`}>{starter ?? 'A character'}</Link> : <span className="kb-system-name">The System</span>}
+            <Byline character={t.firstCharacter ? characters.get(t.firstCharacter) : undefined} id={t.firstCharacter} name={starter ?? undefined} link />
           </span>
           {isNew && (
             <> · <Link to={threadHref(t.id, pageOf(firstUnread, perPage), firstUnread)} aria-label={`First unread post in ${t.title}`}>first unread</Link></>
@@ -287,11 +313,12 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         </div>
       </td>
       <td role="cell" className="kb-thread-replies kb-num"><span className="kb-num">{t.replies}</span><span className="kb-thread-unit"> replies</span></td>
-      <td role="cell" className="kb-thread-views kb-num"><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit"> views</span></td>
+      <td role="cell" className="kb-thread-views kb-num"><span className="kb-thread-sep" aria-hidden="true"> · </span><span className="kb-num">{views[t.id] ?? 0}</span><span className="kb-thread-unit"> views</span></td>
       <td role="cell" className="kb-thread-last kb-small">
+        <span className="kb-thread-sep" aria-hidden="true"> · </span>
         <span className="kb-thread-last-label">last: </span>
-        <Mini character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} name={last ?? 'S'} />
-        {t.lastCharacter ? <Link to={`/c/${encodeURIComponent(t.lastCharacter)}`}>{last ?? 'A character'}</Link> : <span className="kb-system-name">The System</span>}
+        <Byline character={t.lastCharacter ? characters.get(t.lastCharacter) : undefined} id={t.lastCharacter} name={last ?? undefined} link />
+        <span className="kb-thread-sep" aria-hidden="true">, </span>
         <br />
         <Link to={threadHref(t.id, pagesInThread, t.lastSeq)} className="kb-thread-last-link kb-muted"><Ago at={t.lastAt} /><span className="kb-visually-hidden"> — latest post in {t.title}</span></Link>
       </td>

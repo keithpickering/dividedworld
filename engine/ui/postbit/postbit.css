@@ -142,6 +142,52 @@
 }
 
 /*
+ * The group bar (GroupBar.tsx): the group's color is inline (a game piece, the same in every theme); the shape is the theme's, through the
+ * --kb-group-bar-* tokens. The shares in the gradient are the ones group-bar-face.ts measures the lettering on (GroupBar.test.tsx holds them together).
+ */
+.kb-group-bar {
+  display: block;
+  box-sizing: border-box;
+  width: var(--kb-group-bar-width);
+  max-width: 100%;
+  height: var(--kb-group-bar-height);
+  margin: 2px 0;
+  border: 1px solid var(--kb-group-bar-edge);
+  border-radius: var(--kb-group-bar-radius);
+  background: linear-gradient(
+    color-mix(in srgb, var(--kb-group-color) 90%, var(--kb-group-bar-gloss)),
+    var(--kb-group-color) 50%,
+    color-mix(in srgb, var(--kb-group-color) 80%, var(--kb-group-bar-halo)) 51%,
+    var(--kb-group-color)
+  );
+  font: var(--kb-group-bar-font);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--kb-group-bar-ink);
+  /* A crisp 1px outline (the glyph's eight neighbors), so lettering reads on a color too light for white alone; group-bar-face.ts measures it. */
+  text-shadow:
+    -1px -1px 0 var(--kb-group-bar-halo), 0 -1px 0 var(--kb-group-bar-halo), 1px -1px 0 var(--kb-group-bar-halo),
+    -1px 0 0 var(--kb-group-bar-halo), 1px 0 0 var(--kb-group-bar-halo),
+    -1px 1px 0 var(--kb-group-bar-halo), 0 1px 0 var(--kb-group-bar-halo), 1px 1px 0 var(--kb-group-bar-halo);
+}
+
+.kb-group-bar[data-kb-stripe] {
+  background: repeating-linear-gradient(135deg, var(--kb-group-color) 0 8px, color-mix(in srgb, var(--kb-group-color) 70%, var(--kb-group-bar-halo)) 8px 16px);
+}
+
+/* The bar and the staff office's title side by side (Postbit.tsx): the title is the badge's. */
+.kb-postbit-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3em;
+}
+
+/*
  * A staff character's badge (StaffBadge.tsx): the group as a game piece, a chip with a small orb in the board's ink, and the office's title
  * beside it in capitals on the board's ink reversed. Both are at the board's full contrast (text on the chip's ground, text on reversed ink).
  */
@@ -180,6 +226,13 @@
   padding: 0 0.4em;
   background: var(--kb-fg);
   color: var(--kb-bg);
+}
+
+/* A staff character's badges (the board look's Task 10): the group's chip over the office's title, each on its line, as the board draws them. */
+.kb-postbit .kb-staff-badge {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
 }
 
 /* The warn meter (WarnMeter.tsx): its words over a small thermometer, in the board's own muted words. Side by side it follows the avatar, ahead of the counts. */
