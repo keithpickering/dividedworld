@@ -278,7 +278,7 @@ $$;
 
 -- phrase_pattern(phrase, token): the pattern phrase_probe runs, '(?<!C)(?:A|B)(?!C)' with C the word class. A is the escaped folded phrase, or for no phrase a contradiction no text satisfies (an assertion that 'a' is and is not next)
 -- and the escaped token; B is the same contradiction, the escaped token (the back's own id, so the pattern is its own) and padding after escaping, to make A and B together 400 characters. A phrase is at most 100 characters
--- (Autocorrect's validateConfig; place_set holds the same bound), 200 escaped at the most, so the length is the same for every back whatever it holds. B never matches, so the answer is A's.
+-- (the engine's SET_PHRASE_MOST, engine/rules/cards.ts, which decideSet and place_set both hold), 200 escaped at the most, so the length is the same for every back whatever it holds. B never matches, so the answer is A's.
 create or replace function phrase_pattern(phrase text, token text) returns text
 language sql immutable parallel safe set search_path = public, pg_temp as $$
   select '(?<!' || phrase_word_class() || ')(?:' || x.a || '|' || rpad(x.b, greatest(length(x.b), 400 - length(x.a)), 'z') || ')(?!' || phrase_word_class() || ')'
@@ -347,7 +347,7 @@ begin
   if phrase is not null then
     if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
     if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-    -- Autocorrect's own bound (validateConfig): phrase_pattern is one length for every back only up to it.
+    -- The engine's bound (SET_PHRASE_MOST, engine/rules/cards.ts, which decideSet holds in the same words): phrase_pattern is one length for every back only up to it.
     if char_length(phrase) > 100 then raise exception '% waits for a phrase of at most 100 characters', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   end if;
   select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;

@@ -10,6 +10,7 @@ import { PHRASE_FIXTURES } from './phrase.fixtures.ts';
 import { occurrences, phraseIn, sameWords } from './phrase.ts';
 import { parse } from './parse.ts';
 import { visibleText } from './visible.ts';
+import { SET_PHRASE_MOST } from '../rules/cards.ts';
 
 test('there are fixtures, each named once, and both answers among them', () => {
   assert.ok(PHRASE_FIXTURES.length >= 30);
@@ -60,4 +61,11 @@ test('the migration\'s word class is \\p{L}\\p{N}, code point for code point', (
     if (wrong.length > 10) break;
   }
   assert.deepEqual(wrong, []);
+});
+
+test('the server holds the engine\'s bound on a set phrase, in its words', () => {
+  const sql = readFileSync(new URL('../../supabase/migrations/0139_face_down_moves.sql', import.meta.url), 'utf8');
+  const bound = /if char_length\(phrase\) > (\d+) then raise exception '% waits for a phrase of at most (\d+) characters'/u.exec(sql);
+  assert.ok(bound, 'place_set bounds a set phrase');
+  assert.deepEqual([Number(bound[1]), Number(bound[2])], [SET_PHRASE_MOST, SET_PHRASE_MOST]);
 });

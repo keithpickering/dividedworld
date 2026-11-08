@@ -260,6 +260,9 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
  * `setPhrase` is returned too, for the landing to find in the quoting post's words, and an empty one is refused, since it is in no
  * post and the back could never land. A set costs nothing beyond the card, and a sprung card lands free. A ward never blocks a set, and a set carries no message, since its Act says nothing about its card.
  */
+/** The longest phrase a Move may be set to wait for, in characters; the server holds the same bound (supabase/migrations/0139_face_down_moves.sql, place_set), so every back's pattern there is one length. */
+export const SET_PHRASE_MOST = 100;
+
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
@@ -278,6 +281,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   }
   const phrase = rules.setPhrase?.(checked.value);
   if (phrase !== undefined && phrase.trim() === '') return refuse(`${rules.name} needs a phrase to wait for`);
+  if (phrase !== undefined && [...phrase].length > SET_PHRASE_MOST) return refuse(`${rules.name} waits for a phrase of at most ${SET_PHRASE_MOST} characters`);
   return ok({ price: 0, config: checked.value, ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }) });
 }
 
