@@ -303,19 +303,75 @@
   color: var(--kb-glass-ink-neon);
 }
 
-/* Who: the same three-way choice as How to play it, its words allowed to wrap. */
+/* Who: the same three-way choice as How to play it, drawn as the glass's skewed tiles: each face skews by the glass token and its words
+   (the inner kb-glass-upright) take the opposite, so they stand straight. Cyan when chosen, with the check and the inset ring as well,
+   and the words may wrap. The gap and the side margin leave room for the skew, so nothing leaves the row at a phone's width. */
+.kb-play-who-row {
+  gap: 8px;
+  margin-inline: 6px;
+}
+
 .kb-play-who-row .kb-play-choice-opt {
   display: flex;
 }
 
-.kb-play-who-row .kb-play-choice-opt span {
+.kb-play-who-row .kb-play-choice-opt + .kb-play-choice-opt .kb-play-choice-face {
+  border-inline-start-width: 1px;
+}
+
+.kb-play-who-row .kb-play-choice-face {
   flex: 1;
+  min-height: 48px;
   padding-inline: 8px;
-  line-height: 1.2;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
+  transform: skewX(var(--kb-glass-skew));
+}
+
+.kb-play-who-row .kb-glass-upright {
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
+  line-height: 1.2;
+  color: inherit;
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+/* The check belongs to the words, not to the skewed face, and the face is the one that shows the ring. */
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-play-choice-face::before {
+  content: none;
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-glass-upright::before {
+  content: '\2713\00a0' / '';
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-glass-upright {
+  background: none;
+  box-shadow: none;
+  border: 0;
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:focus-visible) .kb-play-choice-face {
+  outline: 3px solid var(--kb-glass-ready-text);
+  outline-offset: 2px;
+}
+
+.kb-play-who-row .kb-play-choice-opt:has(input:focus-visible) .kb-glass-upright {
+  outline: none;
+}
+
+@media (forced-colors: active) {
+  .kb-play-who-row .kb-play-choice-opt:has(input:checked) .kb-glass-upright {
+    background: none;
+    box-shadow: none;
+    border: 0;
+    color: HighlightText;
+  }
 }
 
 .kb-play-who {

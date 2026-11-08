@@ -4,6 +4,7 @@
  * Only these, Anyone but these, with up to five removable chips). The request carries `when` only with a condition set, and the form's
  * refusals stand beside the field they belong to. The cards are the engine's test set; none is a Divided World card.
  */
+import { readFileSync } from 'node:fs';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -173,6 +174,12 @@ describe('where the group is', () => {
     expect(within(who).getByRole('radio', { name: 'Anyone' })).toBeChecked();
     expect(within(who).getByRole('radio', { name: 'Only these' })).not.toBeChecked();
     expect(within(who).getByRole('radio', { name: 'Anyone but these' })).not.toBeChecked();
+    /* The trio is the glass's skewed shape: each option's words sit in an upright inner span that the skew's opposite holds straight. */
+    for (const name of ['Anyone', 'Only these', 'Anyone but these']) {
+      const face = within(who).getByRole('radio', { name }).nextElementSibling;
+      expect(face, `${name}'s face`).toHaveClass('kb-play-choice-face');
+      expect(face?.firstElementChild, `${name}'s upright words`).toHaveClass('kb-glass-upright');
+    }
     expect(within(group).queryByRole('combobox')).toBeNull();
     await user.click(toggle(dialog));
     expect(toggle(dialog)).toHaveAttribute('aria-expanded', 'false');
@@ -479,5 +486,17 @@ describe('the words', () => {
     expect([none, many, twice].map((w) => fieldOfRefusal(w!))).toEqual(['who', 'who', 'who']);
     expect(fieldOfRefusal(own!)).toBe('says');
     expect(fieldOfRefusal('this post already holds a card face down')).toBeNull();
+  });
+});
+
+describe('the Who trio is skewed like the glass tabs', () => {
+  const css = readFileSync('engine/ui/cards/play.css', 'utf8');
+  test('the face skews by the glass token and its words take the opposite', () => {
+    expect(css).toMatch(/\.kb-play-who-row \.kb-play-choice-face \{[^}]*transform: skewX\(var\(--kb-glass-skew\)\);/u);
+    expect(css).toMatch(/\.kb-play-who-row \.kb-glass-upright \{[^}]*transform: skewX\(calc\(var\(--kb-glass-skew\) \* -1\)\);/u);
+  });
+  test('the selected face keeps its check, and the focus ring is on the face', () => {
+    expect(css).toMatch(/\.kb-play-who-row \.kb-play-choice-opt:has\(input:checked\) \.kb-glass-upright::before \{[^}]*content: /u);
+    expect(css).toMatch(/\.kb-play-who-row \.kb-play-choice-opt:has\(input:focus-visible\) \.kb-play-choice-face \{[^}]*outline: /u);
   });
 });

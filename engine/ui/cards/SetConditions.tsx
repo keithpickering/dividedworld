@@ -226,7 +226,7 @@ export function SetConditions({ id, open, onToggle, draft, onChange, lockedSays,
               {([['anyone', 'Anyone'], ['only', 'Only these'], ['except', 'Anyone but these']] as const).map(([value, label]) => (
                 <label key={value} className="kb-play-choice-opt">
                   <input type="radio" name={`${id}-who`} className="kb-visually-hidden" checked={draft.mode === value} onChange={() => set({ mode: value })} />
-                  <span>{label}</span>
+                  <span className="kb-play-choice-face"><span className="kb-glass-upright">{label}</span></span>
                 </label>
               ))}
             </div>
