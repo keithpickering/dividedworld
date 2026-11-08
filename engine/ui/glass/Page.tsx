@@ -12,7 +12,7 @@
  * 1440px the Main board's is drawn at the window's scale (shell.css).
  */
 import { AnimatePresence } from 'motion/react';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { addressOf, useLocation, useNavigation, useRouterInternals } from '../router.tsx';
 import type { GlassSurface } from '../types.ts';
@@ -63,8 +63,8 @@ export function Page({ surface, menu = true, children }: PageProps) {
   const { shown } = useRouterInternals();
   const resolved = shown.ready && shown.route?.key !== undefined && shown.key !== null ? shown.key : path;
   /*
-   * A count of screens, bumped by the render that changes both the path and the key. Before the first page has landed the key is the path; the move to the
-   * route's own key at the address the window opened at is the same screen settling, not a change.
+   * A count of screens, bumped by the render that changes both the path and the key. Before the first page has landed the key is the path;
+   * the move to the route's own key at the address the window opened at is the same screen settling, not a change.
    */
   const address = addressOf(shown.location);
   const [now, setNow] = useState({ key: resolved, path, address, ready: shown.ready, n: 0 });
@@ -75,6 +75,7 @@ export function Page({ surface, menu = true, children }: PageProps) {
     setNow({ key: resolved, path, address, ready: shown.ready, n: now.n + (changed ? 1 : 0) });
   }
   const screenKey = now.n;
+  const screenValue = useMemo(() => ({ key: resolved, popped }), [resolved, popped]);
   /* The wait: `main` is busy while a load is out, and a hidden status says so when one lands (nothing at rest). */
   const { pending, outcome } = useNavigation();
   const waited = useRef(false);
@@ -117,7 +118,7 @@ export function Page({ surface, menu = true, children }: PageProps) {
           <main ref={main} className="kb-glass-content" tabIndex={-1} aria-busy={pending ? true : undefined}>
             <AnimatePresence initial={false} custom={dir}>
               <Leaving key={screenKey} custom={dir} className="kb-glass-screen" {...screen(feel)}>
-                <ScreenKeyContext.Provider value={{ key: resolved, popped }}>{children}</ScreenKeyContext.Provider>
+                <ScreenKeyContext.Provider value={screenValue}>{children}</ScreenKeyContext.Provider>
               </Leaving>
             </AnimatePresence>
           </main>

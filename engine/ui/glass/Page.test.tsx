@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { renderInWorld } from '../test-world.tsx';
-import { Link } from '../router.tsx';
+import { Link, useLocation } from '../router.tsx';
 import { Routes, type Route } from '../routes.tsx';
 import * as enter from './enter.ts';
 import { GlassLink } from './Link.tsx';
@@ -132,9 +132,10 @@ describe('a page and the router\'s key', () => {
 
   describe('screens are counted by path', () => {
     const routes: Route[] = [
-      { path: '/settings', load: async () => 'doc', key: (_p, q) => q.get('section') ?? 'top', render: () => <p>settings body</p> },
+      { path: '/settings', load: async () => 'doc', key: (_p, q) => q.get('section') ?? 'top', render: () => <SettingsBody /> },
       { path: '/season', load: async () => 'doc', key: () => 'season', render: () => <p>season body</p> },
     ];
+    const SettingsBody = () => <p>settings body {useLocation().query.toString()}</p>;
     const mountSettings = () => renderInWorld(
       <><Page surface="settings"><p>page</p></Page><Routes routes={routes} /><Link to="/settings?section=board">board</Link><Link to="/season">season</Link></>,
       { path: '/settings', seed: signedIn },
@@ -145,7 +146,7 @@ describe('a page and the router\'s key', () => {
       await screen.findByText('settings body');
       const node = document.querySelector('.kb-glass-screen');
       await userEvent.click(screen.getByRole('link', { name: 'board' }));
-      await screen.findByText('settings body');
+      await screen.findByText(/settings body.*section=board/);
       expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1);
       expect(document.querySelector('.kb-glass-screen[data-kb-exiting]')).toBeNull();
       expect(document.querySelector('.kb-glass-screen')).toBe(node);
