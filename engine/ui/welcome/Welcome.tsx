@@ -3,7 +3,7 @@
  * docs/research/2026-11-02-onboarding/01-welcome.html and 04-phone.html): a glass page in the Updates page's frame. The instance's developer
  * persona's letter (`InstanceUi.onboarding.letter`, Markdown through the guide's renderer, so the letter is written once and the Strategy
  * Guide's first section reads the same words) stands on a post with the persona's picture, name and tagline; under it, Before you start
- * (the theme tiles Settings › The board draws, without its preview, and the motion and text size rows Settings › Accessibility draws, saved as they change); then Make your first character, and a
+ * (the theme tiles Settings › The board draws, without its preview, and the motion, text size and Brighter effects rows Settings › Accessibility draws, saved as they change); then Make your first character, and a
  * quieter link to the Strategy Guide. A column beside says what happens next, plainly.
  *
  * It shows once. The page marks the welcome seen when it opens (`seeWelcome`), and `SendToWelcome` sends an account here only while it has

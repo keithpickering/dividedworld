@@ -4,7 +4,7 @@
  * sections, Account, Accessibility, The board and Notifications (the board's Privacy and Export my data wait
  * for a design), and the section beside it.
  *
- * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, the post style and tilt, each a row of
+ * Accessibility: motion (its sentence naming the instance's own card, `InstanceUi.copy`), smoke, contrast, text size, Brighter effects, the post style and tilt, each a row of
  * skewed choices with its sentence. The board (?section=board): the theme, a preview and one tile per theme, and the mode, light, dark or the device's
  * (ThemePicker.tsx). Each is saved to the account the moment it is chosen and applied to the
  * page at once (applyAppearance): the theme and mode restyle the board only, the smoke, contrast and text

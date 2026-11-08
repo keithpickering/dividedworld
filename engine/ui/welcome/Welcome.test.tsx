@@ -73,7 +73,7 @@ describe('the welcome page', () => {
     expect(within(before).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects']);
   });
 
-  test('Before you start holds theme, motion and text size, as Settings draws them, and no other row', async () => {
+  test('Before you start holds theme, motion, text size and Brighter effects, as Settings draws them, and no other row', async () => {
     page();
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await within(before).findAllByRole('radiogroup');

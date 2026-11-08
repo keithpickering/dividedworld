@@ -1,5 +1,5 @@
 /**
- * The rows of Settings › Accessibility that the welcome page's Before you start draws as well (motion and text size; its theme row is
+ * The rows of Settings › Accessibility that the welcome page's Before you start draws as well (motion, text size and Brighter effects; its theme row is
  * ThemePicker.tsx's tiles), so both draw one control and one sentence each, and a choice made on either is the same choice. Each row is a
  * fieldset of skewed radios whose legend is the row's label; what to do with a choice is the screen's (preferences.ts saves it).
  */
