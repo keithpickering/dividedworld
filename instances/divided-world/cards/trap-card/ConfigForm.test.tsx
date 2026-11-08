@@ -43,22 +43,24 @@ describe('the card it waits for', () => {
     expect(whoops).toHaveTextContent('Common');
   });
 
-  test('left untouched it chooses the first card and tells the play form; the arrow keys move the choice', async () => {
+  test('left untouched it chooses nothing and says nothing to the play form; a choice is given, and the arrow keys move it', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();
     render(<Held onChange={onChange} />);
-    const first = castable[0]!;
-    expect(onChange).toHaveBeenCalledWith({ card: first.key });
-    expect(screen.getByRole('radio', { name: first.name })).toBeChecked();
-    screen.getByRole('radio', { name: first.name }).focus();
+    expect(onChange).not.toHaveBeenCalled();
+    for (const r of screen.getAllByRole('radio')) expect(r).not.toBeChecked();
+    await user.click(screen.getByRole('radio', { name: castable[0]!.name }));
+    expect(onChange).toHaveBeenLastCalledWith({ card: castable[0]!.key });
     await user.keyboard('{ArrowDown}');
     expect(screen.getByRole('radio', { name: castable[1]!.name })).toBeChecked();
     expect(onChange).toHaveBeenLastCalledWith({ card: castable[1]!.key });
   });
 
-  test('gives what the card\'s rules take', () => {
+  test('gives what the card\'s rules take', async () => {
     const onChange = vi.fn();
     render(<Held onChange={onChange} />);
+    expect(trapCard.validateConfig(undefined).ok).toBe(false);
+    await userEvent.click(screen.getByRole('radio', { name: castable[0]!.name }));
     const given = onChange.mock.calls.at(-1)![0];
     expect(trapCard.validateConfig(given).ok).toBe(true);
   });

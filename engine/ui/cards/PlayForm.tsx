@@ -146,7 +146,9 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
   const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
-  const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok;
+  /* A Set waits for the card's own settings to be accepted, as a cast's price does (a Gimmick that names a card has no card until the player names one). */
+  const unsettled = setting && !rules.validateConfig(config).ok;
+  const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled;
 
   const change = (value: string) => {
     const typed = [...value];
@@ -295,6 +297,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               )}
               <p className="kb-play-fine" role="status" aria-label="Cost">{shortWords || (!lands.ok ? plainRefusal(lands.why) : '')}</p>
             </div>}
+          {unsettled && <p className="kb-play-fine" id={`${id}-unsettled`}>Choose the card's settings above to set it.</p>}
           <p className="kb-play-fine">
             {setting
               ? `Setting is a public Act${named ? ` under ${named.name}'s name` : ''}. Everyone sees a card back on the post; only you see which card it is.`
@@ -303,7 +306,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
         </div>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <ButtonRow>
-          <GlassButton type="submit" kind="primary" disabled={blocked}>{again ? `${verb} again anyway` : setting ? (named ? `Set face down as ${named.name}` : 'Set face down') : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={blocked} {...(unsettled ? { 'aria-describedby': `${id}-unsettled` } : {})}>{again ? `${verb} again anyway` : setting ? (named ? `Set face down as ${named.name}` : 'Set face down') : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
         </ButtonRow>
       </form>

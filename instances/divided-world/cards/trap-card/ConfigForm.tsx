@@ -5,20 +5,14 @@
  * `{ card }`, the key `trapCard.validateConfig` takes (trap-card.ts). The group is native radios, so the arrow keys move between the
  * faces and Space chooses; the chosen face is outlined, and its tag and rarity are words as well as a shape.
  */
-import { useEffect } from 'react';
 import type { CSSProperties } from 'react';
 import { gemOf, rarityName } from '../../../../engine/ui/cards/faces.ts';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import './trap-card.css';
 
 export function ConfigForm({ config, onChange, id, castable = [] }: ConfigFormProps) {
-  const chosen = typeof config?.card === 'string' && castable.some((f) => f.key === config.card) ? config.card : castable[0]?.key;
-
-  /* Untouched, the first face is chosen and the play form holds it, so setting straight away names that card. */
-  useEffect(() => {
-    if (chosen !== undefined && config?.card !== chosen) onChange({ card: chosen });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chosen]);
+  /* Untouched, nothing is chosen: the play form waits for a card, and the player names it. */
+  const chosen = typeof config?.card === 'string' && castable.some((f) => f.key === config.card) ? config.card : undefined;
 
   return (
     <fieldset className="kb-trap-pick">

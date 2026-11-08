@@ -7,7 +7,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
+import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { hudKey } from '../player.tsx';
@@ -19,7 +19,8 @@ import type { CardUi, ConfigFormProps } from './types.ts';
 const base = { priceKey: 'x.price', playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
 const spark: CardRules = { ...base, key: 'spark', name: 'Spark', alignment: 'sweet', rarity: 'common', reaches: ['character'], canApply: () => ok(undefined) };
-const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: (c) => (c as { card?: string }).card ?? '', canApply: () => ok(undefined) };
+const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: (c) => (c as { card?: string }).card ?? '', canApply: () => ok(undefined),
+  validateConfig: (c) => (typeof (c as { card?: unknown } | undefined)?.card === 'string' ? ok(c) : refuse('the card is the key of the card to catch')) };
 const pass: CardRules = { ...base, key: 'pass', name: 'Pass', alignment: 'sweet', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
 const shield: CardRules = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'common', play: 'use', canApply: () => ok(undefined) };
@@ -35,11 +36,20 @@ function Ink({ config, onChange, id, castable }: ConfigFormProps) {
     </fieldset>
   );
 }
+/** A picker as Trap Card's: one radio for each castable card, nothing chosen until the player chooses. */
+function Pick({ config, onChange, id, castable }: ConfigFormProps) {
+  return (
+    <fieldset>
+      <legend>The card it waits for</legend>
+      {(castable ?? []).map((f) => <label key={f.key}><input type="radio" name={`${id}-catch`} aria-label={f.name} checked={config?.card === f.key} onChange={() => onChange({ card: f.key })} /></label>)}
+    </fieldset>
+  );
+}
 const art = (color: string) => ({ color, ink: '#000', canvas: '', mark: `/${color}.svg`, credit: 'Test' });
 const cards: CardUi[] = [
   { key: 'blot', art: art('pink'), describe: () => 'Splats.', ConfigForm: Ink },
   { key: 'spark', art: art('cyan'), describe: () => 'Sparkles.' },
-  { key: 'snare', art: art('red'), describe: () => 'Catches.', ConfigForm: Ink },
+  { key: 'snare', art: art('red'), describe: () => 'Catches.', ConfigForm: Pick },
   { key: 'pass', art: art('blue'), describe: () => 'Passes.' },
   { key: 'bluffy', art: art('orange'), describe: () => 'Nothing.' },
   { key: 'shield', art: art('green'), describe: () => 'Shields.' },
@@ -187,8 +197,27 @@ describe('a Gimmick', () => {
     expect(within(dialog).queryByRole('group', { name: 'How to play it' })).toBeNull();
     expect(dialog.querySelector('[data-kb-sets]')).toHaveTextContent('Waits for the card it names to be cast on this post, and takes it.');
     expect(within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('list', { name: 'Castable cards' }).textContent).toBe('Blot');
+    /* Only the cards cast on a post: no Use (Shield), no Gimmick (Snare, Pass, Bluffy), no card beyond a post (Spark). */
+    expect(within(dialog).getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual(['Blot']);
     expect(within(post(2)).queryByRole('button', { name: /face down on post/u })).toBeNull();
+  });
+
+  test('an untouched picker chooses nothing: Set waits, said in words the button is tied to, until the card\'s settings are accepted', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const setCard = vi.spyOn(w.fake, 'setCard');
+    await open(w);
+    const dialog = await armAndOpen(user, 'Snare', 'Set Snare face down on post 3', 3);
+    expect(within(dialog).getByRole('radio', { name: 'Blot' })).not.toBeChecked();
+    const button = within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' });
+    expect(button).toBeDisabled();
+    const hint = document.getElementById(button.getAttribute('aria-describedby')!)!;
+    expect(hint).toHaveTextContent('Choose the card\'s settings above to set it.');
+    await user.click(within(dialog).getByRole('radio', { name: 'Blot' }));
+    expect(button).toBeEnabled();
+    expect(button.getAttribute('aria-describedby')).toBeNull();
+    await user.click(button);
+    await waitFor(() => expect(setCard).toHaveBeenCalledWith('snare', w.pipe, expect.any(String), { card: 'blot' }));
   });
 
   test('says its trigger: a visit ends, and one with none does nothing', async () => {
