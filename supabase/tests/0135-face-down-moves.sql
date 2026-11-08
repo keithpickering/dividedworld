@@ -111,6 +111,42 @@ begin
   end loop;
 end $$;
 
+-- A pool post that quotes a Trap Card's post, and a player's cast of the card it names on the same post, at once: both land, nothing deadlocks. The pool post takes the back, the thread and the
+-- count rows (the persona's and the setter's) before it writes; the cast takes the post, the back, then its own count row. (0075's race of a quote and a cast, run with a pool post.)
+-- Before the block below that writes as the same persona in this file's own transaction, which would hold the persona's count row.
+do $$
+declare
+  setter uuid := gen_random_uuid(); caster uuid := gen_random_uuid();
+  s uuid := gen_random_uuid(); c uuid := gen_random_uuid();
+  t uuid := gen_random_uuid();
+  x uuid;
+  said text[];
+  round integer;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sp-poolrace-setter@test.invalid'), (%2$L, 'sp-poolrace-caster@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Sp Poolrace Setter', now(), now()), (%4$L, %2$L, 'Sp Poolrace Caster', now(), now());
+    insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
+    insert into threads (id, board, title) select %5$L, b.id, 'Pool race' from boards b where b.slug = 'general';
+    insert into card_ledger (account, card, kind, price) select %1$L, 'spxtrap', 'bought', 0 from generate_series(1, 8);
+    insert into card_ledger (account, card, kind, price) select %2$L, 'spxrare', 'bought', 0 from generate_series(1, 8);
+  $sql$, setter, caster, s, c, t));
+  for round in 1 .. 6 loop
+    x := gen_random_uuid();
+    perform tests.commit(format($sql$
+      insert into acts (id, character, kind, thread, payload) values (%1$L, %2$L, 'post', %3$L, '{"body": "A Trap Card under this."}');
+      do $d$ begin perform set_card(%4$L, 'spxtrap', %2$L, %1$L, '{"card": "spxrare"}', 0, 'spxrare'); end $d$;
+    $sql$, x, s, t, setter));
+    said := tests.race_service(format('select write_staff_act(%L, ''post'', %L, %L, ''{"body": "A pool post, quoting."}'')', 'spx-race-mod', t, x),
+                               format('select play_card(%L, %L, %L, %L, %L, 0, %L)', caster, 'spxrare', c, x, '{}', ''));
+    if said[1] is not null or said[2] is not null then raise exception 'a pool post and a cast on one trapped post, round %: %', round, said; end if;
+    if (select count(*) from acts where kind = 'post' and target_act_id = x) is distinct from 1::bigint or (select count(*) from acts where kind = 'card' and target_act_id = x and payload ? 'caught') is distinct from 1::bigint then
+      raise exception 'a pool post and a cast on one trapped post, round %: one did not land', round;
+    end if;
+  end loop;
+end $$;
+
 -- A pool post that quotes a trapped post takes the back's row before it writes (steps 3 to 5 ahead of its insert): while another session holds the back, it waits and has written no post;
 -- once the back is free it lands, and the Move lands on the persona's post (#233).
 do $$
