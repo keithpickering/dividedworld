@@ -15,6 +15,8 @@
  * The glass may joke where it describes the game, and it never bluffs (CLAUDE.md, "The fiction may lie; the log never does").
  */
 import type { FrontDoorUi } from '../../../engine/ui/types.ts';
+import snucklesPortrait from './avatars/snuckles_portrait.png?url';
+import snucklesSquare from './avatars/snuckles_square.png?url';
 import chadPortrait from './avatars/robochad_portrait.jpg?url';
 import chadSquare from './avatars/robochad_square.jpg?url';
 import deerPortrait from './avatars/deer_portrait.jpg?url';
@@ -30,7 +32,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   title: 'WELCOME TO THE BEEF ZONE',
   label: 'Sample thread · made up',
   cast: Object.freeze([
-    Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }), avatarPortrait: snucklesPortrait, avatarSquare: snucklesSquare }),
     Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: chadPortrait, avatarSquare: chadSquare }),
     Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: deerPortrait, avatarSquare: deerSquare }),
     Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: joshPicture, avatarSquare: joshPicture }),
