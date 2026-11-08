@@ -38,7 +38,7 @@ Both are engine concepts this design adds through interfaces that name no card.
 
 ## 1. What it does
 
-**Decided:** You Were Saying? is a **Cast on a post**, **Pepperoni**. The old voice continues the post from its last
+**Decided:** You Were Saying? is a **Move** cast on a post, **Pepperoni**. The old voice continues the post from its last
 visible character, and the continuation (the **tail**) is drawn after the post's own words. Nothing is covered, and the
 author's words are never changed ("The System acts; it never destroys what a player wrote").
 
@@ -52,7 +52,7 @@ author's words are never changed ("The System acts; it never destroys what a pla
 **Decided** (the owner chose the recommendation): the play form holds a slider from the base price up to a cap, in steps.
 The base buys a starting length, and each step buys a fixed number of tokens more, about a sentence.
 
-- **Economy settings:** the base price (`youWereSaying.price`), the tokens the base buys, the price of a step, the tokens
+- **Economy settings:** the base price (the card's slot on the Vending Machine), the tokens the base buys, the price of a step, the tokens
   a step buys and the most tokens in all. The starting numbers are 1.00 for 25 tokens, 0.25 for each 25 more, and 200 at
   most, so 2.75 at most in all. The season review replaces them.
 - **The face** shows the price's range, as Autocorrect's does, since the length is chosen in the form.
@@ -81,7 +81,7 @@ Weighed: three named sizes (a coarser offer); a free amount typed in (fiddly at 
 - **A failure refunds.** If the endpoint does not answer after its retries, or the second scrub hits, or what comes back
   is empty, the play stays (it is an Act, and it is still a play the room may react to), the Aura paid at the play for
   its length comes back to the caster's wallet as a `refund` wallet event, and the card goes back to the caster's hand
-  (a `returned` card ledger row), since its base price was paid at the Vending Machine. The caster's and the author's
+  (a `returned` card ledger row), since its base price was paid at the Vending Machine or for a pack. The caster's and the author's
   logs say so in plain words. This is the session's reading of the owner's "refund", not a choice the owner was asked.
   A Mod Bot's play pays nothing and holds no hand, so its failure returns nothing. On a regeneration after an edit, a
   failure keeps the tail it had, which still reads as a continuation of the words before.

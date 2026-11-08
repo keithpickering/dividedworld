@@ -8,7 +8,7 @@ check needs a poison. The engine boundary check (`tools/check-engine-boundary.mj
 `engine/` or `supabase/` names You Were Saying?. The engine gains **a card that writes**, the generation queue, the
 scrubber and the append layer, and reads the card only through `CardRules.writes`.
 
-**One migration:** `supabase/migrations/0116_card_writes.sql`, with its SQL test `supabase/tests/0116-card-writes.sql`,
+**One migration:** `supabase/migrations/0143_card_writes.sql`, with its SQL test `supabase/tests/0143-card-writes.sql`,
 run against Postgres on localhost. If other work has taken these numbers by the time this is built, use the next free
 ones. No deployed database, bucket or connector is touched.
 
@@ -17,7 +17,7 @@ ones. No deployed database, bucket or connector is touched.
 Model: inline
 
 **Files:** `engine/system/model.ts` (`CompletionRequest`), `engine/system/validate.ts` (`cutCompletion`, line 127),
-`supabase/functions/_shared/models/index.ts` (`complete`, line 154); tests `engine/system/validate.test.ts`,
+`supabase/functions/_shared/models/index.ts` (`complete`, line 155); tests `engine/system/validate.test.ts`,
 `supabase/functions/_shared/models/index.test.ts`.
 
 - `CompletionRequest` gains `lines?: 'one' | 'many'`, `'one'` when unset.
@@ -37,7 +37,7 @@ Model: sonnet
 **Files:** `engine/system/scrub.ts` (new), `engine/rules/types.ts` (`SystemContent` gains `scrubWords: readonly
 string[]`), `engine/rules/instance.ts` (`instanceProblems`: a word list entry that is empty or not lower case is a
 problem), `instances/divided-world/system/scrub-words.ts` (new) and `instances/divided-world/system/index.ts`,
-`engine/rules/test-system.ts`, `supabase/functions/chatter/core.ts` (line 315); tests `engine/system/scrub.test.ts`
+`engine/rules/test-system.ts`, `supabase/functions/chatter/core.ts` (line 318); tests `engine/system/scrub.test.ts`
 (new), `supabase/functions/chatter/core.test.ts`.
 
 The staff design's section 13 scrubber, built for every old-voice output.
@@ -62,11 +62,11 @@ the chatter test's old-voice persona answering a planted hit twice files a rejec
 
 Model: sonnet
 
-**Files:** `engine/rules/cards.ts` (`CardRules`, line 135; `decided`, line 217), `engine/rules/types.ts` (`Settings`),
+**Files:** `engine/rules/cards.ts` (`CardRules`, line 123; `decided`, line 201), `engine/rules/types.ts` (`Settings`),
 `engine/rules/instance.ts` (`instanceProblems`), `engine/system/model.ts` (`CallContext`, line 25),
-`engine/system/duties.ts`, `engine/ui/cards/faces.ts` (`facesOf`, line 114), `supabase/functions/chatter/core.ts`
-(`cardsOnOffer`, lines 231–236); tests `engine/rules/cards.test.ts`, `engine/rules/instance.test.ts`,
-`engine/ui/cards/faces.test.ts`, `supabase/functions/chatter/core.test.ts`.
+`engine/system/duties.ts`, `engine/ui/cards/faces.ts` (`facesOf`, line 142), `supabase/functions/chatter/core.ts`
+(`cardsOnOffer`, line 233); tests `engine/rules/cards.test.ts`, `engine/rules/instance.test.ts`,
+`engine/ui/cards/faces.test.tsx`, `supabase/functions/chatter/core.test.ts`.
 
 - `CardRules.writes?: Writes<Config>`, where
   `Writes<Config> = { tokens(config: Config, settings: Settings): number; frame(input: WriteFrameInput): { prompt: string; stop: readonly string[] } }`
@@ -80,7 +80,7 @@ Model: sonnet
   too; `decided` refuses its play with "The old voice isn't running on this forum, so this card can't be played."
   (glass copy, plain). SQL refuses again (Task 4).
 - `CallContext` gains `play?: Id`. `CompletionRequest.duty` widens to `Duty | 'cardText'`; `DUTIES` stays staff work
-  only, so `instanceProblems`' duty assignment check (line 504) and `DUTIES.length === 9` are unchanged.
+  only, so `instanceProblems`' duty assignment check (line 551) and `DUTIES.length === 9` are unchanged.
 
 Tests first: a test card with `writes` on a character reach is an instance problem; `facesOf` with `oldVoice: false`
 omits it and keeps every other card; `decidePlay` refuses it with the sentence above; the pool's offer omits it; a
@@ -90,12 +90,12 @@ omits it and keeps every other card; `decidePlay` refuses it with the sentence a
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0116_card_writes.sql` (new); test `supabase/tests/0116-card-writes.sql` (new);
+**Files:** `supabase/migrations/0143_card_writes.sql` (new); test `supabase/tests/0143-card-writes.sql` (new);
 `supabase/functions/seed/` where it hands `seed_instance` the cards; `tools/export-instance.mjs` and
 `tools/import-instance.mjs` with their round-trip test.
 
-- **`card_kinds.writes boolean not null default false`**, set by `seed_instance` (latest `0105_*.sql`, insert at line
-  596) from `CardRules.writes`. `settings.oldVoice` is seeded with the rest.
+- **`card_kinds.writes boolean not null default false`**, set by `seed_instance` (latest `0139_machine.sql`, insert at
+  line 567) from `CardRules.writes`. `settings.oldVoice` is seeded with the rest.
 - **`card_texts`** (append-only, with the guards `play_moments` has, `0072_play_moments.sql`): `id`, `play` → acts,
   `version` → acts (the post's own Act or an edit), `text` (at most 4,000 characters), `failed text` (null, or the
   predicate: `unreachable`, `scrub:<predicate>`, `nonEmpty`), `call` → `model_calls` (nullable), `created_at`. Exactly
@@ -119,17 +119,19 @@ Model: sonnet
 - **The refund** (`refund_card_write(play)`, called by `finish_card_write` when `failed` is set and the play has no
   `card_texts` row with `text`): the pattern of `refund_appeal` (`0109_appeals.sql:525`): an advisory lock, a side table
   `card_write_refunds (play primary key, amount, at)`, the payer from `wallet_events where kind = 'play' and ref = play`,
-  `wallet_move(account, amount, 'refund', null, play)`, and a `card_ledger` row of a new kind `returned` (the kind check
-  at `0006_cards.sql:21` widens; `returned` names the act as `played` does). A play with no payer (a Mod Bot's, from
+  `wallet_move(account, amount, 'refund', null, play)`, and a `card_ledger` row of a new kind `returned` (the kind check,
+  last widened at `0142_face_down_moves.sql:172`, widens; `returned` names the act as `played` and `caught` do, and
+  `card_held`, `0142_face_down_moves.sql:182`, counts it as it counts `bought`, `pulled` and `caught`). A play with no payer (a Mod Bot's, from
   `staff_play_card`) refunds nothing and returns nothing.
 - **A clear** saves through the existing `save_effect_state` (latest `0092_card_end.sql:487`); the card's
   `validateState` (Task 7) holds its shape.
-- **Refusals:** `play_card` and `buy_card` refuse a writing card when `settings.oldVoice` is false, in the words of
-  Task 3.
+- **Refusals:** `play_card` and `buy_card` (latest `0140_machine_moves.sql:615`) refuse a writing card when
+  `settings.oldVoice` is false, in the words of Task 3, and a pack's roll leaves it out (`roll_pack`'s `leaves`,
+  `0139_machine.sql:201`), so it is neither sold singly nor pulled.
 - **`post_tails(post)`** (granted as `effect_state` is read, to a signed-in player): every `card_texts` row for the plays
   on the post, ordered by version then play.
 - **`model_calls.play bigint` → acts**, nullable; `record_model_call` (`0042_model_calls.sql:60`) writes it from the
-  payload; `ledger.ts`'s `ModelCallRow` and `ledgered()` (`supabase/functions/_shared/models/index.ts:111`) carry
+  payload; `ledger.ts`'s `ModelCallRow` and `ledgered()` (`supabase/functions/_shared/models/index.ts:94`) carry
   `request.play`.
 - **The schedule:** `schedule_card_writes()` adds `kayfabb-write` to pg_cron every minute, `net.http_post` to
   `/functions/v1/write` with the Vault secrets the other jobs use (`0089_*.sql:263` is the pattern).
@@ -147,7 +149,7 @@ delete; `play_card` refuses with `oldVoice` false; `post_tails` is refused to an
 Model: sonnet
 
 **Files:** `supabase/functions/write/core.ts`, `supabase/functions/write/index.ts` (new), `supabase/functions/act/core.ts`
-(`afterTheAnswer`, line 226); tests `supabase/functions/write/core.test.ts` (new), `supabase/functions/act/core.test.ts`.
+(`afterTheAnswer`, line 229); tests `supabase/functions/write/core.test.ts` (new), `supabase/functions/act/core.test.ts`.
 
 - `runWrites(db, models, instance, settings, most)`: claims jobs, and for each builds the frame with the card's
   `writes.frame`, calls `scrubbedComplete` with `duty: 'cardText'`, `play`, `lines: 'many'`, `maxTokens` the play's
@@ -167,9 +169,9 @@ on claim throws; the kick runs only for a post that has jobs.
 
 Model: sonnet
 
-**Files:** `engine/ui/cards/types.ts` (`EffectProps`, line 118), `engine/ui/cards/Effects.tsx` (`PostEffects`, line 41),
+**Files:** `engine/ui/cards/types.ts` (`EffectProps`, line 121), `engine/ui/cards/Effects.tsx` (`PostEffects`, line 42),
 `engine/ui/data/api.ts` (line 1519 area), `engine/ui/data/fake.ts`, `web/src/data/supabase.ts`,
-`engine/ui/thread/lines.tsx` (`Versions`, line 35), `engine/ui/cards/Moment.tsx` (`MomentFrame`, line 55); tests beside
+`engine/ui/thread/lines.tsx` (`Versions`, line 58), `engine/ui/cards/Moment.tsx` (`MomentFrame`, line 55); tests beside
 each.
 
 - `EffectProps.written: ReadonlyMap<Id, Written>`, where `Written = { text: string } | { waiting: true } | { failed: true }`,
@@ -193,12 +195,13 @@ one's.
 Model: sonnet
 
 **Files:** `instances/divided-world/cards/you-were-saying.ts` (new), `instances/divided-world/cards/you-were-saying/frame.ts`
-(new), `instances/divided-world/cards/index.ts`, `instances/divided-world/settings.ts` (`economy`, near lines 176–179);
+(new), `instances/divided-world/cards/index.ts`, `instances/divided-world/machine.ts` (its slot),
+`instances/divided-world/settings.ts` (`economy`, near lines 177–181);
 tests `instances/divided-world/cards/you-were-saying.test.ts` (new), `instances/divided-world/cards/cards.test.ts`
 (line 20's list).
 
-- **Rules:** key `youWereSaying`, name `You Were Saying?`, alignment `pepperoni`, rarity `common`, `stack: 3`,
-  `priceKey: 'youWereSaying.price'`; `reads` for `youWereSaying.baseTokens`, `.stepTokens`, `.stepPrice`, `.mostTokens`.
+- **Rules:** key `you-were-saying`, name `You Were Saying?`, alignment `pepperoni`, rarity `common`, `stack: 3`; no
+  price of its own (the booster packs design moved prices onto the machine's slots); `reads` for `youWereSaying.baseTokens`, `.stepTokens`, `.stepPrice`, `.mostTokens`.
 - **Config:** `{ steps: number }`, a whole number from 0 to `(mostTokens − baseTokens) / stepTokens`. `tokens` is
   `baseTokens + steps × stepTokens`; `playPrice` is `steps × stepPrice` (a face, with no config, asks the most).
 - **`canApply`:** `landsOn`, then refuses a post whose visible text is empty: "There's nothing in this post to continue."
@@ -209,11 +212,13 @@ tests `instances/divided-world/cards/you-were-saying.test.ts` (new), `instances/
   after, so the model continues mid-line. Stops: `\n<Name>:` shapes are not knowable ahead, so the stop list holds
   `"\nQuote:"`, `"\n---"`, `"\nPosted:"`, and the frame's header line; `cutCompletion` under `'many'` keeps the rest.
   Every name and text is collapsed to plain lines as `chatterCompletion` does, so a player's words cannot end the frame.
-- **Economy:** `youWereSaying.price` 100, `baseTokens` 25, `stepTokens` 25, `stepPrice` 25, `mostTokens` 200.
+- **Economy:** `youWereSaying.baseTokens` 25, `.stepTokens` 25, `.stepPrice` 25, `.mostTokens` 200.
+- **The machine:** a slot `{ item: { card: 'you-were-saying' }, availability: 'onSale', price: 100 }`. Being common, it
+  is also in the Booster's common pulls.
 
 Tests first: `tokens` and `playPrice` at 0 and at the most steps; a step past the most is refused by `validateConfig`; an
 images-only post is refused; the frame ends with the post's last characters and no newline; a post body holding
-`"\nName:"` cannot add a line to the frame; cards.test.ts's list gains `['youWereSaying', 'pepperoni', 100]` and its pool
+`"\nName:"` cannot add a line to the frame; cards.test.ts's list gains `['you-were-saying', 'pepperoni', 100]` and its pool
 tests pass for the new card.
 
 ## Task 8. The tail: terminal bleed (instance effect)
@@ -222,7 +227,7 @@ Model: sonnet
 
 **Files:** `instances/divided-world/cards/you-were-saying/Effect.tsx`, `instances/divided-world/cards/you-were-saying/tail.css`
 (new), `instances/divided-world/cards/you-were-saying/erase.ts` (new, the hold's clock), `instances/divided-world/ui/cards.ts`
-(the lazy Effect and `describe`), `instances/divided-world/ui/settings` where `cardSettings` live (`settings.ts` line 139:
+(the lazy Effect and `describe`), `instances/divided-world/ui/settings` where `cardSettings` live (`settings.ts` line 152:
 `youWereSaying.eraseCps` 6, `youWereSaying.retypeMs` 2000, `youWereSaying.typeCps` 40, as `screenReads`); tests
 `Effect.test.tsx` and `erase.test.ts` beside them; a story under the screens' stories with a shot.
 
@@ -268,7 +273,7 @@ Tests first: the slider's value is the config's `steps`; arrow keys step it; the
 
 Model: haiku
 
-**Files:** `engine/ui/log/lines.ts` (the play lines near 497 and 534, the `back()` helper at 369), `instances/divided-world/ui/cards.ts`
+**Files:** `engine/ui/log/lines.ts` (the card lines from line 506, the `back()` helper at 448), `instances/divided-world/ui/cards.ts`
 (`logPlay`, `logSave`), the log data read that carries `wallet` events; tests `engine/ui/log/lines.test.tsx`.
 
 The exact strings are the design's section 13:
