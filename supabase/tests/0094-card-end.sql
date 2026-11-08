@@ -217,9 +217,7 @@ begin
     ('ce-th', 'Ce Thread', 'sweet', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{thread}', false, null),
     ('ce-pin', 'Ce Pin', 'sweet', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{thread}', true, null),
     ('ce-bd', 'Ce Board', 'salty', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null),
-    ('ce-bd2', 'Ce Board Two', 'salty', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null),
-    ('ce-hook', 'Ce Hook', 'salty', 'cetwo.price', 'common', 'set', 1, false, null, '{post}', false,
-      '{"trigger": {"on": "reply"}, "outcome": {"do": "strike", "card": "ce-wh"}}');
+    ('ce-bd2', 'Ce Board Two', 'salty', 'cetwo.price', 'common', 'cast', 1, false, interval '1 day', '{board}', false, null);
 end $$;
 
 -- ---- card_target: the post's effects leave the reversed play out and keep the identical live one ----
@@ -287,7 +285,7 @@ begin
   if why is null or why not like '%turns away cards%' then raise exception 'the identical live ward still turns the cast away: %', why; end if;
 end $$;
 
--- ---- spring_traps: a strike's stack leaves the reversed play out and keeps its layer ----
+-- ---- spring_traps: a Move's stack on the quoting post leaves the reversed play out and keeps its layer ----
 do $$
 declare
   player uuid := (select id from auth.users where email = 'ce-player@test.invalid');
@@ -300,20 +298,20 @@ declare
   reply2 uuid := tests.post(caster, t, 'A reply carrying three, none reversed.');
   mid uuid; got jsonb;
 begin
-  perform place_set(author, 'ce-hook', trapped, '{}', player, 0);
-  perform place_set(author, 'ce-hook', trapped2, '{}', player, 0);
+  perform place_set(author, 'ce-wh', trapped, '{}', player, 0);
+  perform place_set(author, 'ce-wh', trapped2, '{}', player, 0);
   perform tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 1}', reply);
   mid := tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 2}', reply);
   perform tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 3}', reply);
   perform tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 1}', reply2);
   perform tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 2}', reply2);
   perform tests.act(caster, 'card', t, '{"card": "ce-wh", "layer": 3}', reply2);
-  if spring_traps('reply', trapped2, reply2) is not null then raise exception 'a full live stack leaves the trap set'; end if;
-  if spring_traps('reply', trapped, reply) is not null then raise exception 'three live plays leave the trap set'; end if;
+  if spring_traps('quote', trapped2, reply2) is not null then raise exception 'a full live stack leaves the Move set'; end if;
+  if spring_traps('quote', trapped, reply) is not null then raise exception 'three live plays leave the Move set'; end if;
   perform pg_temp.end_play(mid);
-  got := spring_traps('reply', trapped, reply);
-  if got is null or got -> 'struck' is null then raise exception 'two live plays and one reversed take the strike: %', got; end if;
-  if (got -> 'struck' -> 'payload' ->> 'layer')::integer is distinct from 4 then raise exception 'the strike takes layer 4: %', got -> 'struck' -> 'payload'; end if;
+  got := spring_traps('quote', trapped, reply);
+  if got is null or got -> 'struck' is null then raise exception 'two live plays and one reversed let the Move land: %', got; end if;
+  if (got -> 'struck' -> 'payload' ->> 'layer')::integer is distinct from 4 then raise exception 'the Move takes layer 4: %', got -> 'struck' -> 'payload'; end if;
 end $$;
 
 -- ---- The plays beyond a post: reach_effects, effects_above and pinned_threads leave a reversed play out ----

@@ -447,7 +447,7 @@ declare
 begin
   update settings set value = value || '{"bluffy.price": 25}' where key = 'economy';
   insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap, ward, lasts)
-    values ('vs-trap', 'Vs Trap', 'pepperoni', 'bluffy.price', 'common', 'set', '{"trigger": {"on": "visit"}, "outcome": {"do": "nullify"}}', false, null) on conflict (key) do nothing;
+    values ('vs-trap', 'Vs Trap', 'pepperoni', 'bluffy.price', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null) on conflict (key) do nothing;
   setting_ := tests.act(c, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'vs-trap', p, t, 1, now() + interval '1 day');
   v := start_visit(p, 'vs-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));

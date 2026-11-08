@@ -80,14 +80,13 @@ begin
   perform set_config('kayfabb.intercept_writer', 'on', true);
   icpt := tests.act(a1, 'intercept', t, jsonb_build_object('visit_act', vpost, 'kind', 'quiz', 'succeeded', true), p2, base + interval '29 minutes');
   perform set_config('kayfabb.intercept_writer', 'off', true);
-  -- Ann's own card set face down on her post, which sprang (a setEnds row naming the spring), and another that a reply passed by (a setPasses row).
+  -- Ann's own card set face down on her post, which sprang (a setEnds row naming the spring), and another still set (in no source: a reply passes no back now, so setPasses is always empty).
   set3 := tests.act(a1, 'set', t, '{}', p1, base + interval '30 minutes');
   insert into face_down (play, account, card, post, thread, round, ends_at) values (set3, ann, 'blot', p1, t, 1, base + interval '2 hours');
   sp3 := tests.act(a1, 'spring', t, jsonb_build_object('card', 'blot', 'trigger', 'reply', 'outcome', '{}'::jsonb, 'set', set3), p1, base + interval '31 minutes');
   p1b := tests.post(a1, t, 'Ann again.', base + interval '32 minutes');
   set4 := tests.act(a1, 'set', t, '{}', p1b, base + interval '33 minutes');
   insert into face_down (play, account, card, post, thread, round, ends_at) values (set4, ann, 'blot', p1b, t, 1, now() + interval '3 days');
-  insert into face_down_reply (play, thread, passed_by, passed_at) values (set4, t, vpost, base + interval '34 minutes');
   -- A report of Ann's on Bob's post.
   perform set_config('kayfabb.report_writer', 'on', true);
   rep := tests.act(a1, 'report', t, '{"reason": "rude"}', p2, base + interval '35 minutes');
@@ -171,15 +170,15 @@ begin
   -- ---- What `around` reads for them ----
   -- The Acts the lines name: shares', cards', plays', saves', the bribe's, the Turn's; then two rounds on (the spring and the post, then what it caught and its post), not a third (W).
   ids := (select array_agg(x ->> 'id' order by x ->> 'id') from jsonb_array_elements(doc -> 'acts') x);
-  if ids is distinct from (select array_agg(u.v::text order by u.v::text) from unnest(array[p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3, p1b]) as u(v)) then
+  if ids is distinct from (select array_agg(u.v::text order by u.v::text) from unnest(array[p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3]) as u(v)) then
     raise exception 'acts: %', ids;
   end if;
-  if doc -> 'acts' is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from acts_public a where a.id in (p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3, p1b)) then raise exception 'the acts are the acts_public rows'; end if;
+  if doc -> 'acts' is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from acts_public a where a.id in (p1, p2, y, k, sp, z, c1, b_on_p1, turn_act, z2, w3, rc, rt, rb, icpt, vpost, sp3)) then raise exception 'the acts are the acts_public rows'; end if;
   -- Not read: a third round (W), the older Turn's Act and what only a set or a spring's own set names.
   if exists (select 1 from jsonb_array_elements(doc -> 'acts') x where x ->> 'id' in (w::text, turn_old::text, set_act::text, set3::text, set2::text, sp2::text)) then raise exception 'a third round, an older Turn and a set are not named'; end if;
-  -- The sources the fixtures fill: a spring's end, a pass, a caught play, a report and an appeal, each one row.
+  -- The sources the fixtures fill: a spring's end, a caught play, a report and an appeal, each one row; and no pass (a reply passes no back).
   if jsonb_array_length(doc -> 'sources' -> 'setEnds') is distinct from 1 or doc #>> '{sources,setEnds,0,spring}' is distinct from sp3::text then raise exception 'setEnds: %', doc -> 'sources' -> 'setEnds'; end if;
-  if jsonb_array_length(doc -> 'sources' -> 'setPasses') is distinct from 1 or doc #>> '{sources,setPasses,0,post}' is distinct from p1b::text then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
+  if jsonb_array_length(doc -> 'sources' -> 'setPasses') is distinct from 0 then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
   if jsonb_array_length(doc -> 'sources' -> 'caught') is distinct from 1 or doc #>> '{sources,caught,0,play}' is distinct from z2::text then raise exception 'caught: %', doc -> 'sources' -> 'caught'; end if;
   if jsonb_array_length(doc -> 'sources' -> 'reports') is distinct from 1 or doc #>> '{sources,reports,0,report}' is distinct from rep::text then raise exception 'reports: %', doc -> 'sources' -> 'reports'; end if;
   if jsonb_array_length(doc -> 'sources' -> 'appeals') is distinct from 1 or doc #>> '{sources,appeals,0,appeal}' is distinct from apl::text then raise exception 'appeals: %', doc -> 'sources' -> 'appeals'; end if;

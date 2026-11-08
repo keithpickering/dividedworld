@@ -102,13 +102,13 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0072): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
-      -- A trap of the export's own (#136 F1): Ann sets a cast-trigger nullify on her post through set_card, and Bob's Blot cast on it
+      -- A trap of the export's own (#136 F1): Ann sets a Trap Card naming Blot on her post through set_card, and Bob's Blot cast on it
       -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
       update settings set value = value || '{"expcatch.price": 100}' where key = 'economy';
       insert into card_kinds (key, name, alignment, price_setting, rarity, play, trap)
-      values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}, "outcome": {"do": "nullify"}}');
+      values ('expcatch', 'Exported Catcher', 'salty', 'expcatch.price', 'rare', 'set', '{"trigger": {"on": "cast"}}');
       insert into card_ledger (account, card, kind, price) values (ann, 'expcatch', 'bought', 0), (bob, 'blot', 'bought', 0);
-      perform set_card(ann, 'expcatch', a, p, '{}', 0);
+      perform set_card(ann, 'expcatch', a, p, '{"card": "blot"}', 0, 'blot');
       perform play_card(bob, 'blot', b, p, '{}', 0, '');
       -- One more card, played as the sweetie above is, for an admin to end after the caught one (0092); its id is fixed in the test.
       insert into acts (id, character, kind, thread, target_act_id, payload) values ('${endedPlay}', a, 'card', t, p, '{"card": "sweetie", "config": {}}');
