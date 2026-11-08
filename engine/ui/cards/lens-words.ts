@@ -76,6 +76,14 @@ export function shortQuote(text: string, most: number = QUOTE_SHORT): string {
   return `\u201c${head}\u2026\u201d`;
 }
 
+/** Who a quote must come from, in words: "Spritey or Boshi", "Spritey, Boshi or Pipewrench"; with `except`, "anyone but" them. Null for no one (anyone). */
+export function whoWords(ids: readonly Id[], except: boolean, nameOf: (id: Id) => string): string | null {
+  const listed = ids.map(nameOf);
+  if (listed.length === 0) return null;
+  const list = listed.length < 2 ? listed.join('') : `${listed.slice(0, -1).join(', ')} or ${listed[listed.length - 1]}`;
+  return except ? `anyone but ${list}` : list;
+}
+
 const textOf = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
 /** The conditions a spring Act matched (its payload's `when`; never an Anyone-but list), each text unquoted and unshortened. Absent ones are null. */

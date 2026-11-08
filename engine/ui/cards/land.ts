@@ -79,13 +79,16 @@ const LANDS_ON: Readonly<Record<'post' | BeyondPost, string>> = {
   board: "the quoting post's board",
 };
 
+/** Where a sprung Move lands, in words ("the quoting post"). */
+export const landsWords = (rules: Pick<CardRules, 'reaches'>): string => LANDS_ON[reachesOf(rules)[0] ?? 'post'];
+
 /**
  * What a card set face down does, in one plain sentence, from the card's rules and never its name: a Move springs on a quote and lands on
  * what its first reach says; a Gimmick waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
  * post to start (and ends it), or does nothing.
  */
 export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap'>): string {
-  if (playOfRules(rules) === 'cast') return `Springs when someone quotes this post, and lands on ${LANDS_ON[reachesOf(rules)[0] ?? 'post']}.`;
+  if (playOfRules(rules) === 'cast') return `Springs when someone quotes this post, and lands on ${landsWords(rules)}.`;
   const on = rules.trap?.trigger.on;
   if (on === 'cast') return 'Waits for the card it names to be cast on this post, and takes it.';
   if (on === 'visit') return 'Ends the next Mod Bot visit to this post when the visit starts.';

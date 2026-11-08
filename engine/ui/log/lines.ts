@@ -29,7 +29,7 @@ import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
 import { upperFirst } from '../copy-words.ts';
-import { quotedWords, shortQuote, springConditions } from '../cards/lens-words.ts';
+import { quotedWords, shortQuote, springConditions, whoWords } from '../cards/lens-words.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
@@ -196,9 +196,7 @@ export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'ph
 
 /** What a Move waits for, said to its setter alone, every condition in full. The Anyone-but list is named here and nowhere else. */
 function castWaits(e: Pick<CardEvent, 'phrase' | 'passage' | 'who' | 'whoExcept'>, nameOf: (id: Id) => string): string {
-  const listed = (e.who ?? []).map(nameOf);
-  const list = listed.length < 2 ? listed.join('') : `${listed.slice(0, -1).join(', ')} or ${listed[listed.length - 1]}`;
-  const who = listed.length === 0 ? null : e.whoExcept ? `anyone but ${list}` : list;
+  const who = whoWords(e.who ?? [], e.whoExcept === true, nameOf);
   if (!e.passage && !who) return e.phrase ? `to spring on a quote that says \u201c${e.phrase}\u201d` : 'to spring on a quote';
   return `to spring when ${who ?? 'someone'} quotes ${e.passage ? shortQuote(e.passage, Infinity) : 'it'}${e.phrase ? ` saying ${shortQuote(e.phrase, Infinity)}` : ''}`;
 }

@@ -18,7 +18,7 @@
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
 import type { PronounSet } from '../../rules/pronouns.ts';
-import type { BeyondPost, Rarity, Reach } from '../../rules/cards.ts';
+import type { BeyondPost, Rarity, Reach, SetConditions } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
 import type { RecordKind } from '../profile/record.ts';
@@ -2168,8 +2168,9 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a Gimmick.
    */
-  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>): Promise<Answer<Act>>;
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
   /** Use a card the player holds on a post of the character's own (a ward), as a play is: its Act comes back, with its end. */
   useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
   /** Which card each of the player's own card backs among these sets is (`my_face_down`), by set; another's back is absent. */

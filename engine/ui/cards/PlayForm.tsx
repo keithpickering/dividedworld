@@ -26,7 +26,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
-import { casterMessage, castOnPost, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
+import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -36,9 +36,10 @@ import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
-import { endsWords, landing, landingOn, lengthOf, springWords, targetOf } from './land.ts';
+import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf } from './land.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
+import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
 import './play.css';
 
 export interface PlayFormProps {
@@ -78,6 +79,10 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
+  /* A Move's conditions (SetConditions.tsx): kept here so a closed group does not lose them, and sent only with a Set. `placed` is a refusal the server gave that belongs to a field. */
+  const [draft, setDraft] = useState<ConditionsDraft>(noConditions);
+  const [whenOpen, setWhenOpen] = useState(false);
+  const [placed, setPlaced] = useState<{ readonly field: Field; readonly why: string } | null>(null);
   const account = player.session.account;
   /*
    * The account the screen is on now, read after every wait: an answer for another one is dropped. These checks are defense in
@@ -138,6 +143,25 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     }
   }, [rules, setting, priced, goal, config]);
 
+  /* A Move being set may carry conditions; a Gimmick never does (the rules refuse them), and a card played face up has none. */
+  const conditional = setting && how === 'cast';
+  /* A card with its own phrase has its Says fixed to it. */
+  const lockedSays = useMemo(() => {
+    if (!conditional || !rules?.setPhrase) return null;
+    try { const checked = rules.validateConfig(config); return checked.ok ? rules.setPhrase(checked.value) : ''; } catch { return ''; }
+  }, [conditional, rules, config]);
+  const when = useMemo(() => (conditional ? whenOf(draft, lockedSays !== null) : undefined), [conditional, draft, lockedSays]);
+  /* The post's visible words, parsed once for each edit of it: the view of it and the rules' look at the passage both read them. */
+  const watched = useMemo(() => (post ? targetOf(post) : null), [post]);
+  /* The rules' own word on the conditions, asked as the server will ask it, so a refusal shows beside its field before anything is sent. */
+  const problems = useMemo((): Problems => {
+    if (!when || !rules || !watched) return {};
+    const decided = decideSet(rules, priced, watched, [], config ?? {}, instance.cards, when);
+    const field = decided.ok ? null : fieldOfRefusal(decided.why);
+    return decided.ok || field === null ? {} : { [field]: plainRefusal(decided.why) };
+  }, [when, rules, watched, priced, config, instance.cards]);
+  const shown: Problems = Object.keys(problems).length > 0 ? problems : placed ? { [placed.field]: placed.why } : {};
+
   if (!rules || !face) return null;
   const length = post ? lengthOf(post) : 0;
   /* Another of the player's own masks is the target: a post's author, or the character a play beyond a post lands on. */
@@ -148,7 +172,11 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
   /* A Set waits for the card's own settings to be accepted, as a cast's price does (a Gimmick that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
-  const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled;
+  const flawed = Object.keys(problems).length > 0;
+  const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
+  const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
+  /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
+  const springs = when || lockedSays ? `Springs ${conditionWords({ ...when, ...(lockedSays ? { says: lockedSays } : {}) }, nameOf)}, and lands on ${landsWords(rules)}.` : springWords(rules);
 
   const change = (value: string) => {
     const typed = [...value];
@@ -206,13 +234,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     const before = new Set(carried.map((p) => p.id));
     setBusy(true);
     setRefusal(null);
+    setPlaced(null);
     try {
       let answer;
       try {
         answer = beyond
           ? how === 'use' ? await api.useCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
             : await api.playCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
-          : setting ? await api.setCard(card, setter.id, post!.id, config ?? {})
+          : setting ? await (when ? api.setCard(card, setter.id, post!.id, config ?? {}, when) : api.setCard(card, setter.id, post!.id, config ?? {}))
           : how === 'use' ? await api.useCard(card, hud.id, post!.id, config ?? {}, message)
           : await api.playCard(card, hud.id, post!.id, config ?? {}, message);
       } catch { await look(null, before, (setting ? setter : hud).id); return; }
@@ -220,7 +249,13 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
       if (answer.ok) await landed(answer.value);
       else if (answer.uncertain) await look(answer.error, before, (setting ? setter : hud).id);
       else {
-        setRefusal(settle(answer.error));
+        /* A refusal that belongs to a condition stands beside its field, which takes the focus; any other is the form's alert. */
+        const field = when ? fieldOfRefusal(answer.error) : null;
+        if (field !== null) {
+          setPlaced({ field, why: plainRefusal(answer.error) });
+          setWhenOpen(true);
+          setTimeout(() => (document.getElementById(`${id}-${field}`) ?? document.querySelector<HTMLElement>(`#${CSS.escape(`${id}-when`)} input[type="radio"]:checked`))?.focus());
+        } else setRefusal(settle(answer.error));
         /* The post may have changed under the play (a fourth Whoops! landed first): read its plays again so this form and the post stop offering it. */
         try { await read(); } catch { /* the refusal stands; the next read is the live one */ }
       }
@@ -267,8 +302,11 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               : <>On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.</>}
           </p>
           {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
-          {setting && <p className="kb-play-sets" data-kb-sets>{springWords(rules)}</p>}
+          {setting && <p className="kb-play-sets" data-kb-sets>{springs}</p>}
           {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} /></div>}
+          {conditional && post && (
+            <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
+          )}
           {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(instance.settings.setLasts)}</p>}
           {/* A Set's Act says nothing, so it carries no message and costs no more than the card: a Bluff's and a trap's are alike. */}
           {!setting && <div className="kb-play-message">
@@ -282,7 +320,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
             </div>
           </div>}
           {setting
-            ? <p className="kb-play-fine" role="status" aria-label="Whether it can be set">{!lands.ok ? plainRefusal(lands.why) : ''}</p>
+            ? <p className="kb-play-fine" role="status" aria-label="Whether it can be set">{!lands.ok ? plainRefusal(lands.why) : whenOpen ? '' : Object.values(shown)[0] ?? ''}</p>
             : <div className="kb-play-sum">
               <dl className="kb-play-cost">
                 <div><dt>Card</dt><dd>Paid</dd></div>
