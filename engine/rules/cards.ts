@@ -309,7 +309,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
     if (who !== undefined) {
       if (who.characters.length === 0) return refuse('name at least one character, or choose anyone');
       if (who.characters.length > SET_WHO_MOST) return refuse(`name at most ${SET_WHO_MOST} characters`);
-      if (new Set(who.characters).size !== who.characters.length) return refuse('name each character once');
+      if (new Set(who.characters.map((c) => c.toLowerCase())).size !== who.characters.length) return refuse('name each character once');
     }
   }
   return ok({ price: 0, config: checked.value, ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }), ...(passage === undefined ? {} : { passage }), ...(who === undefined ? {} : { who: { except: who.except, characters: [...who.characters] } }) });

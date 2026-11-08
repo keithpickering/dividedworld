@@ -327,4 +327,6 @@ test('a Who with no characters, more than five, or one twice is refused, and non
   assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who(ids) }), { ok: false, why: 'name at most 5 characters' });
   assert.equal(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who(ids.slice(0, 5)) }).ok, true);
   assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who([A, B, A], true) }), { ok: false, why: 'name each character once' });
+  // An id is the same id in either case: the UUID check accepts both.
+  assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who(['abcdefab-1111-4111-8111-111111111111', 'ABCDEFAB-1111-4111-8111-111111111111'], true) }), { ok: false, why: 'name each character once' });
 });
