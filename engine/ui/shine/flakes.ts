@@ -460,8 +460,8 @@ function drawList(
 }
 
 /**
- * The flares over the flakes `drawList` found facing the light. Under a bright band every one is a glint, on either board and
- * under reduced motion too (a loose flake's is drawn over, as on the dark board). Elsewhere, where the band reaches white (the light board) a flare is the
+ * The flares over the flakes `drawList` found facing the light. Under a bright band a post's own flake glints on either board and
+ * under reduced motion too, and a loose one is drawn over in its own ink. In a standard band, where it reaches white (the light board) a flare is the
  * glint's sprite, added, and that stays in the band. On the dark board, where `glints` allows it, each one is a glint, the one
  * thing the shine draws out of the band there (section 5, issue #340): added, in the flake's own hue at full brightness
  * (`glintOf`), with the instance's glint over its heart at `GLINT_CORE` of its size, as real glitter flashes white at its center
@@ -478,7 +478,7 @@ function drawFlares(ctx: CanvasRenderingContext2D, list: readonly Flake[], band:
     const f = list[flareAt[j]!]!;
     const alpha = (flareA[j]! - GLINT_MIN) / (1 - GLINT_MIN);
     if (alpha < 0.03) continue;
-    const sprite = white ? star : spriteOf(glints ? glintOf(f, lx, ly) : ceilTintOf(f, band.hi, lx, ly), glintLin);
+    const sprite = white ? star : spriteOf(glints ? glintOf(f, lx, ly) : band.bright ? tintOf(f, lx, ly, f.pal.lin) : ceilTintOf(f, band.hi, lx, ly), glintLin);
     if (!sprite) continue;
     const z = 7 + f.s * 4;
     ctx.globalAlpha = alpha; ctx.drawImage(sprite, f.x - z / 2, f.y - z / 2, z, z);
@@ -1169,6 +1169,7 @@ export function shake(v: number, now: number): number {
 /** The color of a carried or falling flake at a phase, in the band it was lent against. The old dark outline is gone: it could fall below the light board's floor. */
 function clingColor(f: Flake, ph: number, band: Band): string {
   const flash = Math.abs(Math.sin(ph)) ** 8, ink = darkStandard(band) ? ceilingOf(f.pal, band.hi)[f.ink]! : f.pal.lin[f.ink]!;
+  if (band.bright) return freeColour(ink, floorOf(band) + (1 - floorOf(band)) * flash, band);
   const k = 0.45 + 0.55 * flash;
   scratch[0] = ink[0] * k; scratch[1] = ink[1] * k; scratch[2] = ink[2] * k;
   return hexFor(clampInto(scratch, band));

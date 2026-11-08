@@ -10,7 +10,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tokensOf } from '../contrast.ts';
 import { bandOf, brightBand, luminanceOf, toLinear, toHex, type Rgb } from './band.ts';
-import { BRIGHT_FLOOR, drawLoose, glintsAreFew, GLINT_MIN, landAll, loose, makeFlakes, sampleFlakes, type Flake, type Flakes } from './flakes.ts';
+import { BRIGHT_FLOOR, drawLoose, glintsAreFew, GLINT_MIN, landAll, loose, makeFlakes, sampleCling, sampleFlakes, type Flake, type Flakes } from './flakes.ts';
 
 /** A stand-in canvas: a sprite drawn on it remembers the colors of its gradient's stops. */
 class FakeCanvas {
@@ -229,6 +229,30 @@ describe('the bright band: glitter in full color', () => {
     assert.equal(r.images.length, 1);
     assert.equal(r.images[0]!.op, 'source-over');
     near(r.fills[0]!, GLITTER[BLUE]!);
+    near(colorOf(r.images[0]!.sprite), GLITTER[BLUE]!);
+  });
+
+  test('a loose flare keeps the flake\'s own hue, not a hue moved to a ceiling', () => {
+    for (const board of [brightDark, brightLight]) {
+      for (const ink of [0, 3, 5, 6]) {
+        const { aim } = post(false, ink);
+        const host = {};
+        loose(host).push({ ...aim });
+        const r = recorder();
+        drawLoose(host, r.ctx, { x: aim.nx, y: aim.ny }, board, 0, false);
+        near(colorOf(r.images[0]!.sprite), GLITTER[ink]!);
+      }
+    }
+  });
+
+  test('cling takes the floors: its darkest color is the ink at 0.5 on the dark board, 0.85 of it on the light', () => {
+    const { f } = post(false, BLUE);
+    const ink = toLinear(GLITTER[BLUE]!);
+    const dk = sampleCling(f, brightDark), lt = sampleCling(f, brightLight);
+    const has = (set: Set<string>, want: string) => [...set].some((c) => { try { near(c, want); return true; } catch { return false; } });
+    assert.ok(has(dk, hexOfLin(ink.map((v) => v * BRIGHT_FLOOR.dark) as Rgb)), 'dark trough');
+    assert.ok(has(lt, hexOfLin(ink.map((v) => 1 + (v - 1) * BRIGHT_FLOOR.light) as Rgb)), 'light trough');
+    assert.ok(has(dk, GLITTER[BLUE]!) && has(lt, GLITTER[BLUE]!), 'full ink at the peak');
   });
 
   test('the standard checks are not applied to a bright band: glintsAreFew takes no band, and the sampled colors leave the standard one', () => {
