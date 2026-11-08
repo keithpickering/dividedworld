@@ -158,10 +158,7 @@ export interface CardRules<Config = unknown> {
   readonly stack?: number;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
-  /**
-   * What playing it on this target costs from the wallet, on top of the base price already paid. A
-   * trap that strikes is given the struck card's configuration, which is what it carries.
-   */
+  /** What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it. */
   playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
   /**
    * Whether it lands on this target, given the effects already there. A Cast or a Use is also given its configuration as
@@ -260,8 +257,8 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
  * A card set face down on a post, a Move (cast) or a Gimmick (set); a Use is refused. Refused on a post that already holds a live
  * face-down card. The configuration is the card's own (`validateConfig`). A cast Gimmick names the card it catches
  * (`catches`), which must be one of `cards` that is cast on a post, since a caught card is one a caster played there. A Move's
- * `setPhrase` is returned too, for the landing to find in the quoting post's words. A set costs nothing now: a Move pays when it
- * springs, as a cast does. A ward never blocks a set, and a set carries no message, since its Act says nothing about its card.
+ * `setPhrase` is returned too, for the landing to find in the quoting post's words, and an empty one is refused, since it is in no
+ * post and the back could never land. A set costs nothing beyond the card, and a sprung card lands free. A ward never blocks a set, and a set carries no message, since its Act says nothing about its card.
  */
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string }> {
   const play = playOf(rules);
@@ -279,6 +276,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
     if (!named || playOf(named) !== 'cast' || !reachesOf(named).includes('post')) return refuse(`${rules.name} names a card that is cast on a post`);
   }
   const phrase = rules.setPhrase?.(checked.value);
+  if (phrase !== undefined && phrase.trim() === '') return refuse(`${rules.name} needs a phrase to wait for`);
   return ok({ price: 0, config: checked.value, ...(catches === undefined ? {} : { catches }), ...(phrase === undefined ? {} : { phrase }) });
 }
 

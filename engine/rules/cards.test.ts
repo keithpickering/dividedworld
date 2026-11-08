@@ -70,7 +70,7 @@ test('decideUse uses a Use and nothing else, and a ward does not stop a Use', ()
 });
 
 test('decideSet sets a Gimmick, one face-down card to a post', () => {
-    const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
+  const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
   assert.deepEqual(decideSet(snare, settings, post, [back], { card: 'inky' }, [inky]), { ok: false, why: 'this post already holds a card face down' });
   assert.equal(decideSet(snare, settings, post, [{ ...back, ends: gone }], { card: 'inky' }, [inky]).ok, true);
   assert.equal(decideSet(bluff, settings, post, [], {}, []).ok, true);
@@ -86,6 +86,9 @@ test('decideSet sets a Move, and returns the phrase its landing needs', () => {
   const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
   assert.deepEqual(decideSet(glue, settings, post, [back], { phrase: 'soon' }, [glue]), { ok: false, why: 'this post already holds a card face down' });
   assert.match((decideSet(glue, settings, { ...post, kind: 'spin' }, [], { phrase: 'soon' }, [glue]) as { why: string }).why, /post/);
+  // An empty phrase is in no post, so the back could never land: it is refused before it is set.
+  assert.deepEqual(decideSet(glue, settings, post, [], { phrase: '' }, [glue]), { ok: false, why: 'Test Glue needs a phrase to wait for' });
+  assert.deepEqual(decideSet(glue, settings, post, [], { phrase: '  ' }, [glue]), { ok: false, why: 'Test Glue needs a phrase to wait for' });
 });
 
 test('a cast Gimmick names the card it catches, which must be cast on a post', () => {
