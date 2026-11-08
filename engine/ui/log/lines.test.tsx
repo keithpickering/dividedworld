@@ -151,6 +151,51 @@ describe('cards set face down, traps and catches', () => {
     expect(text(setRow('whoops', { springs: true, phrase: 'good luck' }))).toBe('Whoops! set face down on your post #3. It waits to spring on a quote that says “good luck”, and ends by itself if none comes.');
   });
 
+  /* Quote conditions (quote-conditions plan, Task 6): the setter's own line names every condition in full, the Anyone-but list included. */
+  describe('quote conditions in the log', () => {
+    const long = 'the punchline that goes on and on and on past forty characters of a long joke';
+    const sprungText = (payload: Record<string, unknown>) => {
+      const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post4', ...payload } });
+      const log = { ...empty, setEnds: [{ play: 'set1', card: 'whoops', post: 'post3', spring: 'sp', endedAt: later }] };
+      return text(logRows(data({ log, mine, acts: new Map([...posts, spring].map((a) => [a.id, a])), names }), w, 600, null)[0]!);
+    };
+    const ids = { s: 's', b: 'b' };
+    const namesB = new Map([['s', 'Spritey'], ['b', 'Boshi']]);
+    const setWith = (extra: Record<string, unknown>) => {
+      const set = act('set1', 'set', 'p', { targetActId: 'post3' });
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'set1', price: 0, at, springs: true, ...extra }] };
+      return text(logRows(data({ log, mine, acts: new Map([...posts, set].map((a) => [a.id, a])), names: namesB }), w, 600, null)[0]!);
+    };
+    test('the set line: Only these with a passage and a phrase, in full', () => {
+      expect(setWith({ passage: 'the punchline', phrase: 'nice try', who: [ids.s, ids.b], whoExcept: false }))
+        .toBe('Whoops! set face down on your post #3. It waits to spring when Spritey or Boshi quotes “the punchline” saying “nice try”, and ends by itself if none comes.');
+    });
+    test('the set line: Anyone but names the list, to the setter alone', () => {
+      expect(setWith({ who: [ids.b], whoExcept: true }))
+        .toBe('Whoops! set face down on your post #3. It waits to spring when anyone but Boshi quotes it, and ends by itself if none comes.');
+    });
+    test('the set line: each condition alone and in pairs', () => {
+      expect(setWith({ passage: 'the punchline' })).toContain('It waits to spring when someone quotes “the punchline”, and ends');
+      expect(setWith({ who: [ids.s], whoExcept: false })).toContain('It waits to spring when Spritey quotes it, and ends');
+      expect(setWith({ who: [ids.s], whoExcept: false, phrase: 'nice try' })).toContain('when Spritey quotes it saying “nice try”, and ends');
+      expect(setWith({ passage: long })).toContain(`quotes “${long}”, and ends`);
+    });
+    test('the sprung line names the matched conditions, shortened, and never the Anyone-but list', () => {
+      expect(sprungText({ when: { passage: 'the punchline', says: 'nice try' } }))
+        .toBe('Whoops! on your post #3 sprang when Spritey quoted “the punchline” saying “nice try”, and landed on Spritey\'s post #4.');
+      expect(sprungText({ when: { says: 'nice try' }, for: 's' })).toContain('sprang when Spritey quoted it saying “nice try”, and landed');
+      expect(sprungText({ when: { passage: long } })).toContain('quoted “the punchline that goes on and on and on…”, and landed');
+      expect(sprungText({})).toBe('Whoops! on your post #3 sprang when Spritey quoted it, and landed on Spritey\'s post #4.');
+    });
+    test('the struck player\'s log line names the matched conditions, shortened', () => {
+      const spring = act('sp', 'spring', 's', { targetActId: 'post4', payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'setS', by: 'post3', when: { passage: long, says: 'nice try' } } });
+      const struck = act('k3', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', spring: 'sp' } });
+      const log = { ...empty, playsOnMine: [{ play: 'k3', post: 'post3', at, reach: 'post' as const, targetName: null, targetCharacter: 'p' }] };
+      const [row] = logRows(data({ log, mine, acts: new Map([...posts, spring, struck].map((a) => [a.id, a])), names }), w, 600, null);
+      expect(text(row!)).toContain('quoted it, and landed'.replace('quoted it', 'quoted “the punchline that goes on and on and on…” saying “nice try”'));
+    });
+  });
+
   test('a Trap Card names the card it waits for; a Hall Pass waits for a Mod Bot\'s visit', () => {
     expect(text(setRow('snare', { springs: true, catches: 'whoops' }))).toBe('Snare set face down on your post #3. It waits for a Whoops!, and ends by itself if none comes.');
     expect(text(setRow('pass', { springs: true }))).toBe('Hall Pass set face down on your post #3. It waits for a Mod Bot\'s visit, and ends by itself if none comes.');

@@ -120,6 +120,27 @@ describe('a trap', () => {
       ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Spritey',
     });
   });
+  test('struck by a quote that met conditions: the matched ones, shortened, and never an Anyone-but list', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
+    const passage = 'the punchline that goes on and on and on past forty characters of a long joke';
+    const sp = spring({ payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post43', when: { passage, says: 'nice try' }, for: 'c1' } });
+    const s = said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey', title: 'Hobbies' }), ctx([laid, sp, set(), act('post43', { seq: 43 }), act('post9', { seq: 9 })], { names }));
+    expect(s.detail).toBe('Pipewrench set it face down two days before your quote of “the punchline that goes on and on and on…” saying “nice try” set it off. It laid Whoops! on it. In Hobbies.');
+    expect(s.detail).not.toContain('past forty');
+  });
+  test('the instance voice is handed the shortened conditions', () => {
+    const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
+    const seen: unknown[] = [];
+    const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+    const sp = spring({ payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post43', when: { says: 'nice try' } } });
+    said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), ctx([laid, sp, set(), act('post43', { seq: 43 })], { names, ui }));
+    expect(seen[0]).toMatchObject({ how: 'quote', says: '“nice try”', passage: null });
+  });
+  test('sprang (yours) names the matched conditions', () => {
+    const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+    const sp = spring({ payload: { card: 'whoops', trigger: 'quote', did: 'landed', set: 'set1', by: 'post43', when: { passage: 'the punchline' } } });
+    expect(said(r, ctx([sp, act('post9', { seq: 9 })])).detail).toBe('A quote of “the punchline” set it off, and it landed. In Hobbies.');
+  });
   test('struck by a quote, without what could not be read: the card and the span fall away, never a bluff', () => {
     const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'glitter', spring: 'sp' } });
     const s = said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), ctx([laid, act('post43', { seq: 43 })]));
@@ -152,7 +173,7 @@ describe('a trap', () => {
     expect(said(row({ kind: 'trapStruck', act: 's', character: 'c1', name: 'Spritey' }), c)).toMatchObject({ line: 'L', detail: 'D' });
     expect(said(row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey' }), c)).toMatchObject({ line: 'L', detail: 'D' });
     expect(seen).toEqual([
-      { how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days', setterStaff: false },
+      { how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: 'Whoops!', span: 'two days', setterStaff: false, passage: null, says: null },
       { how: 'caught', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: 'two days', setterStaff: false },
     ]);
   });

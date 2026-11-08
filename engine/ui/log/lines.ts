@@ -29,6 +29,7 @@ import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
 import { upperFirst } from '../copy-words.ts';
+import { quotedWords, shortQuote, springConditions } from '../cards/lens-words.ts';
 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
@@ -179,11 +180,11 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
  * quote (and the phrase it needs, where it was set with one); a Gimmick waits for its trigger, and a Trap Card for the card it names. Null for a Bluff,
  * which waits for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
  */
-export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase'>, words: Pick<Words, 'instance'>): string | null {
+export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase' | 'passage' | 'who' | 'whoExcept'>, words: Pick<Words, 'instance'>, nameOf: (id: Id) => string = () => 'someone'): string | null {
   if (e.springs === false) return null;
   const rules = words.instance.cards.find((c) => c.key === e.card);
   if (!rules) return null;
-  if (playKindOf(rules) === 'cast') return e.phrase ? `to spring on a quote that says “${e.phrase}”` : 'to spring on a quote';
+  if (playKindOf(rules) === 'cast') return castWaits(e, nameOf);
   const on = rules.trap?.trigger.on as string | undefined;
   if (on === 'visit') return 'for a Mod Bot\'s visit';
   if (on === 'cast') {
@@ -191,6 +192,15 @@ export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'ph
     return named ? `for ${withArticle(named)}` : 'for the card it names';
   }
   return null;
+}
+
+/** What a Move waits for, said to its setter alone, every condition in full. The Anyone-but list is named here and nowhere else. */
+function castWaits(e: Pick<CardEvent, 'phrase' | 'passage' | 'who' | 'whoExcept'>, nameOf: (id: Id) => string): string {
+  const listed = (e.who ?? []).map(nameOf);
+  const list = listed.length < 2 ? listed.join('') : `${listed.slice(0, -1).join(', ')} or ${listed[listed.length - 1]}`;
+  const who = listed.length === 0 ? null : e.whoExcept ? `anyone but ${list}` : list;
+  if (!e.passage && !who) return e.phrase ? `to spring on a quote that says \u201c${e.phrase}\u201d` : 'to spring on a quote';
+  return `to spring when ${who ?? 'someone'} quotes ${e.passage ? shortQuote(e.passage, Infinity) : 'it'}${e.phrase ? ` saying ${shortQuote(e.phrase, Infinity)}` : ''}`;
 }
 
 /** "your post #43" for the post of the character whose line it is, as the Settlement board says it; "Gloomba's post #46" otherwise. */
@@ -583,7 +593,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const paid = take((w) => w.kind === 'play' && w.ref === e.act);
     /* A card set face down: its card is the setter's own row, said only to them. */
     if (play?.kind === 'set') {
-      const waits = setWaits(e, words);
+      const waits = setWaits(e, words, (id) => data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'someone');
       rows.push({
         key: `set:${e.act}`, kind: 'set', at: e.at, what: `You set ${cardName(e.card)} face down`,
         /* A Bluff carries no trap (my_card_ledger's `springs`); a row with no `springs` keeps the trap's words. */
@@ -644,7 +654,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
         rows.push({
           key: `struck:${p.play}`, kind: 'struck', at: p.at, what: 'A face-down card struck your post',
           details: [`${nameOf(spring.character, 'Someone')}'s face-down ${cardName(spring.payload.card)} on `, (trapped && actLink(trapped, data, words)) ?? 'a post', ' sprang when ',
-            (by && actLink(by, data, words, post?.character ?? undefined)) ?? 'a post', ' quoted it, and landed on ', landedOn, '.'],
+            (by && actLink(by, data, words, post?.character ?? undefined)) ?? 'a post', ` quoted ${quotedWords(springConditions(spring.payload))}, and landed on `, landedOn, '.'],
           aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
         });
         continue;
@@ -774,7 +784,7 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
         : reach === 'character' ? [quoter ?? 'the quoting post\'s character'] : [reach === 'thread' ? 'the thread it quoted in' : 'the board it quoted on'];
       rows.push({
         key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
-        details: [`${cardName(e.card)} on `, on, ` sprang when ${quoter ?? 'a post'} quoted it, and landed on `, ...landed, '.'],
+        details: [`${cardName(e.card)} on `, on, ` sprang when ${quoter ?? 'a post'} quoted ${quotedWords(springConditions(spring?.payload ?? {}))}, and landed on `, ...landed, '.'],
         aura: 0, wallet: null, characters,
       });
       continue;

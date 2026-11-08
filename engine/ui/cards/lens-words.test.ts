@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, sprungWords, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, shortQuote, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
 import type { CardView } from './types.ts';
 import { caughtWords } from './marks.ts';
 
@@ -71,6 +71,27 @@ describe('sprungWords', () => {
     const said = sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reaction' }, 'UTC');
     assert.equal(said, 'Set face down by Pipewrench on November 5; sprang on a reaction.');
     assert.ok(!said.includes('Spritey'));
+  });
+});
+
+describe('shortQuote', () => {
+  test('short text is quoted whole; long text is cut at the last word boundary with an ellipsis', () => {
+    assert.equal(shortQuote('the punchline'), '“the punchline”');
+    const long = 'the punchline that goes on and on and on past forty characters of a long joke';
+    assert.equal(shortQuote(long), '“the punchline that goes on and on and on…”');
+    assert.equal(shortQuote('x'.repeat(100)), `“${'x'.repeat(40)}…”`);
+    assert.equal(shortQuote(long, Infinity), `“${long}”`);
+  });
+});
+
+describe('sprungWords with conditions', () => {
+  const at = '2026-11-05T12:00:00.000Z';
+  const base = { setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'quote' };
+  test('the Lens says each matched condition in full', () => {
+    const passage = 'p'.repeat(30) + ' ' + 'q'.repeat(70);
+    assert.equal(sprungWords({ ...base, passage: 'the punchline', says: 'nice try' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey quoted “the punchline” saying “nice try”.');
+    assert.equal(sprungWords({ ...base, says: 'nice try' }, 'UTC'), 'Set face down by Pipewrench on November 5; sprang when Spritey quoted it saying “nice try”.');
+    assert.ok(sprungWords({ ...base, passage }, 'UTC').includes(`quoted “${passage}”.`));
   });
 });
 
