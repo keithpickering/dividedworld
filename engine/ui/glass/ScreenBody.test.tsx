@@ -3,7 +3,7 @@
  * over the new one while it leaves, inert; a move reads its direction from the change of `at`; a move that is not a Back brings the body's
  * top under the menu bar.
  */
-import { act, screen } from '@testing-library/react';
+import { act, configure, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
@@ -27,14 +27,25 @@ function Body() {
   const at = Number(useLocation().query.get('at') ?? 0);
   return <ScreenBody at={at} axis="y" className="mine"><button>press {at}</button></ScreenBody>;
 }
-const mount = () => renderInWorld(
+function Axis() {
+  const at = Number(useLocation().query.get('at') ?? 0);
+  return <ScreenBody at={at} axis="x"><button>across {at}</button></ScreenBody>;
+}
+const links = (
   <>
-    <Page surface="settings" menu={false}><Body /></Page>
-    <Routes routes={routes} />
-    <Link to="/settings?at=2">to two</Link><Link to="/settings?at=1">to one</Link><Link to="/settings?at=1&x=1">to one again</Link>
-  </>,
-  { path: '/settings', seed: signedIn },
+    <Link to="/settings?at=2">to two</Link><Link to="/settings?at=1">to one</Link><Link to="/settings?at=1&x=1">to one again</Link><Link to="/settings?at=-1">to minus</Link>
+  </>
 );
+const mount = (body = <Body />) => {
+  const tree = (
+    <>
+      <Page surface="settings" menu={false}>{body}</Page>
+      <Routes routes={routes} />
+      {links}
+    </>
+  );
+  return renderInWorld(tree, { path: '/settings', seed: signedIn });
+};
 const holder = () => document.querySelector<HTMLElement>('.kb-screen-body')!;
 const bodies = () => Array.from(holder().children) as HTMLElement[];
 
@@ -63,6 +74,7 @@ describe('a change of screen body', () => {
     expect(bodies()).toHaveLength(2);
     const old = bodies().find((b) => b.hasAttribute('data-kb-exiting'))!;
     expect(old).toHaveAttribute('inert');
+    expect(old).toHaveAttribute('aria-hidden', 'true');
     expect(old.textContent).toContain('press 0');
     const fresh = bodies().find((b) => !b.hasAttribute('data-kb-exiting'))!;
     expect(fresh.textContent).toContain('press 2');
@@ -76,6 +88,56 @@ describe('a change of screen body', () => {
     expect(vi.mocked(enter.enterScreen).mock.calls.some(([, el]) => (el as HTMLElement).closest('.kb-screen-body'))).toBe(false);
   });
 
+  test('the first landing, the path settling to the route\'s key, swaps no body', async () => {
+    mount();
+    await screen.findByRole('button', { name: 'press 0' });
+    await waitFor(() => expect(screen.getByRole('main')).not.toHaveAttribute('aria-busy'));
+    expect(bodies()).toHaveLength(1);
+    expect(bodies()[0]!.hasAttribute('data-kb-exiting')).toBe(false);
+    expect(vi.mocked(enter.enterScreen).mock.calls.some(([, el]) => (el as HTMLElement).closest('.kb-screen-body'))).toBe(false);
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  test('a mount under Strict Mode, which replays its effects, plays no entrance and no scroll', async () => {
+    document.documentElement.style.setProperty('--kb-glass-menu-height', '40px');
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: -50, bottom: 300, left: 0, right: 100, width: 100, height: 350, x: 0, y: -50, toJSON: () => ({}) });
+    /* The strict root wraps the providers (a StrictMode inside them is not replayed, as they mount their children after a render of their own). */
+    configure({ reactStrictMode: true });
+    try {
+      mount();
+      await screen.findByRole('button', { name: 'press 0' });
+      await waitFor(() => expect(screen.getByRole('main')).not.toHaveAttribute('aria-busy'));
+    } finally { configure({ reactStrictMode: false }); }
+    expect(vi.mocked(enter.enterScreen).mock.calls.some(([, el]) => (el as HTMLElement).closest('.kb-screen-body'))).toBe(false);
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  test('the entrance\'s stop runs when the body changes again, and on unmount', async () => {
+    const stops: Array<ReturnType<typeof vi.fn>> = [];
+    vi.mocked(enter.enterScreen).mockImplementation(() => { const stop = vi.fn(); stops.push(stop); return stop; });
+    const view = mount();
+    await screen.findByRole('button', { name: 'press 0' });
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    const bodyCalls = () => vi.mocked(enter.enterScreen).mock.calls.filter(([, el]) => (el as HTMLElement).closest('.kb-screen-body'));
+    expect(bodyCalls()).toHaveLength(1);
+    const first = stops[stops.length - 1]!;
+    expect(first).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('link', { name: 'to one' }));
+    expect(first).toHaveBeenCalledTimes(1);
+    const second = stops[stops.length - 1]!;
+    expect(second).not.toHaveBeenCalled();
+    view.unmount();
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  test('axis x renders and swaps in place', async () => {
+    mount(<Axis />);
+    await screen.findByRole('button', { name: 'across 0' });
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(bodies().some((b) => b.textContent?.includes('across 2') && !b.hasAttribute('data-kb-exiting'))).toBe(true);
+    expect(bodies().find((b) => b.hasAttribute('data-kb-exiting'))?.textContent).toContain('across 0');
+  });
+
   test('under Off there is one body at once', async () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     mount();
@@ -85,16 +147,8 @@ describe('a change of screen body', () => {
     expect(bodies()).toHaveLength(1);
   });
 
-  test('focus stays on the button that was pressed', async () => {
-    const view = renderInWorld(
-      <>
-        <Page surface="settings" menu={false}><Body /></Page>
-        <Routes routes={routes} />
-        <Link to="/settings?at=2">to two</Link>
-      </>,
-      { path: '/settings', seed: signedIn },
-    );
-    void view;
+  test('focus stays on the link that was pressed', async () => {
+    mount();
     await screen.findByRole('button', { name: 'press 0' });
     const link = screen.getByRole('link', { name: 'to two' });
     await userEvent.click(link);
@@ -114,22 +168,84 @@ describe('the direction', () => {
     await userEvent.click(screen.getByRole('link', { name: 'to one again' }));
     expect(dir()).toBe('-1');
   });
+  test('a move to or from a negative place (a page with no tab) keeps the direction it had', async () => {
+    mount();
+    await screen.findByRole('button', { name: 'press 0' });
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(dir()).toBe('1');
+    await userEvent.click(screen.getByRole('link', { name: 'to minus' }));
+    expect(dir()).toBe('1');
+    await userEvent.click(screen.getByRole('link', { name: 'to one' }));
+    expect(dir()).toBe('1');
+    await userEvent.click(screen.getByRole('link', { name: 'to minus' }));
+    expect(dir()).toBe('1');
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(dir()).toBe('1');
+    await userEvent.click(screen.getByRole('link', { name: 'to one' }));
+    expect(dir()).toBe('-1');
+    await userEvent.click(screen.getByRole('link', { name: 'to minus' }));
+    expect(dir()).toBe('-1');
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(dir()).toBe('-1');
+  });
 });
 
 describe('the scroll to the body', () => {
-  beforeEach(() => {
-    document.documentElement.style.setProperty('--kb-glass-menu-height', '40px');
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: -50, bottom: 300, left: 0, right: 100, width: 100, height: 350, x: 0, y: -50, toJSON: () => ({}) });
-  });
+  const rectAt = (top: number) => vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top, bottom: top + 350, left: 0, right: 100, width: 100, height: 350, x: 0, y: top, toJSON: () => ({}) });
+  beforeEach(() => { document.documentElement.style.setProperty('--kb-glass-menu-height', '40px'); });
 
   test('a body whose top is above the menu bar is brought under it by the difference', async () => {
+    rectAt(-50);
     mount();
     await screen.findByRole('button', { name: 'press 0' });
     await userEvent.click(screen.getByRole('link', { name: 'to two' }));
     expect(scrollBy).toHaveBeenCalledWith(0, -90);
   });
 
+  test('a top exactly at the menu bar, or below it, does not scroll', async () => {
+    const spy = rectAt(40);
+    mount();
+    await screen.findByRole('button', { name: 'press 0' });
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(scrollBy).not.toHaveBeenCalled();
+    spy.mockReturnValue({ ...spy.getMockImplementation?.()?.call(document.body) ?? {}, top: 41 } as DOMRect);
+    await userEvent.click(screen.getByRole('link', { name: 'to one' }));
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  test('with no menu height set, a top above zero scrolls by it and a top at or below zero does not', async () => {
+    document.documentElement.style.removeProperty('--kb-glass-menu-height');
+    const spy = rectAt(-30);
+    mount();
+    await screen.findByRole('button', { name: 'press 0' });
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(scrollBy).toHaveBeenCalledWith(0, -30);
+    scrollBy.mockClear();
+    spy.mockReturnValue({ top: 0 } as DOMRect);
+    await userEvent.click(screen.getByRole('link', { name: 'to one' }));
+    expect(scrollBy).not.toHaveBeenCalled();
+    spy.mockReturnValue({ top: 20 } as DOMRect);
+    await userEvent.click(screen.getByRole('link', { name: 'to minus' }));
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  test('the body is measured and scrolled before its entrance starts', async () => {
+    rectAt(-50);
+    const order: string[] = [];
+    scrollBy.mockImplementation(() => { order.push('scroll'); });
+    vi.mocked(enter.enterScreen).mockImplementation(() => { order.push('enter'); return () => {}; });
+    mount();
+    await screen.findByRole('button', { name: 'press 0' });
+    const spy = vi.mocked(HTMLElement.prototype.getBoundingClientRect);
+    spy.mockClear();
+    order.length = 0;
+    spy.mockImplementation(function () { order.push('measure'); return { top: -50 } as DOMRect; });
+    await userEvent.click(screen.getByRole('link', { name: 'to two' }));
+    expect(order.slice(0, 3)).toEqual(['measure', 'scroll', 'enter']);
+  });
+
   test('a Back does not scroll', async () => {
+    rectAt(-50);
     mount();
     await screen.findByRole('button', { name: 'press 0' });
     await userEvent.click(screen.getByRole('link', { name: 'to two' }));

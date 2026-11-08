@@ -41,20 +41,23 @@ export function ScreenBody({ at, axis, className, children, ...rest }: ScreenBod
     setSeen(at);
   }
   const holder = useRef<HTMLDivElement>(null);
-  const first = useRef(true);
-  /* A change of body (not the mount): the body arriving enters by the stagger, and, unless the move was a Back, is brought under the menu bar. */
+  const prev = useRef(key);
+  /*
+   * A change of body (not the mount, and not Strict Mode's replay of it: the last key seen, not a first-run flag, says whether it changed): the
+   * body is brought under the menu bar when the move was not a Back, measured and scrolled before its entrance starts (the entrance's initial
+   * transform would skew its top), and then enters by the stagger. `popped` is read here only because it changes with `key`.
+   */
   useLayoutEffect(() => {
-    if (first.current) { first.current = false; return; }
+    if (prev.current === key) return;
+    prev.current = key;
     const body = Array.from(holder.current?.children ?? []).find((c) => !c.hasAttribute('data-kb-exiting')) as HTMLElement | undefined;
     if (!body) return;
-    const stop = enterScreen(feel, body);
     if (!popped) {
-      const root = document.documentElement;
-      const menu = parseFloat(getComputedStyle(root).getPropertyValue('--kb-glass-menu-height') || root.style.getPropertyValue('--kb-glass-menu-height')) || 0;
+      const menu = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--kb-glass-menu-height')) || 0;
       const top = body.getBoundingClientRect().top;
       if (top < menu) globalThis.scrollBy?.(0, top - menu);
     }
-    return stop;
+    return enterScreen(feel, body);
     // Per body: a change of feel mid-screen does not replay it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
