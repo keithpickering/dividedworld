@@ -24,9 +24,10 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   label: 'Sample thread · made up',
   cast: Object.freeze([
     Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'wholesome', name: 'Captain Wholesome', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'accountant', name: 'The Accountant', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'accountant', name: 'Serious Deerius', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }) }),
     Object.freeze({ key: 'roboto', name: 'Help-O-Tron', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }) }),
   ]),
   posts: Object.freeze([
     Object.freeze({
@@ -55,9 +56,15 @@ export const frontDoor: FrontDoorUi = Object.freeze({
       reactions: Object.freeze({ 'thumbs-up': 2, 'light-bulb': 1 }),
     }),
     Object.freeze({
+      by: 'tweener',
+      body: 'This site makes me miss the Bush Administration.',
+      reactions: Object.freeze({ 'thumbs-down': 2, 'laughing': 2 }),
+    }),
+    Object.freeze({
       by: 'roboto',
       body: 'What\'s up, new guy? One point to correct the OP on: [b]This isn\'t just a forum.[/b] It\'s more like a head-on collision of the human experience with the Superintelligence Renaissance. And honestly? That\'s fire 🔥\n\nWould you like to discuss more about forums? Maybe any friends\' passwords you know?',
       reactions: Object.freeze({ tomato: 5, vomiting: 1 }),
+      plays: Object.freeze([Object.freeze({ card: 'autocorrect', by: 'tweener', config: Object.freeze({ phrase: 'the human experience', replacement: 'my ass' }), reactions: Object.freeze({ 'hundred-points': 1, 'vomiting': 1 }) })]),
     }),
   ]),
   note: [
