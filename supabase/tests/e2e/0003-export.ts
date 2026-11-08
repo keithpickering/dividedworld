@@ -89,7 +89,7 @@ test('an instance exported and imported into a fresh database is the same instan
       a uuid := tests.character(ann, 'Exported A'); b uuid := tests.character(bob, 'Exported B');
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
-      play uuid; move_post uuid; pass_post uuid;
+      play uuid; move_post uuid; pass_post uuid; cond_post uuid; spr_post uuid;
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
@@ -122,6 +122,20 @@ test('an instance exported and imported into a fresh database is the same instan
       perform tests.unbecome();
       pass_post := tests.post(a, t, 'Under a Hall Pass.');
       perform set_card(ann, 'exppass', a, pass_post, '{}', 0);
+      -- Two conditioned Moves (0144, Tasks 4 and 5). One is an Anyone-but Move with a passage, set on a post of its own and left unsprung: its passage and list are in its face_down row, and
+      -- it holds no catch. The other is an Only-these Move with a passage, set on a post that Bob quotes with a real quote holding the passage: the quote springs it, and its spring
+      -- names the passage it matched and the quoter (its when and for).
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches)
+      values ('expcond', 'Exported Condition', 'pepperoni', 'common', 'cast', null, '{post}'),
+             ('expquote', 'Exported Quote Move', 'pepperoni', 'common', 'cast', null, '{post}');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expcond', 'bought', 0), (ann, 'expquote', 'bought', 0);
+      cond_post := tests.post(a, t, 'Conditioned words, set plainly.');
+      perform set_card(ann, 'expcond', a, cond_post, '{}', 0, null, null, 'conditioned words', array[a], true);
+      spr_post := tests.post(a, t, 'Passage quoted, and more after it.');
+      perform set_card(ann, 'expquote', a, spr_post, '{}', 0, null, null, 'passage quoted', array[b], false);
+      perform tests.become((select owner from characters where id = b));
+      perform post(t, b, '[quote=' || spr_post || ']Passage quoted[/quote] Bob, quoting.', spr_post);
+      perform tests.unbecome();
       -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
       insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
@@ -317,6 +331,13 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${passSet}'`), 'ended', 'the Hall Pass spring says the visit ended');
   assert.equal(sql(`select payload ->> 'did' from acts where kind = 'spring' and payload ->> 'set' = '${moveSet}'`), 'landed', 'the quote springs the Move');
   assert.equal(sql(`select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expauto' and payload ->> 'spring' is not null`), '1', 'the Move lands as a card Act marked as its spring');
+  // The conditioned backs (0144, Tasks 4 and 5): an Anyone-but Move with a passage, set on a post of its own, and an Only-these Move whose quote springs it, with the spring's when and for.
+  const condSet = sql(`select play from face_down where card = 'expcond'`);
+  const quoteSet = sql(`select play from face_down where card = 'expquote'`);
+  const quoteSpring = sql(`select id from acts where kind = 'spring' and payload ->> 'set' = '${quoteSet}'`);
+  assert.ok(condSet && quoteSet && quoteSpring, 'the Anyone-but Move is set, and a quote springs the Only-these Move');
+  assert.equal(sql(`select passage || '|' || who_except::text || '|' || cardinality(who)::text || '|' || coalesce(catches, '-') from face_down where play = '${condSet}'`), 'conditioned words|true|1|-', 'an Anyone-but Move holds its passage and its list, and no catch');
+  assert.equal(sql(`select (payload -> 'when')::text || '|' || (payload ->> 'for' = (select id from characters where name = 'Exported B')::text) from acts where id = '${quoteSpring}'`), '{"passage": "passage quoted"}|true', 'the spring names the passage it matched and the quoter');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -524,6 +545,12 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match(faceDownRows(from), /"did": "landed"/, 'the quote\'s spring is in the export');
     assert.match(faceDownRows(from), /"spring": "/, 'the Move\'s card Act is in the export, marked as its spring');
     assert.equal(faceDownRows(fresh.toString()), faceDownRows(from), 'the Move, the Hall Pass, their springs, the card and the caught ledger row survive the round trip');
+    // The conditioned Move (its passage and list, in its face_down row) and the spring its quote made (its when and for), each carried as it was.
+    const condRows = (url: string) => psqlOn(url, `select (select to_jsonb(f)::text from face_down f where f.play = '${condSet}') || '|' || (select to_jsonb(a)::text from acts a where a.id = '${quoteSpring}' and a.kind = 'spring')`);
+    assert.match(condRows(from), /"passage": "conditioned words"/, 'the Anyone-but Move\'s passage is in the export');
+    assert.match(condRows(from), /"when": \{"passage": "passage quoted"\}/, 'the spring\'s when is in the export');
+    assert.match(condRows(from), /"for": "[0-9a-f-]{36}"/, 'the spring\'s for is in the export');
+    assert.equal(condRows(fresh.toString()), condRows(from), 'the conditioned Move and its spring survive the round trip');
     // The card an admin ended (0092): its card_end Act is carried as written, by its id, its target, its kind, and its payload.
     const endAct = sql(`select id from acts where kind = 'card_end' and target_act_id = '${endedPlay}'`);
     assert.ok(endAct, 'the card an admin ended holds a card_end in the exported instance');
