@@ -6,7 +6,7 @@ import type { AccountListener, Character, KayfaApi, MyCharacter } from '../data/
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import { PlayerProvider } from '../player.tsx';
-import { RouterProvider } from '../router.tsx';
+import { RouterProvider, useRouterInternals } from '../router.tsx';
 import { Routes } from '../routes.tsx';
 import { testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
@@ -14,13 +14,14 @@ import { boardSwitch } from '../glass/board.ts';
 import { Link, useLocation } from '../router.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { Frame } from './Frame.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
-  id, name, class: cls, classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
+  id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({
-  id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-10-01',
+  id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01',
 });
 
 /* The glass routes as the app names them (web/src/App.tsx): the router's moves into them keep the board's place. */
@@ -301,6 +302,49 @@ describe('the HUD: the glass, docked at the bottom', () => {
     screen.getByRole('textbox', { name: 'Your reply' }).blur();
     await userEvent.keyboard('{Escape}');
     expect(here()).toBe('/characters');
+  });
+});
+
+describe('Esc and a load', () => {
+  /* A board that loads, and a glass page whose load waits on the test: each call is told when its signal is aborted. */
+  function loads() {
+    const calls: Array<{ readonly signal: AbortSignal; readonly resolve: (d: unknown) => void }> = [];
+    let retry: () => void = () => undefined;
+    let boardReads = 0;
+    function Retry() { retry = useRouterInternals().retry; return null; }
+    const routes = [
+      { path: '/b/general', load: () => (boardReads++ === 0 ? Promise.resolve('board') : new Promise<unknown>(() => undefined)), render: () => <p>the board</p> },
+      { path: '/characters', load: (a: { readonly signal: AbortSignal }) => new Promise<unknown>((resolve) => { calls.push({ signal: a.signal, resolve }); }), render: () => <p>the roster</p> },
+    ];
+    return { calls, retry: () => retry(), page: <><Retry /><Routes routes={routes} /></> };
+  }
+
+  test('an Esc while the load it started is out stops it, and does not start another: the board stays', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    const { calls, page } = loads();
+    setup(true, undefined, page);
+    await within(await hud()).findByRole('button', { name: 'Menu' });
+    await screen.findByText('the board');
+    await userEvent.keyboard('{Escape}');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.signal.aborted).toBe(false);
+    await userEvent.keyboard('{Escape}');
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.signal.aborted).toBe(true);
+    expect(here()).toBe('/b/general');
+    expect(screen.getByText('the board')).toBeInTheDocument();
+  });
+
+  test('a silent re-read of the shown page does not take the Esc: it still opens the menu', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    const { calls, retry, page } = loads();
+    setup(true, undefined, page);
+    await screen.findByText('the board');
+    await within(await hud()).findByRole('button', { name: 'Menu' });
+    act(() => retry());
+    await userEvent.keyboard('{Escape}');
+    /* The Esc was the menu's: it asked for the roster. */
+    expect(calls).toHaveLength(1);
   });
 });
 

@@ -13,6 +13,8 @@
  *    1.85 is a Main Eventer's), so a fact is held by its label and its place, never by its value; Place's link and the class fact's words are the same.
  *  - The build's nav is named Main, as in 02-board; the host and tagline are not repeated.
  *  - The story's times are read against the real clock, so no time is a landmark; a record row is held by its place and its words.
+ *  - The build has a Pronouns row after Rank (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board predates, so the About table is
+ *    a row (38.3px) taller and every fact, link and table after Rank stands that much lower than the shifts above would put it.
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -28,26 +30,26 @@ const manifest: BoardManifest = {
     { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'Spritey', buildShift: { y: 35.6 } },
-    { id: 'about', role: 'table', name: 'About Spritey', type: false, buildShift: { y: 38.6, height: -33.4 } },
+    { id: 'about', role: 'table', name: 'About Spritey', type: false, buildShift: { y: 38.6, height: 4.9 } },
     { id: 'about-band', role: 'columnheader', name: 'About Spritey', within: 'about', origin: 'about' },
     { id: 'fact-title', role: 'rowheader', name: 'Title', within: 'about', origin: 'about' },
     { id: 'fact-rank', role: 'rowheader', name: 'Rank', within: 'about', origin: 'about' },
-    { id: 'fact-aura-this-season', role: 'rowheader', name: 'Aura this season', within: 'about', origin: 'about' },
-    { id: 'fact-place', role: 'rowheader', name: 'Place', within: 'about', origin: 'about' },
-    { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about' },
-    { id: 'fact-threads-spun', role: 'rowheader', name: 'Threads spun', within: 'about', origin: 'about' },
-    { id: 'fact-cards-played', role: 'rowheader', name: 'Cards played', within: 'about', origin: 'about' },
-    { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about' },
-    { id: 'fact-class', role: 'rowheader', name: 'Class', within: 'about', origin: 'about', buildShift: { y: -34.4 } },
+    { id: 'fact-aura-this-season', role: 'rowheader', name: 'Aura this season', within: 'about', origin: 'about', buildShift: { y: 39.6 } },
+    { id: 'fact-place', role: 'rowheader', name: 'Place', within: 'about', origin: 'about', buildShift: { y: 40.1 } },
+    { id: 'fact-posts', role: 'rowheader', name: 'Posts', within: 'about', origin: 'about', buildShift: { y: 40.6 } },
+    { id: 'fact-threads-spun', role: 'rowheader', name: 'Threads spun', within: 'about', origin: 'about', buildShift: { y: 41.1 } },
+    { id: 'fact-cards-played', role: 'rowheader', name: 'Cards played', within: 'about', origin: 'about', buildShift: { y: 41.6 } },
+    { id: 'fact-joined', role: 'rowheader', name: 'Joined', within: 'about', origin: 'about', buildShift: { y: 42.1 } },
+    { id: 'fact-class', role: 'rowheader', name: 'Class', within: 'about', origin: 'about', buildShift: { y: 3.9 } },
     { id: 'fact-title-words', role: 'cell', name: 'Level editor guy', within: 'about', origin: 'about' },
-    { id: 'standings', role: 'link', name: 'season standings', within: 'about', origin: 'about', box: 'position' },
-    { id: 'signature', role: 'text', name: 'posting in pencil since 2003', within: 'about', origin: 'about', box: 'position', buildShift: { y: -33.6 } },
-    { id: 'record', role: 'table', name: 'Latest rows of the public record, newest first', type: false, buildShift: { y: -451.6, height: 5.4 } },
+    { id: 'standings', role: 'link', name: 'season standings', within: 'about', origin: 'about', box: 'position', buildShift: { y: 40.4 } },
+    { id: 'signature', role: 'text', name: 'posting in pencil since 2003', within: 'about', origin: 'about', box: 'position', buildShift: { y: 4.6 } },
+    { id: 'record', role: 'table', name: 'Latest rows of the public record, newest first', type: false, buildShift: { y: -413.3, height: 5.4 } },
     { id: 'record-band', role: 'heading', name: 'Public record', within: 'record', origin: 'record' },
     { id: 'record-when', role: 'columnheader', name: 'When', within: 'record', origin: 'record' },
     { id: 'record-what', role: 'columnheader', name: 'What', within: 'record', origin: 'record' },
-    { id: 'see-all', role: 'link', name: 'See the full record', buildShift: { y: -447.7 } },
-    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: -448.7 } },
+    { id: 'see-all', role: 'link', name: 'See the full record', buildShift: { y: -409.4 } },
+    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: -410.4 } },
   ],
 };
 

@@ -4,6 +4,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { BbCode, type QuoteOf } from '../bbcode/render.tsx';
+import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
@@ -133,8 +134,8 @@ export function MoveEndLine({ act }: { readonly act: Act }) {
 }
 
 /** A Boss keeping a move of an earlier Boss after a handover: the plain record, in the engine's words. */
-export function MoveKeepLine({ name }: { readonly name: string }) {
-  return <p className="kb-act-line">{name} kept a move of an earlier Boss. It is now its own.</p>;
+export function MoveKeepLine({ name, pronouns }: { readonly name: string; readonly pronouns: PronounSet }) {
+  return <p className="kb-act-line">{name} kept a move of an earlier Boss. The move is now {words(pronouns).theirs}.</p>;
 }
 
 export { Debuts };

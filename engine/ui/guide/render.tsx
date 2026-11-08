@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from 'react';
 import type { ScreenSettings } from '../data/api.ts';
-import { Link } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import { settingText, type Block, type Inline } from './markdown.ts';
 
 export interface Fill {
@@ -33,8 +33,8 @@ function Inlines({ nodes, fill }: { readonly nodes: readonly Inline[]; readonly 
           case 'setting': return settingText(n.path, fill.settings) ?? DASH;
           case 'link': {
             const words = <Inlines nodes={n.children} fill={fill} />;
-            if (n.href.startsWith('#')) return <Link key={i} to={`${fill.path}${n.href}`}>{words}</Link>;
-            if (n.href.startsWith('/')) return <Link key={i} to={n.href}>{words}</Link>;
+            if (n.href.startsWith('#')) return <GlassLink key={i} to={`${fill.path}${n.href}`}>{words}</GlassLink>;
+            if (n.href.startsWith('/')) return <GlassLink key={i} to={n.href}>{words}</GlassLink>;
             return <a key={i} href={n.href} rel="noopener noreferrer">{words}</a>;
           }
         }

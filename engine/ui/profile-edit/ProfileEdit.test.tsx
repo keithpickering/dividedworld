@@ -1,8 +1,10 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { Link } from '../router.tsx';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
+import { LoadedCharacters } from '../loaded.tsx';
 import { ProfileEdit } from './ProfileEdit.tsx';
 
 beforeEach(() => { localStorage.clear(); });
@@ -13,14 +15,14 @@ function world() {
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'face');
-  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false });
+  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, pronouns: PRONOUN_PRESETS.they });
   const stranger = fake.seed.character(other, 'Stranger', 'heel');
   fake.signInAs(me);
-  return { fake, pipe, waiting, stranger };
+  return { fake, me, pipe, waiting, stranger };
 }
 /** Opens the one address the page has; `name` picks a character in the page, as a player does. */
 const open = async (w: ReturnType<typeof world>, name?: string) => {
-  renderIn(w.fake, <ProfileEdit />, { path: '/characters/edit' });
+  renderIn(w.fake, <LoadedCharacters />, { path: '/characters/edit' });
   if (name) await userEvent.selectOptions(await screen.findByLabelText('Character'), name);
 };
 
@@ -37,7 +39,7 @@ describe('profile edit', () => {
 
   test('a character carried from the My characters link in history.state opens first; a stranger\'s id there is ignored', async () => {
     const w = world();
-    renderIn(w.fake, <><Link to="/characters/edit" state={{ character: w.waiting }}>mine</Link><Link to="/characters/edit" state={{ character: w.stranger }}>theirs</Link><ProfileEdit /></>, { path: '/characters' });
+    renderIn(w.fake, <><Link to="/characters/edit" state={{ character: w.waiting }}>mine</Link><Link to="/characters/edit" state={{ character: w.stranger }}>theirs</Link><LoadedCharacters /></>, { path: '/characters' });
     await userEvent.click(await screen.findByRole('link', { name: 'mine' }));
     expect(await screen.findByLabelText('Character')).toHaveValue(w.waiting);
     expect(await screen.findByText(/waiting to debut/iu)).toBeInTheDocument();
@@ -68,16 +70,65 @@ describe('profile edit', () => {
   test('says plainly that a player with no characters has no profile to edit, and links to making one', async () => {
     const fake = buildWorld();
     fake.signInAs(fake.seed.account('lonely'));
-    renderIn(fake, <ProfileEdit />, { path: '/characters/edit' });
+    renderIn(fake, <LoadedCharacters />, { path: '/characters/edit' });
     expect(await screen.findByText(/no characters yet/iu)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Make a character' })).toHaveAttribute('href', '/characters/new');
+  });
+
+  test('a retired she/her character says an admin can restore her, and that her profile cannot be edited', async () => {
+    const w = world();
+    const gone = w.fake.seed.character(w.me, 'Gloomba', 'heel', { pronouns: PRONOUN_PRESETS.she });
+    w.fake.seed.retire(gone);
+    await open(w, 'Gloomba');
+    expect(await screen.findByText('Gloomba is retired. An admin can restore her; until then her profile cannot be edited.')).toBeInTheDocument();
   });
 
   test('a character waiting to debut has no profile to edit yet', async () => {
     const w = world();
     await open(w, 'Spritey');
     expect(await screen.findByText(/waiting to debut/iu)).toBeInTheDocument();
+    expect(screen.getByText('Spritey is waiting to debut at the next settlement. They have no profile to edit until they have debuted.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Title')).toBeNull();
+  });
+
+  test('starts on the stored pronouns, saves a new set with the rest, and a bad custom set disables saving', async () => {
+    const w = world();
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const setProfile = vi.spyOn(w.fake, 'setProfile');
+    await open(w);
+    await screen.findByLabelText('Title');
+    const group = screen.getByRole('group', { name: 'Pronouns' });
+    expect(within(group).getByRole('radio', { name: /^it\/its/u })).toBeChecked();
+    await userEvent.click(within(group).getByRole('radio', { name: /^Custom/u }));
+    const save = screen.getByRole('button', { name: 'Save the profile' });
+    expect(save).toBeEnabled();
+    await userEvent.clear(screen.getByLabelText('Subject'));
+    expect(save).toBeDisabled();
+    await userEvent.type(screen.getByLabelText('Subject'), 'abcdefghijklm');
+    expect(screen.getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText('Subject'));
+    for (const [label, v] of [['Subject', 'Xe'], ['Object', 'xem'], ['Possessive adjective', 'xyr'], ['Possessive', 'xyrs'], ['Reflexive', 'xemself']] as const) { await userEvent.clear(screen.getByLabelText(label)); await userEvent.type(screen.getByLabelText(label), v); }
+    expect(save).toBeEnabled();
+    await userEvent.click(save);
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, '', '', 'default', { ...xe, subject: 'Xe' }));
+    expect((await w.fake.characters([w.pipe]))[0]!.pronouns).toEqual(xe);
+  });
+
+  test('opens on a stored custom set with its fields filled, and saves it untouched as it was', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me2');
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const gloomba = fake.seed.character(me, 'Gloomba', 'face', { pronouns: xe });
+    fake.signInAs(me);
+    const setProfile = vi.spyOn(fake, 'setProfile');
+    renderIn(fake, <LoadedCharacters />, { path: '/characters/edit' });
+    expect(await screen.findByLabelText('Title')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /^Custom/u })).toBeChecked();
+    expect(screen.getByLabelText('Subject')).toHaveValue('xe');
+    expect(screen.getByLabelText('Reflexive')).toHaveValue('xemself');
+    await userEvent.click(screen.getByRole('button', { name: 'Save the profile' }));
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(gloomba, '', '', 'default', xe));
   });
 
   test('edits the title, the signature and the pip style', async () => {
@@ -91,9 +142,26 @@ describe('profile edit', () => {
     expect(screen.getByLabelText('Pip style')).toHaveValue('default');
     expect(within(screen.getByLabelText('Pip style')).getAllByRole('option').map((o) => o.textContent)).toEqual(['Default']);
     await userEvent.click(screen.getByRole('button', { name: 'Save the profile' }));
-    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, 'Professional Wrench', 'I [b]brought[/b] a wrench.', 'default'));
+    await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, 'Professional Wrench', 'I [b]brought[/b] a wrench.', 'default', PRONOUN_PRESETS.it));
     expect(await screen.findByText('Profile saved.')).toBeInTheDocument();
     expect((await w.fake.characters([w.pipe]))[0]).toMatchObject({ title: 'Professional Wrench', signature: 'I [b]brought[/b] a wrench.' });
+  });
+
+  test('Save the profile is a busy button while the save is out: aria-busy, its name kept, and a second press saves once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.setProfile.bind(w.fake);
+    const setProfile = vi.spyOn(w.fake, 'setProfile').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await open(w);
+    await userEvent.type(await screen.findByLabelText('Title'), 'Professional Wrench');
+    const save = screen.getByRole('button', { name: 'Save the profile' });
+    await userEvent.click(save);
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Save the profile' })).toBe(save);
+    await userEvent.click(save);
+    expect(setProfile).toHaveBeenCalledTimes(1);
+    release();
+    expect(await screen.findByText('Profile saved.')).toBeInTheDocument();
   });
 
   test('previews the postbit as the board will draw it, beside the fields, following what is typed and sending nothing', async () => {
@@ -117,20 +185,18 @@ describe('profile edit', () => {
     expect(aside).toHaveTextContent('The preview follows what you type. Nothing changes on the board until you save.');
   });
 
-  test('reserves the postbit column and says it is busy until what it shows has been read', async () => {
+  test('its whole page, preview included, is in the first render, from the document, and nothing is read for it', async () => {
     const w = world();
-    let release!: () => void;
-    const real = w.fake.characterCounts.bind(w.fake);
-    vi.spyOn(w.fake, 'characterCounts').mockImplementation(async (id) => { await new Promise<void>((r) => { release = r; }); return real(id); });
-    await open(w);
-    const aside = await screen.findByRole('complementary', { name: 'What everyone will see' });
-    const side = aside.querySelector('.kb-profile-preview-side')!;
-    expect(side).toHaveAttribute('aria-busy', 'true');
-    expect(within(aside).queryByRole('group', { name: 'About Pipewrench' })).toBeNull();
-    await waitFor(() => expect(release).toBeDefined());
-    release();
-    await within(aside).findByRole('group', { name: 'About Pipewrench' });
-    expect(side).not.toHaveAttribute('aria-busy', 'true');
+    const boot = await w.fake.boot();
+    const doc = await w.fake.myCharactersPage();
+    const read = holdReads(w.fake, ['session']);
+    renderIn(w.fake, <ProfileEdit doc={doc} />, { path: '/characters/edit', boot });
+    expect(screen.getByLabelText('Title')).toBeInTheDocument();
+    const aside = screen.getByRole('complementary', { name: 'What everyone will see' });
+    expect(within(aside).getByRole('group', { name: 'About Pipewrench' })).toBeInTheDocument();
+    expect(document.querySelector('[aria-busy="true"]')).toBeNull();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+    expect(read).toEqual([]);
   });
 
   test('the preview says the class its player made public, as the thread does, and no more', async () => {

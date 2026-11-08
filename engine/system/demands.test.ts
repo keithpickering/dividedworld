@@ -109,4 +109,5 @@ test('every demand kind says in a few plain words what met it', () => {
   const params = { board, count: 12, quadrant: 'calmPositive', reactions: 6 };
   for (const k of DEMAND_KINDS) assert.doesNotMatch(k.met(params), /[{}]|undefined|NaN/u, k.key);
   assert.equal(demandKind('distinctCharactersOnBoard')!.met(params), '12 posted');
+  assert.equal(demandKind('characterPostsInThread')!.met(params), 'the named character posted');
 });

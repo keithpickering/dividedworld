@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -35,6 +36,23 @@ const fact = (within_: HTMLElement, label: string): HTMLElement => {
 
 const open = (id: string, w?: Fake) => (w ? renderIn(w, <LoadedProfile id={id} />, { path: `/c/${id}` }) : null);
 
+describe('the pronouns line', () => {
+  test('a default character shows it/its, a custom set shows xe/xem, in a Pronouns row of its facts', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const plain = fake.seed.character(fake.seed.account('a'), 'Plain', 'face');
+    const xe = fake.seed.character(fake.seed.account('b'), 'Xenia', 'face', { pronouns: { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false } });
+    fake.signInAs(me);
+    const first = renderIn(fake, <LoadedProfile id={plain} />, { path: `/c/${plain}` });
+    expect(await screen.findByText('it/its')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+    expect(screen.getByRole('rowheader', { name: 'Pronouns' }).closest('tr')).toHaveTextContent('it/its');
+    first.unmount();
+    renderIn(fake, <LoadedProfile id={xe} />, { path: `/c/${xe}` });
+    expect(await screen.findByText('xe/xem')).toHaveClass('kb-profile-pronouns', 'kb-muted');
+    expect(screen.getByRole('rowheader', { name: 'Pronouns' }).closest('tr')).toHaveTextContent('xe/xem');
+  });
+});
+
 describe('the public profile', () => {
   test('its facts: name, title, rank, exact standing and when it settled, place, counts, month joined, signature', async () => {
     const fake = buildWorld();
@@ -54,7 +72,7 @@ describe('the public profile', () => {
     expect(within(fact(facts, 'Place')).getByRole('link', { name: 'season standings' })).toHaveAttribute('href', '/season?tab=rankings');
   });
 
-  test('each fact is a row of a table under an "About" band, its label a row header (Title, Rank, Aura this season, Place, Posts, Threads spun, Cards played, Joined, in that order)', async () => {
+  test('each fact is a row of a table under an "About" band, its label a row header (Title, Rank, Pronouns, Aura this season, Place, Posts, Threads spun, Cards played, Joined, in that order)', async () => {
     const fake = buildWorld();
     const w = world(fake);
     await fake.setProfile(w.pipe, 'Level editor guy', '[i]posting in pencil[/i]', 'default');
@@ -68,7 +86,7 @@ describe('the public profile', () => {
     expect(table.querySelector('caption')).toBeNull();
     expect(table.querySelector('td.kb-about-avatar')).toHaveAttribute('role', 'presentation');
     const labels = within(table).getAllByRole('rowheader').map((h) => h.textContent);
-    expect(labels).toEqual(['Title', 'Rank', 'Aura this season', 'Place', 'Posts', 'Threads spun', 'Cards played', 'Joined']);
+    expect(labels).toEqual(['Title', 'Rank', 'Pronouns', 'Aura this season', 'Place', 'Posts', 'Threads spun', 'Cards played', 'Joined']);
     for (const h of within(table).getAllByRole('rowheader')) expect(h.closest('tr')!.querySelector('td:not(.kb-about-avatar)')).not.toBeNull();
     expect(fact(facts, 'Title')).toHaveTextContent('Level editor guy');
     /* The signature closes the card, in a row of its own under the facts. */
@@ -103,11 +121,11 @@ describe('the public profile', () => {
   test('before anything has settled, says so and gives no standing', async () => {
     const fake = buildWorld();
     const account = fake.seed.account('x');
-    const c = fake.seed.character(account, 'Fresh', 'face');
+    const c = fake.seed.character(account, 'Fresh', 'face', { pronouns: PRONOUN_PRESETS.she });
     fake.signInAs(account);
     open(c, fake);
     const facts = await screen.findByRole('table', { name: 'About Fresh' });
-    await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for it yet'));
+    await waitFor(() => expect(facts).toHaveTextContent('Nothing has settled for her yet'));
   });
 
   test('a character that is waiting to debut, and one that does not exist, are the same page: the router\'s "cannot be found"', async () => {

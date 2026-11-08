@@ -15,17 +15,23 @@ export interface Route extends RouteLike {
 
 export { match };
 
-export function Routes({ routes }: { readonly routes: readonly Route[] }) {
+/** The screens the app draws for a failed load and an address no route matches; without them the board's two pages are drawn. */
+export interface Failures {
+  readonly display: (p: { readonly address: string; readonly onRetry: () => void }) => ReactNode;
+  readonly find: (p: { readonly address: string }) => ReactNode;
+}
+
+export function Routes({ routes, failures }: { readonly routes: readonly Route[]; readonly failures?: Failures }) {
   const { shown, retry, attach } = useRouterInternals();
   useLayoutEffect(() => { attach(routes); });
   const address = addressOf(shown.location);
-  if (shown.failure === 'display') return <CannotDisplay address={address} onRetry={retry} />;
-  if (shown.failure === 'find') return <CannotFind address={address} />;
+  if (shown.failure === 'display') return failures ? <>{failures.display({ address, onRetry: retry })}</> : <CannotDisplay address={address} onRetry={retry} />;
+  if (shown.failure === 'find') return failures ? <>{failures.find({ address })}</> : <CannotFind address={address} />;
   for (const r of routes) {
     const params = match(r.path, shown.location.path);
     if (!params) continue;
     if (r.load && !shown.ready) return null;
     return <>{r.render(params, shown.doc)}</>;
   }
-  return <CannotFind address={address} />;
+  return failures ? <>{failures.find({ address })}</> : <CannotFind address={address} />;
 }

@@ -8,7 +8,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { Characters } from './Characters.tsx';
+import { LoadedCharacters } from '../loaded.tsx';
 
 /** The boards' count down to the settlement: 7 h 42 min, from when the story is set. */
 const SETTLEMENT_IN = (7 * 60 + 42) * 60_000;
@@ -39,7 +39,7 @@ const three: World = (fake, instance) => {
 };
 
 function CharactersStory() {
-  return <Page surface="characters"><Characters /></Page>;
+  return <Page surface="characters"><LoadedCharacters /></Page>;
 }
 
 const meta: Meta<typeof CharactersStory> = {

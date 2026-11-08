@@ -13,6 +13,8 @@
  *  - The profile screen: the board draws two tables (the avatar beside the badges and the title, then the facts under them), the build is one table (Task 9's
  *    grid, whose label column the avatar cell shares); the badge and title rows stand where that grid puts them, and the facts and the log are held by their
  *    labels and their places. The log's rows read as blocks, each date over its words with the end under them, which the story's words and dates fill.
+ *  - The profile's Pronouns row (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md) is the build's and not the board's: it stands after the title, so
+ *    every fact under it stands a row (33px) lower than where the grid alone puts it.
  *  - The build's nav is a boards button where the board draws one; the banner and the crumb stand lower than the board draws them, as in 03-phone and 07-phone.
  */
 import type { BoardManifest } from '../../board-match.ts';
@@ -35,11 +37,11 @@ const manifest: BoardManifest = {
     build: { story: 'boards-14-staff--staff' },
     landmarks: [
       { id: 'title', role: 'heading', name: 'The Director', box: 'position', buildShift: { x: SCREEN, y: 52.6 } },
-      { id: 'fact-interests', role: 'rowheader', name: 'Interests', box: 'position', buildShift: { x: SCREEN, y: 40.5 } },
-      { id: 'fact-mood', role: 'rowheader', name: 'Current mood', buildName: 'Current Mood', box: 'position', buildShift: { x: SCREEN, y: 40.5 } },
-      { id: 'fact-career', role: 'rowheader', name: 'Career', box: 'position', buildShift: { x: SCREEN, y: 40.5 } },
-      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { x: SCREEN, y: 40.5 } },
-      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { x: SCREEN, y: 40.5 } },
+      { id: 'fact-interests', role: 'rowheader', name: 'Interests', box: 'position', buildShift: { x: SCREEN, y: 73.5 } },
+      { id: 'fact-mood', role: 'rowheader', name: 'Current mood', buildName: 'Current Mood', box: 'position', buildShift: { x: SCREEN, y: 73.5 } },
+      { id: 'fact-career', role: 'rowheader', name: 'Career', box: 'position', buildShift: { x: SCREEN, y: 73.5 } },
+      { id: 'fact-posts', role: 'rowheader', name: 'Posts', box: 'position', buildShift: { x: SCREEN, y: 73.5 } },
+      { id: 'fact-joined', role: 'rowheader', name: 'Joined', box: 'position', buildShift: { x: SCREEN, y: 73.5 } },
     ],
   }],
 };

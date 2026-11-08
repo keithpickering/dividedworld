@@ -17,6 +17,7 @@
  * epoch milliseconds as the estimate function sends it.
  */
 import type { Quadrant, Span } from '../../rules/types.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
@@ -153,6 +154,8 @@ export interface Suggestions {
 
 /** The instance settings a screen reads (the screen_settings view): none of them a private fact. */
 export interface ScreenSettings {
+  /** The pronouns a new character starts with (`Settings.pronouns`, the setting `pronouns`): public, as a title is. */
+  readonly pronouns: PronounSet;
   readonly postsPerPage: number;
   /** The text search configuration the search index is built in (`searchLanguage`); a screen never needs it but the view holds it. */
   readonly searchLanguage: string;
@@ -434,6 +437,8 @@ export interface Character {
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
   readonly pipStyle: string;
+  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row has the engine's it/its. */
+  readonly pronouns: PronounSet;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
   /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
@@ -614,6 +619,8 @@ export interface QueuedMove {
   readonly id: number;
   readonly staff: string;
   readonly boss: string | null;
+  /** The Boss's pronouns, beside its name (admin_queue); the engine's it/its where no character holds the name. */
+  readonly bossPronouns: PronounSet;
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: Demand | null;
@@ -639,6 +646,7 @@ export interface MoveInForce {
   readonly id: number | null;
   readonly staff: string | null;
   readonly boss: string | null;
+  readonly bossPronouns: PronounSet;
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: Demand | null;
@@ -658,6 +666,7 @@ export interface MoveEnded {
   readonly id: number | null;
   readonly staff: string | null;
   readonly boss: string | null;
+  readonly bossPronouns: PronounSet;
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly demand: Demand | null;
@@ -692,9 +701,12 @@ export interface HandoverTodo {
   readonly season: number;
   readonly boss: string;
   readonly bossName: string;
+  readonly bossPronouns: PronounSet;
   readonly bossWas: string | null;
   readonly outgoing: string | null;
   readonly outgoingName: string | null;
+  /** The outgoing Boss's pronouns; the engine's it/its where there is none. */
+  readonly outgoingPronouns: PronounSet;
   readonly outgoingOffice: string | null;
   /** How the new Boss was chosen: `nomination` or `rotation`. */
   readonly how: string;
@@ -713,7 +725,7 @@ export interface AdminQueue {
   readonly todos: readonly HandoverTodo[];
   readonly more: { readonly waiting: boolean; readonly inForce: boolean; readonly staffCards: boolean; readonly ended: boolean };
   /** The Bosses a waiting nomination can be replaced with: on the roster, not retired, debuted; in the rotation's order. */
-  readonly roster: readonly { readonly staff: string; readonly name: string }[];
+  readonly roster: readonly { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[];
 }
 
 /* ---------------------------------------------------------- the player's own ---- */
@@ -728,6 +740,8 @@ export interface Session {
 export interface MyCharacter {
   readonly id: Id;
   readonly name: string;
+  /** Its pronouns, as a profile shows them to everyone (its player's own choice; the screens that speak about it use them). */
+  readonly pronouns: PronounSet;
   /** Its class now: shown to its player as "only you". */
   readonly class: string;
   readonly classSince: string;
@@ -1003,6 +1017,8 @@ export interface Update {
   readonly character: Id;
   readonly name: string;
   readonly tagline: string;
+  /** The persona's pronouns (updates_read); the engine's it/its where its profile has none. */
+  readonly pronouns: PronounSet;
   readonly avatar: string | null;
   readonly title: string;
   readonly body: string;
@@ -1530,6 +1546,96 @@ export interface RecordPage {
   readonly unread: number;
 }
 
+/** The player's characters page (my_characters_page, 0115): every character, with what the Characters and Edit profile screens draw of each. */
+export interface MyCharactersPage {
+  readonly characters: Awaited<ReturnType<KayfaApi['myCharacters']>>;
+  /** The public face of each debuted character (`characters(ids)`); a character that has not debuted has none. */
+  readonly faces: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** `characterCounts(id)` of each character. */
+  readonly counts: Readonly<Record<Id, CharacterCounts>>;
+  /** `standingAmounts(ids)` of the debuted characters, hundredths. */
+  readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
+  readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly nextSettlementAt: Awaited<ReturnType<KayfaApi['nextSettlementAt']>>;
+}
+
+/** The season page (season_page, 0117): the News tab, the live standings or a finished season's final table, by `tab`. Null where the season asked for does not exist. */
+export type SeasonPage =
+  | { readonly tab: 'news'; readonly season: Awaited<ReturnType<KayfaApi['season']>>; readonly news: Awaited<ReturnType<KayfaApi['seasonNews']>> }
+  | {
+    readonly tab: 'standings';
+    readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+    readonly finished: Awaited<ReturnType<KayfaApi['finishedSeasons']>>;
+    readonly page: number;
+    readonly standings: Awaited<ReturnType<KayfaApi['standingsPage']>>;
+    /** `standingsCount()` */
+    readonly size: number;
+    readonly reveals: Awaited<ReturnType<KayfaApi['classReveals']>>;
+    readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  }
+  | {
+    readonly tab: 'results';
+    readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+    readonly finished: Awaited<ReturnType<KayfaApi['finishedSeasons']>>;
+    readonly page: number;
+    /** `resultPlace(season, character)`: the character's 0-based place in the table; null where none was asked for or it has no row. */
+    readonly place: Awaited<ReturnType<KayfaApi['resultPlace']>>;
+    readonly results: Awaited<ReturnType<KayfaApi['resultsPage']>>;
+  };
+
+/** The Alerts page (alerts_page, 0119): the newest rows and everything the words need beside them. */
+export interface AlertsPage {
+  readonly alerts: Awaited<ReturnType<KayfaApi['alerts']>>;
+  /** The account's mark (`preferences().alertsSeenAt`). */
+  readonly seenAt: string | null;
+  readonly openedAt: Awaited<ReturnType<KayfaApi['accountOpenedAt']>>;
+  /** The Acts the rows name and the ones those lead to (`actsById`). */
+  readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
+  /** The authors of those Acts (`characters(ids)`). */
+  readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** The first post of each followed thread among the rows (`openingActs`). */
+  readonly openings: Awaited<ReturnType<KayfaApi['openingActs']>>;
+  readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+}
+
+/** The Updates page (updates_page, 0121): a page of Updates, the open one's reactions, and for an admin with a handover season the queue. */
+export interface UpdatesPage {
+  readonly updates: Awaited<ReturnType<KayfaApi['updates']>>;
+  /** The tallies of the open Update (`update`, or the newest). */
+  readonly tallies: Awaited<ReturnType<KayfaApi['tallies']>>;
+  readonly mine: Awaited<ReturnType<KayfaApi['myReactions']>>;
+  readonly queue?: Awaited<ReturnType<KayfaApi['adminQueue']>>;
+}
+
+/** The admin queue page (queue_page, 0121); null for a caller who is not an admin. */
+export interface QueuePage {
+  readonly queue: Awaited<ReturnType<KayfaApi['adminQueue']>>;
+  readonly boardNames: Awaited<ReturnType<KayfaApi['boardNames']>>;
+  readonly bosses: Awaited<ReturnType<KayfaApi['bosses']>>;
+  readonly contact: Awaited<ReturnType<KayfaApi['adminContact']>>;
+}
+
+/** The player's log page (log_page, 0123): the page `log(before)` answers, and what its lines name. */
+export interface LogPage {
+  readonly log: Awaited<ReturnType<KayfaApi['log']>>;
+  /** The Acts the lines name and the ones those lead to, two rounds (`actsById`). */
+  readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
+  /** `effectStates(plays)` of the saves. */
+  readonly states: Awaited<ReturnType<KayfaApi['effectStates']>>;
+  /** The other characters the lines name (`characters(ids)`). */
+  readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
+  /** The threads the announced Turns and thread-reaching plays name (`thread(id)`). */
+  readonly threads: readonly ThreadSummary[];
+  /** The boards board-reaching plays name (`board(id)`). */
+  readonly boards: readonly Board[];
+  /** `standingAmounts(ids)` of the player's characters. */
+  readonly standings: Awaited<ReturnType<KayfaApi['standingAmounts']>>;
+  /** Every announced Turn of the player's characters (`turnsAnnounced(ids)`); the log draws only each character's latest, which the screen picks with the characters it holds (the one whose announcement is dated at its `classSince`). */
+  readonly turns: Awaited<ReturnType<KayfaApi['turnsAnnounced']>>;
+  readonly season: Awaited<ReturnType<KayfaApi['season']>>;
+}
+
 export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
@@ -1588,9 +1694,9 @@ export interface KayfaApi {
    */
   describeBoard(board: Id, description: string): Promise<Answer<{ readonly board: Id; readonly description: string }>>;
   /** The instance's whole roster by staff key and name, a waiting persona included (`boss_roster_names`): an admin's alone; anyone else is refused (the call throws). */
-  bosses(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
+  bosses(): Promise<readonly { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[]>;
   /** The names of staff who have debuted, by staff key (`characters_public`): public, so a waiting persona is not in it. The public moderation log names a nominee and a keeper from it. */
-  staffNames(): Promise<readonly { readonly staff: string; readonly name: string }[]>;
+  staffNames(): Promise<readonly { readonly staff: string; readonly name: string; readonly pronouns: PronounSet }[]>;
 
   settings(): Promise<ScreenSettings>;
 
@@ -1749,9 +1855,21 @@ export interface KayfaApi {
   /** How many reports this character may still make today (UTC). Shown only to the player of that character; null where it could not be read. */
   reportsLeft(character: Id): Promise<number | null>;
   /** The public name of the Mod on a board's beat, who judges its reports, and the board's name; null where no Mod is on staff. */
-  beatMod(board: Id): Promise<{ readonly mod: string; readonly board: string } | null>;
+  beatMod(board: Id): Promise<{ readonly mod: string; readonly pronouns: PronounSet; readonly board: string } | null>;
   /** The ban now running on one of the player's characters (`my_bans`), for the appeal to the Boss; null where it is not banned. */
   myBan(character: Id): Promise<MyBan | null>;
+  /** The player's own characters in one read, with what the Characters and Edit profile screens draw of each. */
+  myCharactersPage(): Promise<MyCharactersPage>;
+  /** The season page in one read, by `tab` ('news', else the standings or a finished `season`'s table, at `page` or around `character`); null where the season does not exist. */
+  seasonPage(tab: string | null, season: number | null, character: Id | null, page: number | null): Promise<SeasonPage | null>;
+  /** The Alerts page in one read, the rows at or before `before`. */
+  alertsPage(before: string | null): Promise<AlertsPage>;
+  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover season asks an admin's queue as well. */
+  updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
+  /** The admin queue page in one read; null for a caller who is not an admin. */
+  queuePage(): Promise<QueuePage | null>;
+  /** The log in one read, the rows at or before `before`. */
+  logPage(before: string | null): Promise<LogPage>;
   /** A character's profile page in one read; null where the character is not shown. */
   profilePage(character: Id): Promise<ProfilePage | null>;
   /** A page of a character's record in one read; null where the character is not shown. */
@@ -1883,9 +2001,11 @@ export interface KayfaApi {
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;
-  createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness): Promise<Answer<CreatedCharacter>>;
+  /** `pronouns` left out: the instance's default (`Settings.pronouns`), as the server takes it. */
+  createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Promise<Answer<CreatedCharacter>>;
   setDebut(character: Id, timing: DebutTiming, loudness: DebutLoudness): Promise<Answer<{ readonly id: Id; readonly waiting: boolean; readonly loudness: DebutLoudness }>>;
-  setProfile(character: Id, title: string, signature: string, pipStyle: string): Promise<Answer<Character>>;
+  /** `pronouns` left out: the stored set stays. */
+  setProfile(character: Id, title: string, signature: string, pipStyle: string, pronouns?: PronounSet): Promise<Answer<Character>>;
   setAvatar(upload: AvatarUpload): Promise<Answer<Character>>;
 
   /* Live: Acts, tallies and saved effects on a thread; new threads on a board. Each returns its unsubscribe. */

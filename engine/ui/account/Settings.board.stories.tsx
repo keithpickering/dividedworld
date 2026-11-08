@@ -6,7 +6,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { SettingsScreen } from './Settings.tsx';
+import { LoadedSettings } from '../loaded.tsx';
 
 /**
  * A player with two invites: the one made Nov 5 is open (it expires Nov 12, a week on) and the one made Nov 2 has been used. The seed's own
@@ -20,7 +20,7 @@ const twoInvites: World = (fake) => {
 };
 
 function AccountStory() {
-  return <Page surface="account"><SettingsScreen /></Page>;
+  return <Page surface="account"><LoadedSettings /></Page>;
 }
 
 const meta: Meta<typeof AccountStory> = {

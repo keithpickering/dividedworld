@@ -6,6 +6,7 @@ import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
+import { PRONOUN_PRESETS } from './pronouns.ts';
 
 const settings: Settings = {
   walletCap: 600,
@@ -34,6 +35,7 @@ const settings: Settings = {
   presenceNames: 15,
   presencePollSeconds: 30,
   systemEnabled: false,
+  pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
     honeymoon: { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 },
@@ -750,4 +752,33 @@ test('only a card that reaches a thread pins', () => {
   assert.match(instanceProblems(withCards({ pins: true })).join('\n'), /card "splat" pins true; only a card that reaches a thread pins/);
   assert.match(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts, pins: true })).join('\n'), /card "splat" pins true; only a card that reaches a thread pins/);
   assert.match(instanceProblems(withCards({ rarity: 'rare', reaches: ['thread'], lasts, pins: 'yes' })).join('\n'), /card "splat" pins "yes"/);
+});
+
+/* ------------------------------------------------------------------------------------- Pronouns ---- */
+
+test('the pronouns setting is held by pronounProblems', () => {
+  assert.deepEqual(settingsProblems(settings), []);
+  assert.match(settingsProblems({ ...settings, pronouns: { ...PRONOUN_PRESETS.it, subject: 'it ' } }).join('\n'), /setting "pronouns".*subject holds a space/);
+  assert.match(settingsProblems({ ...settings, pronouns: 'it' as never }).join('\n'), /setting "pronouns"/);
+  assert.match(settingsProblems({ ...settings, pronouns: undefined } as never).join('\n'), /setting "pronouns" is missing/);
+});
+
+test('a persona or the developer with a bad pronoun set is named; a good or missing one is not', () => {
+  assert.deepEqual(instanceProblems(withBot({ pronouns: PRONOUN_PRESETS.she })), []);
+  assert.match(said(withBot({ pronouns: { ...PRONOUN_PRESETS.she, reflexive: 'x3' } })), /persona "bot-a".*reflexive holds a character that is not a letter/);
+  assert.match(said(withBoss({ pronouns: { subject: 'a' } as never })), /persona "boss-a".*no object/);
+  assert.match(said({ ...good, developer: { name: 'Gabe', tagline: '', pronouns: { ...PRONOUN_PRESETS.he, plural: 'yes' as never } } }), /developer.*plural is not true or false/);
+  assert.deepEqual(instanceProblems({ ...good, developer: { name: 'Gabe', tagline: '', pronouns: PRONOUN_PRESETS.he } }), []);
+});
+
+test('a stock line may use a staff token\'s pronoun forms and no other token\'s', () => {
+  const line = (key: 'visitFiled' | 'moveMet' | 'reportDismissed', text: string) => withSystem({ stockLines: { ...system.stockLines, [key]: [text] } });
+  assert.deepEqual(instanceProblems(line('visitFiled', '{mod} forgot how {mod.they} felt; {mod.They} {mod.is} sorry, {mod.Their} {mod.themself} watch{mod.s}.')), []);
+  assert.match(said(line('reportDismissed', 'Sorry, {reporter.they}.')), /stock line "reportDismissed".*\{reporter\.they\}/);
+  assert.match(said(line('visitFiled', '{mod.thei} left.')), /stock line "visitFiled".*\{mod\.thei\}.*one of: they, They, them/);
+  assert.match(said(line('moveMet', '{boss.they} won.')), /stock line "moveMet".*\{boss\.they\}/);
+  assert.match(said(line('visitFiled', '{rule.they}')), /\{rule\.they\}/);
+  assert.deepEqual(instanceProblems(line('visitFiled', '{mod} filed it.')), []);
+  assert.match(said(line('visitFiled', '{mod.} left.')), /stock line "visitFiled".*\{mod\.\}/);
+  assert.match(said(line('visitFiled', '{mod.they.x} left.')), /stock line "visitFiled".*\{mod\.they\.x\}/);
 });

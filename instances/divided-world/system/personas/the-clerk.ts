@@ -10,6 +10,7 @@
  * and a bigger bank than the instance's ordinary honeymoon (still inside the engine's PHASE_CAPS).
  */
 import type { Persona } from '../../../../engine/rules/types.ts';
+import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
 
 const name = 'Clerk-O-Tron 3000 (placeholder)';
@@ -29,7 +30,8 @@ export const theClerk: Persona = {
   strictness: { visitHours: { least: 6, most: 12 }, bands: ['minor', 'moderate'] },
   weakness: { kind: 'distraction' },
   voice: 'chat',
-  persuadedBy: 'DRAFT: a citation of the thread\'s own numbers or a form filled in correctly; it is unmoved by volume.',
+  pronouns: PRONOUN_PRESETS.it,
+  persuadedBy: 'DRAFT: a citation of the thread\'s own numbers or a form filled in correctly; you are unmoved by volume.',
   persona: persona({
     name,
     title,

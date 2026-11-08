@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { seedMoves } from '../board/move-world.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from './Thread.tsx';
@@ -48,9 +49,19 @@ describe('the Boss on The System\'s board', () => {
     await waitFor(() => expect(screen.getAllByText('A move has ended: its demand was met.').length).toBeGreaterThan(0));
   });
 
+  test('a Boss keeping a move names the move as theirs, in the Boss\'s own set', async () => {
+    const { fake, w } = announcements();
+    fake.seed.staff('the-twin', 'The Twin', 'boss', { pronouns: PRONOUN_PRESETS.they });
+    const kept = fake.seed.move('director', { board: w.general, name: 'Twin Terrace' });
+    fake.seed.keepMove(kept, 'the-twin');
+    const moveThread = (await fake.act(kept))!.thread;
+    renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
+    await waitFor(() => expect(screen.getAllByText('The Twin kept a move of an earlier Boss. The move is now theirs.').length).toBeGreaterThan(0));
+  });
+
   test('a handover\'s ends and keeps are plain lines too: set aside at the handover, used up, and a Boss keeping a move', async () => {
     const { fake, w } = announcements();
-    fake.seed.staff('the-clerk', 'The Clerk', 'boss');
+    fake.seed.staff('the-clerk', 'The Clerk', 'boss', { pronouns: PRONOUN_PRESETS.she });
     const set = fake.seed.move('director', { board: w.general, name: 'Set Aside Alley' });
     fake.seed.endMove(set, { why: 'superseded', by: 'boss' });
     const used = fake.seed.move('director', { board: w.general, name: 'Used Up Ave' });
@@ -61,6 +72,6 @@ describe('the Boss on The System\'s board', () => {
     renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     await waitFor(() => expect(screen.getAllByText('A move has ended: it ended at the handover.').length).toBeGreaterThan(0));
     expect(screen.getAllByText('A move has ended: it was used up at the handover.').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('The Clerk kept a move of an earlier Boss. It is now its own.').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('The Clerk kept a move of an earlier Boss. The move is now hers.').length).toBeGreaterThan(0);
   });
 });

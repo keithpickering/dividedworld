@@ -128,8 +128,10 @@ test('an instance exported and imported into a fresh database is the same instan
       perform count_thread_views();
       -- Tilt turned on (0093), motion snappy (0112) and a mode chosen beside a theme (0115), so values other than the columns' defaults must survive the round trip.
       insert into account_preferences (account, theme, postbit, motion, smoke, contrast, text_size, tilt, mode, cards_met, alerts_seen_at, settlement_seen, toasts, welcomed_at, tips, tips_seen) values (ann, 'dusk', 'stacked', 'snappy', 'low', 'high', 150, 'on', 'light', '{whoops,stick-around}', now() - interval '1 hour', now() - interval '2 hours', '{quote,hint}', now() - interval '3 hours', 'off', '{tour-plate,grid}');
-      insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame)
-      values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}');
+      -- A custom pronoun set (0124), not the column's default, so the round trip has to carry it.
+      insert into character_profiles (character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pronouns)
+      values (a, 'Exported', '[b]sig[/b]', 'exp-sq.webp', 'exp-pt.webp', '{"x": 0, "y": 0, "w": 1, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}',
+        '{"subject": "xe", "object": "xem", "determiner": "xyr", "possessive": "xyrs", "reflexive": "xemself", "plural": false}');
       -- An original 0025 handed to the sweep: a row the export carries, naming a file it does not.
       insert into avatar_orphans (key) values ('exp-src.webp');
       insert into admins (account) values (ann);
@@ -453,6 +455,10 @@ test('an instance exported and imported into a fresh database is the same instan
     const after = contents(fresh.toString());
     assert.deepEqual([...after.keys()], [...before.keys()]);
     for (const [t, rows] of before) assert.equal(after.get(t), rows, `${t} differs after the round trip`);
+    // A custom pronoun set (0124) is carried as it was chosen, not reset to the column's default.
+    const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
+    const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
+    assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
     for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);

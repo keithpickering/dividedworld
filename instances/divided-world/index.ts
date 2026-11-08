@@ -4,6 +4,7 @@
  * composition root (supabase/functions/) is the one place this is imported beside the engine.
  */
 import type { Instance } from '../../engine/rules/types.ts';
+import { PRONOUN_PRESETS } from '../../engine/rules/pronouns.ts';
 import { deepFreeze } from '../../engine/rules/instance.ts';
 import { cards } from './cards/index.ts';
 import { classes } from './classes/index.ts';
@@ -37,7 +38,7 @@ const ranks = deepFreeze([
  * the game". His tagline is instance content and travels in the seed as his profile title; `avatar` is the key of his picture in
  * ui/avatars (InstanceUi.avatars). The voice is the admins' to write: it is never a model's, and what it says is always true.
  */
-const developer = deepFreeze({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' });
+const developer = deepFreeze({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he });
 
 /** The pips a postbit draws beside a rank: the default for now; more come with the gacha and trophies. */
 const pipStyles = deepFreeze([

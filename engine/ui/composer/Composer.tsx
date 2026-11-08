@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
+import { words as pronounWords } from '../../rules/pronouns.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { BanAppeal } from '../cards/Forms.tsx';
 import { RevealModal } from '../characters/RevealModal.tsx';
@@ -114,7 +115,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
   if (!hudCharacter) {
     return (
       <p className="kb-composer-note kb-notice">
-        None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; one waiting to debut can post once it has.
+        None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; a character waiting to debut can post after the debut.
       </p>
     );
   }
@@ -172,7 +173,7 @@ function ComposerBody({ thread, latest, since, onPosted, ref, account }: Compose
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
       {bannedUntil !== null && (
         <p className="kb-notice kb-composer-ban" role="status">
-          <strong>{hudCharacter.name}</strong> is banned until {dayAndTime(bannedUntil)}. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as it.
+          <strong>{hudCharacter.name}</strong> is banned until {dayAndTime(bannedUntil)}. The ban ends by itself then, and it holds only this character: switch to another in the HUD to post as {pronounWords(hudCharacter.pronouns).them}.
           {' '}<BanAppeal character={hudCharacter.id} />
         </p>
       )}

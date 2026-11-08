@@ -153,11 +153,11 @@ test('a waiting Turn is withdrawn by naming its character', () => {
 
 test('a character drops now or debuts at the tally, silent or announced; a waiting one is dropped or its loudness changed', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent', pronouns: null } });
   assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'later' }) ?? '', /^timing:/);
   assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', loudness: 'revealed' }) ?? '', /^loudness: a debut is silent, announced, or announced with its class/);
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class', pronouns: null } });
   assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'tally', loudness: 'with_class' }, instance),
     { ok: true, rpc: 'set_debut', args: { through: id, timing: 'tally', loudness: 'with_class' } });
   assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' }, instance),
@@ -169,9 +169,18 @@ test('a character drops now or debuts at the tally, silent or announced; a waiti
   assert.match(refusal({ action: 'setDebut', timing: 'now', loudness: 'silent' }) ?? '', /^character:/);
 });
 
+test('a character is made with pronouns the way they are stored: lowered, or refused plainly', () => {
+  const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+  assert.deepEqual(decide({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, subject: ' SHE ' } }, instance),
+    { ok: true, rpc: 'create_character', args: { name: 'Hers', class: 'a', timing: 'now', loudness: 'announced', pronouns: she } });
+  assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, subject: 'abcdefghijklm' } }) ?? '', /^pronouns: the subject has 13 characters; at most 12/);
+  assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, object: '' } }) ?? '', /^pronouns: the object is empty/);
+  assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: 'she/her' }) ?? '', /^pronouns: the pronouns are not an object/);
+});
+
 test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'now', loudness: 'announced' } });
+    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'now', loudness: 'announced', pronouns: null } });
   assert.match(refusal({ action: 'createCharacter', name: 'Masked One', class: 'z' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'createCharacter', name: ' \u200b ', class: 'a' }) ?? '', /^name: is empty/);
   assert.match(refusal({ action: 'createCharacter', name: 'n'.repeat(41), class: 'a' }) ?? '', /^name: is longer than 40/);
@@ -185,7 +194,7 @@ test('a character is made with a name and one of the instance\'s classes; invite
   assert.match(refusal({ action: 'openAccount', invite: 7 }) ?? '', /^invite:/);
   // Trimmed as the database trims it, and held to the same hidden characters.
   assert.deepEqual(decide({ action: 'createCharacter', name: ` ${'n'.repeat(40)}  `, class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'now', loudness: 'announced' } });
+    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'now', loudness: 'announced', pronouns: null } });
   for (const name of ['Mas\u200bk', 'Mask\u00a01', 'Mask  1', 'Mask\u202e1', 'Mask\t1', 'Mask\ufeff1', 'Mask\u3164', 'Mask\u{e0041}', 'Mask\u2800', 'Mask\u{1d173}']) {
     assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
   }

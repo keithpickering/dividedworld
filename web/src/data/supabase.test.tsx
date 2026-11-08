@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
+import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
 
 /* Built in pieces on purpose: the web-reads guard refuses a path it cannot read to its end. */
@@ -15,6 +16,7 @@ const REST = ['', 'rest', 'v1'].join('/');
 const URL_ = 'https://proj.supabase.co';
 const PUBLISHABLE = 'sb_publishable_test0123456789';
 const FALLBACK: ScreenSettings = {
+  pronouns: ENGINE_DEFAULT_PRONOUNS,
   postsPerPage: 20,
   searchLanguage: 'english',
   searchRankPool: 5000,
@@ -116,6 +118,7 @@ describe('what the adapter may request', () => {
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.searchThreads({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.suggest('ma'), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
+      api.myCharactersPage(), api.seasonPage('news', null, null, null), api.alertsPage(null), api.updatesPage(null, null, null), api.queuePage(), api.logPage(null),
       api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
     const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
@@ -481,14 +484,15 @@ describe('reads and their rows', () => {
   it('joins characters_public with character_profiles in two reads and defaults an absent profile', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }, { id: A, name: 'Al', joined: '2026-09-01' }]);
-      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy' }]);
+      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy', pronouns: PRONOUN_PRESETS.she }]);
     });
     const list = await h.api.characters([B, A]);
     expect(h.to('characters_public')[0]?.url.searchParams.get('id')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toContain('pronouns');
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', joined: '2026-10-01' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', joined: '2026-09-01' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01' },
     ]);
   });
 
@@ -510,11 +514,13 @@ describe('reads and their rows', () => {
 
   it('maps my_characters, with a pending Turn only when one is waiting', async () => {
     const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false, class_due_at: null };
-    const h = harness(() => rows([{ id: B, ...base }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
+    const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
-    expect(mine[0]).toEqual({ id: B, name: 'Bea', class: 'face', classSince: '2026-09-01T00:00:00+00:00', classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
+    expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
     expect(mine[1]?.presenceHidden).toBe(true);
+    // A character with no profile row has no set to say: the engine's it/its.
+    expect(mine[1]?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     // When a Turn that waited past a reveal was due (0074): a wiring no other test holds (#179).
     expect(mine[1]?.classDueAt).toBe('2026-10-31T00:00:00+00:00');
     expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00' });
@@ -687,6 +693,12 @@ describe('reads and their rows', () => {
     expect((await harness(() => rows([{ settings: { walletCap: 900 } }])).api.settings()).cardEconomy).toEqual({});
   });
 
+  it('maps the instance\'s default pronouns from the view, and falls back to the engine\'s it/its', async () => {
+    const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
+    expect((await harness(() => rows([{ settings: { pronouns: she } }])).api.settings()).pronouns).toEqual(she);
+    expect((await harness(() => rows([{ settings: {} }])).api.settings()).pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
+  });
+
   it('fills a missing settings key from the instance fallback and uses what the view holds', async () => {
     const h = harness(() => rows([{ settings: { walletCap: 900, registrationMode: 'open', editGrace: { unit: 'minute', count: 5 }, reactionCap: null } }]));
     expect(await h.api.settings()).toEqual({ ...FALLBACK, walletCap: 900, registrationMode: 'open', editGrace: { unit: 'minute', count: 5 } });
@@ -717,6 +729,19 @@ describe('failures', () => {
   it('passes an act refusal through with its field', async () => {
     const h = harness(() => json({ field: 'body', error: 'body is empty' }, 400));
     expect(await h.api.post(T, B, ' ', null)).toEqual({ ok: false, error: 'body is empty', field: 'body' });
+  });
+
+  it('sends the pronouns with createCharacter and set_profile, and nothing when none is given', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({ character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she }) : json({ id: B, name: 'Bea', class: 'face', waiting: true, loudness: 'announced', announcement: null })));
+    await h.api.createCharacter('Bea', 'face', 'tally', 'announced', PRONOUN_PRESETS.she);
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'createCharacter', name: 'Bea', class: 'face', timing: 'tally', loudness: 'announced', pronouns: PRONOUN_PRESETS.she }]);
+    const set = await h.api.setProfile(B, 'T', 's', 'default', PRONOUN_PRESETS.she);
+    await h.api.setProfile(B, 'T', 's', 'default');
+    expect(h.to('rpc/set_profile').map((r) => r.body)).toEqual([
+      { through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she },
+      { through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: null },
+    ]);
+    expect(set).toMatchObject({ ok: true, value: { pronouns: PRONOUN_PRESETS.she } });
   });
 
   it('passes an rpc refusal through by its hint, and quotes nothing else', async () => {
@@ -1723,12 +1748,13 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
     const queue = {
       cap: 100,
-      waiting: [{ id: 4, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
-      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' } }],
-      ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
+      waiting: [{ id: 4, staff: 'director', boss: 'The Director', bossPronouns: PRONOUN_PRESETS.she, kind: 'renameBoard', params: { board: C, name: 'Toast' }, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Toast.', goLiveAt: '2026-10-31T14:10:00+00:00', expiresAt: '2026-11-14T00:00:00+00:00', structural: true, boardName: 'General', failedAt: '2026-10-31T14:11:00+00:00', failure: 'it did not land' }],
+      inForce: [{ act: A, id: 3, staff: 'director', boss: 'The Director', bossPronouns: PRONOUN_PRESETS.she, kind: 'renameBoard', params: {}, demand: { kind: 'postsOnBoard', params: { board: C, count: 5 } }, why: 'Why.', landedAt: '2026-10-30T12:00:00+00:00', expiresAt: '2026-11-13T12:00:00+00:00', progress: { done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' } }],
+      ended: [{ how: 'held', by: 'admin', at: '2026-10-30T10:00:00+00:00', act: null, id: 2, staff: 'director', boss: 'The Director', bossPronouns: PRONOUN_PRESETS.they, kind: 'renameBoard', params: {}, demand: null, why: 'x', landedAt: null }, { how: 'met', by: 'tick', at: '2026-10-29T10:00:00+00:00', act: B, id: 1, staff: 'director', boss: 'The Director', kind: 'renameBoard', params: {}, demand: null, why: null, landedAt: '2026-10-28T10:00:00+00:00' }],
       staffCards: [{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }],
       more: { waiting: false, inForce: false, staffCards: false, ended: true },
-      roster: [{ staff: 'the-clerk', name: 'The Clerk' }, { staff: 7, name: 'bad' }],
+      roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
+      todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
@@ -1742,7 +1768,11 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, staffCards: false, ended: true });
     expect(q.staffCards).toEqual([{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }]);
-    expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(q.roster).toEqual([{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }]);
+    // The Boss's set comes beside its name, in every group; a name no character holds (a null set) reads as the engine's it/its.
+    expect([q.waiting[0]?.bossPronouns, q.inForce[0]?.bossPronouns, q.ended[0]?.bossPronouns]).toEqual([PRONOUN_PRESETS.she, PRONOUN_PRESETS.she, PRONOUN_PRESETS.they]);
+    expect(q.ended[1]?.bossPronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
+    expect(q.todos[0]).toMatchObject({ bossPronouns: PRONOUN_PRESETS.he, outgoingPronouns: ENGINE_DEFAULT_PRONOUNS });
     expect(q.waiting[0]?.replacedAt).toBeNull();
     expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
     expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
@@ -1756,18 +1786,19 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(log.rows.map((r) => [r.end?.why ?? null, r.keptBy])).toEqual([['superseded', null], ['spent', null], [null, 'the-clerk'], [null, null]]);
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/replace_successor')) return json({ id: 4, boss: 'hype-man' });
-      if (r.url.pathname.endsWith('/rpc/boss_roster_names')) return json([{ staff: 'hype-man', name: 'Hype Man', office: 'member' }, { staff: 'the-clerk', name: 'The Clerk', office: 'waiting' }, { staff: 7, name: 'no key' }]);
+      if (r.url.pathname.endsWith('/rpc/boss_roster_names')) return json([{ staff: 'hype-man', name: 'Hype Man', office: 'member', pronouns: PRONOUN_PRESETS.they }, { staff: 'the-clerk', name: 'The Clerk', office: 'waiting', pronouns: null }, { staff: 7, name: 'no key' }]);
       return json({}, 404);
     });
     expect(h.to('moves_log')).toHaveLength(0);
     /* The Boss list is the database's own roster (waiting personas included, whose names characters_public does not hold), read through the admin function. */
-    expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man' }, { staff: 'the-clerk', name: 'The Clerk' }]);
+    expect(await h.api.bosses()).toEqual([{ staff: 'hype-man', name: 'Hype Man', pronouns: PRONOUN_PRESETS.they }, { staff: 'the-clerk', name: 'The Clerk', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     expect(h.to('characters_public')).toHaveLength(0);
     expect(h.to('rpc/boss_roster_names')).toHaveLength(1);
     /* The public names come from characters_public alone: debuted staff, by key. */
-    const pub = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ staff: 'the-clerk', name: 'The Clerk' }, { staff: null, name: 'Al' }]) : rows([])));
-    expect(await pub.api.staffNames()).toEqual([{ staff: 'the-clerk', name: 'The Clerk' }]);
-    expect(pub.to('characters_public')[0]?.url.searchParams.get('select')).toBe('staff,name');
+    const pub = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: B, staff: 'the-clerk', name: 'The Clerk' }, { id: A, staff: 'hall-monitor', name: 'Hall Monitor' }, { id: C, staff: null, name: 'Al' }]) : rows([{ character: B, pronouns: PRONOUN_PRESETS.he }])));
+    expect(await pub.api.staffNames()).toEqual([{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 'hall-monitor', name: 'Hall Monitor', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
+    expect(pub.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,staff,name');
+    expect(pub.to('character_profiles')[0]?.url.searchParams.get('select')).toBe('character,pronouns');
     expect(pub.to('rpc/boss_roster_names')).toHaveLength(0);
     expect(await h.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: true, value: { id: 4, boss: 'hype-man' } });
     expect(h.to('rpc/replace_successor')[0]?.body).toEqual({ id: 4, boss: 'hype-man' });
@@ -1807,13 +1838,13 @@ describe('Contact', () => {
 describe('Updates', () => {
   const ROW = {
     act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.',
-    changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2,
+    changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2, pronouns: PRONOUN_PRESETS.he,
   };
-  const UPDATE = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2 };
+  const UPDATE = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Made this. Sorry.', pronouns: PRONOUN_PRESETS.he, avatar: 'gabe', title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: '2026-11-02T08:00:00+00:00', seq: 2 };
 
   it('reads a page through updates, from a cursor, and takes what a row holds as it is', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/updates') ? json([ROW, { ...ROW, act: C, avatar: null, changes: null, tagline: null, seq: 1 }]) : undefined));
-    expect(await h.api.updates()).toEqual([UPDATE, { ...UPDATE, act: C, avatar: null, changes: [], tagline: '', seq: 1 }]);
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/updates') ? json([ROW, { ...ROW, act: C, avatar: null, changes: null, tagline: null, seq: 1, pronouns: null }]) : undefined));
+    expect(await h.api.updates()).toEqual([UPDATE, { ...UPDATE, act: C, avatar: null, changes: [], tagline: '', seq: 1, pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     await h.api.updates('2026-11-02T08:00:00+00:00');
     expect(h.to('rpc/updates').map((r) => r.body)).toEqual([{ before: null, most: 20 }, { before: '2026-11-02T08:00:00+00:00', most: 20 }]);
   });
@@ -1839,9 +1870,9 @@ describe('Updates', () => {
 
 
 describe('a screen in one call', () => {
-  const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star' };
+  const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star', pronouns: PRONOUN_PRESETS.she };
   const CHAR = { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null };
-  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', joined: '2026-10-01' };
+  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01' };
   const PRESENCE = { names: [{ id: B, name: 'Bea', staff: false }], others: 1 };
   const PLAY_ROW = { ...ACT_ROW, id: SET, kind: 'card', target_act_id: A, payload: { card: 'splat' }, current_payload: { card: 'splat' } };
   const ABOVE_ROW = { play: SPRING, reach: 'thread', target: T, ends_at: '2026-10-02T10:00:00+00:00', act: { ...ACT_ROW, id: SPRING, kind: 'card', payload: { card: 'whoops' } } };
@@ -1914,7 +1945,7 @@ describe('a screen in one call', () => {
     expect(page?.states).toEqual({ [SET]: { state: { n: 1 }, savedAt: '2026-10-01T11:00:00+00:00' } });
     expect(page?.tallies).toEqual({ [SET]: { fire: 2 }, [SPRING]: {} });
     expect(page?.mine).toEqual([{ act: SET, kind: 'fire', character: B }]);
-    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default' }]);
+    expect(page?.characters).toEqual([{ ...BEA, title: '', signature: '', avatarSquare: null, squareFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS }]);
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
   });
 
@@ -2042,6 +2073,168 @@ describe('a screen in one call', () => {
     const posts = await once('record_page', { ...answer, kind: 'post' }).api.recordPage(B, 'post', 2);
     expect(posts).toMatchObject({ kind: 'post', page: 2, windowFrom: 20 });
     expect(await once('record_page', null).api.recordPage(B, 'all', 1)).toBeNull();
+  });
+
+  const SEASON_ROW = { id: 3, number: 2, starts_at: '2026-10-01T00:00:00+00:00', ends_at: null, turns_thread: null, reveal_act: null };
+  const REVEAL_ROW = { act: A, character: B, class: 'face', at: '2026-10-01T10:00:00+00:00', via: 'act', thread: T };
+  const TURN_ROW = { act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null };
+  const FINISHED_ROW = { number: 1, starts_at: '2026-07-01T00:00:00+00:00', ends_at: '2026-09-30T00:00:00+00:00', results_at: '2026-09-30T12:00:00+00:00', characters: 12 };
+
+  it('my_characters_page: sends no argument and maps characters, faces, counts, standings, reveals and Turns', async () => {
+    const mine = { id: B, name: 'Bea', class: 'face', class_since: '2026-10-01T00:00:00+00:00', debuted_at: '2026-10-01T00:00:00+00:00', presence_hidden: false };
+    const answer = {
+      characters: [
+        { ...mine, face: { ...CHAR, profile: PROFILE }, counts: { character: B, posts: 4, spins: 1, cards: 2 }, standing: 340, reveals: [REVEAL_ROW], turns: [TURN_ROW] },
+        { ...mine, id: C, name: 'Zed', face: { ...CHAR, id: C, name: 'Zed', profile: null }, counts: null, standing: null,
+          reveals: [{ ...REVEAL_ROW, act: SET, character: C, at: '2026-09-30T10:00:00+00:00' }], turns: [{ ...TURN_ROW, act: SPRING, character: C, at: '2026-10-01T10:00:00+00:00' }] },
+      ],
+      nextSettlementAt: '2026-10-31T08:17:00+00:00',
+    };
+    const h = once('my_characters_page', answer);
+    const page = await h.api.myCharactersPage();
+    expect(only(h, 'my_characters_page') ?? {}).toEqual({});
+    expect(page.characters.map((c) => [c.id, c.name, c.class])).toEqual([[B, 'Bea', 'face'], [C, 'Zed', 'face']]);
+    expect(page.faces.map((f) => f.name)).toEqual(['Bea', 'Zed']);
+    expect(page.counts).toEqual({ [B]: { posts: 4, spins: 1, cards: 2 }, [C]: { posts: 0, spins: 0, cards: 0 } });
+    expect(page.standings).toEqual({ [B]: 340, [C]: 0 });
+    /* Both lists are one list in time order across the characters, whichever is named first. */
+    expect(page.reveals.map((r) => [r.act, r.character])).toEqual([[SET, C], [A, B]]);
+    expect(page.turns.map((t) => [t.act, t.character])).toEqual([[SPRING, C], [C, B]]);
+    expect(page.nextSettlementAt).toBe('2026-10-31T08:17:00+00:00');
+  });
+
+  it('season_page: sends the tab, season, character and page by name, and maps each tab\'s document; no such season is null', async () => {
+    const news = once('season_page', { season: SEASON_ROW, news: [{ kind: 'tally', act: A, thread: T, seq: 3, at: '2026-10-02T10:00:00+00:00', season: 2, name: null, quote: null, count: 2, detail: { debuts: [{ character: B, name: 'Bea', class: null, was: null }] } }] });
+    const a = await news.api.seasonPage('news', null, null, null);
+    expect(only(news, 'season_page')).toEqual({ in_tab: 'news', in_season: null, in_character: null, in_page: null });
+    expect(a).toMatchObject({ tab: 'news', season: { number: 2 }, news: [{ kind: 'tally', act: A, debuts: [{ character: B, name: 'Bea' }] }] });
+    const live = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 2, standings: [{ character: B, name: 'Bea', standing: 300, place: 51 }], size: 61, reveals: [REVEAL_ROW], turns: [TURN_ROW] });
+    const b = await live.api.seasonPage(null, null, null, 2);
+    expect(only(live, 'season_page')).toEqual({ in_tab: null, in_season: null, in_character: null, in_page: 2 });
+    expect(b).toEqual({
+      tab: 'standings', season: expect.objectContaining({ id: 3, number: 2 }), page: 2, size: 61, standings: [{ character: B, name: 'Bea', standing: 300, place: 51 }],
+      finished: [{ number: 1, startsAt: FINISHED_ROW.starts_at, endsAt: FINISHED_ROW.ends_at, resultsAt: FINISHED_ROW.results_at, characters: 12 }],
+      reveals: [expect.objectContaining({ class: 'face' })], turns: [expect.objectContaining({ act: C })],
+    });
+    const done = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 1, place: 4, results: [{ character: B, name: 'Bea', place: 5, standing: 900, shown: [] }] });
+    const c = await done.api.seasonPage(null, 1, B, null);
+    expect(only(done, 'season_page')).toEqual({ in_tab: null, in_season: 1, in_character: B, in_page: null });
+    expect(c).toMatchObject({ tab: 'results', page: 1, place: 4, results: [{ character: B, name: 'Bea', place: 5, standing: 900, shown: [] }] });
+    expect(c).not.toHaveProperty('standings');
+    const unplaced = once('season_page', { season: SEASON_ROW, finished: [FINISHED_ROW], page: 1, place: null, results: [] });
+    expect(await unplaced.api.seasonPage(null, 1, A, null)).toMatchObject({ tab: 'results', place: null, results: [] });
+    expect(await once('season_page', null).api.seasonPage(null, 9, null, null)).toBeNull();
+  });
+
+  it('alerts_page: sends the cursor and maps the rows, the Acts, the people, the openings and the reading', async () => {
+    const answer = {
+      alerts: [{ kind: 'quote', sub: null, act: A, character: B, at: '2026-10-02T10:00:00+00:00', thread: T, name: 'Bea', title: null, count: null }, { kind: 'from-the-future', at: '2026-10-02T09:00:00+00:00' }],
+      seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', acts: [ACT_ROW], people: [{ ...CHAR, profile: PROFILE }], openings: [{ ...ACT_ROW, id: C, seq: 1 }], reading: [{ thread: T, furthest_seq: 2 }],
+    };
+    const h = once('alerts_page', answer);
+    const page = await h.api.alertsPage('2026-10-03T00:00:00+00:00');
+    expect(only(h, 'alerts_page')).toEqual({ in_before: '2026-10-03T00:00:00+00:00' });
+    expect(page.alerts.map((x) => [x.kind, x.act, x.name])).toEqual([['quote', A, 'Bea']]);
+    expect(page).toMatchObject({ seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', people: [BEA], reading: { [T]: 2 } });
+    expect(page.acts).toEqual([ACT]);
+    expect(page.openings[0]).toMatchObject({ id: C, seq: 1 });
+    const first = once('alerts_page', { ...answer, seenAt: null, openedAt: null });
+    expect(await first.api.alertsPage(null)).toMatchObject({ seenAt: null, openedAt: null });
+    expect(only(first, 'alerts_page')).toEqual({ in_before: null });
+  });
+
+  it('updates_page: sends the Update, cursor and handover season by name, and maps the Updates, the open one\'s tallies and the queue', async () => {
+    const update = { act: A, thread: T, character: B, name: 'Gabe', tagline: 'Dev', avatar: null, title: 'Patch', body: 'Fixed.', changes: [{ label: 'Fix', text: 'It works' }], at: '2026-10-02T10:00:00+00:00', seq: 4 };
+    const answer = { updates: [update], tallies: [{ act: A, kind: 'fire', count: 2 }], mine: [{ act: A, kind: 'fire', character: B }], queue: { cap: 100, waiting: [], inForce: [], ended: [], staffCards: [], more: {}, roster: [], todos: [] } };
+    const h = once('updates_page', answer);
+    const page = await h.api.updatesPage(null, '2026-10-03T00:00:00+00:00', 3);
+    expect(only(h, 'updates_page')).toEqual({ in_update: null, in_before: '2026-10-03T00:00:00+00:00', in_handover_season: 3 });
+    expect(page.updates).toEqual([expect.objectContaining({ act: A, title: 'Patch', changes: [{ label: 'Fix', text: 'It works' }], seq: 4 })]);
+    expect(page.tallies).toEqual({ [A]: { fire: 2 } });
+    expect(page.mine).toEqual([{ act: A, kind: 'fire', character: B }]);
+    expect(page.queue).toMatchObject({ cap: 100, waiting: [], roster: [] });
+    const plain = once('updates_page', { updates: [], tallies: [], mine: [] });
+    const bare = await plain.api.updatesPage(C, null, null);
+    expect(only(plain, 'updates_page')).toEqual({ in_update: C, in_before: null, in_handover_season: null });
+    expect(bare).toEqual({ updates: [], tallies: {}, mine: [] });
+    expect('queue' in bare).toBe(false);
+  });
+
+  it('queue_page: sends no argument and maps the queue, the board names, the Bosses and the contact; a caller who is no admin gets null', async () => {
+    const answer = {
+      queue: { cap: 100, waiting: [], inForce: [], ended: [], staffCards: [], more: { waiting: true }, roster: [{ staff: 'the-clerk', name: 'The Clerk' }], todos: [] },
+      boardNames: [{ id: C, slug: 'general', name: 'Toast', was: 'General' }], bosses: [{ staff: 'director', name: 'The Director' }, { staff: 7 }], contact: [{ label: 'Discord', href: 'https://d.example' }, { label: 4 }],
+    };
+    const h = once('queue_page', answer);
+    const page = await h.api.queuePage();
+    expect(only(h, 'queue_page') ?? {}).toEqual({});
+    expect(page).toMatchObject({
+      queue: { cap: 100, more: { waiting: true, inForce: false }, roster: [{ staff: 'the-clerk', name: 'The Clerk' }] },
+      boardNames: [{ id: C, slug: 'general', name: 'Toast', was: 'General' }], bosses: [{ staff: 'director', name: 'The Director' }], contact: [{ label: 'Discord', href: 'https://d.example' }],
+    });
+    expect(await once('queue_page', null).api.queuePage()).toBeNull();
+  });
+
+  describe('log_page', () => {
+    const SRC = (over: Record<string, unknown[]> = {}) => ({
+      ledger: [], wallet: [], cards: [], playsOnMine: [], saves: [], setEnds: [], setPasses: [], caught: [], ended: [], infractions: [], bans: [], reports: [], appeals: [], ...over,
+    });
+    const LEDGER_ROW = { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00', character: B, reason: 'heel.drewHeat', amount: 20, shares_kept: true, params: { n: 2 } };
+    const doc = (sources: unknown, rest: Record<string, unknown> = {}) => ({
+      sources, shares: [], acts: [], states: [], people: [], threads: [], boards: [], standings: [], turns: [], season: null, ...rest,
+    });
+
+    it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {
+      const answer = doc(SRC({
+        ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
+        saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
+      }), {
+        shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
+        people: [{ ...CHAR, profile: PROFILE }], threads: [THREAD_ROW], boards: [BOARD_ROW], standings: [{ character: B, standing: 340 }], turns: [{ ...TURN_ROW, act: A, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, TURN_ROW], season: SEASON_ROW,
+      });
+      const h = once('log_page', answer);
+      const page = await h.api.logPage('2026-10-31T00:00:00+00:00');
+      expect(only(h, 'log_page')).toEqual({ in_before: '2026-10-31T00:00:00+00:00' });
+      expect(page.log.settlements).toEqual([{
+        id: 9, startsAt: LEDGER_ROW.starts_at, endsAt: LEDGER_ROW.ends_at, sharesKept: true,
+        lines: [{ character: B, reason: 'heel.drewHeat', amount: 20, params: { n: 2 }, shares: [{ act: A, quadrant: 'excitedNegative', amount: 20 }] }],
+      }]);
+      expect(page.log.wallet).toEqual([{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }]);
+      expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
+      expect(page.log.before).toBeNull();
+      expect(page.acts).toEqual([ACT]);
+      expect(page.states).toEqual({ [C]: { state: { n: 1 }, savedAt: '2026-10-29T23:00:00+00:00' } });
+      expect(page.people).toEqual([BEA]);
+      expect(page.threads[0]).toMatchObject({ id: T });
+      expect(page.boards).toEqual([BOARD]);
+      expect(page.standings).toEqual({ [B]: 340 });
+      /* Every announced Turn of the character, in the order sent: the screen picks the latest with the characters it holds. */
+      expect(page.turns).toEqual([{ act: A, character: B, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, { act: C, character: B, at: '2026-10-02T10:00:00+00:00', was: null }]);
+      expect(page.season).toMatchObject({ number: 2 });
+    });
+
+    it('reads a page that would not move its cursor again at its one instant by the views, and never when the document moves', async () => {
+      const full = Array.from({ length: 200 }, (_, i) => ({ ...LEDGER_ROW, character: `${B.slice(0, -4)}${String(i).padStart(4, '0')}` }));
+      const stuck = harness((r) => {
+        if (r.url.pathname.endsWith('/rpc/log_page')) return json(doc(SRC({ ledger: full })));
+        const name = r.url.pathname.replace(`${REST}/`, '');
+        if (name === 'my_ledger') return rows([...full, { ...LEDGER_ROW, character: C }]);
+        if (name.startsWith('my_')) return rows([]);
+        return undefined;
+      });
+      const page = await stuck.api.logPage(LEDGER_ROW.ends_at);
+      expect(page.log.before).toBe('2026-10-30T08:16:59.999999+00:00');
+      expect(page.log.settlements.map((x) => [x.id, x.lines.length])).toEqual([[9, 201]]);
+      expect(stuck.to('rpc/log_page')).toHaveLength(1);
+      const whole = stuck.to('my_ledger');
+      expect(whole).toHaveLength(1);
+      expect(whole[0]?.url.searchParams.get('ends_at')).toBe(`eq.${LEDGER_ROW.ends_at}`);
+      for (const name of ['my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_appeals']) expect(stuck.to(name).length, name).toBeGreaterThan(0);
+      /* A page that does move reads nothing but the document. */
+      const moves = once('log_page', doc(SRC({ ledger: [LEDGER_ROW] })));
+      await moves.api.logPage(null);
+      only(moves, 'log_page');
+    });
   });
 
   it('finished_seasons, results_page and result_place: send their names and keys, and map what they answer', async () => {
@@ -2178,11 +2371,11 @@ describe('reports, appeals and what a page says of a ban', () => {
 
   it('names who judges a board\'s reports through beat_mod_name, and the ban now running through my_bans', async () => {
     const h = harness((r) => {
-      if (r.url.pathname === `${REST}/rpc/beat_mod_name`) return json({ mod: 'The Clerk', board: 'General' });
+      if (r.url.pathname === `${REST}/rpc/beat_mod_name`) return json({ mod: 'The Clerk', pronouns: PRONOUN_PRESETS.he, board: 'General' });
       if (r.url.pathname === `${REST}/my_bans`) return rows([{ ban: 'b1', character: B, until: '2099-01-01T00:00:00+00:00', days: 3, rule: 'Rule 2: No double posting' }]);
       return undefined;
     });
-    expect(await h.api.beatMod(C)).toEqual({ mod: 'The Clerk', board: 'General' });
+    expect(await h.api.beatMod(C)).toEqual({ mod: 'The Clerk', pronouns: PRONOUN_PRESETS.he, board: 'General' });
     expect(h.log.find((r) => r.url.pathname.endsWith('/rpc/beat_mod_name'))?.body).toEqual({ in_board: C });
     expect(await h.api.myBan(B)).toEqual({ ban: 'b1', character: B, until: '2099-01-01T00:00:00+00:00', days: 3, rule: 'Rule 2: No double posting' });
     const q = h.to('my_bans')[0]!.url.searchParams;

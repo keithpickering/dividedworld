@@ -37,7 +37,7 @@ create function pg_temp.rows(k text) returns text language sql security definer 
   select coalesce(string_agg(office || ':' || cause, ',' order by id), '') from staff_offices where staff = k $$;
 -- (Read as the superuser's definer: a waiting persona's row is not readable by the admin's own role, which is the point.)
 create function pg_temp.roster_with_names(roster text[]) returns jsonb language sql security definer as $$
-  select jsonb_agg(jsonb_build_object('staff', r.staff, 'name', c.name, 'office', o.office) order by r.ord)
+  select jsonb_agg(jsonb_build_object('staff', r.staff, 'name', c.name, 'pronouns', (select p.pronouns from character_profiles p where p.character = c.id), 'office', o.office) order by r.ord)
   from unnest(roster) with ordinality r(staff, ord) join characters c on c.staff = r.staff join staff_office_now o on o.staff = r.staff $$;
 create function pg_temp.boss() returns text language sql as $$ select boss from seasons where ends_at is null $$;
 create function pg_temp.roll() returns jsonb language sql as $$
