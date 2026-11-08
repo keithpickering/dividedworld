@@ -139,3 +139,24 @@ for (const motion of ['reduce', 'full'] as const) {
     }
   });
 }
+
+/* The HUD's Menu and Alerts keep their shape while they wait, and the spinner sits at the center of each (base.css's upright wrapper once left it at the corner). */
+for (const [layout, viewport] of [['Main', { width: 1440, height: 900 }], ['Phone', { width: 390, height: 800 }]] as const) {
+  for (const control of ['.kb-hud-menu', '.kb-hud-alerts']) {
+    test(`on the ${layout} board, ${control} keeps its size and centers its spinner while it waits`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await page.goto(`/b/general?${SLOW}`);
+      const button = page.locator(control);
+      await expect(button).toBeVisible();
+      const before = await button.boundingBox();
+      await button.click();
+      const spinner = button.locator('.kb-spinner');
+      await expect(spinner).toBeVisible();
+      const [box, bars] = await Promise.all([button.boundingBox(), spinner.boundingBox()]);
+      expect(box!.width).toBeCloseTo(before!.width, 0);
+      expect(box!.height).toBeCloseTo(before!.height, 0);
+      expect(bars!.x + bars!.width / 2).toBeCloseTo(box!.x + box!.width / 2, 0);
+      expect(bars!.y + bars!.height / 2).toBeCloseTo(box!.y + box!.height / 2, 0);
+    });
+  }
+}

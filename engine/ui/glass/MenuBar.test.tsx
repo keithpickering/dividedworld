@@ -319,9 +319,19 @@ describe('a load the menu bar waits on', () => {
     const { routes, land } = loading(['/season']);
     renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
     await userEvent.click(await within(bar()).findByRole('link', { name: 'Season' }));
+    await act(async () => { await new Promise((r) => setTimeout(r, 150)); });
     await land();
     expect(bar().querySelector('.kb-glass-menu-corner:not([data-kb-on]) .kb-spinner')).not.toBeNull();
     await waitFor(() => expect(spinners()).toHaveLength(0));
+  });
+
+  test('with motion on, a wait that ends within a beat leaves no fade behind it', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const { routes, land } = loading(['/season']);
+    renderInWorld(<><MenuBar /><Routes routes={routes} /></>, { path: '/alerts', seed: signedIn });
+    await userEvent.click(await within(bar()).findByRole('link', { name: 'Season' }));
+    await land();
+    expect(spinners()).toHaveLength(0);
   });
 
   test('Esc\'s load is Back\'s: Back is pending and no other control, and the corner shows the one spinner', async () => {

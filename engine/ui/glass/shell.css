@@ -173,8 +173,8 @@
  */
 .kb-glass-menu-corner {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 14px;
+  right: 16px;
   display: flex;
   align-items: center;
   color: var(--kb-glass-text-hi);
@@ -211,8 +211,8 @@
 }
 
 :where(:root[data-kb-layout='phone']) .kb-glass-menu-corner {
-  top: 6px;
-  right: 6px;
+  top: 10px;
+  right: 12px;
 }
 
 /* A load is out (Page.tsx): the page shows the progress cursor over everything on it. */

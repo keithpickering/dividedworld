@@ -65,6 +65,8 @@ const TABS: readonly Tab[] = [
 
 /** How long the corner's spinner takes to fade out, in ms (shell.css). */
 const CORNER_FADE_MS = 180;
+/** How long the corner's spinner must be up before it counts as seen, and so fades out rather than going at once, in ms. */
+const CORNER_SEEN_MS = 100;
 
 /** The admin queue's tab, after the others, shown only to an admin (the server decides who is one; a refused or failed ask shows no tab). */
 const ADMIN: Tab = { label: 'Admin', to: GLASS_NAV.admin, current: (p) => p === GLASS_NAV.admin || p.startsWith('/admin/') };
@@ -136,14 +138,19 @@ function Bar() {
     });
   }, []);
   const cornerOn = backControl.pending || waiting.size > 0 || waitAtEnd;
-  /* The spinner fades out as well as in, so it stays drawn for the fade; under Off or reduced motion it goes with the wait. */
-  const [cornerDrawn, setCornerDrawn] = useState(cornerOn);
+  /* The spinner fades out as well as in, so it is kept drawn for the fade once it has been up long enough to be seen; a wait that came and went within a beat
+     (a read-ahead load answering at once) leaves nothing behind it. Under Off or reduced motion it goes with the wait. */
+  const [seen, setSeen] = useState(false);
   useEffect(() => {
-    if (cornerOn) { setCornerDrawn(true); return undefined; }
-    if (!feel || motionReduced()) { setCornerDrawn(false); return undefined; }
-    const t = setTimeout(() => setCornerDrawn(false), CORNER_FADE_MS);
+    if (cornerOn) {
+      const t = setTimeout(() => setSeen(true), CORNER_SEEN_MS);
+      return () => clearTimeout(t);
+    }
+    if (!seen) return undefined;
+    if (!feel || motionReduced()) { setSeen(false); return undefined; }
+    const t = setTimeout(() => setSeen(false), CORNER_FADE_MS);
     return () => clearTimeout(t);
-  }, [cornerOn, feel]);
+  }, [cornerOn, feel, seen]);
   const list = useRef<HTMLUListElement>(null);
   const transition: Transition = feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 };
   const shown = admin ? [...TABS, ADMIN] : TABS;
@@ -248,7 +255,7 @@ function Bar() {
           </ul>
         )}
       </div>
-      {(cornerOn || cornerDrawn) && <span className="kb-glass-menu-corner" aria-hidden="true" data-kb-on={cornerOn ? '' : undefined}><Spinner /></span>}
+      {(cornerOn || seen) && <span className="kb-glass-menu-corner" aria-hidden="true" data-kb-on={cornerOn ? '' : undefined}><Spinner /></span>}
     </nav>
   );
 }

@@ -1820,9 +1820,12 @@ html[data-kb-float='sheet'] .kb-frame {
   position: relative;
 }
 
-.kb-hud-menu > .kb-hud-wait {
+/* Three classes deep, to win over base.css's `.kb-glass-skew > .kb-glass-upright`, which makes the wrapper inline-block and would leave the spinner at the corner. */
+.kb-hud-menu.kb-glass-skew > .kb-hud-wait {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
@@ -1837,9 +1840,11 @@ html[data-kb-float='sheet'] .kb-frame {
 }
 
 /* Alerts' wait is the same: centered over the link (it is already a positioned box, on both boards), the bell, word and count faded beneath it. */
-.kb-hud-alerts > .kb-hud-wait {
+.kb-hud-alerts.kb-glass-skew > .kb-hud-wait {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
