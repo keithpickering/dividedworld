@@ -962,6 +962,8 @@ begin
     select * into fd from face_down f where f.post = one;
     patterns := patterns || phrase_pattern(fd.phrase, fd.play::text);
   end loop;
+  -- Two backs holding the very same phrase still have patterns of their own, and of the same length.
+  if phrase_pattern('heel', 'one') = phrase_pattern('heel', 'two') or length(phrase_pattern('heel', 'one')) is distinct from length(phrase_pattern('heel', 'two')) then raise exception 'two backs with one phrase share a pattern'; end if;
   if (select count(distinct length(x)) from unnest(patterns) x) is distinct from 1::bigint or (select count(distinct x) from unnest(patterns) x) is distinct from 6::bigint then
     raise exception 'the backs'' phrase patterns are not one length, each its own: %', (select array_agg(length(x)) from unnest(patterns) x);
   end if;
