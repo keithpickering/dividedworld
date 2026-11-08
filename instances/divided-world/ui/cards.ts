@@ -51,7 +51,7 @@ import { rgbOf } from '../cards/whoops/splat.ts';
 
 /**
  * The sentence a Move's words gain on setting it (the face-down Moves design, section 3): set face down on your own post, it springs on the
- * next quote of that post and lands free on what quoted it, at the card's own reach (the quoting post, its character, its thread).
+ * next quote of that post and lands, at no further cost, on what quoted it, at the card's own reach (the quoting post, its character, its thread).
  */
 const setMoveWords = (lands: string) => `You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${lands} at no further cost, using up the card.`;
 
