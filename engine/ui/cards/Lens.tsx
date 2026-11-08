@@ -455,7 +455,7 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   }, []);
   return (
     <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
-      {sprung && <p className="kb-lens-note kb-lens-sprung">{sprung}</p>}
+      {sprung && <p className="kb-lens-note">{sprung}</p>}
       {note && <p className="kb-lens-note">{note}</p>}
       <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}

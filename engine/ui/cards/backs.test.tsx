@@ -127,10 +127,8 @@ describe('a card a back laid', () => {
     const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
     await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
     const row = lens.querySelector('.kb-lens-row')!;
-    await waitFor(() => expect(row.querySelector('.kb-lens-sprung')).not.toBeNull());
-    expect(row.querySelector('.kb-lens-sprung')!.textContent).toMatch(/^Set face down by Spritey on [A-Z][a-z]+ \d+; sprang when Pipewrench quoted it\.$/u);
-    /* Above the card's own rows: the line comes before the play's by-line. */
-    expect(row.firstElementChild).toBe(row.querySelector('.kb-lens-sprung'));
+    /* Above the card's own rows: the line is the row's first, before the play's by-line. */
+    await waitFor(() => expect(row.firstElementChild!.textContent).toMatch(/^Set face down by Spritey on [A-Z][a-z]+ \d+; sprang when Pipewrench quoted it\.$/u));
     expect(row.textContent).not.toMatch(/account/iu);
   });
 });
