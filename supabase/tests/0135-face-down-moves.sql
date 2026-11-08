@@ -869,3 +869,24 @@ begin
   said := spring_traps('quote', p_spring, quoting);
   if said is null then raise exception 'the last back did not spring'; end if;
 end $$;
+
+-- ---- A Trap Card set before this named no card: it catches nothing and ends at its time; no row of it is edited ----
+do $$
+declare
+  ann uuid := tests.account('sp-old-ann'); bob uuid := tests.account('sp-old-bob');
+  a uuid := tests.character(ann, 'Sp Old Ann'); b uuid := tests.character(bob, 'Sp Old Bob');
+  t uuid := tests.thread('Old backs');
+  p uuid := tests.post(a, t, 'An old trap under this.');
+  the_set uuid := tests.act(a, 'set', t, '{}', p);
+  made jsonb; why text;
+begin
+  insert into face_down (play, account, card, post, thread, round, ends_at) values (the_set, ann, 'spxtrap', p, t, 1, now() + interval '7 days');
+  perform pg_temp.hand(bob, 'spxrare', 'spxwhoops');
+  made := pg_temp.cast(bob, 'spxrare', b, p);
+  if made -> 'sprung' is not null or made -> 'payload' ? 'caught' then raise exception 'an old Trap Card naming no card caught a cast: %', made; end if;
+  made := pg_temp.cast(bob, 'spxwhoops', b, p);
+  if made -> 'sprung' is not null then raise exception 'an old Trap Card caught a second card: %', made; end if;
+  if not exists (select 1 from face_down f where f.play = the_set and f.ends_at > now()) or pg_temp.sprung_of(the_set) is not null then raise exception 'the old back is not still set'; end if;
+  why := pg_temp.refusal(format('update face_down set catches = %L where play = %L', 'spxrare', the_set));
+  if why is null then raise exception 'a face_down row was edited'; end if;
+end $$;
