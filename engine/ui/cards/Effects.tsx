@@ -179,8 +179,14 @@ export interface MomentParts {
   readonly drawn: readonly CardPlay[];
   /** What each drawn play had saved then, by play; a play that had saved none is absent and is drawn as it landed. */
   readonly states: Readonly<Record<Id, EffectState>>;
-  /** Everything else on the post then, and every play above it, in words: "Holdy", "a card set face down", "Smear, caught by Trappy", "Sparkly on Spritey". */
+  /**
+   * Everything else on the post then, and every play above it, in words: "Holdy", "a card set face down", "Smear, caught by Trappy",
+   * "Sparkly on Spritey". Never the play whose moment it is: its mark, its Lens row and an ORIGIN box's head already name it (the owner,
+   * 2026-11-07: "Also on the post then" naming the spun play itself was redundant).
+   */
   readonly named: readonly string[];
+  /** What became of the play itself as it landed, where it was not simply played: "Caught by Trappy". Null for a play that landed. */
+  readonly own: string | null;
 }
 
 /**
@@ -199,10 +205,21 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
   const drawn: CardPlay[] = [];
   const states: Record<Id, EffectState> = {};
   const named: { readonly words: string; readonly play: CardPlay }[] = [];
+  /* The first layer is the play whose moment it is (play_moment, 0072): drawn where its card is, and never named beside itself. */
+  const self = moment.layers[0]!.act.id;
+  let own: string | null = null;
   for (const { act, state } of moment.layers) {
     if (act.kind === 'spring' || act.kind === 'card_end') continue;
     const play = playOf(act);
     if (!play || play.reach) continue;
+    if (act.id === self && (play.faceDown || play.caught !== undefined)) {
+      /* A back says nothing of itself; a caught play says what caught it, as its own fate rather than as something else on the post. */
+      if (play.caught !== undefined) {
+        const trap = springs.find((s) => s.payload.set === play.caught)?.payload.card;
+        own = `Caught by ${typeof trap === 'string' ? cardName(trap) : 'a trap'}`;
+      }
+      continue;
+    }
     if (play.faceDown) {
       /* A back whose time had passed by then, with nothing springing it, was gone from the post then (card_target), as now. */
       if (setLasts && shownPlays([play], setLasts, at).length === 0 && !springs.some((x) => x.payload.set === play.id)) continue;
@@ -223,7 +240,7 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
     if (card && drawnInMoment(card) && ui.find((c) => c.key === play.card)?.Effect) {
       drawn.push(play);
       if (state) states[play.id] = state;
-    } else {
+    } else if (act.id !== self) {
       named.push({ words: cardName(play.card), play });
     }
   }
@@ -235,6 +252,7 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
       ...named.sort((a, b) => inPlayOrder(a.play, b.play)).map((n) => n.words),
       ...moment.above.map((a) => `${cardName(typeof a.act.payload.card === 'string' ? a.act.payload.card : '')} on ${where(a)}`),
     ],
+    own,
   };
 }
 
@@ -285,11 +303,19 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   return <>{wrapped}</>;
 }
 
-/** One card's still effect in a moment, its `show` bound to its card, and its words cleared when it is gone. */
+/**
+ * One card's still effect in a moment, its `show` bound to its card, and its words cleared when it is gone. Its words are its view's
+ * notes, a play's each, top first (the last played first), where it gives any: a still view's heading is "as it landed", which the
+ * frame says already (the owner, 2026-11-07), and the notes say how each layer stood. A view with no notes gives its heading.
+ */
 function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'save' | 'release' | 'marks'> & {
   readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly onWords: (card: string, words: string | null) => void;
 }) {
-  const show = useCallback((view: CardView | null) => onWords(card, view?.state ?? null), [onWords, card]);
+  const plays = props.plays;
+  const show = useCallback((view: CardView | null) => {
+    const notes = view ? [...plays].reverse().map((p) => view.notes[p.id]).filter((n): n is string => n !== undefined && n !== '') : [];
+    onWords(card, view === null ? null : notes.length > 0 ? notes.join('; ') : view.state);
+  }, [onWords, card, plays]);
   useEffect(() => () => onWords(card, null), [onWords, card]);
   return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} /></Suspense>;
 }

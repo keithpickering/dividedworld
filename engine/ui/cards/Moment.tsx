@@ -3,9 +3,12 @@
  * with every play on it then as each stood, drawn in place of the post's live body when a reader presses As it landed in the play's
  * Lens row, and in the ORIGIN box of a thread spun from the play.
  *
- * It is glass laid on a board post, in plain words and never in character: a chamfered ring in the play's ink (`inkOf`), or its
- * card's alignment's color, with its glow; a tag at the ring's top ("As it landed · Back to now", the time being the Lens's); and under the
- * words, the plays named in words and each still card's own words, so the moment can be read as well as seen. In the thread the ring
+ * Shown over a live post (As it landed, with Back to now) it is glass laid on a board post, in plain words and never in character: a
+ * chamfered ring in the play's ink (`inkOf`), or its card's alignment's color, with its glow; a tag at the ring's top ("As it landed ·
+ * Back to now", the time being the Lens's); and under the words, the plays named in words and each still card's own words, so the
+ * moment can be read as well as seen. Where the moment is the content (a play-spun ORIGIN box, with no Back to now) the box's own
+ * border and head already frame it and say "as it landed", so it draws no ring and no tag, and its words are the board's own small
+ * print under the post (the owner, 2026-11-07: the ring, the tag and the box were "lots of different borders" saying one thing). In the thread the ring
  * is the post body's own edge (`.kb-act-main`, bar to bar), since a card's effect paints the whole body and the moment shows it as it
  * landed (the owner, 2026-11-06: the frame "should extend all the way to the edges accordingly, so it can show the effect
  * accurately"); it is laid over the body and clips nothing. Elsewhere (the ORIGIN box) the ring is the moment's own box. The post's own
@@ -49,14 +52,15 @@ export function useMomentRead(play: Id): MomentRead {
 }
 
 /**
- * The frame a moment is drawn in. `back` is Back to now's press (none in an ORIGIN box, whose moment is its content); `named` and
- * `words` are what the frame says under the post; `unrecorded` says what else was on the post then wasn't recorded.
+ * The frame a moment is drawn in. `back` is Back to now's press (none in an ORIGIN box, whose moment is its content, and then the frame
+ * is the box's: no ring, no tag); `own` (what became of the play itself), `named` and `words` are what the frame says under the post;
+ * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, place, at, read, back, named, words, unrecorded, frame, children }: {
+export function MomentFrame({ play, place, at, read, back, own = null, named, words, unrecorded, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
   readonly play: CardPlay; readonly place: EffectPlace; readonly at: string; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
-  readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
+  readonly own?: string | null; readonly named: readonly string[]; readonly words: readonly string[]; readonly unrecorded: boolean;
   /** The frame's element, for a control inside it to give focus to (Try again's answer). */
   readonly frame?: RefObject<HTMLDivElement | null>;
   readonly children: ReactNode;
@@ -67,18 +71,26 @@ export function MomentFrame({ play, place, at, read, back, named, words, unrecor
   const onInk = useOnInk();
   const ink = play.faceDown ? undefined : inkOf(ui, play, [play], onInk);
   const ring = useRing(place);
+  /* The moment is the content (a play-spun ORIGIN box): the box frames it, so there is no ring or tag, and a read not yet done is said above the words (and Try again). Over a post, As it landed opens once the moment is read (glass/prepared.ts), so the tag never says it is loading. */
+  const content = back === undefined;
+  const status = read === 'read' ? null : read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.';
+  const said = content && status !== null;
   return (
-    <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
+    <div ref={(el) => { ring.host.current = el; if (frame) frame.current = el; }} tabIndex={-1} className="kb-moment" role="group" aria-label={`As it landed, ${when(at)}`} data-kb-alignment={rules?.alignment} data-kb-content={content ? '' : undefined} style={ink ? ({ '--kb-moment-ink': ink } as CSSProperties) : undefined}>
+      {said && <p className="kb-moment-status kb-small kb-muted">{status}</p>}
       <div className="kb-moment-body">{children}</div>
-      <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />
-      <p ref={ring.tag} className="kb-moment-tag">
-        <span>As it landed</span>
-        {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
-        {read !== 'read' && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.'}</span></>}
-        {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
-      </p>
-      {(named.length > 0 || words.length > 0 || unrecorded) && (
-        <div className="kb-moment-list">
+      {!content && <div ref={ring.ring} className="kb-moment-ring" aria-hidden="true" />}
+      {!content && (
+        <p ref={ring.tag} className="kb-moment-tag">
+          <span>As it landed</span>
+          {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
+          {status !== null && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{status}</span></>}
+          {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
+        </p>
+      )}
+      {(own !== null || named.length > 0 || words.length > 0 || unrecorded) && (
+        <div className={content ? 'kb-moment-list kb-small kb-muted' : 'kb-moment-list'}>
+          {own !== null && <p>{own}.</p>}
           {words.map((w) => <p key={w}>{w}</p>)}
           {named.length > 0 && <p>Also on the post then: {named.join(', ')}</p>}
           {unrecorded && <p>What else was on the post then wasn't recorded.</p>}
@@ -208,7 +220,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
   return (
-    <MomentFrame frame={frame} play={play} place={place} at={play.playedAt} read="read" back={back} named={parts.named} words={words} unrecorded={!moment.recorded}>
+    <MomentFrame frame={frame} play={play} place={place} at={play.playedAt} read="read" back={back} own={parts.own} named={parts.named} words={words} unrecorded={!moment.recorded}>
       <MomentEffects moment={moment} place={place} nameOf={nameOf} onWords={onWords}>{bodyOf(moment.version)}</MomentEffects>
     </MomentFrame>
   );

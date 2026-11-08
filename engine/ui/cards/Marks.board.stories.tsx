@@ -5,7 +5,7 @@
  * its marks: `OnePlay` (the fixture's one play, its card met before so no callout hangs), `Callout` (the same for a reader who has
  * never met the card, so its one-line callout hangs off the mark), `SixKinds` (six kinds of card on one post: four marks and
  * "+2"), and `Armed` (Whoops! armed the way pressing its card in the hand arms it: the dashed ghost mark ends the strip of every post it
- * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card) and `EndedByAnAdmin` (the same play after an admin ended it). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
+ * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card), `EndedByAnAdmin` (the same play after an admin ended it) and `SpunFromAPlay` (a thread spun from a takeover card's play on #41, over its Whoops!: the play's moment in the ORIGIN box). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The story names no instance: the cards are the instance's own, in its order, and the kinds past them are keys no card has, which a
  * mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
@@ -16,7 +16,7 @@ import { useKayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { usePlayer } from '../player.tsx';
-import { useLocation } from '../router.tsx';
+import { useLocation, useNavigate } from '../router.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { usePlay } from './play.tsx';
 import { LoadedThread } from '../loaded.tsx';
@@ -155,6 +155,44 @@ function Opened() {
   return null;
 }
 
+/**
+ * A thread spun from a play on #41: the instance's takeover card (the story names none) is played on #41 over the fixture's play, the
+ * reader spins a thread from it as one of their own characters, and the story moves to that thread, whose ORIGIN box draws the play's
+ * moment: #41 as it read then, the fixture's play drawn still under it.
+ */
+function SpunFromPlay() {
+  const { api, ui } = useKayfa();
+  const navigate = useNavigate();
+  const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
+  const [spun, setSpun] = useState<string | null>(null);
+  useEffect(() => {
+    if (thread === null || spun !== null) return;
+    let live = true;
+    void (async () => {
+      const fake = api as Fake;
+      const acts = await api.acts(thread, 41, 42);
+      const target = acts.find((a) => a.seq === 41);
+      const caster = acts.find((a) => a.seq === 42)?.character ?? null;
+      const key = ui.cards.find((c) => c.takeover === true)?.key;
+      const me = (await api.myCharacters())[0];
+      if (!target || caster === null || key === undefined || !me) throw new Error('the boards fixture has no #41 and #42, the instance no takeover card, or the reader no character');
+      fake.clock.advance(MINUTE);
+      const play = fake.seed.card(caster, target.id, key, { message: '' });
+      const answer = await api.spin(play, me.id, 'About that hold', 'Of all the posts to be held on.');
+      if (!answer.ok) throw new Error(answer.error);
+      if (!live) return;
+      setSpun(answer.value.thread.id);
+      navigate(`/t/${answer.value.thread.id}`);
+    })().catch((e: unknown) => { console.error('the spun story could not be seeded', e); });
+    return () => { live = false; };
+  }, [api, ui, thread, spun, navigate]);
+  return (
+    <Frame>
+      {spun !== null && thread === spun ? <LoadedThread thread={spun} /> : <div aria-busy="true" />}
+    </Frame>
+  );
+}
+
 function Marked({ kinds, armed, quiet, landed = false, ending = 'none' }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean; readonly ending?: Ending }) {
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
@@ -201,3 +239,6 @@ export const EndThisCard: Story = { args: { kinds: 1, armed: false, quiet: true,
 export const EndedByAnAdmin: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'ended' } };
 export const EndThisCardPhone: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'admin' }, ...phone };
 export const EndedByAnAdminPhone: Story = { args: { kinds: 1, armed: false, quiet: true, ending: 'ended' }, ...phone };
+/** A thread spun from a takeover card's play on #41: its ORIGIN box draws the play's moment, #41 as it read then. */
+export const SpunFromAPlay: Story = { render: () => <SpunFromPlay /> };
+export const SpunFromAPlayPhone: Story = { render: () => <SpunFromPlay />, ...phone };

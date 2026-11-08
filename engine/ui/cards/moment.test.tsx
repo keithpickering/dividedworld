@@ -100,6 +100,22 @@ describe('a moment draws still', () => {
     await vi.waitFor(() => expect(onWords).toHaveBeenCalledWith('smear', 'smear as it stood (2)'));
   });
 
+  test('a card whose still view notes each play has those notes as its words, top first, and not its heading', async () => {
+    /* A heading of "As it landed" says only what the frame says already; the notes say how each layer stood. */
+    const Noted = ({ children, show, plays }: EffectProps) => {
+      useEffect(() => { show({ progress: null, state: 'As it landed', yours: false, controls: [], notes: Object.fromEntries(plays.map((p) => [p.id, `${p.id} at 40%`])) }); }, [show, plays]);
+      return <div data-kb-wrap="noted">{children}</div>;
+    };
+    cards[0] = ui('smear', { Effect: Noted });
+    try {
+      const { onWords } = draw(moment([{ act: card('k2', 'smear', 5, { layer: 2 }), state: null }, { act: card('k1', 'smear', 1), state: null }]));
+      await vi.waitFor(() => expect(onWords).toHaveBeenCalledWith('smear', 'k2 at 40%; k1 at 40%'));
+      expect(onWords).not.toHaveBeenCalledWith('smear', 'As it landed');
+    } finally {
+      cards[0] = ui('smear');
+    }
+  });
+
   test('layers wrap in PostEffects\' order: the post\'s cards as first played, the first innermost, and a takeover outermost', () => {
     draw(moment([
       { act: card('k3', 'ripple', 9), state: null },
@@ -123,6 +139,22 @@ describe('a moment names what it does not draw', () => {
     expect(chain()).toEqual(['smear']);
     expect(seen.map((s) => s.card)).not.toContain('holdy');
     expect(named(m)).toEqual(['Tagger', 'Holdy']);
+  });
+
+  test('the play whose moment it is is never named as also on the post: its mark, its Lens row and the ORIGIN head name it', () => {
+    const m = moment([{ act: card('k2', 'holdy', 5), state: null }, { act: card('k1', 'tagger', 1), state: null }]);
+    expect(named(m)).toEqual(['Tagger']);
+    expect(momentParts(m, instance.cards, cards, () => '', instance.settings.setLasts).own).toBeNull();
+  });
+
+  test('a caught play\'s own moment says what caught it, apart from what else was on the post', () => {
+    const back = act('s1', 'set', {}, 1);
+    const spring = act('sp1', 'spring', { card: 'trappy', trigger: 'cast', outcome: { do: 'nullify' }, set: 's1', by: 'k2', caught: 'k2' }, 5);
+    const m = moment([{ act: card('k2', 'smear', 5, { caught: 's1', layer: undefined }), state: null }, { act: back, state: null }, { act: spring, state: null }]);
+    const parts = momentParts(m, instance.cards, cards, () => '', instance.settings.setLasts);
+    expect(parts.own).toBe('Caught by Trappy');
+    expect(parts.named).toEqual(['a card set face down']);
+    expect(parts.drawn).toEqual([]);
   });
 
   test('a card back is named as a back, even once it sprang, and which card it is is never read', () => {
