@@ -1364,7 +1364,7 @@ describe('one board', () => {
   test('board is one board by its slug or its id, and null for neither', async () => {
     const { fake } = world();
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
-    const { threadCount: _c, lastAt: _a, lastCharacter: _l, lastThread: _t, ...row } = general;
+    const { threadCount: _c, lastAt: _a, lastCharacter: _l, lastThread: _t, lastTitle: _n, ...row } = general;
     expect(await fake.board('general')).toEqual(row);
     expect(await fake.board(general.id)).toEqual(row);
     expect((await fake.board('announcements'))?.isSystem).toBe(true);

@@ -140,6 +140,19 @@ describe('the index in the period table (board-look plan, Task 3)', () => {
     expect(table.querySelector('td[colspan], th[colspan]')).toBeNull();
   });
 
+  test('Last post names the thread it points at, linking to it', async () => {
+    renderInWorld(<LoadedIndex />, {
+      seed: (f) => {
+        const spritey = f.seed.character(f.seed.account('other'), 'Spritey', 'face', { at: T0 });
+        f.seed.thread('general', spritey, 'The Title Of It', 'x', { at: T0 });
+        f.signInAs(f.seed.account('me'));
+      },
+    });
+    const title = await screen.findByRole('link', { name: 'The Title Of It' });
+    expect(title.getAttribute('href')).toMatch(/\/t\//);
+    expect(title.closest('td')).toHaveClass('kb-board-last');
+  });
+
   test('Who is online\'s heading is an h2, and a section\'s heading is the one heading of its cell', async () => {
     renderInWorld(<LoadedIndex />, { seed: (f) => { f.signInAs(f.seed.account('me')); } });
     await screen.findByRole('link', { name: 'General' });

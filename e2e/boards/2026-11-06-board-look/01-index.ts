@@ -11,6 +11,8 @@
  *  - The kind of box the board draws around the credit is a footer, found by its role (its words hold the badges').
  *  - A board's last post holds its name link and its time link each at the 24px target (WCAG 2.5.8) without overlap, so its row stands
  *    about 12px taller than the board's line height draws it; what follows is within the match's tolerance.
+ *  - A board's last post also names the thread it points at, in a link of its own above the poster's name, which the board does not draw: the table stands
+ *    25.6px taller for it, the poster's name +18.4 and the time +19.6, and everything under the table (the second row, Who is online, the footer) about +21 to +26.
  *  - A time is a link named by its words and where it goes ("Oct 6, 2026 — latest post in General"), the board's by the words alone.
  */
 import type { BoardManifest } from '../../board-match.ts';
@@ -27,20 +29,20 @@ const manifest: BoardManifest = {
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'position' },
     { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
     { id: 'title', role: 'heading', name: 'Index' },
-    { id: 'boards', role: 'table', name: 'Boards', type: false },
+    { id: 'boards', role: 'table', name: 'Boards', type: false, buildShift: { height: 25.63 } },
     { id: 'head-board', role: 'columnheader', name: 'Board', within: 'boards' },
     { id: 'head-threads', role: 'columnheader', name: 'Threads', within: 'boards' },
     { id: 'head-last', role: 'columnheader', name: 'Last post', within: 'boards' },
     { id: 'general', role: 'link', name: 'General', within: 'boards' },
     { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', within: 'boards', box: 'position' },
-    { id: 'system', role: 'link', name: 'Staff Announcements', within: 'boards', box: 'height', type: false },
+    { id: 'system', role: 'link', name: 'Staff Announcements', within: 'boards', box: 'height', type: false, buildShift: { y: 21.81 } },
     { id: 'system-tag', role: 'text', name: 'Staff post here; you react and spin', within: 'boards', box: 'none', type: false },
-    { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', within: 'boards', box: 'position' },
-    { id: 'last-time', role: 'link', name: 'Oct 6, 2026', buildName: 'Oct 6, 2026 — latest post in General', within: 'boards', box: 'position' },
+    { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', within: 'boards', box: 'position', buildShift: { y: 18.38 } },
+    { id: 'last-time', role: 'link', name: 'Oct 6, 2026', buildName: 'Oct 6, 2026 — latest post in General', within: 'boards', box: 'position', buildShift: { y: 19.63 } },
     { id: 'none-yet', role: 'text', name: 'None yet', within: 'boards', box: 'none' },
-    { id: 'online', role: 'heading', name: 'Who is online' },
-    { id: 'online-note', role: 'text', name: 'Characters active in the past 5 minutes', box: 'position' },
-    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false },
+    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 21.05 } },
+    { id: 'online-note', role: 'text', name: 'Characters active in the past 5 minutes', box: 'position', buildShift: { y: 26.33 } },
+    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 26.39 } },
   ],
 };
 

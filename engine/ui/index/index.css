@@ -129,4 +129,9 @@
   .kb-board-last > a {
     white-space: nowrap;
   }
+
+  /* A thread's title may be long and has no one place to break it, so on the phone it wraps and sits ahead of the byline. */
+  .kb-board-last > a.kb-board-last-title {
+    white-space: normal;
+  }
 }

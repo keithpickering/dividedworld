@@ -306,7 +306,7 @@ function toBoard(r: Row): Board {
 
 /** One board of the index (index_page and boot, the same row), as boards() answers it. */
 function toBoardSummary(r: Row): BoardSummary {
-  return { ...toBoard(r), threadCount: num(r['thread_count']), lastAt: r['last_at'] ?? null, lastCharacter: r['last_character'] ?? null, lastThread: r['last_thread'] ?? null };
+  return { ...toBoard(r), threadCount: num(r['thread_count']), lastAt: r['last_at'] ?? null, lastCharacter: r['last_character'] ?? null, lastThread: r['last_thread'] ?? null, lastTitle: r['last_title'] ?? null };
 }
 
 /** A presence box (here and presence_box answer the same): a name with no id or name is no line. */
@@ -1039,7 +1039,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Promise.all(
         bs.map(async (b): Promise<BoardSummary> => {
           const l = (await list(() => client.from('thread_list').select('*').eq('board', b['id']).order('last_at', { ascending: false }).limit(1)))[0];
-          return { ...toBoard(b), threadCount: threadCounts.get(b['id']) ?? 0, lastAt: l?.['last_at'] ?? null, lastCharacter: l?.['last_character'] ?? null, lastThread: l?.['id'] ?? null };
+          return { ...toBoard(b), threadCount: threadCounts.get(b['id']) ?? 0, lastAt: l?.['last_at'] ?? null, lastCharacter: l?.['last_character'] ?? null, lastThread: l?.['id'] ?? null, lastTitle: l?.['title'] ?? null };
         }),
       );
     },
