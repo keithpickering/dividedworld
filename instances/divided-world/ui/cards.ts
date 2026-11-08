@@ -46,9 +46,6 @@ import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
-
-/** A span in words: "a week", "3 days". */
-const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { rgbOf } from '../cards/whoops/splat.ts';
 
@@ -56,7 +53,10 @@ import { rgbOf } from '../cards/whoops/splat.ts';
  * The sentence a Move's words gain on setting it (the face-down Moves design, section 3): set face down on your own post, it springs on the
  * next quote of that post and lands free on what quoted it, at the card's own reach (the quoting post, its character, its thread).
  */
-const setMove = (lands: string) => `Set face down on one of your own posts, it springs on the next quote of that post and lands free on ${lands}, using up the card.`;
+const setMoveWords = (lands: string) => `You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${lands} at no further cost, using up the card.`;
+
+/** A span in words: "a week", "3 days". */
+const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -80,7 +80,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Holds a reader on the post until they check your sentence, or break free.',
     status: 'Holding you on this post',
     describe: (settings: Settings) =>
-      `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by checking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. ${setMove('the quoting post')} It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Sweet card. Once the post settles in view, whoever reads it is pulled to it and the post fills their screen: they read it there, and get out by checking the caster's sentence to certify they read it, or by scrolling hard past either end of it (or pressing Break free, or Esc) to fill a bar that drains whenever they stop, which frees them for that visit. The post's author and the caster are never held. ${setMoveWords('the quoting post')} It costs ${orbs(settings.economy['stickAround.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'whoops',
@@ -111,7 +111,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     },
     describe: (settings: Settings) => {
       const e = settings.economy;
-      return `A Salty card. It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink. ${setMove('the quoting post')} It costs ${orbs(e['whoops.price'] ?? 0)} to buy, and playing it on a long post costs ${orbs(e['whoops.perLength'] ?? 0)} more for every ${e['whoops.lengthStep'] ?? 0} characters, ${orbs(e['whoops.mostInAll'] ?? 0)} at most in all.`;
+      return `A Salty card. It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink. ${setMoveWords('the quoting post')} It costs ${orbs(e['whoops.price'] ?? 0)} to buy, and playing it on a long post costs ${orbs(e['whoops.perLength'] ?? 0)} more for every ${e['whoops.lengthStep'] ?? 0} characters, ${orbs(e['whoops.mostInAll'] ?? 0)} at most in all.`;
     },
     /* The author's save that washes a layer clean (the rules' `clean`, instances/divided-world/cards/whoops.ts) is the one the log names. */
     logSave: (state: unknown) => (typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true
@@ -129,7 +129,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
-      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the exact card to catch: any card cast on a post, at any rarity. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
+      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the one card it catches, from the cards cast on a post, at any rarity. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
   },
   {
     key: 'force-field',
@@ -166,7 +166,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     },
     describe: (settings: Settings) => {
       const e = settings.economy;
-      return `A Pepperoni card, common. You type a phrase and the words to cover it with, and every place the phrase appears in the post's own words, as whole words in any case, gets a strip of tape with your words on it. Any reader can peel a strip off on their own screen; only the post's author can peel them for everyone, and the author's words are always under the tape and in the post's History. Up to three can stack on one post. ${setMove('the quoting post')} A set one lands only when the quote's own words hold its phrase, and it waits for a quote that does. It costs ${orbs(e['autocorrect.price'] ?? 0)} to buy, and playing it costs ${orbs(e['autocorrect.perVolume'] ?? 0)} more for every ${e['autocorrect.volumeStep'] ?? 0} characters it covers, ${orbs(e['autocorrect.mostInAll'] ?? 0)} at most in all.`;
+      return `A Pepperoni card, common. You type a phrase and the words to cover it with, and every place the phrase appears in the post's own words, as whole words in any case, gets a strip of tape with your words on it. Any reader can peel a strip off on their own screen; only the post's author can peel them for everyone, and the author's words are always under the tape and in the post's History. Up to three can stack on one post. ${setMoveWords('the quoting post')} A set one lands only when the quote's own words hold its phrase, and it waits for a quote that does. It costs ${orbs(e['autocorrect.price'] ?? 0)} to buy, and playing it costs ${orbs(e['autocorrect.perVolume'] ?? 0)} more for every ${e['autocorrect.volumeStep'] ?? 0} characters it covers, ${orbs(e['autocorrect.mostInAll'] ?? 0)} at most in all.`;
     },
     logPlay: (config) => (typeof config.phrase === 'string' && typeof config.replacement === 'string' ? `It covers “${config.phrase}” with “${config.replacement}”.` : undefined),
     logSave: (state: unknown) => {
@@ -187,7 +187,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: `Cast on a character. Every post by that character sparkles for ${spanWords(glitterBomb.lasts!)}.`,
     status: 'Sparkling every post by that character',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. ${setMove("the quoting post's character")} It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. ${setMoveWords("the quoting post's character")} It costs ${orbs(settings.economy['glitterBomb.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   {
     key: 'main-event',
@@ -195,7 +195,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: `Cast on a thread. Pins it to the top of its board for ${spanWords(mainEvent.lasts!)}.`,
     status: "Pinned to its board's top",
     describe: (settings: Settings) =>
-      `A Sweet card, ${mainEvent.rarity}, cast on a thread from its title. For ${spanWords(mainEvent.lasts!)}, the thread is pinned above the first page of its board's list, and then it drops back to its place by itself. It takes no other thread's place on the page. ${setMove("the quoting post's thread")} It costs ${orbs(settings.economy['mainEvent.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Sweet card, ${mainEvent.rarity}, cast on a thread from its title. For ${spanWords(mainEvent.lasts!)}, the thread is pinned above the first page of its board's list, and then it drops back to its place by itself. It takes no other thread's place on the page. ${setMoveWords("the quoting post's thread")} It costs ${orbs(settings.economy['mainEvent.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   /*
    * The onboarding's first card (docs/plans/2026-11-02-onboarding-design.md, section 5), the Face's own: Sweet's cyan, as Force Field is.
@@ -210,7 +210,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     hint: "A Feelin' Fab: the more of them on a post, the more it glows.",
     summary: 'Gives a post a rainbow behind its words. Up to three can stack, and each makes it grander.',
     describe: (settings: Settings) =>
-      `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. ${setMove('the quoting post')} It costs ${orbs(settings.economy['feelinFab.price'] ?? 0)} to buy, and nothing more to play.`,
+      `A Sweet card, common. It gives a post a rainbow behind its words, which stay as readable as ever. One makes the whole post's background drift slowly through the rainbow; two make it an animated rainbow band; three make it an animated radial rainbow, with the colors spreading out from the middle. A few twinkles come with it. Up to three can be on one post, and it stays as long as the post does. ${setMoveWords('the quoting post')} It costs ${orbs(settings.economy['feelinFab.price'] ?? 0)} to buy, and nothing more to play.`,
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down

@@ -98,7 +98,7 @@ A played card is an Act of its own. It shows on the post as a **mark**. Press th
 A plus after a price means that playing the card on a long post costs more; the Vending Machine tells you how much. Three words on every card are worth knowing:
 
 - **Sweet, Salty, Pepperoni.** Sweet helps the post or character it lands on, Salty gets in its way, and Pepperoni depends entirely on context. At the settlement, a Pepperoni card turns out Sweet or Salty depending on how the room reacted to it. The room is everybody except whoever cast it and, for a card on a post, whoever wrote that post.
-- **Cast, Use, Set.** There are three kinds of card. A Move is cast on a target or set face down on your own post to spring on whoever quotes it. A Gimmick is only set. A Ward guards your own post. A set card is a card back to everyone else, and every card back looks the same, so a Bluff might be any card.
+- **Move, Gimmick, Ward.** There are three kinds of card. A Move is cast on a target or set face down on your own post to spring on whoever quotes it. A Gimmick is only set face down, and springs on its own trigger. A Ward is used on your own post to guard it. A set card is a card back to everyone else, and every card back looks the same, so a Bluff might be any card.
 - **Rarity.** Common, uncommon, rare or legendary. The rarer a card, the further it can reach beyond a single post.
 
 ## The masks
