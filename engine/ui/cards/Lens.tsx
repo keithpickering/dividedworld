@@ -422,11 +422,11 @@ function PlayRow({ play, caster, ink, card, view, tallies, mine, compare, to, mo
   const { characters } = usePlayer();
   const { instance } = useKayfa();
   const name = playName(caster, card);
-  /* A caught play says where its card went, once the spring that caught it is read: the view's note (the card is spent) stands until then, and always for a play caught before. */
+  /* A caught play says where its card went, once the spring that caught it is read: the view's note, which claims nothing of the card, stands until then. */
   const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
   const fate = useCaughtFate(springOfCatch);
   const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
-  const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? null, fate) : view.notes[play.id];
+  const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);

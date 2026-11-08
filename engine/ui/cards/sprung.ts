@@ -1,14 +1,14 @@
 /**
  * The line a card that landed from a back carries in the Lens (`sprungWords`): who set it, when, and what set it off. The card's Act names its spring
  * (`CardPlay.spring`); the spring names the set and the post that set it off, and the characters are theirs. All of it is public, read once for a
- * spring and kept: a spring never changes. A read that fails says nothing (the Lens draws the row without the line), and is asked again next time.
+ * spring and kept (once.ts): a spring never changes. A read that fails or finds nothing says nothing (the Lens draws the row without the line), and is asked again next time.
  */
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, KayfaApi } from '../data/api.ts';
 import { readCaughtFate, sprungWords } from './lens-words.ts';
+import { onceFor } from './once.ts';
 
-const kept = new WeakMap<object, Map<Id, Promise<string | null>>>();
 const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v : null);
 
 /** The line for a spring, or null where nothing could be read. */
@@ -33,7 +33,7 @@ export function useCaughtFate(spring: Id | undefined): { readonly taken?: string
   useEffect(() => {
     if (spring === undefined) return undefined;
     let live = true;
-    readCaughtFate(api, spring).then((f) => { if (live && f) setFate({ spring, fate: f }); }, () => {});
+    onceFor(api, spring, 'fate', () => readCaughtFate(api, spring)).then((f) => { if (live && f) setFate({ spring, fate: f }); }, () => {});
     return () => { live = false; };
   }, [api, spring]);
   return spring !== undefined && fate?.spring === spring ? fate.fate : undefined;
@@ -46,11 +46,7 @@ export function useSprungWords(spring: Id | undefined): string | null {
   useEffect(() => {
     if (spring === undefined) return undefined;
     let live = true;
-    const cache = kept.get(api) ?? new Map<Id, Promise<string | null>>();
-    kept.set(api, cache);
-    const read = cache.get(spring) ?? readSprungWords(api, spring);
-    cache.set(spring, read);
-    read.then((words) => { if (live) setSaid({ spring, words }); }, () => { cache.delete(spring); });
+    onceFor(api, spring, 'words', () => readSprungWords(api, spring)).then((words) => { if (live) setSaid({ spring, words }); }, () => {});
     return () => { live = false; };
   }, [api, spring]);
   return spring !== undefined && said?.spring === spring ? said.words : null;

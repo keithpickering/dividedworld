@@ -89,6 +89,10 @@ describe('readCaughtFate: where a caught play\'s card went, for the Lens', () =>
     assert.deepEqual(fate, {});
     assert.equal(caughtWords('Trap Card', fate ?? undefined), 'Caught by a Trap Card. It did nothing, and its card is spent.');
   });
+  test('a setter that could not be read yields no claim: never "spent"', async () => {
+    const none = { actsById: async () => [spring({ did: 'caught' })], characters: async () => [] } as never;
+    assert.equal(await readCaughtFate(none, 'sp'), null);
+  });
   test('a spring written before has no did: the card was spent', async () => {
     assert.deepEqual(await readCaughtFate(api(spring({ outcome: { do: 'payout' } }), false), 'sp'), {});
   });

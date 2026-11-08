@@ -68,12 +68,14 @@ export function sprungWords(f: SprungFacts, zone?: string): string {
 
 /**
  * Where a caught play's card went: the setter's character where the spring says it caught (`did`, written from the face-down Moves on) and the setter is a
- * player; `{}` where the card was spent (a spring written before, or a staff setter, which takes nothing); null where it could not be read.
+ * player; `{}` where the card was spent (a spring written before, or a staff setter, which takes nothing); null where it could not be read, the setter's character included.
  */
 export async function readCaughtFate(api: Pick<KayfaApi, 'actsById' | 'characters'>, spring: Id): Promise<{ readonly taken?: string } | null> {
   const [sprang] = await api.actsById([spring]);
   if (!sprang || sprang.kind !== 'spring') return null;
   if (sprang.payload.did !== 'caught' || sprang.character === null) return {};
   const [setter] = await api.characters([sprang.character]);
-  return setter && setter.staff === undefined ? { taken: setter.name } : {};
+  /* A setter that could not be read is no claim at all: the card was not shown to be spent. */
+  if (!setter) return null;
+  return setter.staff === undefined ? { taken: setter.name } : {};
 }

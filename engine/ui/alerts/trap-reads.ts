@@ -27,7 +27,10 @@ export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters'
     const setters = struck.map((a) => held(text(a.payload.caught) ?? text(held(text(a.payload.spring) ?? '')?.payload.set) ?? '')?.character ?? held(text(a.payload.spring) ?? '')?.character ?? null);
     /* Every setter is read, named already or not: a staff setter's Trap Card takes nothing, and whether a character is staff is public but is not held with a name. */
     const unnamed = [...new Set(setters.filter((c): c is Id => c !== null))];
-    if (unnamed.length > 0) for (const c of await api.characters(unnamed)) { gotNames.set(c.id, c.name); if (c.staff !== undefined) gotStaff.add(c.id); }
+    /* Its own try: a failed read of the characters leaves the Acts already read. */
+    try {
+      if (unnamed.length > 0) for (const c of await api.characters(unnamed)) { gotNames.set(c.id, c.name); if (c.staff !== undefined) gotStaff.add(c.id); }
+    } catch { /* the plain words stand */ }
   } catch { /* the plain words stand */ }
   return { acts: gotActs, names: gotNames, staff: gotStaff };
 }
