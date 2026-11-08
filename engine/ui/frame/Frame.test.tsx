@@ -335,6 +335,26 @@ describe('Esc and a load', () => {
     expect(screen.getByText('the board')).toBeInTheDocument();
   });
 
+  test('Menu pressed toward a loading page keeps its word, its name and its place and shows one spinner over it, until it lands', async () => {
+    window.history.replaceState(null, '', '/b/general');
+    const { calls, page } = loads();
+    setup(true, undefined, page);
+    const menu = await within(await hud()).findByRole('button', { name: 'Menu' });
+    await screen.findByText('the board');
+    const children = () => Array.from(menu.children).map((c) => c.className);
+    const before = children();
+    await userEvent.click(menu);
+    expect(menu).toHaveAttribute('data-kb-pending');
+    expect(menu).toHaveAttribute('aria-busy', 'true');
+    expect(menu.querySelectorAll('.kb-hud-wait .kb-spinner')).toHaveLength(1);
+    /* The label and the key stay in the button, where they were: only the wait is added, as a layer over them. */
+    expect(menu.textContent).toContain('Menu');
+    expect(children().slice(0, before.length)).toEqual(before);
+    expect(menu.lastElementChild!.className).toContain('kb-hud-wait');
+    await act(async () => { calls[0]!.resolve('roster'); });
+    await waitFor(() => expect(menu.querySelector('.kb-spinner')).toBeNull());
+  });
+
   test('a silent re-read of the shown page does not take the Esc: it still opens the menu', async () => {
     window.history.replaceState(null, '', '/b/general');
     const { calls, retry, page } = loads();

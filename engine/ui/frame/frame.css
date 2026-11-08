@@ -1811,3 +1811,33 @@ html[data-kb-float='sheet'] .kb-frame {
 .kb-hud-alerts[data-kb-pending] {
   cursor: progress;
 }
+
+/*
+ * Menu's wait covers its label (Hud.tsx): the spinner is centered over the button, and the key cap, the word and the phone's glyph fade out
+ * beneath it by opacity, so they keep their room and the button keeps its name and its width.
+ */
+.kb-hud-menu {
+  position: relative;
+}
+
+.kb-hud-menu > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+}
+
+.kb-hud-menu > :not(.kb-hud-wait) {
+  transition: opacity 120ms ease;
+}
+
+.kb-hud-menu[data-kb-pending] > :not(.kb-hud-wait) {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-hud-menu > :not(.kb-hud-wait) { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-hud-menu > :not(.kb-hud-wait) {
+  transition: none;
+}

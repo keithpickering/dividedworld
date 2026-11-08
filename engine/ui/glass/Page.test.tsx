@@ -175,18 +175,18 @@ describe('the page while a load is out', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  test('a link on the page that is pending is a claimed source: the menu bar\'s end shows no spinner beside it', async () => {
+  test('a link on the page that is pending is a claimed source: the menu bar\'s corner shows no spinner beside it', async () => {
     const { container } = mount();
     await screen.findByRole('navigation', { name: 'Menu' });
     await userEvent.click(screen.getByRole('link', { name: 'Open season' }));
     expect(screen.getByRole('link', { name: 'Open season' }).querySelector('.kb-spinner')).not.toBeNull();
-    expect(container.querySelector('.kb-glass-menu-end .kb-spinner')).toBeNull();
+    expect(container.querySelector('.kb-glass-menu-corner .kb-spinner')).toBeNull();
   });
 
-  test('a plain Link on the page claims nothing, so the menu bar\'s end shows the wait', async () => {
+  test('a plain Link on the page claims nothing, so the menu bar\'s corner shows the wait', async () => {
     const { container } = mount();
     await screen.findByRole('navigation', { name: 'Menu' });
     await userEvent.click(screen.getByRole('link', { name: 'plain' }));
-    expect(container.querySelector('.kb-glass-menu-end .kb-spinner')).not.toBeNull();
+    expect(container.querySelector('.kb-glass-menu-corner .kb-spinner')).not.toBeNull();
   });
 });

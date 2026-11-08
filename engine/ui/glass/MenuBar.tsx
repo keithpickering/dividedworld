@@ -30,8 +30,11 @@
  * On a phone Back is on its own row and the pages are a strip under it that scrolls sideways, so
  * the current page's tab is scrolled into view as a page opens; with reduced motion it is there at
  * once. Back stays out of the strip, so no tab ever slides under it.
+ *
+ * A load a bar control started (a tab, Back) or no control claimed is shown by one Signal spinner in the bar's upper right corner, which
+ * fades in and out; the tabs and Back keep their widths while it runs, and only mark themselves `data-kb-pending`.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, type Transition } from 'motion/react';
 import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
@@ -60,6 +63,9 @@ const TABS: readonly Tab[] = [
   { label: 'Settings', to: GLASS_NAV.settings, current: (p) => p === '/settings' || p === '/invites' },
 ];
 
+/** How long the corner's spinner takes to fade out, in ms (shell.css). */
+const CORNER_FADE_MS = 180;
+
 /** The admin queue's tab, after the others, shown only to an admin (the server decides who is one; a refused or failed ask shows no tab). */
 const ADMIN: Tab = { label: 'Admin', to: GLASS_NAV.admin, current: (p) => p === GLASS_NAV.admin || p.startsWith('/admin/') };
 
@@ -74,16 +80,20 @@ function density(count: number): 'few' | 'many' | 'most' {
 }
 
 /**
- * A tab, which names its own load: while it is pending it shows the Signal spinner after its label, in a slot that eases open
- * (shell.css; at once under Off) and takes `data-kb-pending`. The claim keeps the bar's end from drawing the same wait.
+ * A tab, which names its own load: while it is pending it takes `data-kb-pending` and tells the bar, which draws the one Signal spinner
+ * in its corner. The tab itself never changes width. The claim keeps the bar from drawing the same wait twice.
  */
-function MenuTab({ tab, path, transition }: { readonly tab: Tab; readonly path: string; readonly transition: Transition }) {
+function MenuTab({ tab, path, transition, onWait }: { readonly tab: Tab; readonly path: string; readonly transition: Transition; readonly onWait: (label: string, on: boolean) => void }) {
   const { source, pending } = usePendingControl();
   const current = tab.current(path);
+  useEffect(() => {
+    onWait(tab.label, pending);
+    return () => onWait(tab.label, false);
+  }, [onWait, tab.label, pending]);
   return (
     <>
       <Link to={tab.to} source={source} className="kb-glass-menu-tab kb-glass-skew" aria-current={current ? 'page' : undefined} data-kb-pending={pending ? '' : undefined}>
-        <span className="kb-glass-upright">{tab.label}<span className="kb-glass-menu-wait" aria-hidden="true">{pending && <Spinner />}</span></span>
+        <span className="kb-glass-upright">{tab.label}</span>
       </Link>
       {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight; its holder wears the link's skew, so the rule is drawn as the boards draw it, 3px along the foot of the skewed tab. */}
       {current && (
@@ -115,6 +125,25 @@ function Bar() {
   const loadOut = useRef(false);
   loadOut.current = pending !== null && !pending.silent;
   const waitAtEnd = useUnclaimed(pending ? pending.source : undefined);
+  /* The tabs that are waiting on their load, by label: Back, the tabs and a load no control claims share the corner's one spinner. */
+  const [waiting, setWaiting] = useState<ReadonlySet<string>>(() => new Set());
+  const onWait = useCallback((label: string, on: boolean) => {
+    setWaiting((was) => {
+      if (was.has(label) === on) return was;
+      const next = new Set(was);
+      if (on) next.add(label); else next.delete(label);
+      return next;
+    });
+  }, []);
+  const cornerOn = backControl.pending || waiting.size > 0 || waitAtEnd;
+  /* The spinner fades out as well as in, so it stays drawn for the fade; under Off or reduced motion it goes with the wait. */
+  const [cornerDrawn, setCornerDrawn] = useState(cornerOn);
+  useEffect(() => {
+    if (cornerOn) { setCornerDrawn(true); return undefined; }
+    if (!feel || motionReduced()) { setCornerDrawn(false); return undefined; }
+    const t = setTimeout(() => setCornerDrawn(false), CORNER_FADE_MS);
+    return () => clearTimeout(t);
+  }, [cornerOn, feel]);
   const list = useRef<HTMLUListElement>(null);
   const transition: Transition = feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 };
   const shown = admin ? [...TABS, ADMIN] : TABS;
@@ -209,18 +238,17 @@ function Bar() {
             <span className="kb-glass-menu-arrow" aria-hidden="true" data-kb-key="‹" />
             <span className="kb-glass-menu-key" aria-hidden="true" data-kb-key="ESC" />
             Back to the board
-            <span className="kb-glass-menu-wait" aria-hidden="true">{backControl.pending && <Spinner />}</span>
           </span>
         </Link>
         {session.signedIn && (
           <ul ref={list} className="kb-glass-menu-list" data-kb-tabs={density(shown.length)} data-kb-fade={fade}>
             {shown.map((t) => (
-              <li key={t.label}><MenuTab tab={t} path={path} transition={transition} /></li>
+              <li key={t.label}><MenuTab tab={t} path={path} transition={transition} onWait={onWait} /></li>
             ))}
           </ul>
         )}
-        {waitAtEnd && <span className="kb-glass-menu-end" aria-hidden="true"><Spinner /></span>}
       </div>
+      {(cornerOn || cornerDrawn) && <span className="kb-glass-menu-corner" aria-hidden="true" data-kb-on={cornerOn ? '' : undefined}><Spinner /></span>}
     </nav>
   );
 }

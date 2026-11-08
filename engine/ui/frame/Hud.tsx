@@ -521,16 +521,18 @@ export function Hud() {
                       className="kb-hud-menu kb-glass-skew"
                       aria-keyshortcuts="Escape"
                       data-kb-pending={menuWait.pending ? '' : undefined}
+                      aria-busy={menuWait.pending || undefined}
                       onClick={() => navigate(GLASS_NAV.characters, { source: menuSource })}
                     >
                       <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
                       <span className={compact ? 'kb-visually-hidden' : 'kb-glass-upright'}>Menu</span>
-                      {menuWait.pending && <span className="kb-hud-wait kb-glass-upright"><Spinner /></span>}
                       {compact && (
                         <svg className="kb-hud-menu-glyph kb-glass-upright" aria-hidden="true" focusable="false" width="22" height="18" viewBox="0 0 22 18">
                           <path d="M2 3h18M2 9h18M2 15h18" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
                         </svg>
                       )}
+                      {/* Over the label, not beside it: the label fades out under a centered spinner and the button keeps its width. */}
+                      {menuWait.pending && <span className="kb-hud-wait kb-glass-upright"><Spinner /></span>}
                     </button>
                     <button
                       ref={handButton}
