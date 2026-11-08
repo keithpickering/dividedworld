@@ -616,7 +616,9 @@ describe("Feelin' Fab, bright", () => {
 
   test('the stylesheet gives the ink and the outline to the foil\'s host, and the words wear them where only the host is painted', () => {
     const css = read('fab.css').replace(/\/\*[\s\S]*?\*\//gu, '');
-    expect(css).toMatch(/\.dw-fab\s*\{[^}]*--kb-bright-ink:\s*#ffffff;[^}]*--kb-bright-outline:\s*#000000;/u);
+    /* thread.css reads both on the post body, which is an ANCESTOR of .dw-fab, and custom properties inherit downward only: they must be declared at the root. */
+    expect(css).toMatch(/:root\s*\{[^}]*--kb-bright-ink:\s*#ffffff;[^}]*--kb-bright-outline:\s*#000000;/u);
+    expect(css.match(/\.dw-fab\s*\{[^}]*\}/u)![0]).not.toMatch(/--kb-bright-/u);
     expect(css).toMatch(/:root\[data-kb-effects="bright"\]\s+\.dw-fab:not\(\[data-kb-bleed\]\)\s+>\s+\.dw-fab-words\s*\{[^}]*color:\s*var\(--kb-bright-ink\)[^}]*text-shadow:[^}]*var\(--kb-bright-outline\)/u);
     expect(css).toMatch(/\.kb-act-main\[data-kb-bright-ink\]\s+\.dw-fab-words\s*\{[^}]*text-shadow:\s*inherit/u);
   });

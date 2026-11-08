@@ -39,12 +39,12 @@
 
 /*
  * Brighter effects (docs/plans/2026-11-08-brighter-effects-design.md, section 1): under the full rainbow the words are white with a black
- * outline, the same on both boards. These two properties are Divided World's; the engine's thread.css reads them for a post body that
+ * outline, the same on both boards. These two properties are Divided World's, declared on the root: thread.css reads them on the post body, an ancestor of .dw-fab, and custom properties only inherit downward; the engine's thread.css reads them for a post body that
  * Effect.tsx has marked `data-kb-bright-ink` (the four inks, a quote's border and the shadow). Where only the host is painted (no body
  * to mark), the host's words wear the ink and the outline themselves, with the same shadow. Where the body is painted, the words must not
  * keep the board's halo above (it would stand over the body's outline), so they inherit the body's.
  */
-.dw-fab {
+:root {
   --kb-bright-ink: #ffffff;
   --kb-bright-outline: #000000;
 }
