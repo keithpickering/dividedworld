@@ -302,7 +302,8 @@ html[data-kb-float='sheet'] .kb-frame {
  * was an ellipse scaled to the window, so at a wide window it was shorter than the column: at 1920x1080 the column's top and bottom
  * ~135px were tinted.) The foot is a linear gradient over 220px, on phones too, and does lie over the posts. Nothing masks. Text
  * under it keeps its contrast (e2e/board-width.spec.ts measures 4.5:1 at the strongest points, and that the column above the foot is
- * untouched at four window sizes). High contrast draws none. Colors and opacities are the instance's (engine/ui/tokens.css); the
+ * untouched at four window sizes). High contrast draws none, and so does Smoke Off (the player's setting for the glass's haze;
+ * Low keeps it, as Low keeps the smoke). Colors and opacities are the instance's (engine/ui/tokens.css); the
  * engine's defaults draw nothing.
  */
 .kb-vignette {
@@ -324,7 +325,8 @@ html[data-kb-float='sheet'] .kb-frame {
     linear-gradient(to left, var(--kb-vignette-side), transparent var(--kb-gutter));
 }
 
-:root[data-kb-contrast='high'] .kb-vignette {
+:root[data-kb-contrast='high'] .kb-vignette,
+:root[data-kb-smoke-level='off'] .kb-vignette {
   display: none;
 }
 
