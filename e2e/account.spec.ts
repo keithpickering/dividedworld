@@ -72,3 +72,44 @@ test('on a phone the door\'s field rows are bare: the generic phone row\'s 16px 
     for (const pad of pads) expect(pad, path).toEqual(['0px', '0px']);
   }
 });
+
+/* A change of section is the body's alone (docs/plans/2026-11-08-glass-in-page-swap-design.md): the heading stays put, untouched by the crossing, and the pressed control keeps focus. */
+test('Settings › The board on the Smooth feel leaves the heading unfiltered and opaque the whole way, and the press keeps focus', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/settings?section=account');
+  await page.evaluate(() => { document.documentElement.setAttribute('data-kb-motion', 'full'); document.documentElement.setAttribute('data-kb-motion-feel', 'smooth'); });
+  const h1 = page.getByRole('heading', { level: 1, name: 'Settings' });
+  await expect(h1).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Account' })).toBeVisible();
+  /* The page's own entrance (the head's stagger) is over before the press: only the section's change is sampled. */
+  await expect.poll(() => page.evaluate(() => {
+    for (let el: Element | null = document.querySelector('h1'); el && el.tagName !== 'MAIN'; el = el.parentElement) if (getComputedStyle(el).opacity !== '1') return false;
+    return true;
+  })).toBe(true);
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __h1: string[]; __stop: boolean };
+    w.__h1 = [];
+    w.__stop = false;
+    const tick = () => {
+      /* Every h1 in the document, the leaving screen's and the entering one's alike, and each ancestor up to the page's own main: a screen's crossing fades and blurs the screen's box, so the heading's own style stays 'none|1' while the heading in it is mid-fade. */
+      for (const h of document.querySelectorAll('h1')) {
+        for (let el: Element | null = h; el && el.tagName !== 'MAIN'; el = el.parentElement) {
+          const c = getComputedStyle(el);
+          w.__h1.push(`${c.filter}|${c.opacity}`);
+        }
+      }
+      if (!w.__stop) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const press = page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'The board' });
+  await press.click();
+  await expect(page.getByRole('radiogroup', { name: 'Mode' })).toBeVisible();
+  /* The old section has left: the crossing is over. */
+  await expect(page.locator('.kb-settings-body [data-kb-exiting]')).toHaveCount(0);
+  const seen = await page.evaluate(() => { const w = globalThis as unknown as { __h1: string[]; __stop: boolean }; w.__stop = true; return w.__h1; });
+  expect(seen.length).toBeGreaterThan(5);
+  /* At rest Motion leaves a settled head as `blur(0px)` or `none`: neither filters. Any other value is a heading mid-fade or mid-blur. */
+  expect([...new Set(seen)].filter((v) => v !== 'none|1' && v !== 'blur(0px)|1')).toEqual([]);
+  await expect(press).toBeFocused();
+});
