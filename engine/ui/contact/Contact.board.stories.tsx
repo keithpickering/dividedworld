@@ -6,7 +6,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
-import { ContactScreen } from './Contact.tsx';
+import { LoadedContact } from '../loaded.tsx';
 
 /** No one signed in, and the admins' two ways set. */
 const ways: World = (fake) => {
@@ -17,7 +17,7 @@ const ways: World = (fake) => {
 };
 
 function ContactStory() {
-  return <Page surface="settings"><ContactScreen /></Page>;
+  return <Page surface="settings"><LoadedContact /></Page>;
 }
 
 const meta: Meta<typeof ContactStory> = {

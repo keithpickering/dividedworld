@@ -19,6 +19,7 @@ import { pageOf, threadHref } from '../thread/pages.ts';
 import { faceOf, withCardEconomy } from './faces.ts';
 import { landing, landingOn } from './land.ts';
 import { playOf, reachesOf, type BeyondPost, type CardTarget, type Play } from '../../rules/cards.ts';
+import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
 import { livePlays, usePlays, type Plays } from './plays.ts';
 import type { Id } from '../data/api.ts';
@@ -45,6 +46,8 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const here = usePlays(plays, act.id);
   const target = useTarget(act);
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
+  /* Rest or focus on the mark reads the post early, so the press that follows opens the form at once (glass/prepared.ts). */
+  const rest = useRest(() => { if (play && rules && target) play.readyForm(rules.key, target); });
   if (!play || !hudCharacter || !target || act.seq === null || !rules) return null;
   /* A Set and a Use go on a post of the reader's own characters alone: decided on the reader's screen, from their own characters, never sent. */
   const how = playOf(rules);
@@ -55,7 +58,9 @@ export function GhostMark({ act }: { readonly act: Act }) {
     <button
       type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
+      aria-busy={play.opening(rules.key, target) ? 'true' : undefined}
       onClick={() => play.openForm(rules.key, target)}
+      {...rest}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
         {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}
@@ -105,6 +110,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const onThread = usePlays(at.plays, at.thread ?? '');
   const onBoard = usePlays(at.plays, at.board ?? '');
   const rules = play?.armed == null ? undefined : instance.cards.find((c) => c.key === play.armed);
+  const rest = useRest(() => { if (play && rules) play.readyForm(rules.key, { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know }); });
   if (!play || !hudCharacter || !rules || !reachesOf(rules).includes(at.reach)) return null;
   const how = playOf(rules);
   if (how === 'set' || how === 'keep') return null;
@@ -121,7 +127,9 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     <button
       type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={reachGhostName(rules.name, how, at.name)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-reach={at.reach}
       style={{ '--kb-mark-color': face.art.color } as CSSProperties}
+      aria-busy={play.opening(rules.key, target) ? 'true' : undefined}
       onClick={() => play.openForm(rules.key, target)}
+      {...rest}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
         {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}

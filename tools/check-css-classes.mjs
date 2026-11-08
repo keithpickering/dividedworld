@@ -86,7 +86,6 @@ export const ALLOWED_HOOKS = new Set([
   'kb-spin-now-region',
   'kb-origin-update-title',
   'kb-settled-wallet',
-  'kb-settled-wait',
   'kb-acct-choice',
   'kb-board-link',
   'kb-thread-last-link',

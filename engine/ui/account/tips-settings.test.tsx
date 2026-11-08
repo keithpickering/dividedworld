@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { Frame } from '../frame/Frame.tsx';
 import type { Fake } from '../data/fake.ts';
 import { buildWorld, renderIn } from '../test-world.tsx';
-import { SettingsScreen } from './Settings.tsx';
+import { LoadedSettings } from '../loaded.tsx';
 
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); });
 afterEach(() => { cleanup(); });
@@ -26,7 +26,7 @@ async function world(welcomed = true): Promise<Fake> {
 const board = (fake: Fake) => renderIn(fake, <Frame><p>A board page.</p></Frame>);
 /** Open Settings, do `act`, wait for the save, and leave. */
 async function inSettings(fake: Fake, act_: () => Promise<void>) {
-  const view = renderIn(fake, <SettingsScreen />, { path: '/settings' });
+  const view = renderIn(fake, <LoadedSettings />, { path: '/settings' });
   await screen.findByRole('switch', { name: 'Tips' });
   await act_();
   await settle();

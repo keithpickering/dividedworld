@@ -13,7 +13,8 @@
  * backend, so one that reaches here is refused. Nothing else reads those parameters: the Supabase
  * branch returns before it looks at the address. The end-to-end build also leaves the demo's fake
  * where a test can reach it (exposeFake, web/src/demo.ts), to play another player's part. In a build that
- * is not production, `?latency=<ms>` delays every promise the fake answers (withLatency).
+ * is not production, `?latency=<ms>` delays every promise the fake answers (withLatency), and `?fail=<rpc>` fails the first call of
+ * the named rpc (withFailure).
  */
 import type { KayfaApi } from '../../../engine/ui/data/api.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -46,6 +47,29 @@ function withLatency(api: KayfaApi, params: URLSearchParams | null): KayfaApi {
   });
 }
 
+/**
+ * `?fail=<rpc>[,<rpc>]` (end-to-end and development builds only, gated as `?latency=` is: `timing` is null in a production build): the
+ * first call of each named rpc (the api method's name in snake case, `log_page` for `logPage`) is refused as a dropped request is, and
+ * every call after it is answered, so a test can watch a screen fail and then Try again.
+ */
+export function withFailure(api: KayfaApi, params: URLSearchParams | null): KayfaApi {
+  const raw = params?.get('fail') ?? null;
+  if (raw === null) return api;
+  const left = new Set(raw.split(',').map((n) => n.trim()).filter(Boolean));
+  if (left.size === 0) throw new Error('The address names no rpc to fail: `?fail=<rpc name>`, such as log_page.');
+  return new Proxy(api, {
+    get(target, key) {
+      const value = Reflect.get(target, key, target) as unknown;
+      if (typeof value !== 'function' || typeof key !== 'string') return value;
+      const rpc = key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+      return (...args: unknown[]) => {
+        if (left.delete(rpc)) return Promise.reject(new Error(`The address asked ${rpc} to fail once.`));
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
+}
+
 export async function createBackend(): Promise<KayfaApi> {
   const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const publishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
@@ -73,7 +97,7 @@ export async function createBackend(): Promise<KayfaApi> {
     const fake = createBoardsFake(moment);
     globalThis.history.replaceState(null, '', seedBoards(fake, moment));
     recordAvatarUploads(fake);
-    return withLatency(fake, timing);
+    return withFailure(withLatency(fake, timing), timing);
   }
   const [{ createFake }, { instance }, { seedDemo, recordAvatarUploads, exposeFake }] = await Promise.all([
     import('../../../engine/ui/data/fake.ts'),
@@ -86,5 +110,5 @@ export async function createBackend(): Promise<KayfaApi> {
     recordAvatarUploads(fake);
     exposeFake(fake, demo);
   }
-  return withLatency(fake, timing);
+  return withFailure(withLatency(fake, timing), timing);
 }

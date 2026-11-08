@@ -47,7 +47,9 @@ export function Welcome() {
   const { api, instance, ui, settings } = useKayfa();
   const { session } = usePlayer();
   const { path } = useLocation();
-  const { prefs, refusal, saved, change } = usePreferenceSaves(session.account);
+  const boot = useBoot();
+  /* The preferences are boot's (the page's start); none is read for them while boot has them. */
+  const { prefs, refusal, saved, change } = usePreferenceSaves(session.account, boot ? boot.preferences : undefined);
   const setup = useId();
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
   const picture = persona.avatar === undefined ? undefined : ui.avatars?.[persona.avatar];

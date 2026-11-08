@@ -74,7 +74,7 @@ export function MomentFrame({ play, place, at, read, back, named, words, unrecor
       <p ref={ring.tag} className="kb-moment-tag">
         <span>As it landed</span>
         {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
-        {read !== 'read' && <><span aria-hidden="true"> · </span><span>{read === 'loading' ? 'Loading the moment…' : read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.'}</span></>}
+        {read !== 'read' && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{read === 'failed' ? 'The moment did not load.' : 'This play has no moment to show.'}</span></>}
         {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
       </p>
       {(named.length > 0 || words.length > 0 || unrecorded) && (

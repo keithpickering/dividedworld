@@ -15,7 +15,7 @@
  */
 import { createContext, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, Visit, VisitEnd, VisitStory } from '../data/api.ts';
+import type { Act, Id, KayfaApi, Visit, VisitEnd, VisitStory } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import type { Mine } from '../reactions/mine.ts';
@@ -149,6 +149,21 @@ function HowRow({ row, name, role, tallies, mine, onSpin }: {
   );
 }
 
+/**
+ * What the visit's tab reads before it shows (the glass-load design, section 4): the story, and the tallies and the reader's own reactions on
+ * its Acts, merged into the page's stores. The Lens does it from the tab's press, so the panel's first render holds the story.
+ */
+export async function readVisit(api: KayfaApi, visit: Visit, thread: Id, tallies: Tallies, mine: Mine): Promise<VisitStory> {
+  const s = await api.visitStory(thread, visit.id, visit.post);
+  const ids = [s.report, s.verdict, ...s.attempts, s.appeal, s.ruling].filter((a): a is Act => a !== null).map((a) => a.id);
+  if (s.end) ids.push(s.end.act);
+  ids.push(visit.id);
+  const [counts, mineNow] = await Promise.all([api.tallies(ids), api.myReactions(ids)]).catch(() => [{}, []] as const);
+  for (const [id, t] of Object.entries(counts)) tallies.merge(id, t);
+  for (const m of mineNow) mine.add(m);
+  return s;
+}
+
 export interface VisitPanelProps {
   readonly visit: Visit;
   readonly thread: Id;
@@ -161,6 +176,8 @@ export interface VisitPanelProps {
   readonly onSpin: (act: Id, label: string) => void;
   /** The visit's end, as this panel has read it: the strip's mark and the tab's name follow. */
   readonly onEnded: (end: VisitEnd) => void;
+  /** The story the tab read before it showed (`readVisit`). */
+  readonly first: VisitStory;
 }
 
 /** What the tab says is "a try": a quiz's answers, a bribe's price or a distraction's word, and the result in a status region. */
@@ -207,12 +224,12 @@ function Challenge({ visit, mod, mask, spent: tried, picked, onTry, busy }: {
   );
 }
 
-export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpin, onEnded }: VisitPanelProps) {
+export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpin, onEnded, first }: VisitPanelProps) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const know = useContext(ThreadCtx)?.know;
   const openAppeal = useContext(AppealCtx);
-  const [story, setStory] = useState<VisitStory | null>(null);
+  const [story, setStory] = useState<VisitStory | null>(first);
   const [failed, setFailed] = useState(false);
   const [names, setNames] = useState(0);
   const [result, setResult] = useState('');
@@ -228,28 +245,28 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
   const ended = useRef(onEnded);
   ended.current = onEnded;
 
+  /* What follows a read of the story: the names it brings are read and drawn, and the visit's end is told to the strip. */
+  const settle = useCallback((s: VisitStory) => {
+    const people = [visit.mod, s.report?.character ?? null, s.appeal?.character ?? null, ...s.attempts.map((a) => a.character), s.ruling?.character ?? null].filter((c): c is Id => c !== null);
+    /* A name the thread did not know is read and then drawn: the characters in these Acts may not have a post on the page. */
+    if (know) void know(people).then(() => { if (live.current) setNames((n) => n + 1); }).catch(() => undefined);
+    /* Told once: a visit that already carries its end has told the strip. */
+    if (s.end && !visit.end) ended.current(s.end);
+  }, [visit.mod, visit.end, know]);
+  useEffect(() => { settle(first); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* The reread after a try. */
   const load = useCallback(async () => {
     try {
-      const s = await api.visitStory(thread, visit.id, visit.post);
+      const s = await readVisit(api, visit, thread, tallies, mine);
       if (!live.current) return;
-      const ids = [s.report, s.verdict, ...s.attempts, s.appeal, s.ruling].filter((a): a is Act => a !== null).map((a) => a.id);
-      if (s.end) ids.push(s.end.act);
-      ids.push(visit.id);
-      const [counts, mineNow] = await Promise.all([api.tallies(ids), api.myReactions(ids)]).catch(() => [{}, []] as const);
-      if (!live.current) return;
-      for (const [id, t] of Object.entries(counts)) tallies.merge(id, t);
-      for (const m of mineNow) mine.add(m);
-      const people = [visit.mod, s.report?.character ?? null, s.appeal?.character ?? null, ...s.attempts.map((a) => a.character), s.ruling?.character ?? null].filter((c): c is Id => c !== null);
-      /* A name the thread did not know is read and then drawn: the characters in these Acts may not have a post on the page. */
-      if (know) void know(people).then(() => { if (live.current) setNames((n) => n + 1); }).catch(() => undefined);
+      settle(s);
       setStory(s);
       setFailed(false);
-      if (s.end) ended.current(s.end);
     } catch {
       if (live.current) setFailed(true);
     }
-  }, [api, thread, visit.id, visit.post, visit.mod, tallies, mine, know]);
-  useEffect(() => { void load(); }, [load]);
+  }, [api, thread, visit, tallies, mine, settle]);
 
   const name = useCallback((c: Id | null) => nameOf(c), [nameOf, names]); // eslint-disable-line react-hooks/exhaustive-deps
   const mod = name(visit.mod);
@@ -311,7 +328,7 @@ export function VisitPanel({ visit, thread, author, nameOf, tallies, mine, onSpi
   const appealWaiting = story?.appeal && !story.ruling;
 
   return (
-    <div className="kb-visit" ref={root} aria-busy={story === null && !failed ? 'true' : undefined}>
+    <div className="kb-visit" ref={root}>
       <div className="kb-lens-section kb-lens-state kb-visit-state">
         <h3 className="kb-visit-heading"><span className="kb-lens-who kb-glass-display">{mod}</span> {heading}</h3>
         {state === 'open' && (

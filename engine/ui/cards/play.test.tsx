@@ -182,6 +182,79 @@ describe('where the ghost mark stands', () => {
   });
 });
 
+describe('the form opens whole', () => {
+  test('the ghost mark is busy while the post is read, nothing opens until it lands, and the form\'s first render holds its content', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    let release!: () => void;
+    const real = w.fake.actsById.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'actsById').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+    await user.click(here(2)!);
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => { release(); });
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+    expect(form.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(here(2)).not.toHaveAttribute('aria-busy');
+  });
+
+  test('Escape while the read is out cancels it: the mark stops spinning and no form opens', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(() => new Promise(() => undefined));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Escape}');
+    expect(document.querySelector('.kb-ghost-mark[aria-busy]')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+  });
+
+  test('the form opens at once from the answer read before it and reads the post again, so an edit in the gap reaches the price', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    const real = w.fake.actsById.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'actsById').mockImplementationOnce(async (...args) => (await real(...args)).map((a) => ({ ...a, currentPayload: { ...a.currentPayload, body: 'short' } })));
+    await user.click(here(2)!);
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    await waitFor(() => expect(within(form).getByText('To pay now').closest('div')).toHaveTextContent('0.25'));
+    expect(read.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('Escape during the wait cancels the read and leaves the card armed', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(() => new Promise(() => undefined));
+    await user.click(here(2)!);
+    expect(here(2)).toHaveAttribute('aria-busy', 'true');
+    await user.keyboard('{Escape}');
+    expect(here(2)).not.toHaveAttribute('aria-busy');
+    expect(here(2)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+  });
+
+  test('a read that fails opens nothing and says so plainly', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user);
+    vi.spyOn(w.fake, 'actsById').mockRejectedValue(new Error('down'));
+    await user.click(here(2)!);
+    expect(await screen.findByRole('status', { name: 'Playing a card' })).toHaveTextContent('That didn\u2019t load. Try again.');
+    expect(screen.queryByRole('dialog', { name: /Whoops!/u })).toBeNull();
+  });
+});
+
 describe('arming a card', () => {
   test('each post the card can land on shows its ghost mark, "Play Whoops! on post N", and a post already carrying three shows none', async () => {
     const user = userEvent.setup();
