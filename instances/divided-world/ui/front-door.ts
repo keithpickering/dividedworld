@@ -23,11 +23,11 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   title: 'WELCOME TO THE BEEF ZONE',
   label: 'Sample thread · made up',
   cast: Object.freeze([
-    Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/snuckles_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/snuckles_square.jpg' }),
+    Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/robochad_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/robochad_square.jpg' }),
+    Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/deer_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/deer_square.jpg' }),
+    Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/human.jpg', avatarSquare: 'instances/divided-world/ui/avatars/human.jpg' }),
+    Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }), avatarPortrait: '/instances/divided-world/ui/avatars/dguy_portrait.jpg', avatarSquare: 'instances/divided-world/ui/avatars/dguy_square.jpg' }),
   ]),
   posts: Object.freeze([
     Object.freeze({
