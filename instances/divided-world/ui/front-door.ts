@@ -26,7 +26,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }) }),
     Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }) }),
     Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }) }),
-    Object.freeze({ key: 'roboto', name: 'Help-O-Tron', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }) }),
+    Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }) }),
     Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }) }),
   ]),
   posts: Object.freeze([
