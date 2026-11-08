@@ -8,7 +8,7 @@ check needs a poison. The engine boundary check (`tools/check-engine-boundary.mj
 `engine/` or `supabase/` names You Were Saying?. The engine gains **a card that writes**, the generation queue, the
 scrubber and the append layer, and reads the card only through `CardRules.writes`.
 
-**One migration:** `supabase/migrations/0143_card_writes.sql`, with its SQL test `supabase/tests/0143-card-writes.sql`,
+**One migration:** `supabase/migrations/0144_card_writes.sql`, with its SQL test `supabase/tests/0144-card-writes.sql`,
 run against Postgres on localhost. If other work has taken these numbers by the time this is built, use the next free
 ones. No deployed database, bucket or connector is touched.
 
@@ -90,7 +90,7 @@ omits it and keeps every other card; `decidePlay` refuses it with the sentence a
 
 Model: sonnet
 
-**Files:** `supabase/migrations/0143_card_writes.sql` (new); test `supabase/tests/0143-card-writes.sql` (new);
+**Files:** `supabase/migrations/0144_card_writes.sql` (new); test `supabase/tests/0144-card-writes.sql` (new);
 `supabase/functions/seed/` where it hands `seed_instance` the cards; `tools/export-instance.mjs` and
 `tools/import-instance.mjs` with their round-trip test.
 
