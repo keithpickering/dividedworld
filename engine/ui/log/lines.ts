@@ -666,7 +666,7 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
   const rows: LogRow[] = [];
   /* A reply trap a reply passed by without springing it: its moment is spent, and it ends by itself at its time. */
   for (const e of data.log.setPasses) {
-    if (words.instance.cards.find((c) => c.key === e.card)?.trap?.trigger.on !== 'reply') continue;
+    if ((words.instance.cards.find((c) => c.key === e.card)?.trap?.trigger.on as string | undefined) !== 'reply') continue;
     if (Date.parse(e.passedAt) >= Date.parse(e.endsAt)) continue;
     const post = data.acts.get(e.post);
     const own = post?.character ?? undefined;

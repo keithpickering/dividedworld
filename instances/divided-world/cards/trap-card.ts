@@ -12,7 +12,9 @@ export const trapCard: CardRules<Record<string, never>> = {
   alignment: 'salty',
   rarity: 'uncommon',
   play: 'set',
-  trap: { trigger: { on: 'cast' }, outcome: { do: 'payout' } },
+  trap: { trigger: { on: 'cast' } },
+  // Stopgap until Task 2 of the face-down Moves plan gives it a configuration naming the card.
+  catches: () => 'whoops',
   priceKey: 'trapCard.price',
   playPrice: () => 0,
   canApply: () => ok(undefined),

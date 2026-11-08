@@ -52,7 +52,7 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   const at = new Date().toISOString();
   const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, ...over });
   const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, priceKey: 'x', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
-  const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', ward: undefined, lasts: undefined, trap: { trigger: { on: 'cast' }, outcome: { do: 'nullify' } }, canApply: () => ({ ok: true, value: undefined }) };
+  const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', ward: undefined, lasts: undefined, trap: { trigger: { on: 'visit' } }, canApply: () => ({ ok: true, value: undefined }) };
   const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, ward: undefined, lasts: undefined, canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
   const cards = [shield, snare, blot];
   const ward = (ends: string): CardPlay => ({ ...play('shield', 1), ends });

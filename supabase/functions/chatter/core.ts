@@ -232,8 +232,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c)
-      && !(play === 'set' && c.trap?.outcome.do === 'payout');
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c);
   });
 
   for (const p of picked.picks) {

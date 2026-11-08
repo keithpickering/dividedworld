@@ -117,9 +117,9 @@ describe('cards set face down, traps and catches', () => {
     ...testInstance,
     cards: [
       ...testInstance.cards,
-      { ...testInstance.cards[0]!, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { do: 'payout' as const } } },
+      { ...testInstance.cards[0]!, key: 'snare', name: 'Snare', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' },
       { ...testInstance.cards[0]!, key: 'bluffy', name: 'Bluffy', play: 'set' as const },
-      { ...testInstance.cards[0]!, key: 'hook', name: 'Hook', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'whoops' } } },
+      { ...testInstance.cards[0]!, key: 'hook', name: 'Hook', rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'reply' } as never } },
     ],
   };
   const w: Words = { ...words, instance: trapWorld };

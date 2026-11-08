@@ -646,10 +646,10 @@ test('a wrongly typed option costs neither the post nor the card: the ink falls 
 });
 
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
-  // No Divided World card with options is a Set (the trap-card's outcome is a payout, which the pool does not set), so the instance
-  // here carries a Set trap that strikes Whoops!, with Whoops!'s options: the persona's ink is checked by the struck card.
+  // No Divided World card with options is a Set, so the instance here carries a Gimmick on a visit, with Whoops!'s options:
+  // the persona's ink is checked by the card's own rules.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
-  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'whoops' } } };
+  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'visit' as const } } };
   const tuned: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, snare] };
   const d = fakeDb(oneReply);
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'snare', on: 'own', config: { snare: { color: '#12ab34' } } } }));

@@ -181,7 +181,7 @@ test('the instance sells Trap Card, Force Field and Bluff, each with its rarity 
     ['whoops', 'common', 'cast', 'salty', 100],
     ['stick-around', 'common', 'cast', 'sweet', 100],
   ]);
-  assert.deepEqual(by('trap-card').trap, { trigger: { on: 'cast' }, outcome: { do: 'payout' } });
+  assert.deepEqual(by('trap-card').trap, { trigger: { on: 'cast' } });
   assert.equal(by('bluff').trap, undefined, 'a Set card with no trap is a bluff');
   assert.deepEqual([by('force-field').ward, by('force-field').lasts], [true, { unit: 'day', count: 7 }]);
   assert.deepEqual(settings.setLasts, { unit: 'day', count: 7 });
@@ -196,7 +196,8 @@ test('Bluff\'s and Trap Card\'s Set requests are the same but for the card key, 
   assert.deepEqual({ ...trap, args: { ...trap.args, card: null } }, { ...bluff, args: { ...bluff.args, card: null } });
   assert.equal(trap.ok && trap.asService, true, 'written by the service, so the key reaches SQL and no client');
   const target = { reach: 'post' as const, act: 'p', kind: 'post' as const, length: 10, text: '' };
-  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), decideSet(by('bluff'), settings, target, [], {}, cards));
+  // Trap Card also names its catch (a stopgap until its configuration does; the face-down Moves plan, Task 2).
+  assert.deepEqual(decideSet(by('trap-card'), settings, target, [], {}, cards), { ok: true, value: { ...(decideSet(by('bluff'), settings, target, [], {}, cards) as { value: object }).value, catches: 'whoops' } });
 });
 const by = (key: string) => cards.find((c) => c.key === key)!;
 

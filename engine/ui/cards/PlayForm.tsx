@@ -105,7 +105,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [] }: PlayFor
   const cardUi = ui.cards.find((c) => c.key === card);
   /* How the card is played (the card mechanic's design, section 1), and for a trap that strikes, the card it lays: its settings are that card's. */
   const how = rules ? playOf(rules) : 'cast';
-  const struck = rules?.trap?.outcome.do === 'strike' ? rules.trap.outcome.card : null;
+  const struck: string | null = null;
   const configUi = struck ? ui.cards.find((c) => c.key === struck) : cardUi;
   const configRules = struck ? instance.cards.find((c) => c.key === struck) : rules;
   const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced) : null), [rules, cardUi, priced]);

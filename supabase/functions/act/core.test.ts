@@ -262,7 +262,7 @@ test('the act function\'s connections send a post once after a 504, and a read a
 const ok = <T>(value: T) => ({ ok: true as const, value });
 const base = { alignment: 'salty' as const, playPrice: () => 0, canApply: () => ok(undefined) };
 const inky = { ...base, key: 'test-inky', name: 'Test Inky', rarity: 'common' as const, priceKey: 'whoops.price', validateConfig: (c: unknown) => ((c as { ink?: unknown })?.ink === 'red' ? ok({ ink: 'red' }) : { ok: false as const, why: 'the ink is red' }) };
-const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'set' as const, trap: { trigger: { on: 'reply' as const }, outcome: { do: 'strike' as const, card: 'test-inky' } }, validateConfig: (c: unknown) => ok(c) };
+const snare = { ...base, key: 'test-snare', name: 'Test Snare', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'set' as const, trap: { trigger: { on: 'visit' as const } }, validateConfig: inky.validateConfig };
 const bluffy = { ...base, key: 'test-bluffy', name: 'Test Bluffy', rarity: 'common' as const, priceKey: 'whoops.price', play: 'set' as const, validateConfig: (c: unknown) => ok(c) };
 const shield = { ...base, key: 'test-shield', name: 'Test Shield', rarity: 'uncommon' as const, priceKey: 'whoops.price', play: 'use' as const, ward: true as const, lasts: { unit: 'day' as const, count: 7 }, validateConfig: (c: unknown) => ok(c) };
 const tested = { ...instance, cards: [...instance.cards, inky, snare, bluffy, shield] };
@@ -280,7 +280,7 @@ test('a Set is decided by its card\'s rules and written by set_card; its answer 
   }
 });
 
-test('a strike\'s configuration is checked by the struck card\'s rules before SQL', async () => {
+test('a Gimmick\'s configuration is checked by its own rules before SQL', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-snare', character: id, target, config: { ink: 'blue' } });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'the ink is red' } });

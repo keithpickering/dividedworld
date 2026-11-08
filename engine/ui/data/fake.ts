@@ -1270,7 +1270,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const playId = uuid();
     let spring: ActRec | null = null;
     if (catches) {
-      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', outcome: trapRules!.trap!.outcome, set: trap.set, by: playId, caught: playId } });
+      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', outcome: { do: 'payout' }, set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
     const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
@@ -1280,7 +1280,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     sendAct(written);
     if (spring) {
       const setter = accounts.get(faceDown.get(trap!.set)!.account);
-      if (setter && trapRules!.trap!.outcome.do === 'payout' && decided.value.price > 0) setter.wallet = Math.min(settings.walletCap, setter.wallet + decided.value.price);
+      if (setter && decided.value.price > 0) setter.wallet = Math.min(settings.walletCap, setter.wallet + decided.value.price);
       sendAct(spring);
     }
     return ok(publicAct(written));
@@ -3460,7 +3460,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const rules = instance.cards.find((c) => c.key === f.card);
       const written = asAt(f.account, o?.at, () => write({
         character: back.character, kind: 'spring', thread: back.thread, target: f.post,
-        payload: { card: f.card, trigger: o?.trigger ?? rules?.trap?.trigger.on ?? 'cast', outcome: rules?.trap?.outcome ?? { do: 'nullify' }, set, ...(o?.caught ? { by: o.caught, caught: o.caught } : {}) },
+        payload: { card: f.card, trigger: o?.trigger ?? rules?.trap?.trigger.on ?? 'cast', outcome: rules?.trap?.trigger.on === 'cast' ? { do: 'payout' } : { do: 'nullify' }, set, ...(o?.caught ? { by: o.caught, caught: o.caught } : {}) },
       }));
       f.sprung = written.id;
       return written.id;
