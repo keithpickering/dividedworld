@@ -138,6 +138,63 @@
   white-space: nowrap;
 }
 
+/* ---- Play it now or Set face down (a Move on one's own post) ---- */
+
+.kb-play-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.kb-play-choice-row {
+  display: flex;
+  margin-top: 8px;
+}
+
+.kb-play-choice-opt {
+  flex: 1 1 0;
+  display: block;
+  cursor: pointer;
+}
+
+/* The radios are the controls and the two halves their picture: the input is hidden to the eye (kb-visually-hidden) and kept for the keyboard and the reader. */
+.kb-play-choice-opt span {
+  box-sizing: border-box;
+  display: block;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-salty-text) 60%, transparent);
+  background: var(--kb-glass-field);
+  text-align: center;
+  font-weight: 800;
+  color: var(--kb-glass-text);
+}
+
+.kb-play-choice-opt + .kb-play-choice-opt span {
+  border-inline-start-width: 0;
+}
+
+.kb-play-choice-opt:hover span {
+  border-color: var(--kb-glass-salty-text);
+}
+
+.kb-play-choice-opt:has(input:checked) span {
+  border-color: var(--kb-glass-salty);
+  background: var(--kb-glass-salty);
+  color: var(--kb-glass-ink-salty);
+}
+
+.kb-play-choice-opt:has(input:focus-visible) span {
+  outline: 2px solid var(--kb-glass-ready-text);
+  outline-offset: 2px;
+}
+
+/* What a Set does and when it ends: plain sentences in the form's text, set apart from the card's own settings by their weight. */
+.kb-play .kb-play-sets {
+  font-weight: 600;
+  color: var(--kb-glass-text);
+}
+
 /* ---- what it costs ---- */
 
 .kb-play-sum {

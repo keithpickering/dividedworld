@@ -46,6 +46,7 @@ import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
+import { ConfigForm as TrapCardConfigForm } from '../cards/trap-card/ConfigForm.tsx';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { rgbOf } from '../cards/whoops/splat.ts';
 
@@ -128,6 +129,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     summary: 'Set face down on your post, naming a card. Catches that card when it is cast there, and takes it into your hand.',
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
+    ConfigForm: TrapCardConfigForm,
     describe: (settings: Settings) =>
       `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the one card it catches, from the cards cast on a post, at any rarity. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs ${orbs(settings.economy['trapCard.price'] ?? 0)} to buy, and nothing more to set.`,
   },

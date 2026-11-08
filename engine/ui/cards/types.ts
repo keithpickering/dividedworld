@@ -12,6 +12,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { Settings } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
 import type { Act, Answer, EffectState, Id } from '../data/api.ts';
+import type { CardFace } from './faces.ts';
 
 /**
  * A card played on a post, read from its card Act: the Act itself is the record, this is its payload
@@ -181,6 +182,8 @@ export interface ConfigFormProps {
   readonly post: Act;
   /** Unique on the page, to hang the form's labels on. */
   readonly id: string;
+  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a Gimmick that waits for a card). */
+  readonly castable?: readonly CardFace[];
 }
 
 /**
