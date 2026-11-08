@@ -60,7 +60,7 @@ describe('the foil', () => {
     }
   });
 
-  test('under a bright band the foil leaves the standard band: past 0.048 on the dark board, under 0.59 on the light one', () => {
+  test('under a bright band the foil leaves the standard band: past 0.048 on the dark board; on the light board the clamp is off too (the deeper palette is drawn there, since the pastels never go under 0.59)', () => {
     const lumOf = (hex: string) => luminanceOf(toLinear(hex));
     for (const pattern of PATTERNS) {
       const dark = sampleFoil(foilFor(pattern, 'dark'), { w: 240, h: 120 }, REST, brightBand('dark'));
