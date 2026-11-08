@@ -6,6 +6,8 @@ import { PHASE_CAPS } from '../system/phases.ts';
 import { DUTIES } from '../system/duties.ts';
 import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
+import { testGroups } from './test-system.ts';
+import { PRONOUN_PRESETS } from './pronouns.ts';
 
 const settings: Settings = {
   walletCap: 600,
@@ -25,6 +27,8 @@ const settings: Settings = {
   titleMaxLength: 120,
   postsPerPage: 20,
   hotReplies: 10,
+  searchLanguage: 'english',
+  searchRankPool: 5000,
   cardSettings: { 'splat.clean': 95 },
   economy: { 'a.bonus': 5 },
   settlementLength: { unit: 'day', count: 1 },
@@ -32,6 +36,7 @@ const settings: Settings = {
   presenceNames: 15,
   presencePollSeconds: 30,
   systemEnabled: false,
+  pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
     honeymoon: { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 },
@@ -52,6 +57,7 @@ const settings: Settings = {
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
+  apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -76,10 +82,9 @@ const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signa
 
 const system: SystemContent = {
   roster: [boss, bot],
-  staffGroup: { name: 'Test Cores' },
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -102,6 +107,7 @@ const good: Instance = {
   boards: [{ slug: 'general', name: 'General', description: 'Anything.' }, { slug: 'announcements', name: 'The System', description: 'Its own.', system: true }],
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
+  groups: testGroups,
   copy: { announcementsThreadTitle: 'Season {season}: Promos' },
   system,
   packs: [],
@@ -144,6 +150,21 @@ test('a thread\'s page and what makes it hot are whole numbers, at least 1', () 
   }
 });
 
+test('the search language names a text search configuration and the rank pool is a whole number from 100 to 100,000', () => {
+  for (const key of ['searchLanguage', 'searchRankPool'] as const) {
+    const { [key]: _gone, ...without } = settings;
+    assert.match(settingsProblems(without as Settings).join('\n'), new RegExp(`setting "${key}" is missing`));
+  }
+  assert.deepEqual(settingsProblems({ ...settings, searchLanguage: 'simple', searchRankPool: 100 }), []);
+  assert.deepEqual(settingsProblems({ ...settings, searchRankPool: 100_000 }), []);
+  for (const bad of ['', 5, null, ' english', 'English', 'a b', 'english;']) {
+    assert.match(settingsProblems({ ...settings, searchLanguage: bad as never }).join('\n'), /setting "searchLanguage" is .*text search configuration/, JSON.stringify(bad));
+  }
+  for (const bad of [99, 100_001, 2.5, '5000', null, Number.NaN, -1]) {
+    assert.match(settingsProblems({ ...settings, searchRankPool: bad as never }).join('\n'), /setting "searchRankPool" is .*; it must be a whole number of matches from 100 to 100,000/, String(bad));
+  }
+});
+
 test('the numbers a card gives the screens are an object of named numbers, like the economy', () => {
   const { cardSettings: _gone, ...without } = settings;
   assert.match(settingsProblems(without as Settings).join('\n'), /setting "cardSettings" is missing/);
@@ -170,6 +191,11 @@ test('ranks start at 0 and rise, each named', () => {
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 100 }, { name: 'C', from: 100 }] }).join('\n'), /rank "C" is from 100, not above the rank before it/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: ' ', from: 10 }] }).join('\n'), /a rank has no name/);
   assert.match(instanceProblems({ ...good, ranks: [{ name: 'A', from: 0 }, { name: 'B', from: 1.5 }] }).join('\n'), /rank "B" is from 1.5/);
+});
+
+test('groups with a problem make the instance have one, in words', () => {
+  const noDefault = { ...good.groups, ladder: good.groups.ladder.filter((r) => r.when.kind !== 'default') };
+  assert.match(instanceProblems({ ...good, groups: noDefault }).join('\n'), /0 default rungs/);
 });
 
 test('pip styles hold a default, each with a key, a name and a full and an empty', () => {
@@ -351,7 +377,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 9);
+  assert.equal(DUTIES.length, 10);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -408,11 +434,8 @@ test('a persona with no weakness is reported (poison: today a Boss with none pas
   assert.match(said(withSystem({ roster: [rest as unknown as Persona, bot] })), /persona "boss-a" has no weakness/);
 });
 
-test('the staff group is named, one to 40 characters', () => {
-  assert.match(said(withSystem({ staffGroup: { name: '' } })), /staffGroup.name.*1 to 40/);
-  assert.match(said(withSystem({ staffGroup: { name: 'x'.repeat(41) } })), /staffGroup.name.*1 to 40/);
-  assert.match(said(withSystem({ staffGroup: undefined } as unknown as Partial<SystemContent>)), /staffGroup.name.*1 to 40/);
-  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: 'x'.repeat(40) } })), []);
+test('the staff group is the ladder\'s staff rung, so the system content names none (a leftover staffGroup is not read)', () => {
+  assert.deepEqual(instanceProblems(withSystem({ staffGroup: { name: '' } } as unknown as Partial<SystemContent>)), []);
 });
 
 test('a quiz needs a question, and each question\'s answer must be one of its choices', () => {
@@ -545,6 +568,16 @@ test('the new settings are checked like the others', () => {
   assert.match(bad('warnBar', { ...wb, banDays: [1, 0] }), /warnBar.*banDays/);
   assert.match(bad('warnBar', { ...wb, decay: { unit: 'year', count: 1 } }), /warnBar.*decay/);
   assert.deepEqual(settingsProblems({ ...settings, warnBar: { ...wb, bands: { ...wb.bands, severe: wb.size }, decay: { unit: 'minute', count: 1 } } }), [], 'a band may fill the bar, and a decay may be minutes');
+  // The apology's numbers: each a whole number, at least 1, and nothing else in the object.
+  const gs = settings.apology;
+  for (const k of ['apologyEveryHours', 'apologyJudgeBatch', 'apologyRulingMaxWords'] as const) {
+    for (const v of [0, -1, 1.5, '24', null]) assert.match(bad('apology', { ...gs, [k]: v }), new RegExp(`apology.*"${k}" is not`), `${k} = ${String(v)}`);
+    assert.deepEqual(settingsProblems({ ...settings, apology: { ...gs, [k]: 1 } }), [], `${k} may be 1`);
+  }
+  assert.match(bad('apology', { ...gs, other: 1 }), /apology.*"other" is not one of its fields/);
+  assert.match(bad('apology', { apologyEveryHours: 24, apologyJudgeBatch: 10 }), /apology.*"apologyRulingMaxWords" is not/);
+  assert.match(bad('apology', 'x'), /apology/);
+  assert.match(bad('apology', null), /apology/);
   assert.deepEqual(settingsProblems({ ...settings, microEventDailyCalls: 0, rosterRecentExcluded: 0, inheritanceGraceDays: 0 }), [], 'zero is allowed where it means none');
 });
 
@@ -773,4 +806,33 @@ test('a slot\'s price is a positive whole number at most INT4_MAX', () => {
   }
   assert.deepEqual(instanceProblems(stocked({ machine: [{ item: { card: 'a' }, availability: 'onSale', price: 2 ** 31 - 1 }] })), []);
   assert.match(said(stocked({ machine: [{ item: { card: 'a' }, availability: 'sometimes' as never, price: 1 }] })), /slot.*availability/);
+});
+
+/* ------------------------------------------------------------------------------------- Pronouns ---- */
+
+test('the pronouns setting is held by pronounProblems', () => {
+  assert.deepEqual(settingsProblems(settings), []);
+  assert.match(settingsProblems({ ...settings, pronouns: { ...PRONOUN_PRESETS.it, subject: 'it ' } }).join('\n'), /setting "pronouns".*subject holds a space/);
+  assert.match(settingsProblems({ ...settings, pronouns: 'it' as never }).join('\n'), /setting "pronouns"/);
+  assert.match(settingsProblems({ ...settings, pronouns: undefined } as never).join('\n'), /setting "pronouns" is missing/);
+});
+
+test('a persona or the developer with a bad pronoun set is named; a good or missing one is not', () => {
+  assert.deepEqual(instanceProblems(withBot({ pronouns: PRONOUN_PRESETS.she })), []);
+  assert.match(said(withBot({ pronouns: { ...PRONOUN_PRESETS.she, reflexive: 'x3' } })), /persona "bot-a".*reflexive holds a character that is not a letter/);
+  assert.match(said(withBoss({ pronouns: { subject: 'a' } as never })), /persona "boss-a".*no object/);
+  assert.match(said({ ...good, developer: { name: 'Gabe', tagline: '', pronouns: { ...PRONOUN_PRESETS.he, plural: 'yes' as never } } }), /developer.*plural is not true or false/);
+  assert.deepEqual(instanceProblems({ ...good, developer: { name: 'Gabe', tagline: '', pronouns: PRONOUN_PRESETS.he } }), []);
+});
+
+test('a stock line may use a staff token\'s pronoun forms and no other token\'s', () => {
+  const line = (key: 'visitFiled' | 'moveMet' | 'reportDismissed', text: string) => withSystem({ stockLines: { ...system.stockLines, [key]: [text] } });
+  assert.deepEqual(instanceProblems(line('visitFiled', '{mod} forgot how {mod.they} felt; {mod.They} {mod.is} sorry, {mod.Their} {mod.themself} watch{mod.s}.')), []);
+  assert.match(said(line('reportDismissed', 'Sorry, {reporter.they}.')), /stock line "reportDismissed".*\{reporter\.they\}/);
+  assert.match(said(line('visitFiled', '{mod.thei} left.')), /stock line "visitFiled".*\{mod\.thei\}.*one of: they, They, them/);
+  assert.match(said(line('moveMet', '{boss.they} won.')), /stock line "moveMet".*\{boss\.they\}/);
+  assert.match(said(line('visitFiled', '{rule.they}')), /\{rule\.they\}/);
+  assert.deepEqual(instanceProblems(line('visitFiled', '{mod} filed it.')), []);
+  assert.match(said(line('visitFiled', '{mod.} left.')), /stock line "visitFiled".*\{mod\.\}/);
+  assert.match(said(line('visitFiled', '{mod.they.x} left.')), /stock line "visitFiled".*\{mod\.they\.x\}/);
 });

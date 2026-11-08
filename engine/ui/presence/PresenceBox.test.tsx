@@ -383,6 +383,16 @@ describe('a snapshot from the page\'s document', () => {
     expect(screen.getByRole('region', { name: HEADING })).toHaveTextContent(/A1, B2 and 3 others$/u);
   });
 
+  test('a staff name\'s chip is the staff rung\'s name from the settings, not the group key the name carries', async () => {
+    const { seeded, fake } = crowd(['Pipewrench']);
+    fake.seed.staffPost(fake.seed.staff('bot-a', 'Hall Monitor', 'mod'), seeded.thread, 'Order.');
+    const groups = [{ key: 'members', name: 'Members', color: '#7a7a7a', stripe: false, staff: false }, { key: 'elite', name: 'Elite Cores', color: '#d4a017', stripe: false, staff: true }];
+    renderIn(fake, <PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />, { settings: { groups } });
+    const box = await screen.findByRole('region', { name: HEADING });
+    await within(box).findByRole('link', { name: 'Hall Monitor' });
+    expect(box).toHaveTextContent('Hall Monitor, Elite Cores');
+  });
+
   test('signed out, a snapshot shows nothing', () => {
     const fake = buildWorld();
     renderIn(fake, <PresenceBox place={{ kind: 'index' }} heading="Who is online" snapshot={{ names: [{ id: 'x', name: 'Ghost', staff: false }], others: 0 }} />);

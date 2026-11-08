@@ -94,6 +94,9 @@ export default manifest;
  *    Close and options are held by their places from its kicker, and its buttons by their words.
  *  - Edit profile on the board is the head, the lead, Title, Signature and the save button; the build adds the character's select above Title, and the pip style,
  *    the avatar and the preview under the save, so Title and what follows stand lower by the select's height.
+ *  - The build's New character and Edit profile each carry the pronoun picker (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board
+ *    predates: on New character it stands between the class note and When it debuts, so When it debuts and Drop now stand 472.8px lower from the note;
+ *    on Edit profile it stands above the save, which stands 472.5px lower again.
  *  - My characters' count stands on its own line under the title: the board's "3 OF 6" is the build's "(3 of 6)", its box a line of its own that is not broken.
  */
 const PHONE = '2026-11-05-backfill/27-characters-phone';
@@ -118,8 +121,8 @@ export const phone: BoardManifest = {
     { id: 'class-label', role: 'text', name: 'CLASS', type: false, box: 'none' },
     held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 6' }),
     held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: -81 }),
-    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 14 }, { origin: 'note', originEdge: 'bottom' }),
-    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 5 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
+    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 486.8 }, { origin: 'note', originEdge: 'bottom' }),
+    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],
   also: [
     {
@@ -152,7 +155,7 @@ export const phone: BoardManifest = {
         held('menu', 'title-count', 'text', '29 of 40', { y: 75.6 }),
         held('menu', 'signature-label', 'text', 'SIGNATURE', { y: 90.1 }),
         held('menu', 'signature-count', 'text', '34 of 500', { y: 106.7 }),
-        held('menu', 'save', 'button', 'SAVE THE PROFILE', { y: 239.2 }, { buildName: 'Save the profile' }),
+        held('menu', 'save', 'button', 'SAVE THE PROFILE', { y: 711.7 }, { buildName: 'Save the profile' }),
       ],
     },
     {

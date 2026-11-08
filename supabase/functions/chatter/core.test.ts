@@ -78,10 +78,10 @@ function fakeDb(w: World = {}) {
         case 'staff_memory_at': return null as T;
         case 'staff_career': return { led: [], offices: [] } as T;
         case 'staff_notes_recent': return ['An earlier thought.'] as T;
-        case 'pool_names': return {} as T;
+        case 'character_faces': return {} as T;
         case 'pool_thread': {
           const at = threads.indexOf(args.in_thread as string);
-          return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', body: 'Hello there.' }] } as T;
+          return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }] } as T;
         }
         case 'pool_orphans': {
           // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
@@ -197,6 +197,8 @@ test('a day with three picks writes three posts, one card, the notes and three s
   assert.ok([Q1, Q2, Q3].includes(reply.target as string));
   // The notes the persona already had are in its prompt, and the order of the writes is post, card, note, spend.
   assert.ok(m.chats.every((c) => c.system.includes('An earlier thought.')));
+  assert.ok(m.chats.every((c) => /Your pronouns are \w+\/\w+ \(/.test(c.system)), 'each persona is told its own pronouns');
+  assert.ok(m.chats.some((c) => c.messages[0]!.content.includes('Ann (she/her): Hello there.')), 'the thread\'s author is written with the pronouns pool_thread gave');
   const order = d.calls.map((c) => c.fn).filter((f) => ['write_staff_thread', 'write_staff_act', 'staff_set_card', 'staff_play_card', 'write_staff_note', 'record_pool_spend'].includes(f));
   assert.deepEqual(order.slice(0, 4), ['write_staff_thread', 'staff_set_card', 'write_staff_note', 'record_pool_spend']);
 });

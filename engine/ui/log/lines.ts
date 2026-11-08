@@ -18,10 +18,12 @@
  * A settlement's row says the player's characters' lines; its wallet is the account's, every
  * character's lines together, and the summary says so beside one character's reasons.
  */
+import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { Act, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
+import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { paramsOf } from '../economy.ts';
 import type { InstanceUi } from '../types.ts';
@@ -36,7 +38,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* The bot-card-options design, section 3: an admin ended a card play. */
   | 'ended'
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
-  | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe';
+  | 'infraction' | 'ban' | 'report' | 'appeal' | 'bribe'
+  /* Member groups, Task 11: a staff move into a group, how it ended and an appeal's ruling on it. */
+  | 'grouped';
 
 /** One row of the log. */
 export interface LogRow {
@@ -260,6 +264,7 @@ function scoredWords(lines: readonly LogLine[], words: Words): string {
 export function logRows(data: LogData, words: Words, cap: number, tab: Id | null): readonly LogRow[] {
   const { instance } = words;
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const inTab = (ids: readonly Id[]) => tab === null || ids.length === 0 || ids.includes(tab);
   const settlementWallet = new Map<number, WalletEvent>();
   for (const e of data.log.wallet) if (e.kind === 'settlement' && e.settlement !== null) settlementWallet.set(e.settlement, e);
@@ -300,7 +305,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
         const act = data.acts.get(t.announced.act);
         const title = act ? data.titles.get(act.thread) : undefined;
         const where: Segment = act && title ? { text: title, href: act.seq !== null ? threadHref(act.thread, pageOf(act.seq, words.postsPerPage), act.seq) : threadHref(act.thread, 1) } : 'the board';
-        details.push(` Announced ${t.announced.was ? 'with its old class ' : ''}in `, where, '.');
+        details.push(` Announced ${t.announced.was ? `with ${pronounsOf(t.character).their} old class ` : ''}in `, where, '.');
       } else {
         details.push(' A silent Turn: no one else was told.');
       }
@@ -321,13 +326,64 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
 
   rows.push(...cardRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, passed: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * The group lines (docs/plans/2026-11-06-member-groups-plan.md, Task 11): a staff member put one of the player's characters in a group, how that ended, and an appeal's ruling on it, in
+ * plain and true words ("The fiction may lie; the log never does"), the role word from the move's office. Each links to the move's Act. The rows are the player's own
+ * (`my_group_moves`), so no line names who else is in a group, and no alert goes with them. A group is named by the instance's own name for it.
+ */
+function groupRows(data: LogData, words: Words): LogRow[] {
+  const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const groups = [...words.instance.groups.ladder, ...words.instance.groups.conferred];
+  const rows: LogRow[] = [];
+  for (const g of data.log.groupMoves) {
+    const name = nameOf(g.character);
+    const group = groups.find((x) => x.key === g.group)?.name ?? g.group;
+    const to = g.seq === null ? undefined : threadHref(g.thread, pageOf(g.seq, words.postsPerPage), g.seq);
+    const linked = (text: string): Segment => (to === undefined ? text : { text, href: to });
+    const role = officeRole(words.ui.copy, g.office ?? undefined);
+    const until = g.landedUntil === null ? '' : ` until ${utcDay(g.landedUntil)}`;
+    const check = g.checkAt === null ? '' : ` It stays if ${name} meets the demand by ${utcDay(g.checkAt)}.`;
+    rows.push({
+      key: `grouped:${g.move}`, kind: 'grouped', at: g.at, what: `${name} was put in ${group}`,
+      details: [`${role} `, linked(`put ${name} in ${group}`), g.boardName === null ? `${until}.${check}` : ` and barred it from posting on ${g.boardName}${until}.${check}`],
+      aura: 0, wallet: null, characters: [g.character],
+    });
+    if (g.endedWhy !== null && g.endedAt !== null) {
+      const why = g.endedWhy === 'met' ? (g.demand === 'apologyAccepted' ? 'an apology was accepted' : 'its demand was met')
+        : g.endedWhy === 'expired' ? 'it expired'
+        : g.endedWhy === 'reversed' ? (g.endedBy === 'admin' ? 'an admin reversed it' : 'it was reversed')
+        : g.endedWhy === 'unmet' ? 'the demand wasn\'t met by its check'
+        : g.endedWhy === 'overturned' ? 'overturned on appeal'
+        : g.endedWhy === 'superseded' ? 'it ended at the handover' : 'it was used up at the handover';
+      rows.push({
+        key: `grouped:${g.move}:left`, kind: 'grouped', at: g.endedAt, what: `${name} left ${group}`,
+        details: [linked(`${name} left ${group}`), `: ${why}.`], aura: 0, wallet: null, characters: [g.character],
+      });
+    }
+    if (g.ruling !== null && g.ruledAt !== null) {
+      const hearer = role;
+      const ruled = g.ruledUntil === null ? Number.NaN : Date.parse(g.ruledUntil);
+      const result = g.ruling === 'upheld' ? 'nothing changed'
+        : g.ruling === 'overturned' ? 'it ended'
+        : Number.isNaN(ruled) ? null
+        : ruled <= Date.parse(g.ruledAt) ? 'it ended at once' : `it now ends ${utcDay(g.ruledUntil!)}`;
+      rows.push({
+        key: `grouped:${g.move}:ruling`, kind: 'grouped', at: g.ruledAt, what: `Appeal ${g.ruling}`,
+        details: [`${hearer} ${g.ruling} `, linked(`${name}'s ${group}`), ` on appeal${result === null ? '' : `: ${result}`}.`], aura: 0, wallet: null, characters: [g.character],
+      });
+    }
+  }
+  return rows;
+}
 
 /**
  * The Mod Bots' lines (the design, section 9): the warn points filed against the player's characters, the bans laid on them, and the reports and appeals they made, each in
@@ -338,6 +394,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 function modRows(data: LogData, words: Words): LogRow[] {
   const now = Date.now();
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
+  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
   const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
   const rows: LogRow[] = [];
 
@@ -358,7 +415,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
     const over = Date.parse(b.until) <= now;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
-      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so it was banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. It can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
+      details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC. Your other characters are not banned.`],
       aura: 0, wallet: null, characters: [b.character],
       ...(!over && !data.log.appeals.some((a) => a.punishment === b.ban && a.refund === null) ? { appealBan: { ban: b.ban, character: b.character, until: b.until, days: b.days, rule: b.rule } } : {}),
     });
@@ -388,7 +445,10 @@ function modRows(data: LogData, words: Words): LogRow[] {
   for (const a of data.log.appeals) {
     const price = paid('appeal', a.appeal);
     const gone = back(a.appeal);
-    const what = a.punishmentKind === 'ban' ? 'the ban' : 'the warn points';
+    /* A group move is named by its group, and linked to the move's own line in the announcements, where the log holds that move; else it is "a group move". */
+    const moved = a.punishmentKind === 'move' ? data.log.groupMoves.find((g) => g.move === a.punishment) : undefined;
+    const movedGroup = moved ? ([...words.instance.groups.ladder, ...words.instance.groups.conferred].find((x) => x.key === moved.group)?.name ?? moved.group) : null;
+    const what = a.punishmentKind === 'ban' ? 'the ban' : a.punishmentKind === 'move' ? (movedGroup === null ? 'a group move' : `the move into ${movedGroup}`) : 'the warn points';
     const came = price === null ? '' : `, and the ${plain(price)} Aura came back`;
     const ruling = a.verdict === null
       ? (a.refund !== null ? ' No one could hear it, so your Aura came back and you can appeal again.' : ' It has not been ruled on yet. If it cannot be, your Aura comes back by itself.')
@@ -398,7 +458,9 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : ` ${a.hearer ?? 'The hearer'} increased it${a.pointsDelta ? `: ${plural(a.pointsDelta, 'more point', 'more points')} landed` : ''}.`;
     rows.push({
       key: `appeal:${a.appeal}`, kind: 'appeal', at: a.at, what: 'You made an appeal',
-      details: [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
+      details: a.punishmentKind === 'move'
+        ? [`${nameOf(a.character)} appealed `, moved?.seq == null ? what : { text: what, href: threadHref(moved.thread, pageOf(moved.seq, words.postsPerPage), moved.seq) }, `${forPrice(price)}. The plea is public.${ruling}`]
+        : [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
       aura: -(price ?? 0) + gone, wallet: null, characters: [a.character],
     });
   }

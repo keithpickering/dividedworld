@@ -96,7 +96,8 @@ export default manifest;
  *    1440 board's lead does not appear on it), so the lead is not compared; the board draws "seven more slots, then Save changes" and no Save, so only the first three
  *    slots (Booster, Whoops!, Stick Around) are held. The strip's buttons are the glass's phone control (The machine 12px narrower than the board's), the
  *    first row stands 16px lower under the strip, and the third 37px lower under the second (the Whoops! row's tag line is taller in the build), and the move
- *    arrows and the price stand 18, 24 and 17px to the left of the board's, 10px lower, for the glass's control measure. The title stands 17px lower under the bar
+ *    arrows and the price stand 18, 9 and 17px to the left of the board's, 10px lower, for the glass's control measure. Move down is 15px nearer the board's
+ *    than Move up because a glass button is at least as wide as the spinner it holds in its label's cell (Button.tsx, parts.css), so the arrow before it is wider. The title stands 17px lower under the bar
  *    and the strip 178px under the title, for the lead the build draws between them. A slot's name in the build reads "Move up" as "<slot>: move up", as board 05 names it. The glass's controls are
  *    its own measure, so a control is held by its place and not its size, and the title's type is the glass's.
  */
@@ -168,7 +169,7 @@ export const phone: BoardManifest = {
         ...([['a1', 'A1', 'Booster', 'moves'], ['a2', 'A2', 'Whoops!', 'a1-code'], ['b1', 'B1', 'Stick Around', 'a2-code']] as const).flatMap(([k, code, card, from], i) => [
           at(`${k}-code`, 'text', code, from, k === 'a1' ? { y: 16 } : k === 'b1' ? { y: 37 } : {}, { originEdge: 'bottom' }),
           at(`${k}-up`, 'button', 'Move up', `${k}-code`, { x: -18, y: 10 }, { buildName: `${card}: move up`, nth: i, buildNth: 0 }),
-          at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -24, y: 10 }, { buildName: `${card}: move down`, nth: i, buildNth: 0 }),
+          at(`${k}-down`, 'button', 'Move down', `${k}-code`, { x: -9, y: 10 }, { buildName: `${card}: move down`, nth: i, buildNth: 0 }),
           at(`${k}-availability`, 'combobox', `${card}: availability`, `${k}-code`),
           at(`${k}-price`, 'textbox', `${card}: price`, `${k}-code`, { x: -17 }),
         ]),

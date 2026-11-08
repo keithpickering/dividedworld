@@ -123,6 +123,24 @@ describe('the avatar cropper', () => {
     expect((await w.fake.characters([w.pipe]))[0]!.avatarPortrait).not.toBeNull();
   });
 
+  test('Save the avatar is a busy button while the save is out: aria-busy, its name kept, and a second press saves once', async () => {
+    const w = world();
+    let release!: () => void;
+    const real = w.fake.setAvatar.bind(w.fake);
+    const setAvatar = vi.spyOn(w.fake, 'setAvatar').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
+    const { api } = io();
+    await mount(w, api);
+    await pick();
+    const save = screen.getByRole('button', { name: 'Save the avatar' });
+    await userEvent.click(save);
+    expect(save).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Save the avatar' })).toBe(save);
+    await userEvent.click(save);
+    expect(setAvatar).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Avatar saved.'));
+  });
+
   test('sends nothing when the encoded file carries EXIF, and says so', async () => {
     const w = world();
     const setAvatar = vi.spyOn(w.fake, 'setAvatar');

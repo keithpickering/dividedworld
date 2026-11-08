@@ -25,10 +25,13 @@ import { Origin } from '../spin/Origin.tsx';
 import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
 import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
 import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useThread, type ThreadContext } from './context.ts';
-import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteLink, text, useHistory, when } from './lines.tsx';
+import { moveOffice } from '../board/move-words.ts';
+import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
+import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 
 export { ThreadCtx, type ThreadContext };
@@ -56,13 +59,14 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
         </>
       );
     case 'move_end': return <MoveEndLine act={act} />;
-    case 'move_keep': return <MoveKeepLine name={name} />;
+    case 'move_keep': return <MoveKeepLine name={name} pronouns={person?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS} />;
     case 'move':
       /* The Boss's move: its stock line in its own voice, under the glass's label of the move, which the engine's catalog words and the Boss cannot change. */
       return (
         <>
-          <MoveTag kind={text(act.payload.kind)} />
-          <BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} />
+          <MoveTag kind={text(act.payload.kind)} office={moveOffice(act.payload)} />
+          <GroupMoveLine act={act} office={moveOffice(act.payload)} />
+          <BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} />
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
@@ -79,13 +83,15 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
     default: {
       /* A post, and a spin's first Act, which is a post that opens on its origin. */
       const origin = act.kind === 'spin' && summary.originActId !== null && summary.originThread !== null;
+      const ruling = rulingOf(act);
       return (
         <>
+          {ruling && <RulingTag ruling={ruling} />}
           {origin && <Origin summary={summary} />}
           {!editing && <ViolationNotice visit={visit} />}
           {editing
             ? <EditPost act={act} seq={act.seq!} onDone={onDone} onSaved={changed} />
-            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteLink={quoteLink} />}><BbCode text={text(act.currentPayload.body)} quoteLink={quoteLink} /></PostEffects>}
+            : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
           <LastEdited act={act} />
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
@@ -150,7 +156,7 @@ function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, 
 }
 
 export const ActArticle = memo(function ActArticle({ act, person, layout, slid }: Props) {
-  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, summary, know, visits } = useThread();
+  const { thread, perPage, observer, plays, tallies, mine, nameOf: casterName, faceOf, pronounsOf, summary, know, visits } = useThread();
   const { ui } = useKayfa();
   const ref = useRef<HTMLElement>(null);
   const narrow = useNarrow();
@@ -186,8 +192,8 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = act.kind === 'post'
     ? <PostMarks
-        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
-        visit={visit} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
+        post={act.id} ghost={act} plays={plays} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+        visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
       />
     : null;
   /* The character's own live plays, on its postbit, and the armed character card's ghost there (the card mechanic's design, section 7). */
@@ -195,11 +201,11 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
   const shown = useReachShown(plays, act.kind === 'post' ? act.character : null, 'character');
   const characterMarks = useMemo(() => (shown && act.kind === 'post' && act.character !== null
     ? <PostMarks
-        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} tallies={tallies} mine={mine}
-        reachAt={{ reach: 'character', target: act.character, name, fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
+        post={act.character} plays={plays} compare={false} to={threadHref(thread, pageOf(seq, perPage), seq)} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
+        reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: threadHref(thread, pageOf(seq, perPage), seq), plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
       />
-    : null), [shown, act, plays, thread, seq, perPage, casterName, tallies, mine, name, summary.board, summary.title, know]);
+    : null), [shown, act, plays, thread, seq, perPage, casterName, faceOf, tallies, mine, name, person?.character.pronouns, summary.board, summary.title, know]);
   return (
     <AppealCtx.Provider value={askAppeal}>
     <article
@@ -211,6 +217,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
       data-kb-seq={seq}
       data-kb-parity={seq % 2 === 0 ? 'even' : 'odd'}
       data-kb-kind={act.kind}
+      data-kb-ruling={rulingOf(act) ?? undefined}
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}
     >
@@ -239,7 +246,7 @@ export const ActArticle = memo(function ActArticle({ act, person, layout, slid }
  * ghost there (the card mechanic's design, section 7). A play's Lens offers Spin, whose form opens under the head.
  */
 export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
-  const { thread, summary, plays, tallies, mine, nameOf, know } = useThread();
+  const { thread, summary, plays, tallies, mine, nameOf, faceOf, know } = useThread();
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
   const to = threadHref(thread, 1);
@@ -252,7 +259,7 @@ export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
         <h1 ref={title} tabIndex={-1} className="kb-heading kb-thread-title">{summary.title}</h1>
         {shown && <span className="kb-thread-head-marks">
           <PostMarks
-            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} tallies={tallies} mine={mine}
+            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
             reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
             onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
           />

@@ -34,15 +34,17 @@ import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
 import './front-door.css';
+import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 /** The instant every staged Act and play carries: a made-up thread has no real time. */
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = (key: string): Id => `front-door:${key}`;
 
-const stage = (c: FrontDoorCharacter): Character => ({
+/** A made-up character is in the ladder's first rung, the one every new character starts in. */
+const stage = (c: FrontDoorCharacter, group: string): Character => ({
   id: idOf(c.key), name: c.name, title: c.title ?? '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null,
-  portraitFrame: null, pipStyle: 'default', joined: '',
+  portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '', group,
 });
 
 interface Staged { readonly act: Act; readonly person: PostbitPerson | undefined }
@@ -56,7 +58,8 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   const { act, person } = staged;
   const seq = act.seq!;
   const name = person?.character.name ?? 'A character';
-  const marks = <PostMarks post={act.id} plays={stores.plays} to={null} moments={false} nameOf={nameOf} tallies={stores.tallies} mine={stores.mine} onSpin={noSpin} />;
+  /* The sample cast has no pictures. */
+  const marks = <PostMarks post={act.id} plays={stores.plays} to={null} moments={false} nameOf={nameOf} faceOf={() => null} tallies={stores.tallies} mine={stores.mine} onSpin={noSpin} />;
   const body = typeof act.currentPayload.body === 'string' ? act.currentPayload.body : '';
   return (
     <article id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side">
@@ -85,7 +88,7 @@ export function FrontDoor() {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
     /* The rank's floor is a standing the postbit's rankIndex lands on that rank. */
     const standing = rankFloor(instance.ranks, rank);
-    const person: PostbitPerson = { character: stage(c), posts: c.posts, standing, revealed: c.revealed ?? null, turnedAt: null };
+    const person: PostbitPerson = { character: stage(c, settings.groups[0]?.key ?? ''), posts: c.posts, standing, revealed: c.revealed ?? null, turnedAt: null };
     return [c.key, person] as const;
   })), [door.cast, instance.ranks]);
   const nameOf = useCallback((id: Id | null) => door.cast.find((c) => idOf(c.key) === id)?.name ?? 'A character', [door.cast]);

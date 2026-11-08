@@ -25,6 +25,8 @@
  *    geometry (the splat covers the post's body, now narrower), so the story's note says 97% where it said 95% before the page moved.
  *  - The glass's type scale (the polish, design section 7) and its 44px tiles set the Lens's words a step off the board's 19 to 21px: type is not compared, only places.
  *  - The board's Close is a box with a cross in it, the build's is the frame's CloseCross (52px).
+ *  - Each play's row draws its caster's avatar left of the caster line (docs/plans/2026-11-07-lens-avatars-design.md), a square the board predates: the caster line
+ *    stands 53.6px right of the board's (the 2.75rem square and the row head's 0.6rem gap), and the message, held from that line, as far left of it.
  *  - The tabs: the board's order (Whoops!, Stick Around, Glitter Bomb, Autocorrect, Force Field) is the build's billing order (most drawn first, then the newest), which
  *    the story plays so that it is the same.
  */
@@ -54,8 +56,8 @@ const manifest: BoardManifest = {
     part('hold', 'button', 'HOLD TO SCRUB', { buildName: 'Hold to scrub', ...under('ends'), box: 'position' }),
     part('fold', 'button', '3 plays · Gloomba, Pipewrench, Mrs. Hooligan', { ...under('hold'), box: 'position', buildShift: { y: -14 } }),
     part('note', 'text', 'LAYER 3 OF 3, ON TOP · 41% WASHED', { buildName: 'Layer 3 of 3, on top · 97% washed', ...under('fold'), box: 'position', buildShift: { y: -13 } }),
-    part('who', 'text', 'GLOOMBA', { ...under('note'), box: 'position' }),
-    part('message', 'text', '“fine, I\'ll do it myself”', { buildName: '“fine, I\'ll do it myself”', ...under('who'), box: 'position' }),
+    part('who', 'text', 'GLOOMBA', { ...under('note'), box: 'position', buildShift: { x: 53.6 } }),
+    part('message', 'text', '“fine, I\'ll do it myself”', { buildName: '“fine, I\'ll do it myself”', ...under('who'), box: 'position', buildShift: { x: -53.6 } }),
     part('react', 'button', '+ REACT', { buildName: 'React', ...under('message'), box: 'position', buildShift: { y: -6 } }),
     part('spin', 'button', 'SPIN THREAD', { ...under('message'), box: 'position', buildShift: { y: -6 } }),
     part('landed', 'button', 'AS IT LANDED', { ...under('message'), box: 'position', buildShift: { y: -14 } }),

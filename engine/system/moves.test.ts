@@ -7,9 +7,9 @@ const board = '11111111-1111-4111-8111-111111111111';
 const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
 
 test('the catalog holds renameBoard, structural, with a long plain label', () => {
-  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
-  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
-  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false]);
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
+  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
+  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false]);
   assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
@@ -44,8 +44,8 @@ test('an uppercase board uuid is lowercased by the repair, and is not a trim', (
 test('every move kind has plain words for a stock line\'s {move}, naming only params it has', () => {
   for (const k of MOVE_KINDS) {
     assert.ok(k.plain.trim() !== '', `${k.key} has no plain words`);
-    const fields = Object.keys((k.params as { fields: Record<string, unknown> }).fields);
-    for (const [, token] of k.plain.matchAll(/\{(\w+)\}/g)) assert.ok(fields.includes(token!), `${k.key}'s words name {${token}}, which is no param`);
+    const fields = [...Object.keys((k.params as { fields: Record<string, unknown> }).fields), ...(k.derived ?? [])];
+    for (const [, token] of k.plain.matchAll(/\{(\w+)\}/g)) assert.ok(fields.includes(token!), `${k.key}'s words name {${token}}, which is no param and no declared derived token`);
   }
 });
 
@@ -205,4 +205,44 @@ test('the machine\'s moves read in plain words, with nothing unfilled and the sl
   assert.deepEqual(pull.parts({ slot }, 'Whoops!', 'plan'), ['Pull ', 'Whoops!', ' from the machine']);
   assert.deepEqual(pull.parts({ slot }, null, 'done'), ['Pulled ', 'a slot', ' from the machine']);
   assert.deepEqual(flash.parts({ slot, hours: 24 }, 'Main Event', 'done'), ['Opened a flash sale on ', 'Main Event', ' for 24 hours']);
+});
+
+const who = '22222222-2222-4222-8222-222222222222';
+
+test('conferGroup is small, askable, made by the Boss or a Mod, and shapes no board', () => {
+  const k = moveKind('conferGroup')!;
+  assert.ok(k);
+  assert.deepEqual([k.structural, k.shapesBoard, k.askable, k.offices], [false, false, true, ['boss', 'mod']]);
+  assert.equal(k.label, '{role} moved a member');
+  assert.equal(k.plain, 'moving a member into "{groupName}"');
+  assert.deepEqual(k.derived, ['groupName']);
+});
+
+test('conferGroup params: a punishment with a board, a favor with checkAt, a non-uuid board rejected naming isUuid, a 41-character group rejected', () => {
+  const punish = moveParamsProblems('conferGroup', { character: who, group: 'trial', board });
+  assert.ok(punish.ok, JSON.stringify(punish));
+  assert.equal((punish.value as Record<string, unknown>)['board'], board);
+  const favor = moveParamsProblems('conferGroup', { character: who, group: 'regular', checkAt: '2026-11-20T00:00:00Z' });
+  assert.ok(favor.ok, JSON.stringify(favor));
+  assert.equal((favor.value as Record<string, unknown>)['board'], null);
+  const bad = moveParamsProblems('conferGroup', { character: who, group: 'trial', board: 'x'.repeat(36) });
+  assert.ok(!bad.ok && bad.path === 'board' && bad.predicate === 'isUuid', JSON.stringify(bad));
+  const badChar = moveParamsProblems('conferGroup', { character: 'x'.repeat(36), group: 'trial' });
+  assert.ok(!badChar.ok && badChar.path === 'character' && badChar.predicate === 'isUuid', JSON.stringify(badChar));
+  const long = moveParamsProblems('conferGroup', { character: who, group: 'g'.repeat(41) });
+  assert.ok(long.ok && long.trims.length === 1 && long.trims[0]?.path === 'group', JSON.stringify(long));
+  const none = moveParamsProblems('conferGroup', { character: who, group: '' });
+  assert.ok(!none.ok && none.path === 'group', JSON.stringify(none));
+});
+
+test('conferGroup reads in plain words from the names it is given, and never names a group itself', () => {
+  const k = moveKind('conferGroup')!;
+  const p = { character: who, group: 'trial', board };
+  const names = { character: 'Pipewrench', group: 'Trial Members', board: 'General' };
+  assert.equal(k.template(p, 'The Boss', names), 'The Boss put Pipewrench in Trial Members, barred from posting on General.');
+  assert.equal(k.template({ character: who, group: 'regular' }, 'The Boss', { character: 'Pipewrench', group: 'Regulars' }), 'The Boss put Pipewrench in Regulars.');
+  assert.doesNotMatch(k.template(p, 'The Boss'), /[{}]|undefined|null/);
+  assert.deepEqual(k.parts(p, null, 'done', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }]);
+  assert.deepEqual(k.parts(p, null, 'plan', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }, ' (planned)']);
+  assert.deepEqual(k.parts({ character: who, group: 'regular' }, null, 'done', { character: 'Pipewrench', group: 'Regulars' }), ['Put Pipewrench in Regulars']);
 });

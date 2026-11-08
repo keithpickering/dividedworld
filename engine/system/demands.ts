@@ -40,6 +40,8 @@ export interface DemandKind {
   /** What the demand asks, as the end of "Needs ...": "12 different characters to post on this board". */
   readonly needs: (params: Readonly<Record<string, unknown>>) => string;
   readonly template: (params: Readonly<Record<string, unknown>>, progress: Progress) => string;
+  /** False for a demand only the code sets, never the meeting (its prompt, its schema and its checks leave it out). */
+  readonly offered?: boolean;
 }
 
 /** The most a count may ask for: past it a demand is not one a board can meet. */
@@ -96,7 +98,7 @@ export const DEMAND_KINDS: readonly DemandKind[] = [
     params: { type: 'object', fields: { character: uuid, thread: uuid } },
     uuids: ['character', 'thread'],
     numbers: {},
-    met: () => 'it posted',
+    met: () => 'the named character posted',
     needs: () => 'one named character to post in one named thread',
     template: (_p, g) => `Needs one named character to post in one named thread: ${so(g)}.`,
   },
@@ -111,7 +113,22 @@ export const DEMAND_KINDS: readonly DemandKind[] = [
     template: (p, g) =>
       `Needs two named characters to quote each other, each reply drawing ${num(p['reactions'])} reactions: ${so(g)}.`,
   },
+  {
+    // The move is its own subject: met when an apology for it is accepted. Set by the code on a punishment that bars a board.
+    key: 'apologyAccepted',
+    offered: false,
+    unit: { one: 'APOLOGY', many: 'APOLOGIES' },
+    params: { type: 'object', fields: {} },
+    uuids: [],
+    numbers: {},
+    met: () => 'an apology was accepted',
+    needs: () => 'an accepted apology',
+    template: (_p, g) => `Needs an accepted apology: ${so(g)}.`,
+  },
 ];
+
+/** The demands the meeting may choose among: the whitelist less the ones the code sets. */
+export const MEETING_DEMAND_KINDS: readonly DemandKind[] = DEMAND_KINDS.filter((k) => k.offered !== false);
 
 /**
  * A demand in plain words with no count of progress, for a move that has not landed (the admin queue): "Needs 8 different characters

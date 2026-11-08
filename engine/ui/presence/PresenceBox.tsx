@@ -39,6 +39,8 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
   const { settings } = useKayfa();
   const id = useId();
   if (presence === null) return null;
+  /* A staff name's chip is the staff rung's name (screen_settings.groups marks which rung that is), whatever else the name's own group is. */
+  const staffRung = settings.groups.find((g) => g.staff);
 
   /* A Mod on a visit carries a glass tag after its name, linking to the post it visits (a visit is a public Act); on a thread's box only, which is where the answer names one. */
   const tag = (n: (typeof presence.names)[number]): ReactNode =>
@@ -46,8 +48,8 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
       ? <Link className="kb-presence-visit" to={threadHref(place.thread, pageOf(n.visitPost, settings.postsPerPage), n.visitPost)}>On a visit · post #{n.visitPost}</Link>
       : null;
   const items: ReactNode[] = presence.names.map((n) =>
-    n.staff && settings.staffGroup
-      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link><span className="kb-visually-hidden">, </span><StaffGroup name={settings.staffGroup.name} />{tag(n)}</span>
+    n.staff && staffRung
+      ? <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link><span className="kb-visually-hidden">, </span><StaffGroup name={staffRung.name} />{tag(n)}</span>
       : <span key={n.id}><Link to={profile(n.id)}>{n.name}</Link>{tag(n)}</span>);
   const hud = player.hudCharacter;
   if (hud?.presenceHidden) {

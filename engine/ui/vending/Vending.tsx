@@ -58,7 +58,8 @@ import { Overlay } from '../glass/Overlay.tsx';
 import { Orbs } from '../orbs/Orbs.tsx';
 import { cascade, CASCADE_BEAT_MS } from '../orbs/fill.ts';
 import { usePlayer } from '../player.tsx';
-import { Link, searchOf, useLocation } from '../router.tsx';
+import { searchOf, useLocation } from '../router.tsx';
+import { GlassLink } from '../glass/Link.tsx';
 import './vending.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Layers } from '../glass/layer.tsx';
@@ -335,10 +336,10 @@ function Machine({ items, status, picked, onPick, onAbout, onBuy, busy, drop, fe
           <span className="kb-vending-lcd-price kb-num" aria-hidden="true" data-kb-art>{picked ? orbs(picked.price) : '0.00'}</span>
         </div>
         {inPack ?? <div className="kb-vending-aura-in" aria-hidden="true" data-kb-art><span className="kb-vending-aura-slot" /><span className="kb-vending-aura-label" /></div>}
-        <button type="button" className="kb-vending-buy" disabled={!picked || busy} onClick={onBuy}>
+        <GlassButton kind="primary" className="kb-vending-buy" busy={busy} disabled={!picked} onClick={onBuy}>
           <span className="kb-vending-buy-word">Buy</span>{' '}
           {picked && <span className="kb-vending-buy-card">{picked.name} · {orbs(picked.price)}</span>}
-        </button>
+        </GlassButton>
       </div>
 
       <div className="kb-vending-tray">
@@ -501,7 +502,7 @@ export function Vending() {
     return (
       <div className="kb-vending">
         <CalmRegion as="p" className="kb-vending-signin">
-          The Vending Machine is for players. <Link to={signInHref(location.path, searchOf(location.query))}>Sign in</Link> to spend your Aura here.
+          The Vending Machine is for players. <GlassLink to={signInHref(location.path, searchOf(location.query))}>Sign in</GlassLink> to spend your Aura here.
         </CalmRegion>
       </div>
     );
@@ -561,10 +562,10 @@ export function Vending() {
             <p className="kb-vending-fine">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
           </CalmRegion>
         </section>
-        <Link ref={handLinkEl} to={handLink} className="kb-vending-hand kb-glass-skew">
+        <GlassLink ref={handLinkEl} to={handLink} className="kb-vending-hand kb-glass-skew">
           <span className="kb-vending-hand-word kb-glass-upright">Your hand</span>{' '}
           <span className="kb-vending-hand-count kb-glass-upright kb-num">{picked && !short ? `${held} → ${held + arrives}` : held}</span>
-        </Link>
+        </GlassLink>
       </aside>
 
       <Machine

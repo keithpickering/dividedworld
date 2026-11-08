@@ -47,7 +47,7 @@ import { feelinFab } from '../cards/feelin-fab.ts';
 /** A span in words: "a week", "3 days". */
 const spanWords = (s: { readonly unit: string; readonly count: number }) => (s.unit === 'day' && s.count === 7 ? 'a week' : s.count === 1 ? `a ${s.unit}` : `${s.count} ${s.unit}s`);
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
-import { luminance } from '../cards/whoops/splat.ts';
+import { rgbOf } from '../cards/whoops/splat.ts';
 
 /** A price of a whole number of hundredths, as the shop says it: "1.00". */
 const orbs = (hundredths: number) => (hundredths / 100).toFixed(2);
@@ -89,16 +89,16 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     /*
      * Each play's tag and chip takes the color it splatted for its border and glow (the plays-on-a-post design, section 5):
      * the tag on top is the most drawn play, not always the top ink. An ink the card cannot read keeps the alignment's.
+     * A Mod Bot's ink may be a color's name, so the tag is given as the hex the splat draws (the engine reads hex).
      */
     tag: (play) => {
       const ink = play.config.color;
       if (typeof ink !== 'string') return undefined;
       try {
-        luminance(ink);
+        return `#${rgbOf(ink).map((c) => c.toString(16).padStart(2, '0')).join('')}`;
       } catch {
         return undefined;
       }
-      return ink;
     },
     describe: (settings: Settings) => {
       const e = settings.economy;
@@ -120,7 +120,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
-      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains what their wallet paid to play it, as far as your wallet's cap allows. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs nothing more to set.`,
+      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next card cast on that post that is uncommon or commoner is caught: it lands as caught and does nothing, its caster has spent it, and your wallet gains what the caster paid to play it, as far as your wallet's cap allows. A rarer card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs nothing more to set.`,
   },
   {
     key: 'force-field',
@@ -175,10 +175,10 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     key: 'glitter-bomb',
     Effect: GlitterBombEffect,
     art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Make a character sparkle.' },
-    summary: `Cast on a character. Every post of theirs sparkles for ${spanWords(glitterBomb.lasts!)}.`,
-    status: 'Sparkling every post of theirs',
+    summary: `Cast on a character. Every post by that character sparkles for ${spanWords(glitterBomb.lasts!)}.`,
+    status: 'Sparkling every post by that character',
     describe: (settings: Settings) =>
-      `A Pepperoni card, ${glitterBomb.rarity}, cast on a character from any of their posts. For ${spanWords(glitterBomb.lasts!)}, every post of that character sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs nothing more to play.`,
+      `A Pepperoni card, ${glitterBomb.rarity}, cast from any post by the character it lands on. For ${spanWords(glitterBomb.lasts!)}, every one of that character's posts sparkles, wherever it is, and then it stops by itself. It falls on that mask alone. It costs nothing more to play.`,
   },
   {
     key: 'main-event',

@@ -9,6 +9,7 @@
  * Aura is an integer count of hundredths of an orb wherever it is stored or returned. Times
  * are epoch milliseconds.
  */
+import type { GroupsContent } from './groups.ts';
 import type { BeyondPost, CardRules, Rarity } from './cards.ts';
 import type { PackRules, SlotSeed } from './packs.ts';
 import type { StockLineKey } from '../system/stock.ts';
@@ -17,6 +18,9 @@ import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
 import type { PoolTrigger } from '../system/pool.ts';
+import type { PronounSet } from './pronouns.ts';
+
+export type { PronounSet };
 
 /** Where a reaction sits on the two axes the classes read: how excited, how positive. */
 export type Quadrant = 'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative';
@@ -117,6 +121,19 @@ export interface WarnBarSettings {
   readonly banDays: readonly number[];
 }
 
+/**
+ * The member groups' numbers (`Settings.apology`; the member groups design, section 5). A barred character apologizes to the move that bars it; these bound how
+ * often, how many the judge hears at once, and how long its ruling runs. Not the groups themselves, which are `Instance.groups`.
+ */
+export interface ApologySettings {
+  /** The hours a character waits between apologies to one move, once the last was accepted, rejected or is still waiting. A whole number, at least 1. */
+  readonly apologyEveryHours: number;
+  /** The most apologies one run of the apology judge hears; the rest wait for the next run. A whole number, at least 1. */
+  readonly apologyJudgeBatch: number;
+  /** The most words of a ruling on an apology; a longer one is trimmed, and the trim recorded. A whole number, at least 1. */
+  readonly apologyRulingMaxWords: number;
+}
+
 /** The settings the engine itself reads. A class's own numbers live with the class. */
 export interface Settings {
   /** The most a wallet holds; Aura past it leaves the wallet and stays in the standing. */
@@ -165,6 +182,13 @@ export interface Settings {
   /** A thread is HOT when it has had at least this many replies in the last 7 days. */
   readonly hotReplies: number;
   /**
+   * The text search configuration a post's words are stemmed in (a name Postgres's pg_ts_config holds: `english`, `simple`), so the engine assumes no language. Changing it
+   * rebuilds the search index in the background (supabase/migrations/0117_search.sql).
+   */
+  readonly searchLanguage: string;
+  /** How many of the newest matches a relevance search ranks (100 to 100,000); a common word fills it at once, which bounds the work at any size. */
+  readonly searchRankPool: number;
+  /**
    * How long after a character's last poll it stays listed in "Who is online" and "Users browsing":
    * a mask arrives on its first poll and leaves only by aging out this long after its last, so a
    * swap of masks is never shown as one leaving as another arrives.
@@ -208,6 +232,8 @@ export interface Settings {
    * do is seen by a player. An instance turns it on only once the screens that show a move's way out exist.
    */
   readonly systemEnabled: boolean;
+  /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
+  readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */
   readonly meetingCron: string;
   /**
@@ -247,6 +273,8 @@ export interface Settings {
   readonly modBots: ModBotSettings;
   /** The warn bar and the ban ladder: points by band, how long they last, and how long each ban in a season runs. */
   readonly warnBar: WarnBarSettings;
+  /** The apology's numbers: how often a barred character may apologize, how many the judge hears at once, how long a ruling runs. */
+  readonly apology: ApologySettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */
@@ -612,6 +640,8 @@ export interface StaffSeed {
   readonly name: string;
   readonly title: string;
   readonly signature: string;
+  /** Its pronouns; left out, the instance's default (`Settings.pronouns`). */
+  readonly pronouns?: PronounSet;
 }
 
 /* ----------------------------------------------------------------- The System's content ---- */
@@ -679,8 +709,6 @@ export interface FeedSource {
 export interface SystemContent {
   /** Every staff persona the instance seeds: Bosses, Mod Bots and any other, one shape. */
   readonly roster: readonly Persona[];
-  /** The member group every staff character is in; the engine reads its name from here. */
-  readonly staffGroup: { readonly name: string };
   /** The roster key of the first season's Boss. */
   readonly firstBoss: string;
   /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
@@ -713,6 +741,8 @@ export interface DeveloperPersona {
   readonly name: string;
   readonly tagline: string;
   readonly avatar?: string;
+  /** The developer's pronouns; left out, the instance's default (`Settings.pronouns`). */
+  readonly pronouns?: PronounSet;
 }
 
 export interface Instance {
@@ -727,6 +757,8 @@ export interface Instance {
   readonly ranks: readonly Rank[];
   readonly pipStyles: readonly PipStyle[];
   readonly system: SystemContent;
+  /** Member groups: the ladder a character climbs and the groups moves confer. */
+  readonly groups: GroupsContent;
   /** The developer persona; left out, the engine's default ("The developers", no tagline, no avatar). */
   readonly developer?: DeveloperPersona;
   /** The packs the Vending Machine sells, each a list of pulls over the cards' rarities (engine/rules/packs.ts). */

@@ -62,6 +62,13 @@ const KINDS: readonly (readonly [string, string, string?])[] = [
  */
 const LOWER = 28;
 const COUNT_LEFT = 67;
+/**
+ * The group bar (docs/plans/2026-11-06-member-groups-design.md, the look the owner approved in docs/research/2026-11-06-member-groups/01-bars.html,
+ * option A) stands under #42's author, which the board, drawn before it, does not: the post is 26.5px taller, so its reactions row, and the picker
+ * under it, stand that much lower, and the picker fills the room left above the board's 700px foot (engine/ui/glass/Overlay.tsx's maxHeight), 17.8px
+ * shorter than it stands with the room. Its parts are measured from its own corner, so only its height moves.
+ */
+const GROUP_BAR_ROOM = 17.8;
 
 const buttons: Landmark[] = KINDS.map(([name, quadrant, built]) => ({
   id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${(built ?? name).replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER },
@@ -73,7 +80,7 @@ const manifest: BoardManifest = {
   build: { story: 'boards-03-react--board' },
   press: [{ role: 'button', name: 'React' }],
   landmarks: [
-    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 } },
+    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 - GROUP_BAR_ROOM } },
     { id: 'heading', role: 'heading', name: 'React', within: 'picker', origin: 'picker' },
     { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker', buildShift: { x: -COUNT_LEFT } },
     { id: 'excited', role: 'text', name: 'Excited', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },

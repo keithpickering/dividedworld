@@ -167,6 +167,52 @@
   background: color-mix(in srgb, var(--kb-glass-neon) 16%, transparent);
 }
 
+/*
+ * A tab (or Back) waiting on its load shows the Signal spinner after its label (MenuBar.tsx): a slot whose width eases from 0 to 22px, so the label
+ * does not jump. Under Off the slot is open at once. The bar's end holds a spinner for a load no control on the page claims (claims.tsx).
+ */
+.kb-glass-menu-wait {
+  display: inline-block;
+  width: 0;
+  vertical-align: middle;
+  overflow: hidden;
+  transition: width 180ms ease;
+}
+
+[data-kb-pending] > .kb-glass-upright > .kb-glass-menu-wait {
+  width: 22px;
+}
+
+.kb-glass-menu-wait > .kb-spinner {
+  /* Four 4px bars and three 2px gaps are the slot's 22px. */
+  gap: 2px;
+  height: 14px;
+  vertical-align: middle;
+}
+
+.kb-glass-menu-end {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  color: var(--kb-glass-text-hi);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-glass-menu-wait { transition: none; }
+}
+
+:root[data-kb-motion='reduce'] .kb-glass-menu-wait {
+  transition: none;
+}
+
+/* A load is out (Page.tsx): the page shows the progress cursor over everything on it. */
+.kb-glass-page[data-kb-pending],
+.kb-glass-page[data-kb-pending] a,
+.kb-glass-page[data-kb-pending] button {
+  cursor: progress;
+}
+
 /* The selected tab's neon rule: one element that glides between tabs (MenuBar.tsx); it does not animate under Off, where it has no transition to run. */
 .kb-glass-menu-list > li {
   position: relative;
@@ -530,13 +576,16 @@
 /*
  * A float (Float.tsx): placed fixed in the window by the float itself. The wrapper is unclipped and carries the glow
  * (a drop shadow in the owner's `--kb-float-glow`), which the dialog's chamfer would cut from a box-shadow; it takes no
- * pointer of its own, so only the dialog is in the page's way. It stands under the overlays (50).
+ * pointer of its own, so only the dialog is in the page's way. It stands under the overlays (50). It wears `.kb-glass` for the glass's
+ * tokens, not its ground (base.css), so it paints nothing: a ground here filled the chamfer's cut corners, cast the glow as a rectangle,
+ * and stayed on the page while the dialog faded out on close.
  */
 .kb-float {
   position: fixed;
   z-index: 40;
   width: max-content;
   max-width: calc(100vw - 8px);
+  background: none;
   pointer-events: none;
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--kb-float-glow, var(--kb-glass-neon)) 60%, transparent));
 }

@@ -2,7 +2,9 @@
  * What a toolbar press does to the draft: pure functions from the text and the selection to the new
  * text and the selection after. The box applies the result; nothing here touches the page.
  */
-export type Tool = 'bold' | 'italic' | 'underline' | 'strike' | 'link' | 'image' | 'code' | 'list';
+import { parse, type BbNode } from '../../bbcode/parse.ts';
+
+export type Tool = 'bold' | 'italic' | 'underline' | 'strike' | 'link' | 'image' | 'code' | 'list' | 'spoiler' | 'video';
 
 export interface Edited {
   readonly text: string;
@@ -31,6 +33,19 @@ export function applyTool(tool: Tool, text: string, start: number, end: number):
     const at = start + '[url='.length;
     return { text: `${text.slice(0, start)}[url=]${selected}[/url]${text.slice(end)}`, start: at, end: at };
   }
+  if (tool === 'spoiler') {
+    const selected = text.slice(start, end);
+    if (selected !== '' && !selected.includes('\n')) return wrap(text, start, end, '[ispoiler]', '[/ispoiler]');
+    /* Anything else is the toggle; the cursor waits where its text goes. */
+    const at = start + '[spoiler='.length;
+    return { text: `${text.slice(0, start)}[spoiler=]${selected}[/spoiler]${text.slice(end)}`, start: at, end: at };
+  }
+  if (tool === 'video') {
+    if (/^https?:\/\/\S+$/u.test(text.slice(start, end))) return wrap(text, start, end, '[video]', '[/video]');
+    /* Words selected are not a video: they stay, and the bare tag goes in after them. */
+    const at = end + '[video]'.length;
+    return { text: `${text.slice(0, end)}[video][/video]${text.slice(end)}`, start: at, end: at };
+  }
   if (tool === 'list') {
     const selected = text.slice(start, end);
     if (selected === '') {
@@ -43,6 +58,40 @@ export function applyTool(tool: Tool, text: string, start: number, end: number):
   const [open, close] = TAGS[tool];
   return wrap(text, start, end, open, close);
 }
+
+/**
+ * The selection wrapped as a counterfeit quote of a character: `[quote=<name> user=<id>]`. A name with a space or `=` is quoted so the parser reads it whole;
+ * one with a `"` in it is left bare (the parser's quoted form cannot hold one), which reads back whole unless it begins with one.
+ */
+export function quoteSomeone(text: string, start: number, end: number, character: { readonly id: string; readonly name: string }): Edited {
+  const name = /[\s=]/u.test(character.name) && !character.name.includes('"') ? `"${character.name}"` : character.name;
+  const named = `[quote=${name} user=${character.id}]`;
+  /* A name the parser would not read back as exactly this counterfeit (a `]` ends the tag early, a `[` or a lone leading `"` makes the opener text, an Act id reads as a real quote) is left out: the head names the character from the id. */
+  const back = parse(`${named}x[/quote]`);
+  const whole = back.length === 1 && back[0]!.type === 'counterfeit' && back[0]!.name === character.name && back[0]!.user === character.id;
+  return wrap(text, start, end, whole ? named : `[quote user=${character.id}]`, '[/quote]');
+}
+
+/**
+ * The characters a draft puts words in the mouth of: the distinct `user` ids of its counterfeit quotes (a quote with a typed name, or none, and `user=<id>`), in the
+ * order they are named, at most `FRAMED_MOST`. A real quote of an Act, and a counterfeit that names no character, add none. The server looks at no more than five.
+ */
+export const FRAMED_MOST = 5;
+export function framedIn(draft: string): string[] {
+  const found = new Set<string>();
+  const walk = (nodes: readonly BbNode[]) => {
+    for (const n of nodes) {
+      if (found.size >= FRAMED_MOST) return;
+      if (n.type === 'counterfeit' && n.user !== null) found.add(n.user);
+      if ('children' in n) walk(n.children);
+    }
+  };
+  walk(parse(draft));
+  return [...found];
+}
+
+/** The trailing `framing` argument of a send: the draft's framed characters, or no argument at all when it frames none. */
+export const framingArgs = (draft: string): [readonly string[]] | [] => { const f = framedIn(draft); return f.length > 0 ? [f] : []; };
 
 /** The draft with a quote of an Act appended on a line of its own: the whole post, by its Act. */
 export function quoteText(draft: string, act: string, body: string): string {

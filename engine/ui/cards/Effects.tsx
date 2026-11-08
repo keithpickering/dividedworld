@@ -28,6 +28,7 @@ import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, shownPlays, usePl
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
+import { glassInk } from './ink.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 /** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
@@ -295,6 +296,34 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
 
 export { useNarrow, useSheet } from '../media.ts';
 
-/** A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order. */
-export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[]): string | undefined =>
-  ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+/**
+ * The words on a filled tab, `--kb-glass-ink-neon`, as the glass root resolves it now: the instance's key sets it there
+ * (engine/ui/glass/apply.ts, on the document's root), and a change of key (high contrast) re-reads it. Empty where nothing
+ * resolves it, and then no ink can be measured.
+ */
+const ON_INK = '--kb-glass-ink-neon';
+const readOnInk = (): string => (typeof document === 'undefined' ? '' : getComputedStyle(document.documentElement).getPropertyValue(ON_INK).trim());
+/* One observer of the root for the page, however many marks ask, started with the first and stopped with the last. */
+const onInkWatchers = new Set<() => void>();
+let onInkObserver: MutationObserver | null = null;
+const watchOnInk = (changed: () => void) => {
+  onInkWatchers.add(changed);
+  if (!onInkObserver && typeof MutationObserver === 'function' && typeof document !== 'undefined') {
+    onInkObserver = new MutationObserver(() => { for (const w of [...onInkWatchers]) w(); });
+    onInkObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-kb-glass-key', 'data-kb-contrast', 'data-kb-mode'] });
+  }
+  return () => {
+    onInkWatchers.delete(changed);
+    if (onInkWatchers.size === 0) { onInkObserver?.disconnect(); onInkObserver = null; }
+  };
+};
+export const useOnInk = (): string => useSyncExternalStore(watchOnInk, readOnInk, () => '');
+
+/**
+ * A play's ink, where its card chooses one (`CardUi.tag`), given all of this card's plays on the post in play order: lifted
+ * to read on the glass where it is too dark to (`glassInk`, against `onInk` from `useOnInk`), and none where it cannot be read.
+ */
+export const inkOf = (ui: { readonly cards: readonly CardUi[] }, play: CardPlay, plays: readonly CardPlay[], onInk: string): string | undefined => {
+  const chosen = ui.cards.find((c) => c.key === play.card)?.tag?.(play, plays.filter((o) => o.card === play.card));
+  return chosen === undefined ? undefined : glassInk(chosen, onInk);
+};

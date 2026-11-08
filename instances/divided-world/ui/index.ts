@@ -59,32 +59,32 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)
 
 /** Each ledger reason, as the log says it: what the character did or drew, plainly, with the numbers it was settled under. */
 const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, number>>) => string)>> = {
-  'face.cheered': 'Cheered: excited, positive reactions to its posts and cards',
+  'face.cheered': 'Cheered: excited, positive reactions to the character\'s posts and cards',
   'face.liftedAPost': 'Lifted a post: the cheers a post drew after its Sweet card landed there',
-  'face.boredTheRoom': 'Bored the room: bored, negative reactions to its posts and cards',
-  'face.stoleThunder': 'Stole the thunder: its card on another\'s post drew more votes than the post this window',
-  'heel.drewHeat': 'Drew heat: excited, negative reactions to its posts and cards',
-  'heel.stoleThunder': 'Stole the thunder: its Salty card on another\'s post drew more votes than the post this window',
-  'heel.shrugged': 'Shrugged off: calm, positive reactions to its posts and cards',
-  'jabroni.drewTheGroan': 'Drew the groan: bored, negative reactions to its posts and cards',
-  'jabroni.soldTheL': 'Sold the L: a Salty card another player landed on its post',
-  'jabroni.takenSincerely': 'Taken sincerely: excited, positive reactions to its posts and cards',
+  'face.boredTheRoom': 'Bored the room: bored, negative reactions to the character\'s posts and cards',
+  'face.stoleThunder': 'Stole the thunder: a card the character played on another\'s post drew more votes than the post this window',
+  'heel.drewHeat': 'Drew heat: excited, negative reactions to the character\'s posts and cards',
+  'heel.stoleThunder': 'Stole the thunder: a Salty card the character played on another\'s post drew more votes than the post this window',
+  'heel.shrugged': 'Shrugged off: calm, positive reactions to the character\'s posts and cards',
+  'jabroni.drewTheGroan': 'Drew the groan: bored, negative reactions to the character\'s posts and cards',
+  'jabroni.soldTheL': 'Sold the L: a Salty card another player landed on the character\'s post',
+  'jabroni.takenSincerely': 'Taken sincerely: excited, positive reactions to the character\'s posts and cards',
   'lurker.calledIt': 'Called it: among the first to react to a post that then drew a crowd its way',
   'lurker.spunAThread': (n) => {
     const k = num(n, 'lurker.spunThreadRepliers');
-    return `Spun a thread: a thread it spun from another's Act drew ${count(k)} other replier${k === 1 ? '' : 's'}`;
+    return `Spun a thread: a thread the character spun from another's Act drew ${count(k)} other replier${k === 1 ? '' : 's'}`;
   },
-  'lurker.cardDrew': 'Its card drew: reactions to a card it played',
+  'lurker.cardDrew': 'Card drew: reactions to a card the character played',
   'lurker.postedTooMuch': (n) => {
     const k = num(n, 'lurker.postsAllowed');
     return k === 0 ? 'Posted too much: any post at all, since none are free' : `Posted too much: a post past ${count(k)} in one settlement window`;
   },
-  'technician.respected': 'Respected: calm, positive reactions to its posts and cards',
-  'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post of its own',
-  'technician.draggedIn': 'Dragged in: excited, negative reactions to its posts and cards',
-  'tweener.splitTheRoom': 'Split the room: hype and heat on its post or card, paid on the smaller side, each player counted once by where they lean',
-  'tweener.stirredThePot': 'Stirred the pot: hype and heat drawn to another\'s post by players who came after its card, paid on the smaller side',
-  'tweener.shrugged': 'Shrugged off: calm or bored reactions to its posts and cards',
+  'technician.respected': 'Respected: calm, positive reactions to the character\'s posts and cards',
+  'technician.evergreen': 'Evergreen: calm, positive reactions that came or went on an older post by that character',
+  'technician.draggedIn': 'Dragged in: excited, negative reactions to the character\'s posts and cards',
+  'tweener.splitTheRoom': 'Split the room: hype and heat on the character\'s post or card, paid on the smaller side, each player counted once by where they lean',
+  'tweener.stirredThePot': 'Stirred the pot: hype and heat drawn to another\'s post by players who came after the character\'s card, paid on the smaller side',
+  'tweener.shrugged': 'Shrugged off: calm or bored reactions to the character\'s posts and cards',
 };
 
 /** Every reason this instance's classes write, for the test that holds their words to the numbers in force. */
@@ -130,10 +130,10 @@ export const instanceUi: InstanceUi = Object.freeze({
   classLooks: Object.freeze<Record<string, ClassLook>>({
     face: { color: '#2e86de', description: () => 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there.', hurtsBy: () => 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
     heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on.', hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
-    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on its posts.', hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
-    technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to its posts and cards, and more when an old post of its own still draws them.', hurtsBy: () => 'Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
-    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when its card sets someone else\'s post arguing.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
-    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to its cards.`, hurtsBy: (e, span) => `Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
+    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on the character\'s posts.', hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
+    technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to the character\'s posts and cards, and more when an old post still draws them.', hurtsBy: () => 'Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
+    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
+    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to the character's cards.`, hurtsBy: (e, span) => `Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
   reasonWords: (reason: string, params: Readonly<Record<string, number>>) => {
     const w = REASONS[reason];

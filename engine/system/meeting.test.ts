@@ -6,6 +6,7 @@ import { DEMAND_KINDS } from './demands.ts';
 import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
+import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 
 const H = 3_600_000;
 const NOW = Date.parse('2026-11-01T12:00:00Z');
@@ -16,6 +17,7 @@ const OTHER_THREAD = '44444444-4444-4444-8444-444444444444';
 const ANN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const BOB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const HIDDEN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const HIDDEN2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02';
 
 const settings = { ...systemSettings, reactionCap: 3 };
 
@@ -34,6 +36,11 @@ const ctx = (): RepairContext => ({
   successors: new Set(['some-boss']),
   mods: new Set(),
   rules: [],
+  groups: {
+    conferred: new Map([['trialMembers', 'punishment'], ['teachersPet', 'favor']]),
+    capped: new Set([HIDDEN]),
+    held: new Set([BOB]),
+  },
 });
 const move = (demand: unknown) => ({
   kind: 'renameBoard',
@@ -90,7 +97,14 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
   assert.ok(r.ok);
   assert.equal(r.moves.length, 0);
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, pullSlot, repriceSlot, flashSale)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup, pullSlot, repriceSlot, flashSale)'), JSON.stringify(r.trims));
+});
+
+test('a demand only the code sets is dropped when the Boss chooses it, and recorded', () => {
+  const r = repairAnswer(answer({ kind: 'apologyAccepted', params: {} }), ctx());
+  assert.ok(r.ok);
+  assert.equal(r.moves.length, 0);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].demand.kind' && t.predicate.startsWith('oneOf(postsOnBoard')), JSON.stringify(r.trims));
 });
 
 test('an inheritance answer must name a move the Boss was shown, when it was shown a list', () => {
@@ -116,7 +130,7 @@ test('the inheritance section is in plain words, says reviewing is free and what
 
 test('the system prompt carries the Boss\'s career as plain facts, and says so when there is none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
   };
   const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, since: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
   assert.ok(served.includes('Your career, as plain facts'), served);
@@ -126,7 +140,7 @@ test('the system prompt carries the Boss\'s career as plain facts, and says so w
 
 test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at notesRead with the newest kept, and the section is absent when there are none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
     career: { led: [], offices: [] },
   };
   const notes = Array.from({ length: settings.pool.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
@@ -151,7 +165,7 @@ test('the rule\'s schema lists description among the rename\'s params, and the p
   const params = schema.properties.moves.items.properties.params;
   assert.ok('description' in params.properties, JSON.stringify(Object.keys(params.properties)));
   assert.ok(!params.required.includes('description'), 'optional: a Boss that gives none gets the stock line');
-  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   const rename = prompt
     .split('\n').find((l) => l.startsWith('- renameBoard'))!;
   assert.match(rename, /description \(text\)/);
@@ -195,7 +209,7 @@ test('a setRule on a board outside the meeting\'s list, or with a param its pred
 });
 
 test('the prompt lists the predicates a rule may use', () => {
-  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /setRule: set a rule/);
   for (const key of ['minLength', 'noDoublePost', 'repliesOnly']) assert.ok(text.includes(key), key);
 });
@@ -309,27 +323,57 @@ test('a rule that conflicts with the rules in force is dropped and recorded, and
 
 test('the prompt shows each Mod: its name, career, beat preferences, pet rules, temperament, notes, memory and what it spent; and which kinds a Mod may make', () => {
   const mod = {
-    key: M1, name: 'Sir Patrols-a-Lot', temperament: 'fussy about bumps', beats: ['games', 'general'], petRules: ['noDoublePost'],
+    key: M1, name: 'Sir Patrols-a-Lot', pronouns: PRONOUN_PRESETS.they, temperament: 'fussy about bumps', beats: ['games', 'general'], petRules: ['noDoublePost'],
     career: { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00+00:00', until: null, cause: 'seed' }] }, notes: ['Saw a bump in Games.'],
     memory: memoryOf('birdwatching', { opinions: [{ character: ANN, score: 2, note: 'Polite.' }] }),
     granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
   };
-  const facts = { boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
   const text = meetingSystemPrompt({ ...facts, mods: [mod] });
-  for (const piece of ['Sir Patrols-a-Lot', `key ${M1}`, 'Mod Bot from 2026-10-01', 'games, general', 'noDoublePost', 'fussy about bumps', 'Saw a bump in Games.', 'birdwatching', 'Ann the Great 2', 'it spent 2 and 1 goes back to your bank', `Mario Fan Games (${BOARD})`, 'Crack down on bumping.']) {
+  for (const piece of ['Sir Patrols-a-Lot', `key ${M1}`, 'Mod Bot from 2026-10-01', 'games, general', 'noDoublePost', 'fussy about bumps', 'Saw a bump in Games.', 'birdwatching', 'Ann the Great 2', 'they spent 2 and 1 goes back to your bank', `Mario Fan Games (${BOARD})`, 'Crack down on bumping.']) {
     assert.ok(text.includes(piece), `${piece} is in the prompt`);
   }
   assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
   assert.match(text, /renameBoard[^\n]*Made by the Boss\./);
-  assert.match(text, /\(setRule; every other kind stays yours\)/);
+  assert.match(text, /\(setRule, conferGroup punishments; every other kind stays yours\)/);
   assert.match(text, /a rule a Mod sets lasts at most 7 days/);
   assert.match(text, /at most 6 patrols/);
   assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');
   assert.match(meetingSystemPrompt({ ...facts, mods: [] }), /You have no Mod Bots on staff\. Do not answer with orders or patrols\./);
   const fresh = meetingSystemPrompt({ ...facts, mods: [{ ...mod, granted: null, unspent: 0, memory: null, order: null, boards: [], notes: [] }] });
-  assert.match(fresh, /You have never handed it an allowance/);
-  assert.match(fresh, /It has no memory yet/);
-  assert.match(fresh, /Its beat is empty now/);
+  assert.match(fresh, /You have never handed them an allowance/);
+  assert.match(fresh, /They have no memory yet; write their first\./);
+  assert.match(fresh, /Their beat is empty now/);
+});
+
+test('a Mod\'s section is written with its own pronouns: they/them reads "Their beat now", it/its "Its beat now", and the heading and the roster carry the label', () => {
+  const mod = {
+    key: M1, name: 'Sir Patrols-a-Lot', pronouns: PRONOUN_PRESETS.they, temperament: 'fussy', beats: [], petRules: [],
+    career: { led: [], offices: [] }, notes: ['Saw a bump.'], memory: memoryOf('birdwatching'),
+    granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
+  };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'mod-x', name: 'Xe', pronouns: PRONOUN_PRESETS.he }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone' };
+  const they = meetingSystemPrompt({ ...facts, mods: [mod] });
+  assert.ok(they.includes('## Sir Patrols-a-Lot (they/them, key mod-one)'), 'the heading');
+  for (const line of ['They have held no office before.', 'You last handed them 3 moves; they spent 2', 'Their beat now: Mario Fan Games', 'Your standing order to them: Crack down', 'Their memory: hobby birdwatching', 'Their notes since their last memory (their own thoughts;']) assert.ok(they.includes(line), line);
+  const it = meetingSystemPrompt({ ...facts, mods: [{ ...mod, pronouns: PRONOUN_PRESETS.it }] });
+  for (const line of ['## Sir Patrols-a-Lot (it/its, key mod-one)', 'It has held no office before.', 'You last handed it 3 moves; it spent 2', 'Its beat now: Mario Fan Games', 'Its notes since its last memory (its own thoughts;']) assert.ok(it.includes(line), line);
+  assert.ok(they.includes(`${testSystem.roster[0]!.persona}\n\nYour pronouns are she/her (she, her, her, hers, herself).`), 'the self line follows the persona');
+  assert.ok(they.includes('mod-x (Xe, he/him)'), 'the successors\' roster');
+  const section = they.slice(they.indexOf('## Sir Patrols-a-Lot'), they.indexOf('The season is in its last week'));
+  assert.ok(!/ its |\bIt \b/.test(section), section);
+});
+
+test('the inheritance section names no pronoun for the Boss before', () => {
+  const due: InheritedMove = { act: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', kind: 'renameBoard', params: { board: BOARD, name: 'Pie Place' }, landedAt: '2026-10-20T09:00:00Z', expiresAt: null, by: 'The Old Boss', boardName: 'General' };
+  const text = inheritedText([due], 1).join('\n');
+  assert.match(text, /These moves, made by the Boss before you, are still in force\./);
+  assert.ok(!/of theirs/.test(text));
+});
+
+test('the ids the model may use write each character as Name (label)', () => {
+  const text = referenceText({ boards: [], threads: [], characters: [{ id: ANN, name: 'Gloomba', pronouns: PRONOUN_PRESETS.she }, { id: BOB, name: 'Zed', pronouns: PRONOUN_PRESETS.they }] });
+  assert.ok(text.includes(`- Gloomba (she/her): ${ANN}`) && text.includes(`- Zed (they/them): ${BOB}`), text);
 });
 
 test('the rule\'s schema offers orders and patrols, both optional, and an order\'s memory is optional', () => {
@@ -526,10 +570,130 @@ test('the reference text lists the machine\'s slots with their ids, and says the
 });
 
 test('the prompt tells the Boss the machine\'s three moves, their bounds and which carry a demand', () => {
-  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
   assert.match(served, /pullSlot/);
   assert.match(served, /at most 2 slots pulled at once/);
   assert.match(served, /50 to 200 percent/);
   assert.match(served, /24 to 48 hours/);
   assert.match(served, /carries no demand/);
+});
+
+// ---- Member groups (Task 8): the meeting confers groups ----
+
+const groupMove = (params: unknown, demand: unknown, extra: Record<string, unknown> = {}) => ({ ...move(demand), kind: 'conferGroup', params, ...extra });
+const groupAnswer = (...moves: unknown[]) => ({ ...answer(null), moves });
+const apology = { kind: 'apologyAccepted', params: {} };
+const posts = { kind: 'postsOnBoard', params: { board: BOARD, count: 5 } };
+const repairedGroup = (moves: unknown[], extra: Partial<RepairContext> = {}) => {
+  const r = repairAnswer(groupAnswer(...moves), { ...ctx(), isPublic: (id) => id === ANN || id === BOB || id === HIDDEN, ...extra });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('a punishment that names a board gets the apology demand from the code, whatever the model wrote, and the change is recorded', () => {
+  const r = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', board: BOARD }, posts)]);
+  assert.equal(r.moves.length, 1);
+  assert.deepEqual(r.moves[0]!.demand, apology);
+  assert.deepEqual(r.moves[0]!.params, { character: ANN, group: 'trialMembers', board: BOARD });
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].demand' && t.predicate === 'setByCode(apologyAccepted)'), JSON.stringify(r.trims));
+  // The model that already wrote the apology changes nothing, and nothing is recorded.
+  const same = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', board: BOARD }, apology)]);
+  assert.deepEqual(same.moves[0]!.demand, apology);
+  assert.ok(!same.trims.some((t) => t.path === 'moves[0].demand'), JSON.stringify(same.trims));
+});
+
+test('a punishment that names no board keeps the demand the model chose; the apology demand is dropped there, as the code alone sets it', () => {
+  const kept = repairedGroup([groupMove({ character: ANN, group: 'trialMembers' }, posts)]);
+  assert.deepEqual(kept.moves[0]!.demand, posts);
+  const dropped = repairedGroup([groupMove({ character: ANN, group: 'trialMembers' }, apology)]);
+  assert.equal(dropped.moves.length, 0);
+  assert.ok(dropped.trims.some((t) => t.path === 'moves[0].demand.kind' && t.predicate.startsWith('oneOf(postsOnBoard')), JSON.stringify(dropped.trims));
+  // A punishment's board must be a board of the meeting's list.
+  const off = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', board: OTHER_BOARD }, apology)]);
+  assert.equal(off.moves.length, 0);
+  assert.ok(off.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'), JSON.stringify(off.trims));
+  // A punishment carries no check.
+  const checked = repairedGroup([groupMove({ character: ANN, group: 'trialMembers', checkAt: new Date(NOW + 40 * H).toISOString() }, posts)]);
+  assert.equal(checked.moves.length, 1);
+  assert.ok(!('checkAt' in checked.moves[0]!.params));
+  assert.ok(checked.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'punishmentHasNoCheck'), JSON.stringify(checked.trims));
+});
+
+test('a group outside the conferred catalog drops the move and is recorded', () => {
+  for (const group of ['members', 'nonesuch']) {
+    const r = repairedGroup([groupMove({ character: ANN, group }, posts)]);
+    assert.equal(r.moves.length, 0, group);
+    assert.ok(r.trims.some((t) => t.path === 'moves[0].params.group' && t.predicate === 'conferredGroup'), JSON.stringify(r.trims));
+  }
+});
+
+test('a character who is not public now, who is capped or who is held drops the move, each recorded under its own predicate', () => {
+  const cases: [string, string][] = [[HIDDEN2, 'publicCharacter'], [HIDDEN, 'underPunishmentCap'], [BOB, 'inNoGroupMove']];
+  for (const [character, predicate] of cases) {
+    const r = repairedGroup([groupMove({ character, group: 'trialMembers' }, posts)]);
+    assert.equal(r.moves.length, 0, predicate);
+    assert.ok(r.trims.some((t) => t.path === 'moves[0].params.character' && t.predicate === predicate), `${predicate}: ${JSON.stringify(r.trims)}`);
+  }
+  // Two moves on one character in one answer: the second would be refused by the queue, so it is dropped here.
+  const twice = repairedGroup([groupMove({ character: ANN, group: 'trialMembers' }, posts), groupMove({ character: ANN.toUpperCase(), group: 'teachersPet' }, posts, { expires_in_hours: 72 })]);
+  assert.equal(twice.moves.length, 1);
+  assert.ok(twice.trims.some((t) => t.path === 'moves[1].params.character' && t.predicate === 'inNoGroupMove'), JSON.stringify(twice.trims));
+});
+
+test('a favor without a checkAt gets one at half its expiry from its go-live, and the addition is recorded', () => {
+  const r = repairedGroup([groupMove({ character: ANN, group: 'teachersPet' }, posts)]);
+  assert.equal(r.moves.length, 1);
+  const m = r.moves[0]!;
+  assert.equal(m.expiresInHours, 72);
+  assert.equal(m.params['checkAt'], new Date(m.goLiveAt + 36 * H).toISOString());
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'halfExpiry'), JSON.stringify(r.trims));
+  // One the model gave inside the window stays; one outside it is replaced and the change recorded.
+  const inside = new Date(NOW + 30 * H + 10 * H).toISOString();
+  const keeps = repairedGroup([groupMove({ character: ANN, group: 'teachersPet', checkAt: inside }, posts)]);
+  assert.equal(keeps.moves[0]!.params['checkAt'], inside);
+  assert.ok(!keeps.trims.some((t) => t.path === 'moves[0].params.checkAt'));
+  const late = repairedGroup([groupMove({ character: ANN, group: 'teachersPet', checkAt: new Date(NOW + 400 * H).toISOString() }, posts)]);
+  assert.equal(late.moves[0]!.params['checkAt'], new Date(late.moves[0]!.goLiveAt + 36 * H).toISOString());
+  assert.ok(late.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'halfExpiry'));
+});
+
+test('a favor that names a board loses the board, and the trim is recorded; the favor stands', () => {
+  const r = repairedGroup([groupMove({ character: ANN, group: 'teachersPet', board: BOARD }, posts)]);
+  assert.equal(r.moves.length, 1);
+  assert.ok(!('board' in r.moves[0]!.params));
+  assert.deepEqual(r.moves[0]!.demand, posts);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'favorBarsNoBoard'), JSON.stringify(r.trims));
+});
+
+test('namedCharacters includes the character a group move names, so it is checked against who is public now', () => {
+  assert.deepEqual(namedCharacters(groupAnswer(groupMove({ character: ANN.toUpperCase(), group: 'trialMembers' }, posts))), [ANN]);
+});
+
+test('the prompt lists the conferred groups with their tones and the rules for choosing, and says which kinds a Mod may be handed', () => {
+  const mod = { key: M1, name: 'Sir Patrols-a-Lot', pronouns: PRONOUN_PRESETS.it, temperament: 'fussy', beats: [], petRules: [], career: { led: [], offices: [] }, notes: [], memory: null, granted: null, unspent: 0, boards: [], order: null };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [mod] };
+  const text = meetingSystemPrompt({ ...facts, groups: { conferred: [{ key: 'trialMembers', name: 'Trial Members', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', tone: 'favor' }] } });
+  assert.match(text, /trialMembers \(Trial Members\): a punishment/);
+  assert.match(text, /teachersPet \(Teacher's Pet\): a favor/);
+  assert.match(text, /A punishment may name one board[^\n]*accepted apology/);
+  assert.match(text, /A favor bars nothing[^\n]*it names a checkAt[^\n]*demand/);
+  assert.match(text, /capped \(punished[^\n]*or held \(already in a group move\) cannot be chosen/);
+  assert.match(text, /a Mod may be handed setRule and conferGroup punishments on its beat/);
+  assert.ok(!/Group moves\./.test(meetingSystemPrompt(facts)), 'no conferred groups, no section');
+});
+
+
+test('the reference list names the group each character is in now beside its name; a character with none shown is listed as before', () => {
+  const text = referenceText({ boards: [], threads: [], characters: [{ id: ANN, name: 'Ann the Great', pronouns: PRONOUN_PRESETS.she, group: 'Trial Members' }, { id: BOB, name: 'Bob', pronouns: PRONOUN_PRESETS.it }] });
+  assert.match(text, new RegExp(`- Ann the Great \\(she/her\\) \\(Trial Members\\): ${ANN}`));
+  assert.match(text, new RegExp(`- Bob \\(it/its\\): ${BOB}`));
+});
+
+test('a first group move dropped for its board does not reserve its character: a valid second move on the same character stands', () => {
+  const bad = groupMove({ character: ANN, group: 'trialMembers', board: OTHER_BOARD }, apology);
+  const good = groupMove({ character: ANN, group: 'trialMembers' }, posts);
+  const r = repairedGroup([bad, good]);
+  assert.equal(r.moves.length, 1);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'));
+  assert.ok(!r.trims.some((t) => t.path === 'moves[1].params.character'), JSON.stringify(r.trims));
 });

@@ -1,14 +1,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
+import { BBCODE_TAGS, MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
 import type { BbNode } from './parse.ts';
+import { visibleText } from './visible.ts';
 
 const text = (t: string): BbNode => ({ type: 'text', text: t });
 const ACT = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
+/** The tree with each autolink put back as the text it was written as, so a test of the other tags does not see links. */
+function unlinked(input: string): BbNode[] {
+  const walk = (nodes: readonly BbNode[]): BbNode[] => {
+    const out: BbNode[] = [];
+    for (const n of nodes) {
+      const back: BbNode = n.type === 'autolink' ? { type: 'text', text: n.text } : 'children' in n ? { ...n, children: walk(n.children) } : n.type === 'list' ? { ...n, items: n.items.map(walk) } : n;
+      const last = out[out.length - 1];
+      if (back.type === 'text' && last?.type === 'text') out[out.length - 1] = { type: 'text', text: last.text + back.text };
+      else out.push(back);
+    }
+    return out;
+  };
+  return walk(parse(input));
+}
+
 /** Every input in `bad` must come back as exactly itself, as one text node. */
 function assertLiteral(inputs: readonly string[]) {
-  for (const input of inputs) assert.deepEqual(parse(input), [text(input)], `should be literal: ${JSON.stringify(input)}`);
+  for (const input of inputs) assert.deepEqual(unlinked(input), [text(input)], `should be literal: ${JSON.stringify(input)}`);
 }
 
 function depthOf(nodes: readonly BbNode[]): number {
@@ -55,7 +71,7 @@ test('tags nest and tag names ignore case', () => {
 });
 
 test('HTML and unknown tags stay text', () => {
-  assertLiteral(['<script>alert(1)</script>', '[spoiler]x[/spoiler]', '[b ]x[/b ]', 'a [] b', '[', ']', '[[b', '[=x]']);
+  assertLiteral(['<script>alert(1)</script>', '[blink]x[/blink]', '[b ]x[/b ]', 'a [] b', '[', ']', '[[b', '[=x]']);
 });
 
 test('color accepts named colors and hex, normalized to lowercase', () => {
@@ -128,7 +144,7 @@ test('a bare url tag around a javascript target becomes text', () => {
 });
 
 test('a bare url tag around anything but one plain target becomes its own text and keeps what is inside', () => {
-  assert.deepEqual(parse('[url][b]https://example.com[/b][/url]'), [
+  assert.deepEqual(unlinked('[url][b]https://example.com[/b][/url]'), [
     text('[url]'),
     { type: 'bold', children: [text('https://example.com')] },
     text('[/url]'),
@@ -157,7 +173,7 @@ test('img with a data or javascript source becomes text', () => {
 });
 
 test('an img with no closing tag is text and the rest still parses', () => {
-  assert.deepEqual(parse('[img]https://example.com/a.png [b]x[/b]'), [
+  assert.deepEqual(unlinked('[img]https://example.com/a.png [b]x[/b]'), [
     text('[img]https://example.com/a.png '),
     { type: 'bold', children: [text('x')] },
   ]);
@@ -168,8 +184,61 @@ test('a quote names an Act by id', () => {
   assert.deepEqual(parse(`[quote="${ACT.toUpperCase()}"]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
 });
 
-test('a quote that does not name an Act by a well-formed id becomes text', () => {
-  assertLiteral(['[quote]hi[/quote]', '[quote=12]hi[/quote]', '[quote=Some Name]hi[/quote]', `[quote=${ACT}x]hi[/quote]`, '[quote="><script>"]hi[/quote]']);
+const USER = '1b4e28ba-2fa1-11d2-883f-0016d3cca427';
+const fake = (name: string | null, user: string | null, ...children: BbNode[]): BbNode => ({ type: 'counterfeit', name, user, children });
+
+test('a quote with a name that is not an Act id is a counterfeit', () => {
+  assert.deepEqual(parse('[quote=Geno]hi[/quote]'), [fake('Geno', null, text('hi'))]);
+  assert.deepEqual(parse('[quote="Geno Wario"]hi[/quote]'), [fake('Geno Wario', null, text('hi'))]);
+  assert.deepEqual(parse('[quote=Geno Wario]hi[/quote]'), [fake('Geno Wario', null, text('hi'))]);
+  assert.deepEqual(parse('[quote=12]hi[/quote]'), [fake('12', null, text('hi'))]);
+  assert.deepEqual(parse(`[quote=${ACT}x]hi[/quote]`), [fake(`${ACT}x`, null, text('hi'))]);
+  assert.deepEqual(parse('[quote="><script>"]hi[/quote]'), [fake('><script>', null, text('hi'))]);
+});
+
+test('a counterfeit may name a character by id, with or without a typed name', () => {
+  assert.deepEqual(parse(`[quote=Geno user=${USER.toUpperCase()}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote="Geno Wario" user=${USER}]hi[/quote]`), [fake('Geno Wario', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote user=${USER}]hi[/quote]`), [fake(null, USER, text('hi'))]);
+  assert.deepEqual(parse('[quote]hi[/quote]'), [fake(null, null, text('hi'))]);
+});
+
+test('user= is found after any run of whitespace and in any case, never swallowed into the name', () => {
+  assert.deepEqual(parse(`[quote=${ACT} USER=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
+  assert.deepEqual(parse(`[quote=Geno User=${USER}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote=Geno\tuser=${USER}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+  assert.deepEqual(parse(`[quote=Geno  user=${USER}]hi[/quote]`), [fake('Geno', USER, text('hi'))]);
+});
+
+test('a name that is an Act id is a real quote, and user= is dropped', () => {
+  assert.deepEqual(parse(`[quote=${ACT} user=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
+  assert.deepEqual(parse(`[quote="${ACT.toUpperCase()}" user=${USER}]hi[/quote]`), [{ type: 'quote', act: ACT, children: [text('hi')] }]);
+});
+
+test('a name over 80 characters, a malformed user= or an empty name makes the opener and its closer text', () => {
+  assert.deepEqual(parse(`[quote=${'n'.repeat(80)}]x[/quote]`), [fake('n'.repeat(80), null, text('x'))]);
+  assertLiteral([
+    `[quote=${'n'.repeat(81)}]x[/quote]`,
+    `[quote="${'n'.repeat(81)}"]x[/quote]`,
+    '[quote=Geno user=notauuid]x[/quote]',
+    '[quote user=notauuid]x[/quote]',
+    `[quote=${ACT} user=notauuid]x[/quote]`,
+    `[quote user=${USER}x]x[/quote]`,
+    '[quote=]x[/quote]',
+    '[quote="Geno"x]x[/quote]',
+  ]);
+});
+
+test('a counterfeit inside a counterfeit, and inside a real quote', () => {
+  assert.deepEqual(parse('[quote=A]x[quote=B]y[/quote]z[/quote]'), [fake('A', null, text('x'), fake('B', null, text('y')), text('z'))]);
+  assert.deepEqual(parse(`[quote=${ACT}][quote]y[/quote][/quote]`), [{ type: 'quote', act: ACT, children: [fake(null, null, text('y'))] }]);
+});
+
+test('counterfeits are capped by MAX_DEPTH like every tag', () => {
+  const tree = parse('[quote=A]'.repeat(MAX_DEPTH + 5) + 'core' + '[/quote]'.repeat(MAX_DEPTH + 5));
+  assert.ok(depthOf(tree) <= MAX_DEPTH);
+  assert.ok(allText(tree).includes('core'));
+  assert.equal(allText(tree).split('[quote=A]').length - 1, 5);
 });
 
 test('quotes survive nesting inside quotes and other tags', () => {
@@ -233,7 +302,7 @@ test('an unclosed tag closes at the end and keeps its words', () => {
 });
 
 test('an unclosed bare url tag falls back to its words', () => {
-  assert.deepEqual(parse('[url]https://example.com'), [text('[url]https://example.com')]);
+  assert.deepEqual(unlinked('[url]https://example.com'), [text('[url]https://example.com')]);
 });
 
 test('a closing tag with nothing open is text', () => {
@@ -407,7 +476,7 @@ test('a bad img gives up only its own opener, and what follows still parses', ()
 
 test('a code or img tag with an attribute is text and parsing resumes after it', () => {
   assert.deepEqual(parse('[code=x]a[/code]'), [text('[code=x]a[/code]')]);
-  assert.deepEqual(parse('[img=x]https://a.b/c.png[/img]'), [text('[img=x]https://a.b/c.png[/img]')]);
+  assert.deepEqual(unlinked('[img=x]https://a.b/c.png[/img]'), [text('[img=x]https://a.b/c.png[/img]')]);
   assert.deepEqual(parse('[code=x][b]a[/b][/code]'), [text('[code=x]'), { type: 'bold', children: [text('a')] }, text('[/code]')]);
 });
 
@@ -465,7 +534,8 @@ test('a color must be a whole hex value or name, with nothing around it', () => 
 });
 
 test('a quote id must be a whole UUID, with nothing around it', () => {
-  assertLiteral([`[quote=zz${ACT}]x[/quote]`, `[quote=${ACT}zz]x[/quote]`]);
+  assert.deepEqual(parse(`[quote=${ACT}zz]x[/quote]`), [fake(`${ACT}zz`, null, text('x'))]);
+  assert.deepEqual(parse(`[quote=zz${ACT}]x[/quote]`), [fake(`zz${ACT}`, null, text('x'))]);
 });
 
 test('a code or img tag with an attribute never reads its contents raw', () => {
@@ -514,4 +584,311 @@ test('many bad img openers before one closer parse in bounded time', () => {
   const tree = parse('[img]x'.repeat(100_000) + '[/img]');
   assert.ok(performance.now() - started < 3000);
   assert.equal(allText(tree), '[img]x'.repeat(100_000) + '[/img]');
+});
+
+const spoiler = (title: string, ...children: BbNode[]): BbNode => ({ type: 'spoiler', title, children });
+const ispoiler = (...children: BbNode[]): BbNode => ({ type: 'ispoiler', children });
+
+test('[spoiler] is a block with a title, "Spoiler" when none or an empty one is given', () => {
+  assert.deepEqual(parse('[spoiler]x[/spoiler]'), [spoiler('Spoiler', text('x'))]);
+  assert.deepEqual(parse('[spoiler=]x[/spoiler]'), [spoiler('Spoiler', text('x'))]);
+  assert.deepEqual(parse('[spoiler=  ]x[/spoiler]'), [spoiler('Spoiler', text('x'))]);
+  assert.deepEqual(parse('[spoiler=The end]x[/spoiler]'), [spoiler('The end', text('x'))]);
+  assert.deepEqual(parse('[spoiler="Quoted title"]x[/spoiler]'), [spoiler('Quoted title', text('x'))]);
+});
+
+test('a spoiler title is at most 80 characters; a longer one makes the opener text', () => {
+  assert.deepEqual(parse(`[spoiler=${'a'.repeat(80)}]x[/spoiler]`), [spoiler('a'.repeat(80), text('x'))]);
+  assertLiteral([`[spoiler=${'a'.repeat(81)}]x[/spoiler]`]);
+});
+
+test('a spoiler holds anything, other spoilers included', () => {
+  assert.deepEqual(parse('[spoiler=a][spoiler=b][b]x[/b][/spoiler][/spoiler]'), [
+    spoiler('a', spoiler('b', { type: 'bold', children: [text('x')] })),
+  ]);
+  assert.equal(parse(`[spoiler][quote=${ACT}]q[/quote][list][*]i[/list][/spoiler]`)[0]?.type, 'spoiler');
+});
+
+test('[ispoiler] is inline and takes inline formatting', () => {
+  assert.deepEqual(parse('a[ispoiler]b[/ispoiler]c'), [text('a'), ispoiler(text('b')), text('c')]);
+  assert.deepEqual(parse('[ispoiler][b]x[/b][/ispoiler]'), [ispoiler({ type: 'bold', children: [text('x')] })]);
+  assert.deepEqual(parse('[ispoiler]x'), [ispoiler(text('x'))]);
+  assertLiteral(['[ispoiler=x]a[/ispoiler]', '[/ispoiler]', '[/spoiler]']);
+});
+
+test('a block tag opened inside [ispoiler] is text, and so is its closer', () => {
+  assert.deepEqual(parse('[ispoiler]a[quote]b[/quote]c[/ispoiler]'), [ispoiler(text('a[quote]b[/quote]c'))]);
+  assert.deepEqual(parse(`[ispoiler][quote=${ACT}]b[/quote][/ispoiler]`), [ispoiler(text(`[quote=${ACT}]b[/quote]`))]);
+  assert.deepEqual(parse('[ispoiler][quote=Geno]b[/quote][/ispoiler]'), [ispoiler(text('[quote=Geno]b[/quote]'))]);
+  assert.deepEqual(parse('[ispoiler][list][*]one[/list][/ispoiler]'), [ispoiler(text('[list][*]one[/list]'))]);
+  assert.deepEqual(parse('[ispoiler][spoiler]s[/spoiler][/ispoiler]'), [ispoiler(text('[spoiler]s[/spoiler]'))]);
+  assert.deepEqual(parse('[ispoiler][code]c[/code][/ispoiler]'), [ispoiler(text('[code]c[/code]'))]);
+});
+
+test('a block closer inside [ispoiler] does not close a block opened outside it', () => {
+  assert.deepEqual(parse('[spoiler=t]a[ispoiler]b[/spoiler]c[/ispoiler]d[/spoiler]'), [
+    spoiler('t', text('a'), ispoiler(text('b[/spoiler]c')), text('d')),
+  ]);
+});
+
+test('a block tag is a tag again once the [ispoiler] is closed', () => {
+  assert.deepEqual(parse('[ispoiler]a[/ispoiler][spoiler]b[/spoiler]'), [ispoiler(text('a')), spoiler('Spoiler', text('b'))]);
+});
+
+test('[ispoiler] works inside [spoiler]', () => {
+  assert.deepEqual(parse('[spoiler]a[ispoiler]b[/ispoiler][/spoiler]'), [spoiler('Spoiler', text('a'), ispoiler(text('b')))]);
+});
+
+// ---- video ----
+
+const YT = 'dQw4w9WgXcQ';
+const ytVideo = {
+  provider: 'youtube', id: YT, src: `https://www.youtube-nocookie.com/embed/${YT}`, url: `https://youtu.be/${YT}`,
+};
+
+test('[video] with a recognized URL is a video; [youtube] takes a URL or a bare id', () => {
+  assert.deepEqual(parse(`[video]https://youtu.be/${YT}[/video]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`[VIDEO] https://youtu.be/${YT} [/VIDEO]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`[youtube]https://youtu.be/${YT}[/youtube]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`[youtube]${YT}[/youtube]`), [{ type: 'video', video: ytVideo }]);
+  assert.deepEqual(parse(`a[video]https://vimeo.com/12[/video]b`).map((n) => n.type), ['text', 'video', 'text']);
+});
+
+test('a bare id is for [youtube] only; a URL no provider matches leaves only the opener as text', () => {
+  assert.deepEqual(parse(`[video]${YT}[/video]`), [text(`[video]${YT}[/video]`)]);
+  assert.deepEqual(parse(`[youtube]short[/youtube]`), [text('[youtube]short[/youtube]')]);
+  assertLiteral([
+    '[video]https://example.com/page[/video]', '[video]javascript:alert(1)[/video]', '[video]http://a.example/x.mp4[/video]',
+    '[video]https://youtube.com.evil.example/watch?v=dQw4w9WgXcQ[/video]', '[video][/video]', '[video=x]https://youtu.be/dQw4w9WgXcQ[/video]',
+  ]);
+  assert.deepEqual(parse('[video]nope [b]b[/b][/video]'), [text('[video]nope '), { type: 'bold', children: [text('b')] }, text('[/video]')]);
+});
+
+test('[video] with no closer is text, and the rest still parses', () => {
+  assert.deepEqual(unlinked(`[video]https://youtu.be/${YT} [b]x[/b]`), [text(`[video]https://youtu.be/${YT} `), { type: 'bold', children: [text('x')] }]);
+  assert.deepEqual(parse('[video]'), [text('[video]')]);
+});
+
+test('a video is a block: inside an inline spoiler it is text', () => {
+  assert.deepEqual(parse(`[ispoiler][video]https://youtu.be/${YT}[/video][/ispoiler]`), [
+    { type: 'ispoiler', children: [text(`[video]https://youtu.be/${YT}[/video]`)] },
+  ]);
+});
+
+test('video and youtube are listed tags', () => {
+  assert.ok(BBCODE_TAGS.includes('video') && BBCODE_TAGS.includes('youtube'));
+});
+
+test('many unclosed [video] openers cost one search, not one each', () => {
+  const t0 = Date.now();
+  parse('[video]https://youtu.be/dQw4w9WgXcQ'.repeat(35_000));
+  parse('[video]' + 'x'.repeat(5000) + '[youtube]'.repeat(10_000) + '[/video]');
+  assert.ok(Date.now() - t0 < 2000);
+});
+
+test('a link or another [ispoiler] opened inside [ispoiler] is text, since the spoiler is a button', () => {
+  assert.deepEqual(parse('[ispoiler][url=https://x.y]a[/url][/ispoiler]'), [ispoiler(text('[url=https://x.y]a[/url]'))]);
+  assert.deepEqual(parse('[ispoiler][url]https://x.y[/url][/ispoiler]'), [ispoiler(text('[url]https://x.y[/url]'))]);
+  assert.deepEqual(parse('[ispoiler][ispoiler]a[/ispoiler]b[/ispoiler]'), [ispoiler(text('[ispoiler]a')), text('b[/ispoiler]')]);
+  assert.deepEqual(parse('[url=https://x.y]a[ispoiler]b[/ispoiler]c[/url]'), [
+    { type: 'url', href: 'https://x.y', children: [text('a'), ispoiler(text('b')), text('c')] },
+  ]);
+  assert.deepEqual(parse('[ispoiler]a[/ispoiler][url=https://x.y]b[/url]'), [ispoiler(text('a')), { type: 'url', href: 'https://x.y', children: [text('b')] }]);
+});
+
+test('an empty [ispoiler] is an empty spoiler node', () => {
+  assert.deepEqual(parse('[ispoiler][/ispoiler]'), [ispoiler()]);
+});
+
+test('center, left and right align a block; they take no attribute, and [align=...] is not a tag', () => {
+  for (const a of ['center', 'left', 'right'] as const) {
+    assert.deepEqual(parse(`[${a}]x[/${a}]`), [{ type: 'align', align: a, children: [text('x')] }]);
+  }
+  assert.deepEqual(parse('[CENTER]x[/Center]'), [{ type: 'align', align: 'center', children: [text('x')] }]);
+  assertLiteral(['[center=x]x[/center]', '[align=center]x[/align]', '[align]x[/align]', '[align=left]x[/align]']);
+});
+
+test('hr stands alone, and its closer is text', () => {
+  assert.deepEqual(parse('[hr]'), [{ type: 'hr' }]);
+  assert.deepEqual(parse('a[hr]b'), [text('a'), { type: 'hr' }, text('b')]);
+  assert.deepEqual(parse('[hr][/hr]'), [{ type: 'hr' }, text('[/hr]')]);
+  assertLiteral(['[hr=1]', '[/hr]']);
+});
+
+test('sub, sup, marquee and rainbow are containers without an attribute', () => {
+  for (const t of ['sub', 'sup', 'marquee', 'rainbow'] as const) {
+    assert.deepEqual(parse(`[${t}]x[/${t}]`), [{ type: t, children: [text('x')] }]);
+    assertLiteral([`[${t}=1]x[/${t}]`]);
+  }
+});
+
+test('font takes a name from the list, without regard to case; any other font is text', () => {
+  assert.deepEqual(parse('[font=Verdana]x[/font]'), [{ type: 'font', font: 'verdana', children: [text('x')] }]);
+  assert.deepEqual(parse('[font=times new roman]x[/font]'), [{ type: 'font', font: 'times new roman', children: [text('x')] }]);
+  assert.deepEqual(parse('[font="Comic Sans MS"]x[/font]'), [{ type: 'font', font: 'comic sans ms', children: [text('x')] }]);
+  for (const f of ['Verdana', 'Arial', 'Tahoma', 'Trebuchet MS', 'Georgia', 'Times New Roman', 'Courier New', 'Comic Sans MS', 'Impact']) {
+    assert.equal(parse(`[font=${f}]x[/font]`)[0]?.type, 'font', f);
+  }
+  assertLiteral(['[font=Papyrus]x[/font]', '[font]x[/font]', '[font=Arial, evil]x[/font]', '[font=Arial;x]x[/font]']);
+});
+
+test('glow and shadow take an optional safe color', () => {
+  assert.deepEqual(parse('[glow]x[/glow]'), [{ type: 'glow', color: null, children: [text('x')] }]);
+  assert.deepEqual(parse('[glow=Red]x[/glow]'), [{ type: 'glow', color: 'red', children: [text('x')] }]);
+  assert.deepEqual(parse('[shadow=#0af]x[/shadow]'), [{ type: 'shadow', color: '#0af', children: [text('x')] }]);
+  assert.deepEqual(parse('[shadow]x[/shadow]'), [{ type: 'shadow', color: null, children: [text('x')] }]);
+  assertLiteral(['[glow=url(x)]x[/glow]', '[shadow=notacolor]x[/shadow]']);
+});
+
+test('highlight takes an optional safe color, yellow by default', () => {
+  assert.deepEqual(parse('[highlight]x[/highlight]'), [{ type: 'highlight', color: 'yellow', children: [text('x')] }]);
+  assert.deepEqual(parse('[highlight=navy]x[/highlight]'), [{ type: 'highlight', color: 'navy', children: [text('x')] }]);
+  assertLiteral(['[highlight=expression(x)]x[/highlight]']);
+});
+
+const noparse = (t: string): BbNode => ({ type: 'noparse', text: t });
+test('noparse is its contents, as one noparse node', () => {
+  assert.deepEqual(parse('[noparse][b]x[/b][/noparse]'), [noparse('[b]x[/b]')]);
+  assert.deepEqual(parse('a[NOPARSE][i]x[/NoParse]b'), [text('a'), noparse('[i]x'), text('b')]);
+  assert.deepEqual(parse('a[noparse][url=javascript:x]y[/url][/noparse]b'), [text('a'), noparse('[url=javascript:x]y[/url]'), text('b')]);
+  assert.deepEqual(parse('[noparse][/noparse]'), []);
+  // No closer, or an attribute: only the opener is text, and the rest parses as usual.
+  assert.deepEqual(parse('[noparse][b]x[/b]'), [text('[noparse]'), { type: 'bold', children: [text('x')] }]);
+  assert.deepEqual(parse('[noparse=1][b]x[/b][/noparse]'), [text('[noparse=1]'), { type: 'bold', children: [text('x')] }, text('[/noparse]')]);
+});
+
+test('a layout tag is text, with its closer, inside an inline spoiler; the inline effects are not', () => {
+  const t = parse('[ispoiler][center]x[/center][left]z[/left][right]w[/right][marquee]y[/marquee][hr][/ispoiler]');
+  assert.deepEqual(t, [{ type: 'ispoiler', children: [text('[center]x[/center][left]z[/left][right]w[/right][marquee]y[/marquee][hr]')] }]);
+  assert.deepEqual(parse('[ispoiler][glow]x[/glow][/ispoiler]')[0], { type: 'ispoiler', children: [{ type: 'glow', color: null, children: [text('x')] }] });
+});
+
+test('the new tags are named for a rule that names one', () => {
+  for (const t of ['center', 'left', 'right', 'hr', 'sub', 'sup', 'font', 'marquee', 'glow', 'shadow', 'rainbow', 'highlight', 'noparse']) assert.ok(BBCODE_TAGS.includes(t), t);
+});
+
+/* Auto-linking (design 4): a bare address in text becomes an `autolink`; its words stay the post's own. */
+const links = (input: string): string[] => {
+  const found: string[] = [];
+  const visit = (nodes: readonly BbNode[]) => {
+    for (const n of nodes) {
+      if (n.type === 'autolink') found.push(n.href);
+      if ('children' in n) visit(n.children);
+      if (n.type === 'list') for (const item of n.items) visit(item);
+    }
+  };
+  visit(parse(input));
+  return found;
+};
+
+test('an address mid-sentence is split out as an autolink, the words around it kept', () => {
+  assert.deepEqual(parse('see https://x.example/a now'), [text('see '), { type: 'autolink', href: 'https://x.example/a', text: 'https://x.example/a' }, text(' now')]);
+  assert.deepEqual(parse('https://x.example'), [{ type: 'autolink', href: 'https://x.example', text: 'https://x.example' }]);
+});
+
+test('trailing punctuation and an unmatched closer stay outside the address', () => {
+  assert.deepEqual(parse('go http://x.example/a.'), [text('go '), { type: 'autolink', href: 'http://x.example/a', text: 'http://x.example/a' }, text('.')]);
+  assert.deepEqual(parse('(see https://x.example/a)'), [text('(see '), { type: 'autolink', href: 'https://x.example/a', text: 'https://x.example/a' }, text(')')]);
+  assert.deepEqual(links('x https://x.example/a?!;:, y'), ['https://x.example/a']);
+  assert.deepEqual(links('[https://x.example/a]'), ['https://x.example/a']);
+  // A closer with its opener inside the address belongs to it.
+  assert.deepEqual(links('https://x.example/b_(c) and https://x.example/d_(e).'), ['https://x.example/b_(c)', 'https://x.example/d_(e)']);
+  assert.deepEqual(links('(https://x.example/b_(c))'), ['https://x.example/b_(c)']);
+});
+
+test('a query and a fragment are part of the address', () => {
+  assert.deepEqual(links('at https://x.example/p?a=1&b=2#frag, ok'), ['https://x.example/p?a=1&b=2#frag']);
+});
+
+test('inside [url], [img], [code], [noparse], [video] and [ispoiler] an address is not split', () => {
+  for (const input of [
+    '[url=https://a.example]see https://x.example/a[/url]',
+    '[url]https://x.example/a[/url]',
+    '[code]https://x.example/a[/code]',
+    '[noparse]https://x.example/a[/noparse]',
+    '[ispoiler]https://x.example/a[/ispoiler]',
+    '[ispoiler][b]https://x.example/a[/b][/ispoiler]',
+  ]) assert.deepEqual(links(input), [], input);
+  assert.deepEqual(links('[img]https://x.example/a.png[/img][video]https://youtu.be/dQw4w9WgXcQ[/video]'), []);
+  // The rest of the post still links, and so does a spoiler's block form.
+  assert.deepEqual(links('[ispoiler]https://a.example[/ispoiler] https://b.example'), ['https://b.example']);
+  assert.deepEqual(links('[spoiler]https://a.example[/spoiler]'), ['https://a.example']);
+});
+
+test('an address inside bold links inside the bold, before its period', () => {
+  const tree = parse('[b]see https://x.example/a.[/b]');
+  assert.deepEqual(tree, [{ type: 'bold', children: [text('see '), { type: 'autolink', href: 'https://x.example/a', text: 'https://x.example/a' }, text('.')] }]);
+  assert.deepEqual(links('[list][*]https://l.example/1,[*]two[/list]'), ['https://l.example/1']);
+});
+
+test('javascript:, data: and refused addresses are not linked', () => {
+  for (const input of ['javascript:alert(1)', 'data:text/html,x', 'http://', 'https://user@evil.example/', 'https://a..b/', 'ftp://x.example/a']) {
+    assert.deepEqual(links(input), [], input);
+  }
+  assert.deepEqual(parse('javascript:alert(1)'), [text('javascript:alert(1)')]);
+  // The address ends at a character safeHref refuses.
+  assert.deepEqual(links('https://x.example/a"b'), ['https://x.example/a']);
+  assert.deepEqual(links('http://exa"mple.com'), []);
+});
+
+test('a long run of schemes, and of valid addresses, stays linear', () => {
+  const t0 = Date.now();
+  parse('http://'.repeat(60_000));
+  parse('http://http://'.repeat(30_000) + 'x');
+  parse('https://a.example/'.repeat(1) + 'a'.repeat(300_000));
+  parse('http://a.example/p '.repeat(20_000));
+  parse('(' .repeat(100_000) + 'https://x.example/' + ')'.repeat(100_000));
+  assert.ok(Date.now() - t0 < 3000, `took ${Date.now() - t0}ms`);
+});
+
+test('the visible text of a post with an address is what it was before auto-linking', () => {
+  const recorded: [string, string][] = [
+  ["see https://x.example/a. and more", "see https://x.example/a. and more"],
+  ["(go to http://a.example/b_(c)) now", "(go to http://a.example/b_(c)) now"],
+  ["ca[b]ts https://x.example/q?a=1&b=2#frag[/b] dogs", "cats https://x.example/q?a=1&b=2#frag dogs"],
+  ["a [url=https://l.example]https://in.example[/url] b https://out.example/z", "a \n b https://out.example/z"],
+  ["x[quote=0f8fad5b-d9cb-469f-a165-70867728950e]https://q.example[/quote]y https://z.example", "x\ny https://z.example"],
+  ["[ispoiler]https://s.example/a[/ispoiler] tail http://t.example", "https://s.example/a tail http://t.example"],
+  ["[list][*]https://l.example/1,[*]two http://l.example/2[/list]", "\nhttps://l.example/1,\ntwo http://l.example/2\n"],
+  ["javascript:alert(1) data:text/html,x https://ok.example/p;", "javascript:alert(1) data:text/html,x https://ok.example/p;"],
+  ["[noparse]https://n.example[/noparse] https://m.example", "https://n.example https://m.example"],
+  ["[code]https://c.example[/code] https://d.example", "\n https://d.example"],
+  ["ca[b]ts[/b] and [i][color=red]dogs[/color][/i]", "cats and dogs"],
+  ["before https://a.example/x!? after", "before https://a.example/x!? after"],
+  ];
+  for (const [input, expected] of recorded) assert.equal(visibleText(parse(input)), expected, input);
+});
+
+test('a literal tag closer after an address stays text after the link', () => {
+  assert.deepEqual(parse('[img=x]https://a.b/c.png[/img]'), [text('[img=x]'), { type: 'autolink', href: 'https://a.b/c.png', text: 'https://a.b/c.png' }, text('[/img]')]);
+  assert.deepEqual(links('https://a.b/x[/b]'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/x[b]y'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/x[color=red'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/x[*]'), ['https://a.b/x']);
+  assert.deepEqual(links('https://a.b/w[1]'), ['https://a.b/w[1]']);
+  assert.deepEqual(links('https://a.b/w[a-b]'), ['https://a.b/w[a-b]']);
+});
+
+test('a refused character inside the host leaves the whole run unlinked, one in the path only cuts', () => {
+  assert.deepEqual(links('http://exa"mple.com'), []);
+  assert.deepEqual(links('http://exa<mple.com/p'), []);
+  assert.deepEqual(links('http://a.example/p"q'), ['http://a.example/p']);
+  assert.deepEqual(links('http://a.example "q'), ['http://a.example']);
+});
+
+test('an auto-linked address at the maximum length links and one past it stays text', () => {
+  const base = 'https://a.example/';
+  const ok = base + 'a'.repeat(MAX_URL_LENGTH - base.length);
+  assert.equal(ok.length, MAX_URL_LENGTH);
+  assert.deepEqual(links(ok), [ok]);
+  assert.deepEqual(links(ok + 'a'), []);
+});
+
+test('tag-shaped scans stay linear', () => {
+  for (const unit of ['https://a.b/[x', 'https://a.b/[/b]']) {
+    const started = performance.now();
+    parse(unit.repeat(100000));
+    const ms = performance.now() - started;
+    assert.ok(ms < 3000, `${unit} took ${ms}ms`);
+  }
 });

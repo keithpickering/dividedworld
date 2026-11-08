@@ -1,0 +1,46 @@
+/*
+ * The Signal spinner (Spinner.tsx): four bars, 4 by 18 px with 3 px gaps, each slanted like the
+ * glass's skewed controls, rising from a third of their height to full in a wave. Every color is
+ * currentColor, so the control around it sets it. Under Motion Off nothing moves: the bars stand
+ * lit at 0.4, 0.6, 0.8 and 1.
+ */
+.kb-spinner {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.kb-spinner > i {
+  display: block;
+  width: 4px;
+  height: 100%;
+  background: currentColor;
+  transform-origin: bottom;
+  transform: skewX(-10deg) scaleY(0.3);
+  animation: kb-spinner-rise 1000ms infinite ease-in-out;
+}
+.kb-spinner > i:nth-child(2) { animation-delay: 120ms; }
+.kb-spinner > i:nth-child(3) { animation-delay: 240ms; }
+.kb-spinner > i:nth-child(4) { animation-delay: 360ms; }
+
+@keyframes kb-spinner-rise {
+  0%, 100% { transform: skewX(-10deg) scaleY(0.3); opacity: 0.5; }
+  40% { transform: skewX(-10deg) scaleY(1); opacity: 1; }
+}
+
+/* Off: the device's reduced motion (unless the player turned motion on), then the player's own Off. */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion='full']) .kb-spinner > i { animation: none; opacity: 1; }
+  :root:not([data-kb-motion='full']) .kb-spinner > i:nth-child(1) { transform: skewX(-10deg) scaleY(0.4); }
+  :root:not([data-kb-motion='full']) .kb-spinner > i:nth-child(2) { transform: skewX(-10deg) scaleY(0.6); }
+  :root:not([data-kb-motion='full']) .kb-spinner > i:nth-child(3) { transform: skewX(-10deg) scaleY(0.8); }
+  :root:not([data-kb-motion='full']) .kb-spinner > i:nth-child(4) { transform: skewX(-10deg) scaleY(1); }
+}
+
+:root[data-kb-motion='reduce'] .kb-spinner > i { animation: none; opacity: 1; }
+:root[data-kb-motion='reduce'] .kb-spinner > i:nth-child(1) { transform: skewX(-10deg) scaleY(0.4); }
+:root[data-kb-motion='reduce'] .kb-spinner > i:nth-child(2) { transform: skewX(-10deg) scaleY(0.6); }
+:root[data-kb-motion='reduce'] .kb-spinner > i:nth-child(3) { transform: skewX(-10deg) scaleY(0.8); }
+:root[data-kb-motion='reduce'] .kb-spinner > i:nth-child(4) { transform: skewX(-10deg) scaleY(1); }

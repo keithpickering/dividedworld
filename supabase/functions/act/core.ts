@@ -94,6 +94,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   set_card: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
+  // An apology is the spin of a move's Act (0130), and is heard as one.
+  apologize: (a) => [...thread(a.thread), ...act(a.act)],
   unmask: (a) => act(a),
   // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
   turn: () => [],
@@ -153,7 +155,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     if (who === SIGN_IN || !who) return SIGN_IN;
     let args: Record<string, unknown> = { ...decision.args, who };
     // A play's prices are settings: read as the rows hold them now, not as the code was deployed. A purchase's is its slot's, which the
-    // database holds and compares with the price the screen showed (machine_now, 0117_machine.sql); it is sent as it was shown.
+    // database holds and compares with the price the screen showed (machine_now, 0139_machine.sql); it is sent as it was shown.
     const tuned = decision.needsTarget ? await withDatabaseSettings(instance, dbs.service) : instance;
     if (decision.needsTarget) {
       // The target as its rules see it (card_target_reach, 0055): a post, a character, a thread or a board, with its own effects and

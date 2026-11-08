@@ -38,7 +38,7 @@ export const WELCOME_PATH = '/welcome';
 
 /** What happens next, in the glass's own words: out of character, plain and true of the game as it stands. */
 const NEXT: readonly { readonly title: string; readonly line: string }[] = [
-  { title: 'Your first character', line: 'A name, a class, and when it arrives on the board. Once it has arrived, it can post.' },
+  { title: 'Your first character', line: 'A name, a class, and when the character arrives on the board. Then it can post.' },
   { title: 'A short tour', line: 'On the board, three short notes point out your mask, your orbs and your hand. Skip all tips ends them.' },
   { title: 'Change anything later', line: 'These settings live in Settings › Accessibility, and this letter is the first section of the Strategy Guide.' },
 ];
@@ -47,7 +47,9 @@ export function Welcome() {
   const { api, instance, ui, settings } = useKayfa();
   const { session } = usePlayer();
   const { path } = useLocation();
-  const { prefs, refusal, saved, change } = usePreferenceSaves(session.account);
+  const boot = useBoot();
+  /* The preferences are boot's (the page's start); none is read for them while boot has them. */
+  const { prefs, refusal, saved, change } = usePreferenceSaves(session.account, boot ? boot.preferences : undefined);
   const setup = useId();
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
   const picture = persona.avatar === undefined ? undefined : ui.avatars?.[persona.avatar];

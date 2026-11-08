@@ -89,7 +89,7 @@
  */
 @media (max-width: 40em) {
   .kb-banner > .kb-menu-button { order: 1; }
-  .kb-banner > .kb-address { order: 2; flex: 1 0 100%; }
+  .kb-banner > .kb-banner-side { order: 2; flex: 1 0 100%; align-items: flex-start; }
 }
 
 .kb-logo {
@@ -149,6 +149,67 @@
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* The boards bar ends in Search, at the right as the board draws it, with a magnifier that takes the link's color. */
+.kb-nav li.kb-nav-search {
+  margin-left: auto;
+}
+
+/* The banner's right side: the host line with its meter, and under it the search box on a row of its own. */
+.kb-banner-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.kb-banner-host {
+  line-height: 1.2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 1.2em;
+  min-width: 0;
+}
+
+/*
+ * With the box's row the right column is taller than the name, so the banner's own padding gives that height back: the name keeps its
+ * place (centered) and the banner keeps the board's height.
+ */
+@media (min-width: 40.0625em) {
+  .kb-banner:has(.kb-banner-search) {
+    align-items: center;
+    padding-block: 8px;
+  }
+}
+
+/* A phone's banner has no room for the search box, and its Boards menu holds the Search link. */
+.kb-banner-search {
+  position: relative; /* the suggest list hangs from this, so its right edge is the button's */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.kb-banner-search .kb-search-combo {
+  position: static;
+}
+
+/* The row is a 24px target (WCAG 2.5.8) so the stacked column fits the height the name gives the banner. */
+.kb-banner-search .kb-search-input {
+  min-height: 1.5rem;
+  padding-block: 0.1em;
+}
+
+@media (max-width: 40em) {
+  .kb-banner-search {
+    display: none;
+  }
 }
 
 .kb-menu-button {
@@ -241,7 +302,8 @@ html[data-kb-float='sheet'] .kb-frame {
  * was an ellipse scaled to the window, so at a wide window it was shorter than the column: at 1920x1080 the column's top and bottom
  * ~135px were tinted.) The foot is a linear gradient over 220px, on phones too, and does lie over the posts. Nothing masks. Text
  * under it keeps its contrast (e2e/board-width.spec.ts measures 4.5:1 at the strongest points, and that the column above the foot is
- * untouched at four window sizes). High contrast draws none. Colors and opacities are the instance's (engine/ui/tokens.css); the
+ * untouched at four window sizes). High contrast draws none, and so does Smoke Off (the player's setting for the glass's haze;
+ * Low keeps it, as Low keeps the smoke). Colors and opacities are the instance's (engine/ui/tokens.css); the
  * engine's defaults draw nothing.
  */
 .kb-vignette {
@@ -263,7 +325,8 @@ html[data-kb-float='sheet'] .kb-frame {
     linear-gradient(to left, var(--kb-vignette-side), transparent var(--kb-gutter));
 }
 
-:root[data-kb-contrast='high'] .kb-vignette {
+:root[data-kb-contrast='high'] .kb-vignette,
+:root[data-kb-smoke-level='off'] .kb-vignette {
   display: none;
 }
 
@@ -424,22 +487,13 @@ html[data-kb-float='sheet'] .kb-frame {
   background: var(--kb-glass-field-2);
 }
 
-.kb-hud-avatar img {
-  display: block;
+.kb-hud-avatar .kb-avatar {
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
-.kb-hud-avatar-none {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  font-family: var(--kb-glass-font-display);
-  /* The display face's one weight: the glass's 600 would draw it in a faux bold. */
-  font-weight: 400;
+.kb-hud-avatar .kb-avatar-none {
   font-size: var(--kb-glass-size-display-s);
-  color: var(--kb-glass-text-2);
 }
 
 .kb-hud-name {
@@ -1666,6 +1720,10 @@ html[data-kb-float='sheet'] .kb-frame {
     flex-direction: column;
     gap: 0.3em;
   }
+
+  .kb-nav li.kb-nav-search {
+    margin-left: 0;
+  }
 }
 
 /* Focus moves to the page on a move between pages; the page itself draws no ring for it. */
@@ -1704,4 +1762,52 @@ html[data-kb-float='sheet'] .kb-frame {
 
 .kb-hud-orbs:hover {
   background: var(--kb-glass-panel-soft);
+}
+
+/*
+ * A HUD control waiting on its load shows the Signal spinner (Hud.tsx). On the avatar it covers the picture, on the orbs it sits at the
+ * link's corner, and on Alerts and Menu it follows the words. The color is the control's own.
+ */
+.kb-hud-wait {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.kb-hud-wait > .kb-spinner {
+  height: 14px;
+  gap: 2px;
+}
+
+.kb-hud-avatar {
+  position: relative;
+}
+
+.kb-hud-avatar > .kb-hud-wait {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  color: var(--kb-glass-text-hi);
+  background: color-mix(in srgb, var(--kb-glass-ground) 70%, transparent);
+}
+
+.kb-hud-avatar > .kb-hud-wait > .kb-spinner {
+  height: 18px;
+  gap: 3px;
+}
+
+.kb-hud-orbs {
+  position: relative;
+}
+
+.kb-hud-orbs > .kb-hud-wait {
+  position: absolute;
+  top: 0;
+  right: 0;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-hud-menu[data-kb-pending],
+.kb-hud-alerts[data-kb-pending] {
+  cursor: progress;
 }

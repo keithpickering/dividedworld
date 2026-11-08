@@ -26,8 +26,10 @@ import { useBoard } from '../glass/useBoard.ts';
 import type { Act, Id } from '../data/api.ts';
 import { PlayForm } from './PlayForm.tsx';
 import type { Plays } from './plays.ts';
+import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, EffectsAbove } from '../../rules/cards.ts';
 import { Layers } from '../glass/layer.tsx';
+import { PREPARED_FAILED, usePrepared } from '../glass/prepared.ts';
 
 /** A post a card may be played on, with what the form says about it. */
 export interface PlayTarget {
@@ -37,7 +39,7 @@ export interface PlayTarget {
    * A play beyond a post (the card mechanic's design, section 7): the reach, its target, the target's name as the form says it ("Spritey",
    * "“Glitter everywhere”", "General"), and the live plays above it, which the card's rules see.
    */
-  readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly above?: EffectsAbove };
+  readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly pronouns?: PronounSet; readonly above?: EffectsAbove };
   /** Where focus goes when the form closes, for a target the form cannot find by its post's number (a thread's head, a board's banner). */
   readonly focusBack?: () => HTMLElement | null;
   /** The thread's title. */
@@ -60,9 +62,20 @@ export interface PlayControls {
   readonly setHandOpen: (open: boolean) => void;
   /** Arm a card, or put the armed one back (null). */
   readonly arm: (card: string | null) => void;
-  /** Open the play form for a card on a post; the hand is put away. */
+  /**
+   * Open the play form for a card on a post; the hand is put away. The post is read first and the form opens once it has landed
+   * (`opening` says which trigger waits); Escape cancels the wait.
+   */
   readonly openForm: (card: string, target: PlayTarget) => void;
+  /** The pointer's rest or focus on a trigger: read the post early, so the press that follows opens the form at once. */
+  readonly readyForm: (card: string, target: PlayTarget) => void;
+  /** Whether the form this trigger would open is being read for now. */
+  readonly opening: (card: string, target: PlayTarget) => boolean;
 }
+
+/** What a trigger reads for: the card and the target's own id. */
+const askOf = (card: string, target: PlayTarget): string => `${card}:${target.reach ? target.reach.target : target.post?.id ?? ''}`;
+interface Ask { readonly card: string; readonly target: PlayTarget }
 
 const Ctx = createContext<PlayControls | null>(null);
 
@@ -79,9 +92,16 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   accountNow.current = account;
   /* Each is kept with the account it was made for, and reads as nothing under another: in the commit the account changes, not after it (the clearing effect below runs after that commit, and a render between would show the other account's card; play.test.tsx pins it). */
   const [armedHeld, setArmedHeld] = useState<{ readonly card: string; readonly for: Id | null } | null>(null);
-  const [formHeld, setFormHeld] = useState<{ readonly card: string; readonly target: PlayTarget; readonly for: Id | null } | null>(null);
+  const [formHeld, setFormHeld] = useState<{ readonly card: string; readonly target: PlayTarget; readonly for: Id | null; readonly read: readonly Act[] } | null>(null);
   const [saidHeld, setSaidHeld] = useState<{ readonly words: string; readonly for: Id | null }>({ words: '', for: null });
   const [handOpen, setHandOpenState] = useState(false);
+  const { api } = useKayfa();
+  /* The post is read before the form opens, so the form's first render holds the post as it stands. A target without a post (a thread's head, a board's banner) reads nothing. */
+  const prepared = usePrepared<readonly Act[], Ask>(
+    (_signal, ask) => (ask.target.post ? Promise.resolve(api.actsById([ask.target.post.id])) : Promise.resolve([])),
+    (ask) => askOf(ask.card, ask.target),
+  );
+  const [reading, setReading] = useState<string | null>(null);
   const armed = armedHeld?.for === account ? armedHeld.card : null;
   const form = formHeld?.for === account ? formHeld : null;
   const said = saidHeld.for === account ? saidHeld.words : '';
@@ -110,14 +130,26 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} on a post, the dashed + mark beside its date, to play it there, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
   }, [nameOf, setArmed, setSaid]);
+  const { open: readOpen, early: readEarly, busy: readBusy, failed: readFailed } = prepared;
   const openForm = useCallback((card: string, target: PlayTarget) => {
+    const key = askOf(card, target);
+    if (readBusy && reading === key) return;
     setHandOpen(false);
-    setFormHeld({ card, target, for: accountNow.current });
-  }, [setHandOpen]);
+    setReading(key);
+    const owner = accountNow.current;
+    void readOpen({ card, target }).then((acts) => {
+      if (acts === null || accountNow.current !== owner) return;
+      setFormHeld({ card, target, for: owner, read: acts });
+    });
+  }, [setHandOpen, readOpen, readBusy, reading]);
+  const readyForm = useCallback((card: string, target: PlayTarget) => readEarly({ card, target }), [readEarly]);
+  const opening = useCallback((card: string, target: PlayTarget) => readBusy && reading === askOf(card, target), [readBusy, reading]);
+  /* A read that failed is said to a screen reader in the status the form's states use, until the next press. */
+  useEffect(() => { if (readFailed) setSaid(PREPARED_FAILED); }, [readFailed, setSaid]);
 
   const controls = useMemo<PlayControls>(
-    () => ({ armed, handOpen, setHandOpen, arm, openForm }),
-    [armed, handOpen, setHandOpen, arm, openForm],
+    () => ({ armed, handOpen, setHandOpen, arm, openForm, readyForm, opening }),
+    [armed, handOpen, setHandOpen, arm, openForm, readyForm, opening],
   );
 
   return (
@@ -129,11 +161,13 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
         <PlayForm
           card={form.card}
           target={form.target}
-          onClose={() => setFormHeld(null)}
+          seen={form.read}
+          onClose={() => { setFormHeld(null); prepared.cancel(); }}
           onPlayed={() => {
             if (accountNow.current !== form.for) return;
             const target = form.target;
             setFormHeld(null);
+            prepared.cancel();
             setArmed(null);
             setSaid(`Played ${nameOf(form.card)} on ${target.reach ? target.reach.name : `${target.author}'s post #${target.post?.seq ?? ''}`}.`);
           }}

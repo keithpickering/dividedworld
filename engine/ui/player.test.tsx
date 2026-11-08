@@ -3,9 +3,10 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Estimate, KayfaApi, MyCharacter, Session, Slot } from './data/api.ts';
 import { PlayerProvider, usePlayer } from './player.tsx';
+import { ENGINE_DEFAULT_PRONOUNS } from '../rules/pronouns.ts';
 
 const char = (id: string, over: Partial<MyCharacter> = {}): MyCharacter => ({
-  id, name: id.toUpperCase(), class: 'face', classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
+  id, name: id.toUpperCase(), pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'face', classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false, ...over,
 });
 

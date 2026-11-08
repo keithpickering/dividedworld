@@ -86,7 +86,6 @@ export const ALLOWED_HOOKS = new Set([
   'kb-spin-now-region',
   'kb-origin-update-title',
   'kb-settled-wallet',
-  'kb-settled-wait',
   'kb-acct-choice',
   'kb-board-link',
   'kb-thread-last-link',
@@ -96,6 +95,7 @@ export const ALLOWED_HOOKS = new Set([
   /* A profile's, a postbit's or a staff page's named part: text that takes the surrounding block's type and color,
   named so a theme can restyle it alone. */
   'kb-profile-name',
+  'kb-profile-pronouns',
   'kb-postbit-title',
   'kb-postbit-rank-name',
   'kb-career',

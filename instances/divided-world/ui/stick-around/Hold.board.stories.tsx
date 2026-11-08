@@ -10,6 +10,7 @@
  * (the thread with the post held, the view with its bar at 40%, the view with a long post scrolled midway) where the page
  * itself would move on.
  */
+import { ENGINE_DEFAULT_PRONOUNS } from '../../../../engine/rules/pronouns.ts';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
 import { createPlays, effectCards, readPlays } from '../../../../engine/ui/cards/plays.ts';
@@ -69,7 +70,7 @@ function HeldPost({ stage, long = false, inked = false }: { readonly stage: Hold
       }
       setRead({
         act, person,
-        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', observer: null, quote: null, changed: () => {} },
+        context: { thread, perPage: settings.postsPerPage, summary, tallies, mine, plays, nameOf: () => 'Gloomba', faceOf: () => null, pronounsOf: () => ENGINE_DEFAULT_PRONOUNS, observer: null, quote: null, changed: () => {} },
       });
     })();
   }, [api, settings, ui, thread, seq, tallies, mine, long, inked]);

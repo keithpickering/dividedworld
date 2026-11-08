@@ -79,6 +79,7 @@
 
 .kb-mark-count {
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 /* The edge: along the mark's bottom, in the card's ink, filled to its progress. No progress draws none. */

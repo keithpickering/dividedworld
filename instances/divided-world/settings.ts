@@ -8,6 +8,7 @@
 import { deepFreeze, withOverrides } from '../../engine/rules/instance.ts';
 import { MACHINE_DEFAULTS } from '../../engine/rules/packs.ts';
 import type { Settings } from '../../engine/rules/types.ts';
+import { PRONOUN_PRESETS } from '../../engine/rules/pronouns.ts';
 import { DEFAULT_STRENGTHS } from '../../engine/system/pool.ts';
 
 /** What the engine reads. */
@@ -38,8 +39,14 @@ export const defaults: Settings = deepFreeze<Settings>({
   postsPerPage: 20,
   /** HOT: ten replies in the last 7 days. */
   hotReplies: 10,
+  /** The community writes in English; the stemming follows (a Postgres text search configuration, so `simple` is there for a language it has none for). */
+  searchLanguage: 'english',
+  /** A relevance search ranks the newest 5,000 matches: a common word fills that at once, so a busy instance pays for 5,000 rows, never for millions. */
+  searchRankPool: 5000,
   /** Switched off: The System holds no meeting and lands no move until Task 13 of its plan turns it on, after the screens that show a move's way out exist. */
   systemEnabled: false,
+  /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
+  pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
   meetingCron: '23 9 * * *',
   /**
@@ -103,6 +110,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    * lands; a full bar brings a ban of 1 day, then 3, then 7, and every later ban in the season is 7 days.
    */
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
+  /**
+   * The apology (the member groups design, section 5): a barred character may apologize to one move once a day, the judge hears ten at a run, and its ruling is
+   * at most 80 words.
+   */
+  apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   /** A board's name is at most 60 characters, whoever proposes it. */
   boardNameMaxLength: 60,
   /** A starting point: no move runs longer than six weeks. */

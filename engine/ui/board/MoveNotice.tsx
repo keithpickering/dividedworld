@@ -23,24 +23,24 @@ import { moveKind } from '../../system/moves.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
-import type { BoardName, Character, Id, MoveNotice as Notice } from '../data/api.ts';
+import type { BoardName, Character, Id, MoveNotice as Notice, Office } from '../data/api.ts';
 import { Layers } from '../glass/layer.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { readable } from '../reactions/Reactions.tsx';
 import { Link } from '../router.tsx';
-import { moveLabel, wayOut } from './move-words.ts';
+import { moveLabel, officeRole, wayOut } from './move-words.ts';
 import './move.css';
 
 /**
  * The Act's label in glass: the long label from the move kind's catalog, and `way`, the segment beside it where there is one (the
  * board's notice has it; a move's post in a thread has the label alone, so a page of announcements reads no progress per post).
  */
-export function MoveTag({ kind, way }: { readonly kind: string; readonly way?: ReactNode }) {
+export function MoveTag({ kind, way, office }: { readonly kind: string; readonly way?: ReactNode; /** The office of the staff character who made the move, which decides who the label says made it (a Mod may make some of the Boss's moves). Absent: the Boss. */ readonly office?: Office }) {
   const { ui } = useKayfa();
   return (
     <span className="kb-move-tag" data-kb-move-kind={kind}>
-      <span className="kb-move-label">{moveLabel(kind, ui.copy.roleWord)}</span>
+      <span className="kb-move-label">{moveLabel(kind, officeRole(ui.copy, office))}</span>
       {way}
     </span>
   );
@@ -50,6 +50,8 @@ interface Loaded {
   readonly notice: Notice;
   readonly boss: Character | null;
   readonly boards: readonly BoardName[];
+  /** The name of the character a group move put in a group (the params hold its id); null for another kind, or when it could not be read. */
+  readonly subject: string | null;
 }
 
 function useNotice(act: Id): Loaded | 'failed' | 'none' | null {
@@ -61,8 +63,12 @@ function useNotice(act: Id): Loaded | 'failed' | 'none' | null {
     void (async () => {
       const [notice, boards] = await Promise.all([api.moveNotice(act), api.boardNames()]);
       if (!notice) { if (live) setLoaded('none'); return; }
-      const boss = notice.character ? (await api.characters([notice.character]))[0] ?? null : null;
-      if (live) setLoaded({ notice, boss, boards });
+      const subjectId = notice.kind === 'conferGroup' && typeof notice.params['character'] === 'string' ? notice.params['character'] : null;
+      const [boss, subject] = await Promise.all([
+        notice.character ? api.characters([notice.character]).then((r) => r[0] ?? null) : null,
+        subjectId ? api.characters([subjectId]).then((r) => r[0]?.name ?? null, () => null) : null,
+      ]);
+      if (live) setLoaded({ notice, boss, boards, subject });
     })().catch(() => { if (live) setLoaded('failed'); });
     return () => { live = false; };
   }, [api, act]);
@@ -85,6 +91,7 @@ export function MoveNotice({ act }: { readonly act: Id }) {
       <div className="kb-move-notice">
         <MoveTag
           kind={notice.kind}
+          office={notice.office}
           way={(
             <button ref={way} type="button" className="kb-move-way" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
               {wayOut(notice.demand, notice.progress, notice.expiresAt)}<span aria-hidden="true"> ›</span>
@@ -123,9 +130,16 @@ export function MoveNotice({ act }: { readonly act: Id }) {
 
 /** The overlay: what was done and when, the demand in words, a progress bar, the expiry, and that an admin can reverse it. Plain. */
 function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loaded; readonly onClose: () => void; readonly returnFocusTo: () => HTMLElement | null }) {
-  const { ui } = useKayfa();
-  const { notice, boards } = loaded;
+  const { ui, settings } = useKayfa();
+  const { notice, boards, boss, subject } = loaded;
   const kind = moveKind(notice.kind);
+  const role = officeRole(ui.copy, notice.office);
+  /* A group move names its character, group and board; the params hold ids and keys, and the instance's rows give the names. */
+  const names = {
+    ...(subject !== null ? { character: subject } : {}),
+    ...(settings.groups.find((g) => g.key === notice.params['group']) ? { group: settings.groups.find((g) => g.key === notice.params['group'])!.name } : {}),
+    ...(boards.find((b) => b.id === notice.params['board']) ? { board: boards.find((b) => b.id === notice.params['board'])!.name } : {}),
+  };
   const demand = notice.demand;
   const progress = notice.progress;
   const known = demand !== null && demandKind(demand.kind) !== undefined;
@@ -133,11 +147,11 @@ function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loade
   const was = boards.find((b) => b.id === notice.params['board'])?.was ?? null;
   const unit = known && readProgress ? (readProgress.of === 1 ? demandKind(demand.kind)!.unit.one : demandKind(demand.kind)!.unit.many).toLowerCase() : '';
   return (
-    <Overlay title={moveLabel(notice.kind, ui.copy.roleWord)} surface="log" kicker="This board" className="kb-move-overlay" onClose={onClose} returnFocusTo={returnFocusTo}>
+    <Overlay title={moveLabel(notice.kind, role)} surface="log" kicker="This board" className="kb-move-overlay" onClose={onClose} returnFocusTo={returnFocusTo}>
       <div className="kb-move-detail">
         <h3>What was done</h3>
         <p>
-          {kind ? kind.template(notice.params, ui.copy.roleWord) : moveLabel(notice.kind, ui.copy.roleWord)}
+          {kind ? kind.template(notice.params, role, names) : moveLabel(notice.kind, role)}
           {was !== null && <> It was called {was}.</>} It landed {dayAndTime(notice.landedAt)}.
         </p>
         <h3>The way out</h3>
