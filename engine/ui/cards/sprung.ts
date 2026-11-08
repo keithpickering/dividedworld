@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Id, KayfaApi } from '../data/api.ts';
-import { sprungWords } from './lens-words.ts';
+import { readCaughtFate, sprungWords } from './lens-words.ts';
 
 const kept = new WeakMap<object, Map<Id, Promise<string | null>>>();
 const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v : null);
@@ -24,18 +24,6 @@ export async function readSprungWords(api: Pick<KayfaApi, 'actsById' | 'characte
   const faces = named.length === 0 ? [] : await api.characters([...new Set(named)]);
   const nameOf = (id: Id | null | undefined) => (id ? faces.find((c) => c.id === id)?.name ?? null : null);
   return sprungWords({ setter: nameOf(sprang.character), setAt: set?.createdAt ?? null, quoter: trigger === 'reaction' ? null : nameOf(by?.character), trigger });
-}
-
-/**
- * Where a caught play's card went: the setter's character where the spring says it caught (`did`, written from the face-down Moves on) and the setter is a
- * player; `{}` where the card was spent (a spring written before, or a staff setter, which takes nothing); null where it could not be read.
- */
-export async function readCaughtFate(api: Pick<KayfaApi, 'actsById' | 'characters'>, spring: Id): Promise<{ readonly taken?: string } | null> {
-  const [sprang] = await api.actsById([spring]);
-  if (!sprang || sprang.kind !== 'spring') return null;
-  if (sprang.payload.did !== 'caught' || sprang.character === null) return {};
-  const [setter] = await api.characters([sprang.character]);
-  return setter && setter.staff === undefined ? { taken: setter.name } : {};
 }
 
 /** The fate of a caught play's card, by the spring that caught it; undefined while it is unread or when the spring is unknown. */

@@ -5,6 +5,7 @@
  * player is ever stuck"). Pure: `instanceUiProblems` runs `wordsProblems` over every card's status, and each effect's own
  * tests run `viewProblems` over the views it can show.
  */
+import type { Id, KayfaApi } from '../data/api.ts';
 import type { CardView } from './types.ts';
 
 /** The most words a state or status may run: a heading, not a description. */
@@ -63,4 +64,16 @@ export function sprungWords(f: SprungFacts, zone?: string): string {
   const by = f.quoter ?? 'a post';
   const did = f.trigger === 'quote' ? `sprang when ${by} quoted it` : f.trigger === 'reply' ? `sprang when ${by} replied to it` : f.trigger === 'reaction' ? 'sprang on a reaction' : 'sprang';
   return `${set}; ${did}.`;
+}
+
+/**
+ * Where a caught play's card went: the setter's character where the spring says it caught (`did`, written from the face-down Moves on) and the setter is a
+ * player; `{}` where the card was spent (a spring written before, or a staff setter, which takes nothing); null where it could not be read.
+ */
+export async function readCaughtFate(api: Pick<KayfaApi, 'actsById' | 'characters'>, spring: Id): Promise<{ readonly taken?: string } | null> {
+  const [sprang] = await api.actsById([spring]);
+  if (!sprang || sprang.kind !== 'spring') return null;
+  if (sprang.payload.did !== 'caught' || sprang.character === null) return {};
+  const [setter] = await api.characters([sprang.character]);
+  return setter && setter.staff === undefined ? { taken: setter.name } : {};
 }

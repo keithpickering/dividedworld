@@ -5,8 +5,9 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, sprungWords, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
 import type { CardView } from './types.ts';
+import { caughtWords } from './marks.ts';
 
 const view = (over: Partial<CardView> = {}): CardView => ({ progress: null, state: 'Holding you on this post', yours: false, controls: [], notes: {}, ...over });
 
@@ -70,5 +71,25 @@ describe('sprungWords', () => {
     const said = sprungWords({ setter: 'Pipewrench', setAt: at, quoter: 'Spritey', trigger: 'reaction' }, 'UTC');
     assert.equal(said, 'Set face down by Pipewrench on November 5; sprang on a reaction.');
     assert.ok(!said.includes('Spritey'));
+  });
+});
+
+describe('readCaughtFate: where a caught play\'s card went, for the Lens', () => {
+  const spring = (payload: Record<string, unknown>, character: string | null = 'cPipe') =>
+    ({ id: 'sp', kind: 'spring', character, thread: 't', targetActId: null, seq: null, createdAt: '2026-11-02T09:41:00.000Z', payload, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const api = (sp: unknown, staff: boolean) => ({
+    actsById: async () => [sp],
+    characters: async () => [{ id: 'cPipe', name: 'Pipewrench', ...(staff ? { staff: 'clerk' } : {}) }],
+  }) as never;
+  test('a player setter took the card', async () => {
+    assert.deepEqual(await readCaughtFate(api(spring({ did: 'caught' }), false), 'sp'), { taken: 'Pipewrench' });
+  });
+  test('a staff setter takes nothing: the card is spent', async () => {
+    const fate = await readCaughtFate(api(spring({ did: 'caught' }), true), 'sp');
+    assert.deepEqual(fate, {});
+    assert.equal(caughtWords('Trap Card', fate ?? undefined), 'Caught by a Trap Card. It did nothing, and its card is spent.');
+  });
+  test('a spring written before has no did: the card was spent', async () => {
+    assert.deepEqual(await readCaughtFate(api(spring({ outcome: { do: 'payout' } }), false), 'sp'), {});
   });
 });
