@@ -780,7 +780,7 @@ html[data-kb-float='sheet'] .kb-frame {
   outline-offset: 3px;
 }
 
-/* The mask's name set in the picker's face, unseen, so the HUD can tell whether the picker would cut it (Hud.tsx). */
+/* The mask's name's widest word set in the picker's face, unseen, so the HUD can size the drawn name to the picker's room (Hud.tsx). */
 .kb-hud-name-probe {
   position: absolute;
   visibility: hidden;
