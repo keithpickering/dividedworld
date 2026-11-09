@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=900">
+<title>The React picker with halfway reactions: a board</title>
+<!-- A board of the halfway-reactions design session, drawn 2026-11-09 and not yet approved by the owner. A reference for the
+     look, not code to copy. It extends the approved React board (docs/research/2026-10-29-two-worlds/03-react.html) and the
+     reaction set (docs/plans/2026-11-05-reaction-set-design.md) with four reactions that sit on the lines between two quadrants:
+     😱 between Heat and Hype, 😬 between Heat and Groan, 😐 between Groan and Calm, 😎 between Hype and Calm.
+     The class colors are the approved board's. The frames are built from one data model below so the two layouts cannot drift. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+@font-face { font-family: 'Anton Local'; src: url('../../../instances/divided-world/ui/fonts/Anton-Regular.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Local'; font-weight: 500; src: url('../../../instances/divided-world/ui/fonts/BarlowCondensed-Medium.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Local'; font-weight: 600; src: url('../../../instances/divided-world/ui/fonts/BarlowCondensed-SemiBold.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Local'; font-weight: 800; src: url('../../../instances/divided-world/ui/fonts/BarlowCondensed-ExtraBold.woff2') format('woff2'); }
+
+body { margin: 0; background: #fff; color: #000; font: 12px/1.5 Verdana, Geneva, sans-serif; }
+.page { width: 900px; }
+.page > header { padding: 16px 32px 0; }
+.page h1 { margin: 0 0 4px; font: bold 16px 'Courier New', Courier, monospace; }
+.page p { margin: 0 0 8px; }
+.page label { font-weight: bold; }
+.frame { position: relative; width: 900px; height: 700px; overflow: hidden; background: #fff; border-top: 1px solid #000; }
+.row { display: flex; border-top: 1px solid #000; }
+.phone { position: relative; flex: none; width: 360px; height: 700px; overflow: hidden; background: #0b0814; border-right: 1px solid #000; }
+.notes { flex: 1; padding: 16px 20px; min-width: 0; }
+.notes table { border-collapse: collapse; width: 100%; margin-bottom: 14px; }
+.notes th, .notes td { border: 1px solid #000; padding: 3px 6px; text-align: left; vertical-align: top; }
+.notes th { background: #ddd; }
+.notes td.e { font-size: 20px; line-height: 1.1; text-align: center; }
+
+/* The 2003 board's post, as the React board draws it. */
+.post { display: flex; border: 1px solid #000; margin: 24px 32px 0; }
+.post .who { width: 22%; padding: 8px; border-right: 1px solid #000; box-sizing: border-box; }
+.post .av { width: 80px; height: 100px; margin-top: 8px; border: 1px solid #000; background: repeating-linear-gradient(45deg, rgba(0,0,0,.08) 0 6px, transparent 6px 12px); }
+.post .body { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.post .meta { display: flex; justify-content: space-between; padding: 3px 8px; border-bottom: 1px solid #000; font-size: 10px; color: #555; }
+.post p.t { margin: 0; padding: 10px 8px 14px; }
+.post .bar { margin-top: auto; display: flex; gap: 6px; align-items: center; padding: 4px 8px; border-top: 1px solid #000; font-size: 11px; }
+.post .bar span.c { border: 1px solid #000; padding: 0 5px; }
+.post .bar b.react { font: bold 11px Verdana, sans-serif; color: #fff; background: #000; border: 1px solid #000; padding: 1px 8px; }
+
+/* The picker. Glass type at game sizes: Barlow Condensed at 20px or more, nothing smaller. */
+.pk {
+  --ground: #07050d;
+  --heat: 255 61 87; --hype: 61 184 255; --groan: 255 217 61; --calm: 46 240 160;
+  --t: 52px; --k: 4; --gap: 6px; --pad: 10px; --c: 52px;
+  position: relative; box-sizing: border-box; color: #f1ecff;
+  font-family: 'Barlow Condensed', 'Barlow Local', sans-serif; font-weight: 600;
+  background: var(--ground);
+}
+.pk.pop {
+  position: absolute; left: 158px; top: 214px; width: 584px; padding: 14px 20px 20px;
+  border: 1px solid #c9f8ff;
+  box-shadow: 0 0 0 1px rgba(25,227,255,.3), 0 0 36px rgba(25,227,255,.5), 0 24px 40px rgba(0,0,0,.4);
+  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 24px 100%, 0 calc(100% - 24px));
+}
+.pk.sheet { --t: 48px; --k: 2; --gap: 4px; --pad: 8px; --c: 48px; position: absolute; left: 0; right: 0; bottom: 78px; padding: 12px 16px 12px; border-top: 1px solid #c9f8ff; box-shadow: 0 -8px 30px rgba(25,227,255,.35); }
+.pk .smoke { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.pk > :not(.smoke) { position: relative; }
+.pk .head { display: flex; justify-content: space-between; align-items: baseline; }
+.pk h2 { margin: 0; font: 30px/1 'Anton', 'Anton Local', Impact, sans-serif; letter-spacing: .5px; font-weight: 400; }
+.pk.sheet h2 { font-size: 28px; }
+.pk .left { font-weight: 800; font-size: 21px; letter-spacing: 2px; color: #c9f8ff; }
+.field { margin-top: 10px; padding: 28px 0; }
+.axis { position: absolute; left: 50%; transform: translateX(-50%); font-weight: 800; font-size: 20px; letter-spacing: 3px; color: #e4def7; white-space: nowrap; }
+.axis.top { top: 0; } .axis.bottom { bottom: 0; }
+.pk.sheet .axis { font-size: 20px; }
+
+.g { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) var(--c) minmax(0, 1fr); gap: var(--gap); }
+.cross { position: absolute; background: rgba(241,236,255,.35); pointer-events: none; }
+.cross.v { left: 50%; top: 0; bottom: 0; width: 1px; }
+.cross.h { top: 50%; left: 0; right: 0; height: 1px; }
+
+.quad { display: flex; flex-direction: column; gap: 8px; padding: var(--pad); background: rgb(var(--fill) / var(--tint)); box-shadow: inset 0 0 0 1px rgb(var(--fill) / var(--ring)); }
+.quad.low { flex-direction: column-reverse; }
+.quad .lab { font: 24px/1 'Anton', 'Anton Local', Impact, sans-serif; font-weight: 400; color: var(--large); }
+.pk.sheet .quad .lab { font-size: 26px; line-height: 1.15; }
+.quad.r .lab { text-align: right; }
+.kinds { display: grid; grid-template-columns: repeat(var(--k), var(--t)); gap: 4px; justify-content: start; }
+.quad.r .kinds { justify-content: end; }
+
+.rx { position: relative; z-index: 1; box-sizing: border-box; width: var(--t); height: var(--t); padding: 0; display: flex; align-items: center; justify-content: center; font-size: 26px; line-height: 1; color: #fff; background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.18); cursor: pointer; font-family: 'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif; }
+.rx:hover { background-color: rgba(255,255,255,.12); }
+.rx[data-own] { border: 2px solid #fff; }
+.rx.focus { outline: 3px solid #fff; outline-offset: 3px; }
+
+/* A halfway tile: filled half and half in the two quadrants' colors, split along the line it sits on. */
+.rx.half { background-color: var(--ground); background-image: linear-gradient(var(--dir), rgb(var(--a) / .34) 50%, rgb(var(--b) / .34) 50%); }
+.rx.half:hover { background-image: linear-gradient(var(--dir), rgb(var(--a) / .5) 50%, rgb(var(--b) / .5) 50%); }
+.e-top { grid-column: 2; grid-row: 1; align-self: end; margin-bottom: var(--pad); }
+.e-bottom { grid-column: 2; grid-row: 3; align-self: start; margin-top: var(--pad); }
+.e-left { grid-column: 1; grid-row: 2; justify-self: start; margin-left: var(--pad); }
+.e-right { grid-column: 3; grid-row: 2; justify-self: end; margin-right: var(--pad); }
+
+.hint { margin: 8px 0 0; font-size: 21px; font-weight: 600; color: #e4def7; }
+.pk.sheet .hint { font-size: 20px; }
+
+.guide { position: absolute; pointer-events: none; z-index: 5; border: 0 dashed #ff2bd6; }
+.guide.v { top: 0; bottom: 0; width: 0; border-left-width: 1px; }
+.guide.h { left: 0; right: 0; height: 0; border-top-width: 1px; }
+body:not(.guides) .guide { display: none; }
+
+/* The phone's dimmed board and HUD. */
+.phone .dim { position: absolute; inset: 0 0 78px 0; padding: 16px 16px 0; background: #1a1624; color: #6d6580; font-size: 11px; }
+.phone .dim div { border: 1px solid #3a3350; padding: 8px; margin-bottom: 10px; height: 64px; }
+.phone .hud { position: absolute; left: 0; right: 0; bottom: 0; height: 78px; background: #120d1d; border-top: 1px solid #3a3350; color: #b9afd4; font: 800 20px 'Barlow Condensed', 'Barlow Local', sans-serif; letter-spacing: 2px; padding: 24px 16px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <h1>The React picker with halfway reactions</h1>
+    <p>Four reactions sit on the lines between two quadrants. Each is drawn on its line, filled half and half in the two quadrants' colors. Frame 1 is the popover (the React board's 900 by 700 window, the popover 44px wider). Frame 2 is the phone sheet. <label><input type="checkbox" id="guides"> Show alignment guides</label></p>
+  </header>
+  <div class="frame" id="desktop" aria-label="Desktop popover"></div>
+  <div class="row">
+    <div class="phone" id="phone" aria-label="Phone sheet"></div>
+    <div class="notes" id="notes"></div>
+  </div>
+</div>
+
+<script>
+/* One data model; both layouts are drawn from it. Class colors are the approved board's. */
+const Q = {
+  heat:  { name: 'Heat',  fill: '255 61 87',  large: '#ff8a96', tint: .14, ring: .60, pos: 'tl', kinds: [['tomato','🍅','Tomato'],['vomiting','🤮','Vomiting'],['cursing','🤬','Cursing'],['thumbs-down','👎','Thumbs down']] },
+  hype:  { name: 'Hype',  fill: '61 184 255', large: '#9fdcff', tint: .14, ring: .60, pos: 'tr', kinds: [['fire','🔥','Fire'],['heart','❤️','Heart'],['laughing','😂','Laughing'],['hundred-points','💯','Hundred points']] },
+  groan: { name: 'Groan', fill: '255 217 61', large: '#ffe27a', tint: .11, ring: .55, pos: 'bl', kinds: [['facepalm','🤦','Facepalm'],['eye-roll','🙄','Eye roll'],['crickets','🦗','Crickets'],['yawn','🥱','Yawn']] },
+  calm:  { name: 'Calm',  fill: '46 240 160', large: '#8af7c9', tint: .10, ring: .50, pos: 'br', kinds: [['thumbs-up','👍','Thumbs up'],['folded-hands','🙏','Folded hands'],['salute','🫡','Salute'],['light-bulb','💡','Light bulb']] },
+};
+/* Each halfway reaction: where it sits, the two quadrants it joins (a is the first color, b the second), and the direction the fill splits in. */
+const EDGES = [
+  { key: 'screaming',  emoji: '😱', name: 'Screaming',  at: 'top',    a: 'heat',  b: 'hype',  dir: '90deg',  focus: true },
+  { key: 'grimacing',  emoji: '😬', name: 'Grimacing',  at: 'left',   a: 'heat',  b: 'groan', dir: '180deg' },
+  { key: 'neutral',    emoji: '😐', name: 'Neutral',    at: 'bottom', a: 'groan', b: 'calm',  dir: '90deg' },
+  { key: 'sunglasses', emoji: '😎', name: 'Sunglasses', at: 'right',  a: 'hype',  b: 'calm',  dir: '180deg', own: true },
+];
+const OWN = new Set(['thumbs-up', 'sunglasses']);
+
+const quad = (id, sheet) => {
+  const q = Q[id], right = q.pos === 'tr' || q.pos === 'br', low = q.pos === 'bl' || q.pos === 'br';
+  const col = right ? 3 : 1, row = low ? 3 : 1;
+  const kinds = q.kinds.map(([k, e, n]) => `<button class="rx" data-key="${k}" ${OWN.has(k) ? 'data-own' : ''} aria-label="${n}, ${q.name}${OWN.has(k) ? ', your reaction' : ''}">${e}</button>`).join('');
+  return `<div class="quad ${right ? 'r' : ''} ${low ? 'low' : ''}" role="group" aria-label="${q.name}" data-q="${id}" style="grid-column:${col};grid-row:${row};--fill:${q.fill};--large:${q.large};--tint:${q.tint};--ring:${q.ring}"><div class="lab">${q.name.toUpperCase()}</div><div class="kinds">${kinds}</div></div>`;
+};
+const edge = (e) => `<button class="rx half e-${e.at} ${e.focus ? 'focus' : ''}" data-key="${e.key}" data-edge="${e.at}" ${OWN.has(e.key) ? 'data-own' : ''} aria-label="${e.name}, ${Q[e.a].name} and ${Q[e.b].name}${OWN.has(e.key) ? ', your reaction' : ''}" style="--a:${Q[e.a].fill};--b:${Q[e.b].fill};--dir:${e.dir}">${e.emoji}</button>`;
+
+const smoke = `<svg class="smoke" aria-hidden="true"><defs>
+  <filter id="rA-ID" x="-15%" y="-15%" width="130%" height="130%"><feTurbulence type="fractalNoise" baseFrequency="0.006 0.008" numOctaves="4" seed="44"/><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.8"/><feGaussianBlur stdDeviation="10"/></filter>
+  <filter id="rsoft-ID" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"/></filter>
+  <mask id="rcalm-ID" maskUnits="userSpaceOnUse" x="0" y="0" width="100%" height="100%"><rect width="100%" height="100%" fill="#fff"/><rect x="-30" y="-30" width="120%" height="120%" fill="#000" opacity="0.85" filter="url(#rsoft-ID)"/></mask></defs>
+  <rect width="100%" height="100%" fill="#07050d"/><g mask="url(#rcalm-ID)"><rect width="100%" height="100%" filter="url(#rA-ID)" opacity="0.8"/></g></svg>`;
+
+const picker = (cls, id) => `
+  <section class="pk ${cls}" role="dialog" aria-label="React to Mrs. Hooligan's post">
+    ${smoke.replaceAll('-ID', '-' + id)}
+    <div class="head"><h2>REACT</h2><span class="left" role="status">1 OF 3 LEFT</span></div>
+    <div class="field">
+      <span class="axis top" aria-hidden="true">EXCITED</span>
+      <div class="g" data-grid>
+        <span class="cross v" aria-hidden="true"></span><span class="cross h" aria-hidden="true"></span>
+        ${['heat', 'hype', 'groan', 'calm'].map((q) => quad(q)).join('')}
+        ${EDGES.map(edge).join('')}
+      </div>
+      <span class="axis bottom" aria-hidden="true">LOW-KEY</span>
+    </div>
+    <p class="hint">Arrow keys move, Enter reacts. Outlined: yours. On a line between two: half to each.</p>
+  </section>`;
+
+document.getElementById('desktop').innerHTML = `
+  <article class="post">
+    <div class="who"><b>Mrs. Hooligan</b><br>Midcarder<div class="av"></div></div>
+    <div class="body">
+      <div class="meta"><span>Posted Nov 9, 2026 9:20 pm</span><a href="#">#42</a></div>
+      <p class="t">Magenta is a very popular color. Half this board would pick magenta. I would pick something classier, personally, if I were the kind of person who did that, which I'm not.</p>
+      <div class="bar"><span class="c">🍅 2</span><span class="c">🤮 3</span><span class="c" style="border-width:2px;padding:0 4px">👍 1</span><b class="react">React</b><span style="color:#555">1 of 3 left</span></div>
+    </div>
+  </article>
+  ${picker('pop', 'd')}`;
+
+document.getElementById('phone').innerHTML = `
+  <div class="dim"><div>Mrs. Hooligan's post (dimmed)</div><div>Reply</div></div>
+  ${picker('sheet', 'p')}
+  <div class="hud" aria-hidden="true">MRS. HOOLIGAN · MIDCARDER</div>`;
+
+document.getElementById('notes').innerHTML = `
+  <p><b>The four halfway reactions</b></p>
+  <table>
+    <tr><th></th><th>Key</th><th>Read aloud</th><th>Sits on</th></tr>
+    ${EDGES.map((e) => `<tr><td class="e">${e.emoji}</td><td>${e.key}</td><td>${e.name}, ${Q[e.a].name} and ${Q[e.b].name}</td><td>${{ top: 'top, in the Excited row', left: 'left, the Heat and Groan line', bottom: 'bottom, in the Low-key row', right: 'right, the Hype and Calm line' }[e.at]}</td></tr>`).join('')}
+  </table>
+  <p><b>Alignment rules</b></p>
+  <ol style="margin:0;padding-left:18px">
+    <li>The picker is a three by three grid: quadrants in the corners, halfway tiles at the middle of each side.</li>
+    <li>Top and bottom tiles sit in the center column, in the row of kinds nearest the middle, so Excited and Low-key are mirror images.</li>
+    <li>Left and right tiles sit on the horizontal line, in the outermost kind column, so each column of tiles runs straight down.</li>
+    <li>The cross runs behind the tiles and the tiles break it.</li>
+  </ol>`;
+
+/* Alignment guides: dashed lines through the centers of the tiles that are meant to line up. */
+const draw = () => {
+  document.querySelectorAll('[data-grid]').forEach((g) => {
+    g.querySelectorAll('.guide').forEach((x) => x.remove());
+    const gb = g.getBoundingClientRect();
+    const mid = (el, axis) => { const b = el.getBoundingClientRect(); return axis === 'x' ? b.left + b.width / 2 - gb.left : b.top + b.height / 2 - gb.top; };
+    const add = (axis, at) => { const d = document.createElement('i'); d.className = 'guide ' + (axis === 'x' ? 'v' : 'h'); d[axis === 'x' ? 'style' : 'style'][axis === 'x' ? 'left' : 'top'] = at + 'px'; g.appendChild(d); };
+    const e = (n) => g.querySelector(`[data-edge="${n}"]`);
+    add('x', mid(e('left'), 'x')); add('x', mid(e('top'), 'x')); add('x', mid(e('right'), 'x'));
+    add('y', mid(e('top'), 'y')); add('y', mid(e('left'), 'y')); add('y', mid(e('bottom'), 'y'));
+  });
+};
+document.getElementById('guides').addEventListener('change', (ev) => { document.body.classList.toggle('guides', ev.target.checked); draw(); });
+window.addEventListener('load', draw);
+if (new URLSearchParams(location.search).has('guides')) { document.getElementById('guides').checked = true; document.body.classList.add('guides'); }
+</script>
+</body>
+</html>
