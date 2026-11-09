@@ -8,6 +8,8 @@
 
 html {
   color-scheme: light dark;
+  /* No jumping around between screens that scroll and don't: the scrollbar's room is kept either way. (`overflow-y: scroll` on the body does the same, but axe reads a page that always scrolls as a scrollable region nothing in it can focus, on a screen with no control.) */
+  scrollbar-gutter: stable;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -27,7 +29,6 @@ body {
   color: var(--kb-fg);
   font: var(--kb-size-body) / var(--kb-line) var(--kb-font-body);
   caret-color: var(--kb-fg);
-  overflow-y: scroll; /* No jumping around between screens that scroll and don't */
 }
 
 ::selection {

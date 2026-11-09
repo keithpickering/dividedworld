@@ -129,7 +129,8 @@ export const phone: BoardManifest = {
       landmarks: [
         /* The phone's HUD is the build's own height (173px) where the board draws 237, and the board's screen stands at x = 1250 on its page: only its parts are compared, from its corner. */
         { id: 'hud', role: 'region', name: 'Game HUD', type: false, box: 'none' },
-        at('prompt', 'heading', 'WHO WILL YOU PLAY AS?', { x: -14 }, { within: 'hud', origin: 'hud' }),
+        /* The prompt's words are the owner's (board 17's departures): "Who will you play?". */
+        at('prompt', 'heading', 'WHO WILL YOU PLAY AS?', { x: -14 }, { buildName: 'WHO WILL YOU PLAY?', within: 'hud', origin: 'hud' }),
         at('register', 'link', 'REGISTER WITH AN INVITE', { y: -32 }, { within: 'hud', origin: 'hud' }),
         at('no-invite', 'text', 'No invite? Ask someone who plays.', { y: -57 }, { within: 'hud', origin: 'hud' }),
         at('sign-in', 'link', 'SIGN IN', { x: 15, y: -52 }, { within: 'hud', origin: 'hud' }),

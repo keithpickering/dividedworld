@@ -75,8 +75,9 @@ function settle() {
     saved = { overflow: document.body.style.overflow, paddingRight: document.body.style.paddingRight };
     const bar = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = 'hidden';
-    /* The page keeps its width when its scrollbar goes. */
-    if (bar > 0 && document.documentElement.clientWidth > 0) document.body.style.paddingRight = `calc(${getComputedStyle(document.body).paddingRight} + ${bar}px)`;
+    /* The page keeps its width when its scrollbar goes: a root whose gutter is kept (base.css) keeps it already, and padding for it too would narrow the page. */
+    const gutterKept = getComputedStyle(document.documentElement).scrollbarGutter.startsWith('stable');
+    if (!gutterKept && bar > 0 && document.documentElement.clientWidth > 0) document.body.style.paddingRight = `calc(${getComputedStyle(document.body).paddingRight} + ${bar}px)`;
   }
   for (const el of Array.from(document.body.children)) {
     if (going.has(el)) continue;

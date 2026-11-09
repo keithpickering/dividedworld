@@ -931,6 +931,8 @@ html[data-kb-float='sheet'] .kb-frame {
 
 .kb-hud-door-words {
   min-width: 0;
+  /* The plate's slanted edge runs in toward the foot, so a long line (an instance's pitch can be a sentence) clears it by wrapping early rather than touching the neon border. */
+  padding-right: 1.75rem;
 }
 
 .kb-hud-door-title {

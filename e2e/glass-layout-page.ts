@@ -26,16 +26,30 @@ function pathOf(el: Element): string {
   return path;
 }
 
-/** Drawn at all: it has a box, is not `visibility: hidden`, is not in a `[hidden]` or `[inert]` subtree, and is not a visually hidden clip (up to 2px, `clip`, or `clip-path: inset(50%)`). */
+/** A visually hidden clip: absolute, and up to 2px, `clip`, or `clip-path: inset(50%)` (the glass's `.kb-visually-hidden`, which also sets `overflow: hidden`). */
+function isVisuallyHiddenClip(s: CSSStyleDeclaration, r: DOMRect): boolean {
+  if (r.width <= 2 && r.height <= 2) return true;
+  if (s.position === 'absolute' && /^inset\(50%\)/.test(s.clipPath)) return true;
+  return s.position === 'absolute' && s.clip !== 'auto' && s.clip !== '';
+}
+
+/**
+ * Drawn at all: it has a box, is not `visibility: hidden`, is not in a `[hidden]` or `[inert]` subtree, and is not a visually hidden clip or inside one.
+ * What stands inside a visually hidden clip is for the reader and never drawn, whatever its own box measures (a readout of a card's lines is a row of
+ * `nowrap` spans in a 1px clip, and the row is as wide as its words): the clip hides it, so no edge of it can overflow anything the player sees.
+ */
 function visible(el: Element): boolean {
   if (el.closest('[hidden], [inert]')) return false;
   if (!el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true })) return false;
   const r = el.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return false;
   const s = getComputedStyle(el);
-  if (r.width <= 2 && r.height <= 2) return false;
-  if (s.position === 'absolute' && /^inset\(50%\)/.test(s.clipPath)) return false;
-  if (s.position === 'absolute' && s.clip !== 'auto' && s.clip !== '') return false;
+  if (isVisuallyHiddenClip(s, r)) return false;
+  for (let a = el.parentElement; a; a = a.parentElement) {
+    if (a.tagName === 'BODY') break;
+    const as = getComputedStyle(a);
+    if (as.position === 'absolute' && as.overflow !== 'visible' && isVisuallyHiddenClip(as, a.getBoundingClientRect())) return false;
+  }
   return true;
 }
 
