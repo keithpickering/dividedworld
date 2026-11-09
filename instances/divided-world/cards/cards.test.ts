@@ -292,6 +292,12 @@ test('Autocorrect lands only where its phrase is, whole and in any case, never i
   assert.equal(decidePlay(autocorrect as CardRules, settings, on('cats'), [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` })), { phrase: 'cats', replacement: 'dogs' }, '').ok, false, 'three deep already');
 });
 
+test('Autocorrect lands on a post when asked with a config that holds no phrase, as a screen asks before one is typed', () => {
+  for (const held of [{}, { color: 'red' }, { phrase: 7 }]) {
+    assert.equal(autocorrect.canApply(on('I love cats'), [], held as never, new Date()).ok, true, JSON.stringify(held));
+  }
+});
+
 test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 2.00 added', () => {
   const price = (body: string, phrase: string) => autocorrect.playPrice(settings, on(body), { phrase, replacement: 'x' });
   assert.equal(price('cats', 'cats'), 0, '4 characters covered');

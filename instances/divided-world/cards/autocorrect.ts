@@ -55,7 +55,8 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
   },
   canApply: (target, effects, config, now) => {
     const lands = landsOn(autocorrect, target, effects, now);
-    if (!lands.ok || !config || target.reach !== 'post') return lands;
+    // The screens ask with whatever the form holds, which before a phrase is typed (or from another card's form) has none.
+    if (!lands.ok || typeof config?.phrase !== 'string' || target.reach !== 'post') return lands;
     return occurrences(target.text, config.phrase).length ? lands : refuse(`“${config.phrase}” is not in this post's own words`);
   },
   staffOptions: {
