@@ -37,7 +37,13 @@ export async function pageViolations(page: Page): Promise<string[]> {
     const axe = (window as unknown as { axe: { run(c: unknown, o: unknown): Promise<{ violations: Found[] }> } }).axe;
     return (await axe.run(document, { runOnly: { type: 'tag', values: tags } })).violations;
   }, TAGS);
-  return found.map((v) => `${v.id} (${v.impact}): ${v.nodes.slice(0, 12).map((n) => `${JSON.stringify(n.target)} ${n.html.slice(0, 100)}`).join(' | ')}`);
+  /* The page's own scroll is the viewport's, which every browser scrolls from the keyboard: base.css keeps the body's scrollbar on so screens do not jump,
+     and axe reads that body as a scrollable region with nothing focusable in it on a screen that has no control (a sheet of cards). Only the body or
+     the root itself is let go; a scroller inside the page that no key reaches is still found. */
+  const kept = found.map((v) => v.id === 'scrollable-region-focusable'
+    ? { ...v, nodes: v.nodes.filter((n) => !(Array.isArray(n.target) && n.target.length === 1 && (n.target[0] === 'body' || n.target[0] === 'html'))) }
+    : v).filter((v) => v.nodes.length > 0);
+  return kept.map((v) => `${v.id} (${v.impact}): ${v.nodes.slice(0, 12).map((n) => `${JSON.stringify(n.target)} ${n.html.slice(0, 100)}`).join(' | ')}`);
 }
 
 /* These specs inject axe and poison styles into the page; the site's policy (e2e/csp.spec.ts holds it) would block them. */
