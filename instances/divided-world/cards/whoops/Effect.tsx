@@ -50,6 +50,7 @@ import { motionReduced } from '../../../../engine/ui/appearance.ts';
 import { LOST_ANSWER, type Answer } from '../../../../engine/ui/data/api.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
+import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SLOP_PX, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 import { cursor, type CursorMode } from './cursor.ts';
 import { readLines } from './lines.ts';
 import { MAX_CANVAS_PX, MAX_DPR, paint, paintSplat, type Geometry, type PaintLayer } from './paint.ts';
@@ -61,7 +62,6 @@ import { luminance, makeSplat, type Box, type Splat } from './splat.ts';
 import * as suds from './suds.ts';
 import './whoops.css';
 import { inkName } from './names.ts';
-import { HOLD_MS, MAX_SAVE_RETRIES, RETRY_AFTER_MS, SLOP_PX, SUPPRESS_MS, overInk, swipeKind } from '../wiping.ts';
 
 /** A burst of strokes is saved once it has been quiet this long. */
 export const SAVE_AFTER_MS = 800;

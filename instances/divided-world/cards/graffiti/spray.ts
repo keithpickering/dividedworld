@@ -27,7 +27,7 @@ export interface WallAct { readonly kind: string; readonly payload: unknown }
 export interface Box { readonly w: number; readonly h: number }
 
 type Point = readonly [number, number];
-interface Brush { readonly rw: number; readonly k: number; readonly pts: readonly (readonly [number, number])[]; readonly color: string; readonly cap: string }
+interface Brush { readonly box: readonly [number, number, number, number]; readonly rw: number; readonly k: number; readonly pts: readonly (readonly [number, number])[]; readonly color: string; readonly cap: string }
 
 const OVERSPRAY = { reach: 1.9, alpha: 0.35 } as const;
 const CORE_ALPHA = 0.92, POOL_ALPHA = 0.2, SPECKLE_ALPHA = 0.5;
@@ -69,7 +69,11 @@ function brushes(act: WallAct, box: Box): Brush[] {
     }
     if (!(s.points as unknown[]).every((p) => Array.isArray(p) && p.length === 2 && finite(p[0]) && finite(p[1]))) continue;
     const k = (s.aspect * box.h) / box.w;
-    out.push({ rw: (width * box.w) / 2, k, color, cap, pts: (s.points as Point[]).map(([x, y]): [number, number] => [x * box.w, (y * box.h) / k]) });
+    const rw = (width * box.w) / 2;
+    const pts = (s.points as Point[]).map(([x, y]): [number, number] => [x * box.w, (y * box.h) / k]);
+    /* The bounds of the core in the brush's space, so a point far from a stroke is turned away without walking its segments. */
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    out.push({ box: [Math.min(...xs) - rw, Math.max(...xs) + rw, Math.min(...ys) - rw, Math.max(...ys) + rw], rw, k, color, cap, pts });
   }
   return out;
 }
@@ -283,7 +287,8 @@ function strokesOf(act: WallAct, box: Box): Brush[] {
 /** Whether the point (CSS px of the box) lies in the core of a stroke: within `rw` of its path in the brush's space. */
 function inCore(s: Brush, x: number, y: number): boolean {
   const py = y / s.k;
-  const { pts, rw } = s;
+  const { pts, rw, box } = s;
+  if (x < box[0] || x > box[1] || py < box[2] || py > box[3]) return false;
   for (let i = 0; i < pts.length; i++) {
     const [ax, ay] = pts[i]!, [bx, by] = pts[Math.min(i + 1, pts.length - 1)]!;
     const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;

@@ -333,3 +333,18 @@ describe('hitAt', () => {
     expect(hitAt([...acts, w, draw(stroke([[0.45, 0.5], [0.55, 0.5]], 'fat'))], BOX, 200, 100)).toBe(true);
   });
 });
+
+describe('hitAt keeps to a stroke\'s own bounds', () => {
+  const box = { w: 400, h: 300 };
+  const act: WallAct = { kind: 'draw', payload: { strokes: [{ can: 'red', cap: 'fat', aspect: box.w / box.h, points: [[0.1, 0.2], [0.5, 0.2]] }] } };
+  const r = (CAPS.fat * box.w) / 2;
+  test('a point within the brush of an end is ink and one a hair past it is not, with the wall far wider than the stroke', () => {
+    const end = 0.5 * box.w, y = 0.2 * box.h;
+    expect(hitAt([act], box, end + r - 0.5, y)).toBe(true);
+    expect(hitAt([act], box, end + r + 0.5, y)).toBe(false);
+    expect(hitAt([act], box, 0.1 * box.w - r + 0.5, y)).toBe(true);
+    expect(hitAt([act], box, 0.1 * box.w - r - 0.5, y)).toBe(false);
+    expect(hitAt([act], box, 0.3 * box.w, y + r + 0.5)).toBe(false);
+    expect(hitAt([act], box, 0.3 * box.w, y - r + 0.5)).toBe(true);
+  });
+});

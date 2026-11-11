@@ -63,29 +63,44 @@ const ENDS = 'Ends on your screen when you scrub it off. The author can wash it 
 
 type Pt = readonly [number, number];
 /** A scrub made on this screen: where in the wall's order it was made (the last Act then), and the stroke in shares of the box. */
-interface Local { readonly after: string | null; readonly aspect: number; readonly points: Pt[] }
+interface Local {
+  /** The ids of the live Acts when it was made: it lies after the last of them still live, so a tag drawn later is never painted over by it. */
+  readonly seen: ReadonlySet<string>;
+  readonly aspect: number;
+  readonly points: Pt[];
+  /** The scrub as a wash Act, made again each time its points grow, so the painter's cache (by Act object) is never stale and never rebuilt for a scrub that has not changed. */
+  act: WallAct;
+}
 interface Gesture { readonly id: number; readonly x0: number; readonly y0: number; cx: number; cy: number; state: 'wait' | 'wipe' | 'page'; timer: ReturnType<typeof setTimeout> | null }
 interface Live { readonly local: Local; readonly pointer: number | null; readonly touch?: true; readonly save: boolean }
 
 const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
 
-/** The wall's Acts with this screen's scrubs placed after the Act each was made on; one whose Act has left the live list goes last. */
+const actOf = (l: Pick<Local, 'aspect' | 'points'>): WallAct => ({ kind: 'wash', payload: { strokes: [{ aspect: l.aspect, points: l.points }] } });
+function newLocal(acts: readonly { readonly id?: string }[], aspect: number, first: Pt): Local {
+  const l: Local = { seen: new Set(acts.flatMap((a) => (a.id === undefined ? [] : [a.id]))), aspect, points: [first], act: { kind: 'wash', payload: null } };
+  l.act = actOf(l);
+  return l;
+}
+function grow(l: Local, p: Pt): void {
+  l.points.push(p);
+  l.act = actOf(l);
+}
+
+/** The wall's Acts with this screen's scrubs, each placed after the last live Act that existed when it was made (before them all when none is live any more). */
 function merge(acts: readonly (WallAct & { readonly id?: string })[], locals: readonly Local[]): WallAct[] {
   if (locals.length === 0) return [...acts];
-  const after = new Map<string | null, WallAct[]>();
+  const after = new Map<number, WallAct[]>();
   for (const l of locals) {
-    const list = after.get(l.after) ?? [];
-    list.push({ kind: 'wash', payload: { strokes: [{ aspect: l.aspect, points: l.points }] } });
-    after.set(l.after, list);
+    let i = acts.length - 1;
+    while (i >= 0 && !(acts[i]!.id !== undefined && l.seen.has(acts[i]!.id!))) i--;
+    const list = after.get(i) ?? [];
+    list.push(l.act);
+    after.set(i, list);
   }
-  const ids = new Set(acts.map((a) => a.id));
-  const out: WallAct[] = [...(after.get(null) ?? [])];
-  for (const a of acts) {
-    out.push(a);
-    out.push(...(after.get(a.id ?? null) ?? []));
-  }
-  for (const [k, v] of after) if (k !== null && !ids.has(k)) out.push(...v);
+  const out: WallAct[] = [...(after.get(-1) ?? [])];
+  acts.forEach((a, i) => { out.push(a); out.push(...(after.get(i) ?? [])); });
   return out;
 }
 
@@ -128,7 +143,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   useEffect(() => { if (!drawing) setCan(lastCan(account)); }, [drawing, account]);
 
   /* Draw mode ends with the reader's right to draw (signed out, a moment): and where it ends for any reason the tile is focused again, so a keyboard is not dropped. */
-  useEffect(() => { if (drawing && !canDraw) setDrawing(false); }, [drawing, canDraw]);
+  
   const wasDrawing = useRef(false);
   useEffect(() => {
     if (wasDrawing.current && !drawing) tileRef.current?.focus({ preventScroll: true });
@@ -145,13 +160,25 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const sudsHost = useRef({});
   const { box } = size;
   const fixed = box.w > 0 && box.h > 0;
+  /* Draw mode closes whenever it cannot be drawn (the play or the surface gone, the box measuring nothing), so the tile is back and nobody is stuck. */
+  const drawable = canDraw && fixed && plays[0] !== undefined;
+  useEffect(() => { if (drawing && !drawable) setDrawing(false); }, [drawing, drawable]);
   const dpr = typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
 
   const locals = useRef<Local[]>([]);
   const now = useRef({ acts, surface, plays, reader, size, near, surfaceEl, drawing, still, dpr });
   now.current = { acts, surface, plays, reader, size, near, surfaceEl, drawing, still, dpr };
   /** The wall as this screen draws and tests it: the live Acts and the scrubs made here. */
-  const wall = useCallback((): WallAct[] => merge(now.current.acts ?? [], locals.current), []);
+  const merged = useRef<{ acts: readonly SurfaceAct[] | null; made: readonly WallAct[]; out: WallAct[] } | null>(null);
+  const wall = useCallback((): WallAct[] => {
+    const { acts: a } = now.current;
+    const made = locals.current.map((l) => l.act);
+    const had = merged.current;
+    if (had && had.acts === a && had.made.length === made.length && had.made.every((m, i) => m === made[i])) return had.out;
+    const out = merge(a ?? [], locals.current);
+    merged.current = { acts: a, made, out };
+    return out;
+  }, []);
 
   const metNow = useRef(met);
   metNow.current = met;
@@ -239,7 +266,27 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     paintQueued.current = requestAnimationFrame(paintNow);
   }, [paintNow]);
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
-  const onDraft = useCallback((act: WallAct | null) => { draftAct.current = act; schedulePaint(); }, [schedulePaint]);
+  const refreshSoon = useRef<() => void>(() => {});
+  /** A tagged drawing stays painted from Tag it until the wall's Acts hold the new draw (by id) or change some other way, so the wall does not flicker through the round trip. */
+  const holding = useRef<{ readonly id: string | undefined; readonly acts: readonly SurfaceAct[] | null } | null>(null);
+  const onDraft = useCallback((act: WallAct | null) => {
+    if (act === null && holding.current) return;
+    if (act !== null) holding.current = null;
+    draftAct.current = act;
+    schedulePaint();
+    refreshSoon.current();
+  }, [schedulePaint]);
+  const settleHold = useCallback(() => {
+    const h = holding.current;
+    if (!h) return;
+    const a = now.current.acts;
+    if (a === h.acts && !(h.id !== undefined && a?.some((x) => x.id === h.id))) return;
+    holding.current = null;
+    draftAct.current = null;
+    paintNow();
+    refreshSoon.current();
+  }, [paintNow]);
+  useLayoutEffect(() => { settleHold(); }, [acts, settleHold]);
 
   /* The canvases are the box's size at the density the wall is drawn at, and the wall is drawn again when its Acts, its box or its nearness change. */
   const q = fixed ? wallDensity(box, dpr) : 1;
@@ -280,23 +327,29 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     return false;
   };
   const textLines = useRef<TextLine[]>([]);
+  /** What the lines were read from: the words and the box. They are read again only when it changes. */
+  const linesKey = useRef('');
   const refresh = useCallback(() => {
     const { size: sz, near: isNear } = now.current;
     if (!isNear || sz.box.w <= 0 || sz.box.h <= 0) return;
     const body = layoutRef.current;
-    if (body && textLines.current.length === 0) {
+    const key = `${body?.textContent ?? ''}|${sz.box.w}|${sz.box.h}|${sz.top}`;
+    if (body && key !== linesKey.current) {
+      linesKey.current = key;
       const read = readLines(body, sz.box);
       const off = sz.top / sz.box.h;
       textLines.current = read.length > 0 ? read.map((l) => ({ ...l, top: l.top + off, bottom: l.bottom + off })) : [{ top: 0, bottom: 1, text: body.textContent ?? '' }];
+      setLines(textLines.current);
     }
-    const w = wall();
+    const w = draftAct.current ? [...wall(), draftAct.current] : wall();
     const next = textLines.current.map((l) => lineCovered(l, sz.box, w));
-    setLines(textLines.current);
     setCovered((was) => (was.length === next.length && was.every((c, i) => c === next[i]) ? was : next));
   }, [wall]);
-  /* A box or words that changed lay the lines out again. */
-  useEffect(() => { textLines.current = []; }, [box.w, box.h, size.top, children]);
-  useEffect(() => { refresh(); }, [refresh, acts, box.w, box.h, size.top, near, scrubbed, children]);
+  /* The lines are tested when the wall, a scrub, the box or the draft changes (a parent that renders again with the same words costs nothing). */
+  useEffect(() => { refresh(); }, [refresh, acts, box.w, box.h, size.top, near, scrubbed]);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  refreshSoon.current = () => { if (!refreshTimer.current) refreshTimer.current = setTimeout(() => { refreshTimer.current = null; refresh(); }, REFRESH_MS); };
+  useEffect(() => () => { if (refreshTimer.current) clearTimeout(refreshTimer.current); }, []);
 
   /* ------------------------------------------------------------------- the wash ---- */
 
@@ -333,7 +386,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       if (answer.uncertain) {
         pending.current.unshift(...batch);
         failures.current += 1;
-        if (failures.current <= MAX_SAVE_RETRIES && !gone.current) queueWash(RETRY_AFTER_MS * 2 ** (failures.current - 1));
+        if (failures.current <= MAX_SAVE_RETRIES) queueWash(RETRY_AFTER_MS * 2 ** (failures.current - 1));
       }
       return;
     }
@@ -412,7 +465,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     if (!startsAt(clientX, clientY)) return false;
     meet();
     const { size: { box: b }, acts: now_ } = now.current;
-    const local: Local = { after: now_?.at(-1)?.id ?? null, aspect: b.w / b.h, points: [shareAt(clientX, clientY)] };
+    const local = newLocal(now_ ?? [], b.w / b.h, shareAt(clientX, clientY));
     locals.current.push(local);
     setScrubbed(locals.current.length);
     live.current = { local, pointer, save: true, ...(touch ? { touch: true as const } : null) };
@@ -425,7 +478,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     const p = shareAt(clientX, clientY);
     const last = s.local.points[s.local.points.length - 1]!;
     if (Math.hypot(p[0] - last[0], p[1] - last[1]) === 0) return;
-    s.local.points.push(p);
+    grow(s.local, p);
     suppress.current = true;
     throwSuds(last, p);
     schedulePaint();
@@ -673,10 +726,10 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
       const cur = sweepStroke.current;
       if (cur) {
         const last = cur.local.points[cur.local.points.length - 1]!;
-        cur.local.points.push(p);
+        grow(cur.local, p);
         throwSuds(last, p);
       } else {
-        const local: Local = { after: now.current.acts?.at(-1)?.id ?? null, aspect: b.w / b.h, points: [p] };
+        const local = newLocal(now.current.acts ?? [], b.w / b.h, p);
         locals.current.push(local);
         setScrubbed(locals.current.length);
         sweepStroke.current = { local, pointer: null, save };
@@ -704,8 +757,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     return () => {
       stopLatest.current();
       gone.current = true;
+      /* What is still to send is sent now, and a send that gets no answer is retried after the post is gone: its timer is left to run out the retries. */
       if (pending.current.length > 0) void flush();
-      if (washTimer.current) clearTimeout(washTimer.current);
     };
   }, [flush]);
 
@@ -756,11 +809,15 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
             <span>Draw</span>
           </button>
         )}
-        {drawing && canDraw && fixed && surface && plays[0] && hudCharacter && (
+        {drawing && drawable && surface && plays[0] && hudCharacter && (
           <DrawMode
             mode="cast" box={box} wall={acts} covered={surface.covered} most={surface.most} asks
             dockHost={frameRef.current?.closest<HTMLElement>('.kb-act') ?? rootRef.current}
-            submit={(input) => surface.draw(plays[0]!.id, hudCharacter.id, input)} cancel={() => setDrawing(false)} done={() => setDrawing(false)}
+            submit={async (input) => {
+              const answer = await surface.draw(plays[0]!.id, hudCharacter.id, input);
+              if (answer.ok && draftAct.current) { holding.current = { id: (answer.value as { id?: string } | null)?.id, acts: now.current.acts }; settleHold(); }
+              return answer;
+            }} cancel={() => setDrawing(false)} done={() => setDrawing(false)}
             onDraft={onDraft} overlayStyle={onBox}
           />
         )}

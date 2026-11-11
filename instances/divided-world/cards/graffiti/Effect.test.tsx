@@ -5,7 +5,7 @@
  * from the attributes it publishes. The hit test is the real one.
  */
 import { act, fireEvent, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createClaims } from '../../../../engine/ui/cards/claims.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -17,10 +17,14 @@ import { LayerInk } from '../whoops/scrub.ts';
 import { DESIGN, makeSplat } from '../whoops/splat.ts';
 import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, WASH_AFTER_MS } from './Effect.tsx';
 import * as spray from './spray.ts';
+import { HOLD_MS } from '../wiping.ts';
 
 vi.mock('../whoops/suds.ts', () => ({ register: vi.fn(), unregister: vi.fn(), wash: vi.fn(), puff: vi.fn() }));
 vi.mock('../whoops/cursor.ts', () => ({ cursor: { over: vi.fn(), press: vi.fn(), leave: vi.fn() } }));
-vi.mock('./spray.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./spray.ts')>()), paintWall: vi.fn() }));
+vi.mock('./spray.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./spray.ts')>();
+  return { ...real, paintWall: vi.fn(), hitAt: vi.fn(real.hitAt) };
+});
 
 /** The player the effect reads (the engine's own provider is real; only who is signed in is fixed here). */
 const player = vi.hoisted(() => ({ value: null as unknown }));
@@ -225,6 +229,28 @@ describe('the author\'s wash', () => {
     expect(wash).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
   });
 
+  test('is sent again after the post has left when the answer to the send on leaving never came', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wash = vi.fn(async () => ({ ok: false as const, error: LOST_ANSWER, uncertain: true as const }));
+    const { frame, unmount } = mount({ author: true, surface: surfaceOf(MIDDLE, { wash }) });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(wash).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(RETRY_AFTER_MS * 2 ** (MAX_SAVE_RETRIES + 2)); });
+    expect(wash).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+  });
+
+  test('a refusal is announced once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const words = 'This post is not yours to wash.';
+    const wash = vi.fn(async () => ({ ok: false as const, error: words }));
+    const { frame } = mount({ author: true, surface: surfaceOf(MIDDLE, { wash }) });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 100); });
+    expect(screen.getAllByRole('status').filter((n) => n.textContent === words)).toHaveLength(1);
+  });
+
   test('a reader\'s Lens has Hold to scrub alone, and the author\'s also has Wash', () => {
     const reader = mount();
     expect(reader.shown.at(-1)?.controls.map((c) => c.label)).toEqual(['Hold to scrub']);
@@ -306,10 +332,17 @@ describe('the Draw tile', () => {
   });
 
   test('is drawn in the can the reader picked last, kept for their account', () => {
-    try { localStorage.setItem('kb-graffiti-can:acct-1', 'teal'); } catch { /* storage is off here: the default can is drawn */ }
+    localStorage.setItem('kb-graffiti-can:acct-1', 'teal');
     const { root } = mount();
-    const tile = root.querySelector('[data-kb-can]') as HTMLElement;
-    expect(['teal', 'cyan']).toContain(tile.dataset.kbCan);
+    expect((root.querySelector('[data-kb-can]') as HTMLElement).dataset.kbCan).toBe('teal');
+  });
+
+  test('where storage throws the tile is drawn in the default can', () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked'); });
+    try {
+      const { root } = mount();
+      expect((root.querySelector('[data-kb-can]') as HTMLElement).dataset.kbCan).toBe('cyan');
+    } finally { get.mockRestore(); }
   });
 
   test('a signed-out reader, or one with no character, sees no tile', () => {
@@ -319,11 +352,15 @@ describe('the Draw tile', () => {
     expect(mount().root.querySelector('[data-kb-over-ink]')).toBeNull();
   });
 
-  test('a press on the tile starts no stroke', () => {
-    const { root } = mount();
+  test('a press on the tile starts no stroke, where the same press on the wall would', () => {
+    const { root, frame } = mount();
     const tile = screen.getByRole('button', { name: 'Draw' });
-    act(() => { fireEvent.pointerDown(tile, { clientX: 300, clientY: 200, pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    const [x, y] = px(0.5, 0.5);
+    expect(spray.hitAt(MIDDLE, BOX, x, y)).toBe(true);
+    act(() => { fireEvent.pointerDown(tile, { clientX: x, clientY: y, pointerId: 1, button: 0, pointerType: 'mouse' }); });
     expect(scrubbed(root)).toBe(0);
+    drag(frame, [[0.5, 0.5], [0.55, 0.5]]);
+    expect(scrubbed(root)).toBe(1);
   });
 });
 
@@ -450,5 +487,119 @@ describe('a finger', () => {
     touch(cell, 'touchend', [], [{ id: 1, at: [x + 30, y] }]);
     expect(prevented).toBe(true);
     expect(scrubbed(root)).toBe(1);
+  });
+});
+
+describe('a hold, and the order of a scrub', () => {
+  function touch(target: HTMLElement, type: 'touchstart' | 'touchend', at: readonly [number, number]) {
+    const list = [{ identifier: 1, clientX: at[0], clientY: at[1], target }];
+    const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, { touches: { value: type === 'touchend' ? [] : list }, targetTouches: { value: list }, changedTouches: { value: list } });
+    act(() => { target.dispatchEvent(event); });
+  }
+
+  test('a finger held 180ms on the paint grabs it with no movement, and not before', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { cell, root } = mount();
+    touch(cell, 'touchstart', px(0.5, 0.5));
+    act(() => { vi.advanceTimersByTime(HOLD_MS - 1); });
+    expect(scrubbed(root)).toBe(0);
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(scrubbed(root)).toBe(1);
+  });
+
+  function hosted() {
+    const ink = createClaims().at('post:graffiti', 0);
+    let set: (acts: readonly SurfaceAct[]) => void = () => {};
+    let bump: () => void = () => {};
+    function Host() {
+      const [acts, setActs] = useState<readonly SurfaceAct[]>(MIDDLE);
+      const [n, setN] = useState(0);
+      set = setActs;
+      bump = () => setN((v) => v + 1);
+      const surface = useMemo(() => surfaceOf(acts), [acts]);
+      return <div className="kb-act-main"><Effect {...propsOf({ surface, ink })}><p data-n={n}>The post&apos;s words.</p></Effect></div>;
+    }
+    const world = renderInWorld(<Host />);
+    return { ...world, setActs: (a: readonly SurfaceAct[]) => act(() => set(a)), bump: () => act(() => bump()), frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement };
+  }
+  const lastPaint = () => vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+
+  test('a scrub whose Act has left the live list stays before the tags that came after it', () => {
+    const { frame, setActs } = hosted();
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    setActs([draw('a2', 0.5)]);
+    const kinds = lastPaint().map((a) => a.kind);
+    expect(kinds).toEqual(['wash', 'draw']);
+  });
+
+  test('a scrub is one Act object for as long as it is unchanged, so the painter\'s cache holds', () => {
+    const { frame, setActs } = hosted();
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    setActs([...MIDDLE]);
+    const first = lastPaint()[1]!;
+    setActs([...MIDDLE]);
+    expect(lastPaint()[1]).toBe(first);
+  });
+
+  test('a parent that renders again with the same words does not test the lines again', () => {
+    const { bump } = hosted();
+    const before = vi.mocked(spray.hitAt).mock.calls.length;
+    bump();
+    expect(vi.mocked(spray.hitAt).mock.calls.length).toBe(before);
+  });
+});
+
+describe('draw mode and the wall it is drawn on', () => {
+  function hosted() {
+    const ink = createClaims().at('post:graffiti', 0);
+    let setActs: (acts: readonly SurfaceAct[]) => void = () => {};
+    let setHas: (has: boolean) => void = () => {};
+    function Host() {
+      const [acts, sa] = useState<readonly SurfaceAct[]>(MIDDLE);
+      const [has, sh] = useState(true);
+      setActs = sa;
+      setHas = sh;
+      const surface = useMemo(() => surfaceOf(acts), [acts]);
+      return <div className="kb-act-main"><Effect {...propsOf({ surface, ink })} plays={has ? [PLAY] : []} /></div>;
+    }
+    const world = renderInWorld(<Host />);
+    return { ...world, root: world.container.querySelector('.kb-graffiti') as HTMLElement, setActs: (a: readonly SurfaceAct[]) => act(() => setActs(a)), setHas: (h: boolean) => act(() => setHas(h)) };
+  }
+  const open = () => { act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); }); };
+  const lastPaint = () => vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+
+  test('where draw mode can no longer be drawn (the play is gone) it closes, and the tile is there when it can again', () => {
+    const { root, setHas } = hosted();
+    open();
+    expect(root.dataset.kbDrawing).toBe('true');
+    setHas(false);
+    expect(root.dataset.kbDrawing).toBeUndefined();
+    setHas(true);
+    expect(screen.getByRole('button', { name: 'Draw' })).toBeInTheDocument();
+  });
+
+  test('after Tag it the drawing stays painted until the wall holds the new draw, then is dropped', async () => {
+    const { root, setActs } = hosted();
+    open();
+    drag(root.querySelector('[data-kb-draw-surface]') as HTMLElement, [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
+    expect(root.dataset.kbDrawing).toBeUndefined();
+    await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    expect(lastPaint()).toHaveLength(MIDDLE.length + 1);
+    expect(lastPaint().at(-1)!.kind).toBe('draw');
+    const tagged = draw('d', 0.2);
+    setActs([...MIDDLE, tagged]);
+    expect(lastPaint()).toEqual([...MIDDLE, tagged]);
+    expect(lastPaint()).toHaveLength(2);
+  });
+
+  test('a wall that changes some other way drops the held drawing too', async () => {
+    const { root, setActs } = hosted();
+    open();
+    drag(root.querySelector('[data-kb-draw-surface]') as HTMLElement, [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
+    setActs([...MIDDLE, draw('other', 0.8)]);
+    expect(lastPaint()).toHaveLength(2);
   });
 });
