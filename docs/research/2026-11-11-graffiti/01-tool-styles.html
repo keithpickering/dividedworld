@@ -1,0 +1,300 @@
+<title>Graffiti Tool Styles</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow+Condensed:ital,wght@0,500;0,700;0,800;1,800&display=swap">
+<style>
+/* Layout: four phone frames side by side (wrapping), each the same post in draw mode, one per style. Single dark look: a review table. */
+:root {
+  color-scheme: dark;
+  --page: #1c1a22;
+  --page-fg: #ece8f4;
+  --page-muted: #a69fb8;
+  --rec: #ffd93d;
+  /* the board (house style) */
+  --b-bg: #fff; --b-fg: #000; --b-muted: #555; --b-rule: #000;
+  /* the glass (Divided World's tokens) */
+  --g-ground: #07050d; --g-panel: rgba(10,6,20,.92); --g-field: #160d2a; --g-text: #f1ecff; --g-text2: #e4def7;
+  --g-neon: #19e3ff; --g-pale: #c9f8ff; --g-ready: #ffd93d; --g-ink-ready: #1a1403; --g-pepperoni: #ff8a3d;
+  /* the 2003 applet */
+  --a-face: #d4d0c8; --a-hi: #fff; --a-lo: #808080; --a-dk: #404040;
+  /* the cans */
+  --c-red:#e8202a; --c-orange:#ff7a1a; --c-yellow:#ffd200; --c-lime:#7ed321; --c-green:#16a34a; --c-teal:#14b8a6;
+  --c-cyan:#22c7f0; --c-blue:#2457e6; --c-purple:#7c3aed; --c-pink:#ff3d9a; --c-brown:#8b5a2b; --c-silver:#b8bcc4; --c-black:#111; --c-white:#fafafa;
+  --f-board: Verdana, Geneva, sans-serif;
+  --f-mono: "Courier New", Courier, monospace;
+  --f-glass: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-display: "Anton", Impact, sans-serif;
+}
+body { background: var(--page); color: var(--page-fg); font: 15px/1.5 var(--f-glass); margin: 0; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 24px 48px; max-width: 1640px; margin: 0 auto; }
+h1 { font: 2.1rem/1.1 var(--f-display); letter-spacing: .02em; margin: 0 0 6px; text-wrap: balance; }
+.lede { color: var(--page-muted); max-width: 70ch; margin: 0 0 22px; font-size: 1.05rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 28px 22px; align-items: start; }
+.col { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.col h2 { font: 800 1.3rem/1.1 var(--f-glass); text-transform: uppercase; letter-spacing: .06em; margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.col h2 .tag { font-size: .8rem; color: var(--rec); border: 1px solid var(--rec); padding: 1px 6px; letter-spacing: .1em; }
+.col p { margin: 0; color: var(--page-muted); font-size: 1rem; }
+.col ul { margin: 0; padding-left: 1.1em; color: var(--page-muted); font-size: .98rem; }
+.col ul b { color: var(--page-fg); font-weight: 700; }
+
+/* the phone */
+.phone { width: 100%; max-width: 360px; height: 640px; border: 10px solid #000; border-radius: 30px; overflow: hidden; position: relative; background: var(--b-bg); box-shadow: 0 0 0 1px #3a3644, 0 18px 40px rgba(0,0,0,.45); }
+.screen { position: absolute; inset: 0; overflow: hidden; font-family: var(--f-board); color: var(--b-fg); }
+.topbar { background: #000; color: #fff; font: bold 12px var(--f-mono); padding: 7px 10px; letter-spacing: .04em; }
+.crumb { font-size: 11px; padding: 6px 10px; border-bottom: 1px solid var(--b-rule); }
+.crumb a { color: #000; }
+.post { margin: 8px; border: 1px solid var(--b-rule); }
+.post-head { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--b-rule); padding: 5px 7px; font-size: 11px; }
+.post-head .who { font-weight: bold; }
+.post-head time { color: var(--b-muted); margin-left: auto; }
+.mark { width: 26px; height: 22px; display: grid; place-items: center; background: var(--g-ground); border: 1px solid var(--g-pepperoni); box-shadow: 0 0 6px rgba(255,138,61,.55); transform: skewX(-10deg); }
+.mark svg { width: 15px; height: 15px; transform: skewX(10deg); }
+.body { position: relative; padding: 10px 10px 34px; font-size: 13px; line-height: 1.45; min-height: 250px; }
+.screen .body p { margin: 0 0 8px; color: var(--b-fg); font-size: inherit; }
+.body .ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.react-row { position: absolute; left: 8px; bottom: 6px; display: flex; gap: 4px; font-size: 11px; }
+.chip { border: 1px solid #000; background: #fff; padding: 0 5px; }
+.next { margin: 0 8px; border: 1px solid var(--b-rule); padding: 6px 7px; font-size: 11px; color: var(--b-muted); }
+.dim { position: absolute; inset: 0; background: rgba(0,0,0,.18); pointer-events: none; }
+.toast { position: absolute; left: 50%; top: 44%; transform: translateX(-50%); font: 11px var(--f-board); }
+
+/* the entry button on the post, per style, sits on the body's top right, lifted over the ink */
+.entry { position: absolute; right: 8px; top: 8px; z-index: 3; }
+
+/* ---------------- A. 2003 applet ---------------- */
+.a-entry { font: 11px var(--f-board); background: var(--a-face); border: 1px solid; border-color: var(--a-hi) var(--a-dk) var(--a-dk) var(--a-hi); box-shadow: inset -1px -1px 0 var(--a-lo); padding: 2px 6px; display: flex; gap: 4px; align-items: center; }
+.a-entry svg { width: 12px; height: 12px; }
+.a-entry.on { border-color: var(--a-dk) var(--a-hi) var(--a-hi) var(--a-dk); box-shadow: inset 1px 1px 0 var(--a-lo); }
+.a-dock { position: absolute; left: 0; right: 0; bottom: 0; background: var(--a-face); border-top: 2px solid; border-color: var(--a-hi); box-shadow: 0 -1px 0 var(--a-lo); padding: 6px 8px 10px; font: 11px var(--f-board); z-index: 4; display: grid; gap: 6px; }
+.a-title { background: linear-gradient(90deg, #000080, #1084d0); color: #fff; font-weight: bold; padding: 2px 5px; margin: -6px -8px 0; display: flex; justify-content: space-between; }
+.a-pal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; border: 1px solid; border-color: var(--a-lo) var(--a-hi) var(--a-hi) var(--a-lo); padding: 2px; background: #fff; }
+.a-pal span { height: 18px; border: 1px solid #000; }
+.a-pal span.sel { outline: 2px solid #000; outline-offset: 1px; box-shadow: inset 0 0 0 1px #fff; }
+.a-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.a-btn { background: var(--a-face); border: 1px solid; border-color: var(--a-hi) var(--a-dk) var(--a-dk) var(--a-hi); box-shadow: inset -1px -1px 0 var(--a-lo); padding: 2px 8px; font: 11px var(--f-board); color: #000; }
+.a-btn.sel { border-color: var(--a-dk) var(--a-hi) var(--a-hi) var(--a-dk); box-shadow: inset 1px 1px 0 var(--a-lo); background: #e8e6e0; }
+.a-btn b { font-weight: bold; }
+.a-meter { flex: 1; min-width: 120px; height: 14px; border: 1px solid; border-color: var(--a-lo) var(--a-hi) var(--a-hi) var(--a-lo); background: #fff; position: relative; }
+.a-meter i { position: absolute; inset: 1px auto 1px 1px; width: 77%; background: repeating-linear-gradient(90deg, #000080 0 8px, transparent 8px 10px); }
+.a-meter-l { white-space: nowrap; }
+
+/* ---------------- B. the glass ---------------- */
+.g-entry { background: var(--g-ground); color: var(--g-pale); font: 800 12px/1 var(--f-glass); text-transform: uppercase; letter-spacing: .1em; border: 1px solid var(--g-neon); box-shadow: 0 0 8px rgba(25,227,255,.5); padding: 5px 9px; transform: skewX(-10deg); display: flex; gap: 6px; align-items: center; }
+.g-entry > * { transform: skewX(10deg); }
+.g-entry svg { width: 13px; height: 13px; }
+.g-dock { position: absolute; left: 0; right: 0; bottom: 0; background: var(--g-panel); border-top: 1px solid var(--g-pale); box-shadow: 0 -1px 12px rgba(25,227,255,.45); padding: 10px 10px 12px; z-index: 4; display: grid; gap: 9px; font-family: var(--f-glass); color: var(--g-text);
+  background-image: radial-gradient(120% 90% at 10% 0%, rgba(140,36,250,.35), transparent 60%), radial-gradient(90% 80% at 100% 100%, rgba(20,217,255,.18), transparent 60%); }
+.g-label { font: 800 11px var(--f-glass); letter-spacing: .14em; text-transform: uppercase; color: var(--g-text2); display: flex; justify-content: space-between; }
+.g-label b { color: var(--g-pale); }
+.g-pal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.g-pal span { height: 22px; transform: skewX(-10deg); border: 1px solid rgba(255,255,255,.25); }
+.g-pal span.sel { border: 2px solid var(--g-text); box-shadow: 0 0 9px var(--g-neon); }
+.g-row { display: flex; gap: 6px; align-items: stretch; }
+.g-btn { background: var(--g-field); color: var(--g-text); border: 1px solid rgba(201,248,255,.35); font: 800 13px/1 var(--f-glass); letter-spacing: .08em; text-transform: uppercase; padding: 8px 10px; transform: skewX(-10deg); display: grid; place-items: center; }
+.g-btn > * { transform: skewX(10deg); display: block; }
+.g-btn.sel { border-color: var(--g-neon); box-shadow: 0 0 9px rgba(25,227,255,.55); color: var(--g-pale); }
+.g-btn.go { background: var(--g-ready); color: var(--g-ink-ready); border-color: var(--g-ready); box-shadow: 0 0 12px rgba(255,217,61,.5); flex: 1; font-size: 15px; }
+.g-meter { height: 8px; background: var(--g-field); position: relative; transform: skewX(-10deg); border: 1px solid rgba(201,248,255,.3); }
+.g-meter i { position: absolute; inset: 0 auto 0 0; width: 77%; background: linear-gradient(90deg, var(--g-neon), var(--g-pale)); box-shadow: 0 0 8px var(--g-neon); }
+
+/* ---------------- C. skeuomorphic ---------------- */
+.s-entry { width: 34px; height: 44px; filter: drop-shadow(1px 2px 1px rgba(0,0,0,.35)); }
+.s-dock { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; padding: 0 8px 10px; display: grid; gap: 6px;
+  background: linear-gradient(#8a8f98, #5b6069 14px, #474b53); border-top: 3px solid #b9bec7; box-shadow: 0 -4px 10px rgba(0,0,0,.35); font: bold 11px var(--f-mono); color: #f4f4f4; }
+.s-cans { display: flex; gap: 0; justify-content: space-between; align-items: flex-end; height: 74px; padding: 0 2px; overflow: hidden; }
+.s-cans svg { width: 23px; height: 58px; flex: none; transition: transform .15s; }
+.s-cans svg.sel { transform: translateY(-12px); filter: drop-shadow(0 0 4px rgba(255,255,255,.7)); }
+.s-row { display: flex; gap: 8px; align-items: center; }
+.s-nib { width: 38px; height: 30px; background: linear-gradient(#ececec, #bdbdbd); border-radius: 4px; border: 1px solid #333; display: grid; place-items: center; box-shadow: inset 0 1px 0 #fff, 0 2px 0 #222; }
+.s-nib.sel { background: linear-gradient(#ffe066, #f2b705); }
+.s-nib i { display: block; background: #111; border-radius: 50%; }
+.s-gauge { flex: 1; height: 26px; border-radius: 13px; background: #222; border: 2px solid #9aa0a8; position: relative; overflow: hidden; box-shadow: inset 0 2px 4px #000; }
+.s-gauge i { position: absolute; inset: 0 auto 0 0; width: 77%; background: repeating-linear-gradient(-45deg, #ff3d9a 0 6px, #ff6fb4 6px 12px); }
+.s-gauge span { position: absolute; inset: 0; display: grid; place-items: center; text-shadow: 0 1px 2px #000; }
+.s-key { background: linear-gradient(#f6f6f6, #c9c9c9); color: #111; border: 1px solid #222; border-radius: 4px; padding: 7px 10px; box-shadow: inset 0 1px 0 #fff, 0 2px 0 #222; font: bold 12px var(--f-mono); }
+.s-key.go { background: linear-gradient(#ff5a5a, #c81e1e); color: #fff; flex: 1; text-align: center; font-size: 13px; text-shadow: 0 1px 0 #600; }
+
+/* ---------------- D. recommended hybrid ---------------- */
+.h-cans { display: flex; justify-content: space-between; align-items: flex-end; height: 62px; padding: 0 2px; }
+.h-cans svg { width: 21px; height: 52px; flex: none; }
+.h-cans svg.sel { transform: translateY(-9px); filter: drop-shadow(0 0 5px var(--g-neon)); }
+
+.notes { display: grid; gap: 6px; }
+.verdict { border-left: 3px solid var(--rec); padding: 8px 12px; background: rgba(255,217,61,.07); color: var(--page-fg); margin-top: 26px; max-width: 90ch; font-size: 1.05rem; }
+.verdict b { color: var(--rec); }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- a spray can: body in --can, cap in --can, highlight -->
+    <symbol id="can" viewBox="0 0 24 60">
+      <rect x="9" y="1" width="6" height="5" rx="1" fill="#222"/>
+      <path d="M4 14 Q4 7 12 6 Q20 7 20 14 Z" fill="var(--can)" stroke="#111" stroke-width=".8"/>
+      <rect x="3" y="13" width="18" height="44" rx="2.5" fill="#d9dde3" stroke="#111" stroke-width=".8"/>
+      <rect x="3" y="20" width="18" height="26" fill="var(--can)" stroke="#111" stroke-width=".6"/>
+      <rect x="5" y="14" width="3" height="41" rx="1.5" fill="#fff" opacity=".55"/>
+      <rect x="3" y="52" width="18" height="5" rx="1.5" fill="#9aa0a8" stroke="#111" stroke-width=".6"/>
+    </symbol>
+    <symbol id="can-icon" viewBox="0 0 16 16">
+      <rect x="6.5" y="0.5" width="3" height="2" fill="currentColor"/>
+      <path d="M4 5 Q4 3 8 3 Q12 3 12 5 V15 H4 Z" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M12.5 1.5 l1.5 -1 M13 3 h2 M12.5 4.5 l1.5 1" stroke="currentColor" stroke-width="1"/>
+    </symbol>
+    <!-- the graffiti already on the post, in shares of the body: a mustache, a crown, "LOL", an arrow -->
+    <symbol id="tags" viewBox="0 0 340 300" preserveAspectRatio="none">
+      <path d="M40 92 C70 70 95 120 125 92 C155 120 180 70 210 92" fill="none" stroke="var(--c-black)" stroke-width="9" stroke-linecap="round"/>
+      <path d="M236 40 l12 -22 l12 18 l12 -20 l12 18 l12 -22 l6 34 h-66 z" fill="none" stroke="var(--c-yellow)" stroke-width="5" stroke-linejoin="round" stroke-linecap="round"/>
+      <path d="M30 190 v40 h20 M66 190 q-14 0 -14 20 q0 20 14 20 q14 0 14 -20 q0 -20 -14 -20 M96 190 v40 h20" fill="none" stroke="var(--c-pink)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M150 250 C190 230 230 236 270 214 m-18 -8 l20 8 l-10 20" fill="none" stroke="var(--c-lime)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <!-- the stroke the drawer is making now (not yet tagged) -->
+    <symbol id="live" viewBox="0 0 340 300" preserveAspectRatio="none">
+      <path d="M150 150 c20 -30 50 -30 60 0 s40 30 60 -4" fill="none" stroke="var(--c-cyan)" stroke-width="8" stroke-linecap="round" opacity=".95"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <h1>Graffiti: the can button and the drawing tools</h1>
+  <p class="lede">The same moment in each style: Spritey's post in a thread, already tagged with a mustache, a crown, "LOL" and an arrow. A reader has pressed the spray-can button, picked cyan and is drawing a squiggle that isn't tagged yet. The wall is at 31% of its 40% limit. Each phone is 360px wide. On desktop the same toolbar sits under the post instead of at the foot of the screen.</p>
+
+  <div class="grid">
+
+    <!-- A -->
+    <section class="col" aria-labelledby="a-h">
+      <h2 id="a-h">A. '03 forum</h2>
+      <div class="phone"><div class="screen">
+        <div class="topbar">DIVIDED WORLD :: General</div>
+        <div class="crumb"><a href="#a-h">Index</a> » <a href="#a-h">General</a> » Best fangame of 2004?</div>
+        <div class="post">
+          <div class="post-head"><span class="who">Spritey</span><span class="mark" title="Graffiti"><svg style="color:var(--g-pepperoni)"><use href="#can-icon"/></svg></span><time>Nov 11, 2:14 pm</time></div>
+          <div class="body">
+            <p>Honestly it has to be Mushroom Kingdom Fusion. The level count alone, and every one of them plays different.</p>
+            <p>Anyone who says otherwise is playing on a toaster.</p>
+            <svg class="ink"><use href="#tags"/></svg><svg class="ink"><use href="#live"/></svg>
+            <div class="entry"><span class="a-entry on"><svg><use href="#can-icon"/></svg>Spray</span></div>
+            <div class="react-row" data-over-ink><span class="chip">😂 3</span><span class="chip">React</span></div>
+          </div>
+        </div>
+        <div class="next">Gloomba · Nov 11, 2:20 pm</div>
+        <div class="a-dock">
+          <div class="a-title"><span>Graffiti</span><span>_ ×</span></div>
+          <div class="a-pal">
+            <span style="background:var(--c-black)"></span><span style="background:var(--c-white)"></span><span style="background:var(--c-red)"></span><span style="background:var(--c-orange)"></span><span style="background:var(--c-yellow)"></span><span style="background:var(--c-lime)"></span><span style="background:var(--c-green)"></span>
+            <span style="background:var(--c-teal)"></span><span class="sel" style="background:var(--c-cyan)"></span><span style="background:var(--c-blue)"></span><span style="background:var(--c-purple)"></span><span style="background:var(--c-pink)"></span><span style="background:var(--c-brown)"></span><span style="background:var(--c-silver)"></span>
+          </div>
+          <div class="a-row"><span class="a-btn">Fine</span><span class="a-btn sel">Marker</span><span class="a-btn">Fat cap</span><span class="a-btn">Undo</span></div>
+          <div class="a-row"><span class="a-meter-l">Wall:</span><span class="a-meter"><i></i></span><span class="a-meter-l">31% / 40%</span></div>
+          <div class="a-row" style="justify-content:flex-end"><span class="a-btn">Cancel</span><span class="a-btn"><b>Tag it</b></span></div>
+        </div>
+      </div></div>
+      <ul>
+        <li><b>Reads as</b> the oekaki applets of the day (PaintBBS, ShiPainter). Pure tribute.</li>
+        <li><b>Breaks</b> the two-worlds rule. Every other game control (the hand, the Lens, the play form) is the glass, and this would be the only game tool drawn as board chrome.</li>
+        <li>11px gray buttons are small to hit on a phone.</li>
+      </ul>
+    </section>
+
+    <!-- B -->
+    <section class="col" aria-labelledby="b-h">
+      <h2 id="b-h">B. The glass</h2>
+      <div class="phone"><div class="screen">
+        <div class="topbar">DIVIDED WORLD :: General</div>
+        <div class="crumb"><a href="#b-h">Index</a> » <a href="#b-h">General</a> » Best fangame of 2004?</div>
+        <div class="post">
+          <div class="post-head"><span class="who">Spritey</span><span class="mark" title="Graffiti"><svg style="color:var(--g-pepperoni)"><use href="#can-icon"/></svg></span><time>Nov 11, 2:14 pm</time></div>
+          <div class="body">
+            <p>Honestly it has to be Mushroom Kingdom Fusion. The level count alone, and every one of them plays different.</p>
+            <p>Anyone who says otherwise is playing on a toaster.</p>
+            <svg class="ink"><use href="#tags"/></svg><svg class="ink"><use href="#live"/></svg>
+            <div class="entry"><span class="g-entry"><svg><use href="#can-icon"/></svg><span>Draw</span></span></div>
+            <div class="react-row"><span class="chip">😂 3</span><span class="chip">React</span></div>
+          </div>
+        </div>
+        <div class="next">Gloomba · Nov 11, 2:20 pm</div>
+        <div class="g-dock">
+          <div class="g-label"><span>Can</span><span>Wall <b>31%</b> of 40%</span></div>
+          <div class="g-meter"><i></i></div>
+          <div class="g-pal">
+            <span style="background:var(--c-black);border-color:#555"></span><span style="background:var(--c-white)"></span><span style="background:var(--c-red)"></span><span style="background:var(--c-orange)"></span><span style="background:var(--c-yellow)"></span><span style="background:var(--c-lime)"></span><span style="background:var(--c-green)"></span>
+            <span style="background:var(--c-teal)"></span><span class="sel" style="background:var(--c-cyan)"></span><span style="background:var(--c-blue)"></span><span style="background:var(--c-purple)"></span><span style="background:var(--c-pink)"></span><span style="background:var(--c-brown)"></span><span style="background:var(--c-silver)"></span>
+          </div>
+          <div class="g-row"><span class="g-btn"><span>Fine</span></span><span class="g-btn sel"><span>Marker</span></span><span class="g-btn"><span>Fat cap</span></span><span class="g-btn"><span>Undo</span></span></div>
+          <div class="g-row"><span class="g-btn"><span>Cancel</span></span><span class="g-btn go"><span>Tag it</span></span></div>
+        </div>
+      </div></div>
+      <ul>
+        <li><b>Reads as</b> the game's own HUD rising over the arena, like the hand and the Lens. It follows the two-worlds rule exactly.</li>
+        <li>Flat color chips feel a bit like a settings screen, and the fun of the cans is lost.</li>
+      </ul>
+    </section>
+
+    <!-- C -->
+    <section class="col" aria-labelledby="c-h">
+      <h2 id="c-h">C. Skeuomorphic</h2>
+      <div class="phone"><div class="screen">
+        <div class="topbar">DIVIDED WORLD :: General</div>
+        <div class="crumb"><a href="#c-h">Index</a> » <a href="#c-h">General</a> » Best fangame of 2004?</div>
+        <div class="post">
+          <div class="post-head"><span class="who">Spritey</span><span class="mark" title="Graffiti"><svg style="color:var(--g-pepperoni)"><use href="#can-icon"/></svg></span><time>Nov 11, 2:14 pm</time></div>
+          <div class="body">
+            <p>Honestly it has to be Mushroom Kingdom Fusion. The level count alone, and every one of them plays different.</p>
+            <p>Anyone who says otherwise is playing on a toaster.</p>
+            <svg class="ink"><use href="#tags"/></svg><svg class="ink"><use href="#live"/></svg>
+            <div class="entry"><svg class="s-entry" style="--can:var(--c-cyan)" viewBox="0 0 24 60"><use href="#can"/></svg></div>
+            <div class="react-row"><span class="chip">😂 3</span><span class="chip">React</span></div>
+          </div>
+        </div>
+        <div class="next">Gloomba · Nov 11, 2:20 pm</div>
+        <div class="s-dock">
+          <div class="s-cans">
+            <svg style="--can:var(--c-black)"><use href="#can"/></svg><svg style="--can:var(--c-white)"><use href="#can"/></svg><svg style="--can:var(--c-red)"><use href="#can"/></svg><svg style="--can:var(--c-orange)"><use href="#can"/></svg><svg style="--can:var(--c-yellow)"><use href="#can"/></svg><svg style="--can:var(--c-lime)"><use href="#can"/></svg><svg style="--can:var(--c-green)"><use href="#can"/></svg><svg style="--can:var(--c-teal)"><use href="#can"/></svg><svg class="sel" style="--can:var(--c-cyan)"><use href="#can"/></svg><svg style="--can:var(--c-blue)"><use href="#can"/></svg><svg style="--can:var(--c-purple)"><use href="#can"/></svg><svg style="--can:var(--c-pink)"><use href="#can"/></svg><svg style="--can:var(--c-brown)"><use href="#can"/></svg><svg style="--can:var(--c-silver)"><use href="#can"/></svg>
+          </div>
+          <div class="s-row"><span class="s-nib"><i style="width:4px;height:4px"></i></span><span class="s-nib sel"><i style="width:9px;height:9px"></i></span><span class="s-nib"><i style="width:16px;height:16px"></i></span><span class="s-gauge"><i></i><span>31% / 40%</span></span></div>
+          <div class="s-row"><span class="s-key">Undo</span><span class="s-key">Cancel</span><span class="s-key go">TAG IT</span></div>
+        </div>
+      </div></div>
+      <ul>
+        <li><b>Reads as</b> a toy: you pick up a can. It's the most fun, and it matches the Whoops! sponge cursor.</li>
+        <li><b>Fits</b> neither world. A third look (brushed metal, glossy keys) would appear only here, and its plain words ("Undo", "Cancel") sit on art.</li>
+      </ul>
+    </section>
+
+    <!-- D -->
+    <section class="col" aria-labelledby="d-h">
+      <h2 id="d-h">D. Glass, with real cans <span class="tag">Recommended</span></h2>
+      <div class="phone"><div class="screen">
+        <div class="topbar">DIVIDED WORLD :: General</div>
+        <div class="crumb"><a href="#d-h">Index</a> » <a href="#d-h">General</a> » Best fangame of 2004?</div>
+        <div class="post">
+          <div class="post-head"><span class="who">Spritey</span><span class="mark" title="Graffiti"><svg style="color:var(--g-pepperoni)"><use href="#can-icon"/></svg></span><time>Nov 11, 2:14 pm</time></div>
+          <div class="body">
+            <p>Honestly it has to be Mushroom Kingdom Fusion. The level count alone, and every one of them plays different.</p>
+            <p>Anyone who says otherwise is playing on a toaster.</p>
+            <svg class="ink"><use href="#tags"/></svg><svg class="ink"><use href="#live"/></svg>
+            <div class="entry"><span class="g-entry"><svg style="width:12px;height:22px" viewBox="0 0 24 60"><use href="#can" style="--can:var(--c-cyan)"/></svg><span>Draw</span></span></div>
+            <div class="react-row"><span class="chip">😂 3</span><span class="chip">React</span></div>
+          </div>
+        </div>
+        <div class="next">Gloomba · Nov 11, 2:20 pm</div>
+        <div class="g-dock">
+          <div class="g-label"><span>Cyan</span><span>Wall <b>31%</b> of 40%</span></div>
+          <div class="g-meter"><i></i></div>
+          <div class="h-cans">
+            <svg style="--can:var(--c-black)"><use href="#can"/></svg><svg style="--can:var(--c-white)"><use href="#can"/></svg><svg style="--can:var(--c-red)"><use href="#can"/></svg><svg style="--can:var(--c-orange)"><use href="#can"/></svg><svg style="--can:var(--c-yellow)"><use href="#can"/></svg><svg style="--can:var(--c-lime)"><use href="#can"/></svg><svg style="--can:var(--c-green)"><use href="#can"/></svg><svg style="--can:var(--c-teal)"><use href="#can"/></svg><svg class="sel" style="--can:var(--c-cyan)"><use href="#can"/></svg><svg style="--can:var(--c-blue)"><use href="#can"/></svg><svg style="--can:var(--c-purple)"><use href="#can"/></svg><svg style="--can:var(--c-pink)"><use href="#can"/></svg><svg style="--can:var(--c-brown)"><use href="#can"/></svg><svg style="--can:var(--c-silver)"><use href="#can"/></svg>
+          </div>
+          <div class="g-row"><span class="g-btn"><span>Fine</span></span><span class="g-btn sel"><span>Marker</span></span><span class="g-btn"><span>Fat cap</span></span><span class="g-btn"><span>Undo</span></span></div>
+          <div class="g-row"><span class="g-btn"><span>Cancel</span></span><span class="g-btn go"><span>Tag it</span></span></div>
+        </div>
+      </div></div>
+      <ul>
+        <li><b>The toolbar is the glass,</b> since it's the game's tool, like the Lens and the hand. Its words are plain glass copy.</li>
+        <li><b>The cans are drawn,</b> since they're the ink, the card's own art. The Whoops! sponge and suds work the same way: art inside the game's interface, never a third chrome.</li>
+        <li>The Draw button is a glass tile lifted over the ink, like the post's marks, with a can in the color you last picked.</li>
+      </ul>
+    </section>
+
+  </div>
+
+  <p class="verdict"><b>Why D.</b> The two-worlds design already settles who owns a control. The board is the arena, and its words and posts are the only 2003 chrome. Anything the player works is the glass. The card's art (splats, suds, the sponge, and now the cans and the ink) is the one place a drawn object lives, and it lives inside one of those two worlds, never as a third. A keeps the tribute but puts a game tool in board chrome. C is the most fun to hold but adds a look nothing else uses. D keeps the glass and gives the fun to the cans.</p>
+</div>
