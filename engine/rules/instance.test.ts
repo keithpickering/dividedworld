@@ -921,3 +921,33 @@ test('a scrubWords entry that is empty or not lower case is a problem', () => {
   assert.match(instanceProblems(withWords(['BadWord'])).join('\n'), /scrubWords entry "BadWord" is not lower case/);
   assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
 });
+
+// A draw and a drive (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 1): each refused, naming the card.
+test('a draw is a list of distinct keys, and a drive is a Cast on a post with real gifts, an overhead and a span', () => {
+  const eco = { ...good, settings: { ...settings, economy: { ...settings.economy, 'g.small': 10, 'g.big': 50, 'g.over': 25 } } };
+  const withDrive = (over: Record<string, unknown>, drive: Record<string, unknown> = {}) => ({ ...eco, cards: [testCard({ ...over, drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g.small', 'g.big'], overhead: 'g.over', ...drive } })] }) as unknown as Instance;
+  const withDraws = (draws: unknown) => ({ ...good, cards: [testCard({ draws })] }) as unknown as Instance;
+  const say = (i: Instance) => instanceProblems(i).join('\n');
+  assert.deepEqual(instanceProblems(withDraws(['a', 'b-2'])), []);
+  assert.deepEqual(instanceProblems(withDrive({})), []);
+  assert.match(say(withDraws([])), /card "splat" draws nothing/);
+  assert.match(say(withDraws(['a', 'a'])), /card "splat" draws "a" twice/);
+  assert.match(say(withDraws(['Bad Key'])), /card "splat" draws "Bad Key"; a draw is lowercase letters, digits and hyphens, 1 to 40/);
+  assert.match(say(withDraws('a')), /card "splat" draws "a"; draws is a list/);
+  assert.match(say(withDrive({ play: 'use', gimmick: { kind: 'ward', upTo: 'common' }, lasts: { unit: 'day', count: 1 } })), /card "splat" has a drive, and only a cast card does/);
+  assert.match(say(withDrive({ reaches: ['post', 'thread'], rarity: 'rare', lasts: { unit: 'day', count: 1 } })), /card "splat" has a drive, and a drive card reaches a post alone/);
+  assert.match(say(withDrive({}, { gifts: ['g.small', 'g.gone'] })), /card "splat" has a drive gift "g\.gone", which the economy does not hold/);
+  assert.match(say(withDrive({}, { overhead: 'g.gone' })), /card "splat" has a drive overhead "g\.gone", which the economy does not hold/);
+  for (const bad of [0, -5, 2.5, 601]) {
+    const over = { ...eco, settings: { ...eco.settings, economy: { ...eco.settings.economy, 'g.small': bad } } };
+    const i = { ...withDrive({}), settings: over.settings } as unknown as Instance;
+    assert.match(say(i), /card "splat" has a drive gift "g\.small" of .*; a gift is a positive whole number of hundredths, at most the wallet's cap \(600\)/, String(bad));
+  }
+  for (const bad of [-1, 101, 12.5]) {
+    const i = { ...withDrive({}), settings: { ...eco.settings, economy: { ...eco.settings.economy, 'g.over': bad } } } as unknown as Instance;
+    assert.match(say(i), /card "splat" has a drive overhead of .*; it is a whole number from 0 to 100/, String(bad));
+  }
+  assert.match(say(withDrive({}, { lasts: { unit: 'minute', count: 7 } })), /card "splat" has a drive that lasts .*; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000/);
+  assert.match(say(withDrive({}, { lasts: { unit: 'day', count: 31 } })), /card "splat" has a drive that lasts 31 days, longer than the 30 days a drive may/);
+  assert.deepEqual(instanceProblems(withDrive({}, { lasts: { unit: 'day', count: 30 } })), []);
+});

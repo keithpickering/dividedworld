@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -427,4 +427,27 @@ test('a set card names, or matches, only cards at or below its own rarity', () =
 test('a set card with no trap is refused', () => {
   const none: CardRules = { ...watcher, trap: undefined };
   assert.deepEqual(decideSet(none, settings, post, [], {}, []), { ok: false, why: 'Test Watcher has no trap to spring' });
+});
+
+test('a gift splits into the overhead, rounded up, and what arrives', () => {
+  assert.deepEqual(giftSplit(10, 25), { overhead: 3, arrives: 7 });
+  assert.deepEqual(giftSplit(25, 25), { overhead: 7, arrives: 18 });
+  assert.deepEqual(giftSplit(50, 25), { overhead: 13, arrives: 37 });
+  assert.deepEqual(giftSplit(100, 25), { overhead: 25, arrives: 75 });
+  assert.deepEqual(giftSplit(10, 0), { overhead: 0, arrives: 10 });
+  assert.deepEqual(giftSplit(10, 100), { overhead: 10, arrives: 0 });
+});
+
+test('the open drive is the one whose close is after now, with its plays', () => {
+  const play = (act: string, drive: string, closes: string): CardEffect => ({ card: 'appeal', act, drive, closes });
+  const a = play('a', 'a', gone);
+  const b1 = play('b', 'b', soon);
+  const b2 = play('c', 'b', soon);
+  const open = openDrive([a, b1, b2, { card: 'other', act: 'z' }], 'appeal', new Date());
+  assert.equal(open?.id, 'b');
+  assert.equal(open?.closes, soon);
+  assert.deepEqual(open?.plays, [b1, b2]);
+  assert.equal(openDrive([a], 'appeal', new Date()), undefined, 'every drive has closed');
+  assert.equal(openDrive([b1], 'other', new Date()), undefined, 'another card has none');
+  assert.equal(openDrive([], 'appeal', new Date()), undefined);
 });

@@ -68,6 +68,10 @@ export interface CardEffect {
   readonly faceDown?: true;
   /** Which reach the effect is on: the target's own, or one above it (effectsOnTarget). A post's unless it says. */
   readonly reach?: Reach;
+  /** The drive a play belongs to (`CardRules.drive`): its opening play's act id, so the drive's own id. Only a play of a drive card has one. */
+  readonly drive?: string;
+  /** When that drive closes, an ISO time: its latest play's time plus the card's `drive.lasts`, computed by card_target and never stored. */
+  readonly closes?: string;
 }
 
 /**
@@ -217,6 +221,17 @@ export interface CardRules<Config = unknown> {
   readonly screenReads?: readonly EconomyRead[];
   /** How many of this card one post may carry, each its own play and layer; 1 unless said. */
   readonly stack?: number;
+  /**
+   * Keys the server draws one of at each play (with `random()`, never the caster's choice), stored on the play's payload as `drawn`.
+   * What a key means is the card's own; the engine only holds that the list is real: not empty, no duplicate, each key `[a-z0-9-]{1,40}`.
+   */
+  readonly draws?: readonly string[];
+  /**
+   * The plays of this card on one post share a drive, which closes `lasts` after its latest play. `gifts` are the economy keys of the
+   * amounts a gift to the drive may be, and `overhead` the economy key of the percentage The System keeps of every gift. Only a Cast
+   * reaching a post alone has one.
+   */
+  readonly drive?: { readonly lasts: Span; readonly gifts: readonly string[]; readonly overhead: string };
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
   /** What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it. */
@@ -429,6 +444,26 @@ export function casterMessage(message: unknown): Verdict<string> {
 
 /** A span in milliseconds, a month as 30 days, as Postgres compares intervals. */
 export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? 86_400_000 : s.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+
+/**
+ * The open drive of card `key` among `effects`: the drive whose `closes` is after `now`, with its plays, or none. The effects are exactly
+ * the drive's plays (card_target leaves out a caught or ended play), and this is the one place that says which plays make a drive.
+ */
+export function openDrive(effects: readonly CardEffect[], key: string, now: Date): { readonly id: string; readonly closes: string; readonly plays: CardEffect[] } | undefined {
+  const plays = effects.filter((e) => e.card === key && e.drive !== undefined && e.closes !== undefined && Date.parse(e.closes) > now.getTime());
+  if (!plays.length) return undefined;
+  const first = plays[0]!;
+  return { id: first.drive!, closes: first.closes!, plays: plays.filter((e) => e.drive === first.drive) };
+}
+
+/**
+ * What a gift of `amount` hundredths is split into: the overhead The System keeps, rounded up so a gift never leaves it short, and what
+ * arrives. Integer arithmetic throughout, so no float decides a cent. The screens' preview and the SQL's split are pinned to this.
+ */
+export function giftSplit(amount: Hundredths, overheadPercent: number): { readonly overhead: Hundredths; readonly arrives: Hundredths } {
+  const overhead = Math.ceil((amount * overheadPercent) / 100);
+  return { overhead, arrives: amount - overhead };
+}
 
 /** The reaches a card lists, a post unless it says. */
 export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
