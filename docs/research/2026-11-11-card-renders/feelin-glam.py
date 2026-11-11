@@ -63,7 +63,8 @@ for j in range(TEETH):
     o.data.materials.append(tooth); cloud.append(o)
 # the shades: two stars, gold rims, dark mirrored lenses
 gold = rig.plastic('gold', rig.hexrgb('#ffc81c'), rough=0.12, metallic=1.0)
-lens = rig.plastic('lens', rig.hexrgb('#0a0420'), rough=0.3)
+lens = rig.plastic('lens', (0.004, 0.0, 0.012), rough=0.35)
+lens.node_tree.nodes['Principled BSDF'].inputs['Specular IOR Level'].default_value = 0.12   # dark under a hard key, not grey
 SHY = -RY - 0.12
 for sx in (-1, 1):
     o = rig.slab('rim', rig.star(5, 0.66, 0.36, rot=sx * 0.12), -0.06, 0.06, gold, 0.03); o.location = (sx * 0.66, SHY, 0.36); cloud.append(o)

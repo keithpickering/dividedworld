@@ -27,8 +27,8 @@ def pawn(loc, mat, s=1.0, rot=(0, 0, 0), mood=None):
     parts = [rig.lathe('body', BODY, mat, seg=48), rig.ball((0, 0, HEAD_Z), HEAD_R, mat, 'head', 40)]
     if mood == 'smug':
         for sx in (-1, 1):
-            parts.append(rig.ball(fp(sx * 0.23, 0.1, -0.02), 0.14, white, 'eye', 20, scale=(1, 0.5, 0.72)))
-            parts.append(rig.ball(fp(sx * 0.23 + 0.06, 0.08, 0.05), 0.065, ink, 'pupil', 16))
+            parts.append(rig.ball(fp(sx * 0.23, 0.1, 0.02), 0.15, white, 'eye', 20, scale=(1, 0.5, 0.8)))
+            parts.append(rig.ball(fp(sx * 0.23 + 0.06, 0.08, 0.09), 0.065, ink, 'pupil', 16))
         parts.append(rig.tube('brow', [fp(-0.4, 0.26, 0.02), fp(-0.1, 0.3, 0.02)], 0.035, ink, res=4))
         parts.append(rig.tube('brow', [fp(0.1, 0.4, 0.02), fp(0.4, 0.46, 0.02)], 0.035, ink, res=4))
         parts.append(rig.tube('smirk', [fp(-0.22 + 0.5 * t, -0.27 + 0.2 * t * t, 0.01) for t in (j / 12 for j in range(13))], 0.04, ink, res=5))
@@ -68,7 +68,7 @@ head = CUT + Vector((0, 0, 4.2))
 sp = bpy.data.lights.new('spot', 'SPOT'); sp.energy = 9000; sp.spot_size = math.radians(30); sp.spot_blend = 0.4; sp.color = (1.0, 0.85, 0.65)
 so = bpy.data.objects.new('spot', sp); sc.collection.objects.link(so); so.location = (-5, -9, 9)
 so.rotation_euler = (head - Vector(so.location)).to_track_quat('-Z', 'Y').to_euler()
-rig.area('wash', (-4, -10, 5), 6.0, 1500, rgb=(1.0, 0.7, 0.45), look_at=(0, 2, 0))
+rig.area('wash', (-4, -10, 5), 6.0, 1500, rgb=(1.0, 0.7, 0.45), look_at=(0, 2, 0), glossy=False)
 rig.area('rim', (7, 6, 5), 4.0, 3500, rgb=(1.0, 0.5, 0.15), look_at=tuple(head), glossy=False)
 rig.world((0.12, 0.04, 0.015), 0.6)
 rig.camera(60, elev=9, target=(0, 0, 0.3))
