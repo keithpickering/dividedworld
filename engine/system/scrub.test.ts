@@ -140,3 +140,7 @@ test('scrubbedComplete: two hits of different kinds reject naming the second', a
   await assert.rejects(scrubbedComplete(f.models, REQUEST, WORDS), (e: unknown) => e instanceof AnswerRejected && e.predicate === 'scrub:url');
   assert.equal(f.calls.length, 2);
 });
+
+test('phone: a trunk prefix before the three groups still hits', () => {
+  for (const t of ['call 1-800-555-1234', '1.800.555.1234', '1 800 555 1234']) assert.equal(scrubHit(t, []), 'phone', t);
+});
