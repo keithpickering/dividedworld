@@ -250,3 +250,37 @@ describe('the stylesheet', () => {
     expect(plate('.kb-postcard-plate') + plate('.kb-postcard-line')).not.toContain('gradient');
   });
 });
+
+describe('the frame says how a card is played', () => {
+  const played = (play: CardRules['play'], size: PostcardSize = 'fan') => shown(size, faceOf({ ...rules, play } as CardRules, ui({}), settings));
+
+  test('the face carries its play, and a back carries none', () => {
+    for (const play of ['cast', 'set', 'use'] as const) expect(played(play).getAttribute('data-kb-play'), play).toBe(play);
+    document.body.innerHTML = '';
+    expect(render(<PostcardBack size="fan" />).container.querySelector('[data-kb-play]')).toBeNull();
+  });
+
+  test('a Set has a folded corner, and no other play does', () => {
+    expect(has(played('set'), '.kb-postcard-fold')).toBe(true);
+    document.body.innerHTML = '';
+    expect(has(played('cast'), '.kb-postcard-fold')).toBe(false);
+    document.body.innerHTML = '';
+    expect(has(played('use'), '.kb-postcard-fold')).toBe(false);
+  });
+
+  test('each type\'s frame is drawn, a Set\'s outside ring and a Use\'s dashed one, never under 1.5px', () => {
+    expect(body(".kb-postcard[data-kb-play='set']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px solid var\(--kb-card-color\)/u);
+    expect(body(".kb-postcard[data-kb-play='use']::before")).toMatch(/border:\s*(?:1\.5|[2-9])px dashed var\(--kb-card-color\)/u);
+    expect(body(".kb-postcard[data-kb-play='set']::before,\n.kb-postcard[data-kb-play='use']::before")).toMatch(/inset:\s*-/u);
+    expect(body(".kb-postcard[data-kb-play='cast']::before")).toBe('');
+    expect(body('.kb-postcard-fold')).toMatch(/left:\s*0/u);
+    expect(body('.kb-postcard-fold')).toMatch(/bottom:\s*0/u);
+  });
+
+  test('forced colors keep the lines, in the system\'s text color', () => {
+    const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
+    expect(forced).toMatch(/data-kb-play='set'\]::before[^{]*\{[^}]*CanvasText/u);
+    expect(forced).toMatch(/data-kb-play='use'\]::before[^{]*\{[^}]*CanvasText/u);
+    expect(forced).toMatch(/\.kb-postcard-fold[^{]*\{[^}]*CanvasText/u);
+  });
+});
