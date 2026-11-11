@@ -522,6 +522,57 @@ button.kb-vending-slot {
   max-width: 28rem;
 }
 
+/*
+ * A card's info: the dialog is as wide as the board draws it (900px), the card's face at the sheet's size (276px) in a column of its own beside the rules, a 40px gap
+ * between (docs/plans/2026-11-05-backfill-boards-design.md, section 7). The slot and the card's kind are the frame's kicker over its title, which is the frame's own
+ * heading. On the phone the dialog is a sheet and the face stands above the rules, centered.
+ */
+.kb-glass-dialog.kb-vending-about-dialog--card { width: min(100%, 900px); }
+
+/* The title at the display size the play form's is (the board draws 60px), the medium on the phone (the board's 40px). */
+.kb-vending-about-dialog--card .kb-glass-dialog-head {
+  font-size: var(--kb-glass-size-display-l);
+  line-height: 1;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-about-dialog--card .kb-glass-dialog-head {
+  font-size: var(--kb-glass-size-display-m);
+}
+
+/* The face's glow (its ring's box-shadow, about 30px) rises into whatever stands over it, and the title is 52px of text on solid ground under high contrast: the body starts one glow's reach under the bar. */
+.kb-vending-about-card {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: 276px minmax(0, 1fr);
+  column-gap: 40px;
+  align-items: start;
+  max-width: none;
+}
+
+.kb-vending-about-text {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-about-card {
+  grid-template-columns: minmax(0, 1fr);
+  /* One glow's reach between the face and the price under it. */
+  row-gap: 32px;
+  justify-items: center;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-about-text { justify-self: stretch; }
+
+/* "· more to play on a long post" is the price's second breath: lighter than the price it follows. */
+.kb-vending-about-extra {
+  font-family: var(--kb-glass-font-body, inherit);
+  font-size: var(--kb-glass-size-body);
+  font-weight: 500;
+  color: var(--kb-glass-text-2);
+}
+
 .kb-vending-about-price {
   margin: 0;
   font-family: var(--kb-glass-font-display);

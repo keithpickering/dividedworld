@@ -39,7 +39,7 @@ export function debutFooter(o: { readonly name: string; readonly timing: FooterT
   return `${w.They} debut${w.s} at the next settlement${o.until ? `, ${o.until}` : ''}. Until then you can drop ${w.them} now instead.`;
 }
 
-/** The Reveal modal's line. */
+/** The Reveal overlay's line. */
 export function revealFooter(gameWord: string): string {
   return `The reveal is checked by ${gameWord} and posted at once.`;
 }

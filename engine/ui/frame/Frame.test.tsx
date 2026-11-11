@@ -5,19 +5,20 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { AccountListener, Character, KayfaApi, MyCharacter } from '../data/api.ts';
 import { ALERTS_UNREAD_BOUND } from '../data/api.ts';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
-import { PlayerProvider } from '../player.tsx';
+import { PlayerProvider, hudKey, usePlayer } from '../player.tsx';
 import { RouterProvider, useRouterInternals } from '../router.tsx';
 import { Routes } from '../routes.tsx';
-import { testGlass } from '../test-world.tsx';
+import { buildWorld, renderIn, testGlass } from '../test-world.tsx';
 import { boardPlace, forgetBoard, keepBoardPlace } from '../glass/back.ts';
 import { boardSwitch } from '../glass/board.ts';
 import { Link, useLocation } from '../router.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { Frame } from './Frame.tsx';
+import { LoadedThread } from '../loaded.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
-  id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
+  id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
   debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({
@@ -1005,5 +1006,122 @@ describe('search in the banner (the search plan, Task 6)', () => {
     const found = await axeViolations(banner());
     expect(found, describeViolations(found)).toEqual([]);
     unmount();
+  });
+});
+
+/* The HUD's "Only you see this" opens the one Reveal (the HUD reveal plan, Task 4), on the thread the player is reading. */
+describe('the HUD opens the Reveal, and says when a class is public', () => {
+  class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
+  const RevealWorld = () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: Date.parse('2026-10-01T12:00:00Z') });
+    const stranger = fake.seed.character(other, 'Stranger', 'heel', { at: Date.parse('2026-10-01T12:00:00Z') });
+    const { thread } = fake.seed.thread('general', stranger, 'The tea thread', 'Who keeps reacting?');
+    fake.signInAs(me);
+    localStorage.setItem(hudKey(me), pipe);
+    return { fake, me, pipe, thread };
+  };
+  type RW = ReturnType<typeof RevealWorld>;
+  const Refresh = () => { const { refresh } = usePlayer(); return <button type="button" onClick={() => void refresh()}>Refresh the player</button>; };
+  const onThread = async (w: RW) => {
+    renderIn(w.fake, <Frame><Refresh /><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}` });
+    await screen.findByRole('article', { name: /^Post 1 /u });
+  };
+  const off = async (w: RW) => {
+    renderIn(w.fake, <Frame><Refresh /><p>page</p></Frame>, { path: '/' });
+    await screen.findByText('Pipewrench', { selector: '.kb-hud-name' });
+  };
+  const lineButton = () => screen.findByRole('button', { name: 'Only you see this: reveal Pipewrench\'s class' });
+  const generalId = async (w: RW) => (await w.fake.boards()).find((b) => b.slug === 'general')!.id;
+
+  beforeEach(() => { vi.stubGlobal('IntersectionObserver', Observer); Element.prototype.scrollIntoView = vi.fn(); });
+
+  test('on a thread, the line is a button that opens the Reveal on that thread, and the reveal lands there', async () => {
+    const w = RevealWorld();
+    await onThread(w);
+    const button = await lineButton();
+    expect(button).toHaveTextContent('Only you see this');
+    await userEvent.click(button);
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(within(dialog).getByText('Reveal')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Board (optional)')).toHaveValue(await generalId(w));
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('The tea thread');
+    const unmask = vi.spyOn(w.fake, 'unmask');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
+    await waitFor(() => expect(unmask).toHaveBeenCalledWith(w.pipe, w.thread, ''));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(/Pipewrench revealed as Face in The tea thread\./u)).toBeInTheDocument();
+  });
+
+  test('off a thread, the Board and Thread start empty', async () => {
+    const w = RevealWorld();
+    await off(w);
+    await userEvent.click(await lineButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(within(dialog).getByLabelText('Board (optional)')).toHaveValue('');
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('');
+    expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeDisabled();
+  });
+
+  test('once the class is public the line reads "Revealed", and no button by either name is in the HUD', async () => {
+    const w = RevealWorld();
+    expect((await w.fake.unmask(w.pipe, w.thread, '')).ok).toBe(true);
+    await off(w);
+    const h = await hud();
+    await waitFor(() => expect(within(h).getByText('Revealed')).toBeInTheDocument());
+    expect(within(h).queryByRole('button', { name: /Only you see this/u })).toBeNull();
+    expect(within(h).queryByRole('button', { name: /Revealed/u })).toBeNull();
+    expect(within(h).queryByText('Only you see this')).toBeNull();
+    expect(within(h).getByText('Revealed').closest('.kb-hud-secret')?.querySelector('path')?.getAttribute('d')).toContain('M3 5 V3.4 a2.5 2.5 0 0 1 5 0');
+  });
+
+  test('after a Turn the class is private again, and the button is back', async () => {
+    const w = RevealWorld();
+    expect((await w.fake.unmask(w.pipe, w.thread, '')).ok).toBe(true);
+    await off(w);
+    await waitFor(() => expect(within(screen.getByRole('region', { name: 'Game HUD' })).getByText('Revealed')).toBeInTheDocument());
+    expect((await w.fake.turn(w.pipe, 'heel', 'silent', false, false)).ok).toBe(true);
+    /* The Turn lands at the next settlement. */
+    w.fake.clock.advance(86_400_000);
+    w.fake.seed.settle({});
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh the player' }));
+    expect(await lineButton()).toBeInTheDocument();
+  });
+
+  test('a reveal from the HUD leaves focus on the Revealed line, not on the page body', async () => {
+    const w = RevealWorld();
+    await onThread(w);
+    await userEvent.click(await lineButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const h = await hud();
+    const line = within(h).getByText('Revealed');
+    expect(document.body).not.toHaveFocus();
+    expect(line.closest('.kb-hud-secret')).toHaveFocus();
+  });
+
+  test('Esc in the overlay closes it, and focus returns to the button', async () => {
+    const w = RevealWorld();
+    await off(w);
+    const button = await lineButton();
+    await userEvent.click(button);
+    await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(window.location.pathname).toBe('/');
+    expect(button).toHaveFocus();
+  });
+
+  test('Menu on a thread carries it to My characters, and Back to the thread does not open the overlay', async () => {
+    const w = RevealWorld();
+    await onThread(w);
+    await screen.findByRole('button', { name: 'Only you see this: reveal Pipewrench\'s class' });
+    await userEvent.click(screen.getByRole('button', { name: 'Menu' }));
+    await waitFor(() => expect(window.location.pathname).toBe('/characters'));
+    expect((window.history.state as { state: unknown }).state).toEqual({ thread: { id: w.thread, title: 'The tea thread', board: await generalId(w) } });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

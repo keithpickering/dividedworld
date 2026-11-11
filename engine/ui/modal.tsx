@@ -1,6 +1,6 @@
 /**
- * A modal: the board's own box over a dimmed page, used where it is the best experience (the Turn,
- * a reveal's confirmation). It is a dialog named by its title. Focus moves inside when it opens
+ * A modal: the board's own box over a dimmed page, used where it is the best experience (quoting someone from
+ * the composer). It is a dialog named by its title. Focus moves inside when it opens
  * (to the first control of its body, else its Close button), Tab and Shift+Tab are held inside it,
  * Esc and a press on the dimmed page close it, and focus returns to the control that opened it. If
  * that control is gone by then (the row it sat in changed under the dialog), focus goes to the

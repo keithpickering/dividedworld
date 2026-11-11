@@ -62,7 +62,7 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
-/** The hint a refusal for a barred account carries (0146_conduct.sql, refuse_if_barred). */
+/** The hint a refusal for a barred account carries (0148_conduct.sql, refuse_if_barred). */
 const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
@@ -490,6 +490,7 @@ function toMyCharacter(r: Row): MyCharacter {
     pronouns: pronounsOrDefault(r['pronouns']),
     class: r['class'],
     classSince: r['class_since'],
+    classShownAt: r['class_shown_at'] ?? null,
     classDueAt: r['class_due_at'] ?? null,
     turnOpensAt: r['turn_opens_at'] ?? null,
     debutedAt: r['debuted_at'] ?? null,

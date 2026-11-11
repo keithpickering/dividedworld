@@ -83,7 +83,6 @@ export const ALLOWED_HOOKS = new Set([
   'kb-roster-panel-head',
   'kb-character-sub',
   'kb-composer-now-region',
-  'kb-composer-reveal',
   'kb-spin-now-region',
   'kb-origin-update-title',
   'kb-settled-wallet',

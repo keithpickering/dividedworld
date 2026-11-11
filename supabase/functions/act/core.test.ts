@@ -817,7 +817,7 @@ test('a request that names no account schedules nothing after: a body refused be
     assert.deepEqual(calls, [], 'nothing is read');
     assert.equal(later, 0, 'a refused body schedules no drain');
   }
-  // A barred account (0146's refuse_if_barred: 28000 with the hint kayfabb.barred): answered with a recognizable hint, so the client reads its session again.
+  // A barred account (0148's refuse_if_barred: 28000 with the hint kayfabb.barred): answered with a recognizable hint, so the client reads its session again.
   {
     const barred: Db = { rpc: async () => { throw new DatabaseError('post: this account is banned', '28000', 401, 'this account is banned', 'kayfabb.barred'); } };
     const out = await handleAction({ dbs: { player: barred, service: barred }, instance, body: { action: 'post', thread: id, character: id, body: 'Hello.' },

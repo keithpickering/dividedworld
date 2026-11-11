@@ -776,6 +776,8 @@ export interface MyCharacter {
   /** Its class now: shown to its player as "only you". */
   readonly class: string;
   readonly classSince: string;
+  /** When its current class was made public (a reveal, a debut with its class, or a Turn announced with it); null while only its player knows it. */
+  readonly classShownAt: string | null;
   /**
    * The settlement end its latest Turn was due at, where a reveal made after that window had ended made the Turn wait for the
    * next settlement (0074_settle_claim.sql); null where it took effect when due, or its class is its first.
@@ -1022,15 +1024,15 @@ export interface LogSettlement {
 /** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe';
+  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. */
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
   /** What the floor held back of a settlement's debit. */
   readonly floored: number;
   readonly balanceAfter: number;
-  /** A play's Act, or a trap's spring for its payout; null for a settlement and a purchase. */
+  /** A play's Act, or a trap's spring for its payout; null for a settlement, a purchase and a grant. */
   readonly ref: Id | null;
   readonly at: string;
 }

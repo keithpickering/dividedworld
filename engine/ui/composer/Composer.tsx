@@ -17,7 +17,6 @@
  */
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type FormEvent, type Ref } from 'react';
 import { parse } from '../../bbcode/parse.ts';
-import { RevealModal } from '../characters/RevealModal.tsx';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -29,7 +28,6 @@ import { useBannedUntil } from './ban.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { Editor, type EditorHandle } from './Editor.tsx';
 import { framingArgs, quoteText } from './text.ts';
-import { Layers } from '../glass/layer.tsx';
 
 export interface ComposerHandle {
   /** Append a quote of an Act to the draft and move focus to the box. `selected`: `body` is a stretch of the post's shown words, kept as typed. */
@@ -78,7 +76,6 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   /* The last quote took the draft over the longest post. */
   const [quoted, setQuoted] = useState(false);
   const editor = useRef<EditorHandle>(null);
-  const [revealing, setRevealing] = useState(false);
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
   const bannedUntil = useBannedUntil(hudCharacter);
@@ -198,10 +195,8 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
         <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
-        <button type="button" className="kb-button kb-composer-reveal" data-kb-size="small" onClick={() => setRevealing(true)}>Reveal…</button>
       </Editor>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
-      <Layers>{revealing && <RevealModal character={hudCharacter} thread={thread} onClose={() => setRevealing(false)} />}</Layers>
     </form>
   );
 }

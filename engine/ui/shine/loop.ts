@@ -91,11 +91,16 @@ export interface Options {
   readonly hidden?: () => void;
   /** The share of the rate its moved and idle draws come at, in (0, 1] (default 1); anything else is 1. */
   readonly share?: number;
+  /**
+   * A quiet host is drawn and lit as any host is, but it is never the shiny post in view (`watchShinyInView`): a sheen that is
+   * not foil or glitter, such as a card's residue, rides the loop without bringing up the tilt tip.
+   */
+  readonly quiet?: boolean;
 }
 
 interface Reg {
   canvas: HTMLCanvasElement; box: { w: number; h: number }; density: number;
-  draw: (frame: ShineFrame) => boolean; hidden: (() => void) | undefined; phase: number; share: number; credit: number; since: number;
+  draw: (frame: ShineFrame) => boolean; hidden: (() => void) | undefined; quiet: boolean; phase: number; share: number; credit: number; since: number;
   inView: boolean; fresh: boolean; busy: boolean; settling: boolean;
   cur: Light | null; drawn: Light | null; draws: number; stop: () => void;
 }
@@ -116,9 +121,9 @@ let releaseTilt: (() => void) | null = null;
 /* Who wants to know which shiny post is in view (the shine tip, engine/ui/tips/Tips.tsx). */
 const shinyWatchers = new Set<(canvas: HTMLCanvasElement | null) => void>();
 let announced: HTMLCanvasElement | null = null;
-/** The first registered host among those in view: the design's "first time a shiny post is in view" is any shiny post, not the page's first. */
+/** The first registered host among those in view, quiet ones aside: the design's "first time a shiny post is in view" is any shiny post, not the page's first. */
 const shinyInView = (): HTMLCanvasElement | null => {
-  for (const r of hosts.values()) if (r.inView) return r.canvas;
+  for (const r of hosts.values()) if (r.inView && !r.quiet) return r.canvas;
   return null;
 };
 /** Tells the watchers when the canvas of the first registered host in view changes. */
@@ -130,7 +135,7 @@ function announce(): void {
 }
 
 /**
- * Calls `onChange` with the canvas of the first registered host that is in view (null when none is), now and whenever that
+ * Calls `onChange` with the canvas of the first registered host that is in view and not quiet (null when none is), now and whenever that
  * changes. The loop reaches no React and no tip; whoever draws a tip subscribes here. Returns the stop.
  */
 export function watchShinyInView(onChange: (canvas: HTMLCanvasElement | null) => void): () => void {
@@ -230,7 +235,7 @@ export function register(
   const capped = Math.min(MAX_DENSITY, Math.max(0, density));
   const share = options.share !== undefined && options.share > 0 && options.share <= 1 ? options.share : 1;
   const reg: Reg = {
-    canvas, box, density: capped, draw, hidden: options.hidden, phase: options.phase ?? old?.phase ?? made++ * PHASE_STEP,
+    canvas, box, density: capped, draw, hidden: options.hidden, quiet: options.quiet === true, phase: options.phase ?? old?.phase ?? made++ * PHASE_STEP,
     share, credit: old?.credit ?? ((spread++ * SPREAD) % 1) * IDLE_COST, since: 0,
     inView: false, fresh: true, busy: false, settling: false, cur: old?.cur ?? null, drawn: null, draws: old?.draws ?? 0, stop: () => {},
   };

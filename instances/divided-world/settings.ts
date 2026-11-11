@@ -153,8 +153,13 @@ export const defaults: Settings = deepFreeze<Settings>({
    * concern them. Followed threads, hints and season news are the quieter kinds, and wait in Alerts unless a player turns them on.
    */
   toastDefaults: ['quote', 'cardOnYours', 'cardEnded', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
-  /** The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone. */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.peelMs': 700 },
+  /**
+   * The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone.
+   * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the
+   * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
+   * how fast it settles back, in pixels a second.
+   */
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */

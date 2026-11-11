@@ -24,7 +24,7 @@
  * and the two links, whose widths follow the panel too and whose places already follow the Online status row, are held by their words.
  *
  * "Pipewrench's log" opens My log on Pipewrench's tab (the glass build's Part 4); its place follows the
- * panel's actions, where Reveal… sits beside Edit profile, so it is compared by size. Left out: Mrs. Hooligan's and Spritey's classes and
+ * panel's actions, where Reveal… sits beside Edit profile (for a character whose class is private; a public one shows a plain Revealed line there), so it is compared by size. Left out: Mrs. Hooligan's and Spritey's classes and
  * Turns are the fixture's, not the board's (the board's Mrs. Hooligan is a Jabroni in her cooldown;
  * the fixture's is a Face who has never Turned), so only Pipewrench's card and Spritey's Turn line
  * are compared.

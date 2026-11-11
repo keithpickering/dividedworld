@@ -19,5 +19,5 @@ export function chooseInstance(profile: string | undefined): Instance {
 /** The deployed instance's email theme, chosen here beside the instance so the engine never imports it. */
 export { mailTheme } from '../../../instances/divided-world/mail/index.ts';
 
-/** The deployed instance's code of conduct, whose version and section keys the seed writes (0146). Chosen here beside the instance so the engine never imports it. */
+/** The deployed instance's code of conduct, whose version and section keys the seed writes (0148). Chosen here beside the instance so the engine never imports it. */
 export { conduct } from '../../../instances/divided-world/ui/conduct.ts';

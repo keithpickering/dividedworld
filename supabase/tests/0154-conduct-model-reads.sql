@@ -1,4 +1,4 @@
--- What reads a post's words for a model or a card's condition reads what a player would (supabase/migrations/0146_conduct.sql, which re-creates
+-- What reads a post's words for a model or a card's condition reads what a player would (supabase/migrations/0148_conduct.sql, which re-creates
 -- 0105's rule_breaks and 0144's spring_facts; the conduct plan, Task 2): a Mod Bot's rule and a visit's draw find nothing wrong with a hidden
 -- post, which would otherwise be a way to measure words an admin hid, and a card's Says condition cannot match them.
 

@@ -59,6 +59,7 @@ const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 export const TEST_CODE = '123456';
 
 const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
+const ALREADY_PUBLIC = 'that character\'s class is already public; after a Turn, the new class can be revealed';
 const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -1571,11 +1572,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(original));
   }
 
+  /** When the character's current class was made public: the latest of its unmask Acts and class-carrying announces of that class, at or after the class began (the filter `classReveals` uses). */
+  function classShownAt(c: CharRec): number | null {
+    const now = classNow(c);
+    let latest: number | null = null;
+    for (const a of acts.values()) {
+      if (a.character !== c.id || a.at < now.at) continue;
+      if (a.kind !== 'unmask' && !(a.kind === 'announce' && typeof a.payload.class === 'string')) continue;
+      if (a.payload.class !== now.cls) continue;
+      if (latest === null || a.at > latest) latest = a.at;
+    }
+    return latest;
+  }
+
   function unmask(character: Id, thread: Id, message: string): Answer<Act> {
     const bad = request({ action: 'unmask', character, thread, message });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
+    if (classShownAt(c) !== null) return refuse(ALREADY_PUBLIC);
     const found = threadAndBoard(thread);
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
@@ -2705,8 +2720,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account) return [];
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
+        const shown = classShownAt(c);
         return {
-          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
+          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classShownAt: shown === null ? null : iso(shown), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
