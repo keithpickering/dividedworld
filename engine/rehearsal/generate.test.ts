@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { castFor, dayActions, type World } from './generate.ts';
+import { castFor, dayActions as draw, DAY_MS as DAY, type World } from './generate.ts';
 import type { RehearsalCorpus, Scenario, Sketch } from './types.ts';
 
 const sketch = (n: number, over: Partial<Sketch> = {}): Sketch => ({
@@ -21,12 +21,13 @@ const reactions = [
   { key: 'a', emoji: 'a', quadrant: 'excitedPositive' as const }, { key: 'b', emoji: 'b', quadrant: 'excitedNegative' as const },
   { key: 'c', emoji: 'c', quadrant: 'calmPositive' as const }, { key: 'd', emoji: 'd', quadrant: 'boredNegative' as const },
 ];
-const DAY = 86_400_000;
+const LIMITS = { title: 200, post: 2000 };
+const dayActions = (w: World, c: RehearsalCorpus, s: Scenario, d: number, l = LIMITS) => draw(w, c, s, d, l);
 const cast = castFor(scenario, corpus);
 const characters = cast.flatMap((p) => p.characters.map((c, i) => ({ id: `ch-${p.player}-${i}`, name: c.name, player: p.player, sketch: c.sketch })));
 const world: World = {
   dayStart: 1_000 * DAY, reactions, characters,
-  threads: [{ id: 't1', board: 'general', title: 'Anyone like sprites?' }, { id: 't2', board: 'general', title: 'topic3 thread' }],
+  threads: [{ id: 't1', board: 'general', title: 'Anyone like sprites?', open: true }, { id: 't2', board: 'general', title: 'topic3 thread', open: true }],
   posts: characters.slice(0, 6).map((c, i) => ({ act: `p${i}`, thread: i % 2 ? 't1' : 't2', character: c.id, at: 1_000 * DAY - (i + 1) * 3_600_000 })),
 };
 
@@ -102,7 +103,7 @@ test('a feud draws a negative reaction and others a positive one', () => {
     const neg = quad(r.kind!).endsWith('Negative');
     if (r.character === feud.id) { saw++; assert.ok(neg); } else assert.ok(!neg);
   }
-  assert.ok(saw > 0);
+  assert.ok(saw > 0, 'a feud reaction happened');
 });
 
 test('replies fill {name} with real character names and leave no slot behind', () => {
@@ -119,4 +120,65 @@ test('replies fill {name} with real character names and leave no slot behind', (
     }
   }
   assert.ok(named > 0);
+});
+
+const requests = (w: World, c = corpus, s = scenario, days = 30) =>
+  Array.from({ length: days }, (_, d) => dayActions(w, c, { ...s, seed: d + 1 }, d + 1)).flat().map((x) => x.request as Record<string, string>);
+
+test('replies lean toward threads a feud or an interest is in', () => {
+  const feud = characters.find((c) => c.sketch === 's1')!;
+  const foe = characters.find((c) => c.sketch === 's2')!;
+  const w: World = {
+    ...world, threads: [{ id: 'plain', board: 'general', title: 'nothing here', open: true }, { id: 'foes', board: 'general', title: 'nothing here', open: true }],
+    posts: [{ act: 'x', thread: 'foes', character: foe.id, at: world.dayStart - 5 * DAY }],
+  };
+  const mine = requests(w, corpus, { ...scenario, reactionsPerPost: { least: 0, most: 0 } }, 60).filter((r) => r.action === 'post' && r.character === feud.id);
+  const inFoes = mine.filter((r) => r.thread === 'foes').length;
+  assert.ok(mine.length > 10 && inFoes > mine.length - inFoes, `${inFoes} of ${mine.length}`);
+  const liking = characters.find((c) => c.sketch === 's3')!;
+  const w2: World = { ...w, threads: [{ id: 'plain', board: 'general', title: 'nothing here', open: true }, { id: 'liked', board: 'general', title: 'All about topic3', open: true }], posts: [] };
+  const l = requests(w2, corpus, scenario, 60).filter((r) => r.action === 'post' && r.character === liking.id);
+  assert.ok(l.filter((r) => r.thread === 'liked').length > l.length / 2);
+});
+
+test('a reply to a feud uses a disagreeing line; {interest} and {board} are filled', () => {
+  const feud = characters.find((c) => c.sketch === 's1')!;
+  const foe = characters.find((c) => c.sketch === 's2')!;
+  const c2: RehearsalCorpus = { ...corpus, replies: ['R {interest} {board}'], agreeing: ['A {interest} {board}'], disagreeing: ['D {name} {interest} {board}'] };
+  const w: World = { ...world, threads: [{ id: 'foes', board: 'lounge', title: 'x', open: true }], posts: [{ act: 'x', thread: 'foes', character: foe.id, at: world.dayStart - 5 * DAY }] };
+  const mine = requests(w, c2, scenario, 40).filter((r) => r.action === 'post' && r.character === feud.id);
+  assert.ok(mine.length > 0);
+  const interests = corpus.sketches.find((s) => s.key === 's1')!.interests;
+  for (const r of mine) {
+    const m = /^D (\w+) (\w+) lounge$/.exec(r.body!);
+    assert.ok(m, r.body);
+    assert.equal(m[1], foe.name);
+    assert.ok(interests.includes(m[2]!));
+  }
+});
+
+test('an empty world gives only thread starts; a board without openers is skipped; one character is fine', () => {
+  const empty = requests({ ...world, threads: [], posts: [] });
+  assert.ok(empty.length > 0 && empty.every((r) => r.action === 'startThread'));
+  const c2: RehearsalCorpus = { ...corpus, openers: { quiet: [], general: corpus.openers.general! } };
+  assert.ok(requests({ ...world, threads: [], posts: [] }, c2).every((r) => r.board === 'general'));
+  const one: World = { ...world, characters: [characters[0]!], posts: [] };
+  const got = requests(one);
+  assert.ok(got.every((r) => r.action !== 'react'));
+  assert.ok(got.every((r) => r.character === characters[0]!.id));
+});
+
+test('a closed thread is never replied to or reacted in', () => {
+  const w: World = { ...world, threads: [{ id: 'shut', board: 'general', title: 'topic3', open: false }, { id: 't1', board: 'general', title: 'x', open: true }], posts: characters.map((c, i) => ({ act: `q${i}`, thread: 'shut', character: c.id, at: world.dayStart - 1000 })) };
+  const got = requests(w);
+  assert.ok(got.some((r) => r.action === 'post'));
+  assert.ok(got.every((r) => r.thread !== 'shut' && r.action !== 'react'));
+});
+
+test('filled titles and bodies are trimmed to the limits', () => {
+  for (let d = 1; d <= 10; d++) for (const x of dayActions(world, corpus, { ...scenario, seed: d }, d, { title: 5, post: 8 })) {
+    const r = x.request as Record<string, string>;
+    if (r.title !== undefined) assert.ok(Array.from(r.title).length <= 5);
+    if (r.body !== undefined) assert.ok(Array.from(r.body).length <= 8);
+  }
 });
