@@ -274,6 +274,17 @@ describe('a wall under a splat', () => {
     expect(scrubbed(root)).toBe(0);
   });
 
+  test('in draw mode a press on the splat\'s ink draws, under it, and scrubs neither the splat nor the wall', () => {
+    const { root, whoops } = both();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); });
+    const surface = root.querySelector('[data-kb-draw-surface]') as HTMLElement;
+    const [x, y] = spot();
+    drag(surface, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(Number(surface.dataset.kbStrokes)).toBe(1);
+    expect(Number(whoops.dataset.kbWashed!.split(' ')[0])).toBe(0);
+    expect(scrubbed(root)).toBe(0);
+  });
+
   test('a press beside the splat\'s ink, on the wall, scrubs the wall', () => {
     const { cell, root, whoops } = both();
     const ink = splatInk();
@@ -313,6 +324,101 @@ describe('the Draw tile', () => {
     const tile = screen.getByRole('button', { name: 'Draw' });
     act(() => { fireEvent.pointerDown(tile, { clientX: 300, clientY: 200, pointerId: 1, button: 0, pointerType: 'mouse' }); });
     expect(scrubbed(root)).toBe(0);
+  });
+});
+
+describe('draw mode on a wall that is there', () => {
+  const open = () => { act(() => { fireEvent.click(screen.getByRole('button', { name: 'Draw' })); }); };
+  const frameOf = () => act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+  const surfaceOf2 = (root: HTMLElement) => root.querySelector('[data-kb-draw-surface]') as HTMLElement;
+  const strokesOf = (root: HTMLElement) => Number(surfaceOf2(root).dataset.kbStrokes);
+
+  test('opens the toolbar and a surface over the post body, and the tile steps aside', () => {
+    const { root } = mount();
+    open();
+    expect(screen.getByRole('group', { name: 'Graffiti tools' })).toBeInTheDocument();
+    expect(surfaceOf2(root)).not.toBeNull();
+    expect(surfaceOf2(root).hasAttribute('data-kb-over-ink')).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Draw' })).toBeNull();
+    expect(screen.getByRole('tab', { name: 'Spray' })).toHaveFocus();
+  });
+
+  test('the meter starts at the wall as its Acts leave it, of the limit the surface gives', () => {
+    mount({ surface: surfaceOf(MIDDLE, { covered: 3100, most: 4000 }) });
+    open();
+    expect(screen.getByText(/^Wall \d+% of 40%$/)).toBeInTheDocument();
+    expect(screen.getByText('Draw something first')).toBeInTheDocument();
+  });
+
+  test('a press draws and never scrubs the wall, even on its ink', () => {
+    const { root } = mount();
+    open();
+    drag(surfaceOf2(root), [[0.3, 0.5], [0.5, 0.5], [0.7, 0.5]]);
+    expect(strokesOf(root)).toBe(1);
+    expect(scrubbed(root)).toBe(0);
+  });
+
+  test('what is drawn is painted into the wall\'s own layer after the wall\'s Acts, before it is tagged', async () => {
+    const { root } = mount();
+    open();
+    drag(surfaceOf2(root), [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    await frameOf();
+    const last = vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+    expect(last).toHaveLength(MIDDLE.length + 1);
+    expect(last[0]).toEqual(MIDDLE[0]);
+    expect(last.at(-1)!.kind).toBe('draw');
+    expect((last.at(-1)!.payload as { strokes: unknown[] }).strokes).toHaveLength(1);
+  });
+
+  test('a hit on the wall is not made by a drawing not yet tagged: only the wall\'s Acts are its ink', () => {
+    const { frame, root } = mount();
+    open();
+    drag(surfaceOf2(root), [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    drag(frame, [[0.4, 0.2], [0.6, 0.2]]);
+    expect(scrubbed(root)).toBe(0);
+  });
+
+  test('Tag it sends the draw as the reader\'s character on this play and closes draw mode, keeping the can for the tile', async () => {
+    const { root, surface } = mount();
+    open();
+    act(() => { fireEvent.click(screen.getByRole('radio', { name: 'Pink' })); });
+    drag(surfaceOf2(root), [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
+    expect(surface.draw).toHaveBeenCalledTimes(1);
+    const [play, as, input] = vi.mocked(surface.draw).mock.calls[0]!;
+    expect([play, as]).toEqual(['play-g', 'c1']);
+    expect(input).toEqual({ strokes: [{ can: 'pink', cap: 'stock', aspect: 1.5, points: [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]] }] });
+    expect(root.dataset.kbDrawing).toBeUndefined();
+    expect(screen.queryByRole('group', { name: 'Graffiti tools' })).toBeNull();
+    expect(root.querySelector('[data-kb-can]')).toHaveAttribute('data-kb-can', 'pink');
+    expect(screen.getByRole('button', { name: 'Draw' })).toHaveFocus();
+  });
+
+  test('a refusal stays in the toolbar and the drawing is kept, with draw mode open', async () => {
+    const surface = surfaceOf(MIDDLE, { draw: vi.fn(async () => ({ ok: false as const, error: 'This tag would take the wall to 46%; its limit is 40%.' })) });
+    const { root } = mount({ surface });
+    open();
+    drag(surfaceOf2(root), [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Tag it' })); });
+    expect(screen.getByRole('alert')).toHaveTextContent('This tag would take the wall to 46%; its limit is 40%.');
+    expect(root.dataset.kbDrawing).toBe('true');
+    expect(strokesOf(root)).toBe(1);
+  });
+
+  test('Cancel with nothing drawn closes at once; with strokes it asks first, and Leave drops the drawing and clears it from the wall\'s layer', async () => {
+    const { root } = mount();
+    open();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); });
+    expect(root.dataset.kbDrawing).toBeUndefined();
+    open();
+    drag(surfaceOf2(root), [[0.3, 0.2], [0.5, 0.2], [0.7, 0.2]]);
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Cancel' })); });
+    expect(root.dataset.kbDrawing).toBe('true');
+    expect(screen.getByText('Leave without tagging? Your drawing isn\'t saved.')).toBeInTheDocument();
+    act(() => { fireEvent.click(screen.getByRole('button', { name: 'Leave' })); });
+    expect(root.dataset.kbDrawing).toBeUndefined();
+    await frameOf();
+    expect(vi.mocked(spray.paintWall).mock.calls.at(-1)![3]).toEqual(MIDDLE);
   });
 });
 

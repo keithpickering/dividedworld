@@ -22,8 +22,11 @@
  * Screen readers. A line of text under paint is hidden from them as from the eye (the body is `inert` while any line is covered) and the lines
  * clear of it are read from a hidden copy.
  *
- * Draw mode is Task 10's. The tile sets `drawing` (published as `data-kb-drawing` on the root); while it is set no press scrubs, and Task 10
- * renders the toolbar and the drawing in its place here.
+ * Draw mode (Compose.tsx's `DrawMode`, the same drawing the card's `Compose` makes on a post with no wall yet). The tile sets `drawing` (published
+ * as `data-kb-drawing` on the root); while it is set no press scrubs, `DrawMode` lays its lifted surface over the body (a press there is the
+ * surface's: `data-kb-over-ink` keeps this wall and Whoops! from starting a stroke under it) and draws its toolbar under the post. The drawing
+ * is handed back (`onDraft`) and painted into this wall's own canvas after the wall's Acts, which lies beneath any splat, so under a splat it shows
+ * only where the splat is scrubbed; it is no ink of the wall's (`hitAt`, the covered lines) until it is tagged and arrives as an Act.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { motionReduced } from '../../../../engine/ui/appearance.ts';
@@ -31,6 +34,8 @@ import { LOST_ANSWER, type Answer, type SurfaceAct } from '../../../../engine/ui
 import { usePlayer } from '../../../../engine/ui/player.tsx';
 import type { CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
 import { CANS, SPONGE, type Can } from '../graffiti.ts';
+import { DrawMode } from './Compose.tsx';
+import { lastCan } from './draft.ts';
 import { cursor } from '../whoops/cursor.ts';
 import { readLines } from '../whoops/lines.ts';
 import { ROW_PX, SWEEP_BRUSH_ROWS, bandsOf, sweepStep, type Sweep, type TextLine } from '../whoops/scrub.ts';
@@ -44,8 +49,6 @@ export { MAX_SAVE_RETRIES, RETRY_AFTER_MS };
 export const WASH_AFTER_MS = 1500;
 /** How often the covered lines are recomputed while a sweep runs. */
 const REFRESH_MS = 150;
-/** The can a reader who has picked none is drawn with. */
-const DEFAULT_CAN: Can = 'cyan';
 /** A wash holds at most this many strokes of at most this many points, 3,000 points in all (`graffiti.ts` `BOUNDS`, the server's check). */
 const BATCH = { strokes: 120, points: 300, total: 3000 } as const;
 /** Points closer than this to the one before are dropped, px. */
@@ -105,15 +108,6 @@ function fit(points: readonly Pt[], box: Box): { aspect: number; points: [number
   return out;
 }
 
-/** The can a reader picked last on this device, kept per account. Storage may be off or blocked: then the default can is drawn. */
-function lastCan(account: string | null): Can {
-  try {
-    const v = account ? localStorage.getItem(`kb-graffiti-can:${account}`) : null;
-    if (v && Object.hasOwn(CANS, v)) return v as Can;
-  } catch { /* blocked or private: the default */ }
-  return DEFAULT_CAN;
-}
-
 export function Effect({ plays, reader, surface, ink: registry, place, show, met, still, children }: EffectProps) {
   const { session, hudCharacter } = usePlayer();
   const account = session.signedIn ? session.account : null;
@@ -133,8 +127,18 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const [can, setCan] = useState<Can>(() => lastCan(account));
   useEffect(() => { if (!drawing) setCan(lastCan(account)); }, [drawing, account]);
 
+  /* Draw mode ends with the reader's right to draw (signed out, a moment): and where it ends for any reason the tile is focused again, so a keyboard is not dropped. */
+  useEffect(() => { if (drawing && !canDraw) setDrawing(false); }, [drawing, canDraw]);
+  const wasDrawing = useRef(false);
+  useEffect(() => {
+    if (wasDrawing.current && !drawing) tileRef.current?.focus({ preventScroll: true });
+    wasDrawing.current = drawing;
+  }, [drawing]);
+
   const bleed = place === 'thread';
+  const rootRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const tileRef = useRef<HTMLButtonElement>(null);
   const layoutRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sudsRef = useRef<HTMLCanvasElement>(null);
@@ -218,6 +222,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
 
   /* ----------------------------------------------------------------- the canvas ---- */
 
+  /** The drawing being made in draw mode, not yet tagged: painted after the wall's Acts, in this same layer. */
+  const draftAct = useRef<WallAct | null>(null);
   const paintQueued = useRef(0);
   const paintNow = useCallback(() => {
     paintQueued.current = 0;
@@ -226,13 +232,14 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
     if (!canvas || !isNear || sz.box.w <= 0 || sz.box.h <= 0) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    paintWall(ctx, sz.box, density, wall());
+    paintWall(ctx, sz.box, density, draftAct.current ? [...wall(), draftAct.current] : wall());
   }, [wall]);
   const schedulePaint = useCallback(() => {
     if (paintQueued.current) return;
     paintQueued.current = requestAnimationFrame(paintNow);
   }, [paintNow]);
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
+  const onDraft = useCallback((act: WallAct | null) => { draftAct.current = act; schedulePaint(); }, [schedulePaint]);
 
   /* The canvases are the box's size at the density the wall is drawn at, and the wall is drawn again when its Acts, its box or its nearness change. */
   const q = fixed ? wallDensity(box, dpr) : 1;
@@ -726,7 +733,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   /* The Draw tile sits at the body's top right, lifted over the ink. */
   const tile = { left: -size.left + box.w, top: -size.top };
   return (
-    <div className="kb-graffiti" data-kb-graffiti data-kb-place={place} data-kb-scrubbed={scrubbed} data-kb-drawing={drawing ? 'true' : undefined}>
+    <div ref={rootRef} className="kb-graffiti" data-kb-graffiti data-kb-place={place} data-kb-scrubbed={scrubbed} data-kb-drawing={drawing ? 'true' : undefined}>
       <div ref={frameRef} className="kb-graffiti-frame" style={bleed ? { overflow: 'visible' } : undefined}>
         <div ref={layoutRef} data-kb-graffiti-layout="" inert={hidden}>
           {children}
@@ -737,8 +744,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
             <canvas ref={sudsRef} className="kb-graffiti-suds" data-kb-effect-ink aria-hidden="true" style={onBox} />
           </>
         )}
-        {canDraw && fixed && (
-          <button type="button" className="kb-graffiti-draw" data-kb-over-ink data-kb-can={can} style={tile} onClick={() => setDrawing(true)}>
+        {canDraw && fixed && !drawing && (
+          <button ref={tileRef} type="button" className="kb-graffiti-draw" data-kb-over-ink data-kb-can={can} style={tile} onClick={() => setDrawing(true)}>
             <svg className="kb-graffiti-can" viewBox="0 0 20 28" aria-hidden="true" focusable="false">
               <rect x="5" y="9" width="10" height="17" rx="2" fill={CANS[can]} stroke="currentColor" strokeWidth="1.4" />
               <rect x="7" y="4" width="6" height="5" rx="1" fill="currentColor" />
@@ -748,6 +755,14 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
             </svg>
             <span>Draw</span>
           </button>
+        )}
+        {drawing && canDraw && fixed && surface && plays[0] && hudCharacter && (
+          <DrawMode
+            mode="cast" box={box} wall={acts} covered={surface.covered} most={surface.most} asks
+            dockHost={frameRef.current?.closest<HTMLElement>('.kb-act') ?? rootRef.current}
+            submit={(input) => surface.draw(plays[0]!.id, hudCharacter.id, input)} cancel={() => setDrawing(false)} done={() => setDrawing(false)}
+            onDraft={onDraft} overlayStyle={onBox}
+          />
         )}
       </div>
       {read && read.length > 0 && (
