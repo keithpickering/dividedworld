@@ -3,9 +3,11 @@
  *
  *   node tools/test-card-art.mjs
  *
- * The guard fails a card-art folder (instances/<name>/ui/cards/<key>/) that lacks a file, has the
- * wrong canvas, a bad manifest, an oversize file, or an SVG that runs or reaches out
- * (docs/plans/2026-11-05-card-template-plan.md, Task 2). This reads no file in the repository: each
+ * The guard fails a card-art folder (instances/<name>/ui/cards/<key>/) that lacks a file, has no
+ * canvas or two, the wrong canvas (an SVG off its viewBox; a WebP that is not one, is the wrong size
+ * or is animated), a bad manifest, an oversize file, or an SVG that runs or reaches out
+ * (docs/plans/2026-11-05-card-template-plan.md, Task 2; docs/plans/2026-11-11-rendered-card-art-plan.md,
+ * Task 1). This reads no file in the repository: each
  * case writes a repository-shaped scratch folder in os.tmpdir() and runs the check over it through
  * its function and through the command, whose exit code is what the build reads.
  */
@@ -181,6 +183,14 @@ try {
   red('a valid WebP padded past 400 KB', webp(Buffer.concat([WEBP_LOSSY, Buffer.alloc(401 * 1024)])), /art\.webp.*400 KB/);
   red('a WebP cut to 20 bytes', webp(WEBP_LOSSY.subarray(0, 20)), /art\.webp.*is not a WebP image$/m);
   red('an art.webp whose first chunk is ALPH', webp(altered(WEBP_LOSSY, (c) => { c.write('ALPH', 12, 'latin1'); })), /art\.webp.*is not a WebP image this guard can read/);
+  // Each header check on its own: a file wrong in one place only, so no other check can catch it instead.
+  red('a WebP whose first four bytes are not RIFF', webp(altered(WEBP_LOSSY, (c) => { c.write('RIFX', 0, 'latin1'); })), /art\.webp.*is not a WebP image$/m);
+  red('a RIFF file that is not a WebP (WAVE)', webp(altered(WEBP_LOSSY, (c) => { c.write('WAVE', 8, 'latin1'); })), /art\.webp.*is not a WebP image$/m);
+  red('a lossy WebP with no start code', webp(altered(WEBP_LOSSY, (c) => { c[23] = 0; })), /art\.webp.*is not a WebP image this guard can read/);
+  red('a lossless WebP with no signature byte', webp(altered(WEBP_LOSSLESS, (c) => { c[20] = 0; })), /art\.webp.*is not a WebP image this guard can read/);
+  red('a lossy WebP cut to 27 bytes, inside its size', webp(WEBP_LOSSY.subarray(0, 27)), /art\.webp.*is not a WebP image$/m);
+  // A lossy frame's width and height are 14 bits each; the two bits above them are a scale, which is not the size.
+  green('a lossy WebP with scale bits set above its width and height', webp(altered(WEBP_LOSSY, (c) => { c.writeUInt16LE(1080 | 0x4000, 26); c.writeUInt16LE(1680 | 0x8000, 28); })));
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

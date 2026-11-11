@@ -36,7 +36,8 @@
  * cheap and a miss is not.
  *
  * Not caught in a WebP: a right header over corrupt image data (the browser draws nothing, and a card
- * with no picture is still a whole card), and EXIF or XMP chunks, which are inert in an `<img>`.
+ * with no picture is still a whole card); an extended header that claims 1080 by 1680 over a frame of
+ * another size, since only the first chunk is read; and EXIF or XMP chunks, which are inert in an `<img>`.
  *
  * `cardArtFaults` is exported and reads only the root it is handed, so tools/test-card-art.mjs
  * drives it red over scratch folders. A repository with no card folder passes: there is nothing
