@@ -156,6 +156,21 @@
   padding: 0.5em 6%;
 }
 
+/*
+ * Glitter that has landed on a post (docs/plans/2026-11-11-shake-design.md section 4): the engine puts canvas tiles inside a cell and
+ * marks the cell `data-kb-landed`. The cell is positioned so the tiles (absolute, in the cell's px) lie in it, and isolated so the
+ * tiles' z-index -1 puts them over the cell's own ground and under its content, never behind the next post. No cell set a position
+ * before (the only positioned things in a post are inside `.kb-act-main`), so this overrides nothing.
+ */
+.kb-act > [data-kb-landed] {
+  position: relative;
+  isolation: isolate;
+}
+
+.kb-act > [data-kb-landed] > canvas[data-kb-landing] {
+  z-index: -1;
+}
+
 .kb-act-main {
   grid-area: main;
   padding: 0.5em 1%;

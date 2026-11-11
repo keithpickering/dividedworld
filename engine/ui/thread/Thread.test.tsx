@@ -22,6 +22,25 @@ vi.mock('../player.tsx', async (original) => {
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
 });
 
+/* Glitter's landing places: the real ones, counted, so a test can ask what is registered and what has been let go. */
+const landing = vi.hoisted(() => ({ posts: new Set<HTMLElement>(), pages: 0, pageCalls: 0 }));
+vi.mock('../shine/landing.ts', async (original) => {
+  const m = await original<typeof import('../shine/landing.ts')>();
+  return {
+    ...m,
+    landPost: (article: HTMLElement) => {
+      const off = m.landPost(article);
+      landing.posts.add(article);
+      return () => { landing.posts.delete(article); off(); };
+    },
+    landPage: () => {
+      const off = m.landPage();
+      landing.pages++; landing.pageCalls++;
+      return () => { landing.pages--; off(); };
+    },
+  };
+});
+
 /* What a post's words cost to draw: every render of a body, and every parse of a long one. */
 const drawn = vi.hoisted(() => ({ bodies: [] as string[], parses: [] as string[] }));
 vi.mock('../bbcode/render.tsx', async (original) => {
@@ -62,6 +81,7 @@ const watched = (el: Element | null) => waitFor(() => expect(MockObserver.all.so
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 beforeEach(() => {
+  landing.posts.clear(); landing.pages = 0; landing.pageCalls = 0;
   MockObserver.all = [];
   drawn.bodies = [];
   drawn.parses = [];
@@ -2110,5 +2130,44 @@ describe('a card an admin ended', () => {
     /* The end comes from the admin's call, not the Lens: only the broadcast carries it to this page. */
     await act(async () => { expect((await w.fake.reverseCard(played)).ok).toBe(true); });
     await waitFor(() => expect(within(post(2)).queryByTestId('fx-whoops')).toBeNull());
+  });
+});
+
+
+describe('where glitter lands in a thread', () => {
+  test('a mounted post is registered as a landing place, and one that unmounts lets go of it', async () => {
+    const w = world(3);
+    const shown = open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.posts.has(second)).toBe(true));
+    expect(landing.posts.size).toBe(3);
+    shown.unmount();
+    expect(landing.posts.size).toBe(0);
+  });
+
+  test('a post that comes live is registered, and the one before it keeps its registration', async () => {
+    const w = world(2);
+    const tapped = tap(w.fake);
+    open(w);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.posts.size).toBe(2));
+    see(sentinel(), true);
+    deliver(() => tapped().onAct?.(live(w.thread, 3, w.pipe)));
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(landing.posts.size).toBe(3));
+    expect(landing.posts.has(post(1))).toBe(true);
+  });
+
+  test('the thread screen holds the page while it is on screen, and unmounting sweeps it: nothing loose, no page tile', async () => {
+    const w = world(2);
+    const shown = open(w);
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(landing.pages).toBe(1));
+    shown.unmount();
+    expect(landing.pages).toBe(0);
+    expect(landing.posts.size).toBe(0);
+    const { probe } = await import('../shine/landing.ts');
+    expect(probe.landed()).toEqual({ effect: 0, cell: 0, page: 0 });
+    expect(document.querySelectorAll('canvas[data-kb-landing]')).toHaveLength(0);
   });
 });
