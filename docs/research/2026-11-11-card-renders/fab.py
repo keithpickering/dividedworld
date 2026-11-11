@@ -1,5 +1,6 @@
 """Feelin' Fab card art exploration, after Minus World's original icon: a grinning cloud with a rainbow
-standing out of it, the sun under it, hills and daisies at the foot."""
+standing out of it, the sun low behind hills, daisies at the foot. Seen from the grass, looking up at the cloud,
+at sunset."""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy
@@ -8,11 +9,23 @@ import rig
 
 OUT = sys.argv[-1]
 sc = rig.reset()
-# world: the card is the xz plane, 5.4 wide by 8.4 tall, centered on the origin; the camera looks along +y
-C = Vector((0.0, 0.0, 0.95))             # the cloud's middle, in the focus zone
+C = Vector((0.0, 0.0, 1.9))              # the cloud's middle
 RX, RY, RZ = 1.75, 1.0, 1.0              # the cloud's face is the front of this ellipsoid
+EYE = Vector((1.9, -5.8, -0.35))         # where the camera stands: low in the grass, off to one side
+G = -1.75                                # the grass under it
 
-rig.backdrop(14, [(0.0, '#d6f3ff'), (0.45, '#8fd3f7'), (1.0, '#3d9be0')])
+# ---- the sky: a sunset, banded by height above the horizon as the period's skies were -----------
+w = bpy.data.worlds.new('sunset'); sc.world = w; w.use_nodes = True
+n, l = w.node_tree.nodes, w.node_tree.links
+tc = n.new('ShaderNodeTexCoord'); sx = n.new('ShaderNodeSeparateXYZ'); ramp = n.new('ShaderNodeValToRGB'); cr = ramp.color_ramp
+SKY = [(0.0, '#2a1030'), (0.49, '#7a2a3a'), (0.505, '#ffc04a'), (0.55, '#ff8a3a'), (0.62, '#f0508a'), (0.72, '#8a3aa8'), (0.86, '#2a2a8a'), (1.0, '#0c1040')]
+cr.elements[0].position, cr.elements[0].color = SKY[0][0], (*rig.hexrgb(SKY[0][1]), 1)
+cr.elements[1].position, cr.elements[1].color = SKY[-1][0], (*rig.hexrgb(SKY[-1][1]), 1)
+for pos, hx in SKY[1:-1]:
+    e = cr.elements.new(pos); e.color = (*rig.hexrgb(hx), 1)
+half = n.new('ShaderNodeMath'); half.operation = 'MULTIPLY_ADD'; half.inputs[1].default_value = 0.5; half.inputs[2].default_value = 0.5   # up is 1, the horizon 0.5
+l.new(tc.outputs['Generated'], sx.inputs[0]); l.new(sx.outputs['Z'], half.inputs[0]); l.new(half.outputs[0], ramp.inputs['Fac'])
+l.new(ramp.outputs['Color'], n['Background'].inputs['Color']); n['Background'].inputs['Strength'].default_value = 1.0
 
 # ---- the rainbow: six glossy pipes standing out of the cloud, leaning as they climb --------------
 BANDS = ['#ff2a2a', '#ff8a1c', '#ffe21c', '#2fd24a', '#2a7dff', '#9a3df0']
@@ -21,12 +34,12 @@ for i, hx in enumerate(BANDS):
     x0 = (i - 2.5) * PIPE * 1.9
     pts = []
     for k in range(41):
-        t = k / 40; z = C.z + 0.3 + t * 6.4
+        t = k / 40; z = C.z + 0.3 + t * 9.0
         pts.append((x0 * (1 + 0.28 * t) - 0.75 * t * t - 0.05, 0.55 + 0.5 * t, z))   # fans a little, leans left
     rig.tube('band', pts, PIPE, rig.plastic(f'band{i}', rig.hexrgb(hx), rough=0.08, coat=1.0, emit=0.25), res=8)
 
 # ---- the cloud: one broad body for the face, lumps around its rim --------------------------------
-fluff = rig.plastic('cloud', (0.82, 0.86, 0.95), rough=0.5)
+fluff = rig.plastic('cloud', (0.8, 0.8, 0.86), rough=0.55)
 rig.ball(C, 1.0, fluff, 'cloud', 64, scale=(RX, RY, RZ))
 LUMPS = [(-1.55, 0.45, 0.8), (-0.85, 0.85, 0.85), (0.05, 0.95, 0.9), (0.95, 0.8, 0.85), (1.6, 0.35, 0.8),
          (-1.95, -0.25, 0.7), (1.95, -0.3, 0.72), (-1.3, -0.7, 0.75), (-0.35, -0.85, 0.8), (0.65, -0.82, 0.8), (1.4, -0.7, 0.7)]
@@ -55,50 +68,48 @@ for j in range(TEETH):
     md = o.modifiers.new('bevel', 'BEVEL'); md.width = 0.035; md.segments = 3
     o.data.materials.append(tooth)
 
-# ---- the sun under it, its rays, and the hills it rises behind -----------------------------------
-sun = rig.plastic('sun', rig.hexrgb('#ffd21c'), rough=0.15, coat=1.0, emit=0.6)
-S = Vector((0.15, 1.6, -3.1))
-rig.ball(S, 0.6, sun, 'sun', 48)
-for j in range(12):
-    a = j / 12 * math.tau + 0.13
-    d = Vector((math.cos(a), 0, math.sin(a)))
-    bpy.ops.mesh.primitive_cone_add(radius1=0.09, depth=0.6, vertices=16, location=S + d * 1.15, rotation=(0, math.pi / 2 - a, 0))
-    bpy.context.object.data.materials.append(sun); bpy.ops.object.shade_smooth()
+# ---- the sun, going down behind the far hills ----------------------------------------------------
+SUN = Vector((-17.0, 60.0, EYE.z + 3.0))
+rig.ball(SUN, 3.6, rig.glow('sun', rig.hexrgb('#fff2b0'), 3.0), 'sun', 48)
+for r, a in ((6.5, 0.22), (11.0, 0.1), (17.0, 0.05)):             # its glow, in three soft shells
+    rig.ball(SUN + Vector((0, 2, 0)), r, rig.glow('glow', rig.hexrgb('#ffb04a'), 1.6, alpha=a), 'glow', 32)
+far = rig.plastic('far-hill', rig.hexrgb('#3a4a5a'), rough=0.7, emit=0.2)
+mid = rig.plastic('mid-hill', rig.hexrgb('#2a8a3c'), rough=0.5, emit=0.22)
+for x, y, r, k, m_ in ((-24, 48, 16, 0.04, far), (4, 52, 20, 0.02, far), (30, 46, 15, 0.06, far), (-12, 26, 9, 0.3, mid), (14, 24, 10, 0.26, mid), (-2, 15, 6, 0.24, mid)):
+    rig.ball((x, y, EYE.z - 0.9), r, m_, 'hill', 64, scale=(1, 1, k + 0.12))
 
-hill_a = rig.plastic('hill', rig.hexrgb('#35c23a'), rough=0.35)
-hill_b = rig.plastic('hill-far', rig.hexrgb('#1f9a3a'), rough=0.35)
-HILLS = [((-2.6, 2.4, -8.3), 5.6, hill_b), ((3.2, 3.0, -8.9), 6.3, hill_b), ((0.6, 0.2, -9.6), 6.0, hill_a), ((-3.6, -0.4, -8.6), 4.6, hill_a)]
-for loc, r, mat in HILLS:
-    rig.ball(loc, r, mat, 'hill', 96)
-
-petal = rig.plastic('petal', (1.0, 1.0, 1.0), rough=0.25)
+# ---- the near hill, and the daisies on it ----------------------------------------------------------
+hill = rig.plastic('hill', rig.hexrgb('#2fae3a'), rough=0.35)
+H0 = Vector((0.6, 0.6, G - 7.0)); HR = 7.0
+rig.ball(H0, HR, hill, 'near-hill', 96)
+rig.floor(G - 1.2, far, size=400, y=60)
+petal = rig.plastic('petal', (1.0, 0.97, 0.95), rough=0.25)
 heart = rig.plastic('heart', rig.hexrgb('#ffc21c'), rough=0.2, coat=1.0)
-def on_hill(x, z):
-    """The nearest hill's front at (x, z): where a daisy sits."""
-    best = None
-    for (cx, cy, cz), r, _ in HILLS:
-        k = r * r - (x - cx) ** 2 - (z - cz) ** 2
-        if k > 0 and (best is None or cy - math.sqrt(k) < best): best = cy - math.sqrt(k)
-    return best
-for x, z, s in ((-1.9, -3.45, 1.0), (1.55, -3.25, 1.15), (2.3, -3.85, 0.9), (-0.7, -3.85, 0.8), (0.55, -3.6, 0.7), (-2.4, -3.95, 0.75)):
-    y = on_hill(x, z)
-    if y is None: continue
-    p = Vector((x, y - 0.12 * s, z))
+for x, y, s in ((-1.6, -1.4, 1.0), (0.2, -0.6, 1.1), (2.6, -1.2, 1.0), (-0.5, 1.0, 0.9), (1.7, 0.8, 0.9), (3.4, 0.6, 0.8), (-2.6, 0.4, 0.9), (0.9, 2.4, 0.8), (-1.6, 2.6, 0.8), (3.0, 2.8, 0.8)):
+    z = H0.z + math.sqrt(max(0.0, HR * HR - (x - H0.x) ** 2 - (y - H0.y) ** 2))
+    p = Vector((x, y, z + 0.5 * s))
+    rig.cone((x, y, z - 0.05), p, 0.025 * s, 0.02 * s, rig.plastic('stem', rig.hexrgb('#1f8a2a'), rough=0.4), 8)
+    facing = (EYE - p).normalized(); side = facing.cross(Vector((0, 0, 1))).normalized(); up = side.cross(facing)
     for j in range(8):
         a = j / 8 * math.tau
-        rig.ball(p + Vector((math.cos(a), 0, math.sin(a))) * 0.2 * s, 0.11 * s, petal, 'petal', 16, scale=(1, 0.5, 1))
-    rig.ball(p + Vector((0, -0.05 * s, 0)), 0.13 * s, heart, 'heart', 20)
+        rig.ball(p + (side * math.cos(a) + up * math.sin(a)) * 0.2 * s, 0.11 * s, petal, 'petal', 16)
+    rig.ball(p + facing * 0.06 * s, 0.13 * s, heart, 'heart', 20)
 
-# ---- sparkles in the sky: four-pointed stars ------------------------------------------------------
-glint = rig.plastic('glint', (1.0, 1.0, 1.0), rough=0.1, emit=1.2)
-for x, z, s, rot in ((-2.0, 3.55, 0.42, 0.0), (2.15, 2.9, 0.3, 0.3), (-2.25, 1.9, 0.2, 0.5), (2.2, 0.1, 0.24, 0.1), (-2.1, -1.1, 0.3, 0.2), (1.8, -1.6, 0.18, 0.4)):
-    pts = [(math.cos(rot + j * math.pi / 4) * (s if j % 2 == 0 else s * 0.28), math.sin(rot + j * math.pi / 4) * (s if j % 2 == 0 else s * 0.28)) for j in range(8)]
-    o = rig.slab('glint', pts, -0.05, 0.05, glint, 0.02); o.location = (x, 2.5, z)
+# ---- the first stars, high in the dark of the sky ---------------------------------------------------
+glint = rig.glow('star', (1.0, 1.0, 1.0), 2.5)
+for x, z, s in ((-7, 21, 0.5), (5, 24, 0.4), (10, 16, 0.32), (-12, 14, 0.3), (1, 28, 0.3), (14, 26, 0.25)):
+    o = rig.slab('star', rig.star(4, s, s * 0.24), -0.05, 0.05, glint, 0.02); o.location = (x, 30, z)
+    o.rotation_euler = (math.radians(-25), 0, 0)
 
-# ---- light and camera -----------------------------------------------------------------------------
-rig.area('key', (-6, -9, 8), 4.0, 1500, look_at=tuple(C))
-rig.area('fill', (6, -7, -2), 7.0, 350, rgb=(0.8, 0.9, 1.0), look_at=tuple(C))
-rig.area('ground', (0, -6, 1), 5.0, 450, rgb=(1.0, 1.0, 0.9), look_at=(0, 0, -4))
-rig.world((0.35, 0.6, 1.0), 0.5)
-rig.camera(60)
+# ---- light: the low sun from behind, warm from under, a cool lamp from the camera's side -----------
+sl = bpy.data.lights.new('sunlight', 'SUN'); sl.energy = 3.5; sl.color = (1.0, 0.6, 0.3); sl.angle = math.radians(3)
+so = bpy.data.objects.new('sunlight', sl); sc.collection.objects.link(so)
+so.rotation_euler = (C - SUN).to_track_quat('-Z', 'Y').to_euler()
+rig.area('under', (-3.5, 1.5, -2.0), 4.0, 1100, rgb=(1.0, 0.5, 0.3), look_at=tuple(C), glossy=False)
+rig.area('face', (4.5, -8, 2.5), 5.0, 480, rgb=(0.85, 0.8, 1.0), look_at=tuple(C))
+rig.area('grass', (0, -6, 3), 4.0, 700, rgb=(1.0, 0.85, 0.8), look_at=(0.5, -1.5, G))
+
+cam = rig.camera(28)                                              # wide and close, looking up
+cam.location = EYE
+cam.rotation_euler = (Vector((0.25, 0.0, 0.8)) - EYE).to_track_quat('-Z', 'Y').to_euler()
 rig.render(OUT)

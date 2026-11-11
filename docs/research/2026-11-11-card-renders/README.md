@@ -166,6 +166,13 @@ The second step needs Pillow. What they show, on this date:
 - Main Event's sign says the card's name, which the plate then says again.
 - Trap Card's trap is small in its frame at every size.
 
+**After the owner saw the sheets**, seven scenes were recomposed so their subject sits above the name plate: Whoops!
+(the splat higher and smaller, so its runs end above the plate), Bluff, Glitter Bomb and Hall Pass (raised), Main
+Event (its sign removed, the belt larger and higher), Trap Card (the camera closer), and Feelin' Fab, which the owner
+also asked to see from below and at a truer sunset: its camera now stands low in the grass looking up at the cloud,
+with a banded sunset sky, the sun going down behind far hills, and daisies on a near one. The two sheets here were made
+before that and show the first compositions.
+
 ## What using these on cards would need
 
 Card art is vector only today: `tools/check-card-art.mjs` refuses an `<image>` in `art.svg`, and the art README says

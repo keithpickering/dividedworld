@@ -16,7 +16,7 @@ for k in range(-4, 5):                                           # the hall: a r
     for j in range(3): rig.tube('vent', [(k * 1.6 - 0.4, 8.85, G + 4.6 - 0.18 * j), (k * 1.6 + 0.4, 8.85, G + 4.6 - 0.18 * j)], 0.03, rig.plastic('vent', rig.hexrgb('#041c24'), rough=0.4), res=2)
 
 # ---- the Mod Bot: a boxy head, one red visor, an antenna ------------------------------------------
-B = Vector((-0.55, 2.2, 1.9))
+B = Vector((-0.6, 2.2, 2.5))
 shell = rig.plastic('bot', rig.hexrgb('#16a8c4'), rough=0.18, metallic=0.4, coat=1.0)
 dark = rig.plastic('bot-dark', rig.hexrgb('#041c24'), rough=0.3)
 chrome = rig.plastic('chrome', (0.85, 0.95, 1.0), rough=0.06, metallic=1.0)
@@ -38,7 +38,7 @@ vl = bpy.data.lights.new('visor', 'POINT'); vl.energy = 350; vl.color = (1.0, 0.
 vo = bpy.data.objects.new('visor', vl); sc.collection.objects.link(vo); vo.location = B + Vector((0, -1.6, 0.1))
 
 # ---- the pass: a badge on a lanyard, swung up in front of the visor ------------------------------
-P = Vector((0.85, -0.6, -0.1))
+P = Vector((1.0, -0.6, 0.75))            # the whole pass sits above the card's name plate
 paper = rig.plastic('pass', rig.hexrgb('#e6fdff'), rough=0.18, coat=1.0)
 cyan = rig.plastic('pass-ink', rig.hexrgb('#18c8e8'), rough=0.15, coat=1.0, emit=0.2)
 navy = rig.plastic('pass-dark', rig.hexrgb('#06323e'), rough=0.2)
@@ -55,10 +55,10 @@ for k in range(3):
     badge.append(rig.slab('line', rig.rrect(1.3 - 0.3 * k, 0.09, 0.04), -0.085, -0.06, navy, 0.005)); badge[-1].location = (-0.15 * k, 0, -0.68 - 0.21 * k)
 badge.append(rig.tube('check', [(0.42, -0.1, -0.95), (0.52, -0.1, -1.07), (0.72, -0.1, -0.82)], 0.035, cyan, res=5))
 tilt = (-8, 14, -14)
-rig.group(badge, loc=P, rot=tilt)
+rig.group(badge, loc=P, rot=tilt, scale=0.86)
 # the lanyard: a flat strap from the clip up and off the top of the card
 from mathutils import Euler
-top = P + Euler(tuple(math.radians(a) for a in tilt), 'XYZ').to_matrix() @ Vector((0, 0, 1.7))
+top = P + Euler(tuple(math.radians(a) for a in tilt), 'XYZ').to_matrix() @ (Vector((0, 0, 1.7)) * 0.86)
 import bmesh
 for sx in (-1, 1):
     bm = bmesh.new(); prev = None

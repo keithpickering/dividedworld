@@ -56,5 +56,6 @@ so = bpy.data.objects.new('spot', sp); sc.collection.objects.link(so); so.locati
 rig.area('key', (-6, -8, 6), 4.0, 1300, look_at=tuple(H + Vector((0, 0, 1))))
 rig.area('rim', (5, 5, 5), 4.0, 2500, rgb=(1.0, 0.5, 0.8), look_at=tuple(H), glossy=False)
 rig.world((0.12, 0.02, 0.08), 0.6)
-rig.camera(60, elev=13, target=(0, 0, 0.35))
+cam = rig.camera(60, elev=13, target=(0, 0, 0.95))
+cam.data.sensor_height = 36 / 1.16         # a little closer: the trap was small in its frame
 rig.render(OUT)

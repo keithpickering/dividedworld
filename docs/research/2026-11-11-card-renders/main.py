@@ -1,4 +1,5 @@
-"""Main Event card art exploration, after the placeholder art.svg: a title belt under the house lights."""
+"""Main Event card art exploration, after the placeholder art.svg: a title belt under the house lights. It carries
+no sign: the card's own plate says its name."""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy
@@ -10,7 +11,7 @@ sc = rig.reset()
 rig.backdrop(18, [(0.0, '#03141a'), (0.5, '#0a3d4c'), (1.0, '#010608')])
 G = -2.3
 rig.floor(G, rig.checker('canvas', '#08323d', '#0d4a5a', 34, rough=0.1))
-C = Vector((0, 0, 0.75))                 # the belt's plate
+C = Vector((0, 0, 1.45))                 # the belt's plate
 
 gold = rig.plastic('gold', rig.hexrgb('#ffc21c'), rough=0.1, metallic=1.0)
 chrome = rig.plastic('chrome', (0.9, 0.97, 1.0), rough=0.05, metallic=1.0)
@@ -49,16 +50,7 @@ for j in range(12):
     a = math.tau * j / 12
     plate.append(rig.ball((math.cos(a) * 0.9, -0.15, math.sin(a) * 0.9), 0.06, gem, 'gem', 16))
 pl = rig.group(plate, loc=(0, -0.1, 0)); pl.scale = (1.5, 1.0, 1.12); belt.append(pl)
-rig.group(belt, loc=C, rot=(-10, 0, -4), scale=1.12)
-
-# ---- the marquee over it: a sign with bulbs, hung on two wires ----------------------------------
-sign = [rig.slab('sign', rig.rrect(3.3, 0.95, 0.12), -0.08, 0.08, rig.plastic('sign', rig.hexrgb('#06222b'), rough=0.3), 0.03),
-        rig.text('MAIN EVENT', 0.42, rig.plastic('letters', rig.hexrgb('#e6fdff'), rough=0.1, emit=1.6), (0, -0.09, 0), depth=0.03, bevel=0.006)]
-bulb = rig.glow('bulb', rig.hexrgb('#fff3b0'), 5.0)
-for j in range(11):
-    for z in (-0.4, 0.4): sign.append(rig.ball((-1.5 + 0.3 * j, -0.1, z), 0.05, bulb, 'bulb', 12))
-rig.group(sign, loc=(0, 0.6, 3.25), rot=(8, 0, 3))
-for x in (-1.2, 1.3): rig.tube('wire', [(x, 0.6, 3.7), (x * 1.1, 0.6, 7)], 0.012, chrome, res=2)
+rig.group(belt, loc=C, rot=(-10, 0, -4), scale=1.3)
 
 # ---- the house lights: one beam down the middle, two crossing behind ----------------------------
 beam = rig.glow('beam', rig.hexrgb('#b8f8ff'), 0.7, alpha=0.02)
@@ -67,7 +59,7 @@ for sx in (-1, 1): rig.cone((sx * 6, 9, 9), (-sx * 2.5, 9, G), 0.3, 1.8, beam, 4
 sp = bpy.data.lights.new('spot', 'SPOT'); sp.energy = 3500; sp.spot_size = math.radians(34); sp.color = (0.8, 0.97, 1.0)
 so2 = bpy.data.objects.new('spot', sp); sc.collection.objects.link(so2); so2.location = (0, -1.5, 9.5); so2.rotation_euler = (math.radians(-9), 0, 0)
 glint = rig.glow('glint', (1, 1, 1), 4.0)
-for x, z, s in ((-1.75, 1.75, 0.2), (1.95, 0.2, 0.15), (-2.2, -0.3, 0.12), (1.4, 1.9, 0.11), (2.3, 2.3, 0.08), (-2.3, 2.6, 0.09)):
+for x, z, s in ((-1.9, 2.9, 0.22), (2.1, 0.5, 0.15), (-2.2, 0.2, 0.12), (1.5, 3.1, 0.13), (2.3, 3.6, 0.08), (-1.2, 3.7, 0.09), (0.3, 3.3, 0.1)):
     o = rig.slab('glint', rig.star(4, s, s * 0.22), -0.02, 0.02, glint, 0.005); o.location = (x, -1.2, z)
 rig.area('key', (-6, -9, 6), 4.0, 1800, look_at=tuple(C))
 rig.area('window', (3, -8, 4), 1.2, 900, look_at=tuple(C), size_y=5.0)

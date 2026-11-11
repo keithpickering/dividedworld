@@ -8,7 +8,7 @@ import rig
 OUT = sys.argv[-1]
 rnd = random.Random(int(os.environ.get('GLITTER_SEED', '11')))
 sc = rig.reset()
-C = Vector((0, 0, 0.55))                 # the envelope's mouth, where it all comes out
+C = Vector((0, 0, 1.35))                 # the envelope's mouth, where it all comes out; high, so the envelope clears the name plate
 
 # ---- behind it: a sunburst, its rays turning about the mouth -------------------------------------
 m, n, l, b = rig.material('burst')

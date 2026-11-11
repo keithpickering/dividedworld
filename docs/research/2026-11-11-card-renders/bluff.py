@@ -10,7 +10,7 @@ rnd = random.Random(int(os.environ.get('BLUFF_SEED', '5')))
 sc = rig.reset()
 rig.backdrop(16, [(0.0, '#0c0302'), (0.5, '#3a0d08'), (1.0, '#120403')])
 rig.floor(-3.6, rig.checker('floor', '#1c0604', '#33100a', 30, rough=0.07))
-C = Vector((0, 0, 1.1))
+C = Vector((0, 0, 1.75))                 # high enough that the gloved hand clears the card's name plate
 
 # ---- the card, back out: a lattice, a ring, and the question it will never answer ----------------
 W, HH = 2.3, 3.3
@@ -38,7 +38,7 @@ for i in range(4):
     parts.append(rig.tube('finger', [(x, 0.35, zb - 0.25), (x, -0.02, zb - 0.22), (x, -0.2, zb - 0.02), (x * 1.02, -0.22, zb + tip * 0.6), (x * 1.04, -0.2, zb + tip)], 0.15, glove, res=8))
 parts.append(rig.ball((0.0, 0.45, zb - 0.45), 0.8, glove, 'palm', 40, scale=(1.0, 0.5, 0.75)))
 parts.append(rig.tube('cuff', [(0.0, 0.5, zb - 1.0), (0.1, 0.9, zb - 6.0)], 0.5, glove, res=10))
-rig.group(parts, loc=C, rot=(-6, -22, -9))
+rig.group(parts, loc=C, rot=(-6, -22, -9), scale=0.9)
 
 # ---- the smoke it is played in: soft balls of it, lit from inside -------------------------------
 for i in range(34):

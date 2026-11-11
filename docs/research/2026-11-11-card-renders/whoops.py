@@ -81,9 +81,9 @@ def drip(x, y0, length, w, wobble=0.0, seed=1):
 # ---- the layers, laid out after the placeholder art.svg: one big splat high and left, runs under it,
 # a darker one behind and low, small pale ones about ------------------------------------------
 # world: the card is 5.4 wide by 8.4 tall, centered on the origin, y up
-main = place(SEED, (-0.2, 1.55), 3.7, rot=0.3)
-main += drip(-1.0, 0.75, 3.3, 0.1, 0.05, 3) + drip(0.3, 0.45, 2.3, 0.075, 0.04, 5) + drip(0.95, 0.8, 1.6, 0.055, 0.03, 8) + drip(-0.4, 0.45, 1.2, 0.05, 0.02, 9)
-back = place(SEED + 12, (1.45, -2.5), 2.6, rot=1.1) + drip(1.8, -3.1, 1.5, 0.07, 0.03, 4)
+main = place(SEED, (-0.25, 2.25), 3.25, rot=0.3)      # high on the card: the name plate starts near y = -1.3, and the runs should end above it
+main += drip(-0.95, 1.55, 2.5, 0.095, 0.05, 3) + drip(0.25, 1.3, 1.75, 0.07, 0.04, 5) + drip(0.85, 1.6, 1.25, 0.055, 0.03, 8) + drip(-0.4, 1.3, 0.95, 0.05, 0.02, 9)
+back = place(SEED + 12, (1.75, -2.6), 2.4, rot=1.1) + drip(2.1, -3.2, 1.3, 0.07, 0.03, 4)
 pale = place(SEED + 5, (2.0, 3.4), 0.95, rot=0.5) + place(SEED + 9, (-2.0, -2.9), 0.7, rot=2.0)
 
 X0, X1, Y0, Y1 = -3.5, 3.5, -5.2, 5.2      # the wall, wider than the card so a tilted camera never sees its edge
