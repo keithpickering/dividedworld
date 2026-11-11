@@ -206,7 +206,8 @@ revoke all on gear_kinds, gear_ledger, gear_worn from public, anon, authenticate
 grant select on gear_kinds, gear_ledger, gear_worn to authenticated;
 create policy read on gear_kinds for select to authenticated using (true);
 create policy own on gear_ledger for select to authenticated using (account = auth.uid());
-create policy read on gear_worn for select to authenticated using (true);
+-- Public once the character has debuted, as character_profiles is (0019): an undebuted mask's pieces are not readable by its id.
+create policy read on gear_worn for select to authenticated using (exists (select 1 from characters_public c where c.id = gear_worn.character));
 
 -- --------------------------------------------------------------------------------------------------------------- the wardrobe ----
 

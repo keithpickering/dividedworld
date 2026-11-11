@@ -190,6 +190,9 @@ begin
   perform tests.become(fay);
   if (select count(*) from gear_ledger) is distinct from 3 or jsonb_array_length(my_wardrobe()) is distinct from 1 then raise exception 'Fay''s own rows and wardrobe'; end if;
   if (select count(*) from gear_worn) < 3 then raise exception 'gear_worn is public to signed-in players'; end if;
+  perform tests.unbecome(); update characters set debuted_at = null where id = e2; perform tests.become(fay);
+  if (select count(*) from gear_worn where character = e2) is distinct from 0 then raise exception 'gear_worn shows an undebuted mask''s pieces by its id'; end if;
+  if (select count(*) from gear_worn where character = e1) is distinct from 1 then raise exception 'gear_worn shows a debuted mask''s pieces'; end if;
   perform tests.become_anon();
   if pg_temp.refusal('select my_wardrobe()') is null then raise exception 'a visitor opened a wardrobe'; end if;
   if pg_temp.refusal('select count(*) from gear_ledger') is null then raise exception 'a visitor read the gear ledger'; end if;

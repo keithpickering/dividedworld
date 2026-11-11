@@ -64,9 +64,10 @@ begin
   if jsonb_array_length(face -> 'outfit') is distinct from 2 or jsonb_array_length(face -> 'trophies') is distinct from 3 then raise exception 'board_page: %', face; end if;
   face := (select x -> 'profile' from jsonb_array_elements(boot() -> 'faces') x where x ->> 'name' = 'Sc Ann');
   if jsonb_array_length(face -> 'outfit') is distinct from 2 or jsonb_array_length(face -> 'trophies') is distinct from 3 then raise exception 'boot faces: %', face; end if;
-  face := (select x -> 'profile' from jsonb_array_elements(my_characters_page() -> 'characters') x where x -> 'face' ->> 'id' = a::text);
   face := (select x -> 'face' -> 'profile' from jsonb_array_elements(my_characters_page() -> 'characters') x where x ->> 'id' = a::text);
   if jsonb_array_length(face -> 'outfit') is distinct from 2 then raise exception 'my_characters_page: %', face; end if;
+  -- The index carries it too.
+  if not exists (select 1 from jsonb_array_elements(index_page() -> 'characters') x where x -> 'profile' ? 'outfit') then raise exception 'index_page carries no outfit: %', index_page(); end if;
   perform tests.unbecome();
 
   -- A reversed award leaves the next page at once, and the belt with it.
@@ -77,5 +78,48 @@ begin
   face := (select x -> 'profile' from jsonb_array_elements(r -> 'people') x where x -> 'character' ->> 'id' = a::text);
   if (select string_agg(p ->> 'trophy', ',' order by ord) from jsonb_array_elements(face -> 'trophies') with ordinality q(p, ord)) is distinct from 'sc-medal' then
     raise exception 'a reversed award is gone: %', face -> 'trophies'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- The alerts page and the log name another character's profile with its cosmetics ----
+select tests.unbecome();
+do $$
+declare
+  me uuid := tests.account('sc-cid'); her uuid := tests.account('sc-dot');
+  mine uuid := tests.character(me, 'Sc Cid'); dot uuid := tests.character(her, 'Sc Dot');
+  t uuid := tests.thread('Sc pages'); base timestamptz := now() - interval '2 hours';
+  pp uuid; cplay uuid; cend uuid; mp uuid;
+begin
+  insert into character_profiles (character) values (mine), (dot);
+  pp := tests.post(dot, t, 'Dot posts.', base);
+  cplay := tests.act(mine, 'card', t, '{"card": "splat"}', pp, base + interval '1 minute');
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  cend := tests.act(null::uuid, 'card_end', t, '{"why": "reversed", "by": "admin"}', cplay, base + interval '2 minutes');
+  perform set_config('kayfabb.card_end_writer', 'off', true);
+  insert into alerts (account, kind, act, character, at) values (me, 'cardEnded', cend, mine, base + interval '3 minutes');
+  mp := tests.post(mine, t, 'Cid posts.', base + interval '4 minutes');
+  perform tests.act(dot, 'card', t, '{"card": "splat"}', mp, base + interval '5 minutes');
+  perform tests.become(me);
+  if not exists (select 1 from jsonb_array_elements(alerts_page(null) -> 'people') x where x -> 'profile' ? 'outfit') then raise exception 'alerts_page profiles carry no outfit: %', alerts_page(null) -> 'people'; end if;
+  if not exists (select 1 from jsonb_array_elements(log_page(null) -> 'people') x where x -> 'profile' ? 'outfit') then raise exception 'log_page profiles carry no outfit: %', log_page(null) -> 'people'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- An undebuted mask is not confirmed by its cosmetics: the answer is the one an unknown id gets ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := (select id from auth.users where email = 'sc-ann@test.invalid'); bob uuid := (select id from auth.users where email = 'sc-bob@test.invalid');
+  u uuid := tests.character(bob, 'Sc Hidden'); a uuid := (select id from characters where name = 'Sc Ann');
+begin
+  update characters set debuted_at = null where id = u;
+  insert into character_profiles (character, avatar_square, avatar_portrait, square_frame, portrait_frame, portrait_tallness) values (u, 'sq-u', 'po-u', '{"x": 0, "y": 0, "w": 1, "h": 1}', '{"x": 0, "y": 0, "w": 1, "h": 1}', 1.2);
+  insert into gear_worn (character, layer, gear, x, y, w, turn) values (u, 0, 'sc-hat', 0.5, 0.1, 0.4, 0);
+  perform tests.become(ann);
+  if profile_cosmetics(u) is distinct from profile_cosmetics(gen_random_uuid()) then raise exception 'profile_cosmetics confirms an undebuted mask: %', profile_cosmetics(u); end if;
+  if profile_cosmetics(u) is distinct from '{"outfit": [], "trophies": [], "portrait_tallness": null}'::jsonb then raise exception 'the constant shape: %', profile_cosmetics(u); end if;
+  if profile_cosmetics(a) -> 'portrait_tallness' is null then raise exception 'a debuted mask shows its cosmetics'; end if;
+  perform tests.unbecome(); perform tests.become(bob);
+  if jsonb_array_length(profile_cosmetics(u) -> 'outfit') is distinct from 1 then raise exception 'the owner sees their own undebuted mask'; end if;
   perform tests.unbecome();
 end $$;

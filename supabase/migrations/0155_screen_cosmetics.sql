@@ -2,14 +2,19 @@
 -- (pieces in layer order, gear_worn) and its shown trophies (trophy_shelf), as profile_projection (0150, 0151) carries them. The shape lives here once:
 -- profile_cosmetics, one lookup by character (character_profiles by its key, gear_worn by its key (character, layer), the shelf by its indexes), called once per
 -- character a screen names and never per post or per Act. A security definer, as profile_projection is: trophy_shelf is not the caller's to run, and the
--- screens are security invoker. It reads only what is public by character (a worn piece, a shown or held trophy), so no private fact moves with it.
+-- screens are security invoker. It reads only what is public by character (a worn piece, a shown or held trophy) once the character has debuted, so no private fact moves with it.
+-- An undebuted mask is not public (characters_public), so for it, and for an id that is no character, the answer is one constant shape: a caller holding a uuid
+-- cannot confirm a mask exists. Only its own player is shown what an undebuted mask wears.
 create function profile_cosmetics(of_character uuid) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select jsonb_build_object(
-    'portrait_tallness', (select p.portrait_tallness from character_profiles p where p.character = of_character),
-    'outfit', coalesce((select jsonb_agg(jsonb_build_object('gear', w.gear, 'x', w.x, 'y', w.y, 'w', w.w, 'turn', w.turn, 'layer', w.layer) order by w.layer)
-                        from gear_worn w where w.character = of_character), '[]'::jsonb),
-    'trophies', trophy_shelf(of_character))
+  select case when exists (select 1 from characters_public c where c.id = of_character)
+                or exists (select 1 from characters c where c.id = of_character and c.owner = auth.uid()) then
+    jsonb_build_object(
+      'portrait_tallness', (select p.portrait_tallness from character_profiles p where p.character = of_character),
+      'outfit', coalesce((select jsonb_agg(jsonb_build_object('gear', w.gear, 'x', w.x, 'y', w.y, 'w', w.w, 'turn', w.turn, 'layer', w.layer) order by w.layer)
+                          from gear_worn w where w.character = of_character), '[]'::jsonb),
+      'trophies', trophy_shelf(of_character))
+  else jsonb_build_object('portrait_tallness', null, 'outfit', '[]'::jsonb, 'trophies', '[]'::jsonb) end
 $$;
 revoke execute on function profile_cosmetics(uuid) from public, anon;
 grant execute on function profile_cosmetics(uuid) to authenticated;
