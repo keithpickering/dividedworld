@@ -90,3 +90,51 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
     assert.ok(!JSON.stringify(answer).includes(ann.account) && !JSON.stringify(answer).includes(bob.account), 'an answer carried an account');
   }
 });
+
+test('a barred player apologizes through the action rules: an empty body is refused by field, a real one opens the thread live, and a second waits', async () => {
+  await psqlDb().rpc('seed_instance', { payload: scratchSeed(instance) });
+  const account = sql(`with u as (insert into auth.users (email) values ('act-e2e-sorry@test.invalid') returning id) insert into accounts (id) select id from u returning id`);
+  const character = sql(`with c as (insert into characters (owner, name, debuted_at) values ('${account}', 'Sorryworks', now()) returning id)
+    insert into class_history (character, class_key) select id, 'heel' from c returning character`);
+  // A staff move that bars the character from General and asks an apology, written as the staff writes it (0127's model).
+  const move = sql(`do $$
+    declare made uuid;
+    begin
+      perform set_config('kayfabb.staff_writer', 'on', true);
+      made := tests.act((select id from characters where staff = '${instance.system.firstBoss}'), 'move',
+        (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
+        jsonb_build_object('kind', 'conferGroup', 'body', 'Moved.',
+          'params', jsonb_build_object('character', '${character}', 'group', 'trialMembers', 'board', (select id::text from boards where slug = 'general')),
+          'demand', jsonb_build_object('kind', 'apologyAccepted', 'params', '{}'::jsonb),
+          'expires_at', clock_timestamp() + interval '3 days'));
+      perform set_config('kayfabb.staff_writer', '', true);
+    end $$;
+    select id from acts where kind = 'move' and payload -> 'params' ->> 'character' = '${character}'`);
+  const asSorry = { player: psqlDb(account), service: psqlDb() };
+  const written = () => sql(`select (select count(*) from acts where character = '${character}' and kind = 'spin') || ' ' || (select count(*) from apologies where character = '${character}')`);
+  assert.equal(written(), '0 0');
+
+  // The action rules read the request first: an empty apology never reaches the SQL function.
+  const empty = await runAction(asSorry, instance, { action: 'apologize', move, character, title: 'I am sorry', body: '' });
+  assert.equal(empty.status, 400, JSON.stringify(empty));
+  assert.equal((empty.body as { field: string }).field, 'body');
+  assert.equal(written(), '0 0', 'a refused apology wrote nothing');
+
+  const sent = await runAction(asSorry, instance, { action: 'apologize', move, character, title: 'I am sorry', body: 'I was wrong, and here is why.' });
+  assert.equal(sent.status, 200, JSON.stringify(sent));
+  const { thread, act } = sent.body as { thread: { id: string }; act: { id: string } };
+  assert.equal(sql(`select count(*) from acts a join threads t on t.id = a.thread where a.id = '${act.id}' and a.kind = 'spin' and a.character = '${character}' and a.target_act_id = '${move}' and t.id = '${thread.id}' and t.origin_act_id = '${move}'`), '1', 'the apology is the spin of the move');
+  assert.equal(sql(`select count(*) || ' ' || min(state) from apologies where character = '${character}' and move_act = '${move}' and apology_act = '${act.id}'`), '1 pending');
+  const { board } = thread as unknown as { board: string };
+  assert.deepEqual(sent.broadcasts, [
+    { topic: `board:${board}`, event: 'thread', payload: thread },
+    { topic: `thread:${thread.id}`, event: 'act', payload: act },
+  ], 'the thread and its Act are heard live');
+  assert.ok(!JSON.stringify(sent).includes(account), 'the answer carried an account');
+
+  // One at a time: a second is refused in the database's own words.
+  const second = await runAction(asSorry, instance, { action: 'apologize', move, character, title: 'Again', body: 'Again.' });
+  assert.ok(second.status >= 400 && second.status < 500, JSON.stringify(second));
+  assert.match(String((second.body as { error: string }).error), /still waiting for a ruling/);
+  assert.equal(written(), '1 1', 'a refused second apology wrote nothing');
+});
