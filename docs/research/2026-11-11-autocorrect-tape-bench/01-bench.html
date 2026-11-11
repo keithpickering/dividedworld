@@ -156,7 +156,9 @@ button.b:hover { background: var(--shade); }
 }
 .piece .flap::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / .55) 45%, transparent 62%);
+  background:
+    linear-gradient(var(--fold, 90deg), transparent 55%, rgb(70 55 25 / .22)),
+    linear-gradient(100deg, transparent 20%, rgb(255 255 255 / .55) 45%, transparent 62%);
 }
 .piece .corner {
   top: 0; background: linear-gradient(135deg, #f8f0da, #e2d4ad);
@@ -224,8 +226,8 @@ button.b:hover { background: var(--shade); }
     <label><input type="radio" name="peek" value="turn" id="peekTurn" checked> Lifts the layers in turn on one pull</label>
     <label><input type="radio" name="peek" value="together" id="peekTogether"> Lifts every layer together</label>
     <label><input type="radio" name="peek" value="top" id="peekTop"> Lifts only the top</label>
-    <div class="slider"><label for="stay">Stays up</label><input type="range" id="stay" min="0" max="2500" step="100" value="900"><output for="stay" id="stayOut">900</output></div>
-    <div class="slider"><label for="settle">Lays down</label><input type="range" id="settle" min="40" max="1200" step="20" value="160"><output for="settle" id="settleOut">160</output></div>
+    <div class="slider"><label for="stay">Stays up</label><input type="range" id="stay" min="0" max="2500" step="100" value="300"><output for="stay" id="stayOut">300</output></div>
+    <div class="slider"><label for="settle">Lays down</label><input type="range" id="settle" min="40" max="1200" step="20" value="300"><output for="settle" id="settleOut">300</output></div>
     <span class="hint">After a peek is let go: how long it stays up (milliseconds), then how fast it lays back down (pixels a second, the last layer lifted first). Grab it again before it is down to keep pulling: room for a phone's short drags.</span>
     <span class="hint">The last post holds three plays: “big cats” → “small dogs”, then “cats are” → “nobody asked”, then “big cats” → “Wigglers”. Only a strip with nothing over it can be peeled or peeked.</span>
   </fieldset>
@@ -301,7 +303,7 @@ button.b:hover { background: var(--shade); }
   };
 
   /* ---------- The bench's settings. ---------- */
-  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', peek: 'turn', stay: 900, settle: 160, pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', peek: 'turn', stay: 300, settle: 300, pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
   /* Each strip's state: 'taped', 'peeled' (peeled this visit: its footprint stays) or 'saved' (peeled before this load: the words' own width). */
   const memberState = new Map();
   /* A half-peeled piece's progress, kept across the bench's own redraws within a visit. */
@@ -671,10 +673,17 @@ button.b:hover { background: var(--shade); }
       } else roll.style.display = 'none';
       /* The flap of a peek: the lifted tape folded back over the rest, its sticky side up. */
       if (P.lift > 0.5) {
-        /* Past halfway it is held up off the page rather than laid flat over the next words, so it narrows as it comes up. */
-        const fw = Math.min(P.lift, Math.max(9, P.W - P.lift + 9));
-        flap.style.display = 'block'; flap.style.width = `${fw.toFixed(1)}px`;
-        flap.style.left = `${(P.liftSide === 'a' ? a : z - fw).toFixed(1)}px`;
+        /*
+         * The lifted tape is a plane hinged at the fold, turned up toward the eye: nearly folded flat for a small lift, nearly
+         * upright once all of it is up, so it never lies over the next words. Seen in perspective, its free end, nearer the eye,
+         * stands taller than the fold, by at most about half again however long the strip is.
+         */
+        const L = P.lift, t = clamp(L / P.W, 0, 1), theta = 150 - 58 * t;
+        flap.style.display = 'block'; flap.style.width = `${L.toFixed(1)}px`;
+        flap.style.left = `${(P.liftSide === 'a' ? a - L : z).toFixed(1)}px`;
+        flap.style.transformOrigin = P.liftSide === 'a' ? 'right center' : 'left center';
+        flap.style.transform = `perspective(${Math.max(P.H * 13, L * 3).toFixed(0)}px) rotateY(${(P.liftSide === 'a' ? theta : -theta).toFixed(1)}deg)`;
+        flap.style.setProperty('--fold', P.liftSide === 'a' ? '90deg' : '270deg');
       } else flap.style.display = 'none';
       /* The corner lifting while an end is picked. */
       if (P.pick) {
