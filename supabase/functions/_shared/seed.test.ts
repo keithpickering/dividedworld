@@ -8,6 +8,7 @@ import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 import { PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import type { Persona } from '../../../engine/rules/types.ts';
+import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance);
@@ -167,4 +168,14 @@ test('the seed carries the conditions and each persona\'s arc as SQL checks it: 
   assert.ok(!JSON.stringify(p).includes('A secret') && !JSON.stringify(p).includes('Another'), 'a brief travelled in the seed');
   assert.deepEqual(seed.system.staff[1]!.arc, [], 'a persona with no arc has none');
   assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
+});
+
+test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0165)', () => {
+  const first = instance.system.roster[0]!;
+  const days = (h: number, m: number) => instanceSeed({ ...instance, system: { ...instance.system, roster: [{ ...first, phases: { honeymoon: { days: h }, meltdown: { days: m } } }, ...instance.system.roster.slice(1)] } }).system.staff[0]!.phaseDays;
+  assert.deepEqual(days(2.5, 500), { honeymoon: 2, meltdown: PHASE_CAPS.meltdown.days });
+  assert.deepEqual(days(0, -3), { honeymoon: 1, meltdown: 1 });
+  assert.deepEqual(days(PHASE_CAPS.honeymoon.days, 7), { honeymoon: PHASE_CAPS.honeymoon.days, meltdown: 7 });
+  assert.equal(PHASE_CAPS.honeymoon.days, 42, 'SQL\'s arc_season_span cuts at 42 too');
+  assert.equal(PHASE_CAPS.meltdown.days, 42, 'SQL\'s arc_season_span cuts at 42 too');
 });

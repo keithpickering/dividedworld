@@ -434,6 +434,13 @@ begin
     plan := plan || r."QUERY PLAN" || E'\n';
   end loop;
   perform pg_temp.expect(plan !~* 'seq scan' and plan ~* 'threads_board_last_at', 'the board count does not start from the board''s threads by index: ' || plan);
+  -- The posts of each thread are read by acts_patrol_posts (thread, created_at): with the other indexes that could serve the posts out of the way (this transaction's, rolled back with it), that is the index the plan uses.
+  drop index acts_thread_posts, acts_posts_by_time, acts_recent_posts, acts_created;
+  plan := '';
+  for r in execute 'explain (costs off) ' || replace(replace(stmt, 'in_board', quote_literal(pg_temp.board('fangame-palace')) || '::uuid'), 'since', 'now() - interval ''7 days''') loop
+    plan := plan || r."QUERY PLAN" || E'\n';
+  end loop;
+  perform pg_temp.expect(plan ~* 'acts_patrol_posts' and plan !~* 'seq scan', 'the posts of a thread are not read by acts_patrol_posts: ' || plan);
 end $$;
 
 -- ---- 11. The masks: nothing the conditions read is a private fact. A grep of each definition finds no owner, account or reaction; the grep is driven red on a planted function ----
@@ -446,13 +453,146 @@ declare
   p regprocedure;
 begin
   perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned()'::regprocedure) = 'reaction', 'the masks check did not find the word it exists to find');
-  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass') loop
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass')) = 6, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting')) = 11, 'a function the masks check reads is missing');
   -- Every definer function here pins its search path, and no client can call one.
-  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_beat_events_guard')
+  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_beat_events_guard')
     and (not prosecdef or not exists (select 1 from unnest(proconfig) c where c = 'search_path=public, pg_temp'))), 'an arc function is not a definer with a pinned search path');
-  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass')
+  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting')
     and (has_function_privilege('anon', oid, 'execute') or has_function_privilege('authenticated', oid, 'execute'))), 'a client can call an arc function');
+end $$;
+
+-- ---- 12. A phase has begun: and stays begun. The honeymoon has begun from the season's first instant, the reign once the honeymoon is over, the meltdown in the season's last days ----
+do $$
+declare
+  r record;
+begin
+  -- (day of the season, phase, has begun) for the instance's 14 day honeymoon and 21 day meltdown of a 90 day season.
+  for r in select * from (values
+    (0, 'honeymoon', true), (0, 'reign', false), (0, 'meltdown', false),
+    (13, 'honeymoon', true), (13, 'reign', false), (13, 'meltdown', false),
+    (15, 'honeymoon', true), (15, 'reign', true), (15, 'meltdown', false),
+    (68, 'reign', true), (68, 'meltdown', false),
+    (70, 'honeymoon', true), (70, 'reign', true), (70, 'meltdown', true)
+  ) t(day, ph, begun) loop
+    perform pg_temp.began(r.day);
+    perform pg_temp.expect(pg_temp.holds('ar-boss', jsonb_build_object('kind', 'phase', 'phase', r.ph)) = r.begun, format('on day %s the %s has %sbegun, and the condition says otherwise', r.day, r.ph, case when r.begun then '' else 'not ' end));
+  end loop;
+  perform pg_temp.began(0);
+end $$;
+
+-- ---- 13. The held-back kinds: a kind is held until the beat it names has unlocked ----
+do $$
+declare
+  s bigint := pg_temp.season();
+begin
+  update persona_arcs set holds_back = '[{"kind": "createBoard", "until": "split"}, {"kind": "moveThread", "until": "never"}, {"kind": "mergeBoard", "until": "late"}]' where staff = 'ar-boss';
+  -- split unlocked in section 5 and late in section 9; `never` has not.
+  perform pg_temp.expect(held_back_kinds('ar-boss', s) = array['moveThread'], 'the held kinds are not the one whose beat has not unlocked: ' || coalesce(held_back_kinds('ar-boss', s)::text, 'null'));
+  insert into arc_beat_events (season, staff, beat, event) values (s, 'ar-boss', 'never', 'unlocked');
+  perform pg_temp.expect(held_back_kinds('ar-boss', s) = '{}', 'a kind is held after its beat unlocked: ' || held_back_kinds('ar-boss', s)::text);
+  perform pg_temp.expect(held_back_kinds('ar-other', s) = '{}' and held_back_kinds('ar-plain', s) = '{}' and held_back_kinds('nobody', s) = '{}', 'a persona that holds nothing back, or none, holds back a kind');
+  -- A season in which nothing has unlocked holds back every kind it names (a season that has not begun its arc).
+  perform pg_temp.expect(held_back_kinds('ar-boss', s + 1000) = array['createBoard', 'moveThread', 'mergeBoard'], 'a season with no events does not hold every kind back: ' || held_back_kinds('ar-boss', s + 1000)::text);
+end $$;
+
+-- ---- 14. The due point: past it once the phase's day, the days into it, or the days before the end have come (any one of those named) ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  r record;
+begin
+  -- (day of the season, due point, past it)
+  for r in select * from (values
+    (15, '{"phase": "reign", "daysIntoPhase": 7}'::jsonb, false), (22, '{"phase": "reign", "daysIntoPhase": 7}', true),
+    (85, '{"daysBeforeEnd": 2}', false), (89, '{"daysBeforeEnd": 2}', true),
+    (60, '{"phase": "meltdown"}', false), (70, '{"phase": "meltdown"}', true),
+    (2, '{"phase": "honeymoon", "daysIntoPhase": 3}', false), (4, '{"phase": "honeymoon", "daysIntoPhase": 3}', true),
+    (15, '{"phase": "reign"}', true), (5, '{"phase": "reign"}', false),
+    (30, '{"phase": "reign", "daysIntoPhase": 7, "daysBeforeEnd": 2}', true), (89, '{"phase": "meltdown", "daysIntoPhase": 40, "daysBeforeEnd": 2}', true)
+  ) t(day, due, past) loop
+    perform pg_temp.began(r.day);
+    perform pg_temp.expect(beat_is_due('ar-boss', s, r.due) = r.past, format('on day %s the due point %s is %spast, and the evaluator says otherwise', r.day, r.due, case when r.past then '' else 'not ' end));
+  end loop;
+  perform pg_temp.expect(beat_is_due('ar-boss', s, 'null'::jsonb) is false and beat_is_due('ar-boss', s, '{}'::jsonb) is false, 'a beat with no due point is due');
+  -- The Boss's unlocked, unplayed beats with their due state, and what it holds back: the one read the meeting makes. Day 89: `late` (due two days before the end) is unlocked and past its point;
+  -- `never` was unlocked by hand in section 13 and has none.
+  perform pg_temp.began(89);
+  perform pg_temp.expect(arc_for_meeting('ar-boss', s) = jsonb_build_object('beats', jsonb_build_array(
+      jsonb_build_object('key', 'late', 'mini', false, 'due', true), jsonb_build_object('key', 'never', 'mini', false, 'due', false)),
+    'heldBack', '[]'::jsonb), 'the meeting''s read is not the unlocked, unplayed beats with their due state: ' || arc_for_meeting('ar-boss', s)::text);
+  -- Before the due point the same beat is not due; a played beat is not listed; a persona with no arc reads empty.
+  perform pg_temp.began(80);
+  perform pg_temp.expect((arc_for_meeting('ar-boss', s) -> 'beats' -> 0 ->> 'due')::boolean is false, 'late is due before its point');
+  insert into arc_beat_events (season, staff, beat, event) values (s, 'ar-boss', 'never', 'played');
+  perform pg_temp.expect(arc_for_meeting('ar-boss', s) -> 'beats' = '[{"key": "late", "mini": false, "due": false}]'::jsonb, 'a played beat is still listed: ' || (arc_for_meeting('ar-boss', s) -> 'beats')::text);
+  perform pg_temp.expect(arc_for_meeting('ar-plain', s) = '{"beats": [], "heldBack": []}'::jsonb and arc_for_meeting('nobody', s) = '{"beats": [], "heldBack": []}'::jsonb, 'a persona with no arc has beats');
+  -- A lapsed beat is not listed either (`rev` lapsed in section 9): the meeting's read and the pass share one definition of a beat's state.
+  perform pg_temp.expect(not (arc_for_meeting('ar-boss', s) -> 'beats')::text like '%"rev"%', 'a lapsed beat is listed');
+end $$;
+
+-- ---- 15. A persona's own phase days: a day that is no number falls back to the instance's, a fraction is made whole, and the engine's caps hold, as phaseAt holds them ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  r record;
+  got interval;
+begin
+  perform pg_temp.began(0);
+  for r in select * from (values
+    ('{"honeymoon": null}'::jsonb, interval '14 days'), ('{"honeymoon": "three"}', interval '14 days'), ('{"honeymoon": true}', interval '14 days'), ('{}', interval '14 days'),
+    ('{"honeymoon": 2.5}', interval '2 days'), ('{"honeymoon": 0}', interval '1 day'), ('{"honeymoon": -4}', interval '1 day'), ('{"honeymoon": 500}', interval '42 days'), ('{"honeymoon": 3}', interval '3 days')
+  ) t(days, expect) loop
+    update persona_arcs set phase_days = r.days where staff = 'ar-other';
+    select x.honeymoon_ends - x.starts_at into got from arc_season_span('ar-other', s) x;
+    perform pg_temp.expect(got = r.expect, format('phase days %s gave a honeymoon of %s, not %s', r.days, got, r.expect));
+  end loop;
+  update persona_arcs set phase_days = '{"meltdown": 500}' where staff = 'ar-other';
+  perform pg_temp.expect((select x.ends_at - x.meltdown_starts from arc_season_span('ar-other', s) x) = interval '42 days', 'a meltdown over the cap was not cut to it');
+  update persona_arcs set phase_days = '{"honeymoon": 3}' where staff = 'ar-other';
+end $$;
+
+-- ---- 16. beatLanded: a beat with no bundle has landed once played; a repeatable beat is read at its latest play ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  b uuid := gen_random_uuid();
+begin
+  -- `once` was played in section 9 with no bundle.
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "once"}'), 'a played beat with no bundle has not landed');
+  -- g-again was played twice with no bundle (section 3); a third play queues a bundle that waits, and the beat is not landed until it is.
+  perform pg_temp.expect(pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "g-again"}'), 'a repeatable beat played with no bundle has not landed');
+  perform pg_temp.part(b, 'Replay', 'one', 'createBoard', pg_temp.mkboard('Replay Board'), interval '30 days');
+  insert into arc_beat_events (season, staff, beat, event) values (s, 'ar-boss', 'g-again', 'unlocked');
+  insert into arc_beat_events (season, staff, beat, event, bundle) values (s, 'ar-boss', 'g-again', 'played', b);
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', '{"kind": "beatLanded", "beat": "g-again"}'), 'a replay whose bundle waits was read as landed by an earlier play');
+end $$;
+
+-- ---- 17. The season's close: the lapses of its last days are written for the closed season's Boss, and only once ----
+do $$
+declare
+  old_season bigint := pg_temp.season();
+  before_n bigint;
+  closed jsonb;
+begin
+  -- `late` is due, unlocked and unplayed: in the open season past its planned end it is left (a meeting may still come); `never` was played.
+  perform pg_temp.began(91);
+  perform system_tick();
+  perform pg_temp.expect((select e.event from arc_beat_events e where e.season = old_season and e.staff = 'ar-boss' and e.beat = 'late' order by e.id desc limit 1) = 'unlocked', 'a due beat lapsed in the open season');
+  -- reveal_season closes the season and opens the next; the tick then lapses what was still unlocked, due beats too.
+  closed := reveal_season(now());
+  perform pg_temp.expect(closed is not null and pg_temp.season() <> old_season, 'the season did not close: ' || coalesce(closed::text, 'null'));
+  before_n := (select count(*) from arc_beat_events where season = old_season);
+  perform system_tick();
+  perform pg_temp.expect((select e.event from arc_beat_events e where e.season = old_season and e.staff = 'ar-boss' and e.beat = 'late' order by e.id desc limit 1) = 'lapsed',
+    'the closed season''s last unlocked beat did not lapse: ' || coalesce((select e.event from arc_beat_events e where e.season = old_season and e.staff = 'ar-boss' and e.beat = 'late' order by e.id desc limit 1), 'nothing'));
+  perform pg_temp.expect((select count(*) from arc_beat_events where season = old_season) = before_n + 1, 'the close wrote ' || ((select count(*) from arc_beat_events where season = old_season) - before_n) || ' events, not the one lapse');
+  -- A played beat stays played, and once is once.
+  perform pg_temp.expect((select e.event from arc_beat_events e where e.season = old_season and e.beat = 'never' order by e.id desc limit 1) = 'played', 'a played beat lapsed at the close');
+  before_n := (select count(*) from arc_beat_events);
+  perform system_tick();
+  perform system_tick();
+  perform pg_temp.expect((select count(*) from arc_beat_events) = before_n, 'the closed season lapsed twice');
 end $$;

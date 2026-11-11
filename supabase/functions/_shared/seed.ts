@@ -13,6 +13,7 @@ import { BBCODE_TAGS } from '../../../engine/bbcode/parse.ts';
 import { PREDICATES } from '../../../engine/rules/predicates.ts';
 import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 import { CONDITIONS } from '../../../engine/system/conditions.ts';
+import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 import type { Beat, Persona } from '../../../engine/rules/types.ts';
 
 /** What a persona's visits can be talked down with, as the seed carries it in `challenge`: the kind and its number, never a quiz's questions or answers (those travel in `quiz`). */
@@ -37,10 +38,14 @@ function arcOf(p: Persona): { key: string; mini: boolean; repeatable: boolean; u
   return [...(p.arc ?? []).map((b) => one(b, false)), ...(p.miniArcs ?? []).map((b) => one(b, true))];
 }
 
-/** A persona's own phase lengths in days, for the beats that read a phase: only the two phases that have a length, and only where the persona overrides it (already inside the engine's caps). */
+/**
+ * A persona's own phase lengths in days, for the beats that read a phase: only the two phases that have a length, and only where the persona overrides it, made whole and held to the
+ * engine's caps (`PHASE_CAPS`) exactly as `phaseAt` holds them, so the seed carries only what SQL's arc_season_span reads as it is (it makes the same cut, as a guard).
+ */
 function phaseDaysOf(p: Persona): { honeymoon?: number; meltdown?: number } {
-  const h = p.phases?.honeymoon?.days;
-  const m = p.phases?.meltdown?.days;
+  const cut = (given: number | undefined, cap: number): number | undefined => (typeof given === 'number' && Number.isFinite(given) ? Math.min(Math.max(Math.floor(given), 1), cap) : undefined);
+  const h = cut(p.phases?.honeymoon?.days, PHASE_CAPS.honeymoon.days);
+  const m = cut(p.phases?.meltdown?.days, PHASE_CAPS.meltdown.days);
   return { ...(h !== undefined ? { honeymoon: h } : {}), ...(m !== undefined ? { meltdown: m } : {}) };
 }
 
