@@ -16,14 +16,14 @@ describe('the trapStruck voice', () => {
     expect(trapStruckWords({ how: 'quote', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: null, setterStaff: false, passage: null, says: '“nice try”' })!.detail)
       .toBe('Their face-down Whoops! sprang when you quoted their post saying “nice try”.');
   });
-  test('a caught cast: a Trap Card named the exact card, and it is the setter\'s now', () => {
+  test('a caught cast: a Reversal caught it, and it is the setter\'s now', () => {
     expect(trapStruckWords({ how: 'caught', setter: 'Pipewrench', card: 'Whoops!', laid: null, span: 'an hour', setterStaff: false }))
-      .toEqual({ line: 'Pipewrench had a Trap Card waiting.', detail: 'It named your Whoops! exactly, and it had been face down for an hour when you cast it. Whoops! is Pipewrench\'s now.' });
+      .toEqual({ line: 'Pipewrench had a Reversal waiting.', detail: 'It caught your Whoops!, and it had been face down for an hour when you cast it. Whoops! is Pipewrench\'s now.' });
   });
   test('a staff setter keeps nothing: the card is spent, and the voice says so', () => {
     const said = trapStruckWords({ how: 'caught', setter: 'The Clerk', card: 'Whoops!', laid: null, span: 'an hour', setterStaff: true })!;
-    expect(said.line).toBe('The Clerk had a Trap Card waiting.');
-    expect(said.detail).toBe('It named your Whoops! exactly, and it had been face down for an hour when you cast it. Whoops! is spent.');
+    expect(said.line).toBe('The Clerk had a Reversal waiting.');
+    expect(said.detail).toBe('It caught your Whoops!, and it had been face down for an hour when you cast it. Whoops! is spent.');
   });
   test('without the setter or the card it says nothing, so the engine\'s plain words stand', () => {
     expect(trapStruckWords({ how: 'quote', setter: null, card: 'Whoops!', laid: null, span: null, setterStaff: false })).toBeUndefined();

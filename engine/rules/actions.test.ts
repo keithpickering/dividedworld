@@ -155,6 +155,14 @@ test('a Set names the card, the character, the post and the configuration, and c
   }
 });
 
+test('a take-back names the character and the set Act, and is the service\'s call for the account', () => {
+  assert.deepEqual(decide({ action: 'takeBack', character: id, set: other }, instance),
+    { ok: true, rpc: 'take_back', args: { through: id, set_act: other }, asService: true });
+  assert.match(refusal({ action: 'takeBack', character: 'x', set: other }) ?? '', /^character:/);
+  assert.match(refusal({ action: 'takeBack', character: id, set: 'x' }) ?? '', /^set:/);
+  assert.match(refusal({ action: 'takeBack', character: id }) ?? '', /^set:/);
+});
+
 test('saving an effect\'s state names the play, the character and the state', () => {
   assert.deepEqual(decide({ action: 'saveEffect', play: other, character: id, state: { strokes: [] } }, instance),
     { ok: true, rpc: 'save_effect_state', args: { through: id, on_play: other, state: { strokes: [] } }, asService: true, needsCardOfPlay: true });

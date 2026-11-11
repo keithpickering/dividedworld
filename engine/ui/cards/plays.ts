@@ -21,7 +21,7 @@ import { endsWords } from './marks.ts';
 export const PLAYS_PER_POST = 8;
 
 /**
- * The kind every card set face down is drawn as: one back, the same for every card, so a trap and a Bluff look alike to everyone
+ * The kind every card set face down is drawn as: one back, the same for every card, so two cards set face down look alike to everyone
  * but their setter (the card mechanic's design, section 3). No instance's card key can be it: a key is lowercase words.
  */
 export const CARD_BACK = 'kb:card-back';
@@ -33,12 +33,12 @@ export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.star
 const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
 
 /**
- * The plays a post shows: all but a card back whose time has passed with nothing springing it, which is gone, as the server drops it
+ * The plays a post shows: all but a card back whose time has passed with nothing springing it, or that its setter took back, which is gone, as the server drops it
  * (card_target). Its end is setLasts after it was set, the same for every card.
  */
 export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: number = Date.now()): readonly CardPlay[] {
-  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
-  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && Date.parse(p.playedAt) + span <= now));
+  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'hour' ? 3_600_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && (p.takenBack !== undefined || Date.parse(p.playedAt) + span <= now)));
   return shown.length === plays.length ? plays : shown;
 }
 
@@ -115,6 +115,10 @@ function springOf(act: Act): { readonly set: Id; readonly card: string; readonly
   if (act.kind !== 'spring' || typeof act.payload.set !== 'string' || typeof act.payload.card !== 'string') return null;
   return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt };
 }
+
+/** The back a `take_back` Act ends, and when, or null for any other Act. */
+const takeBackOf = (act: Act): { readonly set: Id; readonly at: string } | null =>
+  act.kind === 'take_back' && typeof act.payload.set === 'string' ? { set: act.payload.set, at: act.createdAt } : null;
 
 /** The play a `card_end` Act ends, or null for any other Act. */
 const endOf = (act: Act): Id | null => (act.kind === 'card_end' && typeof act.targetActId === 'string' ? act.targetActId : null);
@@ -213,6 +217,8 @@ export function createPlays(): Plays {
   const faces = new Map<Id, string>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
   const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
+  /* The backs their setters took back: a `take_back` that arrived before its back is kept here for when the back does. */
+  const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
   const ended = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
@@ -265,6 +271,19 @@ export function createPlays(): Plays {
           }
           continue;
         }
+        /* A take-back ends its back in place, as a spring reveals one: the same play, with the time it was taken back. */
+        const taken = takeBackOf(act);
+        if (taken) {
+          takenBacks.set(taken.set, taken.at);
+          const post = postOf.get(taken.set);
+          const own = post === undefined ? undefined : byPost.get(post);
+          const back = own?.get(taken.set);
+          if (own && back && !back.takenBack) {
+            own.set(back.id, { ...back, takenBack: { at: taken.at } });
+            touched.add(homeOf(back));
+          }
+          continue;
+        }
         /* A card_end marks its play reversed in place, keeping its place in the billing; one that comes first is held. */
         const target = endOf(act);
         if (target !== null) {
@@ -282,7 +301,9 @@ export function createPlays(): Plays {
         if (!found) continue;
         const early = found.faceDown ? springs.get(found.id) : undefined;
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
-        const play = ended.has(found.id) ? { ...withSpring, reversed: true as const } : withSpring;
+        const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
+        const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
+        const play = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         if (own.has(play.id)) continue;
@@ -425,5 +446,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

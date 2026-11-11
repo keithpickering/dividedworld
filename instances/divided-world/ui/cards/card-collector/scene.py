@@ -1,4 +1,5 @@
-"""Trap Card card art, after the placeholder art.svg: a sprung-open trap with a card for bait."""
+"""Card Collector card art: a sprung-open trap with a card for bait. (The card was Trap Card when the scene was made;
+it catches the next cast of the card it names.)"""
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # rig.py is one folder up, shared by every card
 sys.dont_write_bytecode = True           # no __pycache__ beside the card folders: the art guard reads every folder there as a card's

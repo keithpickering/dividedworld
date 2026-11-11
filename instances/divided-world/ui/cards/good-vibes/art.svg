@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 840" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<radialGradient id="bg" cx="50%" cy="38%" r="80%">
+<stop offset="0" stop-color="#0c5568"/>
+<stop offset=".5" stop-color="#05242d"/>
+<stop offset="1" stop-color="#010608"/>
+</radialGradient>
+</defs>
+<rect width="540" height="840" fill="url(#bg)"/>
+<path d="M0 650 H540 M0 700 H540 M0 750 H540 M0 800 H540" stroke="#2ee6ff" stroke-width="1.5" opacity=".08"/>
+<circle cx="270" cy="330" r="200" fill="#2ee6ff" opacity=".12"/>
+<path d="M120 240 H420 A30 30 0 0 1 450 270 V380 A30 30 0 0 1 420 410 H250 L170 470 V410 H120 A30 30 0 0 1 90 380 V270 A30 30 0 0 1 120 240 Z" fill="#9ef4ff"/>
+<path d="M120 252 H420 A18 18 0 0 1 438 270 V380 A18 18 0 0 1 420 398 H240 L182 442 V398 H120 A18 18 0 0 1 102 380 V270 A18 18 0 0 1 120 252 Z" fill="none" stroke="#2ee6ff" stroke-width="4"/>
+<path d="M270 372 C190 320 190 270 232 270 C252 270 264 282 270 294 C276 282 288 270 308 270 C350 270 350 320 270 372 Z" fill="#2ee6ff"/>
+<path d="M100 170 L108 192 L130 200 L108 208 L100 230 L92 208 L70 200 L92 192 Z M450 120 L456 138 L474 144 L456 150 L450 168 L444 150 L426 144 L444 138 Z" fill="#e6fdff" opacity=".85"/>
+<path d="M170 520 C200 490 240 550 270 520 C300 490 340 550 370 520" stroke="#2ee6ff" stroke-width="6" stroke-linecap="round" fill="none" opacity=".6"/>
+<path d="M170 570 C200 540 240 600 270 570 C300 540 340 600 370 570" stroke="#2ee6ff" stroke-width="6" stroke-linecap="round" fill="none" opacity=".35"/>
+</svg>

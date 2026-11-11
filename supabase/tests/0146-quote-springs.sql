@@ -16,8 +16,8 @@ $$;
 
 insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
   ('cqmove', 'Cq Move', 'salty', 'common', 'cast', null, '{post}', null),
-  ('cqbluff', 'Cq Bluff', 'pepperoni', 'common', 'set', null, '{post}', null);
-insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, ward) values ('cqward', 'Cq Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', true);
+  ('cqidle', 'Cq Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
+insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values ('cqward', 'Cq Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "ward", "upTo": "uncommon"}');
 
 -- A back on a fresh post of `setter`'s, a quote of that post by `quoter` (the quoting post's words are `says`, then a real quote of the back's post holding `quoted`), and the call a quote makes.
 -- Returns the spring's payload, or null when nothing sprang (and then checks nothing was written).
@@ -135,7 +135,7 @@ declare
   ann uuid := tests.account('cq-even-ann'); bob uuid := tests.account('cq-even-bob');
   s uuid := tests.character(ann, 'Even Setter'); q uuid := tests.character(bob, 'Even Quoter'); other uuid := tests.character(bob, 'Even Other');
   t uuid := tests.thread('Even work');
-  labels text[] := array['bluff', 'none', 'says unmet', 'says met', 'quotes unmet', 'quotes met', 'only unmet', 'only met', 'anyone-but unmet', 'anyone-but met', 'all met'];
+  labels text[] := array['idle', 'none', 'says unmet', 'says met', 'quotes unmet', 'quotes met', 'only unmet', 'only met', 'anyone-but unmet', 'anyone-but met', 'all met'];
   springs boolean[] := array[false, true, false, true, false, true, false, true, false, true, true];
   posts uuid[] := '{}'; p uuid; quoting uuid; free uuid; body text;
   fd face_down; one uuid; i integer; n integer;
@@ -146,12 +146,12 @@ begin
   perform set_config('track_functions', 'all', true);
   perform set_config('enable_seqscan', 'off', true);
   discard plans;
-  perform pg_temp.hand(ann, 'cqmove', 'cqbluff');
+  perform pg_temp.hand(ann, 'cqmove', 'cqidle');
   for i in 1 .. array_length(labels, 1) loop
     p := tests.post(s, t, 'Trapped ' || i || ': the punchline, and zebra stripes.');
     posts := posts || p;
     perform case i
-      when 1 then set_card(ann, 'cqbluff', s, p, '{}', 0)
+      when 1 then set_card(ann, 'cqidle', s, p, '{}', 0)
       when 2 then set_card(ann, 'cqmove', s, p, '{}', 0)
       when 3 then set_card(ann, 'cqmove', s, p, '{}', 0, null, 'zebra')
       when 4 then set_card(ann, 'cqmove', s, p, '{}', 0, null, 'nice try')

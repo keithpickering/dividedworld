@@ -44,8 +44,8 @@ Wherever the picture comes from, two things about the card's face decide how it 
 
 ## The cards' own pictures are 3D scenes
 
-The ten cards here are rendered in Blender, in the manner of 1990s trading-card art, and each card's folder holds the
-scene its picture came from: `scene.py`, a Python script that builds the scene from nothing and renders it. `rig.py`,
+Nine of the cards here are rendered in Blender, in the manner of 1990s trading-card art (the four newest still have
+vector placeholders), and each of those nine folders holds the scene its picture came from: `scene.py`, a Python script that builds the scene from nothing and renders it. `rig.py`,
 beside the folders, is what the scenes share. To make a card's picture again, from its folder:
 
 ```

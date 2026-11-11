@@ -11,7 +11,7 @@ const persona = testSystem.roster[0]!;
 const she = PRONOUN_PRESETS.she;
 const they = PRONOUN_PRESETS.they;
 const CAST: OfferedCard = { key: 'whoops', name: 'Whoops!', play: 'cast' };
-const SET: OfferedCard = { key: 'bluffy', name: 'Bluffy', play: 'set' };
+const SET: OfferedCard = { key: 'dud', name: 'Dud', play: 'set' };
 const facts = (change: Partial<RepairFacts> = {}): RepairFacts => ({ postMaxLength: 200, titleMaxLength: 40, askedTitle: false, offered: [CAST, SET], ...change });
 const ok = (raw: unknown, change: Partial<RepairFacts> = {}) => {
   const r = repairChatter(raw, facts(change));
@@ -82,10 +82,10 @@ test('a Cast on its own post is dropped: a Cast lands on the post replied to', (
 });
 
 test('a Set on the reply is dropped: a Set lands on its own post', () => {
-  const r = ok({ words: 'Hi.', card: { key: 'bluffy', on: 'reply' } });
+  const r = ok({ words: 'Hi.', card: { key: 'dud', on: 'reply' } });
   assert.equal(r.answer.card, undefined);
   assert.equal(r.trims[0]!.predicate, 'setOnOwn');
-  assert.deepEqual(ok({ words: 'Hi.', card: { key: 'bluffy', on: 'own' } }).answer.card, { key: 'bluffy', on: 'own' });
+  assert.deepEqual(ok({ words: 'Hi.', card: { key: 'dud', on: 'own' } }).answer.card, { key: 'dud', on: 'own' });
 });
 
 test('a card whose shape is wrong is dropped, not the answer', () => {
@@ -152,7 +152,7 @@ test('the provider schema asks for a title only for a thread start, and offers o
   assert.equal('card' in plain.properties, false);
   const full = chatterSchema({ askedTitle: true, offered: [CAST, SET] }) as any;
   assert.deepEqual(full.required, ['words', 'title']);
-  assert.deepEqual(full.properties.card.properties.key.enum, ['whoops', 'bluffy']);
+  assert.deepEqual(full.properties.card.properties.key.enum, ['whoops', 'dud']);
   assert.deepEqual(full.properties.card.properties.on.enum, ['reply', 'own']);
   assert.equal(full.additionalProperties, false);
 });

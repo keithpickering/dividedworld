@@ -84,7 +84,7 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'whoops2', status: eight }]), rules), [`the card "whoops2": the status "${eight}" is 8 words, over the 6 a status may run`]);
     const sentence = 'It never holds you: you wrote this post';
     assert.match(instanceUiProblems(withCards([{ key: 'stick-around', status: sentence }]), rules).join('\n'), /the card "stick-around": the status ".*" is a sentence/u);
-    assert.deepEqual(instanceUiProblems(withCards([{ key: 'whoops', status: 'Holding you on this post' }, { key: 'bluff', status: 'Set, face down to everyone else' }]), rules), []);
+    assert.deepEqual(instanceUiProblems(withCards([{ key: 'whoops', status: 'Holding you on this post' }, { key: 'hall-pass', status: 'Set, face down to everyone else' }]), rules), []);
   });
   test("refuses a card with no status, naming it: its Lens heading would be its summary, a sentence", () => {
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
@@ -195,7 +195,7 @@ describe('instanceUiProblems', () => {
     }
   });
   test('refuses a card kind word that is empty, missing or not text, and takes the three words', () => {
-    const words = { cast: 'Move', set: 'Gimmick', use: 'Ward' };
+    const words = { cast: 'Move', set: 'Reversal', use: 'Gimmick' };
     const withKinds = (kinds: unknown) => { const u = ui(good); (u.copy as Record<string, unknown>).cardKinds = kinds; return u; };
     assert.deepEqual(instanceUiProblems(withKinds(words), rules), []);
     for (const key of ['cast', 'set', 'use']) {

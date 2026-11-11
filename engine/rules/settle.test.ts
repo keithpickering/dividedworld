@@ -1100,6 +1100,164 @@ test('a settlement with no staff target and no spring is as it was', () => {
   assert.deepEqual(settle({ ...b, unscoredTargets: [] }, instance), settle(b, instance));
 });
 
+/* Spring scoring and Earn (docs/plans/2026-11-11-card-types-plan.md, Task 2). A spring with `by` is scored against the Act that
+   sprang it: "snatcher" earns 20 for a Salty play that outdraws what it landed on, "lifter" a vote per excited-positive vote a Sweet
+   play's target draws after it; "kinded" pays every reaction its own vote and names the reaction's kind. */
+const snatcher: ClassRules = {
+  key: 'snatcher',
+  name: 'Snatcher',
+  earn: (input) => input.cardsPlayed.filter((c) => c.readsAs === 'salty' && c.onOthers && c.votes > c.targetVotes).map((c): Earning => ({ reason: 'snatcher.stole', amount: 20, act: c.act })),
+};
+const lifter: ClassRules = {
+  key: 'lifter',
+  name: 'Lifter',
+  earn: (input, settings) => input.cardsPlayed.filter((c) => c.readsAs === 'sweet' && c.onOthers && c.targetAfter.excitedPositive > 0)
+    .map((c): Earning => ({ reason: 'lifter.lifted', amount: settings.vote * c.targetAfter.excitedPositive, act: c.act })),
+};
+const kinded: ClassRules = {
+  key: 'kinded',
+  name: 'Kinded',
+  earn: (input, settings) => input.received.map((r): Earning => ({
+    reason: r.quadrant === 'boredNegative' ? 'kinded.groan' : 'kinded.nod', amount: (r.quadrant === 'boredNegative' ? -1 : 1) * settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind,
+  })),
+};
+const splat = instance.cards[0]!;
+const cardsWorld: Instance = {
+  ...instance,
+  classes: [...instance.classes, snatcher, lifter, kinded],
+  cards: [
+    ...instance.cards,
+    { ...splat, key: 'cheer', alignment: 'sweet' },
+    { ...splat, key: 'calmBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
+    { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
+    { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
+  ],
+};
+function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: SettlementInput['unscoredTargets'] = []): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'ann-snatcher', player: 'ann', classes: [{ class: 'snatcher', from: 0 }] },
+      { id: 'ann-lift', player: 'ann', classes: [{ class: 'lifter', from: 0 }] },
+      { id: 'ann-quiet', player: 'ann', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat', 'dee'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    acts: [
+      post('ap', 'ann-snatcher', FROM + 1 * H),
+      { id: 'cast', character: castBy, kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'ap', card: 'splat' },
+      { id: 'sp', character: 'ann-snatcher', kind: 'spring', at: FROM + 3 * H, thread: 't1', target: 'ap', card: 'splat', by: 'cast' },
+      ...extra,
+    ],
+    unscoredTargets,
+    reactions: [react('sp', 'cat', 'cat-1', 'fire', FROM + 4 * H), react('sp', 'dee', 'dee-1', 'fire', FROM + 5 * H)],
+  };
+}
+test('a spring catching another player\'s cast is scored against the cast, and a Salty one that outdraws it steals thunder', () => {
+  const r = settle(springBoard('bob-1'), cardsWorld);
+  assert.equal(amountOf(r, 'ann-snatcher', 'snatcher.stole'), 20, 'the spring drew two players, the cast none');
+});
+test('a spring catching the setter\'s own other mask\'s cast earns nothing', () => {
+  const r = settle(springBoard('ann-quiet'), cardsWorld);
+  assert.equal(amountOf(r, 'ann-snatcher', 'snatcher.stole'), 0);
+});
+test('a Sweet spring on a staff visit that draws hype lifts it, and a spring with no `by` keeps its trapped post', () => {
+  const visit = { id: 'visit1', kind: 'post' as const, at: FROM + 1 * H, thread: 't1', staff: true as const };
+  const b = springBoard('bob-1', [], [visit]);
+  const sweet = (extra: Partial<InputAct>): SettlementInput => ({
+    ...b,
+    acts: [post('ap', 'ann-lift', FROM + 1 * H), { id: 'sp', character: 'ann-lift', kind: 'spring', at: FROM + 3 * H, thread: 't1', target: 'ap', card: 'cheer', ...extra }],
+    reactions: [react('visit1', 'cat', 'cat-1', 'fire', FROM + 4 * H), react('visit1', 'dee', 'dee-1', 'fire', FROM + 5 * H)],
+  });
+  assert.equal(amountOf(settle(sweet({ by: 'visit1' }), cardsWorld), 'ann-lift', 'lifter.lifted'), 20, 'two players cheered the visit after the spring');
+  assert.equal(amountOf(settle(sweet({ by: 'unseen-visit' }), cardsWorld), 'ann-lift', 'lifter.lifted'), 0, 'a staff Act nobody reacted to');
+  assert.equal(amountOf(settle(sweet({}), cardsWorld), 'ann-lift', 'lifter.lifted'), 0, 'without `by`, the trapped post is its own and its reactions are not the visit\'s');
+});
+
+function earnBoard(gimmicks: InputAct[], reactions: InputReaction[]): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'tom-1', player: 'tom', classes: [{ class: 'kinded', from: 0 }] },
+      ...['bob', 'cat', 'dee'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    acts: [post('tp1', 'tom-1', FROM + 1 * H), post('tp2', 'tom-1', FROM + 1 * H + 1), ...gimmicks],
+    reactions,
+  };
+}
+const onTom = (id: string, card: string, at: number, ends: number | null = FROM + 20 * H): InputAct => ({ id, character: 'tom-1', kind: 'card', at, thread: 't1', card, reach: 'character', on: 'tom-1', ...(ends !== null ? { ends } : {}) });
+test('an earn gimmick raises positive earnings from its quadrants inside its window, and nothing outside it', () => {
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H, FROM + 10 * H)], [
+    react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 12 * H),
+    react('tp1', 'dee', 'dee-1', 'tea', FROM + 1 * H),
+  ]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 30);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, '10% of the one vote inside [at, ends)');
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'calmBoost' });
+});
+test('an earn gimmick never raises a negative earning, and one from a quadrant it does not name is left alone', () => {
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 5 * H),
+  ]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'kinded.groan'), -10);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 0);
+});
+test('an earn gimmick that names a reaction raises that reaction and leaves another of the same quadrant alone', () => {
+  const r = settle(earnBoard([onTom('g1', 'fireBoost', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp2', 'cat', 'cat-1', 'heart', FROM + 5 * H),
+  ]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 20);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 5, 'half of the fire vote only');
+});
+test('a gimmick on a post raises that post\'s earnings alone, and two gimmicks each raise on their own', () => {
+  const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'fireBoost', ends: FROM + 20 * H };
+  const r = settle(earnBoard([onPost], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('tp2', 'cat', 'cat-1', 'fire', FROM + 5 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 5, 'tp1 only');
+  const both = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onTom('g3', 'fireBoost', FROM + 2 * H)], [
+    react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'fire', FROM + 5 * H),
+  ]), cardsWorld);
+  assert.equal(amountOf(both, 'tom-1', 'card.boost'), 1 + 5, 'the calm vote by 10%, the fire vote by 50%');
+  assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 1], [{ card: 'fireBoost' }, 5]], 'one entry per card, each naming its own');
+  assert.equal(both.details.filter((d) => d.reason === 'card.boost').reduce((s, d) => s + d.amount, 0), 6, 'the log\'s lines add up to the entries');
+});
+test('two Earn cards on different posts split each boost entry over its own card\'s posts alone', () => {
+  const onPost = (id: string, card: string, target: string): InputAct => ({ id, character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target, card, ends: FROM + 20 * H });
+  const input = earnBoard([onPost('g1', 'calmBoost', 'tp1'), onPost('g2', 'fireBoost', 'tp2')], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp2', 'cat', 'cat-1', 'fire', FROM + 5 * H)]);
+  const r = settle(input, cardsWorld);
+  const boosts = r.entries.filter((e) => e.reason === 'card.boost');
+  assert.equal(boosts.length, 2);
+  const shares = shareEntries(input, cardsWorld, boosts).filter((x) => x.reason === 'card.boost');
+  const postsOf = (card: string) => shares.filter((x) => x.amount === boosts.find((e) => e.params?.card === card)!.amount).map((x) => x.act);
+  assert.deepEqual(postsOf('calmBoost'), ['tp1']);
+  assert.deepEqual(postsOf('fireBoost'), ['tp2']);
+  assert.equal(shares.length, 2, 'each entry lands on one post');
+});
+test('an earn gimmick play with no `ends` is malformed and boosts nothing', () => {
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H, null)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'kinded.nod'), 10);
+  assert.equal(r.entries.filter((e) => e.reason === 'card.boost').length, 0);
+});
+test('a boost that rounds to nothing makes no card.boost entry', () => {
+  const r = settle(earnBoard([onTom('g1', 'dustBoost', FROM + 2 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(r.entries.filter((e) => e.reason === 'card.boost').length, 0);
+  assert.equal(r.details.filter((e) => e.reason === 'card.boost').length, 0);
+});
+test('the same card on a character and on one of its posts is one entry, each play boosting', () => {
+  const onPost: InputAct = { id: 'g2', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'calmBoost', ends: FROM + 20 * H };
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM + 2 * H), onPost], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 2]]);
+});
+test('an earn gimmick played before the window, still up in it, boosts the window\'s earnings', () => {
+  const r = settle(earnBoard([onTom('g1', 'calmBoost', FROM - 2 * H, FROM + 10 * H)], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'tea', FROM + 11 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, 'the vote before `ends` only');
+});
+test('an earn gimmick an admin ended is not in the input, so it boosts nothing', () => {
+  const r = settle(earnBoard([], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 0);
+});
+
 /* Cards beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 6): a play on a character, a thread or a board has no target
    post to outdraw. Its own reactions pay its caster by class, as any Act's do; the class rules that read a card's target post pass
    it over; and it lands on nobody's posts. */

@@ -19,7 +19,7 @@ import { useThread } from '../thread/context.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { faceOf, withCardEconomy } from './faces.ts';
 import { landing, landingOn } from './land.ts';
-import { playOf, reachesOf, type BeyondPost, type CardTarget, type Play } from '../../rules/cards.ts';
+import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, type Play } from '../../rules/cards.ts';
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
 import { livePlays, usePlays, type Plays } from './plays.ts';
@@ -30,10 +30,10 @@ import { lowerFirst } from '../copy-words.ts';
 function useTarget(act: Act): PlayTarget | null {
   const { thread, perPage, summary, plays, nameOf, know } = useThread();
   if (act.kind !== 'post' || act.seq === null) return null;
-  return { post: act, title: summary.title, author: act.character === null ? lowerFirst(nameOf(null)) : nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
+  return { post: act, board: summary.board, title: summary.title, author: act.character === null ? lowerFirst(nameOf(null)) : nameOf(act.character), to: threadHref(thread, pageOf(act.seq, perPage), act.seq), plays, know: know ?? (async () => {}) };
 }
 
-/** What the ghost mark is named by its card's play: "Play Whoops! on post 41", "Set Trap Card face down on post 41", "Use Force Field on post 41". */
+/** What the ghost mark is named by its card's play: "Play Whoops! on post 41", "Set Card Collector face down on post 41", "Use Force Field on post 41". */
 export function ghostName(card: string, play: Play, seq: number): string {
   return play === 'set' ? `Set ${card} face down on post ${seq}` : play === 'use' ? `Use ${card} on post ${seq}` : `Play ${card} on post ${seq}`;
 }
@@ -93,6 +93,8 @@ export interface ReachAt {
   /** The thread and the board above the target, whose live plays its card's rules see. */
   readonly thread: Id | null;
   readonly board: Id | null;
+  /** The character who started the thread, where the target is one: a use card goes on a thread its acting character started. */
+  readonly starter?: Id | null;
   /** The thread's title, for the form. */
   readonly title: string;
   /** Where the form's link goes: the post, the thread, the board. */
@@ -103,7 +105,7 @@ export interface ReachAt {
   readonly focusBack: () => HTMLElement | null;
 }
 
-/** What a ghost beyond a post is named: "Play Glitter on Spritey", "Use a Ward on Spritey". */
+/** What a ghost beyond a post is named: "Play Glitter on Spritey", "Use a ward on Spritey". */
 export const reachGhostName = (card: string, play: Play, name: string): string => `${play === 'use' ? 'Use' : 'Play'} ${card} on ${name}`;
 
 /**
@@ -124,6 +126,9 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   const how = playOf(rules);
   if (how === 'set' || how === 'keep') return null;
   if (how === 'use' && at.reach === 'character' && !actingCharacters.some((c) => c.id === at.target)) return null;
+  /* A use card is used on a thread the acting character (the HUD's, as the server checks it) started, and never on a board: no ghost where it cannot go. */
+  if (how === 'use' && (at.reach === 'board' || (at.reach === 'thread' && (at.starter ?? null) !== hudCharacter.id))) return null;
+  const effect = effectOf(instance.cards);
   const above = {
     ...(at.thread ? { thread: livePlays(onThread.plays).filter((p) => p.reach === 'thread').map(effect) } : {}),
     ...(at.board ? { board: livePlays(onBoard.plays).filter((p) => p.reach === 'board').map(effect) } : {}),
@@ -148,7 +153,11 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
   );
 }
 
-const effect = (p: { readonly id: Id; readonly card: string; readonly ends?: string }) => ({ card: p.card, act: p.id, ...(p.ends ? { ends: p.ends } : {}) });
+/** A live play above a target as its rules see it: its card, its Act, and what it does while up (a ward or a price, read from its card's rules) and when it ends. */
+const effectOf = (cards: readonly CardRules[]) => (p: { readonly id: Id; readonly card: string; readonly ends?: string }) => {
+  const gimmick = cards.find((c) => c.key === p.card)?.gimmick;
+  return { card: p.card, act: p.id, ...(gimmick ? { gimmick } : {}), ...(p.ends ? { ends: p.ends } : {}) };
+};
 
 /**
  * Whether a target beyond a post has a strip to draw: a play on it, or an armed card that reaches it. With neither, its host draws no

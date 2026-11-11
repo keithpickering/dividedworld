@@ -121,7 +121,7 @@ interface Held {
   readonly log: Log;
   readonly acts: ReadonlyMap<Id, Act>;
   readonly names: ReadonlyMap<Id, string>;
-  /** The staff characters among them: a Mod Bot's Trap Card takes nothing, so a line about its catch says the card is spent. */
+  /** The staff characters among them: a Mod Bot's catching set card takes nothing, so a line about its catch says the card is spent. */
   readonly staff: ReadonlySet<Id>;
   readonly titles: ReadonlyMap<Id, string>;
   readonly states: ReadonlyMap<Id, unknown>;
