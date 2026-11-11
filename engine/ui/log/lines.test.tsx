@@ -1052,13 +1052,13 @@ describe('a drive\'s gifts', () => {
     const [row, ...rest] = rowsOf([out], [char('g', 'Spritey', 'heel')], [post], gift(50, 12, 38));
     expect(rest).toEqual([]);
     expect(row).toMatchObject({ key: 'gift:g1:gift_out', kind: 'gift', at, what: 'You gave to a drive', aura: -50, wallet: 450, characters: ['g'] });
-    expect(text(row!)).toBe('You gave 0.50 to the drive on post #3; 0.38 reached its author after The System\'s overhead of 0.12.');
+    expect(text(row!)).toBe('You gave 0.50 to the drive on post #3; 0.38 reached its author after an overhead of 0.12.');
     expect(row!.details.some((d) => typeof d === 'object' && d.text === 'post #3' && d.href.includes('th'))).toBe(true);
   });
 
-  test('a gift on a staff post says it all went to The System\'s overhead', () => {
+  test('a gift on a staff post says it all went to overhead', () => {
     const [row] = rowsOf([out], [char('g', 'Spritey', 'heel')], [staffPost], gift(50, 50, 0));
-    expect(text(row!)).toBe('You gave 0.50 to the drive on post #3; it all went to The System\'s overhead.');
+    expect(text(row!)).toBe('You gave 0.50 to the drive on post #3; it all went to overhead.');
   });
 
   test('the author\'s line names the giver, the amount, and what they received, with the wallet after', () => {

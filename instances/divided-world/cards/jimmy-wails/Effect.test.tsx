@@ -218,7 +218,7 @@ describe('the drive under it', () => {
   test('the amounts and the overhead are the economy\'s', () => {
     mount({ economy: { 'jimmyWails.gift1': 15, 'jimmyWails.gift2': 30, 'jimmyWails.gift3': 60, 'jimmyWails.gift4': 120, 'jimmyWails.overhead': 10 } });
     expect(buttons().map((b) => b.textContent)).toEqual(['0.15', '0.30', '0.60', '1.20']);
-    expect(screen.getByText('0.13 reaches Pipewrench after The System\'s 10% overhead')).toBeTruthy();
+    expect(screen.getByText('0.13 reaches Pipewrench after 10% overhead')).toBeTruthy();
   });
 
   test('an economy missing a key throws rather than showing a number', () => {

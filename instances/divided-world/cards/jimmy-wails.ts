@@ -6,7 +6,7 @@
  *   ui/jimmy-wails/plates.ts, which a test holds to this list), and its words are the caster's message, which it must have.
  * - **Its drive** is the post's plays of it, up to the stack of three, closing a week after the latest. The first play opens one, the
  *   next two join it, and once it has closed a play opens another (the database's place_cast, supabase/migrations/0150_drives.sql).
- *   The gifts and the overhead The System keeps are economy numbers (settings.ts).
+ *   The gifts and the overhead are economy numbers (settings.ts).
  * - **It lands** by its own count: not the post's plays of it, which `landsOn` counts, but the open drive's, so a closed drive's three
  *   banners never keep a fourth from opening another.
  */

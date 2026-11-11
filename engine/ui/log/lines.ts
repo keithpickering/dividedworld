@@ -417,7 +417,7 @@ function giftRows(data: LogData, words: Words): LogRow[] {
     };
     if (w.kind === 'gift_out') {
       const gave = `You gave ${plain(amount ?? 0)} to`;
-      const went = overhead === null || arrives === null ? '' : arrives === 0 ? '; it all went to The System\'s overhead' : `; ${plain(arrives)} reached its author after The System's overhead of ${plain(overhead)}`;
+      const went = overhead === null || arrives === null ? '' : arrives === 0 ? '; it all went to overhead' : `; ${plain(arrives)} reached its author after an overhead of ${plain(overhead)}`;
       rows.push({
         key: `gift:${w.ref}:gift_out`, kind: 'gift', at: w.at, what: 'You gave to a drive',
         details: placed ? [`${gave} the drive on `, post(false), `${went}.`] : [`${gave} a drive${went}.`],

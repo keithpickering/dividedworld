@@ -274,14 +274,14 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const jw = instanceUi.cards.find((c) => c.key === 'jimmy-wails')!;
     expect(jw.Effect).toBeDefined();
     expect(jw.summary).toBe('Puts your sob story on a donation banner under a post, so anyone can send its author Aura.');
-    expect(jw.hint).toBe('Anyone can chip in. The System takes a cut for overhead.');
+    expect(jw.hint).toBe('Anyone can chip in. A cut of each gift goes to overhead.');
     expect(jw.hint).not.toMatch(/\d/u);
     const said = jw.describe(instance.settings);
     expect(said).toContain('0.10, 0.25, 0.50 and 1.00');
-    expect(said).toContain('keeps 25% of each gift');
+    expect(said).toContain('loses 25% to overhead');
     expect(said).toMatch(/Up to 3 appeals share one drive[\s\S]*a week after the latest one/u);
     const changed = { ...instance.settings, economy: { ...instance.settings.economy, 'jimmyWails.overhead': 10, 'jimmyWails.gift4': 200 } };
-    expect(jw.describe(changed)).toMatch(/0\.10, 0\.25, 0\.50 and 2\.00[\s\S]*keeps 10% of each gift/u);
+    expect(jw.describe(changed)).toMatch(/0\.10, 0\.25, 0\.50 and 2\.00[\s\S]*loses 10% to overhead/u);
     expect(jw.logPlay!({}, { opened: true })).toBe('It opened a drive.');
     expect(jw.logPlay!({}, { opened: false })).toBe('It joined the drive.');
     expect(jw.logPlay!({}, {})).toBeUndefined();

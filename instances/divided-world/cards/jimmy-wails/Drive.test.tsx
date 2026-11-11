@@ -54,11 +54,11 @@ describe('the buttons', () => {
 describe('what arrives', () => {
   test('is the amount less the overhead, from the split the database makes, for the first amount until another is pointed at', () => {
     mount();
-    expect(screen.getByText('0.07 reaches Pipewrench after The System\'s 25% overhead')).toBeTruthy();
+    expect(screen.getByText('0.07 reaches Pipewrench after 25% overhead')).toBeTruthy();
     fireEvent.focus(buttons()[1]!);
-    expect(screen.getByText('0.18 reaches Pipewrench after The System\'s 25% overhead')).toBeTruthy();
+    expect(screen.getByText('0.18 reaches Pipewrench after 25% overhead')).toBeTruthy();
     fireEvent.pointerEnter(buttons()[3]!);
-    expect(screen.getByText('0.75 reaches Pipewrench after The System\'s 25% overhead')).toBeTruthy();
+    expect(screen.getByText('0.75 reaches Pipewrench after 25% overhead')).toBeTruthy();
   });
 });
 

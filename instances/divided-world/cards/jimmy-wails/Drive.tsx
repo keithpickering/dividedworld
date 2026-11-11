@@ -1,12 +1,12 @@
 /**
  * Jimmy Wails's drive (docs/plans/2026-11-03-jimmy-wails-design.md, sections 4 and 7; plan Task 7), in the plain look of the Wikipedia appeal it
- * parodies: the amounts to give as buttons, what reaches the post's author after The System's overhead, what the drive has raised and the donor wall.
+ * parodies: the amounts to give as buttons, what reaches the post's author after overhead, what the drive has raised and the donor wall.
  *
  * - **Buttons.** One for each amount the economy offers, each "Give 0.25 Aura to this drive". A button worth more than the reader's wallet is disabled
  *   and says so in its description. A wallet not yet known (null: the reader is signed out, or the header has not loaded it) disables them all with
  *   that said, since a gift cannot be made without a balance to take it from; the reader's own character is the one who gives, so the author reading
  *   their own post sees the buttons too (giving to oneself is allowed, and the overhead makes it cost).
- * - **What arrives.** "0.18 reaches {author} after The System's 25% overhead", for the amount last pointed at or focused (the first until then),
+ * - **What arrives.** "0.18 reaches {author} after 25% overhead", for the amount last pointed at or focused (the first until then),
  *   computed with `giftSplit`, the split the database makes. The author's character name is public.
  * - **The result** of a gift goes to a polite live region, and a refusal shows the database's own words there.
  * - **Closed, in the ORIGIN box, or in a moment:** no buttons. A closed drive says "This drive has ended. It raised 4.20 in 11 gifts." and keeps its wall.
@@ -22,7 +22,7 @@ export interface DriveProps {
   readonly author: string;
   /** The amounts a gift may be, in hundredths, in the order they are offered. */
   readonly amounts: readonly number[];
-  /** The percentage The System keeps of every gift. */
+  /** The percentage kept of every gift. */
   readonly overhead: number;
   /** Whether the buttons are drawn at all: not in an ORIGIN box, nor in a play's moment. A closed drive draws none whatever this says. */
   readonly buttons: boolean;
@@ -90,7 +90,7 @@ export function Drive({ drive, author, amounts, overhead, buttons, wallet, give,
               );
             })}
           </div>
-          <p className="dw-jw-split">{figure(giftSplit(shown, overhead).arrives)} reaches {author} after The System&apos;s {overhead}% overhead</p>
+          <p className="dw-jw-split">{figure(giftSplit(shown, overhead).arrives)} reaches {author} after {overhead}% overhead</p>
         </>
       ) : null}
       <div className="dw-jw-result" role="status" aria-live="polite" data-refused={result?.refused ? 'true' : undefined}>{result?.text ?? ''}</div>
