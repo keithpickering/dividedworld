@@ -459,6 +459,9 @@ describe('standings', () => {
     expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.standing, s.place])).toEqual([
       ['Bo Face', 500, 1], ['Ana Face', 300, 2], ['Ana Heel', 300, 2],
     ]);
+    /* Dense (#453): the standing after a tie takes the next place. */
+    fake.seed.settle({ standings: { [anaFace]: 500, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.place])).toEqual([['Ana Face', 1], ['Bo Face', 1], ['Ana Heel', 2]]);
     expect(await fake.lastSettledAt()).toBe(new Date(fake.clock.now()).toISOString());
   });
 });
@@ -1517,7 +1520,8 @@ describe('a place and a standing, read for one character or a page of them', () 
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
     const all = await fake.standingsPage(0, 1000);
     for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
-    expect((await fake.standingPlace(boFace))?.place).toBe(all.length);
+    /* Dense (#453): the debt stands one place below the tie at 300, place 2 of 3, where it was last by count. */
+    expect((await fake.standingPlace(boFace))?.place).toBe(2);
     expect(await fake.standingPlace(waiting)).toBeNull();
     expect(await fake.standingPlace('nobody')).toBeNull();
   });
@@ -1684,8 +1688,9 @@ describe('a page of the standings', () => {
     fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 }, debut: false });
     const row = (s: { name: string; standing: number; place: number }) => [s.name, s.standing, s.place];
     expect((await fake.standingsPage(0, 2)).map(row)).toEqual([['Bo Face', 500, 1], ['Ana Face', 300, 2]]);
-    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, 4]]);
-    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, 5]]);
+    /* Places are dense (#453): the tie at 300 is place 2 and the next standing place 3, never 4. */
+    expect((await fake.standingsPage(2, 2)).map(row)).toEqual([['Ana Heel', 300, 2], ['Bo Lurk', 0, 3]]);
+    expect((await fake.standingsPage(4, 2)).map(row)).toEqual([['Bo Heel', -40, 4]]);
     expect((await fake.standingsPage(4, 2))[0]?.character).toBe(boHeel);
     expect((await fake.standingsPage(3, 1))[0]?.character).toBe(boLurk);
     expect(await fake.standingsPage(5, 2)).toEqual([]);

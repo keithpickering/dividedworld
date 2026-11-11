@@ -25,7 +25,8 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 const at = (day: number, hour = 12) => Date.UTC(2026, 9, day, hour);
 
-function world() {
+/** `places` gives Season 1's four places in the order Spritey, Gloomba, Mrs. Hooligan, Pipewrench; by default 1, 2, 3, 4. */
+function world(places: readonly [number, number, number, number] = [1, 2, 3, 4]) {
   const fake = buildWorld();
   const { seed } = fake;
   const me = seed.account('me');
@@ -44,10 +45,10 @@ function world() {
   seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
   /* Season 1's results are rows, not Acts: the final table as it stood. */
   seed.seasonResults(1, [
-    { character: spritey, place: 1, standing: 985, shown: [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face', was: null }] },
-    { character: gloomba, place: 2, standing: 840 },
-    { character: mrs, place: 3, standing: 795 },
-    { character: pipe, place: 4, standing: 100 },
+    { character: spritey, place: places[0], standing: 985, shown: [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face', was: null }] },
+    { character: gloomba, place: places[1], standing: places[1] === places[0] ? 985 : 840 },
+    { character: mrs, place: places[2], standing: 795 },
+    { character: pipe, place: places[3], standing: 100 },
   ], { at: at(28) });
   /* Season 1's Promos: a debut, then a Turn announced with its old class. */
   seed.announce(thwomp, 'debut', { at: at(26, 8) });
@@ -265,6 +266,14 @@ describe('the News tab', () => {
     expect(within(item).queryByText('Pipewrench')).toBeNull();
     expect(within(podium[0]!).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);
     expect(within(item).getByRole('link', { name: 'All 4 characters and their standings' })).toHaveAttribute('href', '/season?tab=rankings&season=1');
+  });
+
+  test('each of the top three is named by its place, so a tie at first is two Firsts and the next a Second (dense places, #453)', async () => {
+    const w = world([1, 1, 2, 3]);
+    show(w.fake);
+    const item = await waitFor(() => itemOf('Season 1 results'));
+    const places = within(item).getAllByRole('listitem').map((li) => li.querySelector('.kb-season-place')?.textContent);
+    expect(places).toEqual(['First', 'First', 'Second']);
   });
 
   test('the player\'s own characters are marked yours, by the screen, in the results and in the Turns', async () => {

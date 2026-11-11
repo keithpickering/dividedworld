@@ -703,7 +703,7 @@ export interface Standing {
   readonly name: string;
   /** Hundredths. */
   readonly standing: number;
-  /** Ties share a place. */
+  /** Ties share a place, and the next standing takes the next place (dense, #453). */
   readonly place: number;
 }
 
@@ -711,7 +711,7 @@ export interface Standing {
 export interface StandingPlace {
   /** Hundredths. */
   readonly standing: number;
-  /** Ties share a place. */
+  /** Ties share a place, and the next standing takes the next place (dense, #453). */
   readonly place: number;
   readonly of: number;
 }
@@ -1440,6 +1440,7 @@ export interface SeasonFinished {
 export interface SeasonResultRow {
   readonly character: Id;
   readonly name: string;
+  /** Dense, as the live standings' (#453): a tie shares a place and the next standing takes the next one. */
   readonly place: number;
   readonly standing: number;
   readonly shown: readonly SeasonShown[];
@@ -2264,8 +2265,9 @@ export interface KayfaApi {
   season(): Promise<Season | null>;
   /**
    * A page of the open season's standings: every debuted character, ranked by standing (ties share a place, and the next
-   * place skips), then by name; at most 1,000 rows, empty past the end. The whole season is never read at once, and a
-   * page costs the page on the server (one range of an index, never a ranking of the season).
+   * standing takes the next place: dense, #453), then by name; at most 1,000 rows, empty past the end. The whole season is
+   * never read at once, and a page costs the page on the server (one range of an index, and a probe for each distinct
+   * standing above it, never a ranking of the season).
    */
   standingsPage(offset: number, limit: number): Promise<readonly Standing[]>;
   /**

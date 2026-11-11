@@ -40,6 +40,7 @@ export { seasonAt, type SeasonTab };
 const TABS: readonly { readonly key: SeasonTab; readonly label: string }[] = [{ key: 'rankings', label: 'Rankings' }, { key: 'news', label: 'News' }];
 
 
+/** A place in words, by the place itself (never the row's index): places are dense (#453), so a tie at first is two Firsts and the next row Second. */
 const PLACES = ['First', 'Second', 'Third'];
 const BBCODE = /\[\/?[a-z*]+(?:=[^\]]*)?\]/giu;
 /** A post's first words for a quotation: its markup left out, cut where a long one runs on. */
@@ -85,11 +86,11 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
       <p>The final standings, and the class each player made public that season. Never who played them.</p>
       {item.top.length > 0 && (
         <ol className="kb-season-podium-list">
-          {item.top.map((r, i) => {
+          {item.top.map((r) => {
             const s = stated(r);
             return (
               <li key={r.character} className="kb-glass-cut-dialog kb-season-podium">
-                <span className="kb-season-place">{PLACES[i] ?? `Place ${r.place}`}</span>
+                <span className="kb-season-place">{PLACES[r.place - 1] ?? `Place ${r.place}`}</span>
                 <b className="kb-season-name"><GlassLink to={`/c/${encodeURIComponent(r.character)}`}>{r.name}</GlassLink></b>
                 <span className="kb-season-standing">
                   {figure(r.standing)}

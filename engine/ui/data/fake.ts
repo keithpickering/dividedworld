@@ -2182,11 +2182,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /* ------------------------------------------------------------------ the api ---- */
-  /** The season's standings, every debuted character ranked, as standings_page pages them: by standing, ties sharing a place, then by name. In memory, so the whole of it. */
+  /**
+   * The season's standings, every debuted character ranked, as standings_page pages them: by standing, ties sharing a place, then by name. A place is dense (#453): one
+   * more than the distinct standings above, so a tie never costs the next standing its place. In memory, so the whole of it.
+   */
   const ranking = (): Standing[] => {
     const listed = [...characters.values()].filter((c) => c.debutedAt !== null).map((c) => ({ character: c.id, name: c.name, standing: standingOf.get(c.id) ?? 0 }));
     return listed
-      .map((s): Standing => ({ ...s, place: 1 + listed.filter((o) => o.standing > s.standing).length }))
+      .map((s): Standing => ({ ...s, place: 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size }))
       .sort((a, b) => a.place - b.place || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
   /** A place's presence box (presence_box, 0093): the characters present within the window, longest there first. It marks no one present. */

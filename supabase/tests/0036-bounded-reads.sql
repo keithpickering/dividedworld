@@ -112,7 +112,8 @@ begin
   select count(*) into total from season_standings;
   -- The ranking, read as its owner (no client reads season_standings), then asked of standing_place as a player.
   ranked := (select jsonb_agg(to_jsonb(x)) from season_standings x);
-  at_or_above_0 := (select count(*) from season_standings where standing >= 0);
+  -- Places are dense (#453): a debt stands one place below each distinct standing at or above 0, however many characters share one.
+  at_or_above_0 := (select count(distinct standing) from season_standings where standing >= 0);
 
   perform tests.become(bob);
   perform auth.assert_impersonating();
@@ -126,9 +127,10 @@ begin
   -- The cases by name: ties share a place; no row stands at 0; a debt stands below every character with no row.
   if (standing_place(tied_b) ->> 'place')::integer is distinct from 2 then raise exception 'ties share the place above them'; end if;
   if (standing_place(nothing) ->> 'standing')::integer is distinct from 0 then raise exception 'no row stands at 0'; end if;
-  if (standing_place(owes) ->> 'place')::integer is distinct from at_or_above_0 + 1 then raise exception 'a negative standing is below every standing at or above 0, the characters with no row among them: %', standing_place(owes); end if;
+  if (standing_place(owes) ->> 'place')::integer is distinct from at_or_above_0 + 1 then raise exception 'a negative standing is one place below each distinct standing at or above 0 (dense, #453), the characters with no row among them: %', standing_place(owes); end if;
   if (standing_place(owes_same) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer then raise exception 'equal debts share a place'; end if;
-  if (standing_place(owes_more) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer + 2 then raise exception 'a larger debt is below the two smaller ones'; end if;
+  -- Dense (#453): the larger debt is one place below the two equal smaller ones, where it was two by count.
+  if (standing_place(owes_more) ->> 'place')::integer is distinct from (standing_place(owes) ->> 'place')::integer + 1 then raise exception 'a larger debt is the next place below the two smaller ones (dense, #453)'; end if;
   -- A character waiting to debut and a character that does not exist answer alike (nothing), so the answer proves neither.
   if standing_place(waiting) is not null or standing_place(gen_random_uuid()) is not null then raise exception 'a waiting or unknown character has no standing'; end if;
   perform tests.unbecome();
@@ -179,17 +181,19 @@ begin
   plan := pg_temp.plan_of(format('select character, amount from standings where season = %s and character in (%L, %L)', open_season, a, gen_random_uuid()));
   if pg_temp.scans(plan) or plan not like '%standings_pkey%' then raise exception 'a page of postbits'' standings is not read from standings_pkey: %', plan; end if;
 
-  -- A profile's place: the two ranges standing_place counts, both from the (season, amount) index alone.
+  -- A profile's place, dense since #453: the distinct standings above, walked down the (season, amount) index one amount at a time, each step
+  -- a probe of the index alone (the highest amount above, then the next lower one still above).
   foreach q in array array[
-    format('select count(*) from standings s where s.season = %s and s.amount > %s', open_season, mine),
-    format('select count(*) from standings s where s.season = %s and s.amount <= %s', open_season, -mine)
+    format('select s.amount from standings s where s.season = %s and s.amount > %s order by s.amount desc limit 1', open_season, mine),
+    format('select s.amount from standings s where s.season = %s and s.amount > %s and s.amount < %s order by s.amount desc limit 1', open_season, mine, mine + 100)
   ] loop
     plan := pg_temp.plan_of(q);
-    if pg_temp.scans(plan) or plan not like '%standings_season_amount%' then raise exception 'a character''s place is not counted from standings_season_amount: %', plan; end if;
+    if pg_temp.scans(plan) or plan not like '%standings_season_amount%' or plan like '%Sort%' then raise exception 'a character''s place is not walked down standings_season_amount: %', plan; end if;
   end loop;
-  -- The function counts exactly those two ranges (a rewrite that counts characters or ranks them all has to change this file).
-  if fn not like '%s.amount > mine%' or fn not like '%s.amount <= mine%' or fn like '%rank()%' or fn like '%season_standings%' then
-    raise exception 'standing_place counts the two index ranges and the counter, and nothing else: %', fn;
+  -- The function walks exactly those probes (a rewrite that counts characters or ranks them all has to change this file).
+  if fn not like '%with recursive above%' or fn not like '%s.amount > mine order by s.amount desc limit 1%' or fn not like '%s.amount > mine and s.amount < a.amount order by s.amount desc limit 1%'
+     or fn like '%rank()%' or fn like '%season_standings%' or fn like '%count(*)%' then
+    raise exception 'standing_place walks the distinct standings above in the index and reads the counter, and nothing else: %', fn;
   end if;
 
   -- A board's page: its counter is one row of boards, its threads the (board, last_at) index (0034 reads the list itself).
@@ -212,7 +216,7 @@ begin
   -- count is served by the season's primary-key range plus a filter (every row of the season), and the
   -- plan no longer names the index, which is what the check looks for.
   drop index standings_season_amount;
-  plan := pg_temp.plan_of(format('select count(*) from standings s where s.season = %s and s.amount > %s', open_season, mine));
+  plan := pg_temp.plan_of(format('select s.amount from standings s where s.season = %s and s.amount > %s order by s.amount desc limit 1', open_season, mine));
   if plan like '%standings_season_amount%' then raise exception 'the index is dropped and the plan still names it, so the check above cannot tell: %', plan; end if;
   set local enable_seqscan = on;
 end $$;

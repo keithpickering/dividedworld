@@ -290,7 +290,7 @@ begin
      or jsonb_array_length(trophies_of(e, (select min(at) from trophy_awards where character = e) + interval '1 microsecond', 10) -> 'awards') is distinct from 1 then raise exception 'the last page says there is no more'; end if;
 end $$;
 
--- ---- The season's places: ties share a place, and a place past third gets nothing ----
+-- ---- The season's places: ties share a place, the next mask takes the next place (dense, #453), and a place past third gets nothing ----
 create table pg_temp.ts (c1 uuid, c2 uuid, c3 uuid, c4 uuid, c5 uuid);
 select tests.unbecome();
 do $$
@@ -306,26 +306,34 @@ begin
   c3 := tests.character(p3, 'Ts Three', 'alpha', t0 + interval '1 hour'); c4 := tests.character(p1, 'Ts Four', 'alpha', t0 + interval '1 hour');
   c5 := tests.character(p2, 'Ts Five', 'alpha', t0 + interval '1 hour');
   insert into pg_temp.ts values (c1, c2, c3, c4, c5);
-  -- A tie at second: places 1, 2, 2, 4, 5. Two Runner-Up, no Third: the table says place 4 for the next, and the trophy follows the table.
+  -- A tie at second: places 1, 2, 2, 3, 4, dense (#453: a tie never costs the next mask its place). Two Runner-Up and a Third for the next: the trophy follows the table.
   insert into standings (character, season, amount) values (c1, s1, 700), (c2, s1, 500), (c3, s1, 500), (c4, s1, 300), (c5, s1, 100)
   on conflict (season, character) do update set amount = excluded.amount;
   if reveal_season(ended) is null then raise exception 'the season did not roll over'; end if;
+  if (select string_agg(c.name || '=' || r.place, ',' order by r.place, c.name) from season_results r join characters c on c.id = r.character where r.season = s1 and c.name like 'Ts %')
+     is distinct from 'Ts One=1,Ts Three=2,Ts Two=2,Ts Four=3,Ts Five=4' then
+    raise exception 'a tie at second places the next mask third (1, 2, 2, 3, 4; #453): %', (select string_agg(c.name || '=' || r.place, ',' order by r.place, c.name) from season_results r join characters c on c.id = r.character where r.season = s1 and c.name like 'Ts %');
+  end if;
   if (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s1)
-     is distinct from 'tt-champion=Ts One,tt-runner-up=Ts Three,tt-runner-up=Ts Two' then
-    raise exception 'a tie at second writes two Runner-Up and, the places being 1, 2, 2, 4, no Third: %', (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s1);
+     is distinct from 'tt-champion=Ts One,tt-runner-up=Ts Three,tt-runner-up=Ts Two,tt-third=Ts Four' then
+    raise exception 'a tie at second writes two Runner-Up and, the places being 1, 2, 2, 3, a Third (#453): %', (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s1);
   end if;
   if exists (select 1 from trophy_awards a where a.season = s1 and a.by is distinct from 'season') or exists (select 1 from trophy_awards a join characters c on c.id = a.character where c.staff is not null) then raise exception 'season awards are the season''s, and none is a staff character''s'; end if;
   if (select t ->> 'by' from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 'the season' then raise exception 'a season award says "the season"'; end if;
   if (select (t ->> 'season')::integer from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 1 then raise exception 'a season award names its season'; end if;
   if (select t -> 'move' from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 'null'::jsonb then raise exception 'a season award names no move'; end if;
-  -- The next season: a tie at first. Places 1, 1, 3, 4, 5: two Champion, one Third.
+  -- The next season: a tie at first. Places 1, 1, 2, 3, 4 (#453): two Champion, one Runner-Up, and a Third for the next.
   s2 := (select id from seasons where ends_at is null);
   insert into standings (character, season, amount) values (c1, s2, 500), (c2, s2, 500), (c3, s2, 300), (c4, s2, 200), (c5, s2, 100)
   on conflict (season, character) do update set amount = excluded.amount;
   if reveal_season(ended + interval '1 day') is null then raise exception 'the second season did not roll over'; end if;
+  if (select string_agg(c.name || '=' || r.place, ',' order by r.place, c.name) from season_results r join characters c on c.id = r.character where r.season = s2 and c.name like 'Ts %')
+     is distinct from 'Ts One=1,Ts Two=1,Ts Three=2,Ts Four=3,Ts Five=4' then
+    raise exception 'a tie at first places the next mask second (1, 1, 2, 3, 4; #453): %', (select string_agg(c.name || '=' || r.place, ',' order by r.place, c.name) from season_results r join characters c on c.id = r.character where r.season = s2 and c.name like 'Ts %');
+  end if;
   if (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s2)
-     is distinct from 'tt-champion=Ts One,tt-champion=Ts Two,tt-third=Ts Three' then
-    raise exception 'a tie at first writes two Champion and one Third: %', (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s2);
+     is distinct from 'tt-champion=Ts One,tt-champion=Ts Two,tt-runner-up=Ts Three,tt-third=Ts Four' then
+    raise exception 'a tie at first writes two Champion, one Runner-Up and one Third (#453): %', (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s2);
   end if;
   if (select count(*) from trophy_awards where character = c1 and trophy = 'tt-champion') is distinct from 2::bigint then raise exception 'a character can win a place in two seasons'; end if;
   -- The awards cannot be written: the season still ends, with its results, and the failure is kept for an admin, who can read it and give the places by hand.
