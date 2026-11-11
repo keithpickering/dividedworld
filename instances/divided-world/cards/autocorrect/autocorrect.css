@@ -173,3 +173,10 @@
 .dw-ac-form-places {
   margin: 0.25rem 0 0;
 }
+/* The marker is clipped to its piece, so ink never lands on the post's words; the roll, corner and flap sit outside it. */
+.dw-ac-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}

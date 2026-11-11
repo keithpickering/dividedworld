@@ -295,7 +295,7 @@ const Piece = memo(function Piece({ strip, index, box, words, fontPx, pad, own, 
     <div ref={div} className="dw-ac-piece" style={style} data-kb-ac-piece={strip.key} data-kb-ac-line={index} data-kb-ac-stuck={stuck} data-kb-focus={focused ? 'true' : undefined} {...handlers}>
       <div className="dw-ac-body" style={body} data-tension={strain ? '' : undefined}>
         <canvas ref={canvas} className="dw-ac-paper" style={{ width: box.w, height: box.h }} />
-        {words ? <span className="dw-ac-ink" style={{ fontSize: fontPx, left: pad }}>{words}</span> : null}
+        {words ? <span className="dw-ac-clip"><span className="dw-ac-ink" style={{ fontSize: fontPx, left: pad }}>{words}</span></span> : null}
       </div>
       {still ? null : own.map(([lo, hi], k) => {
         /* Only the tape still stuck, and the grip at its ends, takes a pointer: the peeled part leaves the post's words and links alone. */
@@ -766,8 +766,9 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   /* Rooms: break-spaces after a strip's words, by the end offset they follow, as this screen's measuring last found them. */
   const [rooms, setRooms] = useState<Rooms>({});
   const [laid, setLaid] = useState<Layout | null>(null);
-  const world = useRef({ strips, stacks, loaded, rooms });
-  world.current = { strips, stacks, loaded, rooms };
+  const world = useRef({ strips, stacks, loaded, rooms, key: '' });
+  world.current = { strips, stacks, loaded, rooms, key: `${text}\u0000${configsKey}` };
+  const extra = useRef<{ key: string; at: Record<string, number> }>({ key: '', at: {} });
 
   /*
    * The measuring: the segments' own widths (never the rooms'), the break-space in the formatting each room sits in, the marker in
@@ -778,7 +779,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   const layout = useCallback(() => {
     const host = box.current;
     if (!host) return;
-    const { strips: all, stacks: groups, loaded: before, rooms: have } = world.current;
+    const { strips: all, stacks: groups, loaded: before, rooms: have, key } = world.current;
     const hostRect = host.getBoundingClientRect();
     const base = Number.parseFloat(getComputedStyle(host).fontSize) || 16;
     const ruler = rulerOf();
@@ -818,26 +819,57 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         if (made) { inner.set(end, made); nextRooms[String(end)] = made; }
       }
     }
+    /*
+     * What a strip that crosses a line needs beyond one line's worth: the room above is measured as if the footprint stood on one
+     * line, but a word of the replacement that fits no piece but the last leaves the other pieces' tape unused. Found below, once
+     * the strip's pieces are known, and kept (it only grows, up to the replacement's own width) until the post's text or plays change.
+     */
+    if (extra.current.key !== key) extra.current = { key, at: {} };
+    for (const [end, n] of Object.entries(extra.current.at)) nextRooms[end] = (nextRooms[end] ?? 0) + n;
     if (!sameJson(nextRooms, have)) { setRooms(nextRooms); return; }
 
     const out: Record<string, Laid> = {};
-    const rangeOf = (strip: TapeStrip): Range | null => {
+    const bump: Record<string, number> = {};
+    /*
+     * The boxes of a strip's words and its room, and only those: a Range from the first word to the room also takes the text of the
+     * visually hidden anchor buttons between them (a clipped one-pixel button whose label still has a box as wide as the replacement),
+     * and that box would join the line and carry the piece past the post's edge.
+     */
+    const rectsOf = (strip: TapeStrip): Rect[] | null => {
       const first = segs.find((s) => edge(s)[0] === strip.from);
       const last = segs.filter((s) => edge(s)[1] === strip.to).at(-1);
       if (!first || !last) return null;
-      const room = before.has(strip.key) ? null : host.querySelector(`[data-kb-ac-room="${strip.to}"]`);
-      const r = document.createRange();
-      r.setStartBefore(first);
-      r.setEndAfter(room ?? last);
-      return r;
+      const room = before.has(strip.key) ? null : host.querySelector<HTMLElement>(`[data-kb-ac-room="${strip.to}"]`);
+      /* The rooms of strips ending inside this one are part of its footprint, as its own is. */
+      const inner = [...host.querySelectorAll<HTMLElement>('[data-kb-ac-room]')].filter((e) => Number(e.dataset.kbAcRoom) > strip.from && Number(e.dataset.kbAcRoom) < strip.to);
+      const parts = [...segs.slice(segs.indexOf(first), segs.indexOf(last) + 1), ...inner, ...(room ? [room] : [])];
+      const rects: Rect[] = [];
+      for (const part of parts) {
+        const r = document.createRange();
+        r.selectNodeContents(part);
+        if (typeof r.getClientRects !== 'function') return null;
+        rects.push(...r.getClientRects());
+      }
+      return rects;
     };
     for (const s of all) {
-      const range = rangeOf(s);
-      if (!range || typeof range.getClientRects !== 'function') continue;
-      const boxes = linesOf([...range.getClientRects()], hostRect);
+      const rects = rectsOf(s);
+      if (!rects) continue;
+      const boxes = linesOf(rects, hostRect);
       if (!boxes.length) continue;
       const dealt = dealWords(s.replacement, boxes.map((b) => b.w - 2 * pad), (t, scale) => ruler(marker(scale), t));
+      const lack = ruler(marker(dealt.scale), dealt.words.at(-1) ?? '') - (boxes.at(-1)!.w - 2 * pad);
+      const grown = extra.current.at[String(s.to)] ?? 0;
+      if (lack > 0.5 && !before.has(s.key) && grown * spaceAt(s.to) < 2 * ruler(marker(1), s.replacement)) {
+        const more = Math.ceil(lack / spaceAt(s.to));
+        extra.current.at[String(s.to)] = grown + more;
+        bump[String(s.to)] = Math.max(bump[String(s.to)] ?? 0, more);
+      }
       out[s.key] = { boxes, words: dealt.words, scale: dealt.scale };
+    }
+    if (Object.keys(bump).length) {
+      setRooms(Object.fromEntries(Object.entries({ ...nextRooms, ...bump }).map(([end, n]) => [end, (nextRooms[end] ?? 0) + (bump[end] ?? 0)])));
+      return;
     }
     const next: Layout = { w: hostRect.width, base, strips: out };
     setLaid((was) => (sameJson(was, next) ? was : next));

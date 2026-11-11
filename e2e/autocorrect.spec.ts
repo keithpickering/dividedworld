@@ -145,3 +145,33 @@ test('after a reload, a peeled strip takes its words\' own width, and its residu
   expect(f.left).toBeGreaterThanOrEqual(peeled.left - 3);
   expect(f.right).toBeLessThanOrEqual(peeled.right + 3);
 });
+
+/* A piece of tape never passes its line's box: every piece lies inside its post body's content box, on a phone and on a desktop. */
+for (const [width, height] of [[390, 844], [1440, 1120]] as const) {
+  for (const story of ['stack', 'across', 'wider', 'one']) {
+    test(`no piece of tape passes its post body's content box (${story}, ${width}px)`, async ({ page }) => {
+      await open(page, `${story}-${width === 390 ? 'phone' : 'light'}`, { width, height });
+      const over = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-piece]')].flatMap((p) => {
+        const host = p.closest<HTMLElement>('.dw-ac')!;
+        const cs = getComputedStyle(host);
+        const right = host.clientWidth - Number.parseFloat(cs.paddingRight);
+        const left = Number.parseFloat(cs.paddingLeft);
+        /* The piece's own box, untilted: its offset in the tape layer and its width. */
+        const at = p.offsetLeft, end = p.offsetLeft + p.offsetWidth;
+        return at < left - 0.5 || end > right + 0.5 ? [`${p.dataset.kbAcPiece} line ${p.dataset.kbAcLine}: ${at.toFixed(1)}..${end.toFixed(1)} outside ${left.toFixed(1)}..${right.toFixed(1)}`] : [];
+      }));
+      expect(over).toEqual([]);
+    });
+
+    /* Ink never leaves its tape: every marker box lies inside its own piece, onto no word of the post. */
+    test(`every marker lies inside its piece (${story}, ${width}px)`, async ({ page }) => {
+      await open(page, `${story}-${width === 390 ? 'phone' : 'light'}`, { width, height });
+      const out = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.dw-ac-ink')].flatMap((ink) => {
+        const p = ink.closest<HTMLElement>('[data-kb-ac-piece]')!;
+        const a = ink.getBoundingClientRect(), b = p.getBoundingClientRect();
+        return a.left < b.left - 1 || a.right > b.right + 1 ? [`${p.dataset.kbAcPiece} line ${p.dataset.kbAcLine} "${ink.textContent}": ink ${a.left.toFixed(1)}..${a.right.toFixed(1)} piece ${b.left.toFixed(1)}..${b.right.toFixed(1)}`] : [];
+      }));
+      expect(out).toEqual([]);
+    });
+  }
+}
