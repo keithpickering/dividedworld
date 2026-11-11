@@ -563,9 +563,12 @@ export function color(value: unknown): string | null {
 
 /**
  * Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. A set card that
- * springs on a visit is never offered: a Mod Bot visits only players' posts, so a persona's Hall Pass could never spring.
+ * springs on a visit is never offered: a Mod Bot visits only players' posts, so a persona's Hall Pass could never spring. Nor is a card that needs a
+ * caster message, since a persona's play carries none.
  */
 export function staffOffers(card: CardRules): boolean {
   if (card.trap?.trigger.on === 'visit') return false;
+  // A persona plays a card with no caster message, so a card that needs one could never land.
+  if (card.needsMessage !== undefined) return false;
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }

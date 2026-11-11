@@ -188,7 +188,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         const play = decision.play === 'use'
           ? decideUse(rules, tuned.settings, target, effects, decision.args.config, said.value)
           : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
-        if (!play.ok) return refused('config', play.why);
+        // A card that needs a caster message refuses a blank one on the message field, as the screens show it there.
+        if (!play.ok) return refused(play.why === rules.needsMessage ? 'message' : 'config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
         // A card that writes buys its tokens at this decision, from the settings as the rows hold them now; the database writes them with the play and the worker and the log read them there.
         if (play.value.tokens !== undefined) args = { ...args, tokens: play.value.tokens };

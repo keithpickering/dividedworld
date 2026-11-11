@@ -83,6 +83,14 @@ test('a play on a post hands play_card the version it was decided against, and i
   assert.deepEqual(calls.at(-1), `service:play_card:${JSON.stringify({ card: 'whoops', through: id, target, config: { color: 'red' }, message: '', who: whoami, price: 0, reach: 'post', from_post: null, version: edit })}`);
 });
 
+test('a card that needs a message, played with none, is refused on the message field, and never written', async () => {
+  const pleading = { ...instance, cards: instance.cards.map((c) => (c.key === 'whoops' ? { ...c, needsMessage: 'say why' } : c)) };
+  const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
+  const out = await runAction(dbs, pleading, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: '  ' });
+  assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'message', error: 'say why' } });
+  assert.ok(!calls.some((c) => c.startsWith('service:play_card:')), calls.join('\n'));
+});
+
 test('a play whose message is too long is refused by its field, and never written', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
   const out = await runAction(dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: 'x'.repeat(201) });

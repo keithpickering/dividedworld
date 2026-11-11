@@ -273,6 +273,7 @@ test('staffOffers: a card with staffOptions and no default is offered, and a car
   assert.equal(staffOffers({ ...inky, staffConfigs: [{ ink: 'red' }] }), true, 'the fallback list alone still offers it');
   assert.equal(staffOffers(plain), true, 'a default alone offers it');
   assert.equal(staffOffers(hallway), false, 'a set card that springs on a visit is never offered: a Mod Bot visits only players\' posts');
+  assert.equal(staffOffers({ ...plain, needsMessage: 'an appeal needs words' }), false, 'a card that needs a message is never offered: a persona plays with none');
   assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a set card that springs on a cast is offered with its options');
 });
 
