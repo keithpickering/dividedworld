@@ -11,13 +11,16 @@
  *   `stepBurst(flakes, now)` and paints it with `drawBurst(ctx, flakes, band, now)` on a second canvas over the words. Both return whether another frame is needed. At most `MAX_IN_FLIGHT` fly across the page; past that a
  *   burst lands its remainder at once. Under reduced motion there is no burst and every flake is placed at once.
  * - Cling: a mouse passing over a `sticky` registered host picks flakes up (at most 26), they ride the pointer, drop off over
- *   anything else and land on whichever registered host is under them (or fade). A host that takes no pointer names the element
+ *   anything else, fly briefly and land on whichever registered host is under them after their hang. A host that takes no pointer names the element
  *   the pointer is over instead (`hit`), and is still where its flakes land, in its own px. Loose glitter is `loose(host)`, 300 across
  *   the page, oldest first, the reader's own and never saved. One page-fixed canvas draws the flakes in the air; it is made on
- *   the first pickup and removed after `IDLE_MS` with nothing carried or falling, in the shape of Whoops!'s drawn cursor so a
+ *   the first pickup and removed after `IDLE_MS` with nothing carried or in the air, in the shape of Whoops!'s drawn cursor so a
  *   later port to the engine loop is a move.
- * - Shake: a scroll of the page past `SHAKE_SPEED` shakes settled flakes off the sticky hosts on screen onto that same layer,
- *   where they fall and land or fade (`shake`): the touch reader's way to move the glitter, where a mouse picks it up.
+ * - Shake: a scroll of the page past `SHAKE_SPEED` shakes copies of settled flakes off the sticky hosts on screen, a frame at a time
+ *   for as long as it stays that fast (`shake`), onto that same layer: they are thrown the way the page was moving at about half its
+ *   speed, sprayed sideways, tumble as air drag slows them, settle at a slow flutter and land on the host under them after their
+ *   hang, or leave the screen past its bottom or sides, never fading (docs/plans/2026-11-11-shake-design.md section 3). The touch
+ *   reader's way to move the glitter, where a mouse picks it up.
  * - The dark board (a band that ends far short of white): each ink is taken at the ceiling, saturated (`ceilingOf`), and a
  *   flake facing the light glints: its flare is added, in its own hue at full brightness with the instance's glint at its
  *   heart (`glintOf`). The glints alone leave the band (docs/plans/2026-11-06-shine-design.md section 5, issue #340), and
@@ -949,8 +952,9 @@ export interface ClingOptions {
    (`bandFor` on that host's element at pickup): that is the board whose post inks it was lent against, and the layer is only
    ever drawn over registered hosts' boards. The page's root would be wrong the day a card themes a board of its own. */
 interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
-/* `over`: whether a registered host is under the flake, asked once when it starts to fade (and once more when it lands). */
-interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band; over?: boolean }
+/* A flake in the air (docs/plans/2026-11-11-shake-design.md section 3): `vx, vy` in px a second, `ph` its turn, `spin` how fast it
+   turns, `age` the seconds since it left and `hang` the seconds before it may land. It is drawn at full alpha always. */
+interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; ph: number; spin: number; age: number; hang: number; band: Band }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
 /** Each registered host's `hit` (the host itself by default), to the hosts that name it in registration order: what a walk up from a node is matched against. */
@@ -1110,7 +1114,8 @@ function onMove(e: PointerEvent): void {
     for (let i = carried.length - 1; i >= 0; i--) {
       if (cr() < moved * 0.006) {
         const c = carried.splice(i, 1)[0]!;
-        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vy: 20 + cr() * 40, vx: (cr() - 0.5) * 30, land: 10 + cr() * 26, fallen: 0, ph: c.ph, band: c.band, over: undefined });
+        /* The cursor's numbers: up to 20 px a second sideways, 30 to 80 down, a hang of 0.15 to 0.5 s. */
+        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vx: (cr() - 0.5) * 40, vy: 30 + cr() * 50, ph: c.ph, spin: 6 + cr() * 10, age: 0, hang: 0.15 + cr() * 0.35, band: c.band });
       }
     }
   }
@@ -1121,19 +1126,37 @@ function onMove(e: PointerEvent): void {
 
 /**
  * A scroll this fast (CSS px a second) shakes glitter off the posts on screen: the touch reader's way to move it, where a mouse
- * picks it up. What is shaken off falls on the page-fixed layer, so it leaves the post's box, and lands on whichever registered host
- * is under it or fades, as a dropped flake does. As a mouse's pickup does, it takes a copy of a flake on screen (its ink, size and
- * turn, where it lies) and leaves the post as it was: taking the flake itself would repaint the post's whole base layer on every
- * frame of a fast scroll, the most expensive time to (e2e/shine.spec.ts's raster share went from 0.67 to 8.5 of the posts in view).
+ * picks it up. What is shaken off flies on the page-fixed layer, thrown the way the page was moving, so it leaves the post's box,
+ * tumbles through air drag, settles and lands on whichever registered host is under it after its hang, or leaves the screen: it
+ * never fades. As a mouse's pickup does, it takes a copy of a flake on screen (its ink, size and turn, where it lies) and leaves the
+ * post as it was: taking the flake itself would repaint the post's whole base layer on every frame of a fast scroll, the most
+ * expensive time to (e2e/shine.spec.ts's raster share went from 0.67 to 8.5 of the posts in view).
  */
 export const SHAKE_SPEED = 2200;
-/** At most this many flakes off one post in a frame, and this many falling across the page. */
-const SHAKE_PER_HOST = 8;
-const MAX_SHAKEN = 160;
+/*
+ * The flight (docs/plans/2026-11-11-shake-design.md section 3), exported so a test can state the numbers it holds to. A full flick
+ * shakes `SHAKE_PER_FLICK` flakes off each post over its first `SHAKE_FLICK_S` seconds, at most `MAX_AIR` are in the air across
+ * the page. A flake leaves at `THROW` of the scroll's speed (0.6 to 1.4 times it) and up to `SPRAY` of it sideways either way; each
+ * frame drag (`DRAG`) slows it and gravity adds to its fall, so it settles to about `GRAVITY / DRAG` px a second, swaying up to
+ * `FLUTTER` px a second at `FLUTTER_RATE` radians a second. After its hang (`HANG_S` times 0.6 to 1.4) it lands where it is over a
+ * landing place.
+ */
+export const SHAKE_PER_FLICK = 40;
+export const SHAKE_FLICK_S = 0.4;
+export const THROW = 0.55;
+export const SPRAY = 0.11;
+export const DRAG = 7;
+export const GRAVITY = 480;
+export const FLUTTER = 35;
+export const FLUTTER_RATE = 5.5;
+export const HANG_S = 0.6;
+export const MAX_AIR = 400;
 
 let scrollSeen: { y: number; t: number } | null = null;
 let shakeFrame = 0;
 let shakeV = 0;
+/** When the last shake frame ran (the page's clock), so a flick's frames are handed their own `dt`. */
+let shakeLast: number | null = null;
 let scrollHeard = false;
 
 /** The page's scroll listener: on while a sticky host is registered, off with the last. */
@@ -1143,10 +1166,14 @@ function hearScroll(on: boolean): void {
   if (on) { addEventListener('scroll', onScroll, { passive: true }); return; }
   removeEventListener('scroll', onScroll);
   if (shakeFrame) cancelAnimationFrame(shakeFrame);
-  shakeFrame = 0; scrollSeen = null;
+  shakeFrame = 0; scrollSeen = null; shakeLast = null;
 }
 
-/** Every scroll of the page: past `SHAKE_SPEED`, one shake at the next frame, however many scroll events the frame holds. */
+/**
+ * Every scroll of the page: past `SHAKE_SPEED`, one shake at the next frame, however many scroll events the frame holds, so a flick
+ * shakes once a frame for as long as its speed stays past the threshold. The frame is handed the seconds since the one before (a
+ * flick's first frame, or one after a gap, counts as a 60 Hz frame).
+ */
 function onScroll(e: Event): void {
   const t = e.timeStamp, y = window.scrollY;
   const was = scrollSeen;
@@ -1155,21 +1182,28 @@ function onScroll(e: Event): void {
   const v = (y - was.y) / ((t - was.t) / 1000);
   if (Math.abs(v) < SHAKE_SPEED) return;
   shakeV = v;
-  if (!shakeFrame) shakeFrame = requestAnimationFrame((now) => { shakeFrame = 0; try { shake(shakeV, now); } catch (err) { console.error(err); } });
+  if (!shakeFrame) shakeFrame = requestAnimationFrame((now) => {
+    shakeFrame = 0;
+    const dt = shakeLast !== null && now - shakeLast > 0 && now - shakeLast < STALE_MS ? (now - shakeLast) / 1000 : 1 / 60;
+    shakeLast = now;
+    try { shake(shakeV, now, Math.min(0.05, dt)); } catch (err) { console.error(err); }
+  });
 }
 
 /**
- * Shakes glitter off the sticky hosts on screen, as a scroll at `v` px a second does (down is positive): copies of settled flakes on
- * screen, thrown the way the page was moving, falling. The post itself is not redrawn. A post mid-burst sheds nothing, and reduced
- * motion shakes nothing. Returns how many were shaken off. Exposed so a test can shake.
+ * Shakes glitter off the sticky hosts on screen, as a scroll at `v` px a second does (down is positive) over a frame of `dt`
+ * seconds: `SHAKE_PER_FLICK x (0.4 + 0.6 x strength) x dt / SHAKE_FLICK_S` flakes off each post (the fraction carried by a draw),
+ * strength running from 0 at `SHAKE_SPEED` to 1 at twice it. They are copies of settled flakes on screen, thrown up the screen on a
+ * scroll down and down it on a scroll up. The post itself is not redrawn. A post mid-burst sheds nothing, reduced motion shakes
+ * nothing, and no more than `MAX_AIR` are in the air. Returns how many were shaken off. Exposed so a test can shake.
  */
-export function shake(v: number, now: number): number {
+export function shake(v: number, now: number, dt: number): number {
   if (typeof document === 'undefined' || Math.abs(v) < SHAKE_SPEED || clingReduced()) return 0;
-  const over = Math.min(1, Math.max(0, (Math.abs(v) - SHAKE_SPEED) / SHAKE_SPEED));
+  const strength = Math.min(1, Math.max(0, (Math.abs(v) - SHAKE_SPEED) / SHAKE_SPEED));
   const vw = innerWidth, vh = innerHeight;
   let took = 0;
   for (const [host, opts] of hosts) {
-    if (falling.length >= MAX_SHAKEN) break;
+    if (falling.length >= MAX_AIR) break;
     if (!opts.sticky || !opts.flakes || !host.isConnected) continue;
     const f = opts.flakes as Inner;
     if (!f.fired || f.parts.length || !f.settled.length) continue;
@@ -1177,13 +1211,15 @@ export function shake(v: number, now: number): number {
     if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
     const band = bandAt(host, now);
     if (!band) continue;
-    const n = Math.min(Math.round(2 + over * (SHAKE_PER_HOST - 2)), MAX_SHAKEN - falling.length);
+    const want = SHAKE_PER_FLICK * (0.4 + 0.6 * strength) * dt / SHAKE_FLICK_S;
+    const n = Math.min(Math.floor(want) + (cr() < want % 1 ? 1 : 0), MAX_AIR - falling.length);
     let off = 0;
     for (let tries = 0; off < n && tries < n * 4; tries++) {
       const fl = f.settled[(cr() * f.settled.length) | 0]!;
       const x = r.left + fl.x, y = r.top + fl.y;
       if (x < 0 || y < 0 || x > vw || y > vh) continue;
-      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 80, vy: -v * (0.04 + cr() * 0.06), land: 30 + cr() * 140, fallen: 0, ph: cr() * 6, band, over: undefined });
+      /* Thrown with the page: it leaves at a share of the scroll's speed, against the way the page went, sprayed sideways. */
+      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 2 * SPRAY * Math.abs(v), vy: -v * THROW * (0.6 + cr() * 0.8), ph: cr() * 6, spin: 6 + cr() * 14, age: 0, hang: HANG_S * (0.6 + cr() * 0.8), band });
       off++;
     }
     took += off;
@@ -1283,24 +1319,30 @@ export const cling = {
       for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); paint(ctx, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1, c.band, ratio); }
       mouse.speed *= Math.exp(-dt * 8);
     }
+    const vw = innerWidth, vh = innerHeight;
     for (let i = falling.length - 1; i >= 0; i--) {
       const b = falling[i]!;
-      b.vy = Math.min(90, b.vy + 300 * dt); b.x += b.vx * dt; b.y += b.vy * dt; b.fallen += b.vy * dt; b.ph += dt * 12;
-      if (b.fallen >= b.land) {
-        falling.splice(i, 1);
+      /* Air drag pulls the throw down to a slow fall (gravity against drag: about GRAVITY / DRAG px a second), a flutter sways it,
+         and its turn is quicker while it moves quickly. */
+      const k = Math.exp(-DRAG * dt);
+      b.vx *= k; b.vy = b.vy * k + GRAVITY * dt;
+      b.age += dt;
+      b.x += (b.vx + FLUTTER * Math.sin(b.f.tph + b.age * FLUTTER_RATE)) * dt; b.y += b.vy * dt;
+      b.ph += dt * b.spin * (0.35 + 0.65 * Math.min(1, Math.hypot(b.vx, b.vy) / 400 + 0.3));
+      /* Off the bottom or the sides, it is gone, as glitter thrown off a table is; off the top, it comes back down. */
+      if (b.y > vh + 10 || b.x < -10 || b.x > vw + 10) { falling.splice(i, 1); continue; }
+      if (b.age >= b.hang && b.y >= 0) {
         const host = hostUnder(b.x, b.y);
         if (host) {
+          falling.splice(i, 1);
           /* The one measure a flake costs: the post it lands on, to put it in that post's own px. */
           const r = host.getBoundingClientRect();
           addLoose(host, { ...b.f, x: b.x - r.left, y: b.y - r.top });
           try { hosts.get(host)?.landed?.(); } catch (err) { console.error(err); }
+          continue;
         }
-        continue;
       }
-      /* A flake with nowhere to land fades through the last third of its fall. */
-      if (b.over === undefined && b.fallen > b.land * 0.67) b.over = hostUnder(b.x, b.y) !== null;
-      const fade = b.over === false ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
-      paint(ctx, b.f, b.x, b.y, b.ph, fade, b.band, ratio);
+      paint(ctx, b.f, b.x, b.y, b.ph, 1, b.band, ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     if (!carried.length && !falling.length) settle();
