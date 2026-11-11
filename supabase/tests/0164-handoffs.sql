@@ -125,6 +125,9 @@ begin
   -- Toast Corner is made, and Gone Place is merged into Busy Place, both in season 1; the Boss plays its beat.
   q := pg_temp.queue('createBoard', jsonb_build_object('name', 'Toast Corner', 'premise', 'Toast.', 'description', 'A new board.'));
   perform pg_temp.land(q);
+  -- Zed Corner is made and then reversed: its move has ended, so the board is closed.
+  q := pg_temp.queue('createBoard', jsonb_build_object('name', 'Zed Corner', 'premise', 'Zzz.', 'description', 'A short-lived board.'));
+  perform end_move(pg_temp.land(q), 'reversed', 'admin');
   q := pg_temp.queue('mergeBoard', jsonb_build_object('board', pg_temp.board('gone'), 'into', pg_temp.board('busy')));
   perform pg_temp.land(q);
   -- The season is young, so the tick has not unlocked the beat; it unlocks and the Boss plays it.
@@ -179,9 +182,9 @@ begin
   perform pg_temp.expect((select count(*) from acts) + (select count(*) from handoffs) + (select count(*) from arc_beat_events) = before_rows, 'handoff_facts wrote a row');
   perform pg_temp.expect(f = handoff_facts(s), 'handoff_facts is not the same read twice');
   perform pg_temp.expect((select array_agg(k order by k) from jsonb_object_keys(f) k) = array['beats', 'busiest', 'closed', 'created', 'merged', 'moves', 'quietest'], 'the facts hold more or less than the seven lists: ' || f::text);
-  perform pg_temp.expect((select array_agg(e ->> 'name') from jsonb_array_elements(f -> 'created') e) = array['Toast Corner'], 'the board made is not Toast Corner: ' || (f -> 'created')::text);
+  perform pg_temp.expect((select array_agg(e ->> 'name') from jsonb_array_elements(f -> 'created') e) = array['Toast Corner', 'Zed Corner'], 'the boards made are not Toast Corner and Zed Corner: ' || (f -> 'created')::text);
   perform pg_temp.expect((select array_agg(e ->> 'name' || '>' || (e ->> 'intoName')) from jsonb_array_elements(f -> 'merged') e) = array['Gone Place>Busy Place'], 'the merge is not Gone Place into Busy Place: ' || (f -> 'merged')::text);
-  perform pg_temp.expect(jsonb_array_length(f -> 'closed') = 0 or (select bool_and(e ->> 'name' <> 'Toast Corner') from jsonb_array_elements(f -> 'closed') e), 'a board still open is listed as closed');
+  perform pg_temp.expect((select array_agg(e ->> 'name') from jsonb_array_elements(f -> 'closed') e) = array['Zed Corner'], 'the board whose move ended is not the one board closed: ' || (f -> 'closed')::text);
   perform pg_temp.expect((select array_agg(e ->> 'beat') from jsonb_array_elements(f -> 'beats') e) = array['split'], 'the beat played is not listed: ' || (f -> 'beats')::text);
   perform pg_temp.expect((select array_agg(distinct e ->> 'kind' order by e ->> 'kind') from jsonb_array_elements(f -> 'moves') e where e ->> 'kind' in ('createBoard', 'mergeBoard')) = array['createBoard', 'mergeBoard']
     and (select bool_and(e ? 'kind' and e ? 'landedAt') from jsonb_array_elements(f -> 'moves') e), 'the moves in force do not hold the two lasting moves: ' || (f -> 'moves')::text);
@@ -236,6 +239,15 @@ begin
   -- The words as they stand now are the ones the handover posts.
   perform pg_temp.apply('hf-boss', 'Farewell, you lovely lot.', 'Merge the fangame board into World -1 first.');
   perform pg_temp.expect((select h.farewell from handoffs_latest h where h.season = s) = 'Farewell, you lovely lot.', 'the later meeting''s farewell does not stand');
+  -- A later meeting that writes only a note keeps the farewell the earlier one wrote, and one that writes only a farewell keeps the note: silence displaces nothing.
+  perform pg_temp.apply('hf-boss', null, 'An interim note.');
+  perform pg_temp.expect((select h.farewell from handoffs_latest h where h.season = s) = 'Farewell, you lovely lot.' and (select h.note from handoffs_latest h where h.season = s) = 'An interim note.',
+    'a later note lost the farewell: ' || (select h.farewell || ' / ' || h.note from handoffs_latest h where h.season = s));
+  perform pg_temp.apply('hf-boss', 'Farewell, you lovely lot.', null);
+  perform pg_temp.expect((select h.farewell from handoffs_latest h where h.season = s) = 'Farewell, you lovely lot.' and (select h.note from handoffs_latest h where h.season = s) = 'An interim note.',
+    'a later farewell lost the note: ' || (select h.farewell || ' / ' || h.note from handoffs_latest h where h.season = s));
+  perform pg_temp.apply('hf-boss', null, 'Merge the fangame board into World -1 first.');
+  perform pg_temp.expect((select h.farewell from handoffs_latest h where h.season = s) = 'Farewell, you lovely lot.', 'the restored note lost the farewell');
   perform tests.unbecome();
 end $$;
 
@@ -337,7 +349,7 @@ declare
   after_f jsonb;
 begin
   before_f := handoff_facts(s1);
-  perform pg_temp.expect(jsonb_array_length(before_f -> 'created') = 1 and jsonb_array_length(before_f -> 'moves') >= 2, 'setup: season 1 does not hold its two lasting moves: ' || before_f::text);
+  perform pg_temp.expect(jsonb_array_length(before_f -> 'created') = 2 and jsonb_array_length(before_f -> 'moves') >= 2, 'setup: season 1 does not hold its two lasting moves: ' || before_f::text);
   -- The season is made to have closed before those moves landed: everything they did is after its end.
   update seasons set ends_at = now() - interval '1 hour' where id = s1;
   after_f := handoff_facts(s1);
