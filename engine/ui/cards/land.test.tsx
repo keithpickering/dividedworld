@@ -4,7 +4,8 @@
  * posts to offer a card on and which cards to offer a post.
  */
 import { describe, expect, test } from 'vitest';
-import { landsOn, type CardRules } from '../../rules/cards.ts';
+import { landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
+import { QUADRANTS } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { effectsOf, landing, landingOn, lengthOf } from './land.ts';
 import type { CardPlay } from './types.ts';
@@ -134,6 +135,24 @@ describe('a card that names a quadrant or a class, as a screen offers it', () =>
 
   test('a skim card is still offered on a post that carries one of its own, for the quadrants left', () => {
     expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { cards, setLasts }).ok).toBe(true);
+  });
+});
+
+/* The lenient wrapper asks a card's own landing with no settings at all: a card whose `canApply` reads its configuration (a skim card's, through quadrantFree) must see none. */
+describe('a card whose canApply reads its configuration, as a screen offers it', () => {
+  const setLasts = { unit: 'day' as const, count: 7 };
+  const reading: CardRules = {
+    key: 'reader', name: 'Reader', alignment: 'salty', rarity: 'uncommon', playPrice: () => 0, skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4,
+    validateConfig: (c) => ((c as { quadrant?: unknown } | null)?.quadrant === undefined ? { ok: false, why: 'choose the reactions' } : { ok: true, value: c }),
+    canApply: (t, e, config, now) => {
+      const lands = landsOn({ key: 'reader', stack: 4 }, t, e, now);
+      const quadrant = (config as { quadrant: never } | undefined)?.quadrant;
+      return lands.ok && config ? quadrantFree({ key: 'reader' }, t, [{ card: 'reader', act: 'x', quadrant: QUADRANTS[0], ends: '2999-01-01T00:00:00Z' }], quadrant, now) : lands;
+    },
+  };
+  test('arming it neither throws nor applies the placeholder quadrant\'s check', () => {
+    expect(() => landing(reading, post('hi'), [], { cards: [reading], setLasts })).not.toThrow();
+    expect(landing(reading, post('hi'), [], { cards: [reading], setLasts }).ok).toBe(true);
   });
 });
 

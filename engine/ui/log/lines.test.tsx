@@ -1086,6 +1086,9 @@ describe('the payout cards\' lines', () => {
     expect(text(tabbed!)).toBe(`Scored as a Heel for Oct 29: drew heat +0.05, card.skim +0.01. ${OWN}`);
     const [all] = logRows(data({ log, mine, acts: new Map([...posts, named].map((a) => [a.id, a])) }), w, 600, null).filter((r) => r.kind === 'settlement');
     expect(text(all!)).toBe(`Scored for Oct 29. Pipewrench as a Heel: drew heat +0.05, card.skim +0.01. ${OWN}`);
+    /* The sentence is in the settlement's row, so the character has no row of its own: no extra "ended" row. */
+    expect(logRows(data({ log, mine, acts: new Map([...posts, named].map((a) => [a.id, a])) }), w, 600, null).filter((r) => r.kind === 'gimmickEnded' || r.what === 'Off Day on Pipewrench ended')).toEqual([]);
+    expect(logRows(data({ log, mine, acts: new Map([...posts, named].map((a) => [a.id, a])) }), w, 600, 'p').filter((r) => r.kind === 'gimmickEnded')).toEqual([]);
   });
 
   test('a window in which the character has no line gets a row of its own at the settlement\'s end', () => {
@@ -1107,6 +1110,9 @@ describe('the payout cards\' lines', () => {
     const [row] = logRows(data({ estimate, mine, acts: new Map([...posts, open].map((a) => [a.id, a])) }), w, 600, 'p');
     expect(text(row!)).toContain(' Scored as a Heel this window by Off Day.');
     expect(text(logRows(data({ estimate, mine, acts: new Map([...posts, soon].map((a) => [a.id, a])) }), w, 600, 'p')[0]!)).not.toContain('Scored as');
+    /* A window already closed is not in force either. */
+    const closed = act('k4', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now - 7_200_000).toISOString(), ends: new Date(now - 3_600_000).toISOString() } });
+    expect(text(logRows(data({ estimate, mine, acts: new Map([...posts, closed].map((a) => [a.id, a])) }), w, 600, 'p')[0]!)).not.toContain('Scored as');
     /* An Off Day an admin ended is not in force. */
     const ended = { ...empty, ended: [{ cardEnd: 'e1', play: 'k2', side: 'onMine' as const, at: later, card: 'offday', character: 'p', reach: 'character' as const, targetName: 'Pipewrench', casterName: 'Pipewrench', postAuthorName: null }] };
     expect(text(logRows(data({ estimate, log: ended as never, mine, acts: new Map([...posts, open].map((a) => [a.id, a])) }), w, 600, 'p').find((r) => r.kind === 'estimate')!)).not.toContain('Scored as');

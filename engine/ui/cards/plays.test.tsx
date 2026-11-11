@@ -331,6 +331,10 @@ describe('card backs, springs and catches', () => {
     before.add([base('sp', 'spring', spring)]);
     before.add([base('s1', 'set', {})]);
     expect(before.get('p1').plays[0]!.revealed?.quadrant).toBe('excitedPositive');
+    const numeric = createPlays();
+    numeric.add([base('s1', 'set', {}), base('sp', 'spring', { ...spring, quadrant: 7 })]);
+    expect(numeric.get('p1').plays[0]!.revealed).toEqual({ card: 'chess', spring: 'sp', at });
+    expect(numeric.get('p1').plays[0]!.revealed).not.toHaveProperty('quadrant');
     const caught = createPlays();
     caught.add([base('s1', 'set', {}), base('sp', 'spring', { card: 'snare', trigger: 'cast', did: 'caught', set: 's1', by: 'k2', caught: 'k2' })]);
     expect(caught.get('p1').plays[0]!.revealed).toEqual({ card: 'snare', spring: 'sp', at });
