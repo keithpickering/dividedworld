@@ -745,8 +745,11 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     // A flash sale lasts its hours, whatever expiry was asked: the window is the move's whole life. Every machine move is held to machine.moveDaysMost besides.
     const most = machineKind ? machineExpiryMost : expiryMost;
     if (kind.key === 'flashSale' && Number(given['hours']) > most) return drop(`${path}.params.hours`, `atMost(${most})`);
-    const expires = kind.key === 'flashSale' ? Number(given['hours']) : Math.min(Math.max(hours, phaseLeast), most);
-    if (expires !== hours) {
+    // A lasting kind has no expiry: the hours given are dropped and the drop recorded (a move that stays is not the meeting's to time).
+    const expires = kind.lasting ? 0 : kind.key === 'flashSale' ? Number(given['hours']) : Math.min(Math.max(hours, phaseLeast), most);
+    if (kind.lasting) {
+      trims.push({ path: `${path}.expires_in_hours`, predicate: 'noExpiry', before: hours, after: 0 });
+    } else if (expires !== hours) {
       trims.push({ path: `${path}.expires_in_hours`, predicate: kind.key === 'flashSale' ? 'equalsHours' : `between(${phaseLeast}, ${most})`, before: hours, after: expires });
     }
     // A favor's check: the time the tick looks to see the demand was met, between its go-live and its expiry. One the model gave outside that, or none, is half the favor's length.

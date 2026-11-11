@@ -246,3 +246,12 @@ test('conferGroup reads in plain words from the names it is given, and never nam
   assert.deepEqual(k.parts(p, null, 'plan', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }, ' (planned)']);
   assert.deepEqual(k.parts({ character: who, group: 'regular' }, null, 'done', { character: 'Pipewrench', group: 'Regulars' }), ['Put Pipewrench in Regulars']);
 });
+
+test('every move kind declares whether it is lasting, and none is today', () => {
+  for (const k of MOVE_KINDS) assert.equal(typeof (k as { lasting?: unknown }).lasting, 'boolean', `${k.key} declares lasting`);
+  assert.deepEqual(MOVE_KINDS.filter((k) => k.lasting).map((k) => k.key), []);
+});
+
+test('a lasting kind carries no demand, whatever its params (a catalog invariant)', () => {
+  for (const k of MOVE_KINDS.filter((x) => x.lasting)) assert.equal(k.demand({}), 'none', `${k.key} declares no demand`);
+});

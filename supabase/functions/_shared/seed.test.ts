@@ -90,15 +90,15 @@ test('a roster entry carries pronouns only when its persona declares them, and t
 
 test('the seed carries the engine\'s catalogs of moves (with whether each is structural, shapes a board, and which offices make it, and the tokens SQL derives for its words) and demands', () => {
   const { moves, demands } = instanceSeed(instance).system;
-  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, offices: m.offices, derived: m.derived ?? [] })));
+  assert.deepEqual(moves, MOVE_KINDS.map((m) => ({ key: m.key, structural: m.structural, shapesBoard: m.shapesBoard, lasting: m.lasting, offices: m.offices, derived: m.derived ?? [] })));
   assert.deepEqual(moves, [
-    { key: 'renameBoard', structural: true, shapesBoard: true, offices: ['boss'], derived: [] },
-    { key: 'nameSuccessor', structural: true, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'setRule', structural: false, shapesBoard: false, offices: ['boss', 'mod'], derived: [] },
-    { key: 'conferGroup', structural: false, shapesBoard: false, offices: ['boss', 'mod'], derived: ['groupName'] },
-    { key: 'pullSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'repriceSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
-    { key: 'flashSale', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
+    { key: 'renameBoard', structural: true, shapesBoard: true, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'nameSuccessor', structural: true, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'setRule', structural: false, shapesBoard: false, lasting: false, offices: ['boss', 'mod'], derived: [] },
+    { key: 'conferGroup', structural: false, shapesBoard: false, lasting: false, offices: ['boss', 'mod'], derived: ['groupName'] },
+    { key: 'pullSlot', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'repriceSlot', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
+    { key: 'flashSale', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);

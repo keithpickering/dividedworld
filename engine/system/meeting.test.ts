@@ -706,3 +706,23 @@ test('a first group move dropped for its board does not reserve its character: a
   assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'));
   assert.ok(!r.trims.some((t) => t.path === 'moves[1].params.character'), JSON.stringify(r.trims));
 });
+
+// A lasting kind has no expiry (a thing built to stay). No real kind is lasting yet, so a test kind joins the catalog for these tests alone.
+test('an expires_in_hours given for a lasting kind is dropped and recorded; for any other kind it is kept', async () => {
+  const { MOVE_KINDS, RENAME_BOARD } = await import('./moves.ts');
+  const lasting = { ...RENAME_BOARD, key: 'testLasting', lasting: true, demand: () => 'none' as const };
+  (MOVE_KINDS as unknown as unknown[]).push(lasting);
+  try {
+    const a = answer(null);
+    const r = repairAnswer({ ...a, moves: [{ ...move(null), kind: 'testLasting', expires_in_hours: 72 }, move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })] }, { ...ctx(), bank: 50 });
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.moves.length, 2, JSON.stringify(r.trims));
+    assert.equal(r.moves[0]!.kind, 'testLasting');
+    assert.equal(r.moves[0]!.expiresInHours, 0, 'a lasting move has no expiry');
+    assert.deepEqual(r.trims.filter((t) => t.path === 'moves[0].expires_in_hours'), [{ path: 'moves[0].expires_in_hours', predicate: 'noExpiry', before: 72, after: 0 }]);
+    assert.equal(r.moves[1]!.expiresInHours, 72);
+    assert.deepEqual(r.trims.filter((t) => t.path === 'moves[1].expires_in_hours'), []);
+  } finally {
+    (MOVE_KINDS as unknown as unknown[]).pop();
+  }
+});

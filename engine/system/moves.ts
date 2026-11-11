@@ -73,6 +73,11 @@ export interface MoveKind {
   readonly structural: boolean;
   /** Whether the move shapes a board, so a new Boss reviews it when it inherits it (the inheritance review). */
   readonly shapesBoard: boolean;
+  /**
+   * Whether the move builds something that stays: it has no expiry and carries no demand, and ends only when it is reversed or superseded. A lasting move changes where
+   * threads are (`threads.board`, derived from the Acts by `thread_place`), and the inheritance review does not hand it on (a new Boss inherits moves that expire).
+   */
+  readonly lasting: boolean;
   /** Whether the Boss may propose it among its `moves`. A move that is not is queued by the meeting from another answer. */
   readonly askable: boolean;
   /**
@@ -126,6 +131,7 @@ export const RENAME_BOARD: MoveKind = {
   offices: ['boss'],
   structural: true,
   shapesBoard: true,
+  lasting: false,
   askable: true,
   label: '{role} renamed this board',
   params: {
@@ -150,6 +156,7 @@ export const NAME_SUCCESSOR: MoveKind = {
   offices: ['boss'],
   structural: true,
   shapesBoard: false,
+  lasting: false,
   askable: false,
   label: '{role} named its successor',
   params: { type: 'object', fields: { boss: { type: 'string', minLength: 1, maxLength: 80 } } },
@@ -168,6 +175,7 @@ export const SET_RULE: MoveKind = {
   offices: ['boss', 'mod'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: 'Set a rule',
   params: {
@@ -208,6 +216,7 @@ export const CONFER_GROUP: MoveKind = {
   offices: ['boss', 'mod'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} moved a member',
   params: {
@@ -250,6 +259,7 @@ export const PULL_SLOT: MoveKind = {
   offices: ['boss'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} pulled a card from the machine',
   params: { type: 'object', fields: { slot: slotField } },
@@ -269,6 +279,7 @@ export const REPRICE_SLOT: MoveKind = {
   offices: ['boss'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} repriced a slot at the machine',
   params: { type: 'object', fields: { slot: slotField, percent: { type: 'number' } } },
@@ -293,6 +304,7 @@ export const FLASH_SALE: MoveKind = {
   offices: ['boss'],
   structural: false,
   shapesBoard: false,
+  lasting: false,
   askable: true,
   label: '{role} opened a flash sale at the machine',
   params: { type: 'object', fields: { slot: slotField, hours: { type: 'number' } } },
