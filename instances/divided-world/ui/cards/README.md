@@ -44,8 +44,8 @@ Wherever the picture comes from, two things about the card's face decide how it 
 
 ## The cards' own pictures are 3D scenes
 
-Nine of the cards here are rendered in Blender, in the manner of 1990s trading-card art (the four newest still have
-vector placeholders), and each of those nine folders holds the scene its picture came from: `scene.py`, a Python script that builds the scene from nothing and renders it. `rig.py`,
+The cards here are rendered in Blender, in the manner of 1990s trading-card art, and each card's folder holds the
+scene its picture came from: `scene.py`, a Python script that builds the scene from nothing and renders it. `rig.py`,
 beside the folders, is what the scenes share. To make a card's picture again, from its folder:
 
 ```
@@ -60,7 +60,8 @@ That is Blender's Python module, with no Blender install and no GPU; the full Bl
 while changing a scene, `ART_SCALE=1 ART_SAMPLES=40` makes a half-size draft in under a minute: give a draft another
 name, such as `draft.png`, since the guard refuses an `art.webp` of any other size, and do not commit it. Each scene's
 other settings (a seed, a camera) are environment variables read at its top. Whoops! is the one scene that needs
-`scipy`.
+`scipy`. Heat Magnet's fire is a fluid simulation, which fails inside the Python module, so that one scene needs the
+full Blender build.
 
 **The art file is what ships; the scene is how to make it again.** Nothing in the build renders a scene or compares it
 with its picture, because a render needs Blender and minutes of CPU, and two renders of one scene are not the same
