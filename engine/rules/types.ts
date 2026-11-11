@@ -45,7 +45,7 @@ export type Hundredths = number;
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
   /** Minutes only where a setting says it takes them (editGrace, presenceWindow, hints.window); a window, a season and a cooldown count days or more. */
-  readonly unit: 'minute' | 'day' | 'week' | 'month';
+  readonly unit: 'minute' | 'hour' | 'day' | 'week' | 'month';
   readonly count: number;
 }
 

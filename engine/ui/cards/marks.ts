@@ -61,7 +61,7 @@ export const utcDate = (iso: string): string => { const d = new Date(iso); retur
 /** "Nov 5": a day in the reader's zone, as a back's words say when it was set and when it sprang. */
 const localDate = (iso: string): string => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const DAY = 86_400_000;
-const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
+const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
 
 /**

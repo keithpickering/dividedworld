@@ -2,7 +2,7 @@
 -- trap takes its locks in one written order, so a write that springs a trap is never refused by a deadlock; a sprung back is not
 -- locked; spring_traps reads the same rows for every back before it decides; my_card_ledger says whether a set card can spring.
 -- docs/plans/2026-11-03-trap-locks-plan.md, Tasks 1 to 3. Rewritten for face-down Moves (docs/plans/2026-11-07-face-down-moves-plan.md, Task 6): a back is a Trap Card
--- naming a card, a Move that springs on a quote, or an Idle, and a post meets only the back on the post it quotes. The cards are the engine's test set, never an instance's.
+-- naming a card, a Move that springs on a quote, or an Idle (a back with a visit trap, which no quote springs), and a post meets only the back on the post it quotes. The cards are the engine's test set, never an instance's.
 
 -- ---- Races, first, so the rows they commit wait on nothing this file has written and not committed ----
 
@@ -162,7 +162,7 @@ create function pg_temp.since(before bigint[]) returns text language sql as $$
   select array_agg(n.v - before[n.i] order by n.i)::text from unnest(pg_temp.reads()) with ordinality n(v, i)
 $$;
 
--- An Idle, a matching Move whose setter is retired, and a matching Move whose landing post already carries its card: each answers null and
+-- An Idle (a visit trap, so no quote springs it), a matching Move whose setter is retired, and a matching Move whose landing post already carries its card: each answers null and
 -- writes nothing, and each reads the same rows before it does. Before 0075 the retired setter's check read characters for the trap alone,
 -- and the stack count ran for the full-stack trap alone, so how long a quote took was computed from which card was face down.
 -- (supabase/tests/0135-face-down-moves.sql counts the other backs, and the one that springs.)
@@ -208,7 +208,7 @@ begin
   if said is not null then raise exception 'a retired setter''s Move sprang: %', said; end if;
   before := pg_temp.reads(); said := spring_traps('quote', p_full, r); full_reads := pg_temp.since(before);
   if said is not null then raise exception 'a Move onto a full stack sprang: %', said; end if;
-  if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_idle, p_retired, p_full)) then raise exception 'a back that cannot spring wrote a spring'; end if;
+  if exists (select 1 from acts where kind = 'spring' and target_act_id in (p_idle, p_retired, p_full)) then raise exception 'a back that does not spring in this test (an Idle with a visit trap, a retired setter, a full stack) wrote a spring'; end if;
 
   if retired_reads is distinct from idle_reads then
     raise exception 'a retired setter''s Move read % and an Idle % (acts, card_kinds, characters, face_down): the work before the decision differs with the card', retired_reads, idle_reads;

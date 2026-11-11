@@ -370,7 +370,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- A card the trap did not name, an Idle, a Move, and an ended trap: the cast lands, and the reads are alike ----
+-- ---- A card the trap did not name, an Idle (a visit trap, which no cast springs), a Move, and an ended trap: the cast lands, and the reads are alike ----
 do $$
 declare
   ann uuid := tests.account('pass-ann');
@@ -404,7 +404,7 @@ begin
   played := play_card(bob, 'grandie', b, p_low, '{}', 0, '');
   if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a card the trap did not name was caught: %', played; end if;
   if (card_target(p_low) -> 'effects' -> 0 ->> 'ends')::timestamptz <= now() then raise exception 'the passed-over trap is no longer set'; end if;
-  -- An Idle, a Move and an ended trap leave a cast untouched.
+  -- An Idle (a visit trap, which no cast springs), a Move and an ended trap leave a cast untouched.
   foreach before in array array[to_jsonb(p_idle), to_jsonb(p_hook), to_jsonb(p_old)] loop
     played := play_card(bob, 'sweetie', b, (before #>> '{}')::uuid, '{}', 0, '');
     if played ? 'sprung' or played -> 'payload' ? 'caught' then raise exception 'a cast was caught by no trap that names it: %', played; end if;
@@ -614,8 +614,11 @@ begin
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]}')$s$);
   if why is distinct from 'card "seedling" springs on "reply"; a set card springs on cast or visit' then raise exception 'a trap on a reply seeded: %', why; end if;
   why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "seedling", "name": "Seedling", "alignment": "sweet", "rarity": "common", "play": "use", "gimmick": {"kind": "ward", "upTo": "common"}, "lasts": {"unit": "day", "count": "seven"}}]}')$s$);
-  if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
+  if why is distinct from 'card "seedling" lasts {"unit": "day", "count": "seven"}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000' then raise exception 'a time up of no number seeded: %', why; end if;
   -- An invite's lifetime is still a span of days or more (0020), beside setLasts.
   why := pg_temp.refusal($s$insert into settings (key, value) values ('inviteLifetime', '{"unit": "minute", "count": 5}') on conflict (key) do update set value = excluded.value$s$);
   if why is distinct from 'inviteLifetime is a span: a unit of day, week or month and a whole count from 1 to 1000' then raise exception 'an invite lifetime in minutes: %', why; end if;
+  -- A card's time up may count hours (a Gimmick for 36 hours), and the catalog accepts and reads it.
+  if span_interval('{"unit": "hour", "count": 36}') is distinct from interval '36 hours' then raise exception 'span_interval does not read hours: %', span_interval('{"unit": "hour", "count": 36}'); end if;
+  if card_kinds_problem('[{"key": "tourist", "name": "Tourist", "alignment": "sweet", "rarity": "uncommon", "play": "use", "reaches": ["character"], "lasts": {"unit": "hour", "count": 36}, "gimmick": {"kind": "earn", "by": 0.1}}]'::jsonb) is not null then raise exception 'a use card lasting hours was refused: %', card_kinds_problem('[{"key": "tourist", "name": "Tourist", "alignment": "sweet", "rarity": "uncommon", "play": "use", "reaches": ["character"], "lasts": {"unit": "hour", "count": 36}, "gimmick": {"kind": "earn", "by": 0.1}}]'::jsonb); end if;
 end $$;

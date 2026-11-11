@@ -37,7 +37,7 @@ const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
  * (card_target). Its end is setLasts after it was set, the same for every card.
  */
 export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: number = Date.now()): readonly CardPlay[] {
-  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'hour' ? 3_600_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
   const shown = plays.filter((p) => !(p.faceDown && !p.revealed && Date.parse(p.playedAt) + span <= now));
   return shown.length === plays.length ? plays : shown;
 }

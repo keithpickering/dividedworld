@@ -669,7 +669,8 @@ test('a trap is a set card\'s, and a gimmick and a time up are a use card\'s', (
   assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: day, reaches: ['post', 'moon'] })).join('\n'), /a use card reaches a post, a character or a thread/);
   assert.deepEqual(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'day', count: 1 }, rarity: 'rare', reaches: ['post', 'character', 'thread'] })), []);
   assert.match(instanceProblems(withCards({ play: 'set', trap, lasts: day })).join('\n'), /card "splat" has a time up \(lasts\), and only a use card or a card reaching beyond a post does/);
-  assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'hour', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
+  assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'minute', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'hour', count: 36 } })), [], 'a card may last hours');
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
 });
 

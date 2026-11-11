@@ -706,9 +706,9 @@ begin
   if position(ann::text in caught::text) > 0 then raise exception 'the answer to the caster names the setter''s account: %', caught; end if;
   -- It is a finished back: the next cast of that card lands.
   if pg_temp.cast(bob, 'spxwhoops', b, p) -> 'sprung' is not null then raise exception 'a sprung Trap Card caught twice'; end if;
-  -- A rare card is caught when it is named.
+  -- A card the Reversal names is caught when it is named.
   caught := pg_temp.cast(bob, 'spxrare', b, pr);
-  if caught -> 'sprung' is null or card_held(ann, 'spxrare') is distinct from 1 then raise exception 'a rare card was not caught when named: %', caught; end if;
+  if caught -> 'sprung' is null or card_held(ann, 'spxrare') is distinct from 1 then raise exception 'a named card was not caught when named: %', caught; end if;
 end $$;
 
 -- ---- Casting on one's own other mask's Trap Card gives the card back to the same account, and names no account ----
@@ -884,7 +884,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- Every back costs the same reads before its decision: an Idle, a Trap Card naming another card, a Move whose phrase is absent, a Move that cannot land, a retired setter's Move, and a back that springs ----
+-- ---- Every back costs the same reads before its decision: an Idle (a visit trap, so no quote springs it), a Trap Card naming another card, a Move whose phrase is absent, a Move that cannot land, a retired setter's Move, and a back that springs ----
 -- What a call reads from the tables spring_facts and spring_traps decide from, and their indexes: rows fetched and index entries returned in this transaction so far, as 0077-trap-locks.sql counts them.
 create function pg_temp.reads() returns bigint[] language sql as $$
   select array_agg(x.n order by x.relname) from (
@@ -969,10 +969,10 @@ begin
   end loop;
   foreach one in array backs[1:5] loop
     before := pg_temp.reads(); said := spring_traps('quote', one, quoting); full_reads := full_reads || pg_temp.since(before);
-    if said is not null then raise exception 'a back that cannot spring sprang: %', said; end if;
+    if said is not null then raise exception 'a back that does not spring in this test sprang: %', said; end if;
   end loop;
-  if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that cannot spring wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
-  if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that cannot spring read differently: Idle, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
+  if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that does not spring in this test wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
+  if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that do not spring in this test read differently: Idle, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
   if spring_traps('quote', p_spring, quoting) is not null then raise exception 'the last back sprang through a Ward'; end if;
   said := spring_traps('quote', p_spring, free);
   if said is null then raise exception 'the last back did not spring'; end if;

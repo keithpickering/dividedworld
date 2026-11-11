@@ -66,11 +66,11 @@ language sql stable set search_path = public, pg_temp as $$
              select 1 from jsonb_array_elements_text(c.e -> 'reaches') r where r <> 'post'), false)
            then format('card "%s" has a time up (lasts), and only a Use card or a card reaching beyond a post does', c.key) end,
       -- The count is read as a number only once it is one: AND does not promise to read its sides in order.
-      case when c.e ? 'lasts' and not coalesce(jsonb_typeof(c.e -> 'lasts') = 'object' and c.e #>> '{lasts,unit}' in ('day', 'week', 'month')
+      case when c.e ? 'lasts' and not coalesce(jsonb_typeof(c.e -> 'lasts') = 'object' and c.e #>> '{lasts,unit}' in ('hour', 'day', 'week', 'month')
              and case when jsonb_typeof(c.e #> '{lasts,count}') = 'number'
                       then (c.e #>> '{lasts,count}')::numeric between 1 and 1000 and (c.e #>> '{lasts,count}')::numeric = trunc((c.e #>> '{lasts,count}')::numeric)
                       else false end, false)
-           then format('card "%s" lasts %s; it must be a span: a unit of day, week or month and a whole count from 1 to 1000', c.key, c.e -> 'lasts') end,
+           then format('card "%s" lasts %s; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000', c.key, c.e -> 'lasts') end,
       -- engine/rules/instance.ts, playProblems: a set card springs on a cast or a visit. A Move's trigger is the engine's (a quote), never a card's.
       case when c.trap is not null and coalesce(c.trigger_on not in ('cast', 'visit'), true)
            then format('card "%s" springs on %s; a set card springs on cast or visit', c.key, coalesce(nullif((c.trap #> '{trigger,on}')::text, 'null'), 'nothing')) end
@@ -1413,3 +1413,11 @@ begin
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
   );
 end $$;
+
+-- A card's time up may count hours (Publicity Tour, Heat Magnet and Class Clown last 36). span_interval (0022) reads them; card_kinds_problem above
+-- accepts the unit for `lasts` alone, and no setting does (engine/rules/instance.ts, LASTS_UNITS).
+create or replace function span_interval(span jsonb) returns interval
+language sql immutable set search_path = public, pg_temp as $$
+  select (span ->> 'count')::integer * case span ->> 'unit' when 'minute' then interval '1 minute' when 'hour' then interval '1 hour' when 'day' then interval '1 day'
+    when 'week' then interval '1 week' when 'month' then interval '1 month' end
+$$;

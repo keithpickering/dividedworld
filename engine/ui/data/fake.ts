@@ -409,7 +409,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let offset = 0;
   const base = options.now ?? (() => START);
   const now = () => base() + offset;
-  const span = (s: Span) => s.count * (s.unit === 'minute' ? MINUTE : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
+  const span = (s: Span) => s.count * (s.unit === 'minute' ? MINUTE : s.unit === 'hour' ? 60 * MINUTE : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 
   let counter = 0;
   const uuid = () => `00000000-0000-4000-8000-${(++counter).toString(16).padStart(12, '0')}`;

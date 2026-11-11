@@ -23,6 +23,8 @@ import type { Pull, SlotSeed } from './packs.ts';
 export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
+/** A card's time up may count hours: a Gimmick for a day and a half. No setting does. */
+const LASTS_UNITS: readonly Span['unit'][] = ['hour', ...SPAN_UNITS];
 /** A grace may be minutes long (editGrace), and so may presence's window; nothing else is. */
 const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];
 /** The most of a unit a span counts, as settings_spans_hold (0007) holds it: past any instance's life, inside span_interval's integer. */
@@ -446,7 +448,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   }
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
   if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a use card or a card reaching beyond a post does`);
-  if (c.lasts !== undefined && !isSpan(c.lasts)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of day, week or month and a whole count from 1 to 1000`);
+  if (c.lasts !== undefined && !isSpan(c.lasts, LASTS_UNITS)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000`);
   const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
   if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a set card springs on ${TRIGGERS.join(' or ')}`);
   const match = c.trap?.match;
@@ -529,7 +531,7 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
     const floor = least?.[r];
     if (RARITIES.includes(floor) && RARITIES.includes(c.rarity) && !atOrBelow(floor, c.rarity)) out.push(`${who} reaches a ${r}, which takes a card of ${floor} or rarer; it is ${c.rarity}`);
     const bound = longest?.[r];
-    if (c.lasts !== undefined && isSpan(c.lasts) && bound !== undefined && isSpan(bound) && spanMs(c.lasts) > spanMs(bound)) {
+    if (c.lasts !== undefined && isSpan(c.lasts, LASTS_UNITS) && bound !== undefined && isSpan(bound) && spanMs(c.lasts) > spanMs(bound)) {
       out.push(`${who} lasts ${spanWords(c.lasts)}, longer than a ${r} effect may (reachLasts.${r}, ${spanWords(bound)})`);
     }
   }
