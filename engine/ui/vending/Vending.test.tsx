@@ -195,6 +195,13 @@ describe('the info button on each card\'s slot', () => {
     expect(dialog.textContent).not.toContain('1.00+');
   });
 
+  test('the card info\'s title is the large display size (the play form\'s), and the medium one on the phone (the boards draw 60px and 40px)', () => {
+    const css = readFileSync('engine/ui/vending/vending.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    const rule = (selector: string) => css.match(new RegExp(`${selector.replace(/[.[\]()':=-]/g, '\\$&')}\\s*\\{([^}]*)\\}`))?.[1] ?? '';
+    expect(rule('.kb-vending-about-dialog--card .kb-glass-dialog-head')).toMatch(/font-size:\s*var\(--kb-glass-size-display-l\)/);
+    expect(rule(":where(:root[data-kb-layout='phone']) .kb-vending-about-dialog--card .kb-glass-dialog-head")).toMatch(/font-size:\s*var\(--kb-glass-size-display-m\)/);
+  });
+
   test('a card whose play costs nothing more says its price alone', async () => {
     open(seeded(562));
     fireEvent.click(await screen.findByRole('button', { name: 'About Stick Around' }));

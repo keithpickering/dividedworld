@@ -126,8 +126,8 @@ export const phone: BoardManifest = {
        * its parts are measured from its own corner. The board's face sits between the title and the price and so does the build's (the frame's bar holds the eyebrow and the
        * title; the face, the price and the rules follow it). The eyebrow says the kind where the board draws the alignment (board 34's departure), and the board's
        * price says "more on a long post" where the build says "more to play on a long post" (the plan's copy). The board's face is a 170px stand-in where the build draws
-       * the Postcard at the sheet's 276px: the face is held by its center and its y, and what follows it stands its 159px of extra height lower; the sheet's corner is 8px
-       * in from the window's edge, so the board's centered face stands 8px left of center in the build, and 9px higher; the frame's kicker stands 30px above the board's eyebrow.
+       * the Postcard at the sheet's 276px: the face is held by its center and its y, and what follows it stands its 168px of extra height lower; the sheet's corner is 8px
+       * in from the window's edge, so the board's centered face stands 8px left of center in the build, ; the frame's kicker stands 30px above the board's eyebrow.
        */
       name: 'The card info, as a sheet',
       build: { moment: '07-vending' },
@@ -136,8 +136,8 @@ export const phone: BoardManifest = {
         { id: 'sheet', role: 'figure', name: 'Card info, as a sheet', buildRole: 'dialog', buildName: 'Whoops!', type: false, box: 'none' },
         at('eyebrow', 'text', 'SLOT A2 · SALTY', { y: -30 }, { within: 'sheet', origin: 'sheet', buildName: 'Slot A2 · Move' }),
         at('title', 'heading', 'WHOOPS!', { y: 14 }, { within: 'sheet', origin: 'sheet' }),
-        at('face', 'figure', 'Whoops!, Salty, Cast, Common', { x: -8, y: -9 }, { within: 'sheet', origin: 'sheet', buildRole: 'article', buildName: 'Whoops!, Salty, Move, common postcard', box: 'center' }),
-        at('price', 'text', '1.00 to buy · more on a long post', { y: 150 }, { within: 'sheet', origin: 'sheet', buildName: '1.00 to buy · more to play on a long post' }),
+        at('face', 'figure', 'Whoops!, Salty, Cast, Common', { x: -8, y: 0 }, { within: 'sheet', origin: 'sheet', buildRole: 'article', buildName: 'Whoops!, Salty, Move, common postcard', box: 'center' }),
+        at('price', 'text', '1.00 to buy · more on a long post', { y: 159 }, { within: 'sheet', origin: 'sheet', buildName: '1.00 to buy · more to play on a long post' }),
       ],
     },
     {

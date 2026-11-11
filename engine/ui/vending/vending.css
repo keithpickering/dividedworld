@@ -529,6 +529,16 @@ button.kb-vending-slot {
  */
 .kb-glass-dialog.kb-vending-about-dialog--card { width: min(100%, 900px); }
 
+/* The title at the display size the play form's is (the board draws 60px), the medium on the phone (the board's 40px). */
+.kb-vending-about-dialog--card .kb-glass-dialog-head {
+  font-size: var(--kb-glass-size-display-l);
+  line-height: 1;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-vending-about-dialog--card .kb-glass-dialog-head {
+  font-size: var(--kb-glass-size-display-m);
+}
+
 .kb-vending-about-card {
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
