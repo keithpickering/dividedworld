@@ -12,7 +12,7 @@
 -- The awards that could not be given (0151's trophy_award_failures) get a way to be finished. An award given by hand through give_failed_award is a row of
 -- trophy_failure_resolutions (append-only, one per failure and character, naming the award and the admin's account, which no client reads), so the failure's list says
 -- which characters have had theirs: a second give is refused. trophy_award_failures is replaced by a paged read, {failures, more}, each failure's characters with `given`
--- and `open` (a character is still owed an award, or the characters cannot be read now). A resolution counts only while its award is not taken back: a reversed hand-given award is owed again and can be given again, the open ones first and each group newest first. Its cursor is the last row's
+-- and `open` (a character is still owed an award, or the characters cannot be read now). A resolution counts only while its award is not taken back: a reversed hand-given award is owed again and can be given again. The list puts the open failures first, and each group newest first. Its cursor is the last row's
 -- at, id and open. An open failure costs nothing to place (no resolution row means open); only a failure an admin has begun to resolve reads its roster to be placed.
 
 create function admin_awards(before timestamptz default null, most integer default 20, before_id uuid default null) returns jsonb
