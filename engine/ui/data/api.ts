@@ -683,6 +683,10 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
+  /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A landed move with no end yet (admin_queue). */
@@ -699,6 +703,10 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
+  /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A move that ended, or was held or refused and never landed, in the last 30 days (admin_queue). */
@@ -721,6 +729,10 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
+  /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  readonly bundle: Id | null;
+  readonly role: string | null;
+  readonly bundleName: string | null;
 }
 
 /** A face-up play of a staff character, still in force (admin_queue's `staffCards`), for an admin to end. */
@@ -1900,9 +1912,9 @@ export interface KayfaApi {
    */
   setAdminContact(links: readonly ContactLink[]): Promise<Answer<readonly ContactLink[]>>;
   /** Holds a move that is waiting: it never lands. An admin's alone, and it cannot be taken back. */
-  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string }>>;
+  holdMove(id: number): Promise<Answer<{ readonly id: number; readonly heldAt: string; /** The queued moves held with it, which build on it. */ readonly heldAlso: readonly number[] }>>;
   /** Ends a move in force now as reversed by an admin; the old name returns at once. An admin's alone. */
-  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id }>>;
+  reverseMove(act: Id): Promise<Answer<{ readonly act: Id; readonly endedBy: Id; /** The moves in force that built on it, ended with it. */ readonly alsoEnded: readonly Id[]; /** The queued moves held with it. */ readonly heldAlso: readonly number[] }>>;
   /**
    * Ends a card play as reversed by an admin (`reverse_card`, 0092): a `card_end` Act of no character is written beside the play, the
    * layer comes off and the card stops counting; the original play is never changed. An admin's alone; a caught play, one that has

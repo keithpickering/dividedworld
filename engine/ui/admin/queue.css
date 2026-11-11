@@ -84,6 +84,23 @@
 .kb-queue-move[data-kb-state='waiting'] { border-left-color: var(--kb-glass-ready); }
 .kb-queue-move[data-kb-state='ended'] { border-left-color: var(--kb-glass-text-2); grid-template-columns: minmax(0, 1fr); }
 
+.kb-queue-bundle {
+  margin: 0 0 12px;
+  padding: 0 0 0 14px;
+  border-left: 3px solid var(--kb-glass-text-2);
+}
+
+.kb-queue-bundle-head {
+  margin: 0 0 8px;
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-queue-bundle > .kb-queue-move:last-child { margin-bottom: 0; }
+
 .kb-queue-countdown,
 .kb-queue-time {
   margin: 0;

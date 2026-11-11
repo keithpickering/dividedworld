@@ -1897,14 +1897,18 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
       todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
+    /* A part of a bundle says its bundle, role and the bundle's name (0161); a move that is none says null for each. */
+    queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split' } as (typeof queue.waiting)[0];
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
-      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00' });
-      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B });
+      if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] });
+      if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] });
       return json({}, 404);
     });
     const q = await h.api.adminQueue();
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
+    expect(q.waiting[0]).toMatchObject({ bundle: C, role: 'minus', bundleName: 'The Split' });
+    expect([q.inForce[0], q.ended[0]]).toMatchObject([{ bundle: null, role: null, bundleName: null }, { bundle: null, role: null, bundleName: null }]);
     expect(q.inForce[0]?.progress).toEqual({ done: 2, of: 5, met: false, checkedAt: '2026-11-01T14:05:00+00:00' });
     expect(q.ended.map((e) => e.how)).toEqual(['held', 'met']);
     expect(q.more).toEqual({ waiting: false, inForce: false, staffCards: false, ended: true });
@@ -1915,9 +1919,9 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(q.ended[1]?.bossPronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     expect(q.todos[0]).toMatchObject({ bossPronouns: PRONOUN_PRESETS.he, outgoingPronouns: ENGINE_DEFAULT_PRONOUNS });
     expect(q.waiting[0]?.replacedAt).toBeNull();
-    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00' } });
+    expect(await h.api.holdMove(4)).toEqual({ ok: true, value: { id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] } });
     expect(h.to('rpc/hold_move')[0]?.body).toEqual({ id: 4 });
-    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B } });
+    expect(await h.api.reverseMove(A)).toEqual({ ok: true, value: { act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] } });
     expect(h.to('rpc/reverse_move')[0]?.body).toEqual({ move_act: A });
   });
 

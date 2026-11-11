@@ -16,6 +16,9 @@
  *                     where. END, on these and nowhere else, asks first (the Lens's confirm) and takes the card's layer off for everyone.
  *   Ended             folded; the last 30 days, with how each ended: its demand met, run out, reversed, held or refused (never landed).
  *
+ * A bundle (the parts of one idea, queued together) is drawn inside its group as one group headed by the bundle's name, each part still its own card with its own HOLD or
+ * REVERSE: an admin may hold or reverse any one part, and what builds on it follows (the dialog says so). The group sits where its first part sits.
+ *
  * Under the groups, ruled off, stands How players reach you (AdminContact.tsx): the links the public Reach a person page shows, which only an admin sets.
  *
  * Plain text throughout. The glass never speaks as the Boss: what it says of a move is the engine's catalog (engine/system/moves.ts,
@@ -68,6 +71,38 @@ export function countdown(at: string, now: number): string {
 type Roster = { readonly staff: string; readonly name: string; readonly pronouns: PronounSet };
 
 type Asked = { readonly kind: 'hold'; readonly row: QueuedMove } | { readonly kind: 'reverse'; readonly row: MoveInForce };
+
+/** What a button says of its move: the board it makes or renames, else the part of its bundle it is, else the move. */
+function partLabel(row: { readonly kind: string; readonly params: Readonly<Record<string, unknown>>; readonly role: string | null; readonly bundleName: string | null }): string {
+  const name = row.params['name'];
+  if (typeof name === 'string' && name !== '') return name;
+  if (row.kind === 'nameSuccessor') return 'the naming of a successor';
+  return row.role !== null && row.bundleName !== null ? `the part "${row.role}" of ${row.bundleName}` : 'this move';
+}
+
+/** Rows in their order, the parts of one bundle gathered where the first of them stands. */
+type Item<T> = { readonly bundle: string; readonly name: string; readonly rows: readonly T[] } | { readonly bundle: null; readonly row: T };
+function inBundles<T extends { readonly bundle: string | null; readonly bundleName: string | null }>(rows: readonly T[]): readonly Item<T>[] {
+  const out: Item<T>[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (row.bundle === null) { out.push({ bundle: null, row }); continue; }
+    if (seen.has(row.bundle)) continue;
+    seen.add(row.bundle);
+    out.push({ bundle: row.bundle, name: row.bundleName ?? 'A bundle', rows: rows.filter((r) => r.bundle === row.bundle) });
+  }
+  return out;
+}
+
+/** The parts of one bundle, as one group under its name. */
+function BundleGroup({ id, name, children }: { readonly id: string; readonly name: string; readonly children: ReactNode }) {
+  return (
+    <div role="group" aria-labelledby={`queue-bundle-${id}`} className="kb-queue-bundle" data-kb-bundle={id}>
+      <h3 id={`queue-bundle-${id}`} className="kb-queue-bundle-head">{name}</h3>
+      {children}
+    </div>
+  );
+}
 
 /** The queue at /admin/queue, drawn from the route's document. A caller who is not an admin (or not signed in) has no page: the line says so. */
 export function QueueScreen({ doc, now }: { readonly doc: ScreenDoc<QueuePageDoc> | NotAdminDoc; readonly now?: number }) {
@@ -139,7 +174,8 @@ function Queue({ page, now }: { readonly page: QueuePageDoc; readonly now?: numb
       )}
       {asked && (
         <Confirm
-          key="confirm" asked={asked} boards={boards} bosses={bosses}
+          /* One dialog for each move asked about: a close still playing (Layers keeps it) is never the next one, whose button has not been pressed. */
+          key={`confirm-${asked.kind}-${asked.kind === 'hold' ? asked.row.id : asked.row.act}`} asked={asked} boards={boards} bosses={bosses}
           returnFocusTo={heading(asked.kind === 'hold' ? 'queue-waiting' : 'queue-in-force')}
           onClose={() => setAsked(null)}
           onDone={async () => { await load(); setAsked(null); document.getElementById(asked.kind === 'hold' ? 'queue-waiting' : 'queue-in-force')?.focus(); }}
@@ -325,50 +361,89 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
   );
 }
 
-function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
+function WaitingRow({ q, nested, boards, bosses, roster, now, onHold, onReplaced }: { readonly q: QueuedMove; readonly nested: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
   const { api } = useKayfa();
+  const Head = nested ? 'h4' : 'h3';
+  const description = typeof q.params['description'] === 'string' ? q.params['description'] : '';
+  const premise = typeof q.params['premise'] === 'string' ? q.params['premise'] : '';
+  return (
+    <article className="kb-queue-move" data-kb-state="waiting">
+      <div className="kb-queue-when">
+        <p className="kb-queue-countdown">{countdown(q.goLiveAt, now)}</p>
+        <p className="kb-queue-time">{dayAndTime(q.goLiveAt)}</p>
+      </div>
+      <div className="kb-queue-body">
+        <Head className="kb-queue-sentence"><MoveSentence kind={q.kind} params={q.params} boards={boards} bosses={bosses} tense="plan" was={q.boardName} /></Head>
+        {premise && <p>New subject: {premise}</p>}
+        <p>{demandNeeds(q.demand, q.kind)}{q.expiresAt && <> If that never happens, it ends on its own on {shortDate(q.expiresAt)}.</>}</p>
+        {q.kind === 'nameSuccessor' && <p>If it lands and is not held or reversed, the Boss it names takes the seat when the season rolls over. Otherwise the roster&apos;s rotation chooses.</p>}
+        {q.replacedAt && <p>An admin put this Boss in the nomination&apos;s place on {dayAndTime(q.replacedAt)}.</p>}
+        {description && <p className="kb-queue-quote">Description: “{description}”</p>}
+        {q.adminDescription && <p className="kb-queue-quote">An admin&apos;s replacement, which lands beside it: “{q.adminDescription}”</p>}
+        {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
+        {q.failedAt && (
+          <p className="kb-queue-failure" role="note">
+            It could not land at {dayAndTime(q.failedAt)}: {q.failure}. It stays in line and is tried again; hold it if it should not land.
+          </p>
+        )}
+      </div>
+      <div className="kb-queue-act">
+        {(() => {
+          const hold = <GlassButton aria-label={`Hold: ${partLabel(q)}`} onClick={() => onHold(q)}>HOLD</GlassButton>;
+          /* A rename's replacement field sits shut under HOLD, so the row keeps the board's width and its words wrap as the board's do. */
+          return q.kind === 'renameBoard'
+            ? <ReplaceDescription lead={hold} id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />
+            : <ButtonRow>{hold}</ButtonRow>;
+        })()}
+        {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
+      </div>
+    </article>
+  );
+}
+
+function Waiting({ rows, more, boards, bosses, roster, now, onHold, onReplaced }: { readonly rows: readonly QueuedMove[]; readonly more: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly roster: readonly Roster[]; readonly now: number; readonly onHold: (row: QueuedMove) => void; readonly onReplaced: () => Promise<void> }) {
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-waiting" data-kb-group="waiting">
       <GroupHead id="queue-waiting" title="Waiting to land" count={rows.length} more={more} />
       {rows.length === 0 && <p className="kb-queue-empty">Nothing is waiting.</p>}
-      {rows.map((q) => {
-        const description = typeof q.params['description'] === 'string' ? q.params['description'] : '';
-        const premise = typeof q.params['premise'] === 'string' ? q.params['premise'] : '';
-        return (
-          <article key={q.id} className="kb-queue-move" data-kb-state="waiting">
-            <div className="kb-queue-when">
-              <p className="kb-queue-countdown">{countdown(q.goLiveAt, now)}</p>
-              <p className="kb-queue-time">{dayAndTime(q.goLiveAt)}</p>
-            </div>
-            <div className="kb-queue-body">
-              <h3 className="kb-queue-sentence"><MoveSentence kind={q.kind} params={q.params} boards={boards} bosses={bosses} tense="plan" was={q.boardName} /></h3>
-              {premise && <p>New subject: {premise}</p>}
-              <p>{demandNeeds(q.demand, q.kind)}{q.expiresAt && <> If that never happens, it ends on its own on {shortDate(q.expiresAt)}.</>}</p>
-              {q.kind === 'nameSuccessor' && <p>If it lands and is not held or reversed, the Boss it names takes the seat when the season rolls over. Otherwise the roster&apos;s rotation chooses.</p>}
-              {q.replacedAt && <p>An admin put this Boss in the nomination&apos;s place on {dayAndTime(q.replacedAt)}.</p>}
-              {description && <p className="kb-queue-quote">Description: “{description}”</p>}
-              {q.adminDescription && <p className="kb-queue-quote">An admin&apos;s replacement, which lands beside it: “{q.adminDescription}”</p>}
-              {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
-              {q.failedAt && (
-                <p className="kb-queue-failure" role="note">
-                  It could not land at {dayAndTime(q.failedAt)}: {q.failure}. It stays in line and is tried again; hold it if it should not land.
-                </p>
-              )}
-            </div>
-            <div className="kb-queue-act">
-              {(() => {
-                const hold = <GlassButton aria-label={`Hold: ${q.params['name'] ?? (q.kind === 'nameSuccessor' ? 'the naming of a successor' : 'this move')}`} onClick={() => onHold(q)}>HOLD</GlassButton>;
-                /* A rename's replacement field sits shut under HOLD, so the row keeps the board's width and its words wrap as the board's do. */
-                return q.kind === 'renameBoard'
-                  ? <ReplaceDescription lead={hold} id={`queue-rename-${q.id}`} about={String(q.params['name'] ?? 'this rename')} saved="Saved. It lands with the rename." save={(words) => api.replaceQueuedDescription(q.id, words)} onSaved={onReplaced} />
-                  : <ButtonRow>{hold}</ButtonRow>;
-              })()}
-              {q.kind === 'nameSuccessor' && <Replace row={q} roster={roster} bosses={bosses} onReplaced={onReplaced} />}
-            </div>
-          </article>
-        );
-      })}
+      {inBundles(rows).map((item) => item.bundle === null
+        ? <WaitingRow key={item.row.id} q={item.row} nested={false} boards={boards} bosses={bosses} roster={roster} now={now} onHold={onHold} onReplaced={onReplaced} />
+        : (
+          <BundleGroup key={item.bundle} id={item.bundle} name={item.name}>
+            {item.rows.map((q) => <WaitingRow key={q.id} q={q} nested boards={boards} bosses={bosses} roster={roster} now={now} onHold={onHold} onReplaced={onReplaced} />)}
+          </BundleGroup>
+        ))}
     </CalmRegion>
+  );
+}
+
+function InForceRow({ m, nested, boards, bosses, onReverse }: { readonly m: MoveInForce; readonly nested: boolean; readonly boards: readonly BoardName[]; readonly bosses: readonly Roster[]; readonly onReverse: (row: MoveInForce) => void }) {
+  const Head = nested ? 'h4' : 'h3';
+    const ok = m.progress.of > 0 && !m.progress.error;
+    const known = m.demand !== null && demandKind(m.demand.kind) !== undefined;
+  return (
+    <article className="kb-queue-move" data-kb-state="in-force">
+      <div className="kb-queue-when">
+        <p className="kb-queue-countdown">SINCE {shortDate(m.landedAt).toUpperCase()}</p>
+        {m.expiresAt && <p className="kb-queue-time">ends {shortDate(m.expiresAt)}</p>}
+      </div>
+      <div className="kb-queue-body">
+        <Head className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} boards={boards} bosses={bosses} tense="done" act={m.act} /></Head>
+        {m.demand === null && <p>{demandNeeds(null, m.kind)}</p>}
+        {m.demand !== null && (known ? <p>{(ok ? demandWords(m.demand, m.progress) : demandAsk(m.demand))}</p> : <p>It asks for something this page has no words for.</p>)}
+        {ok && (
+          <div className="kb-queue-bar" role="progressbar" aria-label="Progress toward the way out" aria-valuemin={0} aria-valuemax={m.progress.of} aria-valuenow={m.progress.done} aria-valuetext={`${m.progress.done} of ${m.progress.of}`}>
+            <i style={{ width: `${Math.round((100 * m.progress.done) / m.progress.of)}%` }} />
+          </div>
+        )}
+        {ok && m.progress.checkedAt !== null && <p className="kb-queue-time">{m.progress.done} of {m.progress.of}, counted {dayAndTime(m.progress.checkedAt)}</p>}
+        {m.demand !== null && m.progress.checkedAt === null && <p className="kb-queue-time">Not counted yet.</p>}
+        {m.why && <p className="kb-queue-quote">Why, in {m.boss ?? 'the Boss'}&apos;s words: “{m.why}”</p>}
+      </div>
+      <div className="kb-queue-act">
+        <ButtonRow><GlassButton aria-label={`Reverse: ${partLabel(m)}`} onClick={() => onReverse(m)}>REVERSE</GlassButton></ButtonRow>
+      </div>
+    </article>
   );
 }
 
@@ -377,34 +452,13 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-in-force" data-kb-group="in-force">
       <GroupHead id="queue-in-force" title="In force" count={rows.length} more={more} />
       {rows.length === 0 && <p className="kb-queue-empty">Nothing is in force.</p>}
-      {rows.map((m) => {
-        const ok = m.progress.of > 0 && !m.progress.error;
-        const known = m.demand !== null && demandKind(m.demand.kind) !== undefined;
-        return (
-          <article key={m.act} className="kb-queue-move" data-kb-state="in-force">
-            <div className="kb-queue-when">
-              <p className="kb-queue-countdown">SINCE {shortDate(m.landedAt).toUpperCase()}</p>
-              {m.expiresAt && <p className="kb-queue-time">ends {shortDate(m.expiresAt)}</p>}
-            </div>
-            <div className="kb-queue-body">
-              <h3 className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} boards={boards} bosses={bosses} tense="done" act={m.act} /></h3>
-              {m.demand === null && <p>{demandNeeds(null, m.kind)}</p>}
-              {m.demand !== null && (known ? <p>{(ok ? demandWords(m.demand, m.progress) : demandAsk(m.demand))}</p> : <p>It asks for something this page has no words for.</p>)}
-              {ok && (
-                <div className="kb-queue-bar" role="progressbar" aria-label="Progress toward the way out" aria-valuemin={0} aria-valuemax={m.progress.of} aria-valuenow={m.progress.done} aria-valuetext={`${m.progress.done} of ${m.progress.of}`}>
-                  <i style={{ width: `${Math.round((100 * m.progress.done) / m.progress.of)}%` }} />
-                </div>
-              )}
-              {ok && m.progress.checkedAt !== null && <p className="kb-queue-time">{m.progress.done} of {m.progress.of}, counted {dayAndTime(m.progress.checkedAt)}</p>}
-              {m.demand !== null && m.progress.checkedAt === null && <p className="kb-queue-time">Not counted yet.</p>}
-              {m.why && <p className="kb-queue-quote">Why, in {m.boss ?? 'the Boss'}&apos;s words: “{m.why}”</p>}
-            </div>
-            <div className="kb-queue-act">
-              <ButtonRow><GlassButton aria-label={`Reverse: ${m.params['name'] ?? 'this move'}`} onClick={() => onReverse(m)}>REVERSE</GlassButton></ButtonRow>
-            </div>
-          </article>
-        );
-      })}
+      {inBundles(rows).map((item) => item.bundle === null
+        ? <InForceRow key={item.row.act} m={item.row} nested={false} boards={boards} bosses={bosses} onReverse={onReverse} />
+        : (
+          <BundleGroup key={item.bundle} id={item.bundle} name={item.name}>
+            {item.rows.map((m) => <InForceRow key={m.act} m={m} nested boards={boards} bosses={bosses} onReverse={onReverse} />)}
+          </BundleGroup>
+        ))}
     </CalmRegion>
   );
 }
@@ -469,6 +523,7 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
                 {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} act={e.act} />}
               </h3>
               <p>{endedLine(e)}</p>
+              {e.bundleName !== null && <p>Part of the bundle “{e.bundleName}”.</p>}
             </div>
           </article>
         ))}
@@ -517,6 +572,9 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
               ? `It ends now, as reversed by an admin, and the roster's rotation chooses the successor at the handover. ${role} says so in the move's thread, and learns of it at ${bw.their} next meeting.`
               : `It ends now, as reversed by an admin, and the old name returns at once. ${role} says so in the move's thread, and learns of it at ${bw.their} next meeting.`}
         </p>
+        {hold && row.bundleName !== null && <p>Any part of “{row.bundleName}” that builds on it is held with it. The parts it builds on are left.</p>}
+        {!hold && row.bundleName !== null && <p>What builds on it is reversed with it: the parts of “{row.bundleName}” that name it, and later moves into a board it made.</p>}
+        {!hold && row.bundleName === null && row.kind === 'createBoard' && <p>What builds on it is reversed with it: later moves into the board it made.</p>}
         {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
         <ButtonRow align="end">
           <GlassButton onClick={onClose}>Cancel</GlassButton>

@@ -794,3 +794,79 @@ describe('replacing a description', () => {
     expect(await within(card).findByRole('alert')).toHaveTextContent('there is no such board');
   });
 });
+
+describe('a bundle', () => {
+  const thread = '22222222-2222-4222-8222-222222222222';
+  const split = { id: 'the-split', name: 'The Split' };
+  /** Two parts of one bundle waiting: World -1 is made (role `minus`), and a thread is moved into it (role `move`, which names `minus`). */
+  const waitingParts = (fake: ReturnType<typeof buildWorld>) => {
+    const soon = fake.clock.now() + 3_600_000;
+    fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'World -1 first.', bundle: { ...split, role: 'minus' }, lasting: { kind: 'createBoard', params: { name: 'World -1', premise: 'Everything that is not about fangames.', description: 'Technically fangames.' } } });
+    fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'Then the thread.', bundle: { ...split, role: 'move' }, lasting: { kind: 'moveThread', params: { thread, board: { role: 'minus' } } } });
+  };
+
+  test('its waiting parts are one group headed by the bundle\'s name, each part with its own Hold, and the role is said in words', async () => {
+    open({ build: (fake) => waitingParts(fake) });
+    const waiting = await group(/^Waiting to land/u);
+    const bundle = await within(waiting).findByRole('group', { name: 'The Split' });
+    expect(within(bundle).getAllByRole('article')).toHaveLength(2);
+    expect(within(bundle).getByRole('button', { name: 'Hold: World -1' })).toBeInTheDocument();
+    expect(within(bundle).getByRole('button', { name: 'Hold: the part "move" of The Split' })).toBeInTheDocument();
+    expect(bundle).toHaveTextContent('Create a board named "World -1"');
+    expect(bundle).toHaveTextContent('the board the part "minus" makes');
+    expect(bundle).toHaveTextContent('Why, in The Director\'s words: “Then the thread.”');
+    /* The move that is no part of a bundle is outside it, with its own Hold. */
+    expect(within(bundle).queryByText(/Small Soldiers Situation Room/u)).toBeNull();
+    expect(within(waiting).getAllByRole('button', { name: /^Hold/u })).toHaveLength(3);
+    expect(within(waiting).getAllByRole('group')).toHaveLength(1);
+  });
+
+  test('holding the first part says the parts that build on it are held with it, and holds them; the second held alone leaves the first', async () => {
+    const { fake } = open({ build: (fake) => waitingParts(fake) });
+    const waiting = await group(/^Waiting to land/u);
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Hold: the part "move" of The Split' }));
+    const alone = await screen.findByRole('dialog', { name: 'Hold this move?' });
+    expect(alone).toHaveTextContent('Any part of “The Split” that builds on it is held with it. The parts it builds on are left.');
+    await userEvent.click(within(alone).getByRole('button', { name: 'Hold it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const after = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'The Split' });
+    expect(within(after).getAllByRole('article')).toHaveLength(1);
+    expect(within(after).getByRole('button', { name: 'Hold: World -1' })).toBeInTheDocument();
+    await userEvent.click(within(after).getByRole('button', { name: 'Hold: World -1' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Hold this move?' })).getByRole('button', { name: 'Hold it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect((await fake.adminQueue()).waiting.filter((q) => q.bundle !== null)).toHaveLength(0);
+    expect((await fake.adminQueue()).ended.filter((e) => e.how === 'held' && e.bundle === 'the-split')).toHaveLength(2);
+  });
+
+  test('holding the first of two held at once holds both in one press', async () => {
+    const { fake } = open({ build: (fake) => waitingParts(fake) });
+    const waiting = await group(/^Waiting to land/u);
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Hold: World -1' }));
+    await userEvent.click(within(await screen.findByRole('dialog', { name: 'Hold this move?' })).getByRole('button', { name: 'Hold it' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(within(screen.getByRole('region', { name: /^Waiting to land/u })).queryByRole('group')).toBeNull());
+    const held = (await fake.adminQueue()).ended.filter((e) => e.how === 'held' && e.bundle === 'the-split');
+    expect(held.map((e) => e.role).sort()).toEqual(['minus', 'move']);
+    expect(new Set(held.map((e) => e.at)).size).toBe(1);
+  });
+
+  test('its parts in force are one group too, each with its own Reverse; reversing the first reverses the part that builds on it', async () => {
+    const { fake } = open({
+      build: (fake) => {
+        fake.seed.move('director', { board: '', name: '', lasting: { kind: 'createBoard', params: { name: 'World -1', premise: 'p', description: 'd' } }, bundle: { ...split, role: 'minus' } });
+        fake.seed.move('director', { board: '', name: '', lasting: { kind: 'moveThread', params: { thread, board: { role: 'minus' } } }, bundle: { ...split, role: 'move' } });
+      },
+    });
+    const live = await group(/^In force/u);
+    const bundle = await within(live).findByRole('group', { name: 'The Split' });
+    expect(within(bundle).getAllByRole('button', { name: /^Reverse/u })).toHaveLength(2);
+    await userEvent.click(within(bundle).getByRole('button', { name: 'Reverse: World -1' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reverse this move?' });
+    expect(dialog).toHaveTextContent('What builds on it is reversed with it: the parts of “The Split” that name it, and later moves into a board it made.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Reverse it' }));
+    await waitFor(() => expect(within(screen.getByRole('region', { name: /^In force/u })).queryByRole('group')).toBeNull());
+    const ended = (await fake.adminQueue()).ended.filter((e) => e.bundle === 'the-split');
+    expect(ended.map((e) => `${e.role}:${e.how}`).sort()).toEqual(['minus:reversed', 'move:reversed']);
+  });
+});

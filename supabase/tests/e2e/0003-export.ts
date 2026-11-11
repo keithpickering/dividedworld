@@ -272,9 +272,12 @@ test('an instance exported and imported into a fresh database is the same instan
       perform rebuild_thread_places(array[t]);
       if not exists (select 1 from thread_departures where thread = t) or not exists (select 1 from threads where id = t and board <> origin_board) then raise exception 'the fixture did not land a moveThread'; end if;
       -- Its cause (0106): the Act that drew a move, carried across with the row.
-      insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
+      -- A part of a bundle (0161): its bundle, name and role are columns of the row, carried across with it.
+      insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act, bundle, bundle_name, role)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
-             now() - interval '1 day', now() + interval '2 days', true, kept, p from meetings m;
+             now() - interval '1 day', now() + interval '2 days', true, kept, p, gen_random_uuid(), 'The Exported Bundle', 'palace' from meetings m;
+      -- A move that built on another (0161): written when the dependent lands, insert-only, carried across with the Acts it names.
+      insert into move_dependencies (act, on_act) values (kept, moved);
       -- An apology to the move in force (0129), carried across with the Acts it names.
       insert into apologies (move_act, apology_act, character, state) values (kept, p, b, 'pending');
       -- A Mod's order from that meeting (0103), and a visit by the Mod on the post with its open row (0105), one failed attempt to draw a visit and one to file it, so the
@@ -344,7 +347,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'move_dependencies']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -555,7 +558,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'move_dependencies']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');

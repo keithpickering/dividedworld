@@ -38,6 +38,31 @@ export interface BoardRef {
   readonly name: string;
 }
 
+/**
+ * A part of a bundle names the board another part of the same bundle makes by that part's role (`{role: 'minus'}`), where a board's uuid would go. The database resolves it to the board
+ * when the part lands (supabase/migrations/0161_bundles.sql, `role_board`); the engine only holds the shape. A role is lowercase letters, digits, hyphens and underscores, from a letter.
+ */
+export interface RoleRef {
+  readonly role: string;
+}
+
+/** What a role may be called; SQL holds the same. */
+export const ROLE = /^[a-z][a-z0-9_-]{0,39}$/;
+
+/** Whether a value is a role and nothing more. */
+export function isRoleRef(v: unknown): v is RoleRef {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+  const keys = Object.keys(v);
+  return keys.length === 1 && keys[0] === 'role' && typeof (v as { role: unknown }).role === 'string' && ROLE.test((v as { role: string }).role);
+}
+
+/** The params of the moves that build the board where a role may stand for a board's uuid. A thread is never a role: nothing makes one. */
+const ROLE_PARAMS = ['board', 'into', 'fallback'] as const;
+
+/** A board in a move's words: a link to the board, or, where the board is a part's role not yet made, plain words, since there is no board to link to. */
+const boardPart = (v: unknown, name: string): string | BoardRef =>
+  isRoleRef(v) ? `the board the part "${v.role}" makes` : { board: text(v), name };
+
 /** The move as one short plain sentence, in pieces: words, and the boards it names. */
 export type MoveParts = readonly (string | BoardRef)[];
 
@@ -378,7 +403,7 @@ export const MOVE_THREAD: MoveKind = {
   template: (p, role, names) => `${role} moved ${names?.thread ?? 'a thread'}${names?.from ? ` from ${names.from}` : ''} to ${names?.board ?? 'another board'}. Nothing in the thread was changed; the board it left lists where it went for a few days.`,
   parts: (p, _was, tense, names) => {
     const head = `${tense === 'plan' ? 'Move' : 'Moved'} ${names?.thread ?? 'a thread'}`;
-    const to = { board: text(p['board']), name: names?.board ?? 'a board' };
+    const to = boardPart(p['board'], names?.board ?? 'a board');
     return names?.from ? [`${head} from `, { board: names.fromId ?? '', name: names.from }, ' to ', to] : [`${head} to `, to];
   },
 };
@@ -398,7 +423,7 @@ export const MERGE_BOARD: MoveKind = {
   demand: () => 'none',
   plain: 'the merging of a board into another',
   template: (_p, role, names) => `${role} merged ${names?.from ?? 'a board'} into ${names?.board ?? 'another'}. Its threads moved with it, and the board is closed.`,
-  parts: (p, was, tense, names) => [tense === 'plan' ? 'Merge ' : 'Merged ', { board: text(p['board']), name: was ?? 'a board' }, ' into ', { board: text(p['into']), name: names?.board ?? 'a board' }],
+  parts: (p, was, tense, names) => [tense === 'plan' ? 'Merge ' : 'Merged ', boardPart(p['board'], was ?? 'a board'), ' into ', boardPart(p['into'], names?.board ?? 'a board')],
 };
 
 export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE, CREATE_BOARD, MOVE_THREAD, MERGE_BOARD];
@@ -414,11 +439,30 @@ export function moveKind(key: string): MoveKind | undefined {
  * A move's params against its kind: the shape and string bounds through `repair` (a string over its bound is trimmed and
  * recorded; a missing or mistyped field is rejected), then each uuid param, then the kind's own check. A key outside the catalog is rejected, naming it.
  * A machine move's numbers are held to `limits` (the economy's `machine.*`; the engine's defaults where none is given).
+ * Inside a bundle (`inBundle`), a lasting move's `board`, `into` or `fallback` may be a `{role}` where a board's uuid goes: it is kept as it is, for the database to resolve when the part lands,
+ * and is refused outside a bundle (`roleInsideBundle`). Each role stands for a board of its own while the kind's own check reads the params, so a merge of one role into another is no merge into itself.
  */
-export function moveParamsProblems(key: string, params: unknown, limits: MachineLimits = machineLimits()): Repaired {
+export function moveParamsProblems(key: string, params: unknown, limits: MachineLimits = machineLimits(), inBundle = false): Repaired {
   const kind = moveKind(key);
   if (!kind) return { ok: false, path: 'kind', predicate: `oneOf(${MOVE_KINDS.map((k) => k.key).join(', ')})`, trims: [] };
-  const out = repair(params, kind.params);
+  const roles = new Map<string, RoleRef>();
+  let offered = params;
+  if (kind.lasting && params !== null && typeof params === 'object' && !Array.isArray(params)) {
+    const copy: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+    const standIns: string[] = [];
+    for (const name of ROLE_PARAMS) {
+      const v = copy[name];
+      if (!kind.uuids.includes(name) || v === null || typeof v !== 'object' || Array.isArray(v)) continue;
+      if (!inBundle) return { ok: false, path: name, predicate: 'roleInsideBundle', trims: [] };
+      if (!isRoleRef(v)) return { ok: false, path: name, predicate: 'isRole', trims: [] };
+      let at = standIns.indexOf(v.role);
+      if (at < 0) at = standIns.push(v.role) - 1;
+      roles.set(name, { role: v.role });
+      copy[name] = `00000000-0000-4000-8000-${String(at + 1).padStart(12, '0')}`;
+    }
+    offered = copy;
+  }
+  const out = repair(offered, kind.params);
   if (!out.ok) return out;
   const given = out.value as Record<string, unknown>;
   for (const name of kind.uuids) {
@@ -434,5 +478,7 @@ export function moveParamsProblems(key: string, params: unknown, limits: Machine
     const bad = kind.check(given, limits);
     if (bad) return { ok: false, path: bad.path, predicate: bad.predicate, trims: out.trims };
   }
+  // The roles go back where the stand-ins were.
+  for (const [name, ref] of roles) given[name] = ref;
   return out;
 }

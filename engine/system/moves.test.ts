@@ -301,3 +301,34 @@ test('the three lasting board moves read in plain words, and name the boards the
   assert.deepEqual(moveKind('mergeBoard')!.parts({ board, into: other }, 'Toast', 'plan', { board: 'General' }), ['Merge ', { board, name: 'Toast' }, ' into ', { board: other, name: 'General' }]);
   for (const k of ['createBoard', 'moveThread', 'mergeBoard']) assert.doesNotMatch(moveKind(k)!.template({ ...create, thread, board, into: other }, 'The Boss'), /[{}]|undefined|null/, k);
 });
+
+test('inside a bundle a board param may be {role}, the board the part of that role makes; outside one it is refused', () => {
+  const role = { role: 'minus' };
+  const inside = moveParamsProblems('moveThread', { thread, board: role }, machineLimits(), true);
+  assert.ok(inside.ok && JSON.stringify((inside.value as { board: unknown }).board) === JSON.stringify(role), JSON.stringify(inside));
+  const outside = moveParamsProblems('moveThread', { thread, board: role });
+  assert.ok(!outside.ok && outside.path === 'board' && outside.predicate === 'roleInsideBundle', JSON.stringify(outside));
+  assert.ok(moveParamsProblems('createBoard', { ...create, fallback: role }, machineLimits(), true).ok, 'a fallback may name a role');
+  assert.ok(moveParamsProblems('mergeBoard', { board: { role: 'fangames' }, into: role }, machineLimits(), true).ok, 'a merge may name two roles');
+  assert.ok(moveParamsProblems('mergeBoard', { board, into: role }, machineLimits(), true).ok, 'a merge may name a role and a board');
+  const same = moveParamsProblems('mergeBoard', { board: role, into: { role: 'minus' } }, machineLimits(), true);
+  assert.ok(!same.ok && same.path === 'into' && same.predicate === 'differsFromBoard', 'a board is never merged into itself, even by role: ' + JSON.stringify(same));
+});
+
+test('a role is a name and nothing more, and never stands for a thread or a board of a move that does not build the board', () => {
+  const asThread = moveParamsProblems('moveThread', { thread: { role: 'minus' }, board }, machineLimits(), true);
+  assert.ok(!asThread.ok && asThread.path === 'thread', JSON.stringify(asThread));
+  for (const bad of [{ role: '' }, { role: 'Minus' }, { role: 'a'.repeat(41) }, { role: 7 }, { role: 'minus', beat: 'split' }, {}, { name: 'minus' }]) {
+    const r = moveParamsProblems('moveThread', { thread, board: bad }, machineLimits(), true);
+    assert.ok(!r.ok && r.path === 'board', `${JSON.stringify(bad)} is no role: ${JSON.stringify(r)}`);
+  }
+  const rename = moveParamsProblems('renameBoard', { board: { role: 'minus' }, name: 'x', premise: 'y', description: 'z' }, machineLimits(), true);
+  assert.ok(!rename.ok && rename.path === 'board', JSON.stringify(rename));
+});
+
+test('a part that names a role reads in plain words without a link to a board that is not there yet', () => {
+  const parts = moveKind('moveThread')!.parts({ thread, board: { role: 'minus' } }, null, 'plan');
+  assert.deepEqual(parts, ['Move a thread to ', 'the board the part "minus" makes']);
+  assert.deepEqual(moveKind('mergeBoard')!.parts({ board: { role: 'b' }, into: { role: 'a' } }, null, 'plan'), ['Merge ', 'the board the part "b" makes', ' into ', 'the board the part "a" makes']);
+  assert.doesNotMatch(moveKind('moveThread')!.template({ thread, board: { role: 'minus' } }, 'The Boss'), /[{}]|undefined|null|\[object/);
+});

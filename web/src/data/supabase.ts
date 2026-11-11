@@ -440,14 +440,20 @@ function toFrame(v: unknown): Frame | null {
   return [f['x'], f['y'], f['w'], f['h']].every((n) => typeof n === 'number' && Number.isFinite(n)) ? { x: f['x'], y: f['y'], w: f['w'], h: f['h'] } : null;
 }
 
+/** The numbers of an array the server sent; anything else is none. */
+const numberList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : []);
 const orNull = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 const params = (v: unknown): Readonly<Record<string, unknown>> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+
+/** The bundle a move is a part of, as admin_queue says it: all null where it is no part of one. */
+const bundleOf = (r: Row) => ({ bundle: orNull(r['bundle']), role: orNull(r['role']), bundleName: orNull(r['bundleName']) });
 
 function toQueued(r: Row): QueuedMove {
   return {
     id: num(r['id']), staff: String(r['staff'] ?? ''), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']), demand: toDemand(r['demand']),
     why: String(r['why'] ?? ''), goLiveAt: String(r['goLiveAt'] ?? ''), expiresAt: orNull(r['expiresAt']), structural: r['structural'] === true, boardName: orNull(r['boardName']),
     failedAt: orNull(r['failedAt']), failure: orNull(r['failure']), replacedAt: orNull(r['replacedAt']), adminDescription: orNull(r['adminDescription']),
+    ...bundleOf(r),
   };
 }
 
@@ -462,6 +468,7 @@ function toInForce(r: Row): MoveInForce {
   return {
     act: r['act'], id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: String(r['landedAt'] ?? ''), expiresAt: orNull(r['expiresAt']), progress: toProgress(r['progress']),
+    ...bundleOf(r),
   };
 }
 
@@ -471,6 +478,7 @@ function toEnded(r: Row): MoveEnded {
     how: how === 'met' || how === 'expired' || how === 'reversed' || how === 'superseded' || how === 'spent' || how === 'refused' ? how : 'held', by: orNull(r['by']), at: String(r['at'] ?? ''), act: orNull(r['act']),
     id: typeof r['id'] === 'number' ? r['id'] : null, staff: orNull(r['staff']), boss: orNull(r['boss']), bossPronouns: pronounsOrDefault(r['bossPronouns']), kind: String(r['kind'] ?? ''), params: params(r['params']),
     demand: toDemand(r['demand']), why: orNull(r['why']), landedAt: orNull(r['landedAt']), card: orNull(r['card']), reason: orNull(r['reason']),
+    ...bundleOf(r),
   };
 }
 
@@ -1184,7 +1192,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async holdMove(id) {
       const a = await rpcWrite(() => client.rpc('hold_move', { id }));
-      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? '') } } : a;
+      return a.ok ? { ok: true, value: { id: num(a.value['id']), heldAt: String(a.value['heldAt'] ?? ''), heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     async replaceSuccessor(id, boss) {
       const a = await rpcWrite(() => client.rpc('replace_successor', { id, boss }));
@@ -1212,7 +1220,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async reverseMove(act) {
       const a = await rpcWrite(() => client.rpc('reverse_move', { move_act: act }));
-      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'] } } : a;
+      return a.ok ? { ok: true, value: { act: a.value['act'], endedBy: a.value['endedBy'], alsoEnded: Array.isArray(a.value['alsoEnded']) ? a.value['alsoEnded'] : [], heldAlso: numberList(a.value['heldAlso']) } } : a;
     },
     /* An admin's end of a card goes through the act function, which owns the broadcasts (a layer comes off for everyone reading). */
     reverseCard: (play) => act({ action: 'reverseCard', play }, (r) => ({ act: r['id'], play: r['play'] })),

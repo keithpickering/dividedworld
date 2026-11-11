@@ -145,6 +145,14 @@ begin
     bad := bad || E'\n  an append-only trigger is missing';
   end if;
   if bad <> '' then raise exception 'acts can be changed:%', bad; end if;
+
+  -- The dependencies of the moves (0161) are insert-only too, and no client's: the guards fire always, so not even a restore in replica mode can change one.
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and t.tgname in ('move_dependencies_insert', 'move_dependencies_no_update', 'move_dependencies_no_truncate')) is distinct from 3 then
+    bad := bad || E'\n  a guard of move_dependencies is missing';
+  end if;
+  if bad <> '' then raise exception 'move_dependencies can be changed:%', bad; end if;
 end $$;
 
 -- Replica mode, as a restore with triggers disabled runs, still cannot change an Act.
