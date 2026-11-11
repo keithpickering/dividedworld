@@ -36,7 +36,7 @@ describe('the failure screens', () => {
     renderIn(buildWorld(), <Routes routes={failing} failures={failures} />, { path: '/t/3f2a9c1e' });
     expect(await screen.findByText('glass display /t/3f2a9c1e')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'The page cannot be displayed' })).toBeNull();
-    expect(failures.display).toHaveBeenCalledWith(expect.objectContaining({ address: '/t/3f2a9c1e', onRetry: expect.any(Function) }));
+    expect(failures.display).toHaveBeenCalledWith(expect.objectContaining({ kind: 'broken', address: '/t/3f2a9c1e', onRetry: expect.any(Function) }));
   });
 
   test('with failures, an address no route matches draws the glass find screen', () => {

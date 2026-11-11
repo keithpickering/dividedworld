@@ -10,6 +10,7 @@
  * loader and leaves the page, and the address bar, as they are until the answer lands, then changes them together.
  * It also holds the prefetch answers and the history cache of loaded pages, both in memory only.
  */
+import { failureKind } from './data/api.ts';
 import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type AnchorHTMLAttributes, type MouseEvent, type ReactNode, type Ref } from 'react';
 
 export interface Location {
@@ -51,7 +52,7 @@ export function match(pattern: string, path: string): Record<string, string> | n
 }
 
 /** Why a load shows an error page in place of the screen. */
-export type Failure = 'display' | 'find';
+export type Failure = 'offline' | 'silent' | 'server' | 'broken' | 'find';
 
 /** What the screens draw: the location, the document its route loaded, and whether a load failed. */
 export interface Shown {
@@ -137,7 +138,7 @@ export type OnMove = (from: Location | null, to: Location) => void;
 
 /** How long the pointer rests on a link before its page is read early. */
 const REST_MS = 100;
-const LOAD_LIMIT_MS = 20_000;
+export const LOAD_LIMIT_MS = 20_000;
 const PREFETCH_KEPT_MS = 30_000;
 const ENTRY_KEPT_MS = 5 * 60_000;
 const ENTRIES_MAX = 20;
@@ -288,8 +289,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     let timer: ReturnType<typeof setTimeout> | undefined;
     const outcome = new Promise<Outcome>((resolve) => {
       controller.signal.addEventListener('abort', () => resolve({ kind: 'aborted' }));
-      timer = setTimeout(() => { resolve({ kind: 'failure', failure: 'display' }); controller.abort(); }, LOAD_LIMIT_MS);
-      promise.then((doc) => resolve(doc === null ? { kind: 'failure', failure: 'find' } : { kind: 'doc', doc }), () => resolve({ kind: 'failure', failure: 'display' }));
+      timer = setTimeout(() => { resolve({ kind: 'failure', failure: 'silent' }); controller.abort(); }, LOAD_LIMIT_MS);
+      promise.then((doc) => resolve(doc === null ? { kind: 'failure', failure: 'find' } : { kind: 'doc', doc }), (error: unknown) => resolve({ kind: 'failure', failure: failureKind(error) }));
     });
     void outcome.then((o) => {
       clearTimeout(timer);

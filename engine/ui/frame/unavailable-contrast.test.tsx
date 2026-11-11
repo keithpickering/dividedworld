@@ -65,6 +65,11 @@ describe('the cannot-display sheet\'s own colors', () => {
     expect(f.some((x) => x.startsWith('light: --kb-sheet-link'))).toBe(true);
   });
 
+  test('every link on the sheet, the contact link included, takes the sheet\'s link color', () => {
+    const rules = readFileSync(join(process.cwd(), 'engine/ui/frame/unavailable.css'), 'utf8');
+    expect(rules).toMatch(/\.kb-unavailable-sheet a \{\s*color: var\(--kb-sheet-link\);/u);
+  });
+
   test('a pair left undeclared fails', () => {
     expect(sheetFailures(css.replaceAll('--kb-sheet-fg:', '--kb-sheet-x:')).some((x) => /not declared/u.test(x))).toBe(true);
   });

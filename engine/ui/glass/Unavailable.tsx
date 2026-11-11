@@ -5,18 +5,41 @@
  * the reader's, and a screen that says them back says more than the reader asked. The frame's own pair (frame/Unavailable.tsx)
  * stays for the board; Routes draws these when the app gives them (its `failures`).
  */
+import type { ReactNode } from 'react';
+import { CONTACT_PATH } from '../contact/Contact.tsx';
+import { LOAD_LIMIT_MS } from '../router.tsx';
+import type { DisplayFailure } from '../routes.tsx';
 import { GlassButton } from './Button.tsx';
+import { GlassLink } from './Link.tsx';
 import { PageHead } from './PageHead.tsx';
 import { useBackToBoard } from './back.ts';
 import './unavailable.css';
 
-export function GlassCannotDisplay({ onRetry }: { readonly onRetry: () => void }) {
+const LIMIT_SECONDS = LOAD_LIMIT_MS / 1000;
+
+/** The words by cause. `broken` is the page's own code failing; its words are a draft the owner reads in review. */
+function words(kind: DisplayFailure): { readonly title: string; readonly lead: ReactNode } {
+  const admin = <GlassLink to={CONTACT_PATH}>tell an admin</GlassLink>;
+  switch (kind) {
+    case 'offline':
+      return { title: "You're offline", lead: 'Your device reports no connection, so nothing was sent. Reconnect, then try again.' };
+    case 'silent':
+      return { title: "This screen didn't load", lead: `The server didn't answer within ${LIMIT_SECONDS} seconds, or the connection dropped on the way. Loading a screen changes nothing, so nothing was lost.` };
+    case 'server':
+      return { title: "This screen didn't load", lead: <>The server answered with an error. Your connection is fine, and nothing was lost. Try again in a moment. If it keeps happening, {admin}.</> };
+    case 'broken':
+      return { title: "This screen didn't load", lead: <>Something went wrong while loading it. Nothing was lost. Try again, and if it keeps happening, {admin}.</> };
+  }
+}
+
+export function GlassCannotDisplay({ kind, onRetry }: { readonly kind: DisplayFailure; readonly onRetry: () => void }) {
   const back = useBackToBoard();
+  const { title, lead } = words(kind);
   return (
     <section className="kb-glass-cut-panel kb-glass-unavailable-panel">
       <PageHead
-        title="This screen didn't load"
-        lead="The server didn't answer, or it took longer than 20 seconds. Loading a screen changes nothing, so nothing was lost."
+        title={title}
+        lead={lead}
         actions={<>
           <GlassButton kind="primary" onClick={onRetry}>Try again</GlassButton>
           <GlassButton kind="secondary" onClick={back}>Back to the board</GlassButton>
