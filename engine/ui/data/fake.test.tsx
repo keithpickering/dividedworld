@@ -2702,14 +2702,14 @@ describe('framed alerts', () => {
       const before = await w.wrote();
       const acts = await w.fake.thread(w.thread);
       const answer = await w.fake.apologize(w.move, w.anaFace, 'Sorry', body);
-      expect(answer).toMatchObject({ ok: false, field: 'body' });
+      expect(answer).toMatchObject({ ok: false, field: 'body', error: 'is empty' });
       expect(await w.wrote()).toEqual(before);
       expect(await w.fake.thread(w.thread)).toEqual(acts);
     });
     test('a title over the limit is refused by title', async () => {
       const w = apologyWorld();
       const before = await w.wrote();
-      expect(await w.fake.apologize(w.move, w.anaFace, 'x'.repeat(21), 'I was wrong.')).toMatchObject({ ok: false, field: 'title' });
+      expect(await w.fake.apologize(w.move, w.anaFace, 'x'.repeat(21), 'I was wrong.')).toMatchObject({ ok: false, field: 'title', error: 'is longer than 20 characters' });
       expect(await w.wrote()).toEqual(before);
     });
     test('signed out, it is refused with "sign in to act"', async () => {

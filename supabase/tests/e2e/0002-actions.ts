@@ -111,14 +111,14 @@ test('a barred player apologizes through the action rules: an empty body is refu
     end $$;
     select id from acts where kind = 'move' and payload -> 'params' ->> 'character' = '${character}'`);
   const asSorry = { player: psqlDb(account), service: psqlDb() };
-  const written = () => sql(`select (select count(*) from acts where character = '${character}' and kind = 'spin') || ' ' || (select count(*) from apologies where character = '${character}')`);
-  assert.equal(written(), '0 0');
+  const written = () => sql(`select (select count(*) from threads where origin_act_id = '${move}') || ' ' || (select count(*) from acts where character = '${character}' and kind = 'spin') || ' ' || (select count(*) from apologies where character = '${character}')`);
+  assert.equal(written(), '0 0 0');
 
   // The action rules read the request first: an empty apology never reaches the SQL function.
   const empty = await runAction(asSorry, instance, { action: 'apologize', move, character, title: 'I am sorry', body: '' });
   assert.equal(empty.status, 400, JSON.stringify(empty));
   assert.equal((empty.body as { field: string }).field, 'body');
-  assert.equal(written(), '0 0', 'a refused apology wrote nothing');
+  assert.equal(written(), '0 0 0', 'a refused apology wrote nothing');
 
   const sent = await runAction(asSorry, instance, { action: 'apologize', move, character, title: 'I am sorry', body: 'I was wrong, and here is why.' });
   assert.equal(sent.status, 200, JSON.stringify(sent));
@@ -136,5 +136,5 @@ test('a barred player apologizes through the action rules: an empty body is refu
   const second = await runAction(asSorry, instance, { action: 'apologize', move, character, title: 'Again', body: 'Again.' });
   assert.ok(second.status >= 400 && second.status < 500, JSON.stringify(second));
   assert.match(String((second.body as { error: string }).error), /still waiting for a ruling/);
-  assert.equal(written(), '1 1', 'a refused second apology wrote nothing');
+  assert.equal(written(), '1 1 1', 'a refused second apology wrote nothing');
 });
