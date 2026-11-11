@@ -227,4 +227,31 @@ describe('mixer', () => {
     l2.setGain(0.9);
     assert.equal(v2.gain.log.length, before);
   });
+
+  it('12. decodes with a legacy context whose decodeAudioData only calls its callbacks', async () => {
+    const m = make();
+    ctx.decodeAudioData = ((_b: ArrayBuffer, ok?: (b: { duration: number }) => void) => { ok?.({ duration: 2 }); }) as never;
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    assert.deepEqual(await m.play(boo), { lengthMs: 2000 });
+    ctx.decodeAudioData = ((_b: ArrayBuffer, _ok?: unknown, fail?: (e: unknown) => void) => { fail?.(new Error('bad')); }) as never;
+    assert.equal(await m.play(cheer), null);
+  });
+
+  it('13. a loop reports why it stopped: its bus going off, its group replacing it, or its own stop', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    const stops: string[] = [];
+    const looping = slot('build', { loop: true });
+    await m.loop(looping, { onStop: (r) => stops.push(`a:${r}`) });
+    m.setBus('game', { on: false, volume: 100 });
+    m.setBus('game', { on: true, volume: 100 });
+    await m.loop(looping, { group: 'g', onStop: (r) => stops.push(`b:${r}`) });
+    await m.loop(looping, { group: 'g' });
+    const c = (await m.loop(looping, { onStop: (r) => stops.push(`c:${r}`) }))!;
+    c.stop(0);
+    c.stop(0);
+    assert.deepEqual(stops, ['a:bus', 'b:replaced', 'c:stopped']);
+  });
 });

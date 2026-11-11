@@ -18,10 +18,8 @@
  *
  * Engine code: it names no card and no instance.
  */
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useKayfa } from '../context.tsx';
-import { usePlayer } from '../player.tsx';
-import { usePreferenceSaves } from '../account/preferences.ts';
 import { captions } from './captions.ts';
 import { createMixer, type AudioContextLike, type LoopHandle, type Mixer, type MixerDeps } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
@@ -134,7 +132,7 @@ const wordsOf = (slot: SoundSlot) => ({ text: slot.caption, ...(slot.ink ? { ink
 
 export function useSound(): SoundPlay {
   const sounds = useKayfa().ui.sounds;
-  page.arm();
+  useEffect(() => { page.arm(); }, []);
   const slots = useMemo(() => new Map((sounds?.slots ?? []).map((s) => [s.key, s] as const)), [sounds]);
   const find = useCallback((key: string): SoundSlot | undefined => {
     const s = slots.get(key);
@@ -154,16 +152,27 @@ export function useSound(): SoundPlay {
     loop(key, opts) {
       const slot = find(key);
       if (!slot) return Promise.resolve(null);
-      return page.mixer.loop(slot, opts.group === undefined ? {} : { group: opts.group }).then((inner) => {
+      /* `live`: the caption follows the gain. A loop the mixer ended because its bus went off releases its caption; a game loop then stays
+         captioned by gain alone (the captions-with-sound-off path, as a skipped one is), and an interface loop, or one that was stopped or
+         replaced, is done. The caption shows iff the sound would be audible, or is captioned, at that gain. */
+      let live = true;
+      let inner: LoopHandle | null = null;
+      return page.mixer.loop(slot, { ...(opts.group === undefined ? {} : { group: opts.group }), onStop: (why) => {
+        captions.release(opts.id);
+        if (why !== 'bus' || slot.bus !== 'game') live = false;
+      } }).then((made) => {
+        inner = made;
         /* A skipped game loop is still captioned, as a skipped game sound is; a skipped interface loop is not. */
         if (!inner && slot.bus !== 'game') return null;
         const handle: LoopHandle = {
           setGain(g) {
             inner?.setGain(g);
+            if (!live) return;
             if (g > HELD_FROM) captions.hold(opts.id, wordsOf(slot));
             else captions.release(opts.id);
           },
           stop(fadeMs) {
+            live = false;
             captions.release(opts.id);
             inner?.stop(fadeMs);
           },
@@ -176,13 +185,4 @@ export function useSound(): SoundPlay {
       if (slot) captions.say({ ...wordsOf(slot), ms: CAPTION_MS });
     },
   }), [find]);
-}
-
-/** The account's game-sound choice and the way to change it, saved as Settings saves it (for a card's Lens toggle). */
-export function useGameSound(): { readonly on: boolean; set(on: boolean): void } {
-  const { session } = usePlayer();
-  const { prefs, change } = usePreferenceSaves(session.account);
-  const on = prefs?.gameSound === 'on';
-  const set = useCallback((next: boolean) => change({ gameSound: next ? 'on' : 'off' }), [change]);
-  return { on, set };
 }

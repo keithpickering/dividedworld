@@ -3,13 +3,12 @@
  * says its caption and fetches nothing; a gesture unlocks once; a hidden tab suspends; the preference reaches the buses; an unknown key
  * throws in development.
  */
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
 import { captions } from './captions.ts';
-import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useGameSound, useSound } from './sound.ts';
+import { CAPTION_MS, HELD_FROM, resetSound, setSoundPreference, useSound } from './sound.ts';
 import type { AudioContextLike, GainNodeLike, SourceLike } from './mixer.ts';
 import type { SoundSlot } from './types.ts';
 
@@ -47,7 +46,7 @@ beforeEach(() => {
   resetSound({ makeContext, fetchBytes });
   captions.reset();
 });
-afterEach(() => { vi.restoreAllMocks(); captions.reset(); });
+afterEach(() => { vi.restoreAllMocks(); captions.reset(); resetSound(); });
 
 describe('the page sound', () => {
   test('makes no audio context before a gesture', async () => {
@@ -154,6 +153,74 @@ describe('the page sound', () => {
     expect(captions.current()).toBeNull();
   });
 
+  const interfaceLoop = slot('hum', 'interface', { loop: true });
+  const withSlots = (slots: SoundSlot[]) => ({ children }: { readonly children: ReactNode }) => (
+    <KayfaProvider value={{ ui: { sounds: { slots } } } as unknown as Kayfa}>{children}</KayfaProvider>
+  );
+
+  test('a sounding game loop whose bus goes off releases its caption, then is captioned by gain alone', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    let handle: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
+    await act(async () => { handle = await result.current.loop('build', { id: 'meter' }); });
+    act(() => handle!.setGain(0.9));
+    expect(captions.current()?.held).toBe(true);
+    act(() => setSoundPreference({ gameSound: 'off', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 }));
+    expect(captions.current()).toBeNull();
+    act(() => handle!.setGain(0.9));
+    expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+    act(() => handle!.setGain(0));
+    expect(captions.current()).toBeNull();
+  });
+
+  test('a sounding interface loop whose bus goes off releases its caption and holds nothing after', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: withSlots([interfaceLoop]) });
+    on('interface');
+    await gesture();
+    let handle: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
+    await act(async () => { handle = await result.current.loop('hum', { id: 'hum' }); });
+    act(() => handle!.setGain(0.9));
+    expect(captions.current()?.held).toBe(true);
+    act(() => setSoundPreference({ gameSound: 'off', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 }));
+    expect(captions.current()).toBeNull();
+    act(() => handle!.setGain(0.9));
+    expect(captions.current()).toBeNull();
+  });
+
+  test('a loop that was stopped, or replaced by its group, holds no caption after', async () => {
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    let first: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
+    await act(async () => { first = await result.current.loop('build', { id: 'a', group: 'g' }); });
+    await act(async () => { await result.current.loop('build', { id: 'b', group: 'g' }); });
+    act(() => first!.setGain(0.9));
+    expect(captions.current()).toBeNull();
+    let own: Awaited<ReturnType<ReturnType<typeof useSound>['loop']>> = null;
+    await act(async () => { own = await result.current.loop('build', { id: 'c' }); });
+    act(() => own!.stop(0));
+    act(() => own!.setGain(0.9));
+    expect(captions.current()).toBeNull();
+  });
+
+  test('a legacy context that decodes only through callbacks still sounds', async () => {
+    resetSound({ makeContext: () => { const c = makeContext(); c.decodeAudioData = ((_b: ArrayBuffer, ok?: (b: { duration: number }) => void) => { ok?.({ duration: 1.5 }); }) as never; return c; }, fetchBytes });
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    on('game');
+    await gesture();
+    let played: { lengthMs: number } | null = null;
+    await act(async () => { played = await result.current.play('boo'); });
+    expect(played).toEqual({ lengthMs: 1500 });
+  });
+
+  test('useSound adds the page listeners in an effect, not while rendering', () => {
+    const add = vi.spyOn(document, 'addEventListener');
+    const { result } = renderHook(() => { const r = useSound(); return r; }, { wrapper: wrap });
+    expect(result.current).toBeDefined();
+    expect(add.mock.calls.some(([t]) => t === 'pointerdown')).toBe(true);
+  });
+
   test('caption(key) says a slot\'s caption without playing it', () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     act(() => result.current.caption('boo'));
@@ -176,17 +243,5 @@ describe('the page sound', () => {
       expect(await result.current.play('nope')).toBeNull();
       expect(captions.current()).toBeNull();
     } finally { vi.unstubAllEnvs(); }
-  });
-
-  test('useGameSound reads the account\'s choice and saves a change through the settings saver', async () => {
-    const fake = buildWorld();
-    fake.signInAs(fake.seed.account('me'));
-    let latest: ReturnType<typeof useGameSound> | null = null;
-    function Probe() { latest = useGameSound(); return <p>{latest.on ? 'sound on' : 'sound off'}</p>; }
-    const { findByText } = renderIn(fake, <Probe />);
-    await findByText('sound off');
-    /* A change before the account's choices are read is ignored, so ask until the screen shows it. */
-    await waitFor(() => { act(() => latest!.set(true)); expect(document.body.textContent).toBe('sound on'); });
-    await findByText('sound on');
   });
 });

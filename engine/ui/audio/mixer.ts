@@ -20,17 +20,20 @@ export interface SourceLike { buffer: unknown; loop: boolean; onended: (() => vo
 export interface AudioContextLike {
   readonly currentTime: number; readonly destination: unknown;
   resume(): Promise<void>; suspend(): Promise<void>;
-  decodeAudioData(bytes: ArrayBuffer): Promise<{ readonly duration: number }>;
+  /** The promise form, or the legacy callback form (old WebKit) that returns nothing: the mixer takes either. */
+  decodeAudioData(bytes: ArrayBuffer, ok?: (b: { readonly duration: number }) => void, fail?: (e: unknown) => void): Promise<{ readonly duration: number }> | void;
   createGain(): GainNodeLike; createBufferSource(): SourceLike;
 }
 export interface MixerDeps { makeContext(): AudioContextLike; fetchBytes(src: string): Promise<ArrayBuffer> }
+/** Why a loop ended: its own `stop`, its bus turned off, or another sound of its group replacing it. */
+export type LoopStop = 'stopped' | 'bus' | 'replaced';
 export interface LoopHandle { setGain(g: number): void; stop(fadeMs: number): void }
 export interface Mixer {
   setBus(bus: SoundBus, s: { on: boolean; volume: number }): void;
   /** Resolves whether the mixer is now unlocked: false when the browser refused, so the next gesture may try again. */
   unlock(): Promise<boolean>; suspend(): Promise<void>; resume(): Promise<void>;
   play(slot: SoundSlot, o?: { group?: string; fadeMs?: number }): Promise<{ lengthMs: number } | null>;
-  loop(slot: SoundSlot, o?: { group?: string }): Promise<LoopHandle | null>;
+  loop(slot: SoundSlot, o?: { group?: string; onStop?: (why: LoopStop) => void }): Promise<LoopHandle | null>;
 }
 export function createMixer(deps: MixerDeps): Mixer {
   /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
@@ -40,7 +43,7 @@ export function createMixer(deps: MixerDeps): Mixer {
     game: { on: false, volume: 100, node: null },
     interface: { on: false, volume: 100, node: null },
   };
-  const loops: Record<SoundBus, Set<LoopHandle>> = { game: new Set(), interface: new Set() };
+  const loops: Record<SoundBus, Set<(why: LoopStop) => void>> = { game: new Set(), interface: new Set() };
   /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). */
   const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
@@ -56,10 +59,17 @@ export function createMixer(deps: MixerDeps): Mixer {
     }
     return node;
   }
+  /** Decode with either form of the API: a promise, or the callbacks an old WebKit context takes instead. */
+  function decode(c: AudioContextLike, bytes: ArrayBuffer): Promise<{ readonly duration: number }> {
+    return new Promise((resolve, reject) => {
+      const r = c.decodeAudioData(bytes, resolve, reject);
+      if (r && typeof r.then === 'function') r.then(resolve, reject);
+    });
+  }
   function decoded(c: AudioContextLike, src: string): Promise<{ readonly duration: number } | null> {
     let pending = buffers.get(src);
     if (!pending) {
-      pending = deps.fetchBytes(src).then((bytes) => c.decodeAudioData(bytes)).catch(() => {
+      pending = deps.fetchBytes(src).then((bytes) => decode(c, bytes)).catch(() => {
         buffers.delete(src);
         return null;
       });
@@ -108,7 +118,7 @@ export function createMixer(deps: MixerDeps): Mixer {
       buses[bus].volume = s.volume;
       const node = buses[bus].node;
       if (node) node.gain.value = level(bus);
-      if (!s.on) for (const h of [...loops[bus]]) h.stop(0);
+      if (!s.on) for (const end of [...loops[bus]]) end('bus');
     },
     async unlock() {
       try {
@@ -147,6 +157,15 @@ export function createMixer(deps: MixerDeps): Mixer {
         if (prior) prior.end(0);
         const { source, voice } = start(c, slot, buffer, true, 0);
         let stopped = false;
+        const end = (why: LoopStop, fadeMs: number): void => {
+          if (stopped) return;
+          stopped = true;
+          loops[slot.bus].delete(endNow);
+          if (o.group !== undefined && groups.get(o.group)?.source === source) groups.delete(o.group);
+          fadeOut(c, voice, source, fadeMs);
+          o.onStop?.(why);
+        };
+        const endNow = (why: LoopStop): void => end(why, 0);
         const handle: LoopHandle = {
           setGain(g) {
             if (stopped) return;
@@ -155,16 +174,10 @@ export function createMixer(deps: MixerDeps): Mixer {
             voice.gain.setValueAtTime(voice.gain.value, now);
             voice.gain.setTargetAtTime(Math.min(Math.max(g, 0), 1), now, 0.05);
           },
-          stop(fadeMs) {
-            if (stopped) return;
-            stopped = true;
-            loops[slot.bus].delete(handle);
-            if (o.group !== undefined && groups.get(o.group)?.source === source) groups.delete(o.group);
-            fadeOut(c, voice, source, fadeMs);
-          },
+          stop(fadeMs) { end('stopped', fadeMs); },
         };
-        loops[slot.bus].add(handle);
-        if (o.group !== undefined) groups.set(o.group, { source, end: handle.stop });
+        loops[slot.bus].add(endNow);
+        if (o.group !== undefined) groups.set(o.group, { source, end: (ms) => end('replaced', ms) });
         return handle;
       } catch { return null; }
     },
