@@ -24,7 +24,7 @@
  * a switch (or a sign-out) takes them away in the very commit it happens, and an answer that comes
  * back for the other account changes nothing here.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useId, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { useNavigationGuard } from '../router.tsx';
@@ -107,6 +107,10 @@ export interface Composing {
   readonly target: PlayTarget;
 }
 
+/** Where focus goes when a compose is left: the post's ghost mark, or the post itself once that mark is gone. */
+const focusTarget = (seq: number | null): HTMLElement | null => (seq === null ? null : document.querySelector<HTMLElement>(`#post-${seq} .kb-ghost-mark`) ?? document.getElementById(`post-${seq}`));
+const focusPost = (seq: number | null): void => { setTimeout(() => focusTarget(seq)?.focus(), 0); };
+
 /** What a trigger reads for: the card and the target's own id. */
 const askOf = (card: string, target: PlayTarget): string => `${card}:${target.reach ? target.reach.target : target.post?.id ?? ''}`;
 interface Ask { readonly card: string; readonly target: PlayTarget }
@@ -143,6 +147,7 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const playerNow = useRef(player);
   playerNow.current = player;
   const sending = useRef<Promise<Answer<unknown>> | null>(null);
+  const askId = useId();
   /* The post is read before the form opens, so the form's first render holds the post as it stands. A target without a post (a thread's head, a board's banner) reads nothing. */
   const prepared = usePrepared<readonly Act[], Ask>(
     (_signal, ask) => (ask.target.post ? Promise.resolve(api.actsById([ask.target.post.id])) : Promise.resolve([])),
@@ -178,6 +183,8 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   const setHandOpen = setHandOpenState;
   /** Run `then` now, or after the player answers the card's question when it holds work: Leave runs it, Stay drops it. */
   const leave = useCallback((then: () => void) => {
+    /* A play that is out is not left: it is landing or being refused in a moment, and ending the compose now would lose its answer. */
+    if (sending.current) { setSaid('Your play is on its way. It can be left when it lands.'); return; }
     const ask = askNow.current;
     if (composeNow.current === null || ask === null) { then(); return; }
     setLeaving({ ask, then });
@@ -188,21 +195,18 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
     setAskHeld(null);
     askNow.current = null;
     composeNow.current = null;
-    if (refocus && was?.target.post) {
-      const seq = was.target.post.seq;
-      setTimeout(() => document.querySelector<HTMLElement>(`#post-${seq} .kb-ghost-mark`)?.focus(), 0);
-    }
+    if (refocus && was?.target.post) focusPost(was.target.post.seq);
   }, []);
-  const arm = useCallback((card: string | null) => {
-    if (composeNow.current !== null && card !== composeNow.current.card) {
-      leave(() => { endCompose(false); arm(card); });
-      return;
-    }
+  const apply = useCallback((card: string | null) => {
     const was = armedNow.current;
     setArmed(card);
     if (card !== null) setSaid(`${nameOf(card)} is armed. Press Play ${nameOf(card)} on a post, the dashed + mark beside its date, to play it there, or ${phone.current ? 'press Armed' : 'Esc'} to put it back.`);
     else if (was !== null) setSaid(`${nameOf(was)} is put back.`);
-  }, [nameOf, setArmed, setSaid, leave, endCompose]);
+  }, [nameOf, setArmed, setSaid]);
+  const arm = useCallback((card: string | null) => {
+    if (composeNow.current !== null && card !== composeNow.current.card) { leave(() => { endCompose(false); apply(card); }); return; }
+    apply(card);
+  }, [apply, leave, endCompose]);
   const { open: readOpen, early: readEarly, busy: readBusy, failed: readFailed } = prepared;
   const openForm = useCallback((card: string, target: PlayTarget) => {
     const key = askOf(card, target);
@@ -280,8 +284,10 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.repeat || e.isComposing || e.defaultPrevented) return;
-      /* A dialog above it (the leave question itself, a Lens) answers its own Esc. */
+      if (e.key !== 'Escape' || e.repeat || e.isComposing) return;
+      /* Esc belongs to a field it was typed in, to an open menu or list, and to a dialog above it (the leave question itself, a Lens). */
+      const t = e.target;
+      if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [aria-expanded="true"], [role="menu"], [role="listbox"]')) return;
       if (document.querySelector('[aria-modal="true"], dialog[open]')) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -293,10 +299,12 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
   /* A link or Back while work is held asks the same question, and Leave goes on. */
   const guard = useCallback((proceed: () => void): boolean => {
     const ask = askNow.current;
-    if (composeNow.current === null || ask === null) return false;
+    if (composeNow.current === null) return false;
+    if (sending.current) { setSaid('Your play is on its way. It can be left when it lands.'); return true; }
+    if (ask === null) return false;
     setLeaving({ ask, then: () => { endCompose(false); proceed(); } });
     return true;
-  }, [endCompose]);
+  }, [endCompose, setSaid]);
   useNavigationGuard(guard);
   /* Leaving the page with work held is the browser's question. */
   const holding = compose !== null && askHeld !== null;
@@ -318,12 +326,13 @@ export function PlayProvider({ children }: { readonly children: ReactNode }) {
       <p className="kb-visually-hidden" role="status" aria-label="Playing a card">{said}</p>
       <Layers>
       {leaving && (
-        <Overlay title="Leave?" surface="play" className="kb-play-dialog" onClose={() => setLeaving(null)}>
+        <Overlay title="Leave?" surface="play" className="kb-play-dialog" describedBy={askId} onClose={() => setLeaving(null)} returnFocusTo={() => composeNow.current?.target.post ? focusTarget(composeNow.current.target.post.seq) : null}>
           <div className="kb-play">
-            <div className="kb-play-fields"><p>{leaving.ask}</p></div>
+            <div className="kb-play-fields"><p id={askId}>{leaving.ask}</p></div>
             <ButtonRow>
-              <GlassButton kind="primary" onClick={() => { const then = leaving.then; setLeaving(null); then(); }}>Leave</GlassButton>
-              <GlassButton onClick={() => setLeaving(null)}>Stay</GlassButton>
+              {/* Stay is first, so focus starts on it: the way that loses nothing. */}
+              <GlassButton kind="primary" onClick={() => setLeaving(null)}>Stay</GlassButton>
+              <GlassButton onClick={() => { const then = leaving.then; setLeaving(null); then(); }}>Leave</GlassButton>
             </ButtonRow>
           </div>
         </Overlay>

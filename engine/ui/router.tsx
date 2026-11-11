@@ -210,6 +210,20 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     return null;
   }, []);
   const newEntry = () => `${Date.now().toString(36)}-${++sequence.current}`;
+  /*
+   * Where each entry sits in this document's history, relative to the first (a push is the one after the entry it left), so a Back or Forward a guard
+   * stops can be undone with history.go(delta). An entry reached before this document's first one, or after a move whose place was lost, has none.
+   */
+  const positions = useRef(new Map<string, number>());
+  const posRef = useRef<number | null>(0);
+  const placed = (entry: string, push: boolean) => {
+    const at = push && posRef.current !== null ? posRef.current + 1 : posRef.current;
+    if (at === null) positions.current.delete(entry); else positions.current.set(entry, at);
+    posRef.current = at;
+  };
+  /* The popstate that undoes a guarded one is not a move; the one that follows a Leave is not asked again. */
+  const undoing = useRef(false);
+  const allowPop = useRef(false);
   /* The shown entry's scroll and the time it was left, so Back finds where the reader was. */
   const leave = useCallback(() => {
     const e = entryRef.current ? cache.current.get(entryRef.current) : undefined;
@@ -275,8 +289,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     const url = new URL(req.full, w.location.href);
     const state = req.popped || req.initial ? unwrap(w.history.state).state : req.state;
     if (req.popped || req.initial) w.history.replaceState(wrap(entry, state), '', req.full);
-    else if (req.replace || url.pathname + url.search + url.hash === w.location.pathname + w.location.search + w.location.hash) w.history.replaceState(wrap(entry, state), '', req.full);
-    else w.history.pushState(wrap(entry, state), '', req.full);
+    else if (req.replace || url.pathname + url.search + url.hash === w.location.pathname + w.location.search + w.location.hash) { w.history.replaceState(wrap(entry, state), '', req.full); placed(entry, false); }
+    else { w.history.pushState(wrap(entry, state), '', req.full); placed(entry, true); }
     leave();
     const location = read(w, req.popped);
     const ok = outcome.kind === 'doc';
@@ -328,6 +342,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     /* The first entry is keyed too, so its scroll is kept like every other. */
     const entry = entryRef.current ?? newEntry();
     entryRef.current = entry;
+    if (!positions.current.has(entry)) positions.current.set(entry, 0);
+    posRef.current = positions.current.get(entry) ?? 0;
     w.history.replaceState(wrap(entry, unwrap(w.history.state).state), '');
     if (!cache.current.has(entry)) remember(entry, undefined);
     if (!told.current) { told.current = true; moved.current?.(null, shownRef.current.location); }
@@ -362,18 +378,32 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
 
   useEffect(() => {
     const onPop = () => {
+      const kb = unwrap(w.history.state).kb;
+      posRef.current = kb ? positions.current.get(kb) ?? null : null;
+      if (undoing.current) { undoing.current = false; return; }
       const guard = guardRef.current;
-      if (guard) {
+      const allowed = allowPop.current;
+      allowPop.current = false;
+      if (guard && !allowed) {
         const popped = w.location.pathname + w.location.search + w.location.hash;
-        const shownAt = addressOf(shownRef.current.location) + shownRef.current.location.hash;
-        if (popped !== shownAt && guard(() => goRef.current(popped))) {
-          /* The reader is being asked: the address goes back to the page shown, as a new entry. */
-          w.history.pushState(wrap(newEntry(), undefined), '', shownAt);
+        const l = shownRef.current.location;
+        const shownAt = addressOf(l) + (l.hash ? `#${l.hash}` : '');
+        const poppedAt = posRef.current;
+        const shownPos = entryRef.current ? positions.current.get(entryRef.current) ?? null : null;
+        const delta = poppedAt !== null && shownPos !== null && poppedAt !== shownPos ? shownPos - poppedAt : null;
+        const proceed = () => {
+          if (delta === null) { goRef.current(popped); return; }
+          allowPop.current = true;
+          w.history.go(-delta);
+        };
+        if (popped !== shownAt && guard(proceed)) {
+          /* The reader is being asked: the address goes back to the entry shown, by the way it left; where that is not known, to a new entry for it. */
+          if (delta !== null) { undoing.current = true; w.history.go(delta); }
+          else { const entry = newEntry(); w.history.pushState(wrap(entry, undefined), '', shownAt); placed(entry, true); }
           return;
         }
       }
       const location = read(w, true);
-      const kb = unwrap(w.history.state).kb;
       const found = routeFor(location.path);
       const sh = shownRef.current;
       const refreshing = refreshOut();
@@ -422,8 +452,8 @@ export function RouterProvider({ children, window: w = globalThis.window, onMove
     cancelPending();
     const entry = newEntry();
     const state = wrap(entry, options?.state);
-    if (options?.replace || full === w.location.pathname + w.location.search + w.location.hash) w.history.replaceState(state, '', full);
-    else w.history.pushState(state, '', full);
+    if (options?.replace || full === w.location.pathname + w.location.search + w.location.hash) { w.history.replaceState(state, '', full); placed(entry, false); }
+    else { w.history.pushState(state, '', full); placed(entry, true); }
     /* The address has moved and the page has not: pushState scrolls nothing and draws nothing. */
     leave();
     remember(entry, same ? sh.doc : undefined);

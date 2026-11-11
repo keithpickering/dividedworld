@@ -208,14 +208,15 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* A play being made on this post itself (`CardUi.Compose`) is the innermost thing here: the post's words are its children. */
   const composing = play?.compose && play.compose.target.post?.id === post.id ? play.compose : null;
   const Compose = composing ? ui.cards.find((c) => c.key === composing.card)?.Compose : undefined;
-  const body = composing && play && Compose ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play}>{children}</ComposeSlot> : children;
-  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{body}</>;
+  /* The slot is the outermost thing here, so a play landing on the post mid-compose (a layer wrapping the words) never moves it in the tree: it would remount, and the card's drawing with it. */
+  const slot = (inner: ReactNode) => (composing && play && Compose ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play}>{inner}</ComposeSlot> : inner);
+  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(children)}</>;
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
   const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
   const beneath = (key: string) => ui.cards.find((c) => c.key === key)?.beneath === true;
   const ordered = [...wraps.filter((w) => !takes(w.key) && beneath(w.key)), ...wraps.filter((w) => !takes(w.key) && !beneath(w.key)), ...wraps.filter((w) => takes(w.key))];
-  let wrapped = body;
+  let wrapped = children;
   if (momentAct && bodyOf) {
     wrapped = (
       <MomentView
@@ -244,7 +245,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       </BoundEffect>
     );
   }
-  return <>{wrapped}</>;
+  return <>{slot(wrapped)}</>;
 }
 
 /**
