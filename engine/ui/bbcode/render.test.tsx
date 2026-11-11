@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BbCode, type QuoteOf } from './render.tsx';
 import { TextLayer, type TextRun } from './layers.tsx';
@@ -384,6 +384,59 @@ describe('layout and effects', () => {
     const run: TextRun = { start: 4, end: 21, key: 'r', z: 0, mode: 'replace', render: ({ text, key }) => <b key={key} data-covers={text}>dogs</b> };
     render(<RouterProvider><div data-testid="lay3"><TextLayer runs={[run]}><BbCode text="see https://x.example/a ok" /></TextLayer></div></RouterProvider>);
     expect(screen.getByTestId('lay3').querySelector('b[data-covers]')).toHaveAttribute('data-covers', 'https://x.example/a'.slice(0, 17));
+  });
+
+  describe('a wrap run\'s trail', () => {
+    const wrapRun = (start: number, end: number, key: string, z = 0, trail?: (k: string) => React.ReactNode): TextRun => ({
+      start, end, key, z, mode: 'wrap', render: ({ text, key: k }) => <i key={k}>{text}</i>, ...(trail ? { trail } : {}),
+    });
+    const trailOf = (name: string) => (k: string) => <span key={k} data-trail={name} />;
+    const draw = (runs: TextRun[], text: string) => {
+      render(<RouterProvider><div data-testid="tr"><TextLayer runs={runs}><BbCode text={text} /></TextLayer></div></RouterProvider>);
+      return screen.getByTestId('tr');
+    };
+    const trailsIn = (el: HTMLElement) => [...el.querySelectorAll('[data-trail]')].map((t) => t.getAttribute('data-trail'));
+
+    test('is drawn once, between the run\'s last word and what follows', () => {
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t'))], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span> today/u);
+    });
+
+    test('sits inside the formatting of the run\'s last piece', () => {
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t'))], 'I love big [b]cats[/b] today');
+      const strong = el.querySelector('strong')!;
+      expect(strong.querySelector('[data-trail="t"]')).not.toBeNull();
+      expect(strong.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span>$/u);
+      expect(trailsIn(el)).toEqual(['t']);
+    });
+
+    test('is not drawn where a higher replace run covers the run\'s end', () => {
+      const cover: TextRun = { start: 11, end: 15, key: 'c', z: 0, mode: 'replace', render: ({ key }) => <b key={key}>X</b> };
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t')), cover], 'I love big cats today');
+      expect(el.querySelector('b')).toHaveTextContent('X');
+      expect(trailsIn(el)).toEqual([]);
+    });
+
+    test('belongs to the run on top where a higher wrap run covers a lower one\'s end, and follows a start that is covered', () => {
+      const el = draw([wrapRun(7, 15, 'low', 0, trailOf('low')), wrapRun(11, 21, 'high', 1, trailOf('high'))], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['high']);
+      cleanup();
+      const el2 = draw([wrapRun(7, 15, 'under', 0, trailOf('under')), wrapRun(2, 9, 'over', 1, trailOf('over'))], 'I love big cats today');
+      expect(trailsIn(el2)).toEqual(['over', 'under']);
+    });
+
+    test('of two touching wrap runs are both drawn, in order', () => {
+      const el = draw([wrapRun(2, 6, 'a', 0, trailOf('a')), wrapRun(6, 10, 'b', 0, trailOf('b'))], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['a', 'b']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toMatch(/<span data-trail="a"><\/span><i>[^<]*<\/i><span data-trail="b">/u);
+    });
+
+    test('is absent from a run that has none: it draws what it always drew', () => {
+      const el = draw([wrapRun(7, 15, 'r')], 'I love big cats today');
+      expect(trailsIn(el)).toEqual([]);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toBe('I love <i>big cats</i> today');
+    });
   });
 
   test('all of them are axe clean', async () => {

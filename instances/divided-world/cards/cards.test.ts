@@ -334,6 +334,50 @@ test('Autocorrect\'s saved state is the author\'s peels by occurrence, and the l
   assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
 });
 
+test('Autocorrect\'s saved state keeps the stretches the author half-peeled, by the strip\'s place (the tape design, section 9)', () => {
+  const check = (state: unknown) => autocorrect.validateState!(state);
+  const refused = (state: unknown, predicate: RegExp) => {
+    const r = check(state);
+    assert.equal(r.ok, false, JSON.stringify(state));
+    assert.match(r.ok ? '' : r.why, predicate, JSON.stringify(state));
+  };
+  assert.deepEqual(check({ peeled: [0], stuck: { '2': [[0.25, 1, 3]] } }), { ok: true, value: { peeled: [0], stuck: { '2': [[0.25, 1, 3]] } } });
+  assert.equal(check({ peeled: [], stuck: { '0': [[0, 0.5, 2], [0.5, 1, 3]] } }).ok, true, 'the strip\'s own ends sit at 0 and 1');
+  assert.equal(check({ peeled: [], stuck: { '1': [[0.1, 0.2, 7]] } }).ok, true, 'a tear to a peel line');
+  refused({ peeled: [], stuck: { '2': [[0.25, 1, 0]] } }, /strip's own end/);
+  refused({ peeled: [], stuck: { '2': [[0.5, 0.5, 4]] } }, /from before to/);
+  refused({ peeled: [], stuck: { '2': [[0.6, 0.5, 4]] } }, /from before to/);
+  refused({ peeled: [], stuck: { '2': [[0.1, 0.5, 4], [0.4, 0.8, 4]] } }, /in order and do not overlap/);
+  refused({ peeled: [], stuck: { '2': [[0.5, 0.8, 4], [0.1, 0.2, 4]] } }, /in order and do not overlap/);
+  refused({ peeled: [], stuck: { '2': [[0.1, 0.5, 3]] } }, /strip's own end/);
+  refused({ peeled: [], stuck: { '2': [[0.1, 0.5, 9]] } }, /edges is a whole number from 0 to 8/);
+  refused({ peeled: [], stuck: { '2': [[0.1, 0.5, 1.5]] } }, /edges is a whole number from 0 to 8/);
+  refused({ peeled: [], stuck: { '2': [[0.1, 1.00001, 4]] } }, /share is from 0 to 1/);
+  refused({ peeled: [], stuck: { '2': [[-0.1, 0.5, 4]] } }, /share is from 0 to 1/);
+  refused({ peeled: [2], stuck: { '2': [[0.1, 0.5, 4]] } }, /in peeled or in stuck, never both/);
+  refused({ peeled: [], stuck: { '2': [] } }, /at least one stretch/);
+  refused({ peeled: [], stuck: { '02': [[0.1, 0.5, 4]] } }, /place/);
+  refused({ peeled: [], stuck: { [String(PEELS.most)]: [[0.1, 0.5, 4]] } }, /place/);
+  refused({ peeled: [], stuck: [[[0.1, 0.5, 4]]] }, /stuck is/);
+  refused({ peeled: [], stuck: { '2': [[0.1, 0.5]] } }, /a stretch is/);
+  const many = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [String(i), [[0.1, 0.5, 4]]]));
+  assert.equal(check({ peeled: [], stuck: many(2000) }).ok, true);
+  refused({ peeled: [], stuck: many(2001) }, /a save holds at most 2000 stretches/);
+  assert.deepEqual(check({ peeled: [], stuck: { '1': [[0.123456, 0.5, 4]] } }), { ok: true, value: { peeled: [], stuck: { '1': [[0.1235, 0.5, 4]] } } });
+  assert.deepEqual(check({ peeled: [0, 1, 3] }), { ok: true, value: { peeled: [0, 1, 3] } }, 'an old state is kept as it was');
+  // The largest save there can be: every place peeled that no stretch sits on, and 2,000 stretches on the others, at their widest.
+  const stuck = Object.fromEntries(Array.from({ length: 2000 }, (_, i) => [String(PEELS.most - 1 - i), [[0.1235, 0.9876, 4]]]));
+  const peeled = Array.from({ length: PEELS.most - 2000 }, (_, i) => i);
+  assert.equal(peeled.length, PEELS.most - 2000);
+  const mostSaved = check({ peeled, clean: false, stuck });
+  assert.equal(mostSaved.ok, true);
+  const asPostgres = JSON.stringify(mostSaved.ok && mostSaved.value).replace(/([,:])/g, '$1 ');
+  assert.ok(Buffer.byteLength(asPostgres) <= 262_144, `${Buffer.byteLength(asPostgres)} bytes`);
+  // Places are bounded by PEELS.most for both lists, so the other extreme is every place peeled.
+  const wide = check({ peeled: Array.from({ length: PEELS.most }, (_, i) => i), clean: false, stuck: {} });
+  assert.deepEqual(wide, { ok: true, value: { peeled: Array.from({ length: PEELS.most }, (_, i) => i), clean: false } }, 'an empty stuck is dropped');
+});
+
 test('Autocorrect: a landing refusal is said before a configuration\'s, the face shows the most a play adds, and a phrase is priced in characters', () => {
   const stacked = [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` }));
   assert.match((decidePlay(autocorrect as CardRules, settings, on('cats'), stacked, { phrase: 'x', replacement: '' }, '') as { why: string }).why, /already carries 3/);

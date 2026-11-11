@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>You Were Saying? looks</title>
+<style>
+:root{--bg:#fff;--ink:#000;--line:#000;--muted:#555}
+body{margin:0;background:#e9e9e9;color:var(--ink);font:12px Verdana,Geneva,sans-serif;padding:16px}
+h1{font-size:14px;margin:0 0 4px}
+p.note{margin:0 0 16px;color:#333;max-width:720px}
+.v{max-width:720px;margin:0 0 22px}
+.v h2{font-size:12px;margin:0 0 4px}
+.v .why{margin:0 0 6px;color:#333}
+table.post{width:100%;border:1px solid var(--line);border-collapse:collapse;background:var(--bg)}
+td.bit{width:120px;border-right:1px solid var(--line);vertical-align:top;padding:6px;font-weight:bold}
+td.bit small{display:block;font-weight:normal;color:var(--muted)}
+td.body{padding:6px;vertical-align:top;line-height:1.45}
+.tail{position:relative;display:inline}
+.cursor{display:inline-block;width:7px;height:12px;background:currentColor;vertical-align:-1px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.status{display:block;font:10px "Courier New",monospace;color:#888;margin-top:4px;letter-spacing:.05em}
+/* A: ghost signal */
+.a .tail{color:#2a2a2a;text-shadow:-1px 0 rgba(255,0,60,.45),1px 0 rgba(0,200,255,.45)}
+/* B: terminal bleed */
+.b .tail{font-family:"Courier New",monospace;color:#0a6b2a;background:rgba(0,120,40,.06)}
+/* C: seamless */
+.c .tail{color:inherit}
+.tear{animation:tear .14s steps(2) 1}
+@keyframes tear{0%{clip-path:inset(0 0 0 0);transform:translateX(0)}50%{transform:translateX(6px);text-shadow:-2px 0 rgba(255,0,60,.7),2px 0 rgba(0,200,255,.7);filter:contrast(1.4)}100%{transform:translateX(-3px)}}
+button{font:11px Verdana;margin-bottom:12px}
+@media (prefers-reduced-motion: reduce){.cursor{animation:none}.tear{animation:none}}
+</style></head><body>
+<h1>You Were Saying? — three looks for the tail</h1>
+<p class="note">Each post types its tail in when it scrolls into view (as Glitter Bomb sparkles), then tears like a vsync slip every couple of seconds. The author's words are the same in all three. <button id="replay">Replay typing</button></p>
+
+<div class="v a"><h2>A. Ghost signal (recommended)</h2><p class="why">Same Verdana, a hair lighter, with a faint red and cyan split. You can spot the seam if you look, and the tear makes it obvious.</p>
+<table class="post"><tr><td class="bit">Pipewrench<small>Posts: 412</small></td><td class="body">honestly the new level pack is fine but the second castle drags on way too long and i think <span class="tail" data-t="the reason is that the developers are not aware of how the castle works. We have been working on it for about six months now and I am happy to say we are now at a point where"></span></td></tr></table></div>
+
+<div class="v b"><h2>B. Terminal bleed</h2><p class="why">The tail switches to Courier with a green tint. Unmistakable from the first glance, and the bluff is gone.</p>
+<table class="post"><tr><td class="bit">Pipewrench<small>Posts: 412</small></td><td class="body">honestly the new level pack is fine but the second castle drags on way too long and i think <span class="tail" data-t="the reason is that the developers are not aware of how the castle works. We have been working on it for about six months now and I am happy to say we are now at a point where"></span></td></tr></table></div>
+
+<div class="v c"><h2>C. Seamless until it slips</h2><p class="why">Identical to the author's text. Only the typing replay and the periodic tear give it away, and only during the tear.</p>
+<table class="post"><tr><td class="bit">Pipewrench<small>Posts: 412</small></td><td class="body">honestly the new level pack is fine but the second castle drags on way too long and i think <span class="tail" data-t="the reason is that the developers are not aware of how the castle works. We have been working on it for about six months now and I am happy to say we are now at a point where"></span></td></tr></table></div>
+
+<script>
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function type(el){
+  const t = el.dataset.t; el.textContent=''; let i=0;
+  const cur = document.createElement('span'); cur.className='cursor';
+  const out = document.createElement('span'); el.append(out,cur);
+  if(reduce){out.textContent=t;cur.remove();return}
+  const step=()=>{ if(i<t.length){ out.textContent=t.slice(0,++i); setTimeout(step, 18+Math.random()*40);} else setTimeout(()=>cur.remove(),1600)};
+  setTimeout(step, 700);
+}
+const tails=[...document.querySelectorAll('.tail')];
+function all(){tails.forEach(type)}
+all(); document.getElementById('replay').onclick=all;
+if(!reduce) setInterval(()=>{tails.forEach(el=>{el.classList.remove('tear');void el.offsetWidth;el.classList.add('tear')})},2200+Math.random()*600);
+</script>
+</body></html>
