@@ -18,7 +18,8 @@ import { cardCollector } from '../card-collector.ts';
 import { ConfigForm } from './ConfigForm.tsx';
 
 const POST = { id: 'p' } as Act;
-const castable = cards.filter(castOnPost).map((r) => faceOf(r, cardsUi.find((u) => u.key === r.key), instance.settings, { cast: 'Move', set: 'Gimmick', use: 'Ward' }));
+/* The cards it may wait for: cast on a post, and no rarer than Card Collector itself (uncommon). */
+const castable = cards.filter((c) => castOnPost(c) && (c.rarity === 'common' || c.rarity === 'uncommon')).map((r) => faceOf(r, cardsUi.find((u) => u.key === r.key), instance.settings, { cast: 'Move', set: 'Gimmick', use: 'Ward' }));
 
 /** Held in state as the play form holds it, so a choice shows. */
 function Held({ onChange, faces = castable }: { readonly onChange: (c: Record<string, unknown>) => void; readonly faces?: typeof castable }) {
@@ -36,9 +37,9 @@ describe('the card it waits for', () => {
     expect(screen.getByRole('radio', { name: 'Whoops! Move Common' })).toBeInTheDocument();
     const names = castable.map((f) => f.name);
     expect(radios.map((r, i) => r.closest('label')!.textContent)).toEqual(castable.map((f) => expect.stringContaining(f.name)));
-    expect(names).toEqual(cards.filter(castOnPost).map((c) => c.name));
+    expect(names).toEqual(cards.filter((c) => castOnPost(c) && (c.rarity === 'common' || c.rarity === 'uncommon')).map((c) => c.name));
     expect(names).toEqual(expect.arrayContaining(['Whoops!', 'Stick Around', 'Autocorrect', "Feelin' Fab"]));
-    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event']) expect(names).not.toContain(not);
+    for (const not of ['Force Field', 'Card Collector', 'Hall Pass', 'Publicity Tour', 'Glitter Bomb', 'Main Event', 'Graffiti']) expect(names).not.toContain(not);
   });
 
   test('leaves out a card rarer than Card Collector itself, read from its rules', () => {

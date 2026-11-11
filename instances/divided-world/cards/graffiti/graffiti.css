@@ -1,0 +1,85 @@
+/*
+ * Graffiti's wall on a post (Effect.tsx; design section 8): the frame the words sit in, the ink and suds canvases over them, and the Draw tile.
+ * The post stays the board's 2003 post: this sheet sets no size, margin or transform on its words. The ink is fitted to the post body's box,
+ * which the effect measures. The spray's colors are the card's art, written by the painter (spray.ts), not here.
+ */
+.kb-graffiti {
+  position: relative;
+}
+
+/* A vertical drag still scrolls the page; a sideways one scrubs (the effect keeps the same on the post body it takes touches on). */
+.kb-graffiti-frame {
+  position: relative;
+  overflow: hidden;
+  touch-action: pan-y pinch-zoom;
+}
+
+/*
+ * The canvases are placed and sized by the effect to the body's box, and mark themselves `data-kb-effect-ink`: the thread's sheet
+ * (thread/thread.css) puts them above the words and below what the engine lifts (`data-kb-over-ink`), so the reactions row and the Draw tile
+ * stay in front and usable.
+ */
+.kb-graffiti-ink,
+.kb-graffiti-suds {
+  position: absolute;
+  pointer-events: none;
+}
+
+/*
+ * The Draw tile: glass at the body's top right (the effect gives its left and top, the body's right edge and top, in px), a drawn can in the
+ * color the reader picked last and the word Draw. A tile of the kit's size and focus.
+ */
+.kb-graffiti-draw {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  min-height: 44px;
+  margin: 8px;
+  padding: 0.2rem 0.9rem;
+  transform: translateX(-100%) skewX(var(--kb-glass-skew));
+  border: 2px solid color-mix(in srgb, var(--kb-glass-text) 45%, transparent);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-2);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.kb-graffiti-draw > * {
+  transform: skewX(calc(var(--kb-glass-skew) * -1));
+}
+
+.kb-graffiti-draw:hover {
+  border-color: var(--kb-glass-text);
+  color: var(--kb-glass-text);
+}
+
+.kb-graffiti-draw:focus-visible {
+  outline: 2px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+.kb-graffiti-can {
+  width: 18px;
+  height: 25px;
+  flex: none;
+}
+
+@media (forced-colors: active) {
+  .kb-graffiti-draw {
+    forced-color-adjust: none;
+    border-color: ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+
+  .kb-graffiti-draw:focus-visible {
+    outline-color: Highlight;
+  }
+}

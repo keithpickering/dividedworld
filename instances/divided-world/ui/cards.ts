@@ -42,6 +42,9 @@ import hallPassArt from './cards/hall-pass/art.json';
 import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
 import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
 import belowTheFoldArt from './cards/below-the-fold/art.json';
+import graffitiCanvas from './cards/graffiti/art.webp?url';
+import graffitiMark from './cards/graffiti/mark.svg?url';
+import graffitiArt from './cards/graffiti/art.json';
 import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
@@ -53,6 +56,7 @@ import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { belowTheFold } from '../cards/below-the-fold.ts';
+import { graffiti } from '../cards/graffiti.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
 import { cardCollector } from '../cards/card-collector.ts';
 import { publicityTour } from '../cards/publicity-tour.ts';
@@ -166,6 +170,7 @@ const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m
 const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const JimmyWailsEffect = lazy(() => import('../cards/jimmy-wails/Effect.tsx').then((m) => ({ default: m.JimmyWailsEffect })));
+const GraffitiEffect = lazy(() => import('../cards/graffiti/Effect.tsx').then((m) => ({ default: m.Effect })));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
 /** A list in words: "0.10, 0.25, 0.50 and 1.00". */
@@ -446,6 +451,21 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Pepperoni card, ${toll.rarity}, used on one of your own posts. For ${spanWords(toll.lasts!)}, each vote on a Move another player casts on that post pays you ${tollShare()}, on top of everything its caster earns: the caster loses nothing. A Move cast by one of your own characters pays you nothing. It costs nothing more to use.`,
     logPlay: () => `Until it ends, each vote on a Move another player casts on that post pays you ${tollShare()}.`,
+  },
+  /*
+   * Graffiti (docs/plans/2026-11-11-graffiti-design.md): Pepperoni's color. A wall on a post, drawn under every splat (`beneath`). Its effect draws
+   * the spray, a reader's scrub and the author's wash (graffiti/Effect.tsx); draw mode, the toolbar and the final words are Task 10's.
+   */
+  {
+    key: 'graffiti',
+    Effect: GraffitiEffect,
+    beneath: true,
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: graffitiCanvas, mark: graffitiMark, credit: graffitiArt.credit, tagline: 'Turn a post into a wall.' },
+    summary: 'Turn a post into a wall anyone can tag. The author can wash it off; anyone can tag it again.',
+    status: 'A wall anyone can tag',
+    hint: 'Press Draw to tag this wall. Scrub it away on your screen any time.',
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${graffiti.rarity}. It turns a post into a wall. Any character can tag it with spray cans, and the wall holds up to ${settings.cardSettings['graffiti.limit'] ?? 40}% of the post. A reader can scrub the paint off on their own screen, which lasts until they leave the page. The post's author can wash it off for everyone, and anyone can tag it again. A Whoops! splat on the same post always covers the wall. It costs nothing more to play.`,
   },
   {
     key: '4d-chess',

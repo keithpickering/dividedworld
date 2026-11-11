@@ -1,0 +1,348 @@
+/**
+ * Graffiti's wall on a post (plan Task 9; design sections 4, 5, 7 and 8), as a reader and the post's author meet it. jsdom has no layout and
+ * no canvas, so the body's box is stubbed (the cell's client size; rects sit at 0, 0), `paintWall` is watched where it is called (the painter's
+ * own pixels are spray.test.tsx's), and what the component keeps (how many strokes this screen has scrubbed, whether draw mode is open) is read
+ * from the attributes it publishes. The hit test is the real one.
+ */
+import { act, fireEvent, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { createClaims } from '../../../../engine/ui/cards/claims.ts';
+import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import type { Act, SurfaceAct } from '../../../../engine/ui/data/api.ts';
+import { LOST_ANSWER } from '../../../../engine/ui/data/api.ts';
+import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
+import { Effect as WhoopsEffect } from '../whoops/Effect.tsx';
+import { LayerInk } from '../whoops/scrub.ts';
+import { DESIGN, makeSplat } from '../whoops/splat.ts';
+import { Effect, MAX_SAVE_RETRIES, RETRY_AFTER_MS, WASH_AFTER_MS } from './Effect.tsx';
+import * as spray from './spray.ts';
+
+vi.mock('../whoops/suds.ts', () => ({ register: vi.fn(), unregister: vi.fn(), wash: vi.fn(), puff: vi.fn() }));
+vi.mock('../whoops/cursor.ts', () => ({ cursor: { over: vi.fn(), press: vi.fn(), leave: vi.fn() } }));
+vi.mock('./spray.ts', async (importOriginal) => ({ ...(await importOriginal<typeof import('./spray.ts')>()), paintWall: vi.fn() }));
+
+/** The player the effect reads (the engine's own provider is real; only who is signed in is fixed here). */
+const player = vi.hoisted(() => ({ value: null as unknown }));
+vi.mock('../../../../engine/ui/player.tsx', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../../../engine/ui/player.tsx')>()), usePlayer: () => player.value }));
+const signedIn = () => { player.value = { session: { signedIn: true, account: 'acct-1' }, hudCharacter: { id: 'c1' }, actingCharacters: [{ id: 'c1' }] }; };
+
+const BOX = { w: 600, h: 400 };
+const POST = { id: 'post-1', character: 'someone', kind: 'post', thread: 't', payload: {}, currentPayload: {}, targetActId: null, seq: 41, createdAt: '2026-10-29T21:14:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
+const PLAY: CardPlay = { id: 'play-g', card: 'graffiti', layer: 1, caster: 'caster-1', message: '', config: {}, playedAt: '2026-10-29T21:05:00.000Z', post: POST.id };
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  signedIn();
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-act-main') ? BOX.w : 0; } });
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get(this: HTMLElement) { return this.classList?.contains('kb-act-main') ? BOX.h : 0; } });
+  Range.prototype.getClientRects = function (this: Range) {
+    const top = Math.floor(this.startOffset / 24) * 22.5;
+    return [{ top, bottom: top + 22.5, left: 0, right: 1, width: 1, height: 22.5, x: 0, y: top }] as unknown as DOMRectList;
+  };
+  HTMLCanvasElement.prototype.getContext = (() => ({})) as unknown as HTMLCanvasElement['getContext'];
+  try { localStorage.clear(); } catch { /* none here */ }
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth;
+  delete (HTMLElement.prototype as { clientHeight?: unknown }).clientHeight;
+  delete (Range.prototype as { getClientRects?: unknown }).getClientRects;
+});
+
+const draw = (id: string, ...rows: number[]): SurfaceAct => ({
+  id, kind: 'draw', character: 'drawer', createdAt: '2026-10-29T21:06:00.000Z',
+  payload: { strokes: rows.map((y) => ({ can: 'red', cap: 'fat', aspect: BOX.w / BOX.h, points: [[0.02, y], [0.98, y]] })) },
+} as unknown as SurfaceAct);
+/** A wall with one broad stripe across the middle of the body. */
+const MIDDLE = [draw('a1', 0.5)];
+
+const answered = (id = 'w1') => async () => ({ ok: true as const, value: { id, kind: 'wash' } as unknown as SurfaceAct });
+
+function surfaceOf(acts: readonly SurfaceAct[] | null, over: Partial<NonNullable<EffectProps['surface']>> = {}): NonNullable<EffectProps['surface']> {
+  return { covered: 3100, most: 4000, acts, near: vi.fn(), draw: vi.fn(answered('d')), wash: vi.fn(answered()), ...over } as NonNullable<EffectProps['surface']>;
+}
+
+function propsOf(o: { readonly surface?: EffectProps['surface']; readonly author?: boolean; readonly ink?: EffectProps['ink']; readonly children?: ReactNode } = {}): EffectProps {
+  return {
+    post: POST, plays: [PLAY], states: {}, released: new Set(), written: new Map(), reader: { author: o.author ?? false, caster: false }, place: 'thread', reach: 'post', still: false,
+    save: async () => ({ ok: false, error: 'no' }), release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show: () => {}, met: () => {}, holdScreen: () => {}, marks: null,
+    nameOf: () => 'A character', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
+    ink: o.ink ?? createClaims().at('post:graffiti', 0), ...(o.surface ? { surface: o.surface } : {}),
+    children: o.children ?? <p>The post&apos;s words.</p>,
+  };
+}
+
+function mount(o: { readonly acts?: readonly SurfaceAct[] | null; readonly author?: boolean; readonly surface?: NonNullable<EffectProps['surface']> } = {}) {
+  const surface = o.surface ?? surfaceOf(o.acts === undefined ? MIDDLE : o.acts);
+  const shown: CardView[] = [];
+  const props = { ...propsOf({ surface, author: o.author ?? false }), show: (v: CardView | null) => { if (v) shown.push(v); } };
+  const world = renderInWorld(<div className="kb-act-main"><Effect {...props} /></div>);
+  const root = world.container.querySelector('.kb-graffiti') as HTMLElement;
+  return { ...world, surface, shown, root, frame: world.container.querySelector('.kb-graffiti-frame') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
+}
+
+const px = (x: number, y: number): [number, number] => [x * BOX.w, y * BOX.h];
+const scrubbed = (root: HTMLElement) => Number(root.dataset.kbScrubbed);
+
+function drag(el: HTMLElement, points: readonly (readonly [number, number])[]) {
+  const [first, ...rest] = points.map(([x, y]) => px(x, y));
+  act(() => { fireEvent.pointerDown(el, { clientX: first![0], clientY: first![1], pointerId: 1, button: 0, pointerType: 'mouse' }); });
+  for (const [x, y] of rest) act(() => { fireEvent.pointerMove(el, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse' }); });
+  const [lx, ly] = rest[rest.length - 1] ?? first!;
+  act(() => { fireEvent.pointerUp(el, { clientX: lx, clientY: ly, pointerId: 1, pointerType: 'mouse' }); });
+}
+
+const watchers: ((entries: { isIntersecting: boolean }[]) => void)[] = [];
+function stubViewport() {
+  watchers.length = 0;
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(watch: (entries: { isIntersecting: boolean }[]) => void) { watchers.push(watch); }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
+  return (isIntersecting: boolean) => act(() => { watchers.forEach((w) => w([{ isIntersecting }])); });
+}
+
+describe('the ink layer', () => {
+  test('the canvas is drawn only while the post is near the viewport, and asks for the wall\'s strokes then', () => {
+    const see = stubViewport();
+    const { root, surface } = mount();
+    expect(root.querySelector('canvas[data-kb-effect-ink]')).toBeNull();
+    expect(spray.paintWall).not.toHaveBeenCalled();
+    expect(surface.near).not.toHaveBeenCalled();
+    see(true);
+    const canvas = root.querySelector('canvas[data-kb-effect-ink]') as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    expect([canvas.width, canvas.height]).toEqual([BOX.w, BOX.h]);
+    expect(surface.near).toHaveBeenCalled();
+    expect(spray.paintWall).toHaveBeenCalled();
+    expect(vi.mocked(spray.paintWall).mock.calls.at(-1)![3]).toEqual(MIDDLE);
+    see(false);
+    expect(root.querySelector('canvas[data-kb-effect-ink]')).toBeNull();
+  });
+
+  test('the post\'s words stay drawn, and a wall not yet read draws no strokes', () => {
+    const { root } = mount({ acts: null });
+    expect(root).toHaveTextContent('The post\'s words.');
+    expect(vi.mocked(spray.paintWall).mock.calls.every((c) => c[3].length === 0)).toBe(true);
+  });
+});
+
+describe('a reader\'s scrub', () => {
+  test('scrubs on their own screen and sends nothing, however long they wait', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, root, surface } = mount();
+    drag(frame, [[0.3, 0.5], [0.4, 0.5], [0.5, 0.5]]);
+    expect(scrubbed(root)).toBe(1);
+    act(() => { vi.advanceTimersByTime(60_000); });
+    expect(surface.wash).not.toHaveBeenCalled();
+    await act(async () => { await new Promise((done) => requestAnimationFrame(() => done(null))); });
+    /* The scrub is a wash over the wall's own, drawn on this screen. */
+    const last = vi.mocked(spray.paintWall).mock.calls.at(-1)![3];
+    expect(last).toHaveLength(MIDDLE.length + 1);
+    expect(last.at(-1)!.kind).toBe('wash');
+  });
+
+  test('a press where there is no ink is left to the page: it is not caught and scrubs nothing', () => {
+    const { frame, root } = mount();
+    const prevented = vi.fn();
+    const watch = (e: Event) => { if (e.defaultPrevented) prevented(); };
+    document.addEventListener('pointerdown', watch);
+    drag(frame, [[0.3, 0.1], [0.4, 0.1]]);
+    document.removeEventListener('pointerdown', watch);
+    expect(scrubbed(root)).toBe(0);
+    expect(prevented).not.toHaveBeenCalled();
+  });
+
+  test('is gone with the page: a new visit draws the wall as it is', () => {
+    const first = mount();
+    drag(first.frame, [[0.3, 0.5], [0.5, 0.5]]);
+    expect(scrubbed(first.root)).toBe(1);
+    first.unmount();
+    expect(scrubbed(mount().root)).toBe(0);
+  });
+});
+
+describe('the author\'s wash', () => {
+  test('is sent once, as one wash, after 1.5 seconds without a stroke', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, surface } = mount({ author: true });
+    drag(frame, [[0.3, 0.5], [0.4, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS - 200); });
+    drag(frame, [[0.7, 0.5], [0.8, 0.5], [0.9, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS - 1); });
+    expect(surface.wash).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(surface.wash).toHaveBeenCalledTimes(1);
+    const [play, input] = vi.mocked(surface.wash).mock.calls[0]!;
+    expect(play).toBe(PLAY.id);
+    const strokes = (input as { strokes: { aspect: number; points: [number, number][] }[] }).strokes;
+    expect(strokes).toHaveLength(2);
+    expect(strokes[0]!.aspect).toBeCloseTo(1.5);
+    expect(Object.keys(strokes[0]!).sort()).toEqual(['aspect', 'points']);
+    expect(strokes[0]!.points.length).toBeGreaterThanOrEqual(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(surface.wash).toHaveBeenCalledTimes(1);
+  });
+
+  test('is sent as the post is left, without waiting out the pause', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { frame, surface, unmount } = mount({ author: true });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    expect(surface.wash).not.toHaveBeenCalled();
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(surface.wash).toHaveBeenCalledTimes(1);
+  });
+
+  test('a refusal is shown in the view and not sent again', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wash = vi.fn(async () => ({ ok: false as const, error: 'This post is not yours to wash.' }));
+    const { frame, shown } = mount({ author: true, surface: surfaceOf(MIDDLE, { wash }) });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS + 100); });
+    expect(shown.at(-1)?.report).toBe('This post is not yours to wash.');
+    await act(async () => { await vi.advanceTimersByTimeAsync(RETRY_AFTER_MS * 2 ** MAX_SAVE_RETRIES); });
+    expect(wash).toHaveBeenCalledTimes(1);
+  });
+
+  test('an answer that never came is sent again, a little later each time, and given up on after a few', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const wash = vi.fn(async () => ({ ok: false as const, error: LOST_ANSWER, uncertain: true as const }));
+    const { frame } = mount({ author: true, surface: surfaceOf(MIDDLE, { wash }) });
+    drag(frame, [[0.3, 0.5], [0.5, 0.5]]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(WASH_AFTER_MS); });
+    expect(wash).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(RETRY_AFTER_MS - 1); });
+    expect(wash).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(wash).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(RETRY_AFTER_MS * 2 ** (MAX_SAVE_RETRIES + 2)); });
+    expect(wash).toHaveBeenCalledTimes(1 + MAX_SAVE_RETRIES);
+  });
+
+  test('a reader\'s Lens has Hold to scrub alone, and the author\'s also has Wash', () => {
+    const reader = mount();
+    expect(reader.shown.at(-1)?.controls.map((c) => c.label)).toEqual(['Hold to scrub']);
+    reader.unmount();
+    const author = mount({ author: true });
+    expect(author.shown.at(-1)?.controls.map((c) => c.label)).toEqual(['Hold to scrub', 'Wash']);
+  });
+});
+
+describe('the view', () => {
+  test('says how much of the wall is covered, and how it ends', () => {
+    const { shown } = mount();
+    const view = shown.at(-1)!;
+    expect(view.state).toBe('31% of the wall');
+    expect(view.ends).toBe('Ends on your screen when you scrub it off. The author can wash it off for everyone, and anyone can tag it again.');
+  });
+});
+
+describe('a wall under a splat', () => {
+  const SEED = 21;
+  const splatInk = () => new LayerInk(makeSplat(SEED), [], BOX);
+  function both() {
+    const claims = createClaims();
+    const wall = surfaceOf([draw('a1', 0.5, 0.97)]);
+    const whoopsPlay: CardPlay = { id: 'play-w', card: 'whoops', layer: 1, caster: 'c', message: '', config: { color: '#ff2bd6', seed: SEED }, playedAt: '2026-10-29T21:07:00.000Z', post: POST.id };
+    const base = propsOf({ surface: wall, ink: claims.at('post:graffiti', 0) });
+    const outer = { ...base, plays: [whoopsPlay], ink: claims.at('post:whoops', 1), surface: undefined, save: async () => ({ ok: true as const, value: { play: 'play-w', savedAt: '' } }) };
+    const world = renderInWorld(
+      <div className="kb-act-main"><WhoopsEffect {...outer}><Effect {...base} /></WhoopsEffect></div>,
+    );
+    return { ...world, wall, whoops: world.container.querySelector('[data-kb-whoops]') as HTMLElement, root: world.container.querySelector('.kb-graffiti') as HTMLElement, cell: world.container.querySelector('.kb-act-main') as HTMLElement };
+  }
+  const spot = (): [number, number] => {
+    const ink = splatInk();
+    const { cx, cy } = ink.splat.placement;
+    const x = cx / DESIGN.w;
+    return ink.has(x, cy) ? [x, cy] : [x, cy + 0.05];
+  };
+
+  test('a press on the splat\'s ink over the wall scrubs the splat and not the wall', () => {
+    const { cell, root, whoops } = both();
+    const [x, y] = spot();
+    /* The wall has a stripe where the splat is: put one through the spot's row too. */
+    expect(spray.hitAt([draw('t', y)], BOX, x * BOX.w, y * BOX.h)).toBe(true);
+    drag(cell, [[x, y], [x + 0.05, y], [x + 0.1, y]]);
+    expect(Number(whoops.dataset.kbWashed!.split(' ')[0])).toBeGreaterThan(0);
+    expect(scrubbed(root)).toBe(0);
+  });
+
+  test('a press beside the splat\'s ink, on the wall, scrubs the wall', () => {
+    const { cell, root, whoops } = both();
+    const ink = splatInk();
+    expect(ink.has(0.3, 0.97)).toBe(false);
+    drag(cell, [[0.3, 0.97], [0.4, 0.97], [0.5, 0.97]]);
+    expect(scrubbed(root)).toBe(1);
+    expect(Number(whoops.dataset.kbWashed!.split(' ')[0])).toBe(0);
+  });
+});
+
+describe('the Draw tile', () => {
+  test('opens draw mode, as an addition to the wall', () => {
+    const { root } = mount();
+    expect(root.dataset.kbDrawing).toBeUndefined();
+    const tile = screen.getByRole('button', { name: 'Draw' });
+    expect(tile.closest('[data-kb-over-ink]')).not.toBeNull();
+    act(() => { fireEvent.click(tile); });
+    expect(root.dataset.kbDrawing).toBe('true');
+  });
+
+  test('is drawn in the can the reader picked last, kept for their account', () => {
+    try { localStorage.setItem('kb-graffiti-can:acct-1', 'teal'); } catch { /* storage is off here: the default can is drawn */ }
+    const { root } = mount();
+    const tile = root.querySelector('[data-kb-can]') as HTMLElement;
+    expect(['teal', 'cyan']).toContain(tile.dataset.kbCan);
+  });
+
+  test('a signed-out reader, or one with no character, sees no tile', () => {
+    player.value = { session: { signedIn: false, account: null }, hudCharacter: null, actingCharacters: [] };
+    expect(mount().root.querySelector('[data-kb-over-ink]')).toBeNull();
+    player.value = { session: { signedIn: true, account: 'acct-1' }, hudCharacter: null, actingCharacters: [] };
+    expect(mount().root.querySelector('[data-kb-over-ink]')).toBeNull();
+  });
+
+  test('a press on the tile starts no stroke', () => {
+    const { root } = mount();
+    const tile = screen.getByRole('button', { name: 'Draw' });
+    act(() => { fireEvent.pointerDown(tile, { clientX: 300, clientY: 200, pointerId: 1, button: 0, pointerType: 'mouse' }); });
+    expect(scrubbed(root)).toBe(0);
+  });
+});
+
+describe('a finger', () => {
+  interface Finger { readonly id: number; readonly at: readonly [number, number] }
+  function touch(target: HTMLElement, type: 'touchstart' | 'touchmove' | 'touchend', down: readonly Finger[], changed: readonly Finger[]): boolean {
+    const list = (fingers: readonly Finger[]) => fingers.map((f) => ({ identifier: f.id, clientX: f.at[0], clientY: f.at[1], target }));
+    const event = new TouchEvent(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, { touches: { value: list(down) }, targetTouches: { value: list(down) }, changedTouches: { value: list(changed) } });
+    act(() => { target.dispatchEvent(event); });
+    return event.defaultPrevented;
+  }
+
+  test('a quick vertical swipe scrolls the page and draws nothing', () => {
+    const { cell, root } = mount();
+    const [x, y] = px(0.5, 0.5);
+    touch(cell, 'touchstart', [{ id: 1, at: [x, y] }], [{ id: 1, at: [x, y] }]);
+    const prevented = touch(cell, 'touchmove', [{ id: 1, at: [x, y + 30] }], [{ id: 1, at: [x, y + 30] }]);
+    touch(cell, 'touchend', [], [{ id: 1, at: [x, y + 30] }]);
+    expect(prevented).toBe(false);
+    expect(scrubbed(root)).toBe(0);
+  });
+
+  test('a sideways swipe wipes, and the page\'s scroll is refused for it', () => {
+    const { cell, root } = mount();
+    const [x, y] = px(0.3, 0.5);
+    touch(cell, 'touchstart', [{ id: 1, at: [x, y] }], [{ id: 1, at: [x, y] }]);
+    const prevented = touch(cell, 'touchmove', [{ id: 1, at: [x + 30, y] }], [{ id: 1, at: [x + 30, y] }]);
+    touch(cell, 'touchend', [], [{ id: 1, at: [x + 30, y] }]);
+    expect(prevented).toBe(true);
+    expect(scrubbed(root)).toBe(1);
+  });
+});
