@@ -395,7 +395,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
 
       <Layers>
       {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" character={target} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" kicker="My characters › Reveal" character={target} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       </Layers>
