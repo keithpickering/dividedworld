@@ -38,6 +38,7 @@ import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Piece } from '../../../engine/rules/cosmetics.ts';
+import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
@@ -1962,7 +1963,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* An outcome or rarity the client does not know, or an item that is not text, is no event it can show: a bad answer, never an event made up from it. */
       const outcome = e['outcome'];
       const rarity = str(e['rarity']);
-      if ((outcome !== 'line' && outcome !== 'gear' && outcome !== 'card') || (rarity !== null && !['common', 'uncommon', 'rare', 'legendary'].includes(rarity)) || (e['item'] != null && typeof e['item'] !== 'string')) return refusal(NOT_READ);
+      if ((outcome !== 'line' && outcome !== 'gear' && outcome !== 'card') || (rarity !== null && !(RARITIES as readonly string[]).includes(rarity)) || (e['item'] != null && typeof e['item'] !== 'string')) return refusal(NOT_READ);
       const lineKey = str(e['lineKey']);
       return { ok: true, value: { event: e['event'], outcome, item: str(e['item']), rarity: rarity as RandomEvent['rarity'], line: str(e['line']), ...(lineKey !== null ? { lineKey } : {}), character: e['character'] } };
     },
