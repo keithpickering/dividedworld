@@ -1,0 +1,36 @@
+# The System rehearsal on a pull request once it is ready, and by hand: the tests that need Postgres and libfaketime
+# (tools/rehearse/database/), then a two-day stub run of one scenario, whose directory (report.html, log.json) is uploaded.
+# Outside the build, which has neither (tools/build.mjs); not called by the release. Same trigger shape as sql.yml.
+# The Postgres here is the runner's own binaries (under /usr/lib/postgresql/*), started by the rehearsal on a fake clock,
+# not the service sql.yml uses.
+name: Rehearsal
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ['docs/**']
+  workflow_dispatch:
+concurrency:
+  group: rehearsal-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  rehearsal:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      # Installed only when missing, so the day a runner image stops shipping them fails loudly here.
+      - run: ls -d /usr/lib/postgresql/*/bin >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql)
+      - run: ls /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 >/dev/null 2>&1 || (sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends faketime)
+      - run: ls -d /usr/lib/postgresql/*/bin
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:rehearse
+      - run: npm run rehearse -- small-circle-reign --stub --days 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-small-circle-reign
+          path: rehearsals/small-circle-reign
+          if-no-files-found: warn

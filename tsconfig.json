@@ -17,7 +17,8 @@
     "engine/**/*.ts",
     "instances/**/*.ts",
     "supabase/functions/**/*.ts",
-    "supabase/tests/**/*.ts"
+    "supabase/tests/**/*.ts",
+    "tools/rehearse/**/*.ts"
   ],
   "exclude": ["engine/ui/**", "instances/*/ui/**", "instances/*/cards/**/paint.ts", "instances/*/cards/**/lines.ts", "instances/*/cards/**/fall.ts", "instances/*/cards/**/suds.ts", "instances/*/cards/**/suds.test.ts", "instances/*/cards/**/cursor.ts"]
 }

@@ -26,6 +26,27 @@ The engine's core loop is built (`docs/plans/2026-10-28-core-loop-engine-plan.md
 - `tools/export-instance.mjs` and `tools/import-instance.mjs`: an instance's every table, private ones included, out to
   a directory and back into a fresh instance.
 
+## Rehearsing The System
+
+A rehearsal runs the real schema and the real scheduled jobs on a Postgres of its own, on a fake clock, through a
+scenario's days, with filler players acting as people would (`docs/plans/2026-11-11-system-rehearsal-design.md`). It
+needs Linux, the Postgres binaries under `/usr/lib/postgresql/*` and libfaketime (`apt-get install -y postgresql
+faketime`). It touches no deployed database.
+
+    npm run rehearse -- small-circle-reign --stub --days 2
+
+- `--stub` makes no model call and costs nothing; the build and CI use it. Without a mode flag the run is `record`: it
+  replays any answer already in the cassette (`rehearsals/<scenario>/cassette`) and makes live, paid calls for the
+  rest. `--offline` replays only; `--fresh` ignores the cassette.
+- The cap (`--cap DOLLARS`, default the scenario's `costCapDollars`) counts live calls only, never a replayed one, and
+  a run passes it by at most one job.
+- Other flags: `--days N`, `--seed N`, `--profile playtest`, `--keep` (leave the cluster running, with the commands to
+  reach it), and any scenario field as `--players 6` or, for a range, `--postsPerDay 1-3`.
+- The report (`report.html`, with `log.json`) is written under `rehearsals/`, which git ignores; the command prints its
+  path. `npm run test:rehearse` runs the tests that need Postgres and libfaketime.
+- A live run needs the Anthropic key stored on the environment as a credential, added through the secure form, never
+  pasted into a chat, a command line or a file.
+
 ## Deploying Divided World
 
 This is the first deploy of dw.gripe, from nothing: a Supabase project for the database, Auth, Storage, Realtime, the
