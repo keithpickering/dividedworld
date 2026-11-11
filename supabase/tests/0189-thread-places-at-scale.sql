@@ -98,7 +98,8 @@ declare
   t0 timestamptz;
   took interval;
   calls bigint;
-  bound constant interval := interval '3 seconds';
+  -- Generous for a cold CI runner (a fresh database ran it in 4.4 s, a warm one in 0.5 s); the per-thread path took 16.9 s here. The call count below is the exact guard.
+  bound constant interval := interval '10 seconds';
   mv uuid;
 begin
   perform set_config('track_functions', 'all', true);
