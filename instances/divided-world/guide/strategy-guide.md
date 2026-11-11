@@ -149,11 +149,14 @@ What the glass says is different, and that's the deal. This guide, [My log](/log
 
 ## Coming attractions
 
-Not built yet, and subject to change:
+Built, and not switched on here yet:
 
 - **Mod Bots**, The System's henchmen, who visit posts and file reports.
 - **Rules and a warn bar**: rules that never stop you posting, but fill a bar that can end in a timed ban, with the way out stated plainly.
 - **Reports and appeals.**
+
+Still to come, and subject to change:
+
 - **More cards.**
 
 That's the game as it stands. It's a pre-alpha, and every number in here is today's, so this guide changes when the game does. The game may be unfair, but it will never be a trap: if you ever find yourself stuck with no way out, that's a bug, so [tell an admin](/contact).
