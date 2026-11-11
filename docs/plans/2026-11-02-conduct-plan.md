@@ -180,6 +180,27 @@ Resend: mail is tested against a fake sender.
   - the hidden note on a post, in History and in a quote.
   The boards go in `docs/research/2026-11-02-conduct/`, and the confirmed brief is written into this task before the
   build goes on.
+- **The confirmed brief** (the owner, 2026-11-11, in the build session's `shape`; it chose each recommended option):
+  - **Entry.** A plain text link "Report to admins" at the very foot of the Lens (`engine/ui/cards/Lens.tsx`), set apart
+    under a hairline rule, never a tab, mark or chip, and the same plain link on each version row of the post's History
+    panel. Both open one dialog naming the version. A hidden version's row offers no link. The board's own Report (the
+    Lens's report tab, which a Mod Bot hears) is unchanged.
+  - **The dialog.** A centered modal in the account screens' plain look, a sheet on a phone: the title "Report to
+    admins"; the lead "This reaches a person, not the game. An admin reads every report, and the player is never told
+    who sent it."; the code's sections as a radio list of titles, each with a link to `/conduct#<key>`; "Anything an
+    admin should know (optional)", up to 1000 characters with a live count; Send to admins and Cancel.
+  - **Its states**, each in place with focus on its heading: sent ("Sent. An admin will read it, and we'll email you
+    when they have. Nothing changes on the board." and Close); the limit ("You have {n} reports waiting for an admin.
+    You can send another once one of them is read." shown instead of the form; only the filer's own count); an error,
+    said plainly.
+  - **The hidden note.** One calm glass strip in place of the body, in the account notice look (a dark field under the
+    1px pale-cyan seam rule): "Hidden by an admin: it broke the code of conduct." with the link "Read the code". The
+    postbit, author, place in the thread and the footer stay. The same one-line note stands in for the words in a
+    History row and inside a quote's frame, whose cite keeps its link. The author of a version hidden until edited also
+    sees a muted panel under it, "Only you see this", with their words and Edit; after a second hide until edited and
+    their edit, "You edited this post. An admin will look at your edit before it shows again."
+  - **Bounds.** No card, mark, neon, gold or pink, and nothing in the board's 2003 voice; WCAG 2.2 AA and the glass's
+    text sizes; nothing animates.
 - Then:
   - `engine/ui/conduct/Report.tsx` (the form, the confirmation, and the limit's plain refusal);
   - `engine/ui/conduct/Hidden.tsx` (the note);
