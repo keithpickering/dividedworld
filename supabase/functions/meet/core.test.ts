@@ -80,7 +80,7 @@ interface World {
   machine?: unknown[];
   /** The groups as meeting_context() lists them (0131): the conferred catalog, and the characters that are capped or held. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
-  /** The Boss's trophies as boss_trophies() lists them (0156), and what trophy_award_facts says stands. */
+  /** The Boss's trophies as boss_trophies() lists them (0165), and what trophy_award_facts says stands. */
   trophies?: { key: string; name: string; belt: boolean; holder: { id: string; name: string } | null }[];
   trophyFacts?: { barred: string[]; given: string[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */

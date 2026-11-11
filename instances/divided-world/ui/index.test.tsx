@@ -289,6 +289,22 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(stick.mark).not.toBe(stick.canvas);
     expect(instanceUi.cards.find((c) => c.key === 'whoops')!.hint).toBe('Drag across the ink to scrub it off your screen.');
   });
+  test('Jimmy Wails draws its drive, says its rules from the settings, and its log says whether a play opened the drive or joined it', () => {
+    const jw = instanceUi.cards.find((c) => c.key === 'jimmy-wails')!;
+    expect(jw.Effect).toBeDefined();
+    expect(jw.summary).toBe('Puts your sob story on a donation banner under a post, so anyone can send its author Aura.');
+    expect(jw.hint).toBe('Anyone can chip in. A cut of each gift goes to overhead.');
+    expect(jw.hint).not.toMatch(/\d/u);
+    const said = jw.describe(instance.settings);
+    expect(said).toContain('0.10, 0.25, 0.50 and 1.00');
+    expect(said).toContain('loses 25% to overhead');
+    expect(said).toMatch(/Up to 3 appeals share one drive[\s\S]*a week after the latest one/u);
+    const changed = { ...instance.settings, economy: { ...instance.settings.economy, 'jimmyWails.overhead': 10, 'jimmyWails.gift4': 200 } };
+    expect(jw.describe(changed)).toMatch(/0\.10, 0\.25, 0\.50 and 2\.00[\s\S]*loses 10% to overhead/u);
+    expect(jw.logPlay!({}, { opened: true })).toBe('It opened a drive.');
+    expect(jw.logPlay!({}, { opened: false })).toBe('It joined the drive.');
+    expect(jw.logPlay!({}, {})).toBeUndefined();
+  });
   test('Autocorrect draws its strips and its form, says its rules from the settings, and its log says what a play covered and what was peeled', () => {
     const ac = instanceUi.cards.find((c) => c.key === 'autocorrect')!;
     expect(ac.Effect).toBeDefined();

@@ -97,7 +97,7 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
     const why = check(field, bytes);
     if (why) return refused(field, `the ${field} ${why}`);
   }
-  // How tall the portrait is as a multiple of its width, from its own bytes (set_avatar, 0153); a recrop sends no portrait and keeps the stored one.
+  // How tall the portrait is as a multiple of its width, from its own bytes (set_avatar, 0162); a recrop sends no portrait and keeps the stored one.
   let tallness: number | null = null;
   if (request.portrait) {
     const read = readWebp(request.portrait);

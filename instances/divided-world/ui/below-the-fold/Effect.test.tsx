@@ -20,7 +20,7 @@ function setup(over: Partial<EffectProps> = {}) {
   const met = vi.fn();
   const props: EffectProps = {
     post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false,
-    show, met, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey',
+    show, met, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,
   };
   const rendered = render(<BelowTheFoldEffect {...props} />);

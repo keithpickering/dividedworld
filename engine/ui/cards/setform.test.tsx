@@ -24,6 +24,11 @@ const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'sal
 const pass: CardRules = { ...base, key: 'pass', name: 'Pass', alignment: 'sweet', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const shield: CardRules = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'common', play: 'use', canApply: () => ok(undefined) };
+/** Moves that can only be cast now and face up (faceUpOnly): one that writes, one that needs a message, one that draws, one with a drive. */
+const scribe: CardRules = { ...blot, key: 'scribe', name: 'Scribe', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+const plea: CardRules = { ...blot, key: 'plea', name: 'Plea', needsMessage: 'say why' };
+const dealer: CardRules = { ...blot, key: 'dealer', name: 'Dealer', draws: ['a', 'b'] };
+const appeal: CardRules = { ...blot, key: 'appeal', name: 'Appeal', drive: { lasts: { unit: 'day', count: 7 }, gifts: ['x.price'], overhead: 'x.price' } };
 const instance: Instance = { ...testInstance, cards: [blot, spark, snare, pass, dud, shield], settings: { ...testInstance.settings, economy: { 'x.price': 100 }, setLasts: { unit: 'day', count: 7 } } };
 
 /** The card's own setting, in the form: one radio, to see that a Set keeps it, and the castable cards it was handed, to see the picker's list. */
@@ -53,6 +58,10 @@ const cards: CardUi[] = [
   { key: 'pass', art: art('blue'), describe: () => 'Passes.' },
   { key: 'dud', art: art('orange'), describe: () => 'Nothing.' },
   { key: 'shield', art: art('green'), describe: () => 'Shields.' },
+  { key: 'scribe', art: art('gray'), describe: () => 'Writes.' },
+  { key: 'plea', art: art('gray'), describe: () => 'Pleads.' },
+  { key: 'dealer', art: art('gray'), describe: () => 'Draws.' },
+  { key: 'appeal', art: art('gray'), describe: () => 'Appeals.' },
 ];
 
 class Observer {
@@ -116,6 +125,19 @@ describe('a card that writes, where the instance runs no old voice', () => {
   });
   test('is not among them where it does not', async () => {
     expect(await castable(false)).not.toContain('Typewriter');
+  });
+});
+
+describe('a Move that can only be cast face up, on one\'s own post', () => {
+  test.each([['Scribe', 'writes'], ['Plea', 'needs a message'], ['Dealer', 'draws'], ['Appeal', 'runs a drive']])('%s (%s) offers no Play it now or Set face down, and plays', async (name) => {
+    const user = userEvent.setup();
+    const played: Instance = { ...instance, cards: [...instance.cards, scribe, plea, dealer, appeal] };
+    const w = world({ [name.toLowerCase()]: 1 }, played);
+    await open(w, played);
+    const dialog = await armAndOpen(user, name, `Play ${name} on post 3`, 3);
+    expect(within(dialog).queryByRole('group', { name: 'How to play it' })).toBeNull();
+    expect(within(dialog).queryByRole('radio', { name: /^(Play it now|Set face down)$/u })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'Play as Pipewrench' })).toBeInTheDocument();
   });
 });
 

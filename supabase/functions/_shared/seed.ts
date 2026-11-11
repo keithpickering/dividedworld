@@ -51,16 +51,18 @@ export function instanceSeed(instance: Instance) {
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
       // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.
       writes: c.writes !== undefined,
+      // What the server draws one of at each play and the drive its plays share (0153), and the words a blank message is refused with (0153): data the SQL holds, never which card.
+      draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.
     packs: instance.packs.map((p) => ({ key: p.key, pulls: p.pulls.map((pull) => ({ weights: { ...pull.weights } })), leaves: [...(p.leaves ?? [])] })),
     machine: instance.machine.map((m) => ({ ...('card' in m.item ? { card: m.item.card } : { pack: m.item.pack }), availability: m.availability, price: m.price })),
-    // The gear the instance offers (0153): keys and rarities only, which seed_instance adds and keeps current; names, lines and art stay in the instance.
+    // The gear the instance offers (0162): keys and rarities only, which seed_instance adds and keeps current; names, lines and art stay in the instance.
     gear: instance.gear.map((g) => ({ key: g.key, rarity: g.rarity })),
-    // The lines a Random Event says (0155), each with the outcome it belongs to: seed_instance replaces its event_lines with these.
+    // The lines a Random Event says (0164), each with the outcome it belongs to: seed_instance replaces its event_lines with these.
     eventLines: instance.events.lines.map((l) => ({ key: l.key, outcome: l.outcome, text: l.text })),
-    // The trophy catalog (0154): each kind's key, name, words and whether it is a belt, and where the lists point (the place for each of first, second and third, the kinds the Boss
+    // The trophy catalog (0163): each kind's key, name, words and whether it is a belt, and where the lists point (the place for each of first, second and third, the kinds the Boss
     // may give, the one a met demand gives). seed_instance writes the kinds and sets the three as columns of the kinds they name; the badges stay in the instance's UI.
     trophies: {
       kinds: instance.trophies.kinds.map((k) => ({ key: k.key, name: k.name, ...(k.line !== undefined ? { line: k.line } : {}), belt: k.belt === true })),

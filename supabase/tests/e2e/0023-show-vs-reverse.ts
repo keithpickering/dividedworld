@@ -1,5 +1,5 @@
 /**
- * End to end: showing a trophy and taking it back are serialized (supabase/migrations/0154_trophies.sql show_trophies and reverse_award; the cosmetics plan, Task 3's
+ * End to end: showing a trophy and taking it back are serialized (supabase/migrations/0163_trophies.sql show_trophies and reverse_award; the cosmetics plan, Task 3's
  * review focus). Two connections to the scratch database, each holding a transaction open: A, an admin, reverses an award and holds its transaction; B's show_trophies of that
  * award must wait (it neither sees A's uncommitted reversal nor takes the award past it), and once A commits, B is refused as taken back, so no reversed award is ever shown.
  * Two `for share` locks never wait on each other, so only a stronger lock in show_trophies makes B wait; a single session cannot test it. Run by tools/test-sql.mjs.

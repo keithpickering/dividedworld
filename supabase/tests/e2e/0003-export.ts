@@ -100,9 +100,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into reaction_tallies (act, kind, count) values (p, 'fire', 1);
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;
       insert into card_ledger (account, card, kind, price) values (ann, 'splat', 'bought', 100);
-      -- Gear (0153): a kind, a copy found and a copy granted, and a piece worn, each carried across as it was.
+      -- Gear (0162): a kind, a copy found and a copy granted, and a piece worn, each carried across as it was.
       insert into gear_kinds (key, rarity) values ('expgear', 'uncommon');
-      -- Random Events (0155): a gear event and a card event, each with its found row naming it, the account's last roll and the instance's event lines.
+      -- Random Events (0164): a gear event and a card event, each with its found row naming it, the account's last roll and the instance's event lines.
       insert into event_lines (key, outcome, text) values ('exp-line', 'line', 'Carried across.'), ('exp-gear-line', 'gear', 'Found a thing.');
       insert into random_events (id, account, character, outcome, item, line, line_text) values
         ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-gear-line', 'Found a thing.'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line', 'Carried across.');
@@ -111,7 +111,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_ledger (account, card, kind, price, event) values (ann, 'splat', 'found', 0, '00000000-0000-4000-8000-0000000000e3');
       insert into gear_ledger (account, gear, kind) values (ann, 'expgear', 'granted');
       insert into gear_worn (character, layer, gear, x, y, w, turn) values (a, 2, 'expgear', 0.25, 0.75, 0.5, -30);
-      -- Trophies (0154): an instance's kind with a place, a belt, and a kind an admin made with its picture's key; an award each by an admin, the season and the Boss (naming the post as its move Act),
+      -- Trophies (0163): an instance's kind with a place, a belt, and a kind an admin made with its picture's key; an award each by an admin, the season and the Boss (naming the post as its move Act),
       -- the admin's taken back, and the Boss's shown on a postbit. Each is carried as it was, and the picture is a file the export fetches from the trophies bucket.
       insert into trophy_kinds (key, name, line, belt, season_place) values ('exptrophy', 'Exported Trophy', 'Carried across.', false, null), ('expbelt', 'Exported Belt', null, true, null);
       insert into trophy_kinds (key, name, made_by, art) values ('made-00000000-0000-4000-8000-0000000000e1', 'Exported Made', ann, 'exp-trophy.webp');
@@ -386,6 +386,20 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into acts (character, kind, thread, payload) values (null, 'reveal', old_thread, '{"season": 0, "body": "Every mask.", "characters": 0}') returning id into old_head;
         update seasons set reveal_act = old_head where number = (select max(number) - 1 from seasons);
       end;
+      -- A drive and its gifts (0153): a drive card with a draw and a blank-message refusal, Bob's play of it on a post of Ann's (which opens the drive and draws a key), a gift from Bob
+      -- that overflows Ann's full wallet, and a gift from Ann to her own mask, so donation Acts and the gift_out and gift_in events, an overflow among them, are carried across.
+      declare dp uuid; dplay uuid;
+      begin
+        insert into settings (key, value) values ('economy', '{"exp.g1": 10, "exp.g2": 25, "exp.over": 25}') on conflict (key) do update set value = settings.value || excluded.value;
+        insert into card_kinds (key, name, alignment, rarity, play, stack, draws, drive, needs_message)
+        values ('expdrive', 'Exported Drive', 'sweet', 'uncommon', 'cast', 2, '{exp-a,exp-b}', '{"lasts": {"unit": "day", "count": 2}, "gifts": ["exp.g1", "exp.g2"], "overhead": "exp.over"}', 'Say what the drive is for.');
+        insert into card_ledger (account, card, kind, price) values (bob, 'expdrive', 'bought', 0);
+        dp := tests.post(a, t, 'A post that asks for gifts.');
+        dplay := (play_card(bob, 'expdrive', b, dp, '{}', 0, 'Please give.') ->> 'id')::uuid;
+        insert into wallets (account, balance) values (bob, 100), (ann, 595) on conflict (account) do update set balance = excluded.balance;
+        perform donate(bob, b, dplay, 25);
+        perform donate(ann, a, dplay, 10);
+      end;
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -432,6 +446,14 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
   assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
+  // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
+  const gifts = `select d.id from acts d join acts o on o.id = d.target_act_id and o.payload ->> 'card' = 'expdrive' where d.kind = 'donation'`;
+  assert.match(sql(`select payload ->> 'drawn' from acts where kind = 'card' and payload ->> 'card' = 'expdrive'`), /^exp-[ab]$/, 'the drive\'s play drew a key');
+  assert.equal(sql(`select count(*) from (${gifts}) g`), '2', 'two gifts are two donation Acts');
+  assert.equal(sql(`select count(*) from wallet_events where kind = 'gift_out' and ref in (${gifts})`), '2', 'each gift left a wallet');
+  assert.equal(sql(`select count(*) from wallet_events where kind = 'gift_in' and ref in (${gifts})`), '2', 'each gift arrived in a wallet');
+  assert.equal(sql(`select max(overflow) from wallet_events where kind = 'gift_in' and ref in (${gifts})`), '13', 'a full wallet cut off part of a gift');
+  assert.equal(sql(`select draws::text || '|' || (drive ->> 'overhead') || '|' || needs_message from card_kinds where key = 'expdrive'`), '{exp-a,exp-b}|exp.over|Say what the drive is for.', 'the drive card keeps its columns');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.
@@ -662,7 +684,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(files)));
     assert.ok(!(imported.stdout + imported.stderr).includes(STORAGE_KEY), 'the import printed the Storage key');
 
-    // Random Events (0155): the events, the last roll and the lines, with a found card and a found gear row naming their events.
+    // Random Events (0164): the events, the last roll and the lines, with a found card and a found gear row naming their events.
     for (const t of ['random_events', 'random_event_rolls', 'event_lines']) assert.notEqual(psqlOn(from, `select count(*) from public.${t}`), '0', `the exported instance holds ${t} rows`);
     const eventRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
       select to_jsonb(e)::text x from random_events e union all select to_jsonb(r)::text from random_event_rolls r union all select to_jsonb(l)::text from event_lines l

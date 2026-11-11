@@ -277,7 +277,48 @@ export type OriginPlace =
 
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'take_back' | 'spring' | 'update' | 'card_end' | 'announce'
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
-  | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling';
+  | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
+  /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
+  | 'donation';
+
+/**
+ * One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown.
+ * `name` is the giver's public name (characters_public), carried with the gift so the wall names a giver who never posted in the thread; null only
+ * for a gift just heard on the channel, whose name the drive store reads next, or for a giver with no public name.
+ */
+export interface DriveGift {
+  readonly id: Id;
+  readonly character: Id | null;
+  readonly name: string | null;
+  readonly amount: number;
+  readonly at: string;
+}
+
+/** A drive's total given and count of gifts, with its latest gifts, newest first (`drive_gifts`): a drive nobody gave to is zeros. */
+export interface DriveGifts {
+  readonly id: Id;
+  readonly total: number;
+  readonly count: number;
+  readonly gifts: readonly DriveGift[];
+}
+
+/** The keyset cursor of a drive's wall: the `at` and `id` of the last gift shown. Gifts that share a time are told apart by id. */
+export interface GiftCursor {
+  readonly at: string;
+  readonly id: Id;
+}
+
+/** The next page of a drive's wall (`drive_gifts_page`), newest first, and whether more follow. */
+export interface DriveGiftsPage {
+  readonly gifts: readonly DriveGift[];
+  readonly more: boolean;
+}
+
+/** What `donate` answers the giver: the gift's Act and the giver's own balance after, which is no one else's to read. */
+export interface Donated {
+  readonly act: Act;
+  readonly balance: number;
+}
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -1215,7 +1256,7 @@ export interface LogSettlement {
 export interface WalletEvent {
   readonly settlement: number | null;
   /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant';
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant' | 'gift_out' | 'gift_in';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
@@ -1692,7 +1733,7 @@ export interface Log {
 }
 
 /**
- * One line of the cosmetics log (`my_cosmetic_log`, 0161), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
+ * One line of the cosmetics log (`my_cosmetic_log`, 0170), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
  * `text` the line the Event was rolled with); a `granted` row is gear an admin gave (`item`, `copies`, `character` the mask it was given through, or null where the grant did not name one); an `awarded` row is a trophy given
  * (`by`, and the Boss's name in `byName`; a season's `season` and `place`; the award's own `line` where an admin wrote one); a `reversed` row is an award an admin took back; a `lost` row is a belt that passed from the character to
  * `toName`, a character's name, which is public (`by`, `byName` as an award's). A field a kind does not use is null.
@@ -1758,6 +1799,12 @@ export interface ThreadListener {
   readonly onEffect?: (play: Id, savedAt: string) => void;
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
+  /**
+   * The channel is joined and events are heard from now on. Called again each time the channel rejoins after a drop. A screen drawn from a
+   * document read before this has missed whatever landed until now, and so has one whose connection dropped: what landed while the
+   * channel was not joined is the listener's to read.
+   */
+  readonly onJoined?: () => void;
 }
 
 export interface BoardListener {
@@ -1801,6 +1848,8 @@ export interface ReachListener {
   readonly onNews?: (news: LiveNews) => void;
   /** A settlement was applied, for every signed-in player alike. May come twice: key by id. */
   readonly onSettled?: (settled: LiveSettled) => void;
+  /** The channel is joined and events are heard from now on; called again each time it rejoins after a drop. What landed while it was not joined is the listener's to read. */
+  readonly onJoined?: () => void;
 }
 
 /* ---------------------------------------------------------------- the api ---- */
@@ -2448,6 +2497,15 @@ export interface KayfaApi {
    * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
    */
   playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
+  /**
+   * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
+   * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
+   */
+  donate(character: Id, drive: Id, amount: number): Promise<Answer<Donated>>;
+  /** Each drive's total, count and latest gifts, in the order asked, in one call (`drive_gifts`, at most 100 drives): an id that is no drive is zeros. */
+  driveGifts(drives: readonly Id[]): Promise<readonly DriveGifts[]>;
+  /** The gifts of one drive after the cursor, newest first (`drive_gifts_page`). */
+  driveGiftsPage(drive: Id, before: GiftCursor): Promise<DriveGiftsPage>;
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.

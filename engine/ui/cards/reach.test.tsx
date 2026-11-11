@@ -80,7 +80,8 @@ describe('the plays above a page', () => {
     const above = vi.spyOn(w.fake, 'effectsAbove');
     const page = vi.spyOn(w.fake, 'threadPage');
     await open(w);
-    await waitFor(() => expect(page).toHaveBeenCalledTimes(1));
+    /* The document, and the catch-up's read of the page again once the channels are joined: each carries the plays above in itself. */
+    await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
     expect(above).not.toHaveBeenCalled();
   });
 

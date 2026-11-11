@@ -285,3 +285,12 @@ test('a request with a reach the card lacks is refused before SQL', () => {
   assert.equal(refusal({ action: 'playCard', card: 'sparkle', character: id, target: other }), 'reach: this card lands on a character or a thread', 'no reach is a post\'s');
   assert.equal(refusal({ action: 'setCard', card: 'splat', character: id, reach: 'thread', target: other }), 'reach: a card is set face down on a post');
 });
+
+test('a gift names the character, the drive and a whole amount, and is the service\'s', () => {
+  assert.deepEqual(decide({ action: 'donate', character: id, drive: other, amount: 25 }, instance), { ok: true, rpc: 'donate', args: { through: id, drive: other, amount: 25 }, asService: true });
+  assert.match(refusal({ action: 'donate', character: 'x', drive: other, amount: 25 }) ?? '', /^character:/);
+  assert.match(refusal({ action: 'donate', character: id, drive: 'x', amount: 25 }) ?? '', /^drive:/);
+  assert.match(refusal({ action: 'donate', character: id, drive: other }) ?? '', /^amount:/);
+  assert.match(refusal({ action: 'donate', character: id, drive: other, amount: 0 }) ?? '', /^amount:/);
+  assert.match(refusal({ action: 'donate', character: id, drive: other, amount: 2.5 }) ?? '', /^amount:/);
+});
