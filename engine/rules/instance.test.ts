@@ -314,6 +314,11 @@ test('a number a class reads can carry its bounds', () => {
   assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
 });
 
+test('a number a class reads can carry a most', () => {
+  const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 1, max: 4 }], earn: () => [] }] };
+  assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at most 4/);
+});
+
 test('a settlement window\'s length is a span', () => {
   assert.match(settingsProblems({ ...settings, settlementLength: { unit: 'hour', count: 1 } as never }).join('\n'), /settlementLength/);
   // A count the database's span_interval cannot hold would break every window: refused here as there.

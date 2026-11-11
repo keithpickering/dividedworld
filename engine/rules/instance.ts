@@ -393,11 +393,12 @@ export function instanceProblems(instance: Instance): string[] {
   const economy = instance.settings?.economy;
   if (economy && typeof economy === 'object' && !Array.isArray(economy)) {
     const check = (who: string, read: EconomyRead) => {
-      const { key, whole = false, min = undefined } = typeof read === 'string' ? { key: read } : read;
+      const { key, whole = false, min = undefined, max = undefined } = typeof read === 'string' ? { key: read } : read;
       const n = economy[key];
       if (typeof n !== 'number' || !Number.isFinite(n)) return `${who} reads economy "${key}", which the settings do not hold`;
       if (whole && !Number.isSafeInteger(n)) return `${who} reads economy "${key}" as ${n}; it must be a whole number`;
       if (min !== undefined && n < min) return `${who} reads economy "${key}" as ${n}; it must be at least ${min}`;
+      if (max !== undefined && n > max) return `${who} reads economy "${key}" as ${n}; it must be at most ${max}`;
       return null;
     };
     for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }

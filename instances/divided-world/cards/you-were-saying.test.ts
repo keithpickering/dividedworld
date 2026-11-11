@@ -9,7 +9,7 @@ import { HEADER, STOPS } from './you-were-saying/frame.ts';
 import { defaults as settings } from '../settings.ts';
 import { instance } from '../index.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
-import { postTarget, type CardTarget } from '../../../engine/rules/cards.ts';
+import { postTarget, WRITE_TOKENS_MOST, type CardTarget } from '../../../engine/rules/cards.ts';
 
 const rules = youWereSaying;
 const writes = rules.writes!;
@@ -164,6 +164,17 @@ test('tokens never exceed the most, even where the most is below the base', () =
   const odd = withOverrides(settings, { economy: { 'youWereSaying.baseTokens': 25, 'youWereSaying.mostTokens': 10 } });
   assert.equal(writes.tokens({ steps: 0 }, odd), 10);
   assert.equal(writes.tokens({ steps: 3 }, odd), 10);
+});
+
+test('a most above what the server accepts is refused by the settings, and tokens never pass the bound', () => {
+  const over = (n: number) => ({ ...instance, settings: withOverrides(instance.settings, { economy: { 'youWereSaying.mostTokens': n } }) });
+  assert.deepEqual(instanceProblems(over(WRITE_TOKENS_MOST)), []);
+  assert.match(instanceProblems(over(WRITE_TOKENS_MOST + 1)).join('\n'), /card "you-were-saying" reads economy "youWereSaying\.mostTokens" as 2001; it must be at most 2000/);
+  // A valid setting, whatever its base and step, never buys more than the bound.
+  for (const [base, step, most] of [[1, 1, WRITE_TOKENS_MOST], [5000, 1, WRITE_TOKENS_MOST], [1999, 7, WRITE_TOKENS_MOST], [25, 25, 200]] as [number, number, number][]) {
+    const s = withOverrides(settings, { economy: { 'youWereSaying.baseTokens': base, 'youWereSaying.stepTokens': step, 'youWereSaying.mostTokens': most } });
+    for (const steps of [0, 1, 3, 1000, 100000]) assert.ok(writes.tokens({ steps }, s) <= WRITE_TOKENS_MOST && writes.tokens({ steps }, s) >= 1);
+  }
 });
 
 test('the instance, with the card, has no problems', () => {

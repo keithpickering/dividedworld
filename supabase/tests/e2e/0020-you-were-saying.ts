@@ -127,6 +127,7 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
   const downRequests = asked.slice(2);
   assert.equal(downRequests.length, 4, 'the request was tried again on itself, three times, and then given up');
   assert.equal(wallet(), walletBefore, 'the play\'s price is paid back');
+  assert.equal(sql(`select amount from card_write_refunds where play = '${play2}'`), '25', 'what came back is what the play cost: one step, on a card already held');
   assert.equal(held(), heldBefore, 'the card is back in the caster\'s hand');
   assert.equal(sql(`select kind from card_ledger where act = '${play2}' and kind = 'returned'`), 'returned');
   assert.equal(sql(`select untaken from acts_public where id = '${play2}'`), 't', 'the play reads as one that did not take');
@@ -154,6 +155,6 @@ test('a cast is written, edited into a second tail, cleared by its author; a fai
   assert.deepEqual(asked.map((r) => r.max_tokens), [recorded(play), recorded(play), ...downRequests.map(() => recorded(play2))],
     'the first play\'s two generations and the second\'s tries were each asked for their play\'s recorded length');
   // Every call landed in the ledger against its play, the failures too.
-  assert.equal(Number(sql(`select count(*) from model_calls where id > ${ledgerBefore} and duty = 'cardText'`)), 3, 'one ledger row for each call (two answered, one given up), the retries counted on the call');
+  assert.deepEqual(sql(`select string_agg(play::text, ',' order by id) from model_calls where id > ${ledgerBefore} and duty = 'cardText'`).split(','), [play, play, play2], 'one ledger row for each call (two answered, one given up), the retries counted on the call');
   assert.equal(sql(`select retries from model_calls where id > ${ledgerBefore} and duty = 'cardText' and outcome = 'failed'`), '3');
 });

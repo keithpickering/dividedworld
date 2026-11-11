@@ -24,7 +24,7 @@ import { useHoldScreen } from '../tips/Tips.tsx';
 import { useLensStore } from './Lens.tsx';
 import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
-import { useTails } from './tails.ts';
+import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
 import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
@@ -67,17 +67,29 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /*
    * A play whose first generation failed for good is over, which the page holds only from the plays' read (`untaken`). A page showing it learns
    * it from its tails: every row of a play the page counts failed, none waiting, none a text (a failure a newer job waits behind shows that job
-   * waiting, and a failed regeneration after a text has the text). Then that one post's plays are read again, once for each play, with the one
-   * batched read the page makes, so the mark's count, the Lens and the effect catch up without a reload.
+   * waiting, and a failed regeneration after a text has the text). Then that one post's plays are read again (`cardsOnMany` for the one post, once
+   * for each play), so the mark's count, the Lens and the effect catch up without a reload. A read that fails is tried again after the wait the
+   * tails' own timer keeps (`backoff`), at most `REPEAT_TRIES` times, and then waits for the next change of the post's tails, so a server that
+   * keeps failing is asked a handful of times and never in a loop.
    */
   const reread = useRef<Set<Id>>(new Set());
+  const tries = useRef(0);
+  const [again, setAgain] = useState(0);
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (retry.current !== null) clearTimeout(retry.current); }, []);
   useEffect(() => {
     const over = here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken && !reread.current.has(p.id)
       && (() => { const own = tailRows.filter((r) => r.play === p.id); return own.length > 0 && own.every((r) => r.failed && r.text === null && !r.waiting); })());
     if (over.length === 0) return;
     for (const p of over) reread.current.add(p.id);
-    void api.cardsOnMany([post.id], PLAYS_PER_POST).then((acts) => { plays.add(acts); }, () => {});
-  }, [api, plays, post.id, here.plays, tailRows, writing]);
+    void api.cardsOnMany([post.id], PLAYS_PER_POST).then((acts) => { tries.current = 0; plays.add(acts); }, () => {
+      for (const p of over) reread.current.delete(p.id);
+      const attempt = tries.current++;
+      if (attempt + 1 >= REPEAT_TRIES) { tries.current = 0; return; }
+      if (retry.current !== null) clearTimeout(retry.current);
+      retry.current = setTimeout(() => { retry.current = null; setAgain((n) => n + 1); }, backoff(attempt));
+    });
+  }, [api, plays, post.id, here.plays, tailRows, writing, again]);
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
   const lens = useLensStore();

@@ -961,3 +961,26 @@ begin
   got := pg_temp.claim(10, p2);
   if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'tokens' is distinct from '120' then raise exception 'the claim does not return a Mod Bot play''s tokens: %', got; end if;
 end $$;
+
+-- play_card and staff_play_card are each one function in the public schema (the older arities are dropped, so a call with or without a version or
+-- tokens reaches the same one), and neither player role may call either: they take the price and the tokens the act and chatter functions
+-- decided, so only the service role does.
+do $$
+declare
+  f record;
+begin
+  for f in select * from (values ('play_card'), ('staff_play_card')) as v(name) loop
+    if (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = f.name) is distinct from 1 then
+      raise exception '% is not exactly one function in public: %', f.name,
+        (select string_agg(p.oid::regprocedure::text, '; ') from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public' and p.proname = f.name);
+    end if;
+    if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = f.name and (has_function_privilege('anon', p.oid, 'execute') or has_function_privilege('authenticated', p.oid, 'execute'))) then
+      raise exception '% can be called by anon or authenticated', f.name;
+    end if;
+    if not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                   where n.nspname = 'public' and p.proname = f.name and has_function_privilege('service_role', p.oid, 'execute')) then
+      raise exception '% cannot be called by the service role', f.name;
+    end if;
+  end loop;
+end $$;

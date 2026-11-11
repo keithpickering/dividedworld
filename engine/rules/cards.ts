@@ -213,6 +213,13 @@ export interface CardRules<Config = unknown> {
   validateState?(state: unknown): Verdict<unknown>;
 }
 
+/**
+ * The most tokens a play of a card that writes may buy: the bound require_write_tokens enforces (supabase/migrations/0146_card_writes.sql), since a
+ * stored text is at most 4000 characters. A card that writes reads its most from the economy with this as its `max`, so a setting above it is
+ * refused by the settings' validation and never by the database in a play.
+ */
+export const WRITE_TOKENS_MOST = 2000;
+
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;
 

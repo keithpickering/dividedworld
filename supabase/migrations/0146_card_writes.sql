@@ -64,7 +64,8 @@ end $$;
 -- The tokens a play of a card that writes bought, a fact of the play (design, section 2): decided by the server when the play was decided (the
 -- card's own rules, against the settings of that moment) and written into the play's own Act at insert, so a regeneration is made at the length
 -- the play bought, and the log says it, after any retune of the economy. SQL holds only what it can hold of a number it does not compute: a whole
--- number from 1 to 2000 (a stored text is at most 4000 characters) for a card that writes, and none for any other card. The price is trusted
+-- number from 1 to 2000 (a stored text is at most 4000 characters; engine/rules/cards.ts holds the same bound as WRITE_TOKENS_MOST, which a card that
+-- writes reads its most under, so no setting buys what this refuses) for a card that writes, and none for any other card. The price is trusted
 -- the same way: play_card and staff_play_card are callable by the service role alone (the act and chatter functions), and bound the price they are given.
 create function require_write_tokens(card text, tokens integer) returns void
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -637,7 +638,8 @@ end $$;
 
 -- ------------------------------------------------------------------------------------------------------ finish, refund ----
 
--- The refund of a failed write (the pattern of refund_appeal, 0109): under an advisory lock for the play, once (card_write_refunds' primary
+-- The refund of a failed write (the pattern of refund_appeal, 0109): under an advisory lock for the play and then the play's Act row (the lock
+-- reverse_card takes, so an admin's end and a refund exclude each other), once (card_write_refunds' primary
 -- key), the payer read from the hand's `played` row and the amount from the play's own wallet event, the wallet moved as a `refund`, and the
 -- card returned to the hand as a `returned` ledger row naming the play. The amount recorded is what the wallet actually moved (its cap may
 -- clamp it). A play that already has a text refunds nothing and is not over; a play an admin ended refunds nothing and is over already. A play with no payer (a Mod Bot's) refunds nothing and returns
@@ -653,6 +655,11 @@ begin
   select * into k from acts a where a.id = refund_card_write.play and a.kind = 'card';
   if not found then raise exception 'there is no such card play' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.card_write.' || k.id::text, 0));
+  -- The play's Act row, the lock reverse_card takes, so a refund and an admin's end of the same play never both commit: whichever comes second
+  -- waits for the first and then sees its end or its refund. The order is the advisory lock, then the row, as finish_card_write reaches here
+  -- (it holds the advisory lock first); reverse_card takes the row alone and never the advisory lock, and play_card takes the account and the
+  -- post, never an existing play's row, so no two of them can wait on each other.
+  perform 1 from acts a where a.id = k.id for no key update;
   if exists (select 1 from card_write_refunds r where r.play = k.id) then return jsonb_build_object('refunded', false, 'already', true); end if;
   -- A play an admin ended is over, and ending a card refunds nothing (reverse_card, 0092): the worker's late failure moves nothing either.
   if exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = k.id) then

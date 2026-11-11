@@ -28,6 +28,10 @@ export const TAILS_PER_READ = 200;
 /** How long after a read a waiting (or failed) post is asked about again, and the most that wait grows to (it doubles each time). */
 export const POLL_FIRST = 5_000;
 export const POLL_LAST = 30_000;
+/** The wait before try number `attempt` (0 for the first) after a read failed: `POLL_FIRST`, doubling, never past `POLL_LAST`. The one policy for every read this file's readers repeat. */
+export const backoff = (attempt: number): number => Math.min(POLL_FIRST * 2 ** attempt, POLL_LAST);
+/** The most tries of a read the page repeats on its own before it waits for the next event. */
+export const REPEAT_TRIES = 5;
 /** The most posts whose rows the store keeps once nobody watches them. */
 export const HELD_POSTS = 500;
 

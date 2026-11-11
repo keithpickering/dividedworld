@@ -10,7 +10,7 @@
  * - **Its state** is the author's clear, the version of the post whose tail was erased by hand; it holds until the next edit makes a new one.
  * - **A Mod Bot** plays it at the base length.
  */
-import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { economyOf, landsOn, ok, refuse, WRITE_TOKENS_MOST, type CardRules } from '../../../engine/rules/cards.ts';
 import { defaults } from '../settings.ts';
 import { youWereSayingFrame } from './you-were-saying/frame.ts';
 
@@ -32,7 +32,8 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     { key: 'youWereSaying.baseTokens', whole: true, min: 1 },
     { key: 'youWereSaying.stepTokens', whole: true, min: 1 },
     { key: 'youWereSaying.stepPrice', whole: true, min: 0 },
-    { key: 'youWereSaying.mostTokens', whole: true, min: 1 },
+    // The most is what `tokens` never passes, so its bound is the server's (the base and the step are clamped by it).
+    { key: 'youWereSaying.mostTokens', whole: true, min: 1, max: WRITE_TOKENS_MOST },
   ],
   // The tail's own clock on the screens (you-were-saying/erase.ts): characters erased a second while held, the wait before it types itself back in, characters typed a second.
   screenReads: [

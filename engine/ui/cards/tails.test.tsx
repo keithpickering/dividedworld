@@ -162,6 +162,47 @@ describe('a card_text event reads that one post again', () => {
     expect(read).toHaveBeenCalledTimes(1);
   });
 
+  test('a re-read of the plays that fails is tried again, after the wait the tails\' own timer keeps, and then sets untaken', async () => {
+    const w = seeded();
+    const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
+    const { plays } = await page(w, [w.p1]);
+    await waitFor(() => expect(screen.getAllByText('...')).toHaveLength(1));
+    const real = w.fake.cardsOnMany.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'cardsOnMany').mockRejectedValueOnce(new Error('offline')).mockImplementation(real);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
+      await pass(0);
+      await pass(0);
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(plays.get(w.p1).plays[0]?.untaken).toBeUndefined();
+      await pass(POLL_FIRST);
+      expect(read).toHaveBeenCalledTimes(2);
+    } finally { vi.useRealTimers(); }
+    await waitFor(() => expect(plays.get(w.p1).plays[0]?.untaken).toBe(true));
+    await nextTick();
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  test('a re-read that keeps failing is tried a bounded number of times, never in a loop', async () => {
+    const w = seeded();
+    const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
+    await page(w, [w.p1]);
+    await waitFor(() => expect(screen.getAllByText('...')).toHaveLength(1));
+    const read = vi.spyOn(w.fake, 'cardsOnMany').mockRejectedValue(new Error('offline'));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
+      await pass(0);
+      for (let i = 0; i < 20; i++) await pass(POLL_LAST);
+      const tried = read.mock.calls.length;
+      expect(tried).toBeGreaterThan(1);
+      expect(tried).toBeLessThanOrEqual(6);
+      for (let i = 0; i < 20; i++) await pass(POLL_LAST);
+      expect(read).toHaveBeenCalledTimes(tried);
+    } finally { vi.useRealTimers(); }
+  });
+
   test('a failed regeneration after a text makes no extra read of the plays: the play took', async () => {
     const w = seeded();
     const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
