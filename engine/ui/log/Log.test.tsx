@@ -433,6 +433,16 @@ describe('My log', () => {
     expect(screen.getByText('Nothing on these pages is Spritey\'s yet.')).toBeInTheDocument();
   });
 
+  test('with the player\'s characters unread, an empty log says so with Try again, not that nothing is here yet', async () => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('me'));
+    vi.spyOn(fake, 'myCharacters').mockRejectedValue(new Error('down'));
+    renderIn(fake, <LoadedLog />, { path: '/log' });
+    expect(await screen.findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing here yet|Nothing on these pages/u)).toBeNull();
+  });
+
   test('signed out, asks the player to sign in and reads nothing', async () => {
     const { fake, me, pipe } = world();
     fake.signInAs(null);

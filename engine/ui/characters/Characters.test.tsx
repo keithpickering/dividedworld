@@ -1583,3 +1583,50 @@ describe('a write that landed whose page could not be read back', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('no answer came back, so this may have gone through: look before you try again');
   });
 });
+
+describe('a write that landed while its refresh is still out', () => {
+  /* The refresh's wallet read hangs until released. */
+  const hang = (w: World) => {
+    let release!: () => void;
+    const real = w.fake.wallet.bind(w.fake);
+    vi.spyOn(w.fake, 'wallet').mockImplementation(() => new Promise((resolve) => { release = () => resolve(real()); }));
+    return () => release();
+  };
+
+  test('a Turn cannot be cancelled and sent again: Cancel is disabled and Esc does nothing', async () => {
+    const w = world();
+    const turn = vi.spyOn(w.fake, 'turn');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const release = hang(w);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(turn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a debut cannot be cancelled and sent again', async () => {
+    const w = world();
+    const setDebut = vi.spyOn(w.fake, 'setDebut');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    const release = hang(w);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
+    await waitFor(() => expect(setDebut).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(setDebut).toHaveBeenCalledTimes(1);
+  });
+});

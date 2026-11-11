@@ -15,7 +15,7 @@
  * history.state (New character's, the profile editor's), else on the HUD's, and no address names it.
  */
 import { AnimatePresence, motion, useIsPresent } from 'motion/react';
-import { useEffect, useId, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { words } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
@@ -146,7 +146,10 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   };
   const target = dialog ? mine.find((c) => c.id === dialog.id) ?? null : null;
   /* The dialogs have saved and refreshed the HUD's rows; the page's own document is read again in place. */
-  const done = (message: string) => { setFlash(message); if (dialog) setRefocus({ id: dialog.id, was: page }); setDialog(null); reload(); };
+  const current = useRef(opening);
+  current.current = opening;
+  /* A write that landed answers for the opening it was sent from: a late answer never closes or flashes over a newer dialog. */
+  const done = (message: string, from: number) => { if (from !== current.current) return; setFlash(message); if (dialog) setRefocus({ id: dialog.id, was: page }); setDialog(null); reload(); };
   /* Words from an earlier action are not left standing under a new one. */
   const show = (next: Dialog) => { setFlash(''); setProblem(null); setOpening((n) => n + 1); setDialog(next); };
 
@@ -405,10 +408,10 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       </div>
 
       <Layers>
-      {dialog && target && dialog.kind === 'turn' && <TurnDialog key={`turn-${opening}`} character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key={`reveal-${opening}`} kicker="My characters › Reveal" character={target} at={thread} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
-      {dialog && target && dialog.kind === 'drop' && <DebutDialog key={`drop-${opening}`} character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'debut' && <DebutDialog key={`debut-${opening}`} character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'turn' && <TurnDialog key={`turn-${opening}`} character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key={`reveal-${opening}`} kicker="My characters › Reveal" character={target} at={thread} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(message) => { if (opening === current.current) { setFlash(message); reload(); } }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
+      {dialog && target && dialog.kind === 'drop' && <DebutDialog key={`drop-${opening}`} character={target} timing="now" nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'debut' && <DebutDialog key={`debut-${opening}`} character={target} timing="tally" nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
       </Layers>
     </div>
   );

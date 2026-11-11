@@ -98,6 +98,27 @@ describe('RevealOverlay opened on a thread', () => {
     expect(unmask).toHaveBeenCalledTimes(1);
   });
 
+  test('a reveal that landed while its refresh is out cannot be cancelled and sent again', async () => {
+    const w = world();
+    const t = w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');
+    const board = await boardId(w, 'general');
+    const unmask = vi.spyOn(w.fake, 'unmask');
+    const onClose = vi.fn();
+    const { dialog } = await overlay({ w, onClose, at: { id: t.thread, title: 'The tea thread', board } });
+    await new Promise((r) => setTimeout(r, 50));
+    let release!: () => void;
+    const real = w.fake.wallet.bind(w.fake);
+    vi.spyOn(w.fake, 'wallet').mockImplementation(() => new Promise((resolve) => { release = () => resolve(real()); }));
+    await userEvent.click(within(dialog).getByRole('button', { name: submitName }));
+    await waitFor(() => expect(unmask).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    release();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(unmask).toHaveBeenCalledTimes(1);
+  });
+
   test('typing different text in the Thread box clears the choice', async () => {
     const w = world();
     const t = w.fake.seed.thread('general', w.stranger, 'The tea thread', 'x');

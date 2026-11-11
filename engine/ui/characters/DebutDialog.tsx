@@ -57,12 +57,12 @@ export function DebutDialog({ character, timing, nextSettlement = null, onClose,
   };
 
   return (
-    <Overlay title={drop ? `Drop ${character.name} now` : `How ${character.name} debuts`} kicker="My characters › Debut" surface="turn" className="kb-debut-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
+    <Overlay title={drop ? `Drop ${character.name} now` : `How ${character.name} debuts`} kicker="My characters › Debut" surface="turn" className="kb-debut-dialog" onClose={busy ? () => {} : onClose} returnFocusTo={returnFocusTo}>
       <form className="kb-debut" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <DebutChoice name={character.name} pronouns={character.pronouns} className={className} timing={timing} loudness={loudness} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <FormFoot line={debutFooter({ name: character.name, pronouns: character.pronouns, timing, until: nextSettlement ? untilWords(nextSettlement) : null })}>
-          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton disabled={busy} onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" busy={busy}>{drop ? `Drop ${character.name} now` : `Save how ${character.name} debuts`}</GlassButton>
         </FormFoot>
       </form>

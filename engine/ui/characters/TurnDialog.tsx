@@ -92,7 +92,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
       kicker="My characters › Turn"
       surface="turn"
       className="kb-turn-dialog"
-      onClose={onClose}
+      onClose={busy ? () => {} : onClose}
       returnFocusTo={returnFocusTo}
     >
       <form className="kb-turn" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
@@ -162,7 +162,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
           </p>
           {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
           <ButtonRow>
-            <GlassButton onClick={onClose}>Cancel</GlassButton>
+            <GlassButton disabled={busy} onClick={onClose}>Cancel</GlassButton>
             <GlassButton type="submit" kind="primary" busy={busy} disabled={!to}>{pending ? 'Change the Turn' : 'Confirm Turn'}</GlassButton>
           </ButtonRow>
         </div>
