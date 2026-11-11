@@ -232,6 +232,10 @@ begin
   first_move := pg_temp.rename(general, 'Butter Annex', now() - interval '30 minutes');
   perform pg_temp.named(pg_temp.spun(ann, a, play, 'Spun after a rename'), general, 'Butter Annex', 'spun while renamed');
   perform pg_temp.named(spun, general, 'Butter Annex', 'spun before the rename');
+
+  -- Every move still in force ended, so the section leaves the board names as it found them (as 0051-moves.sql's sections do).
+  perform end_move(o.move_act, 'expired', 'test') from open_moves o;
+  perform pg_temp.named(spun, general, 'General', 'the section''s moves ended');
 end $$;
 
 -- ---- The columns, and who reads them ----

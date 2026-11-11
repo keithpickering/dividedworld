@@ -12,9 +12,9 @@
 -- A scalar subquery in the branch and not a join, for what it costs. `boards_now` holds a materialized step (the moves in force), so a
 -- join to it cannot become a primary-key probe: it is computed whole, every board and its moves, on every read of this view, the thread
 -- page's one row included, and a plan that nested the loop would walk every board for every row. The subquery runs only for a row
--- whose origin is a board play: one probe of `boards` and one pass over the moves in force (open_moves, a handful of rows, read once
+-- whose origin is a board play: one lookup of `boards` by id and one pass over the moves in force (open_moves, a handful of rows, read once
 -- per query). A thread not spun from a board play, which is nearly every thread, pays nothing. On a board's deep page the rows an
--- offset skips are computed too (issue #205, "Deep board pages"), so each skipped row spun from a board play adds that probe: about
+-- offset skips are computed too (issue #205, "Deep board pages"), so each skipped row spun from a board play adds that lookup: about
 -- 9 microseconds each, measured on 5,000 threads with half of them spun from a board play, 42 boards and 5 renames in force (offset
 -- 2000: 16 to 22 ms before, 25 to 32 ms after). It grows with the offset, as the page already does, and not with players, Acts or boards.
 --
