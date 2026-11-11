@@ -725,7 +725,8 @@ begin
     raise exception 'a busy drive: its total 2.75, its count 26 and its latest 20: %', got #- '{0,gifts}';
   end if;
   if got #>> '{0,gifts,0,amount}' is distinct from '25' then raise exception 'the latest gift is first: %', got #> '{0,gifts,0}'; end if;
-  if (select array_agg(k order by k) from jsonb_object_keys(got #> '{0,gifts,0}') k) is distinct from array['amount', 'at', 'character', 'id'] then raise exception 'a gift row shows its giver, amount and time: %', got #> '{0,gifts,0}'; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(got #> '{0,gifts,0}') k) is distinct from array['amount', 'at', 'character', 'id', 'name'] then raise exception 'a gift row shows its giver, the giver''s public name, amount and time: %', got #> '{0,gifts,0}'; end if;
+  if (select count(*) from jsonb_array_elements(got #> '{0,gifts}') g where g ->> 'name' is distinct from 'Dd Giver') > 0 then raise exception 'every gift names its giver: %', got #> '{0,gifts}'; end if;
   if got #>> '{0,gifts,0,character}' is distinct from gch::text then raise exception 'the giver is the giving character: %', got #> '{0,gifts,0}'; end if;
   if got::text ~* 'arrives|overhead' then raise exception 'the wall shows only what was given: %', got; end if;
   if (got #>> '{1,total}')::integer is distinct from 0 or (got #>> '{1,count}')::integer is distinct from 0 or got #> '{1,gifts}' is distinct from '[]'::jsonb then raise exception 'a drive nobody gave to: %', got #> '{1}'; end if;
@@ -735,6 +736,7 @@ begin
   page := drive_gifts_page(d, oldest, (got #>> '{0,gifts,19,id}')::uuid);
   if jsonb_array_length(page -> 'gifts') is distinct from 6 or (page ->> 'more')::boolean is distinct from false then raise exception 'the page after the first 20: %', page; end if;
   if (page #>> '{gifts,0,at}')::timestamptz >= oldest then raise exception 'the page is older than what was shown: %', page; end if;
+  if (select count(*) from jsonb_array_elements(page -> 'gifts') g where g ->> 'name' is distinct from 'Dd Giver') > 0 then raise exception 'a page of the wall names each giver too: %', page; end if;
   -- A page of 20 with more behind it says so.
   page := drive_gifts_page(d, now() + interval '1 second', 'ffffffff-ffff-ffff-ffff-ffffffffffff');
   if jsonb_array_length(page -> 'gifts') is distinct from 20 or (page ->> 'more')::boolean is distinct from true then raise exception 'a full page says more follows: %', page #- '{gifts}'; end if;
