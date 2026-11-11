@@ -5,6 +5,7 @@ import { axeViolations, describeViolations } from '../a11y.ts';
 import { resetTilt, tiltState } from '../shine/tilt.ts';
 import { DEFAULT_PREFERENCES, type Answer, type Preferences, type PreferencesPatch } from '../data/api.ts';
 import { Smoke } from '../glass/Smoke.tsx';
+import { Page } from '../glass/Page.tsx';
 import { applyAppearance } from '../appearance.ts';
 import { buildWorld, holdReads, renderIn, testGlass } from '../test-world.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
@@ -829,5 +830,50 @@ describe('Settings is drawn from its route\'s document', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Account' }));
     expect(await screen.findByRole('heading', { level: 2, name: 'Account' })).toBeInTheDocument();
     expect(invites).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* A change of section is the body's (docs/plans/2026-11-08-glass-in-page-swap-design.md): drawn through the page, as the app draws it. */
+describe('a change of section swaps the body only', () => {
+  const inPage = (fake: ReturnType<typeof world>['fake'], path: string) => renderIn(fake, <Page surface="settings"><LoadedSettings /></Page>, { path });
+  afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); });
+
+  test('the heading and the rail stay the same nodes, the pressed control keeps focus, and the section sits in a screen body', async () => {
+    const w = world();
+    inPage(w.fake, '/settings');
+    await screen.findByRole('radiogroup', { name: 'Smoke' });
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Settings' });
+    const nav = screen.getByRole('navigation', { name: 'Settings sections' });
+    expect(screen.getByRole('radiogroup', { name: 'Smoke' }).closest('.kb-screen-body')).not.toBeNull();
+    const board = screen.getByRole('link', { name: 'The board' });
+    await userEvent.click(board);
+    await screen.findByRole('heading', { level: 2, name: 'The board' });
+    expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBe(h1);
+    expect(screen.getByRole('navigation', { name: 'Settings sections' })).toBe(nav);
+    expect(screen.getByRole('link', { name: 'The board' })).toBe(board);
+    expect(board).toHaveAttribute('aria-current', 'page');
+    expect(board).toHaveFocus();
+    expect(screen.getByRole('heading', { level: 2, name: 'The board' }).closest('.kb-screen-body')).not.toBeNull();
+  });
+
+  test('while the Account body leaves, it still shows the Account section\'s own invites and address, not the new section\'s', async () => {
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    const w = world();
+    await w.fake.createInvite();
+    inPage(w.fake, '/settings?section=account');
+    await screen.findByRole('list', { name: 'Your invites' });
+    await userEvent.click(screen.getByRole('link', { name: 'Accessibility' }));
+    await screen.findByRole('radiogroup', { name: 'Smoke' });
+    const leaving = document.querySelector<HTMLElement>('.kb-screen-body > [data-kb-exiting]');
+    expect(leaving).not.toBeNull();
+    expect(leaving).toHaveAttribute('inert');
+    expect(within(leaving!).getByRole('heading', { level: 2, name: 'Account', hidden: true })).toBeInTheDocument();
+    expect(within(leaving!).getByRole('list', { name: 'Your invites', hidden: true })).toBeInTheDocument();
+    expect(within(leaving!).getByText('me@example.test')).toBeInTheDocument();
+    expect(within(leaving!).queryByRole('radiogroup', { name: 'Smoke', hidden: true })).toBeNull();
+    const entering = document.querySelector<HTMLElement>('.kb-screen-body > :not([data-kb-exiting])');
+    expect(within(entering!).getByRole('radiogroup', { name: 'Smoke' })).toBeInTheDocument();
+    expect(within(entering!).queryByRole('list', { name: 'Your invites' })).toBeNull();
+    await waitFor(() => expect(document.querySelector('[data-kb-exiting]')).toBeNull(), { timeout: 3000 });
   });
 });

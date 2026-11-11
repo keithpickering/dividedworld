@@ -22,7 +22,9 @@
  * either way). A player who has not chosen sees the instance's defaults, said plainly, and "Reset to defaults" puts a choice back to them.
  *
  * The section is the address's `?section=`, so the menu bar's Settings stays current on both and the
- * page does not move its focus from the link the player chose.
+ * page does not move its focus from the link the player chose. A press on a section changes the router's key and not the screen: the heading
+ * and the rail stay where they are, and only the section enters, as a screen body (glass/ScreenBody.tsx) moving down or up the rail by the
+ * section's place in it. Signed out there is no rail and no section to swap, so nothing is wrapped.
  */
 import { useId, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -31,6 +33,7 @@ import { ALERT_KINDS, type AlertKind } from '../../rules/alerts.ts';
 import { toastDefaultKinds } from '../alerts/toast-kinds.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
+import { ScreenBody } from '../glass/ScreenBody.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
 import { useLocation, useNavigate } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
@@ -167,7 +170,8 @@ function Frame({ section, children }: { readonly section: Section | null; readon
             <CalmRegion as="p" className="kb-settings-rail-reach"><ReachAPerson /></CalmRegion>
           </div>
         )}
-        {children}
+        {section && <ScreenBody at={SECTIONS.findIndex((x) => x.key === section)} axis="y">{children}</ScreenBody>}
+        {!section && children}
       </div>
       {/* Signed out there is no rail to put it under, and the player who needs it may not be signed in. */}
       {!section && <CalmRegion as="p" className="kb-acct-text kb-settings-reach"><ReachAPerson /></CalmRegion>}

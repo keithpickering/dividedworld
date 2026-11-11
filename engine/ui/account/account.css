@@ -38,6 +38,11 @@
   margin-top: 28px;
 }
 
+/* The section is held by a screen body (glass/ScreenBody.tsx), a grid item of its own: it may be narrower than its content, as the section was. */
+.kb-settings-body > .kb-screen-body {
+  min-width: 0;
+}
+
 /* The rail: the sections' nav, then Reach a person ruled off under it. min-width 0 keeps a long line from widening the
    column's track. */
 .kb-settings-rail {
