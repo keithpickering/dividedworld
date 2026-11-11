@@ -1,5 +1,6 @@
 /**
- * What a provider's structured output accepts, as one dated table, the way `supabase/functions/_shared/models/prices.ts` holds prices. The first live rehearsal's
+ * What a provider's structured output accepts, as one dated table, the way
+ * `supabase/functions/_shared/models/prices.ts` holds prices. The first live rehearsal's
  * every meeting closed `failed` on a schema the provider refuses (`{}`, then too many optional
  * parameters, then a grammar too large), and the stub took each of them, since it answers any schema.
  * So the rules are data with a verification date, and `schemaProblems` holds a request's schema to them
