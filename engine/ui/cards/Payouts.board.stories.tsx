@@ -95,7 +95,7 @@ function Story({ scene }: { readonly scene: Scene }) {
   );
 }
 
-const meta: Meta<typeof Story> = { title: 'Cards/Payout cards', component: Story, parameters: { moment: '01-main', layout: 'fullscreen' } };
+const meta: Meta<typeof Story> = { title: 'Boards/01 Payout cards', component: Story, parameters: { moment: '01-main', layout: 'fullscreen' } };
 export default meta;
 type S = StoryObj<typeof Story>;
 

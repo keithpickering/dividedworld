@@ -10,7 +10,7 @@ import { settled } from './settled.ts';
  */
 test.use({ bypassCSP: true });
 
-const STORY = (name: string) => `/?fixture=boards&story=cards-payout-cards--${name}`;
+const STORY = (name: string) => `/?fixture=boards&story=boards-01-payout-cards--${name}`;
 const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
