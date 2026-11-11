@@ -1,7 +1,7 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
+ * welcome letter is text; the code of conduct has a positive whole version and sections with unique keys, each with a title and text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
  * members, reactions and ranks the instance has, and cards with a `CardUi`. Pure, so the self-test can plant each defect; the build runs it
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
@@ -19,7 +19,7 @@ export const BADGE_MAX = 12;
 /** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
 export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct'> & Partial<Pick<InstanceUi, 'themes'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
   /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
   for (const t of ui.themes ?? []) {
@@ -63,6 +63,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
       });
     }
   }
+  out.push(...conductProblems(ui.conduct));
   const on = ui.onboarding;
   if (typeof on !== 'object' || on === null) return ['the instance UI has no onboarding'];
   const tips: Record<string, { title?: unknown; line?: unknown; action?: unknown } | undefined> = on.tips ?? {};
@@ -83,6 +84,25 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   for (const card of ui.cards ?? []) {
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
+  }
+  return out;
+}
+
+/** The code of conduct: a positive whole version, sections with unique keys, and a title and words in each. */
+function conductProblems(conduct: unknown): string[] {
+  if (typeof conduct !== 'object' || conduct === null) return ['the instance UI has no conduct'];
+  const { version, sections } = conduct as { version?: unknown; sections?: unknown };
+  const out: string[] = [];
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) out.push('the conduct version is not a positive whole number');
+  if (!Array.isArray(sections) || sections.length === 0) return [...out, 'the conduct has no sections'];
+  const seen = new Set<string>();
+  for (const sec of sections as readonly { key?: unknown; title?: unknown; text?: unknown }[]) {
+    const key = typeof sec?.key === 'string' ? sec.key : '';
+    if (key.trim() === '') out.push('a conduct section has no key');
+    else if (seen.has(key)) out.push(`the conduct has two sections with the key "${key}"`);
+    seen.add(key);
+    if (typeof sec?.title !== 'string' || sec.title.trim() === '') out.push(`the conduct section "${key}" has no title`);
+    if (typeof sec?.text !== 'string' || sec.text.trim() === '') out.push(`the conduct section "${key}" has no text`);
   }
   return out;
 }

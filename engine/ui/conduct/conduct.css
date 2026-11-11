@@ -1,0 +1,20 @@
+/*
+ * The code of conduct (Conduct.tsx): the account screens' frame (account.css: the heading, the panel, the lead) with each section ruled off
+ * under the lead, its bold sentence a heading and its words below. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx
+ * reads this file).
+ */
+.kb-conduct-section {
+  max-width: 920px;
+  padding-block: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-conduct-title {
+  margin: 0 0 0.5rem;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 700;
+}
+
+.kb-conduct-text p {
+  margin: 0 0 0.75rem;
+}

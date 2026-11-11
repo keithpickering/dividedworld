@@ -25,6 +25,14 @@ describe('Divided World\'s developer persona', () => {
   });
 });
 
+describe('Divided World\'s code of conduct', () => {
+  test('is version 1 with the design\'s seven sections, and passes the engine\'s check', () => {
+    expect(instanceUi.conduct.version).toBe(1);
+    expect(instanceUi.conduct.sections.map((s) => s.key)).toEqual(['person', 'hate', 'harassment', 'stop', 'onBoard', 'reportAbuse', 'outing']);
+    expect(instanceUiProblems(instanceUi, instance).filter((p) => /conduct/u.test(p))).toEqual([]);
+  });
+});
+
 describe('Divided World\'s onboarding words', () => {
   test('fill the engine\'s tips exactly, and the check is run against the real instance', () => {
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);

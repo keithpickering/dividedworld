@@ -24,8 +24,9 @@ const looks = (): Record<string, unknown> => ({
   heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.' },
 });
 const copy = { siteName: 'S', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'x' };
+const goodConduct = (): InstanceUi['conduct'] => ({ version: 1, sections: [{ key: 'person', title: 'T.', text: 'Words.' }, { key: 'hate', title: 'U.', text: 'More words.' }] });
 const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown, badges?: unknown) => ({
-  onboarding: onboarding as OnboardingUi, frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
+  onboarding: onboarding as OnboardingUi, conduct: goodConduct(), frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
   copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }), ...(badges === undefined ? {} : { badges: badges as InstanceUi['copy']['badges'] }) },
 });
 const good = { tips: tips(), letter: 'Hi.' };
@@ -36,6 +37,20 @@ const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }
 };
 
 describe('instanceUiProblems', () => {
+  test('reports a conduct section with empty text (the poison the check exists for)', () => {
+    const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
+    for (const text of ['', ' \n ']) assert.deepEqual(withConduct({ version: 1, sections: [{ key: 'a', title: 'A.', text }] }), ['the conduct section "a" has no text']);
+  });
+  test('holds the code of conduct to a positive whole version, unique keys, and a title and words in every section', () => {
+    const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
+    const sec = (key: string, title: string, text: string) => ({ key, title, text });
+    assert.deepEqual(withConduct(goodConduct()), []);
+    for (const version of [0, -1, 1.5, '1', undefined]) assert.deepEqual(withConduct({ ...goodConduct(), version }), ['the conduct version is not a positive whole number']);
+    assert.deepEqual(withConduct({ version: 1, sections: [sec('a', 'A.', 'x'), sec('a', 'B.', 'y')] }), ['the conduct has two sections with the key "a"']);
+    assert.deepEqual(withConduct({ version: 1, sections: [sec('a', '  ', 'x')] }), ['the conduct section "a" has no title']);
+    assert.deepEqual(withConduct({ version: 1, sections: [] }), ['the conduct has no sections']);
+    assert.deepEqual(withConduct(undefined), ['the instance UI has no conduct']);
+  });
   test('holds a theme\'s modes to the keys of its preview', () => {
     const withThemes = (themes: unknown) => instanceUiProblems({ ...ui(good), themes: themes as InstanceUi['themes'] }, rules);
     const t = (modes: string, preview: unknown) => [{ key: 'night', name: 'Night', href: '/n.css', modes, preview }];

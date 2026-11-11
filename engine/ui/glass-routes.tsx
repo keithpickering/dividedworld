@@ -26,6 +26,7 @@ import type { AlertsScreen } from './alerts/Alerts.tsx';
 import type { UpdatesScreen } from './updates/Updates.tsx';
 import type { GuideScreen } from './guide/Guide.tsx';
 import type { ContactScreen } from './contact/Contact.tsx';
+import type { ConductScreen } from './conduct/Conduct.tsx';
 import type { WelcomeScreen } from './welcome/Welcome.tsx';
 import type { QueueScreen } from './admin/Queue.tsx';
 import type { MachineScreen } from './admin/Machine.tsx';
@@ -54,6 +55,7 @@ export interface GlassScreens {
   readonly updates: GlassScreen<Props<typeof UpdatesScreen>>;
   readonly guide: GlassScreen<Props<typeof GuideScreen>>;
   readonly contact: GlassScreen<Props<typeof ContactScreen>>;
+  readonly conduct: GlassScreen<Props<typeof ConductScreen>>;
   readonly welcome: GlassScreen<Props<typeof WelcomeScreen>>;
   readonly queue: GlassScreen<Props<typeof QueueScreen>>;
   readonly machine: GlassScreen<Props<typeof MachineScreen>>;
@@ -81,6 +83,7 @@ export function glassRoutes(env: GlassEnv, s: GlassScreens, extras: GlassExtras 
   const AlertsC = s.alerts.Component;
   const UpdatesC = s.updates.Component;
   const ContactC = s.contact.Component;
+  const ConductC = s.conduct.Component;
   const QueueC = s.queue.Component;
   const MachineC = s.machine.Component;
   const LogC = s.log.Component;
@@ -107,6 +110,7 @@ export function glassRoutes(env: GlassEnv, s: GlassScreens, extras: GlassExtras 
     },
     { path: '/guide', ...chunk(s.guide), render: () => <GuideC /> },
     { path: '/contact', load: () => loadContact(env, s.contact.preload), render: (_, doc) => <ContactC doc={doc as readonly ContactLink[]} /> },
+    { path: '/conduct', ...chunk(s.conduct), render: () => <ConductC /> },
     { path: '/welcome', ...chunk(s.welcome), render: () => <WelcomeC /> },
     { path: '/admin/queue', load: () => loadQueue(env, s.queue.preload), key: queueKey, render: (_, doc) => <QueueC doc={doc as Props<typeof QueueScreen>['doc']} now={extras.now} /> },
     { path: '/admin/machine', ...chunk(s.machine), render: () => <MachineC /> },

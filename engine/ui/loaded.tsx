@@ -25,6 +25,7 @@ import { ProfileEdit } from './profile-edit/ProfileEdit.tsx';
 import type { PictureIo } from './profile-edit/crops.ts';
 import { SeasonScreen } from './season/Season.tsx';
 import { ContactScreen } from './contact/Contact.tsx';
+import { ConductScreen } from './conduct/Conduct.tsx';
 import { SettingsScreen } from './account/Settings.tsx';
 import { SignInScreen } from './account/SignIn.tsx';
 import { Vending } from './vending/Vending.tsx';
@@ -100,7 +101,7 @@ const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => (
 const SCREENS: GlassScreens = {
   signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
   settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
-  guide: direct(GuideScreen), contact: direct(ContactScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), machine: direct(MachineScreen), log: direct(LogScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), machine: direct(MachineScreen), log: direct(LogScreen),
   settlement: direct(SettlementScreen),
 };
 
@@ -114,6 +115,7 @@ function Glass({ paths, io, now }: { readonly paths: readonly string[]; readonly
 const CHARACTERS = ['/characters', '/characters/edit'];
 const SEASON = ['/season'];
 const CONTACT = ['/contact'];
+const CONDUCT = ['/conduct'];
 const SETTINGS = ['/settings'];
 const ALERTS = ['/alerts'];
 const UPDATES = ['/updates'];
@@ -124,6 +126,7 @@ const LOG = ['/log', '/log/settlement'];
 export function LoadedCharacters({ io }: { readonly io?: PictureIo } = {}) { return <Glass paths={CHARACTERS} io={io} />; }
 export function LoadedSeason() { return <Glass paths={SEASON} />; }
 export function LoadedContact() { return <Glass paths={CONTACT} />; }
+export function LoadedConduct() { return <Glass paths={CONDUCT} />; }
 export function LoadedSettings() { return <Glass paths={SETTINGS} />; }
 export function LoadedAlerts() { return <Glass paths={ALERTS} />; }
 export function LoadedUpdates() { return <Glass paths={UPDATES} />; }

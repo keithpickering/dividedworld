@@ -57,6 +57,7 @@ const screens: GlassScreens = {
   updates: lazyScreen(() => import('../../engine/ui/updates/Updates.tsx').then((m) => ({ default: m.UpdatesScreen }))),
   guide: lazyScreen(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen }))),
   contact: lazyScreen(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen }))),
+  conduct: lazyScreen(() => import('../../engine/ui/conduct/Conduct.tsx').then((m) => ({ default: m.ConductScreen }))),
   welcome: lazyScreen(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen }))),
   queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
   machine: lazyScreen(() => import('../../engine/ui/admin/Machine.tsx').then((m) => ({ default: m.MachineScreen }))),
@@ -123,6 +124,8 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/guide': 'settings',
   /* Reach a person stands on the same page smoke, for the same reason, and is readable signed out. */
   '/contact': 'settings',
+  /* The code of conduct stands on the same page smoke, for the same reason, and is readable signed out (registration links to it). */
+  '/conduct': 'settings',
   /* The welcome stands on the same page smoke, for the same reason. */
   '/welcome': 'settings',
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */

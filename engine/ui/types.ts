@@ -381,6 +381,12 @@ export interface GlassTheme {
   readonly orbs: { readonly gradients: readonly GlassOrbStops[]; readonly body: { readonly core: string; readonly edge: string } };
 }
 
+/** An instance's code of conduct: a version and its sections, read by engine/ui/conduct/Conduct.tsx. */
+export interface ConductUi {
+  readonly version: number;
+  readonly sections: readonly { readonly key: string; readonly title: string; readonly text: string }[];
+}
+
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
@@ -426,6 +432,11 @@ export interface InstanceUi {
   readonly onboarding: OnboardingUi;
   /** The instance's Strategy Guide: its prose, and Gabe's hint for each class (docs/plans/2026-11-02-onboarding-plan.md, Task 8). */
   readonly guide: GuideUi;
+  /**
+   * The instance's code of conduct (docs/plans/2026-11-02-conduct-design.md, section 9): versioned, so an account accepts the current
+   * version. Each section's `key` is its anchor on /conduct, its `title` the bold sentence, its `text` plain Markdown.
+   */
+  readonly conduct: ConductUi;
   /** What a signed-out visitor meets: a made-up sample thread, the developer persona's note and the HUD's prompt (docs/plans/2026-11-05-front-door-design.md, section 4). */
   readonly frontDoor: FrontDoorUi;
 }
