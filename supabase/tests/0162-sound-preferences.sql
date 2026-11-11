@@ -1,4 +1,4 @@
--- The sound preferences (supabase/migrations/0154_sound_preferences.sql; docs/plans/2026-11-11-laugh-track-design.md): game and interface sound
+-- The sound preferences (supabase/migrations/0200_sound_preferences.sql; docs/plans/2026-11-11-laugh-track-design.md): game and interface sound
 -- 'off' by default, each with a volume of 80, each kept alone, a sound other than off or on and a volume outside 0 to 100 in steps of 5 refused
 -- in plain words, read by the account alone, and carried in boot()'s preferences.
 
