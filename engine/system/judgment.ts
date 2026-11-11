@@ -318,7 +318,7 @@ const offersMove = (i: Pick<ModPromptInput, 'allowance' | 'beat'>): boolean => i
 
 /**
  * The persona's prompt for a Mod's duty: who it is, what it has done and remembers, the Boss's standing order, the rules in force, the catalog of predicates,
- * and what its one move may be. The engine composes it; the instance's premise for the office is the persona's own text.
+ * and what its one move may be. The engine composes it, and sets the persona in the mod office's frame (`personaPrompt`).
  */
 export function modPrompt(i: ModPromptInput): string {
   const names = i.names ?? (() => 'a character');

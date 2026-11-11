@@ -69,7 +69,6 @@ import {
   dayOf,
   dayRng,
   pick,
-  POSTING_OFFICES,
   priorities,
   seededRng,
   type PoolPhase,
@@ -241,14 +240,11 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     const persona = roster.find((r) => r.key === p.staff);
     const base = { staff: p.staff, trigger: p.trigger, trims: [] as Trim[] };
     if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
-    // The persona's prompt is set in the frame of the office it holds now; one that holds no office that posts has none to speak in.
-    const office = (POSTING_OFFICES as readonly string[]).includes(context.offices[p.staff] ?? '') ? (context.offices[p.staff] as PostingOffice) : null;
-    if (office === null) { records.push({ ...base, status: 'skipped', why: 'the persona holds no office that posts' }); continue; }
     if (already.has(p.staff)) { records.push({ ...base, status: 'already' }); continue; }
     if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
 
     const record = await onePick({
-      db, models, tuned, persona, office, p, day, slugs, cardsOnOffer,
+      db, models, tuned, persona, office: p.office, p, day, slugs, cardsOnOffer,
       threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
     });
     records.push(record);

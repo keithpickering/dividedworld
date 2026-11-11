@@ -370,7 +370,7 @@ export function chatterCompletion(i: { readonly name: string; readonly thread: C
 }
 
 /**
- * What every pool post is told beside its persona's own prompt (which the instance built on its premise): that nobody asked it to write, and
+ * What every pool post is told beside its persona's own prompt (the engine sets the persona in its office's frame, `personaPrompt`): that nobody asked it to write, and
  * what a pool post is. The instance's voice is the persona's; this is the engine's, and says nothing of any instance.
  */
 export const POOL_PREMISE = 'Nobody asked you to post. You are writing on your own, as a character on the board, because something caught your eye. This is not a meeting and not a ruling: you are one voice in a thread, and what you write is a post like anyone\'s.';

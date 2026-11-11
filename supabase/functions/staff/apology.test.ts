@@ -127,6 +127,14 @@ test('a database error is thrown at once, and a ledger failure stops the run', a
   assert.equal(ruled(d2).length, 0);
 });
 
+test('when mod_standing fails with a database error, nothing is called and rule_apology is never made, so no apology is ruled in the wrong office\'s frame', async () => {
+  const d = fakeDb([row(9)], { failOn: 'mod_standing' });
+  const m = fakeModels(() => ({ verdict: 'accepted', ruling: 'x' }));
+  await assert.rejects(runApologies(d.db, m.models, dividedWorld), DatabaseError);
+  assert.equal(m.chats.length, 0, 'no judgment was made');
+  assert.equal(ruled(d).length, 0, 'no ruling was written');
+});
+
 test('with The System off nothing is read or called', async () => {
   const d = fakeDb([row(1)], { enabled: false });
   const m = fakeModels(() => ({}));

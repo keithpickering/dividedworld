@@ -87,9 +87,15 @@ export interface PoolSignals {
 
 /* ---------------------------------------------------------------------------------------------------- candidates ---- */
 
+/** The offices whose posts the pool pays for: every one that writes. A waiting persona is not debuted, a benched one is silent. */
+export const POSTING_OFFICES = ['boss', 'mod', 'member'] as const;
+export type PostingOffice = (typeof POSTING_OFFICES)[number];
+
 /** A reason for a persona to post: where, about which post (if any), and the Act that set it off (if any). */
 export interface Candidate {
   readonly staff: string;
+  /** The office the persona holds now, read once from `ctx.offices` where `candidates` checks that it posts: the frame its prompt is set in. */
+  readonly office: PostingOffice;
   readonly trigger: PoolTrigger;
   /**
    * The thread the reply goes in: the trigger's own. Null only where the trigger has no thread: a stumble from the Boss entering its
@@ -125,10 +131,6 @@ export interface PoolContext {
   readonly characters: Readonly<Record<string, string>>;
 }
 
-/** The offices whose posts the pool pays for: every one that writes. A waiting persona is not debuted, a benched one is silent. */
-export const POSTING_OFFICES = ['boss', 'mod', 'member'] as const;
-export type PostingOffice = (typeof POSTING_OFFICES)[number];
-
 /** An opinion at or above this is a favorite for `oldFlame`; a grudge is any grudge the memory holds. */
 export const FAVORITE_SCORE = 3;
 
@@ -140,10 +142,14 @@ export function candidates(
   ctx: PoolContext,
 ): Candidate[] {
   const byKey = new Map(roster.map((p) => [p.key, p]));
-  const writes = (key: string | null | undefined): key is string => key != null && byKey.has(key) && (POSTING_OFFICES as readonly string[]).includes(ctx.offices[key] ?? '');
+  const officeOf = (key: string | null | undefined): PostingOffice | null => {
+    const office = key != null && byKey.has(key) ? ctx.offices[key] : undefined;
+    return (POSTING_OFFICES as readonly string[]).includes(office ?? '') ? (office as PostingOffice) : null;
+  };
   const out: Candidate[] = [];
   const add = (staff: string | null | undefined, trigger: PoolTrigger, thread: string | null, quoting: string | null, act: string | null) => {
-    if (writes(staff)) out.push({ staff, trigger, thread, quoting, act });
+    const office = officeOf(staff);
+    if (staff != null && office !== null) out.push({ staff, office, trigger, thread, quoting, act });
   };
 
   for (const s of signals.named) add(s.staff, 'named', s.thread, s.act, s.act);
@@ -265,6 +271,7 @@ export const dayRng = (day: string): (() => number) => seededRng(`kayfabb-pool:$
 
 export interface PoolPick {
   readonly staff: string;
+  readonly office: PostingOffice;
   readonly trigger: PoolTrigger;
   readonly thread: string | null;
   readonly quoting: string | null;
@@ -320,7 +327,7 @@ export function pick(
   const chosen = [...fromNew, ...ranked.filter((s) => !taken.has(s)).slice(0, slots - fromNew.length)].sort(better);
   const cardSlots = slots - chosen.length;
   const picks = chosen.map((s, i): PoolPick => ({
-    staff: s.c.staff, trigger: s.c.trigger, thread: s.c.thread, quoting: s.c.quoting, act: s.c.act,
+    staff: s.c.staff, office: s.c.office, trigger: s.c.trigger, thread: s.c.thread, quoting: s.c.quoting, act: s.c.act,
     startThread: i === 0 && threadsLeft > 0,
     cardSlot: i < cardSlots,
   }));

@@ -231,7 +231,7 @@ export interface ConferredGroup {
 }
 
 /**
- * The system prompt: the Boss's persona (which the instance built on its shared premise), then what this meeting allows. The
+ * The system prompt: the Boss's persona (set in the boss office's frame by `personaPrompt`), then what this meeting allows. The
  * numbers are the engine's, the words about them too; a persona that wants a different voice for them has the persona.
  */
 export function meetingSystemPrompt(f: PromptFacts): string {
