@@ -149,11 +149,11 @@ describe('the web plan\'s five poisons', () => {
   });
 
   test('under high contrast, a line on solid ground that is too bright for its color', () => {
-    /* #ffffff at 7:1 needs ground under 0.1 of luminance: a solid ground of 0.2 is no smoke and still too bright. */
-    const white: TextFact = { ...body, color: [255, 255, 255, 1], smoke: 0, brightest: 0.2 };
+    /* The glass's text color at 7:1 needs a ground under its ceiling of luminance: a solid ground of 0.2 is no smoke and still too bright. (Not #ffffff: the caption's ink is that white, an ink, which is read on its fill.) */
+    const white: TextFact = { ...body, color: [241, 236, 255, 1], smoke: 0, brightest: 0.2 };
     expect(judged({ ...white, brightest: 0.02 }, 'rankings', { palette: high, high: true })).toEqual([]);
     expect(judged(white, 'rankings', { palette: high, high: true })).toEqual([
-      '"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast its brightest pixel, luminance 0.2000, is not under the 7:1 ceiling 0.1 for its color, rgb(255, 255, 255)',
+      '"Every character this season" in p.kb-rankings-lead (surface rankings): under high contrast its brightest pixel, luminance 0.2000, is not under the 7:1 ceiling 0.0799 for its color, rgb(241, 236, 255)',
     ]);
   });
 
