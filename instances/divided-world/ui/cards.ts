@@ -39,6 +39,9 @@ import feelinFabArt from './cards/feelin-fab/art.json';
 import hallPassCanvas from './cards/hall-pass/art.webp?url';
 import hallPassMark from './cards/hall-pass/mark.svg?url';
 import hallPassArt from './cards/hall-pass/art.json';
+import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
+import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
+import belowTheFoldArt from './cards/below-the-fold/art.json';
 import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
@@ -49,6 +52,7 @@ import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
+import { belowTheFold } from '../cards/below-the-fold.ts';
 import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
 import { cardCollector } from '../cards/card-collector.ts';
 import { publicityTour } from '../cards/publicity-tour.ts';
@@ -100,6 +104,7 @@ const StickAroundEffect = lazy(() => import('./stick-around/Effect.tsx').then((m
 const AutocorrectEffect = lazy(() => import('../cards/autocorrect/Effect.tsx').then((m) => ({ default: m.AutocorrectEffect })));
 const FeelinFabEffect = lazy(() => import('./feelin-fab/Effect.tsx').then((m) => ({ default: m.FeelinFabEffect })));
 const GlitterBombEffect = lazy(() => import('./glitter-bomb/Effect.tsx').then((m) => ({ default: m.GlitterBombEffect })));
+const BelowTheFoldEffect = lazy(() => import('./below-the-fold/Effect.tsx').then((m) => ({ default: m.BelowTheFoldEffect })));
 const YouWereSayingEffect = lazy(() => import('../cards/you-were-saying/Effect.tsx').then((m) => ({ default: m.YouWereSayingEffect })));
 const WhoopsEffect = lazy(() => import('../cards/whoops/Effect.tsx').then((m) => ({ default: m.Effect })));
 
@@ -149,6 +154,20 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     logSave: (state: unknown) => (typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true
       ? { what: 'Washed clean', said: 'The layer is washed clean, for every reader.' }
       : undefined),
+  },
+  /*
+   * Below the Fold (docs/plans/2026-11-11-card-notes-design.md, section 2): Salty's pink. The post is one bar until a reader presses it;
+   * the effect draws the bar (ui/below-the-fold/Effect.tsx), and nothing about the fold is saved or sent.
+   */
+  {
+    key: 'below-the-fold',
+    Effect: BelowTheFoldEffect,
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: belowTheFoldCanvas, mark: belowTheFoldMark, credit: belowTheFoldArt.credit, tagline: 'Fold a post away.' },
+    summary: 'Folds a post behind a bar. Any reader opens it with one press.',
+    status: 'Folded behind a bar',
+    hint: 'Press the bar to read the post.',
+    describe: () =>
+      `A Salty card, ${belowTheFold.rarity}. It folds a post behind a bar, for every reader alike: the post's words are still there, and anyone opens them with one press of the bar, which lasts until they leave the page. One fold fits on a post. ${setMoveWords('the quoting post')} It costs nothing more to play.`,
   },
   /*
    * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Pepperoni's color is the
