@@ -9,6 +9,7 @@ import type { Span } from '../../rules/types.ts';
 import type { CardPlay } from './types.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { orbs } from './faces.ts';
+import { shareWords } from '../copy-words.ts';
 import { STATUS_MAX_WORDS } from './lens-words.ts';
 
 /** The most marks a strip draws on a desktop, before the "+N" mark. */
@@ -96,6 +97,8 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
   const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') return finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
+  /* A ride pays the post's author, from the cards others cast on it: the heading is the short status, and the report says how much, from the effect's own share. */
+  if (effect.kind === 'ride') return finish('Pays its author for votes here', `Each vote on a card another player casts here pays its author ${shareWords(effect.share)}.`);
   /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */
   const away = [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])];
   const full = `Turns away ${away.length > 0 ? list(away) : 'some cards'}`;
