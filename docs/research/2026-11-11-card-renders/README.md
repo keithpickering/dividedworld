@@ -76,7 +76,8 @@ Environment variables, all optional:
 | `AUTOCORRECT_SEED` | `2` | The lengths of the post's words. |
 | `TOUR_SEED` | `8` | Where the crowd stands and whose cameras flash. |
 | `HEAT_SEED` | `6` | How the flames sway, and the embers. |
-| `HEAT_STYLE` | `tongues` | `tongues` is flat cartoon fire; `volume` is soft fire with depth, far slower to render. |
+| `HEAT_STYLE` | `tongues` | `tongues` is flat cartoon fire; `volume` is soft fire shaped by noise; `fluid` is simulated fire. The last two are far slower. |
+| `HEAT_CACHE`, `HEAT_RES`, `HEAT_FRAMES` | none, `112`, `60` | For `fluid` only: an empty folder the simulation bakes into (required), its resolution, and how many frames it runs before the picture is taken. |
 | `HEAT_FIRE` | `1.0` | The fire's brightness, either style. |
 | `CLOWN_SEED` | `9` | The wig's curls and the confetti. |
 | `CLOWN_TWIST` | `0.5` | How tightly the backdrop's vortex winds: 0 is straight rays, over 1 is nearly rings. |
@@ -121,10 +122,17 @@ this date and is part of the picture: if the price changes, the tag is wrong.
 after the owner's own Feelin' Fab swirl, a twist in the backdrop's shader, and the kit is lit harder and edged from
 behind so it stands off it. Heat Magnet's first fire was pure light at strengths well over white, which blew the
 picture out; the tongues are now graded up their length and held under white (`heat-magnet.png`). The owner also asked
-after later-style fire from a fluid simulation. That could not be made here: the fluid solver fails inside the `bpy`
-module (its own scripts raise errors and the process aborts), and fetching the full Blender build, where it works, was
-refused by the session's permission check. `HEAT_STYLE=volume` is the nearest thing without it: columns of light in a
-volume, shaped by noise and not simulated (`heat-magnet-volume.png`, at 64 samples).
+after later-style fire from a fluid simulation. The fluid solver fails inside the `bpy` module (its own scripts raise errors and the process aborts), so
+`HEAT_STYLE=volume` was made first: columns of light in a volume, shaped by noise and not simulated
+(`heat-magnet-volume.png`, at 64 samples), which the owner liked. The owner then allowed the full Blender build to be
+fetched, where the solver works, and `HEAT_STYLE=fluid` is that: a real simulation, baked and then rendered
+(`heat-magnet-fluid.png`). It runs only under the full build:
+
+```
+HEAT_STYLE=fluid HEAT_CACHE=/some/empty/folder blender -b -P docs/research/2026-11-11-card-renders/heat.py -- out/heat-magnet-fluid.png
+```
+
+Every other scene runs under either. The full build is Blender 5.3.0 for Linux from download.blender.org.
 
 **You Were Saying?** The old voice is drawn as an old beige computer. On its screen a post starts in amber, the
 author's, and goes on in green with a block cursor, the colors the card's design gives the tail in play (Courier with
