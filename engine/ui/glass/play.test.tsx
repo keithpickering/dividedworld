@@ -6,7 +6,11 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 interface Fake { settle: () => void; stop: ReturnType<typeof vi.fn> }
 const fakes: Fake[] = [];
+/* Motion's frame loop: what is scheduled after its render runs when the test says the frame has rendered. */
+const afterRender: (() => void)[] = [];
+const render = () => { for (const f of afterRender.splice(0)) f(); };
 vi.mock('motion/react', () => ({
+  frame: { postRender: (f: () => void) => { afterRender.push(f); return f; } },
   animate: () => {
     let done: () => void = () => {};
     const p = new Promise<void>((r) => { done = r; });
@@ -19,7 +23,7 @@ const { playIn, playOut } = await import('./play.ts');
 const { DEFAULT_FEELS, FEELS, overlay } = await import('./motion.ts');
 
 const el = document.createElement('div');
-afterEach(() => { fakes.length = 0; el.removeAttribute('style'); });
+afterEach(() => { fakes.length = 0; afterRender.length = 0; el.removeAttribute('style'); });
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 describe('the drawer plays', () => {
@@ -31,6 +35,7 @@ describe('the drawer plays', () => {
     playIn(el, { initial: { opacity: 0 }, animate: { opacity: 1, transition: { duration: 1 } } } as never);
     fakes[0]!.settle();
     await flush();
+    render();
     expect(el.style.opacity).toBe('0.5');
     expect(end).not.toHaveBeenCalled();
   });
@@ -45,6 +50,7 @@ describe('the drawer plays', () => {
     playOut(el, { exit: { opacity: 0 } } as never, end);
     fakes[0]!.settle();
     await flush();
+    render();
     expect(end).toHaveBeenCalledTimes(1);
     expect(el.style.opacity).toBe('');
   });
@@ -65,8 +71,44 @@ describe('the drawer plays', () => {
       expect(el.getAttribute('style')).not.toBe('');
       fakes[0]!.settle();
       await flush();
+      render();
       expect(el.getAttribute('style') ?? '').toBe('');
     });
   }
+  /*
+   * Motion writes an animation's final values inline on the frame after its promise settles (its render step), so a clear made when the
+   * promise settles is undone: Smooth's entrance left `filter: blur(0px)` on the drawer, the containing block the header warns of. The
+   * clear waits for that render.
+   */
+  test('the entrance clears after Motion renders its final values, not before', async () => {
+    playIn(el, { initial: { opacity: 0, filter: 'blur(6px)' }, animate: { opacity: 1, filter: 'blur(0px)' } } as never);
+    fakes[0]!.settle();
+    await flush();
+    el.style.opacity = '1';
+    el.style.filter = 'blur(0px)';
+    render();
+    expect(el.getAttribute('style') ?? '').toBe('');
+  });
+  test('the exit clears after Motion renders its final values, and only then ends', async () => {
+    const end = vi.fn();
+    playOut(el, { exit: { opacity: 0, filter: 'blur(6px)' } } as never, end);
+    fakes[0]!.settle();
+    await flush();
+    el.style.opacity = '0';
+    el.style.filter = 'blur(6px)';
+    expect(end).not.toHaveBeenCalled();
+    render();
+    expect(el.getAttribute('style') ?? '').toBe('');
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+  test('a run stopped between its landing and the render clears nothing', async () => {
+    const stop = playIn(el, { initial: { opacity: 0 }, animate: { opacity: 1 } } as never);
+    fakes[0]!.settle();
+    await flush();
+    el.style.opacity = '0.5';
+    stop();
+    render();
+    expect(el.style.opacity).toBe('0.5');
+  });
 });
 

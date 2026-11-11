@@ -4,9 +4,11 @@
  * only hidden, and holds itself shown and inert until the exit ends. (Overlays, floats and modals are layers.tsx's, under `Layers`.)
  *
  * When an animation ends, the inline properties it wrote are removed, so the element rests on its stylesheet alone (a `filter` left on makes
- * an element the containing block of the glass's fixed smoke and overlays). Nothing here reads a response: every duration is the feel's.
+ * an element the containing block of the glass's fixed smoke and overlays). Motion writes the final values inline on its next frame's
+ * render, after the animation's promise settles, so the clear waits for that render (`frame.postRender`): cleared at the promise, Smooth's
+ * entrance left `opacity: 1; filter: blur(0px); transform: none` on the drawer. Nothing here reads a response: every duration is the feel's.
  */
-import { animate } from 'motion/react';
+import { animate, frame } from 'motion/react';
 import type { TargetAndTransition, Transition } from 'motion/react';
 import type { MotionProps } from './motion.ts';
 
@@ -41,7 +43,7 @@ export function playIn(el: HTMLElement, p: MotionProps): Stop {
   if (typeof transformOrigin === 'string') el.style.transformOrigin = transformOrigin;
   const frames = Object.fromEntries(Object.keys(rest).map((k) => [k, [from[k] ?? rest[k], rest[k]]]));
   let stopped = false;
-  const done = () => { if (!stopped) clear(el, Object.keys(to)); };
+  const done = () => { if (!stopped) frame.postRender(() => { if (!stopped) clear(el, Object.keys(to)); }); };
   try {
     const a = animate(el, frames as never, transition as never);
     a.then(done, done);
@@ -56,7 +58,7 @@ export function playOut(el: HTMLElement, p: MotionProps, end: () => void): Stop 
   const { transformOrigin, ...rest } = values;
   if (typeof transformOrigin === 'string') el.style.transformOrigin = transformOrigin;
   let stopped = false;
-  const over = () => { if (stopped) return; clear(el, Object.keys(values)); end(); };
+  const over = () => { if (!stopped) frame.postRender(() => { if (stopped) return; clear(el, Object.keys(values)); end(); }); };
   try {
     const a = animate(el, rest as never, transition as never);
     a.then(over, over);
