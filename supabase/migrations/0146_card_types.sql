@@ -631,3 +631,785 @@ begin
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards));
 end $$;
+
+-- ============================================================================ Task 4: Reversals, take-back and the hand ====
+-- A Reversal springs on a cast it names or matches, a face-down card goes back to its setter's hand at any time before it springs and when its time ends unsprung, and the settlement is given
+-- what the card types need (design sections 3, 4 and 6; plan Task 4). Each function below is copied from its latest definition and changed only where it is said.
+--
+--   1. the Acts, the ledger   acts_kind_check and acts_seq_check gain `take_back` (an Act of the back's post's author, on that post, payload {set}, no card, no seq); acts_take_back_payload holds its
+--                             shape; acts_one_take_back is one take-back per back, found by index; acts_well_formed (0114) refuses one that is not of a live back on its own post by its own author;
+--                             card_ledger gains `returned` (a take-back's row, carrying the Act), the hand's one new row kind; face_down_account_card is the index card_held's time term reads by.
+--   2. place_set              (0144) refuses a set card with no trap ("<name> has no trap to spring"), a named catch or a match rarer than the set card ("<name> names cards up to <rarity>"), and a match beside a named
+--                             catch; a cast Reversal waits for a name or a match; a post's live check counts a take-back as an end.
+--   3. take_back              the door: take_back(who, through, set_act), the service role's (granted as set_card is; no Edge Function calls either yet), under set_card's locks in its order.
+--   4. spring_facts, spring_traps  a cast back springs on the card it names or the card its match holds (flavor in `flavors`, rarity at or below `upTo` and at or below the back's own); every back reads the incoming
+--                             card's printed row and the match whatever it holds. A taken-back back springs nothing.
+--   5. the back's end         card_target, my_face_down (with ended_by: sprung, taken back or time), and place_set above read a back as ended by its spring, a take-back naming it, or ends_at.
+--   6. the hand               card_held = bought + pulled + caught + returned - played + the account's backs whose time passed unsprung and not taken back (read from face_down, never written, as an ended back
+--                             writes nothing today); my_card_ledger shows a time-ended back as a `returned` line at its ends_at.
+--   7. settlement_input, estimate_input   send `by` (a spring's), `ends` (a use card's play's) and `on` (a character-reach play's); and every live Earn play whose end is after the window's start, even one
+--                             played before it (settle.ts boosts only with the play in the input), each with the post it is on.
+--
+-- Locks. take_back takes set_card's, in its order: the setter's `accounts` row (1), the post's `acts` row (2), the back's `face_down` row (3), then writes its Act and its ledger row. It takes no wallet (a take-back is free)
+-- and no thread or count row (a take-back is neither counted nor numbered). place_set, spring_facts and spring_traps take what they took. A spring and a take-back of one back meet at (3): the one that locks
+-- the row second re-reads, finds the other's Act, and does nothing (spring_traps) or refuses (take_back).
+-- Masks. take_back refuses another account's back, another of the setter's masks, a post that is no back, a back that does not exist and a back already sprung, taken back or past its time in the same words,
+-- and reads nothing about the card; every take-back writes the same Act and a ledger row of the same shape. A time-ended back writes nothing: its return is read only by the setter's own card_held and
+-- my_card_ledger (row security on face_down and card_ledger). spring_facts reads the incoming card's printed name, flavor and rarity, public to every caster. Carried Earn plays are public Acts.
+-- Ways out. A back ends by a spring, a take-back, or its time, and each of those returns the card or spends it by what happened (a spring spends it, the other two return it); nothing here adds a state a player can be put
+-- in. A take-back past a back's time is refused because the back is already over and the card already in the hand.
+-- Cost at a busy instance's scale. card_held reads the account's own rows of the card in card_ledger (card_ledger_account) and in face_down (face_down_account_card), one probe each of acts_one_spring and acts_one_take_back
+-- per ended back of that card: linear in that account's backs of that card, never the instance's. The carried Earn plays are found by the card Acts' creation time (a window of the longest Earn `lasts` before the window).
+-- ------------------------------------------------------------------------------------------------ 1. the Acts and the ledger ----
+
+alter table card_ledger drop constraint card_ledger_kind_check;
+alter table card_ledger add constraint card_ledger_kind_check check (kind in ('bought', 'played', 'pulled', 'caught', 'returned'));
+-- A played card, a caught card and a returned card (a take-back) each name their Act; a bought and a pulled card name none.
+alter table card_ledger drop constraint card_ledger_check;
+alter table card_ledger add constraint card_ledger_check check ((kind in ('played', 'caught', 'returned')) = (act is not null));
+
+alter table acts drop constraint acts_kind_check;
+alter table acts add constraint acts_kind_check check (kind in ('post', 'spin', 'card', 'edit', 'tally', 'reveal', 'unmask', 'move', 'move_end', 'move_keep', 'set', 'spring', 'update', 'card_end', 'announce', 'describe', 'infraction', 'ban',
+  'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'appeal', 'appeal_ruling', 'take_back'));
+
+alter table acts drop constraint acts_seq_check;
+alter table acts add constraint acts_seq_check check ((kind = 'edit') = (seq is null) or kind in ('card', 'set', 'spring', 'card_end', 'describe', 'infraction', 'ban', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept',
+  'appeal', 'appeal_ruling', 'take_back'));
+
+-- A take-back names the set it takes back and nothing else: no card, so no one reads which card was face down from it.
+alter table acts add constraint acts_take_back_payload check (kind <> 'take_back' or (
+  payload - 'set' = '{}'::jsonb and jsonb_typeof(payload -> 'set') = 'string'
+  and payload ->> 'set' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') is true);
+-- One take-back per back, what makes "taken back once" a constraint and finds a back's take-back by index (acts_one_spring's twin).
+create unique index acts_one_take_back on acts ((payload ->> 'set')) where kind = 'take_back';
+-- An account's backs of one card, for card_held's time term.
+create index face_down_account_card on face_down (account, card);
+
+-- acts_take_seq (0109), also leaving a take-back out of its thread's seq; everything else as 0109 wrote it.
+create or replace function acts_take_seq() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.kind in ('edit', 'card', 'set', 'spring', 'card_end', 'describe', 'infraction', 'ban', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'appeal', 'appeal_ruling', 'take_back') then
+    new.seq := null;
+  else
+    -- On the right of an assignment a column is its old value: a post that takes a seq above 1 is a reply.
+    update threads set next_seq = next_seq + 1, last_at = greatest(last_at, new.created_at),
+                       replies = replies + case when new.kind = 'post' and next_seq > 1 then 1 else 0 end
+     where id = new.thread returning next_seq - 1 into new.seq;
+  end if;
+  return new;
+end $$;
+
+-- acts_well_formed (0114), refusing a take-back that is not of a live back on its own post by its own author. Everything else as 0114 wrote it.
+create or replace function acts_well_formed() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare t acts%rowtype;
+begin
+  if new.character is not null and coalesce(current_setting('kayfabb.staff_writer', true), '') <> 'on'
+     and exists (select 1 from characters c where c.id = new.character and c.staff is not null) then
+    raise exception 'a staff character acts only through the game''s own moves' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.kind in ('move', 'move_keep') and new.character is not null and not exists (select 1 from characters c where c.id = new.character and c.staff is not null) then
+    raise exception 'a % is a staff character''s Act', new.kind using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.kind = 'move' then
+    if not exists (select 1 from move_kinds k where k.key = new.payload ->> 'kind') then
+      raise exception 'there is no move kind "%"', coalesce(new.payload ->> 'kind', '') using errcode = '23514';
+    end if;
+    if jsonb_typeof(new.payload -> 'demand') = 'object' and not exists (select 1 from demand_kinds d where d.key = new.payload #>> '{demand,kind}') then
+      raise exception 'there is no demand kind "%"', coalesce(new.payload #>> '{demand,kind}', '') using errcode = '23514';
+    end if;
+    if jsonb_typeof(new.payload -> 'demand') = 'object' and demand_params_problem(new.payload -> 'demand') is not null then
+      raise exception 'the demand''s params are malformed at %', demand_params_problem(new.payload -> 'demand') using errcode = '23514';
+    end if;
+    -- Cast once here, so an expiry that is no time is refused at the door and the readers of it never meet one.
+    if jsonb_typeof(new.payload -> 'expires_at') = 'string' then perform (new.payload ->> 'expires_at')::timestamptz; end if;
+  end if;
+  if new.kind = 'move_end' and coalesce(current_setting('kayfabb.move_end_writer', true), '') <> 'on' then
+    raise exception 'a move ends only through end_move' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.kind = 'card_end' and coalesce(current_setting('kayfabb.card_end_writer', true), '') <> 'on' then
+    raise exception 'a card ends only through reverse_card' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.debuted_at is null) then
+    raise exception 'that character debuts at the next settlement' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.retired_at is not null) then
+    raise exception 'that character is retired; an admin can restore it' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  if new.kind = 'announce' then
+    if new.payload ->> 'what' is distinct from 'debut' and new.payload ->> 'what' is distinct from 'turn' then
+      raise exception 'an announcement is a debut or a Turn' using errcode = '23514';
+    end if;
+    if new.payload ->> 'what' = 'debut' and new.payload ? 'was' then
+      raise exception 'a debut has no class it was' using errcode = '23514';
+    end if;
+  end if;
+  if (new.kind = 'unmask' or (new.kind = 'announce' and new.payload ? 'class'))
+     and (new.payload ->> 'class') is distinct from (select class_key from class_now(new.character, new.created_at)) then
+    raise exception 'an % names the class its character holds', new.kind using errcode = '23514';
+  end if;
+  if new.target_act_id is null then return new; end if;
+  select * into t from acts where id = new.target_act_id;
+  if new.kind = 'move_end' and (t.kind <> 'move' or t.thread <> new.thread) then
+    raise exception 'a move_end is of a move, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'card_end' and (t.kind <> 'card' or t.thread <> new.thread) then
+    raise exception 'a card_end is of a card play, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'move_keep' then
+    if t.kind <> 'move' or t.thread <> new.thread then
+      raise exception 'a move_keep is of a move, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+    end if;
+    if not exists (select 1 from open_moves o where o.move_act = t.id) then
+      raise exception 'only a move in force can be kept' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+    if (select c.staff from characters c where c.id = new.character) is distinct from current_boss() then
+      raise exception 'only the season''s Boss keeps a move' using hint = 'kayfabb.refusal', errcode = '42501';
+    end if;
+    if move_owner(t.id) is not distinct from current_boss() then
+      raise exception 'that move is already the Boss''s own' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+  end if;
+  if new.kind = 'edit' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then
+    raise exception 'an edit is of its own author''s post, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'card' and t.kind <> 'post' then
+    raise exception 'a card lands on a post' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  -- A card set face down is its post's own author's, in the post's thread; a spring is its set's author's, on the set's post.
+  if new.kind = 'set' and (t.kind <> 'post' or t.character <> new.character or t.thread <> new.thread) then
+    raise exception 'a card is set face down on a post of its own author''s, in its thread' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind = 'spring' and (t.kind <> 'post' or t.thread <> new.thread or not exists (
+       select 1 from acts s where s.id::text = new.payload ->> 'set' and s.kind = 'set' and s.target_act_id = t.id and s.character = new.character)) then
+    raise exception 'a spring is of a card set face down on its post, by the one who set it' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  -- A take-back is of a card set face down on the post it is on, by the one who set it, in the post's thread, while the back is live as of the take-back: not sprung, not taken back before (acts_one_take_back
+  -- holds that), and not past its time. The card's own account is read from face_down, never named in the Act.
+  if new.kind = 'take_back' and (t.kind <> 'post' or t.thread <> new.thread or not exists (
+       select 1 from acts s join face_down f on f.play = s.id
+       where s.id::text = new.payload ->> 'set' and s.kind = 'set' and s.target_act_id = t.id and s.character = new.character and f.ends_at > new.created_at
+         and not exists (select 1 from acts p where p.kind = 'spring' and (p.payload ->> 'set') = s.id::text))) then
+    raise exception 'a take-back is of a live card set face down on its post, by the one who set it' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  if new.kind <> 'edit' and t.kind = 'edit' then
+    raise exception 'an edit is not answered; answer the post' using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+  return new;
+end $$;
+
+-- place_set (0144), refusing a set card with no trap, a named catch or a match rarer than the set card, and a match beside a named catch; a cast Reversal waits for a name or a match; and a post's live back
+-- ends by a take-back as by a spring or its time. Everything else, the lock order included, as 0144 wrote it. Callable by no API role, as before (create or replace keeps the revoke).
+create or replace function place_set(setter uuid, card text, target uuid, config jsonb, payer uuid, price integer, catches text default null, phrase text default null,
+                          passage text default null, named uuid[] default null, who_except boolean default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  kind_of card_kinds%rowtype;
+  caught_kind card_kinds%rowtype;
+  target_kind text;
+  author uuid;
+  in_thread uuid;
+  written uuid;
+  rounds integer;
+  staff_setter boolean;
+  body text;
+  off_board integer;
+begin
+  select c.staff is not null into staff_setter from characters c where c.id = setter;
+  if staff_setter is null then raise exception 'there is no such character' using errcode = 'P0002'; end if;
+  if staff_setter is distinct from (payer is null) then
+    raise exception 'a staff character''s card is paid by no one, and a player''s by its player' using errcode = '22023';
+  end if;
+  if payer is null and coalesce(price, 0) <> 0 then raise exception 'a staff character''s card costs nothing' using errcode = '22023'; end if;
+  if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
+  select * into kind_of from card_kinds k where k.key = place_set.card;
+  if kind_of.key is null then raise exception 'there is no such card' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if kind_of.play is distinct from 'cast' and kind_of.play is distinct from 'set' then
+    raise exception '% is %', kind_of.name, case kind_of.play when 'use' then 'used on your own post' else 'kept in the hand' end using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A set card with no trap could never spring, and its setter would not know (decideSet's words). It is refused at seed time too; this is for a row that held one before.
+  if kind_of.play = 'set' and kind_of.trap is null then
+    raise exception '% has no trap to spring', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A Reversal that waits for a cast waits for a named card or for a match; one set with neither could catch nothing, and its setter would not know. Naming and matching are one or the other.
+  if catches is null and kind_of.play = 'set' and kind_of.trap #>> '{trigger,on}' = 'cast' and jsonb_typeof(kind_of.trap -> 'match') is distinct from 'object' then
+    raise exception '% names no card to catch', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if catches is not null and jsonb_typeof(kind_of.trap -> 'match') = 'object' then
+    raise exception '% names a card or matches cards, never both', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A match reaches only cards at or below its own rarity, and so does a name (decideSet's words).
+  if jsonb_typeof(kind_of.trap -> 'match') = 'object' and kind_of.trap #>> '{match,upTo}' is not null
+     and rarity_rank(kind_of.trap #>> '{match,upTo}') > rarity_rank(kind_of.rarity) then
+    raise exception '% names cards up to %', kind_of.name, kind_of.rarity using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if catches is not null then
+    if kind_of.play is distinct from 'set' or kind_of.trap #>> '{trigger,on}' is distinct from 'cast' then
+      raise exception '% catches no card', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    select * into caught_kind from card_kinds k where k.key = place_set.catches;
+    if caught_kind.key is null or caught_kind.play is distinct from 'cast' or not ('post' = any (caught_kind.reaches)) then
+      raise exception '% names a card that is cast on a post', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+    if rarity_rank(caught_kind.rarity) > rarity_rank(kind_of.rarity) then
+      raise exception '% names cards up to %', kind_of.name, kind_of.rarity using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+  end if;
+  if phrase is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% waits for no phrase', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if btrim(phrase) = '' then raise exception '% needs a phrase to wait for', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- The engine's bound (SET_PHRASE_MOST, engine/rules/cards.ts, which decideSet holds in the same words): phrase_pattern is one length for every back only up to it.
+    if char_length(phrase) > 100 then raise exception '% waits for a phrase of at most 100 characters', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  -- The conditions of a Move (design sections 3 and 4). A Gimmick takes none.
+  if passage is not null or named is not null or who_except is not null then
+    if kind_of.play is distinct from 'cast' then raise exception '% takes no conditions', kind_of.name using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if passage is not null then
+    if btrim(passage) = '' or phrase_norm(passage) = '' then raise exception 'the passage needs a letter or a digit' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if char_length(passage) > 100 then raise exception 'the passage is at most 100 characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  if (named is null) is distinct from (who_except is null) then
+    raise exception 'a list of characters comes with Only these or Anyone but these' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if named is not null then
+    if cardinality(named) not between 1 and 5 then raise exception 'a list names one to five characters' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    -- The same message for an id that is missing and one that has not debuted: what is read is the debut alone, as suggest_characters reads `characters`, never the owner.
+    select min(i) into off_board from generate_subscripts(named, 1) i
+    where named[i] is null or not exists (select 1 from characters c where c.id = named[i] and c.debuted_at is not null);
+    if off_board is not null then raise exception '% is not a character on the board', off_board using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+    if (select count(distinct x) from unnest(named) x) <> cardinality(named) then raise exception 'a character is named once in a list' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  select a.kind, a.character, a.thread into target_kind, author, in_thread from acts a where a.id = target for no key update;
+  if target_kind is distinct from 'post' then raise exception 'a card is set face down on a post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if author is distinct from setter then raise exception 'a card is set face down on a post of your own character''s' using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+  -- The passage must be in the post's current words (its latest edit's body, else its own), read as the probe reads them. The post is public, so the refusal reads nothing private.
+  if passage is not null then
+    select p.current_payload ->> 'body' into body from acts_public p where p.id = target;
+    if not phrase_in(bbcode_plain(coalesce(body, '')), passage) then raise exception 'that passage is not in this post''s words' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  end if;
+  -- Public, since the back is.
+  -- A back is live until it springs, is taken back or its time passes; the three are public.
+  if exists (select 1 from face_down f where f.post = target and f.ends_at > now()
+             and not exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text)
+             and not exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = f.play::text)) then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  select count(*) into rounds from face_down f where f.post = target;
+  insert into acts (character, kind, thread, target_act_id, payload) values (setter, 'set', in_thread, target, '{}') returning id into written;
+  begin
+    insert into face_down (play, account, card, config, post, thread, round, ends_at, catches, phrase, passage, who, who_except)
+    values (written, payer, card, coalesce(config, '{}'), target, in_thread, rounds + 1, now() + span_interval(setting('setLasts')), place_set.catches, place_set.phrase,
+            place_set.passage, place_set.named, place_set.who_except);
+  exception when unique_violation then
+    raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
+  end;
+  return act_projection(written);
+end $$;
+revoke execute on function place_set(uuid, text, uuid, jsonb, uuid, integer, text, text, text, uuid[], boolean) from public, anon, authenticated, service_role;
+
+-- ------------------------------------------------------------------------------------------------------- 3. take_back ----
+
+-- take_back(who, through, set_act): who is the account and through its acting character, as set_card's are. The set is the caller's own live back, or the refusal is the same words whichever it is not: another
+-- account's, another of the caller's masks', a post's or an Act that is no back, one that does not exist, and one already sprung, taken back or past its time. The locks are set_card's, in its order: the
+-- account's row, then the post's, then the back's face_down row (which a spring holds too), and a refusal before the post is found takes neither of the last two, whoever's back it asked for. It writes the
+-- take-back Act, by the post's author on the post with {set} and no card, and a `returned` row in the setter's ledger carrying it, price 0. Callable by the service role alone, as set_card is.
+create or replace function take_back(who uuid, through uuid, set_act uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  on_post uuid;
+  fd face_down%rowtype;
+  author uuid;
+  written uuid;
+  nothing constant text := 'there is no face-down card to take back there';
+begin
+  perform played_by(through, take_back.who);
+  perform not_banned(through);
+  -- 1. The account's row, as set_card takes it.
+  perform 1 from accounts a0 where a0.id = take_back.who for no key update;
+  -- The caller's own back, found without a lock; anything else is no back to them, and takes no more.
+  select f.post into on_post from face_down f where f.play = take_back.set_act and f.account = take_back.who;
+  if on_post is not null then
+    -- 2. The post's row, as set_card takes it, then 3. the back's, as a spring does; read again under the lock, so a spring or a take-back that landed while this waited is seen.
+    perform 1 from acts a where a.id = on_post for no key update;
+    select f.* into fd from face_down f where f.play = take_back.set_act for update;
+    select a.character into author from acts a where a.id = take_back.set_act;
+  end if;
+  -- A set Act that is not the caller's own back, by the character the caller acts through.
+  if on_post is null or author is distinct from through then
+    raise exception '%', nothing using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  -- A back already sprung, taken back or past its time.
+  if fd.ends_at <= now()
+     or exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text)
+     or exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = fd.play::text) then
+    raise exception '%', nothing using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (author, 'take_back', fd.thread, fd.post, jsonb_build_object('set', fd.play::text)) returning id into written;
+  insert into card_ledger (account, card, kind, act, price) values (take_back.who, fd.card, 'returned', written, 0);
+  return act_projection(written);
+end $$;
+revoke execute on function take_back(uuid, uuid, uuid) from public, anon, authenticated;
+grant execute on function take_back(uuid, uuid, uuid) to service_role;
+
+-- ------------------------------------------------------------------------------------------ 4. spring_facts and spring_traps ----
+
+-- spring_facts (0146), a cast back springing on a named card or a match (step 6b); everything else as 0146 wrote it.
+create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  f spring_facts;
+  k card_kinds%rowtype;
+  named text;
+  in_character integer;
+  in_thread integer;
+  in_board integer;
+  walked_plain text;
+  walked_excerpt text;
+  ic card_kinds%rowtype;
+  m jsonb;
+  ic_rank integer;
+  up_rank integer;
+  own_rank integer;
+  flavor_ok boolean;
+  matched boolean;
+begin
+  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
+  select a.character into f.setter_character from acts a where a.id = fd.play;
+  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
+  -- 2. The back's card kind.
+  select * into k from card_kinds x where x.key = fd.card;
+  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.reach := coalesce(k.reaches[1], 'post');
+  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
+  -- or a visit by_act is not a post, or not yet written, and these find what they find.
+  select a.kind, a.character, a.thread, a.payload ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  from acts a left join threads t on t.id = a.thread where a.id = by_act;
+  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
+  select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
+  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
+  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
+  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
+  -- for the ones of this back's card): which card is counted is chosen after the reads.
+  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1
+    into f.up, f.layer
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended
+        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board)
+    into in_character, in_thread, in_board
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended
+        from play_reach r join acts k2 on k2.id = r.play
+        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
+  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 4b. Whether a live ward Gimmick on the Act turns the card away: place_cast turns a cast away by the same test (ward_refusal), and a Move does not land through it either.
+  f.warded := ward_refusal('post', by_act, k) is not null;
+  -- 5. A board's live card, whatever the card's reach.
+  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
+  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
+  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
+  -- 6b. The back's match, and the incoming card's printed row, for every back whatever it holds (a back with no match reads the same row and asks the same questions of an empty one): the card's
+  -- flavor in the match's `flavors`, its rarity at or below the match's `upTo` and at or below the back's own card's. A cast back springs on the card it names or on one its match holds.
+  select * into ic from card_kinds x where x.key = incoming_card;
+  m := case when jsonb_typeof(k.trap -> 'match') = 'object' then k.trap -> 'match' else '{}'::jsonb end;
+  ic_rank := rarity_rank(ic.rarity); up_rank := rarity_rank(coalesce(m ->> 'upTo', 'legendary')); own_rank := rarity_rank(k.rarity);
+  flavor_ok := case when jsonb_typeof(m -> 'flavors') = 'array' then (m -> 'flavors') ? ic.alignment else true end;
+  matched := jsonb_typeof(k.trap -> 'match') = 'object' and ic.key is not null and flavor_ok and ic_rank <= up_rank and ic_rank <= own_rank;
+  f.caught := (fd.catches is not null and fd.catches = incoming_card and named is not null) or coalesce(matched, false);
+  -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
+  -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
+  select w.plain, w.excerpt into walked_plain, walked_excerpt from bbcode_walk(f.by_body, fd.post) w;
+  -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
+  -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
+  f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
+  f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
+  f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
+  return f;
+end $$;
+revoke execute on function spring_facts(face_down, text, uuid, text) from public, anon, authenticated, service_role;
+
+-- spring_traps (0144), a back taken back being as ended as one sprung or past its time: the select skips it and the read after the lock finds a take-back that landed while this waited. The spring Act
+-- already carries `by` (the Act that met the back). Everything else, the lock order included, as 0144 wrote it.
+create or replace function spring_traps(trigger text, post uuid, by_act uuid, incoming_card text default null, held uuid[] default null, actor uuid default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  fd face_down%rowtype;
+  f spring_facts;
+  back_trigger text;
+  springs boolean;
+  lands boolean;
+  did text;
+  sprung uuid;
+  laid uuid;
+  flag text;
+  held_when jsonb;
+begin
+  select x.* into fd from face_down x
+  where x.post = spring_traps.post and x.ends_at > now() and (held is null or x.play = any (held))
+    and not exists (select 1 from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = x.play::text)
+  order by x.round desc limit 1 for update;
+  if fd.play is null then return null; end if;
+  -- After the lock, so a spring that landed while this waited is seen.
+  if exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = fd.play::text) then return null; end if;
+  if exists (select 1 from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = fd.play::text) then return null; end if;
+  -- The same reads for every back, before anything is decided.
+  f := spring_facts(fd, trigger, by_act, incoming_card);
+  -- The decision, from the locals. A Move springs on a quote that meets every condition its back holds; a Gimmick on its own trigger, or never (a Bluff).
+  back_trigger := case f.kind_play when 'cast' then 'quote' else f.kind_trap #>> '{trigger,on}' end;
+  springs := back_trigger is not distinct from trigger
+    and case trigger when 'quote' then (fd.phrase is null or f.phrase_hit) and (fd.passage is null or f.passage_hit) and (fd.who is null or f.who_hit <> fd.who_except)
+                     when 'cast' then f.caught when 'visit' then true else false end;
+  -- A Move lands on what quoted it, at its first reach, if it can: its stack there has room, a board has no live card, the thread has its first post and a board card its thread.
+  lands := coalesce(f.by_kind = 'post' and case f.reach
+      when 'post' then f.up < f.kind_stack and not f.warded
+      when 'character' then f.by_character is not null and f.reach_up < f.kind_stack
+      when 'thread' then f.first_post is not null and f.reach_up < f.kind_stack
+      else f.by_board is not null and f.announce_thread is not null and f.live_board is null and f.reach_up < f.kind_stack end, false);
+  if not springs then return null; end if;
+  -- A setter's character that can no longer act (retired, until an admin restores it) springs nothing: its back stays set until its time, and the write that met it lands as if no
+  -- back were there (acts_well_formed would refuse the spring, and with it the write). A Move that cannot land leaves its back set for the next quote.
+  if f.setter_retired is not null or f.setter_debuted is null then return null; end if;
+  if back_trigger = 'quote' and not lands then return null; end if;
+  did := case back_trigger when 'quote' then 'landed' when 'cast' then 'caught' else 'ended' end;
+  -- What the quote met, to be shown: the Says phrase and the passage the back held (the setter chose them to be matched, and the spring says so), and the quoter only where the Who was Only these.
+  -- An Anyone but list, and with it who it spared, is never written.
+  held_when := case when trigger = 'quote' then jsonb_strip_nulls(jsonb_build_object('says', fd.phrase, 'passage', fd.passage)) end;
+  if held_when = '{}'::jsonb then held_when := null; end if;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  if f.setter_staff then perform set_config('kayfabb.staff_writer', 'on', true); end if;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (f.setter_character, 'spring', fd.thread, fd.post, jsonb_strip_nulls(jsonb_build_object(
+    'card', fd.card, 'trigger', trigger, 'did', did, 'set', fd.play::text, 'by', by_act::text,
+    'caught', case when trigger = 'cast' then by_act::text end,
+    'when', held_when,
+    'for', case when trigger = 'quote' and fd.who is not null and not fd.who_except then f.by_character::text end))) returning id into sprung;
+  if f.setter_staff then perform set_config('kayfabb.staff_writer', flag, true); end if;
+  perform write_alert(f.setter_character, 'trapSprang', null, sprung, coalesce(actor, auth.uid()));
+  if back_trigger = 'quote' then
+    laid := lay_sprung(f.setter_character, fd.card, fd.config, f.target, f.reach, sprung, by_act);
+    perform write_alert(f.by_character, 'trapStruck', null, laid, f.setter_owner);
+    -- The landed card goes out with the spring, so it reaches readers live as the spring does.
+    return act_projection(sprung) || jsonb_build_object('struck', act_projection(laid));
+  elsif back_trigger = 'cast' and fd.account is not null then
+    -- The caught card is the setter's: one more row in their own ledger, beside the caster's `played` row. A staff setter has no hand and takes nothing.
+    insert into card_ledger (account, card, kind, act, price) values (fd.account, incoming_card, 'caught', sprung, 0);
+  end if;
+  return act_projection(sprung);
+end $$;
+revoke execute on function spring_traps(text, uuid, uuid, text, uuid[], uuid) from public, anon, authenticated, service_role;
+
+-- --------------------------------------------------------------------------------------------------------- 5. the back's end ----
+
+-- card_target (0146), a face-down card's end being the earliest of its spring, a take-back naming it and its time. Everything else as 0146 wrote it.
+create or replace function card_target(target uuid) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object('reach', 'post', 'act', a.id, 'kind', a.kind,
+    'length', char_length(coalesce(a.current_payload ->> 'body', '')),
+    'body', coalesce(a.current_payload ->> 'body', ''),
+    'version', post_version(a.id),
+    'effects', coalesce((select jsonb_agg(e.effect order by e.at, e.id) from (
+        select k.created_at as at, k.id, jsonb_strip_nulls(jsonb_build_object('card', k.payload ->> 'card', 'act', k.id,
+          'gimmick', ck.gimmick, 'ends', k.payload ->> 'ends')) as effect
+        from acts k left join card_kinds ck on ck.key = k.payload ->> 'card'
+        where k.kind = 'card' and k.target_act_id = a.id and not (k.payload ? 'caught') and not card_ended(k.id) and coalesce(k.payload ->> 'reach', 'post') = 'post'
+        union all
+        select s.created_at, s.id, jsonb_build_object('card', null, 'act', s.id, 'faceDown', true,
+          'ends', to_jsonb(coalesce(least(sp.created_at, tb.created_at, f.ends_at), f.ends_at)))
+        from acts s join face_down f on f.play = s.id
+        left join acts sp on sp.kind = 'spring' and (sp.payload ->> 'set') = s.id::text
+        left join acts tb on tb.kind = 'take_back' and (tb.payload ->> 'set') = s.id::text
+        where s.kind = 'set' and s.target_act_id = a.id
+      ) e), '[]'))
+  from acts_public a where a.id = target
+$$;
+
+-- my_face_down (0144), with the take-back as an end beside the spring and the time, and `ended_by` last: sprung, taken back or time (null while the back is live). The setter's own row.
+create or replace view my_face_down as
+  select f.play, f.card, f.config, f.post, f.thread, a.created_at as set_at, f.ends_at, s.id as spring, s.created_at as sprung_at,
+    coalesce(s.created_at, tb.created_at, case when f.ends_at <= now() then f.ends_at end) as ended_at, null::timestamptz as passed_at, f.catches, f.phrase, f.passage, f.who, f.who_except,
+    case when s.id is not null then 'sprung' when tb.id is not null then 'taken back' when f.ends_at <= now() then 'time' end as ended_by
+  from face_down f join acts a on a.id = f.play
+  left join acts s on s.kind = 'spring' and (s.payload ->> 'set') = f.play::text
+  left join acts tb on tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text
+  where f.account = auth.uid();
+
+-- ------------------------------------------------------------------------------------------------------------ 6. the hand ----
+
+-- card_held (0142): bought + pulled + caught + returned - played, and the account's backs of the card whose time passed unsprung and not taken back (a back that ended any other way is already in the
+-- ledger: a spring spent it, a take-back returned it by a row). A back is counted by one of the three ends and never by two: the time term asks for no spring and no take-back at all, whenever they
+-- were written, so a back that sprang as its time ended, or was taken back before it and then timed out, is counted once at most. Its signature, grants and mode are 0142's (security invoker: a signed-in
+-- caller reads their own rows of card_ledger and face_down through their row security and counts 0 for another account's; the definer functions that spend a card read the account they act for).
+-- The two probes are scalar subqueries with `limit 1` and not `not exists`, which the planner turns into hash anti joins that read every spring and take-back the instance holds (explain: 20,000 rows each, to
+-- answer for 60 backs); as scalar subqueries each ended back costs one probe of acts_one_spring and one of acts_one_take_back, whatever the instance holds.
+create or replace function card_held(who uuid, card text) returns integer
+language sql stable set search_path = public, pg_temp as $$
+  select (count(*) filter (where l.kind in ('bought', 'pulled', 'caught', 'returned')) - count(*) filter (where l.kind = 'played')
+          + (select count(*) from face_down f
+             where f.account = card_held.who and f.card = card_held.card and f.ends_at <= now()
+               and (select s.id from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text limit 1) is null
+               and (select tb.id from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text limit 1) is null))::integer
+  from card_ledger l where l.account = card_held.who and l.card = card_held.card
+$$;
+
+-- my_card_ledger (0142), with a time-ended back as a `returned` line at its ends_at: no Act, price 0, the card back in the hand. A taken-back back is the ledger's own returned row (it carries its Act), and a
+-- sprung one is spent; neither is a second line. The caller's own rows alone, as the view was.
+create or replace view my_card_ledger as
+  select l.card, l.kind, l.act, l.price, l.at,
+         case when l.kind = 'played' and a.kind = 'set' then k.trap is not null or k.play = 'cast' end as springs,
+         l.pack, l.repriced
+  from card_ledger l
+  left join card_kinds k on k.key = l.card
+  left join acts a on a.id = l.act
+  where l.account = auth.uid()
+  union all
+  select f.card, 'returned'::text, null::uuid, 0, f.ends_at, null::boolean, null::uuid, false
+  from face_down f
+  where f.account = auth.uid() and f.ends_at <= now()
+    and (select s.id from acts s where s.kind = 'spring' and (s.payload ->> 'set') = f.play::text limit 1) is null
+    and (select tb.id from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = f.play::text limit 1) is null;
+
+-- ------------------------------------------------------------------------------- 7. settlement_input and estimate_input ----
+
+-- settlement_input (0116), sending `by` for a spring, `ends` for a use card's play and `on` for a character-reach play, and every live Earn play reaching into the window (earn_up) with the post it is on.
+-- Everything else as 0116 wrote it.
+create or replace function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  with
+  -- The plays an admin ended before the window's end (Task 3): out of this window, with the votes on them. `<` as every other bound
+  -- here is, so a card_end written at the instant window_end is after the window, as a vote written then is.
+  ended as (select e.target_act_id as id from acts e where e.kind = 'card_end' and e.created_at < window_end),
+  -- Every live Earn Gimmick play still up when the window opens, played before it (a play inside it is a window Act already): settle.ts boosts only with the play in the input, and an Earn play of an earlier window
+  -- is still up in this one. Live is not ended by an admin, not caught, and ending after the window's start; found by creation time, a window of the longest Earn `lasts` before the window, and each comes with its post.
+  earn_up as (
+    select k.id, case when coalesce(k.payload ->> 'reach', 'post') = 'post' then k.target_act_id end as post
+    from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+    where k.kind = 'card' and ck.play = 'use' and ck.gimmick ->> 'kind' = 'earn'
+      and k.created_at < window_start and k.created_at >= window_start - (select max(e.lasts) from card_kinds e where e.play = 'use' and e.gimmick ->> 'kind' = 'earn')
+      and coalesce(k.payload ->> 'reach', 'post') in ('post', 'character') and not (k.payload ? 'caught')
+      and (k.payload ->> 'ends')::timestamptz > window_start and k.id not in (select id from ended)),
+  -- The System's own Acts (the reveal) are no character's, and nobody's to settle; a staff character's
+  -- are The System's too (0043): staff earn nothing, and a card on a staff Act is nobody's to score.
+  win_acts as (select * from acts a where a.created_at >= window_start and a.created_at < window_end and a.character is not null
+               and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
+  win_reactions as (select * from reactions r where r.created_at >= window_start and r.created_at < window_end and r.act not in (select id from ended)),
+  reacted as (select distinct act from win_reactions),
+  earlier_reactions as (select r.* from reactions r join reacted x on x.act = r.act where r.created_at < window_start),
+  active_spun as (select distinct t.id from threads t join win_acts a on a.thread = t.id where t.origin_act_id is not null),
+  spins as (select a.* from acts a join active_spun t on t.id = a.thread where a.kind = 'spin'),
+  first_posts as (
+    -- Each character's first post in the thread, read through acts_thread_posts, one per
+    -- character rather than a sort of the whole thread.
+    select f.* from active_spun t
+    cross join lateral (select distinct a.character from acts a where a.thread = t.id and a.kind = 'post' and a.created_at < window_end) w
+    cross join lateral (select a.* from acts a where a.thread = t.id and a.character = w.character and a.kind = 'post' and a.created_at < window_end
+                        order by a.created_at, a.id limit 1) f
+  ),
+  touched as (
+    select id from win_acts union select act from reacted
+    union select id from earn_up union select post from earn_up where post is not null
+    union select target_act_id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'
+    union select id from spins union select target_act_id from spins where target_act_id is not null
+    -- Every card on an Act a reaction touches, an earlier window's too: a vote counts once per
+    -- player and alignment, for the earliest card (engine/rules/settle.ts).
+    union select a.id from acts a join reacted x on x.act = a.target_act_id where a.kind in ('card', 'spring') and coalesce(a.payload ->> 'reach', 'post') = 'post'
+    union select id from first_posts
+  ),
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null
+               and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
+  -- A staff post a window's card landed on (0054): named with its reactions, so the card is judged against it, and paid nobody.
+  unscored as (select a.* from acts a join characters c on c.id = a.character
+               where c.staff is not null and a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')),
+  -- Named, never settled: settle.ts drops a reaction to one, and reads a spin from one as from another.
+  system_acts as (select a.id from acts a join touched t on t.id = a.id
+                  where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
+  all_reactions as (select * from win_reactions union all select * from earlier_reactions),
+  named as (select character as id from all_acts union select reactor_character from all_reactions),
+  ms as (select 1)
+  select jsonb_build_object(
+    'window', jsonb_build_object('id', to_jsonb(window_start) #>> '{}',
+      'from', (extract(epoch from window_start) * 1000)::bigint, 'to', (extract(epoch from window_end) * 1000)::bigint),
+    'characters', coalesce((
+      select jsonb_agg(jsonb_build_object('id', c.id, 'player', c.owner, 'classes', coalesce((
+        select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
+        from class_history h where h.character = c.id and h.started_at < window_end), '[]')) order by c.id)
+      from characters c join named n on n.id = c.id), '[]'),
+    'acts', coalesce((
+      select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,
+        'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread,
+        'target', case when coalesce(a.payload ->> 'reach', 'post') = 'post' then a.target_act_id end,
+        'reach', case when a.kind = 'card' then nullif(coalesce(a.payload ->> 'reach', 'post'), 'post') end,
+        'card', case when a.kind in ('card', 'spring') then a.payload ->> 'card' end,
+        'by', case when a.kind = 'spring' then a.payload ->> 'by' end,
+        'ends', case when a.kind = 'card' and (select ck.play from card_kinds ck where ck.key = a.payload ->> 'card') = 'use'
+                     then (extract(epoch from (a.payload ->> 'ends')::timestamptz) * 1000)::bigint end,
+        'on', case when a.kind = 'card' and a.payload ->> 'reach' = 'character' then a.payload ->> 'character' end)) order by a.created_at, a.id)
+      from all_acts a), '[]'),
+    'unscoredTargets', coalesce((
+      select jsonb_agg(jsonb_build_object('id', a.id, 'kind', a.kind, 'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread, 'staff', true) order by a.created_at, a.id)
+      from unscored a), '[]'),
+    'reactions', coalesce((
+      select jsonb_agg(jsonb_build_object('act', r.act, 'kind', r.kind, 'at', (extract(epoch from r.created_at) * 1000)::bigint,
+        'player', r.reactor_account, 'character', r.reactor_character) order by r.created_at, r.id)
+      from all_reactions r), '[]'),
+    -- The System's Acts an input Act points at (a spin from the reveal): named, never settled.
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'),
+    -- What earlier windows paid for every player's vote on each Act this window's reactions touch (section 9).
+    'paid', coalesce((
+      select jsonb_agg(jsonb_build_object('player', p.account, 'act', p.act, 'weight', p.weight, 'shares', p.shares) order by p.account, p.act)
+      from paid_votes p join reacted r on r.act = p.act), '[]'))
+$$;
+-- estimate_input (0092), sending the same three and the Earn plays that reach into the window for the caller's characters and posts. Everything else as 0092 wrote it.
+create or replace function estimate_input(account uuid, until timestamptz default now()) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  salt text := gen_random_uuid()::text;
+  window_start timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
+  season_end timestamptz;
+  window_end timestamptz;
+  you text := md5(salt || 'you');
+begin
+  -- The window the next settlement reads begins where next_settlement_window (0004) begins it: at
+  -- the last settled end, or, where no season holds that instant (a gap between seasons), at the
+  -- next season's start; and it never runs past its season's end.
+  if window_start is not null and not exists (select 1 from seasons where starts_at <= window_start and (ends_at is null or ends_at > window_start)) then
+    window_start := (select min(starts_at) from seasons where starts_at > window_start);
+  end if;
+  if window_start is null then return null; end if;
+  select coalesce(s.ends_at, nullif(greatest(s.starts_at + span_interval(setting('seasonLength')), window_start), window_start)) into season_end
+  from seasons s where s.starts_at <= window_start and (s.ends_at is null or s.ends_at > window_start);
+  window_end := least(until, coalesce(season_end, 'infinity'));
+  if window_start >= window_end then return null; end if;
+  return (
+  with
+  -- The plays an admin ended before the window's end (Task 3): out of this window, with the votes on them. `<` as every other bound
+  -- here is, so a card_end written at the instant window_end is after the window, as a vote written then is.
+  ended as (select e.target_act_id as id from acts e where e.kind = 'card_end' and e.created_at < window_end),
+  mine as (select id from characters where owner = account),
+  -- The live Earn plays on the caller's characters and posts, played before the window and still up in it (settlement_input's earn_up, for what the caller's earnings can carry): another player's play on
+  -- the caller's post is a public Act and counts as one of the caller's own.
+  earn_up as (
+    select k.id, case when coalesce(k.payload ->> 'reach', 'post') = 'post' then k.target_act_id end as post
+    from acts k join card_kinds ck on ck.key = k.payload ->> 'card'
+    where k.kind = 'card' and ck.play = 'use' and ck.gimmick ->> 'kind' = 'earn'
+      and k.created_at < window_start and k.created_at >= window_start - (select max(e.lasts) from card_kinds e where e.play = 'use' and e.gimmick ->> 'kind' = 'earn')
+      and coalesce(k.payload ->> 'reach', 'post') in ('post', 'character') and not (k.payload ? 'caught')
+      and (k.payload ->> 'ends')::timestamptz > window_start and k.id not in (select id from ended)
+      and case when coalesce(k.payload ->> 'reach', 'post') = 'character' then (k.payload ->> 'character')::uuid in (select id from mine)
+               else exists (select 1 from acts p join mine m on m.id = p.character where p.id = k.target_act_id) end),
+  win_acts as (select a.* from acts a join mine m on m.id = a.character where a.created_at >= window_start and a.created_at < window_end
+               and a.id not in (select id from ended)),
+  -- The caller's Acts reacted to in the window, whenever written: each of the caller's Acts, then
+  -- its reactions through the index that leads with the Act, never the whole window's reactions.
+  mine_reacted as (select distinct a.id as act from acts a join mine m on m.id = a.character
+                   where exists (select 1 from reactions r where r.act = a.id and r.created_at >= window_start and r.created_at < window_end)),
+  -- The Acts the caller reacted to in the window, through reactions_reactor.
+  reacted_by_me as (select distinct r.act from reactions r where r.reactor_account = account and r.created_at >= window_start and r.created_at < window_end),
+  targets as (select target_act_id as id from win_acts where kind in ('card', 'spin', 'spring') and target_act_id is not null and coalesce(payload ->> 'reach', 'post') = 'post'),
+  -- Every card of the caller's on a post the caller's window cards point at: a vote counts for the earliest.
+  my_cards_there as (select a.id from acts a join mine m on m.id = a.character join targets t on t.id = a.target_act_id where a.kind in ('card', 'spring') and a.created_at < window_end and coalesce(a.payload ->> 'reach', 'post') = 'post'),
+  -- Cards others played on the caller's posts in the window.
+  landed as (select a.id from acts p join mine m on m.id = p.character join acts a on a.target_act_id = p.id
+             where a.kind = 'card' and a.created_at >= window_start and a.created_at < window_end and coalesce(a.payload ->> 'reach', 'post') = 'post'),
+  -- The caller's spun threads active in the window: the spin, and each character's first post.
+  spun as (select distinct s.thread as id from acts s join mine m on m.id = s.character
+           where s.kind = 'spin' and exists (select 1 from acts x where x.thread = s.thread and x.created_at >= window_start and x.created_at < window_end)),
+  spins as (select a.id from acts a join spun t on t.id = a.thread where a.kind = 'spin'),
+  first_posts as (
+    select f.id from spun t
+    cross join lateral (select distinct a.character from acts a where a.thread = t.id and a.kind = 'post' and a.created_at < window_end) w
+    cross join lateral (select a.id from acts a where a.thread = t.id and a.character = w.character and a.kind = 'post' and a.created_at < window_end
+                        order by a.created_at, a.id limit 1) f
+  ),
+  -- The Acts whose reactions are read.
+  voted as (select id from win_acts union select act from mine_reacted union select act from reacted_by_me union select id from targets),
+  touched as (
+    select id from voted union select id from my_cards_there union select id from landed union select id from spins
+    union select id from earn_up union select post from earn_up where post is not null
+    union select target_act_id from acts a join spins s on s.id = a.id where a.target_act_id is not null
+    union select id from first_posts
+    -- The post each card, spin or spring among the voted Acts points at (Task 1, #137): a card the caller only reacted to is
+    -- judged against its post, and a spin the caller only reacted to is read with its origin (settle.ts reads every spin's), as
+    -- settlement_input reads every window play's target.
+    union select a.target_act_id from acts a join voted v on v.id = a.id
+          where a.kind in ('card', 'spin', 'spring') and a.target_act_id is not null and coalesce(a.payload ->> 'reach', 'post') = 'post'
+  ),
+  -- As settlement_input (0004, as 0043 changed it): a staff character's Acts, and a card on one, are named and pay nobody.
+  all_acts as (select a.* from acts a join touched t on t.id = a.id where a.created_at < window_end and a.character is not null
+               and not is_staff_side(a.character, a.kind, a.target_act_id) and a.id not in (select id from ended)),
+  -- A staff post a window's card of the caller's landed on, as settlement_input names it (0054).
+  unscored as (select a.* from acts a join characters c on c.id = a.character join touched t on t.id = a.id
+               where c.staff is not null and a.id in (select k.target_act_id from all_acts k where k.kind = 'card' and k.created_at >= window_start and coalesce(k.payload ->> 'reach', 'post') = 'post')),
+  system_acts as (select a.id from acts a join touched t on t.id = a.id
+                  where (a.character is null or is_staff_side(a.character, a.kind, a.target_act_id)) and a.id not in (select id from unscored)),
+  -- Every reaction on an Act voted on, up to now, but the caller's own to the caller's own characters,
+  -- and none on The System's own Acts: the tally every player reacts to would hand each caller who
+  -- reacted to it every other player's reaction.
+  --
+  -- The settlement never pays a player's reactions to their own characters, and until 0073 this read
+  -- left them out too, which made a live line computed from who reacted: a fire landing on Bob's post
+  -- under Ann's card with no lift line told Ann it came from one of Bob's masks. The live estimate is not
+  -- The System's scoring (CLAUDE.md, "A response never proves a private fact": "The live estimate is not
+  -- that exception: it leaves out only the caller's own reactions, counts every other as anyone's, and
+  -- the settlement is exact"). So ownership is read here only to tell the caller's own from the rest:
+  -- the caller knows their own, and every other reaction, the author's own player's included, is
+  -- counted under `keyed`'s per-mask keys, which the engine cannot tie to an author. The estimate can then
+  -- say more than the settlement pays, as it says "up to"; the settled log is exact.
+  all_reactions as (
+    select r.* from reactions r join voted v on v.id = r.act
+    join acts a on a.id = r.act join characters c on c.id = a.character
+    where r.created_at < window_end and not (r.reactor_account = account and c.owner = account) and r.act not in (select id from ended)
+      and (not is_staff_side(a.character, a.kind, a.target_act_id) or a.id in (select id from unscored))
+  ),
+  -- Each reaction's voter and mask as the engine reads them: the caller's own, as the caller's;
+  -- any other's, under keys made up for this request.
+  keyed as (
+    select r.id, r.act, r.kind, r.created_at,
+      case when r.reactor_account = account then you else md5(salt || 'reactor' || r.reactor_character) end as player,
+      case when r.reactor_account = account then r.reactor_character::text else md5(salt || 'mask' || r.reactor_character) end as character
+    from all_reactions r
+  ),
+  others as (
+    select distinct a.character::text as id, md5(salt || 'author' || a.character) as player from all_acts a where a.character not in (select id from mine)
+    union select distinct k.character, k.player from keyed k where k.player <> you
+  )
+  select jsonb_build_object(
+    'player', you,
+    -- The window's start exactly, as the settlement that opened it ended: `from` is whole
+    -- milliseconds, which can fall short of it. The estimate keeps its answer with this one.
+    'windowStart', window_start,
+    'window', jsonb_build_object('id', 'estimate',
+      'from', (extract(epoch from window_start) * 1000)::bigint, 'to', (extract(epoch from window_end) * 1000)::bigint),
+    'characters', coalesce((
+      select jsonb_agg(x order by x ->> 'id') from (
+        select jsonb_build_object('id', c.id, 'player', you, 'classes', coalesce((
+          select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
+          from class_history h where h.character = c.id and h.started_at < window_end), '[]')) as x
+        from characters c join mine m on m.id = c.id
+        union all
+        select jsonb_build_object('id', o.id, 'player', o.player, 'classes', '[]'::jsonb) from others o
+      ) cs), '[]'),
+    'acts', coalesce((
+      select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,
+        'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread,
+        'target', case when coalesce(a.payload ->> 'reach', 'post') = 'post' then a.target_act_id end,
+        'reach', case when a.kind = 'card' then nullif(coalesce(a.payload ->> 'reach', 'post'), 'post') end,
+        'card', case when a.kind in ('card', 'spring') then a.payload ->> 'card' end,
+        'by', case when a.kind = 'spring' then a.payload ->> 'by' end,
+        'ends', case when a.kind = 'card' and (select ck.play from card_kinds ck where ck.key = a.payload ->> 'card') = 'use'
+                     then (extract(epoch from (a.payload ->> 'ends')::timestamptz) * 1000)::bigint end,
+        'on', case when a.kind = 'card' and a.payload ->> 'reach' = 'character' then a.payload ->> 'character' end)) order by a.created_at, a.id)
+      from all_acts a), '[]'),
+    'unscoredTargets', coalesce((
+      select jsonb_agg(jsonb_build_object('id', a.id, 'kind', a.kind, 'at', (extract(epoch from a.created_at) * 1000)::bigint, 'thread', a.thread, 'staff', true) order by a.created_at, a.id)
+      from unscored a), '[]'),
+    'reactions', coalesce((
+      select jsonb_agg(jsonb_build_object('act', k.act, 'kind', k.kind, 'at', (extract(epoch from k.created_at) * 1000)::bigint,
+        'player', k.player, 'character', k.character) order by k.created_at, k.id)
+      from keyed k), '[]'),
+    'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
+  );
+end $$;
