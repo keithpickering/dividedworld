@@ -14,8 +14,8 @@
 -- account that is barred is told.
 --
 -- Ways out ("No player is ever stuck"): an open report ends with an admin's decision; a hidden version with an unhide; hidden until
--- edited ends, the first time on a post, at the author's next edit (computed from the edit's own Act) and, the second time, at an
--- approve; a suspension at its date or a lift; a ban at a lift; three open reports at an admin's decision on one of them.
+-- edited ends as a hidden post, the first time, at the author's next edit (its new version shows; the offending one stays hidden until an unhide) and, the
+-- second time, at an approve; a suspension at its date or a lift; a ban at a lift; three open reports at an admin's decision on one of them.
 
 -- ------------------------------------------------------------------------------- the three tables ----
 
@@ -173,21 +173,11 @@ $$;
 
 -- ------------------------------------------------------------------------------------- what is hidden ----
 
--- A hideUntilEdited decision's end, computed from the Acts that exist ("Append-only": nothing is updated to end it). The first time a post
--- is hidden until edited it ends when an edit of the post exists after it, so the author's edit is the way out; any later time it ends only
--- when an admin has approved (an `approve` decision on the post) after it.
-create function conduct_hide_ended(d conduct_decisions) returns boolean
-language sql stable security definer set search_path = public, pg_temp as $$
-  select case
-    when exists (select 1 from conduct_decisions e where e.post = d.post and e.outcome = 'hideUntilEdited' and e.id < d.id)
-      then exists (select 1 from conduct_decisions z where z.post = d.post and z.outcome = 'approve' and z.id > d.id)
-    else exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = d.post and x.created_at > d.at)
-  end
-$$;
-
--- Whether version `w` (a post, or an edit of `pst`) is hidden now: its latest decision of its own is a hide, or a hide until edited that
--- has not ended. An edit with no decision of its own, made after a post was hidden until edited a second time, is hidden too, until an
--- approve. For a post nobody ever decided on it is one index lookup, empty.
+-- Whether version `w` (a post, or an edit of `pst`) is hidden now: its latest decision of its own is a hide or a hide until edited (a hide covers a version, and
+-- only an `unhide` or an `approve` of that version brings its words back). What the author's edit ends is the post being hidden: its new current version has no
+-- decision of its own and shows, and the re-review list (reviews_due) holds it. The second time a post is hidden until edited, the edits written after it are hidden
+-- too, until an `approve` on the post; an approved version shows and the versions that were hidden stay hidden unless unhidden. For a post nobody ever decided on
+-- it is one index lookup, empty.
 create function version_hidden(w uuid, pst uuid) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -201,7 +191,7 @@ begin
   where x.post = pst and x.version_act = w and x.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')
   order by x.id desc limit 1;
   if found then
-    return d.outcome = 'hide' or (d.outcome = 'hideUntilEdited' and not conduct_hide_ended(d));
+    return d.outcome in ('hide', 'hideUntilEdited');
   end if;
   if w = pst then return false; end if;
   select a.created_at into made from acts a where a.id = w and a.kind = 'edit';
@@ -293,7 +283,7 @@ create view hidden_versions as
   where version_hidden(h.version_act);
 
 -- Versions brought back by an author's edit with no decision since: the admin's re-review list. A post hidden until edited for the first time
--- is back as soon as its author edits; this lists the newest version of each such post until an admin decides again (approve, hide again,
+-- shows its new version as soon as its author edits (the offending version stays hidden); this lists the newest version of each such post until an admin decides again (approve, hide again,
 -- unhide). Admins read it, nobody else.
 create view reviews_due as
   select d.id as decision, d.post,
@@ -330,13 +320,187 @@ create or replace view acts_public as
     from (select a.kind in ('post', 'edit') and version_hidden(a.id, case when a.kind = 'edit' then a.target_act_id else a.id end) as own) o
   ) h;
 
--- The words of a hidden version are served to admins alone, and a signed-in player reads the table through RLS, so a hidden version's
--- own row is not theirs either (a post's current words and an edit's are one row each).
-drop policy read on acts;
-create policy read on acts for select to authenticated
-  using (kind not in ('post', 'edit')
-         or not version_hidden(id, case when kind = 'edit' then target_act_id else id end)
-         or is_admin());
+-- Words are read through acts_public, never from the table: a player's `select` on `acts` loses the `payload` column. A hidden version's words, and the copy of
+-- them inside a post that quotes it, are in `payload`, and no row policy can empty a quote's contents, so the column goes. Everything else on the row stays as public as
+-- it was. The two security-invoker views that read `acts.payload` as their reader read acts_public instead (the same rows and the same words for a card, a move or an
+-- appeal, none of which can be hidden); every other view or function that reads payload runs as its owner.
+revoke select on acts from authenticated;
+grant select (id, character, kind, thread, target_act_id, seq, created_at) on acts to authenticated;
+
+create or replace view my_cards_ended with (security_invoker = true) as
+WITH mine AS (
+         SELECT c.id
+           FROM characters c
+          WHERE (c.owner = auth.uid())
+        ), plays AS (
+         SELECT e.id AS card_end,
+            k.id AS play,
+            (k.payload ->> 'card'::text) AS card,
+            e.created_at AS at,
+            'cast'::text AS side,
+            k."character" AS caster,
+            COALESCE(pr.reach, 'post'::text) AS reach,
+            k.target_act_id,
+            (k.payload ->> 'targetName'::text) AS named,
+            pr."character" AS reach_character,
+            pr.thread AS reach_thread,
+            pr.board AS reach_board,
+            k."character" AS mine_character
+           FROM (((mine
+             JOIN acts_public k ON (((k."character" = mine.id) AND (k.kind = 'card'::text))))
+             JOIN acts_public e ON (((e.target_act_id = k.id) AND (e.kind = 'card_end'::text))))
+             LEFT JOIN play_reach pr ON ((pr.play = k.id)))
+          WHERE ((pr.play IS NOT NULL) OR (COALESCE((k.payload ->> 'reach'::text), 'post'::text) = 'post'::text))
+        UNION ALL
+         SELECT e.id,
+            k.id,
+            (k.payload ->> 'card'::text),
+            e.created_at,
+            'onMine'::text,
+            k."character",
+            'post'::text,
+            k.target_act_id,
+            NULL::text,
+            NULL::uuid,
+            NULL::uuid,
+            NULL::uuid,
+            p."character"
+           FROM (((mine
+             JOIN acts_public p ON (((p."character" = mine.id) AND (p.kind = 'post'::text))))
+             JOIN acts_public k ON (((k.target_act_id = p.id) AND (k.kind = 'card'::text))))
+             JOIN acts_public e ON (((e.target_act_id = k.id) AND (e.kind = 'card_end'::text))))
+          WHERE ((COALESCE((k.payload ->> 'reach'::text), 'post'::text) = 'post'::text) AND (NOT (EXISTS ( SELECT 1
+                   FROM play_reach x
+                  WHERE (x.play = k.id)))) AND (NOT (k."character" IN ( SELECT mine_1.id
+                   FROM mine mine_1))))
+        UNION ALL
+         SELECT e.id,
+            k.id,
+            (k.payload ->> 'card'::text),
+            e.created_at,
+            'onMine'::text,
+            k."character",
+            'character'::text,
+            k.target_act_id,
+            (k.payload ->> 'targetName'::text),
+            pr."character",
+            NULL::uuid,
+            NULL::uuid,
+            pr."character"
+           FROM (((mine
+             JOIN play_reach pr ON ((pr."character" = mine.id)))
+             JOIN acts_public k ON (((k.id = pr.play) AND (k.kind = 'card'::text))))
+             JOIN acts_public e ON (((e.target_act_id = k.id) AND (e.kind = 'card_end'::text))))
+          WHERE (NOT (k."character" IN ( SELECT mine_1.id
+                   FROM mine mine_1)))
+        UNION ALL
+         SELECT e.id,
+            k.id,
+            (k.payload ->> 'card'::text),
+            e.created_at,
+            'onMine'::text,
+            k."character",
+            'thread'::text,
+            k.target_act_id,
+            (k.payload ->> 'targetName'::text),
+            NULL::uuid,
+            pr.thread,
+            NULL::uuid,
+            o."character"
+           FROM ((((mine
+             JOIN acts_public o ON (((o."character" = mine.id) AND (o.seq = 1))))
+             JOIN play_reach pr ON ((pr.thread = o.thread)))
+             JOIN acts_public k ON (((k.id = pr.play) AND (k.kind = 'card'::text))))
+             JOIN acts_public e ON (((e.target_act_id = k.id) AND (e.kind = 'card_end'::text))))
+          WHERE (NOT (k."character" IN ( SELECT mine_1.id
+                   FROM mine mine_1)))
+        )
+ SELECT card_end,
+    play,
+    card,
+    at,
+    side,
+    reach,
+        CASE reach
+            WHEN 'character'::text THEN COALESCE(named, ( SELECT cp.name
+               FROM characters_public cp
+              WHERE (cp.id = pl.reach_character)))
+            WHEN 'thread'::text THEN COALESCE(named, ( SELECT th.title
+               FROM threads th
+              WHERE (th.id = pl.reach_thread)))
+            WHEN 'board'::text THEN COALESCE(named, ( SELECT bd.name
+               FROM boards bd
+              WHERE (bd.id = pl.reach_board)))
+            ELSE NULL::text
+        END AS target_name,
+        CASE
+            WHEN (reach = 'post'::text) THEN ( SELECT cp.name
+               FROM (acts_public pa
+                 JOIN characters_public cp ON ((cp.id = pa."character")))
+              WHERE (pa.id = pl.target_act_id))
+            ELSE NULL::text
+        END AS post_author_name,
+    ( SELECT cp.name
+           FROM characters_public cp
+          WHERE (cp.id = pl.caster)) AS caster_name,
+    mine_character AS "character"
+   FROM plays pl;
+
+create or replace view my_group_moves with (security_invoker = true) as
+SELECT m.id AS move,
+    c.id AS "character",
+    m.created_at AS at,
+    m.thread,
+    m.seq,
+    (m.payload #>> '{params,group}'::text[]) AS "group",
+        CASE
+            WHEN (jsonb_typeof((m.payload #> '{params,board}'::text[])) = 'string'::text) THEN ((m.payload #>> '{params,board}'::text[]))::uuid
+            ELSE NULL::uuid
+        END AS board,
+    ( SELECT b.name
+           FROM boards_now b
+          WHERE (b.id =
+                CASE
+                    WHEN (jsonb_typeof((m.payload #> '{params,board}'::text[])) = 'string'::text) THEN ((m.payload #>> '{params,board}'::text[]))::uuid
+                    ELSE NULL::uuid
+                END)) AS board_name,
+    move_expires_at(m.id) AS expires_at,
+        CASE
+            WHEN (jsonb_typeof((m.payload -> 'expires_at'::text)) = 'string'::text) THEN ((m.payload ->> 'expires_at'::text))::timestamp with time zone
+            ELSE NULL::timestamp with time zone
+        END AS landed_until,
+        CASE
+            WHEN (jsonb_typeof((m.payload #> '{params,checkAt}'::text[])) = 'string'::text) THEN ((m.payload #>> '{params,checkAt}'::text[]))::timestamp with time zone
+            ELSE NULL::timestamp with time zone
+        END AS check_at,
+    (m.payload #>> '{demand,kind}'::text[]) AS demand,
+    COALESCE(NULLIF((m.payload ->> 'office'::text), ''::text), 'boss'::text) AS office,
+    (e.payload ->> 'why'::text) AS ended_why,
+    (e.payload ->> 'by'::text) AS ended_by,
+    e.created_at AS ended_at,
+    (r.payload ->> 'verdict'::text) AS ruling,
+    r.created_at AS ruled_at,
+        CASE
+            WHEN (jsonb_typeof((r.payload -> 'until'::text)) = 'string'::text) THEN ((r.payload ->> 'until'::text))::timestamp with time zone
+            ELSE NULL::timestamp with time zone
+        END AS ruled_until
+   FROM (((characters c
+     JOIN acts_public m ON (((m.kind = 'move'::text) AND ((m.payload ->> 'kind'::text) = 'conferGroup'::text) AND ((m.payload #>> '{params,character}'::text[]) = (c.id)::text))))
+     LEFT JOIN acts_public e ON (((e.kind = 'move_end'::text) AND (e.target_act_id = m.id))))
+     LEFT JOIN LATERAL ( SELECT ru.id,
+            ru."character",
+            ru.kind,
+            ru.thread,
+            ru.target_act_id,
+            ru.payload,
+            ru.seq,
+            ru.created_at
+           FROM (acts_public ap
+             JOIN acts_public ru ON (((ru.kind = 'appeal_ruling'::text) AND (ru.target_act_id = ap.id))))
+          WHERE ((ap.kind = 'appeal'::text) AND (ap.target_act_id = m.id))
+          ORDER BY ru.created_at DESC, ru.id DESC
+         LIMIT 1) r ON (true))
+  WHERE (c.owner = auth.uid());
 
 -- An admin reads a version's words, hidden or not.
 create function admin_version(act uuid) returns text
@@ -648,6 +812,33 @@ begin
     'recorded', recorded);
 end $function$;
 
+
+-- ------------------------------------------------------------------------------------------ search ----
+
+-- post_search holds each post's current words, which a player can match and read. A hidden current version holds none (the thread's title stays, for a thread's first
+-- post): search_words_of reads through acts_public, so it already gives a hidden version's title alone. The words are rewritten when the two things that change what is
+-- hidden happen: an admin's decision on a post's versions, and a new edit of a post that has been decided on (a second hide until edited hides it too). The search
+-- queries are unchanged, so their plans are.
+create function conduct_decisions_search() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update post_search set words = coalesce(search_words_of(new.post, search_lang()), words) where act = new.post;
+  return null;
+end $$;
+create trigger conduct_decisions_search after insert on conduct_decisions
+  for each row when (new.post is not null and new.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')) execute function conduct_decisions_search();
+
+create function acts_search_hidden() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from conduct_decisions d where d.post = new.target_act_id and d.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')) then
+    update post_search set words = coalesce(search_words_of(new.target_act_id, search_lang()), words) where act = new.target_act_id;
+  end if;
+  return null;
+end $$;
+-- Named after acts_search so it fires after it, over the words that trigger wrote.
+create trigger acts_search_hidden after insert on acts for each row when (new.kind = 'edit') execute function acts_search_hidden();
+revoke execute on function conduct_decisions_search(), acts_search_hidden() from public, anon, authenticated;
 
 -- ------------------------------------------------------------------- the screens that carry acts_public's rows ----
 
@@ -1192,7 +1383,7 @@ revoke execute on function settings_held() from public, anon, authenticated;
 
 -- ------------------------------------------------------------------------------------------ who calls ----
 
-revoke execute on function conduct_hide_ended(conduct_decisions), conduct_author(uuid), conduct_write(bigint, uuid, uuid, text, timestamptz, text),
+revoke execute on function conduct_author(uuid), conduct_write(bigint, uuid, uuid, text, timestamptz, text),
   account_bar(uuid), refuse_if_barred(uuid) from public, anon, authenticated;
 -- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too), and the policy on acts calls one;
 -- every other helper is reached through those and runs as its owner.

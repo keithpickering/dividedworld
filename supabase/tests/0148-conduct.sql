@@ -161,9 +161,16 @@ begin
   if hid is distinct from true then raise exception 'a hidden post does not say so'; end if;
   select (a.current_payload ->> 'body'), a.hidden into words, hid from acts_public a where a.id = p4;
   if words is distinct from 'Other words.' or hid is distinct from false then raise exception 'a post nobody decided on changed: % %', words, hid; end if;
-  -- The row itself: gone from a direct read (RLS), so the words are not read there either.
+  -- The table itself: a player reads no `payload` from it (words come through acts_public alone), whatever the row, so neither a hidden version's words nor the copy of them
+  -- inside a post that quotes it can be read there. The rest of the row stays readable.
+  seen := tests.refusal('select payload from acts');
+  if seen is null or seen not like '42501|%' then raise exception 'a player read acts.payload directly: %', seen; end if;
+  seen := tests.refusal('select * from acts');
+  if seen is null or seen not like '42501|%' then raise exception 'a player read every column of acts: %', seen; end if;
+  seen := tests.refusal(format('select a.payload from acts a where a.id = %L', p1));
+  if seen is null or seen not like '42501|%' then raise exception 'a player read a hidden post''s payload directly: %', seen; end if;
   select count(*) into n from acts a where a.id = p1;
-  if n is distinct from 0 then raise exception 'a hidden post''s row is readable directly by an ordinary player'; end if;
+  if n is distinct from 1 then raise exception 'the rest of a hidden post''s row is not readable'; end if;
   perform tests.unbecome();
   -- Admins read the words, however hidden.
   perform tests.become(admin_a);
@@ -211,7 +218,38 @@ begin
   perform tests.unbecome();
   if words not like '%First words.%' then raise exception 'a quote of an unhidden post is still emptied: %', words; end if;
 
-  -- ---- hideUntilEdited: the author's edit ends it the first time, an approval the second ----
+  -- ---- Search: a hidden version's words match nothing, in the search or in the index a player can read ----
+  declare pz uuid := tests.post(ch_author, th, 'The word is zanzibar, said once.', base + interval '6 minutes');
+  begin
+    perform tests.become(other);
+    if jsonb_array_length(search_posts('zanzibar', null, null, null, null, false, 'newest', null, 20) -> 'results') is distinct from 1 then raise exception 'a post nobody hid is not found'; end if;
+    perform tests.unbecome();
+    perform tests.become(admin_a);
+    perform decide(null, pz, 'hide', null, '');
+    perform tests.unbecome();
+    perform tests.become(other);
+    if jsonb_array_length(search_posts('zanzibar', null, null, null, null, false, 'newest', null, 20) -> 'results') is distinct from 0 then raise exception 'a hidden post''s words matched a search'; end if;
+    select count(*) into n from post_search ps where ps.act = pz and ps.words @@ to_tsquery('simple', 'zanzibar');
+    if n is distinct from 0 then raise exception 'a hidden post''s words are in the index a player reads'; end if;
+    perform tests.unbecome();
+    perform tests.become(admin_a);
+    perform decide(null, pz, 'unhide', null, '');
+    perform tests.unbecome();
+    perform tests.become(other);
+    if jsonb_array_length(search_posts('zanzibar', null, null, null, null, false, 'newest', null, 20) -> 'results') is distinct from 1 then raise exception 'an unhidden post is not found again'; end if;
+    perform tests.unbecome();
+    -- A hide until edited, then the author's edit: the new words are found, the offending ones are not.
+    perform tests.become(admin_a);
+    perform decide(null, pz, 'hideUntilEdited', null, '');
+    perform tests.unbecome();
+    perform tests.act(ch_author, 'edit', th, '{"body": "The word is now tanganyika."}', pz, now() + interval '30 seconds');
+    perform tests.become(other);
+    if jsonb_array_length(search_posts('zanzibar', null, null, null, null, false, 'newest', null, 20) -> 'results') is distinct from 0 then raise exception 'an old version''s words matched after an edit'; end if;
+    if jsonb_array_length(search_posts('tanganyika', null, null, null, null, false, 'newest', null, 20) -> 'results') is distinct from 1 then raise exception 'the edit that showed a post again is not found'; end if;
+    perform tests.unbecome();
+  end;
+
+  -- ---- hideUntilEdited: the author's edit ends the post being hidden the first time (the offending version stays hidden), an approval the second ----
   perform tests.become(admin_a);
   perform decide(null, p3, 'hideUntilEdited', null, 'change the second line');
   perform tests.unbecome();
@@ -232,6 +270,12 @@ begin
   select count(*) into n from reviews_due where post = p3 and version_act = e3;
   perform tests.unbecome();
   if n is distinct from 1 then raise exception 'the re-review list does not hold the edit that brought the post back (% rows)', n; end if;
+  -- The offending version stays hidden for good: its words, and its place in History, are an admin's until an unhide.
+  perform tests.become(other);
+  select (a.payload ->> 'body') into words from acts_public a where a.id = p3;
+  perform tests.unbecome();
+  if words is not null then raise exception 'the offending version of a post hidden until edited came back with the edit: %', words; end if;
+  if not exists (select 1 from hidden_versions where version_act = p3) then raise exception 'the offending version is no longer listed as hidden'; end if;
   -- The second time on the same post: hidden again, the next edit does not end it, an approval does.
   perform tests.become(admin_a);
   perform decide(null, e3, 'hideUntilEdited', null, 'again');
@@ -259,7 +303,21 @@ begin
     perform tests.unbecome();
     if words is distinct from 'Third, fixed twice.' or hid is distinct from false then raise exception 'an approval did not bring the edit back: % %', words, hid; end if;
   end;
-  if (select count(*) from hidden_versions where version_act in (p3, e3)) is distinct from 0 then raise exception 'hidden_versions still lists the post after its approval'; end if;
+  -- The approval shows the approved version alone: the versions that were hidden stay hidden until an unhide.
+  if (select count(*) from hidden_versions where version_act in (p3, e3)) is distinct from 2 or exists (select 1 from hidden_versions where version_act = (select x.id from acts x where x.kind = 'edit' and x.target_act_id = p3 order by x.created_at desc limit 1)) then raise exception 'an approval did not leave the hidden versions hidden and show the approved one'; end if;
+  perform tests.become(other);
+  select (a.payload ->> 'body') into words from acts_public a where a.id = e3;
+  perform tests.unbecome();
+  if words is not null then raise exception 'a version hidden until edited came back at an approval: %', words; end if;
+  perform tests.become(admin_a);
+  perform decide(null, p3, 'unhide', null, '');
+  perform decide(null, e3, 'unhide', null, '');
+  perform tests.unbecome();
+  if exists (select 1 from hidden_versions where version_act in (p3, e3)) then raise exception 'an unhide did not bring a version back'; end if;
+  perform tests.become(other);
+  select (a.payload ->> 'body') into words from acts_public a where a.id = p3;
+  perform tests.unbecome();
+  if words is distinct from 'Third words.' then raise exception 'an unhidden version''s words did not return: %', words; end if;
   if (select count(*) from hidden_versions where version_act = e1) is distinct from 1 then raise exception 'hidden_versions does not list the hidden edit'; end if;
 
   -- ---- A suspension: a past end bars nothing, a current one bars both writers, a lift ends it ----
