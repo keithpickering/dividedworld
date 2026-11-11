@@ -58,3 +58,24 @@ test('both named: both are written, and no other setting is touched', async () =
   assert.deepEqual(await tiersNow(), { strong: 'claude-sonnet-5-5', light: 'claude-sonnet-5-5' });
   assert.equal((await conn.sql("select value from settings where key = 'systemEnabled'"))[0]?.value, true);
 });
+
+test('a row with an extra key keeps it through the merge', async () => {
+  await reseed();
+  await conn.sql("update settings set value = value || '{\"fallback\": \"claude-sonnet-5-5\"}'::jsonb where key = 'modelTiers'");
+  await writeModelTiers(conn, { strong: 'claude-sonnet-5-5' });
+  assert.deepEqual(await tiersNow(), { strong: 'claude-sonnet-5-5', light: 'claude-haiku-5-5', fallback: 'claude-sonnet-5-5' });
+});
+
+test('no modelTiers row yet: both tiers named are written', async () => {
+  await conn.sql("delete from settings");
+  await writeModelTiers(conn, { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' });
+  assert.deepEqual(await tiersNow(), SEEDED);
+});
+
+test('no modelTiers row yet and one tier named: refused in plain words naming the missing tier, nothing written', async () => {
+  await conn.sql("delete from settings");
+  await assert.rejects(writeModelTiers(conn, { strong: 'claude-opus-5-5' }), /no modelTiers setting.*"light"/);
+  assert.equal(await tiersNow(), undefined);
+  await assert.rejects(writeModelTiers(conn, { light: 'claude-opus-5-5' }), /no modelTiers setting.*"strong"/);
+  assert.equal(await tiersNow(), undefined);
+});

@@ -1,4 +1,4 @@
-// `npm run rehearse -- <scenario> [--stub | --offline | --fresh] [--days N] [--seed N] [--cap DOLLARS] [--profile playtest] [--keep]`
+// `npm run rehearse -- <scenario> [--stub | --offline | --fresh] [--days N] [--seed N] [--cap DOLLARS] [--profile playtest] [--keep] [--strong MODEL] [--light MODEL]`
 //
 // What docs/plans/2026-11-11-system-rehearsal-design.md says, in brief: the rehearsal runs the real database and the real scheduled
 // jobs on a Postgres of its own, on a fake clock, minute by minute through a scenario's days, with filler players made of the corpus

@@ -132,3 +132,10 @@ test('a marker planted in every string field of the log never becomes a tag', ()
 test('the header names both tiers\' models', () => {
   assert.match(reportHtml(clean()), /Models: strong claude-opus-5-5, light claude-haiku-5-5\./);
 });
+
+test('a tier the run could not read renders as unset, never as an empty name', () => {
+  const log = { ...clean(), tiers: { strong: '', light: 'claude-haiku-5-5' } } as RehearsalLog;
+  const html = reportHtml(log);
+  assert.match(html, /Models: strong unset, light claude-haiku-5-5\./);
+  assert.match(reportHtml({ ...log, tiers: { strong: 'claude-opus-5-5', light: '' } } as RehearsalLog), /Models: strong claude-opus-5-5, light unset\./);
+});
