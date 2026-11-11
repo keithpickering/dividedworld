@@ -10,12 +10,14 @@
  * **Where it shows.** In a thread the drive has its buttons; in the ORIGIN box of a thread spun from the post, and in a play's moment (`still`: nothing
  * in a moment takes input or advances), the banners and the totals show and the buttons do not.
  *
- * The amounts and the overhead are the economy's (`settings.cardEconomy`, the card's `reads`); a screen of an instance seeded before them reads the
- * starting numbers.
+ * The amounts and the overhead are the economy's (`settings.cardEconomy` over the instance's own, the card's `reads`); a key the economy
+ * lacks throws (economyOf) rather than show a price the server would refuse.
  */
 import { useEffect, useState, type FocusEvent } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import type { CardPlay, Drive as DriveOf, EffectProps } from '../../../../engine/ui/cards/types.ts';
+import { economyOf } from '../../../../engine/rules/cards.ts';
+import { withCardEconomy } from '../../../../engine/ui/cards/faces.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import { Banner } from './Banner.tsx';
 import { Drive, raisedWords } from './Drive.tsx';
@@ -25,8 +27,6 @@ import './jimmy-wails.css';
 export const ADVANCE_MS = 8000;
 
 const GIFT_KEYS = ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'] as const;
-const STARTING_GIFTS = [10, 25, 50, 100] as const;
-const STARTING_OVERHEAD = 25;
 
 export interface CarouselProps {
   readonly plays: readonly CardPlay[];
@@ -80,19 +80,20 @@ export function Carousel({ plays, nameOf, still = false }: CarouselProps) {
         </span>
         <button type="button" className="dw-jw-step" aria-label="Next appeal" onClick={() => step(1)}>&rsaquo;</button>
         <span className="dw-jw-count">{at + 1} of {n}</span>
-        {reduced || still ? null : <button type="button" className="dw-jw-pause" aria-pressed={held} onClick={() => setHeld((h) => !h)}>{held ? 'Resume' : 'Pause'}<span className="dw-jw-sr"> appeals rotating</span></button>}
+        {reduced || still ? null : <button type="button" className="dw-jw-pause" aria-label="Pause rotation" aria-pressed={held} onClick={() => setHeld((h) => !h)}>{held ? 'Resume' : 'Pause'}</button>}
       </div>
     </section>
   );
 }
 
 export function JimmyWailsEffect({ post, drives, place, still, nameOf, give, moreGifts, wallet, children }: EffectProps) {
-  const { settings } = useKayfa();
+  const { instance, settings } = useKayfa();
   const list = drives ?? [];
   const latest = list.at(-1);
   const earlier = list.slice(0, -1);
-  const amounts = GIFT_KEYS.map((key, i) => settings.cardEconomy[key] ?? STARTING_GIFTS[i]!);
-  const overhead = settings.cardEconomy['jimmyWails.overhead'] ?? STARTING_OVERHEAD;
+  const priced = withCardEconomy(instance.settings, settings.cardEconomy);
+  const amounts = GIFT_KEYS.map((key) => economyOf(priced, key));
+  const overhead = economyOf(priced, 'jimmyWails.overhead');
   const author = nameOf(post.character);
   const common = { author, amounts, overhead, buttons: place === 'thread' && !still, wallet, give, moreGifts, nameOf } as const;
   const driveOf = (d: DriveOf) => <Drive key={d.id} drive={d} {...common} />;

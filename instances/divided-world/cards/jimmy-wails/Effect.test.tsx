@@ -139,9 +139,10 @@ describe('the carousel', () => {
 
   test('pauses from its pause button until it is pressed again', async () => {
     mount();
-    const pause = screen.getByRole('button', { name: /^Pause/ });
+    const pause = screen.getByRole('button', { name: 'Pause rotation' });
     fireEvent.click(pause);
     expect(pause.getAttribute('aria-pressed')).toBe('true');
+    expect(pause.getAttribute('aria-label')).toBe('Pause rotation');
     await pass(ADVANCE_MS * 2);
     expect(active()).toBe('1 of 3');
     fireEvent.click(pause);
@@ -155,7 +156,7 @@ describe('the carousel', () => {
     expect(document.querySelector('.dw-jw-carousel')!.getAttribute('data-reduced')).toBe('true');
     await pass(ADVANCE_MS * 5);
     expect(active()).toBe('1 of 3');
-    expect(screen.queryByRole('button', { name: /^Pause/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pause rotation' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Next appeal' }));
     expect(active()).toBe('2 of 3');
   });
@@ -171,7 +172,7 @@ describe('the carousel', () => {
     mount({ still: true });
     await pass(ADVANCE_MS * 2);
     expect(active()).toBe('1 of 3');
-    expect(screen.queryByRole('button', { name: /^Pause/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pause rotation' })).toBeNull();
   });
 });
 
@@ -220,9 +221,10 @@ describe('the drive under it', () => {
     expect(screen.getByText('0.13 reaches Pipewrench after The System\'s 10% overhead')).toBeTruthy();
   });
 
-  test('an economy that holds none of them gives the starting amounts', () => {
-    mount({ economy: {} });
-    expect(buttons().map((b) => b.textContent)).toEqual(['0.10', '0.25', '0.50', '1.00']);
+  test('an economy missing a key throws rather than showing a number', () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(() => mount({ economy: { 'jimmyWails.gift1': 10 } })).toThrow(/economy "jimmyWails\.gift2" is not set/);
+    quiet.mockRestore();
   });
 
   test('axe finds nothing on a drive with its carousel', async () => {
