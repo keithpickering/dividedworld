@@ -439,7 +439,7 @@ describe('reads and their rows', () => {
     const p = req?.url.searchParams;
     expect(p?.get('thread')).toBe(`eq.${T}`);
     expect(p?.getAll('seq')).toEqual(['gte.3', 'lte.9']);
-    expect(p?.get('kind')).toBe('not.in.(edit,card)');
+    expect(p?.get('kind')).toBe('not.in.(edit,card,donation)');
     expect(p?.get('order')).toBe('seq.asc');
     expect(acts).toEqual([ACT]);
   });
@@ -1306,19 +1306,19 @@ describe('the avatar', () => {
 
 describe('live', () => {
   function stub() {
-    const channels: { topic: string; opts: unknown; handlers: Map<string, (m: { payload: unknown }) => void>; subscribed: boolean }[] = [];
+    const channels: { topic: string; opts: unknown; handlers: Map<string, (m: { payload: unknown }) => void>; subscribed: boolean; status?: ((s: string) => void) | undefined }[] = [];
     const removed: string[] = [];
     const order: string[] = [];
     const client = {
       auth: { getSession: async () => ({ data: { session: { access_token: JWT, user: { id: A } } } }), onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }) },
       realtime: { setAuth: vi.fn(async (t: string) => { order.push(`auth:${t === JWT}`); }) },
       channel(topic: string, opts: unknown) {
-        const ch = { topic, opts, handlers: new Map<string, (m: { payload: unknown }) => void>(), subscribed: false };
+        const ch: (typeof channels)[number] = { topic, opts, handlers: new Map<string, (m: { payload: unknown }) => void>(), subscribed: false };
         channels.push(ch);
         order.push(`channel:${topic}`);
         const self = {
           on(_type: string, filter: { event: string }, cb: (m: { payload: unknown }) => void) { ch.handlers.set(filter.event, cb); return self; },
-          subscribe() { ch.subscribed = true; order.push(`subscribe:${topic}`); return self; },
+          subscribe(status?: (s: string) => void) { ch.subscribed = true; ch.status = status; order.push(`subscribe:${topic}`); return self; },
         };
         return self;
       },
@@ -1438,6 +1438,94 @@ describe('live', () => {
       { kind: 'update', sub: null, act: C, at: '2026-11-02T11:00:00Z' },
     ]);
     expect(onPlay).not.toHaveBeenCalled();
+  });
+
+  describe('when a channel is joined', () => {
+    it('tells a thread listener only once the channel reports SUBSCRIBED, and again on each rejoin', async () => {
+      const s = stub();
+      const onJoined = vi.fn();
+      s.api.subscribeThread(T, { onJoined });
+      await settle();
+      expect(s.channels[0]?.subscribed).toBe(true);
+      expect(onJoined).not.toHaveBeenCalled();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(1);
+      s.channels[0]?.status?.('CHANNEL_ERROR');
+      s.channels[0]?.status?.('TIMED_OUT');
+      expect(onJoined).toHaveBeenCalledTimes(1);
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(2);
+    });
+
+    it('tells a listener added to a topic already joined in a microtask, and not one that left by then', async () => {
+      const s = stub();
+      s.api.subscribeThread(T, { onAct: vi.fn() });
+      await settle();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      const late = vi.fn();
+      const gone = vi.fn();
+      s.api.subscribeThread(T, { onJoined: late });
+      s.api.subscribeThread(T, { onJoined: gone })();
+      expect(late).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(late).toHaveBeenCalledTimes(1);
+      expect(gone).not.toHaveBeenCalled();
+      expect(s.channels).toHaveLength(1);
+    });
+
+    it('does not tell a listener added after the channel dropped until it rejoins', async () => {
+      const s = stub();
+      s.api.subscribeThread(T, { onAct: vi.fn() });
+      await settle();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      s.channels[0]?.status?.('CLOSED');
+      const late = vi.fn();
+      s.api.subscribeThread(T, { onJoined: late });
+      await settle();
+      expect(late).not.toHaveBeenCalled();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(late).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not tell a listener that left before the channel was joined', async () => {
+      const s = stub();
+      const keep = vi.fn();
+      const left = vi.fn();
+      s.api.subscribeThread(T, { onJoined: keep });
+      s.api.subscribeThread(T, { onJoined: left })();
+      await settle();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(keep).toHaveBeenCalledTimes(1);
+      expect(left).not.toHaveBeenCalled();
+    });
+
+    it('tells a reach listener the same way', async () => {
+      const s = stub();
+      const onJoined = vi.fn();
+      const left = vi.fn();
+      s.api.subscribeReach({ onJoined });
+      s.api.subscribeReach({ onJoined: left })();
+      await settle();
+      expect(onJoined).not.toHaveBeenCalled();
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(1);
+      s.channels[0]?.status?.('SUBSCRIBED');
+      expect(onJoined).toHaveBeenCalledTimes(2);
+      expect(left).not.toHaveBeenCalled();
+      const late = vi.fn();
+      s.api.subscribeReach({ onJoined: late });
+      await Promise.resolve();
+      expect(late).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a board and an account listener, which pass no callback, untouched', async () => {
+      const s = stub();
+      const onThread = vi.fn();
+      s.api.subscribeBoard(C, { onThread });
+      await settle();
+      expect(() => s.channels[0]?.status?.('SUBSCRIBED')).not.toThrow();
+      expect(onThread).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -1697,6 +1785,24 @@ describe('reads by many ids', () => {
     const times = above.map((p) => p.act.createdAt);
     expect(times).toEqual([...times].sort());
     expect(await h.api.effectsAbove([], null, null)).toEqual([]);
+  });
+
+  it('gives through the act function and maps the gift and the giver\'s balance, and reads the wall in one call and by a keyset cursor', async () => {
+    const gift = { ...ACT_ROW, kind: 'donation', target_act_id: B, seq: null, payload: { amount: 25, overhead: 5, arrives: 20 }, current_payload: { amount: 25, overhead: 5, arrives: 20 }, edited_at: null };
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/act') return json({ gift, balance: 475 });
+      if (r.url.pathname === `${REST}/rpc/drive_gifts`) return json([{ drive: B, total: 25, count: 1, gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }, { id: B, character: null, amount: 10, at: '2026-10-01T09:00:00+00:00' }] }]);
+      if (r.url.pathname === `${REST}/rpc/drive_gifts_page`) return json({ gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }], more: false });
+      return undefined;
+    });
+    const given = await h.api.donate(B, B, 25);
+    expect(given).toMatchObject({ ok: true, value: { balance: 475, act: { id: A, kind: 'donation', targetActId: B, seq: null } } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'donate', character: B, drive: B, amount: 25 }]);
+    expect(await h.api.driveGifts([B, B, 'x),y'])).toEqual([{ id: B, total: 25, count: 1, gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }, { id: B, character: null, name: null, amount: 10, at: '2026-10-01T09:00:00+00:00' }] }]);
+    expect(h.to('rpc/drive_gifts')[0]?.body).toEqual({ drives: [B] });
+    expect(await h.api.driveGifts([])).toEqual([]);
+    expect(await h.api.driveGiftsPage(B, { at: '2026-10-01T10:00:00+00:00', id: A })).toEqual({ gifts: [{ id: A, character: B, name: 'Spritey', amount: 25, at: '2026-10-01T10:00:00+00:00' }], more: false });
+    expect(h.to('rpc/drive_gifts_page')[0]?.body).toEqual({ drive: B, before_at: '2026-10-01T10:00:00+00:00', before_id: A });
   });
 
   it('tails asks post_tails for a page of posts in one call, in calls of at most 200, and maps its rows', async () => {

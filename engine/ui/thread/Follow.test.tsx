@@ -113,7 +113,7 @@ describe('the follow control', () => {
     const boot = await w.fake.boot();
     const doc = (await w.fake.threadPage(w.elsewhere, { page: 1 }, 20, []))!;
     const asked = vi.spyOn(w.fake, 'following');
-    const read = holdReads(w.fake, ['session', 'thread', 'here', 'markRead', 'follow']);
+    const read = holdReads(w.fake, ['session', 'threadPage', 'here', 'markRead', 'follow']);
     renderIn(w.fake, <ThreadScreen thread={w.elsewhere} doc={doc} />, { path: `/t/${w.elsewhere}`, boot });
     /* In the first render, with no wait: the label the document's state gives. */
     expect(screen.getByRole('button', { name: 'Unfollow this thread' })).toBeInTheDocument();

@@ -74,7 +74,7 @@ begin
       'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
       -- The same kind for a pack's pulls (0139): pure, reading no table.
       'pack_pulls_problem(jsonb)',
-      -- What acts_public calls as its reader (0150): whether a version is hidden and what a payload shows of it, so a digest never reads a hidden version's words.
+      -- What acts_public calls as its reader (0159): whether a version is hidden and what a payload shows of it, so a digest never reads a hidden version's words.
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'public_payload(jsonb,boolean)']) x) then
     raise exception 'the functions the digest role may execute are not the reviewed twenty-one: %', fns;
   end if;

@@ -50,7 +50,7 @@ export function sessionRefused(e: unknown): boolean {
   return true;
 }
 
-/** The hint a SQL function raises with when the account is barred (0153_conduct.sql, refuse_if_barred), so the client reads its session again. */
+/** The hint a SQL function raises with when the account is barred (0159_conduct.sql, refuse_if_barred), so the client reads its session again. */
 export const BARRED_HINT = 'kayfabb.barred';
 
 /** The answer for a barred account's refusal, in its plain words and the hint the client recognizes; null for any other error. */

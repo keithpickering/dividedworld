@@ -684,6 +684,7 @@ describe('an effect given more than one play', () => {
         <StickAroundEffect
           post={act1()} plays={plays} states={{}} released={released} written={new Map()} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} save={vi.fn()} show={() => {}} met={() => {}} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
+          give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
         >
           <p>the post</p>
         </StickAroundEffect>

@@ -198,6 +198,13 @@ export const defaults: Settings = deepFreeze<Settings>({
     'youWereSaying.stepTokens': 25,
     'youWereSaying.stepPrice': 25,
     'youWereSaying.mostTokens': 200,
+    /** Jimmy Wails's drive: the four amounts a gift may be, in hundredths (0.10, 0.25, 0.50 and 1.00). */
+    'jimmyWails.gift1': 10,
+    'jimmyWails.gift2': 25,
+    'jimmyWails.gift3': 50,
+    'jimmyWails.gift4': 100,
+    /** The percentage of every gift The System keeps as overhead, rounded up; the rest reaches the post's author. */
+    'jimmyWails.overhead': 25,
     /** The Boss's moves on the machine, from the engine's own starting numbers. */
     ...MACHINE_DEFAULTS,
   },

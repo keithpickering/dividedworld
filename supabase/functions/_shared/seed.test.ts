@@ -12,8 +12,8 @@ import type { Persona } from '../../../engine/rules/types.ts';
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance, conduct);
   assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'conductVersion', 'conductSections'].sort());
-  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0150)');
-  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0150)');
+  assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0159)');
+  assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0159)');
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
@@ -26,10 +26,11 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
     rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined,
+    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, draws: undefined, drive: undefined, needsMessage: undefined,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));

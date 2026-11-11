@@ -1,4 +1,4 @@
--- Where a hidden version's words could still leak, and the screens that must say it is hidden (supabase/migrations/0153_conduct.sql; the
+-- Where a hidden version's words could still leak, and the screens that must say it is hidden (supabase/migrations/0159_conduct.sql; the
 -- conduct plan, Task 2): conceal_quotes reads a tag the way engine/bbcode/parse.ts does, a model's and a card's reads of a post go through the
 -- public form, the screen functions give a hidden post no body, a search finds neither a hidden version's words nor a version a later hide
 -- covers, and the well-formedness trigger and decide_report refuse what they should.

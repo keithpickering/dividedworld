@@ -163,7 +163,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
                 </label>
                 <p id="kb-ack-note" className="kb-acct-row-sentence kb-door-ack-note">An acknowledgement, nothing legally binding.</p>
                 <label className="kb-acct-ack">
-                  {/* The checkbox is the acceptance: its version rides with the login and open_account records it with the account (0153), only here. */}
+                  {/* The checkbox is the acceptance: its version rides with the login and open_account records it with the account (0160), only here. */}
                   <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} {...tie('conduct')} />
                   {/* One span, so the label's flex does not make the link a box of its own: it stays a link inside a sentence. */}
                   <span>I&apos;ve read and agree to the <Link to="/conduct" target="_blank" rel="noopener">code of conduct</Link>.</span>

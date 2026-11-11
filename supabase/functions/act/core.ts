@@ -104,6 +104,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   withdraw_turn: () => [],
   react: (a) => withSprung(a, a.thread ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
   save_effect_state: (a) => (a.thread ? [{ topic: `thread:${a.thread}`, event: 'effect', payload: { play: a.play, saved_at: a.saved_at } }] : []),
+  // A gift is an Act of the drive's thread, heard as a play is. The answer also holds the giver's own balance, which is the giver's alone and is never sent on.
+  donate: (a) => act(a.gift),
   buy_card: () => [],
   buy_pack: () => [],
   // A player's own: a character appears on the next load of who is here, and an invite or an
@@ -186,7 +188,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
         const play = decision.play === 'use'
           ? decideUse(rules, tuned.settings, target, effects, decision.args.config, said.value)
           : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
-        if (!play.ok) return refused('config', play.why);
+        // A card that needs a caster message refuses a blank one on the message field, as the screens show it there.
+        if (!play.ok) return refused(play.why === rules.needsMessage ? 'message' : 'config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
         // A card that writes buys its tokens at this decision, from the settings as the rows hold them now; the database writes them with the play and the worker and the log read them there.
         if (play.value.tokens !== undefined) args = { ...args, tokens: play.value.tokens };

@@ -1046,7 +1046,7 @@ revoke execute on function conduct_decisions_search(), acts_search_hidden() from
 -- acts_public inside one is expanded to the columns the view had that day. A column the view gains later (`hidden`, above) does not reach them
 -- until the function is created again, and a page of Acts without `hidden` would show a hidden version as an empty post with no note. So each is
 -- re-created here with its latest text unchanged (thread_page, profile_page and record_page as 0128 wrote them, alerts_page as 0134 did, log_page
--- as 0139 did); the grants stay as they are. A later migration that re-creates one takes its text from here.
+-- as 0139 did, but log_page as 0153 wrote it: its gift events and donation target); the grants stay as they are. A later migration that re-creates one takes its text from here.
 
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
@@ -1396,7 +1396,7 @@ begin atomic
     union select x.post from sp x where x.post is not null
     union select x.play from ca x union select x.post from ca x where x.post is not null
     union select x.play from en x
-    union select x.ref from wl x where x.kind = 'bribe' and x.ref is not null
+    union select x.ref from wl x where x.kind in ('bribe', 'gift_out', 'gift_in') and x.ref is not null
   ), walk(id, depth) as (
     -- actsFollowed, twice: what the Acts read lead to. A loop costs the two rounds as a chain does.
     select n.id, 0 from named n
@@ -1405,7 +1405,7 @@ begin atomic
     from walk w
     join acts_public a on a.id = w.id
     cross join lateral (values
-      (case when a.kind in ('card', 'spring', 'set') then a.target_act_id end),
+      (case when a.kind in ('card', 'spring', 'set', 'donation') then a.target_act_id end),
       (case when a.kind = 'intercept' and a.payload ->> 'visit_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'visit_act')::uuid end),
       (case when a.kind in ('spring', 'card') and a.payload ->> 'spring' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'spring')::uuid end),
       (case when a.kind = 'spring' and a.payload ->> 'caught' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'caught')::uuid end),

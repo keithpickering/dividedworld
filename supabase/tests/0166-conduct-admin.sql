@@ -1,4 +1,4 @@
--- The admin screen's reads (supabase/migrations/0155_conduct_admin.sql; the conduct plan, Task 7) and staff posts (Task 8): admin_reports and
+-- The admin screen's reads (supabase/migrations/0161_conduct_admin.sql; the conduct plan, Task 7) and staff posts (Task 8): admin_reports and
 -- admin_failed_mail refuse a player and an anonymous caller and answer an admin; an open report carries the version's words, its section, note and
 -- author's account and that account's past decisions, and never the reporter; a decided report leaves the list; a post edited after a first
 -- hide-until-edited is on the re-review list until an admin decides again; mail whose latest attempt failed or was refused is listed, and mail

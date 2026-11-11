@@ -686,12 +686,10 @@ describe('the first load draws once, from boot', () => {
   const ASKED: Readonly<Record<string, number>> = {
     boot: 1,
     estimate: 1,
-    /* The thread draws from its document (Task 13): one read, started with boot and not after it. */
-    threadPage: 1,
-    /* The live window's catch-up (the thread's summary, one row) after the subscription: the only read the thread makes of its own. */
-    thread: 1,
+    /* The thread draws from its document (Task 13): one read, started with boot and not after it, and the catch-up's one read of the drawn page again once its channels are joined: the only read the thread makes of its own. */
+    threadPage: 2,
   };
-  const HELD_TO_ZERO = ['boards', 'myCharacters', 'wallet', 'myCards', 'alertsUnread', 'nextSettlementAt', 'lastSettledAt', 'log', 'preferences', 'characters', 'acts', 'reading', 'board', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'following', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced'] as const;
+  const HELD_TO_ZERO = ['boards', 'myCharacters', 'wallet', 'myCards', 'alertsUnread', 'nextSettlementAt', 'lastSettledAt', 'log', 'preferences', 'characters', 'acts', 'reading', 'board', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'following', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'thread'] as const;
 
   test('/t/<id> asks boot and the estimate once and none of the frame\'s own reads, and the banner and HUD are in the first render after aria-busy clears', async () => {
     const fake = createFake({ instance, settings: fallbackSettings });
