@@ -100,21 +100,21 @@ def volume_fire():
 
 def fluid_fire():
     """Fire from Blender's fluid solver: a bed of fuel on the floor behind and before the magnet, burning up and
-    around it. It needs the full Blender build (the solver fails in the `bpy` module) and a folder to bake into."""
+    around it into a wall of flame. It needs the full Blender build (the solver fails in the `bpy` module) and a folder to bake into."""
     cache = os.environ.get('HEAT_CACHE')
     if not cache: raise SystemExit('HEAT_STYLE=fluid bakes a simulation: set HEAT_CACHE to an empty folder for it')
     frames = int(os.environ.get('HEAT_FRAMES', '60'))
     bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0.7, G + 4.8)); dom = bpy.context.object; dom.name = 'fire-domain'; dom.scale = (3.7, 2.6, 4.8)
     md = dom.modifiers.new('fluid', 'FLUID'); md.fluid_type = 'DOMAIN'; ds = md.domain_settings
-    ds.domain_type = 'GAS'; ds.resolution_max = int(os.environ.get('HEAT_RES', '112')); ds.use_adaptive_domain = False
-    ds.vorticity = 0.3; ds.flame_vorticity = 0.9; ds.burning_rate = 0.25; ds.flame_smoke = 0.0; ds.time_scale = 2.4   # a slow burn, so the flames stand tall
+    ds.domain_type = 'GAS'; ds.resolution_max = int(os.environ.get('HEAT_RES', '64'))   # the owner's pick was baked at 64; finer changes the fire; ds.use_adaptive_domain = False
+    ds.vorticity = 0.3; ds.flame_vorticity = 0.9; ds.burning_rate = 0.22; ds.flame_smoke = 0.0; ds.time_scale = 2.4   # a slow burn, so the flames stand tall
     ds.use_noise = True; ds.noise_scale = 2
     ds.cache_type = 'ALL'; ds.cache_directory = cache; ds.cache_frame_start = 1; ds.cache_frame_end = frames
-    for x, y, w, d in ((-1.7, 1.6, 0.7, 0.5), (0.0, 1.9, 0.8, 0.5), (1.7, 1.6, 0.7, 0.5), (-2.3, -0.9, 0.35, 0.25), (1.9, -1.0, 0.35, 0.25)):   # the fuel: three fires behind the magnet, two small ones before it
+    for x, y, w, d in ((0.0, 1.5, 2.9, 0.7), (-0.2, -1.0, 2.6, 0.35)):       # the fuel: one bed behind the magnet, a thinner one before it
         bpy.ops.mesh.primitive_cube_add(size=2, location=(x, y, G + 0.12)); f = bpy.context.object; f.scale = (w, d, 0.08); f.hide_render = True
         fm = f.modifiers.new('fluid', 'FLUID'); fm.fluid_type = 'FLOW'; fs = fm.flow_settings
-        fs.flow_type = 'FIRE'; fs.flow_behavior = 'INFLOW'; fs.fuel_amount = 1.5; fs.surface_distance = 0.4
-        fs.use_initial_velocity = True; fs.velocity_coord = (0, 0, 5.0)
+        fs.flow_type = 'FIRE'; fs.flow_behavior = 'INFLOW'; fs.fuel_amount = 2.0; fs.surface_distance = 0.4
+        fs.use_initial_velocity = True; fs.velocity_coord = (0, 0, 3.0)
     for o in mag:                                                           # the fire parts around the magnet
         em_ = o.modifiers.new('fluid', 'FLUID'); em_.fluid_type = 'EFFECTOR'; em_.effector_settings.effector_type = 'COLLISION'
     m = bpy.data.materials.new('fluid-fire'); m.use_nodes = True; n, l = m.node_tree.nodes, m.node_tree.links
@@ -122,12 +122,12 @@ def fluid_fire():
     ramp = n.new('ShaderNodeValToRGB'); cr = ramp.color_ramp
     cr.elements[0].position = 0.0; cr.elements[0].color = (*rig.hexrgb('#3a0410'), 1)
     cr.elements[1].position = 1.0; cr.elements[1].color = (*rig.hexrgb('#fff0a0'), 1)
-    for pos, hx in ((0.3, '#c8142a'), (0.6, '#ff5a14'), (0.9, '#ffc23a')):
+    for pos, hx in ((0.2, '#c8142a'), (0.45, '#ff5a14'), (0.75, '#ffc23a')):
         e = cr.elements.new(pos); e.color = (*rig.hexrgb(hx), 1)
     l.new(at.outputs['Fac'], ramp.inputs['Fac'])
     vol = n.new('ShaderNodeVolumePrincipled'); vol.inputs['Color'].default_value = (0, 0, 0, 1)
-    mul = n.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = 0.9 * DIM; l.new(at.outputs['Fac'], mul.inputs[0])
-    den = n.new('ShaderNodeMath'); den.operation = 'MULTIPLY'; den.inputs[1].default_value = 0.5; l.new(at.outputs['Fac'], den.inputs[0])
+    mul = n.new('ShaderNodeMath'); mul.operation = 'MULTIPLY'; mul.inputs[1].default_value = 1.7 * DIM          # an inferno, over white in its heart: the owner's pick; l.new(at.outputs['Fac'], mul.inputs[0])
+    den = n.new('ShaderNodeMath'); den.operation = 'MULTIPLY'; den.inputs[1].default_value = 0.25; l.new(at.outputs['Fac'], den.inputs[0])
     l.new(ramp.outputs['Color'], vol.inputs['Emission Color']); l.new(mul.outputs[0], vol.inputs['Emission Strength']); l.new(den.outputs[0], vol.inputs['Density'])
     out = n['Material Output']
     for lk in list(out.inputs['Surface'].links): l.remove(lk)

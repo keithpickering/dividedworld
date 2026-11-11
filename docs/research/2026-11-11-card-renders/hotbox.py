@@ -1,5 +1,5 @@
-"""A Minus World spell's icon as a 90s render (its name was not given): a blue face, red-eyed and very pleased,
-in a great deal of smoke."""
+"""Hot Box, a Minus World spell, as a 90s render. Its icon's alt text: "a stoned emoji with bloodshot eyes sits
+among puffy clouds"."""
 import sys, os, math, random
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bpy
@@ -13,7 +13,6 @@ rig.backdrop(14, [(0.0, '#0f7a2a'), (0.5, '#2fc04a'), (1.0, '#178a34')])
 C = Vector((-0.05, 0.6, 0.85)); R = 2.3
 
 skin = rig.plastic('face', rig.hexrgb('#74c4f2'), rough=0.25, coat=0.6)
-lid = rig.plastic('lid', rig.hexrgb('#5aa8e0'), rough=0.3)
 ink = rig.plastic('ink', rig.hexrgb('#123a6a'), rough=0.3, coat=1.0)
 white = rig.plastic('eye', rig.hexrgb('#ff8ab4'), rough=0.15, coat=1.0, emit=0.15)
 pupil = rig.plastic('pupil', rig.hexrgb('#b01438'), rough=0.2, coat=1.0)
@@ -25,7 +24,9 @@ for sx in (-1, 1):                                               # eyes: pink, h
     p = face(sx * 0.85, 0.75, -0.12)
     o = rig.ball(p, 0.62, white, 'eye', 48, scale=(1.15, 0.5, 0.72)); o.rotation_euler = (0, math.radians(-sx * 8), 0)
     rig.ball(p + Vector((sx * -0.08, -0.26, -0.06)), 0.2, pupil, 'pupil', 32, scale=(1.35, 0.5, 0.7))
-    o = rig.ball(p + Vector((0, 0.0, 0.2)), 0.64, lid, 'lid', 48, scale=(1.18, 0.56, 0.6)); o.rotation_euler = (0, math.radians(-sx * 10), 0)
+    o = rig.ball(p + Vector((0, -0.03, 0.2)), 0.64, skin, 'lid', 48, scale=(1.2, 0.56, 0.62)); o.rotation_euler = (0, math.radians(-sx * 8), 0)   # the lid, half down
+    for k, (dx, dz) in enumerate(((-0.42, -0.02), (-0.3, -0.16), (0.44, -0.04), (0.3, -0.17))):                # bloodshot: a few veins in from the corners
+        rig.tube('vein', [p + Vector((dx, -0.3, dz)), p + Vector((dx * 0.72, -0.31, dz - 0.03 + 0.04 * (k % 2))), p + Vector((dx * 0.5, -0.31, dz - 0.02))], 0.012, pupil, res=2)
     rig.tube('lid-line', [p + Vector((math.cos(a) * 0.74, -0.33, -0.02 + math.sin(a) * 0.1 - 0.0)) for a in (math.radians(200 + 140 * j / 16) for j in range(17))], 0.03, ink, res=4)
 rig.tube('smile', [face(-1.35 + 2.7 * t, -0.35 - 0.8 * math.sin(math.pi * t) ** 0.9, 0.03) for t in (j / 40 for j in range(41))], 0.06, ink, res=6)
 for sx in (-1, 1):                                               # the corners of it, tucked up

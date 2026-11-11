@@ -30,14 +30,14 @@ when this was written:
 | Good Vibes | `vibes.py` | `good-vibes.png` | this session's: a lava lamp, and a salt shaker with its surcharge on a tag |
 | You Were Saying? | `saying.py` | `you-were-saying.png` | this session's: an old beige computer going on with a post in green |
 
-Three more are not cards of this game. The owner sent three of Minus World's spell icons, without their names, to see
-them in the same style; the scripts are named for what each shows:
+Three more are not cards of this game. The owner sent three of Minus World's spell icons to see them in the same
+style, and then each icon's name and alt text, which the scenes were revised from:
 
-| Icon | Scene | Render |
-| --- | --- | --- |
-| a great smiling face risen behind a city at sunset | `looming.py` | `mw-looming.png` |
-| a blue face, red-eyed and pleased, in smoke | `hazy.py` | `mw-hazy.png` |
-| a figure in a hat and long coat, one eye lit, in a blue alley | `gumshoe.py` | `mw-gumshoe.png` |
+| Spell | Scene | Render | The icon's alt text |
+| --- | --- | --- | --- |
+| Overreaction | `overreaction.py` | `overreaction.png` | "A Godzilla sized :^) emoji sits in the midst of a destroyed metropolis. It has unknowingly tipped skyscrapers with its immense size. Smoke from the leveled buildings sits behind it." |
+| Hot Box | `hotbox.py` | `hot-box.png` | "a stoned emoji with bloodshot eyes sits among puffy clouds." |
+| Whodunnit | `whodunnit.py` | `whodunnit.png` | "a generic anonymous detective lurks stealthily against a brick wall in the dead of a rainy night." |
 
 `rig.py` is what they all share: the scene reset, the Standard view transform (saturated, with no filmic roll-off,
 which is most of the period look), materials, lights, the card's camera, the render call, and the small shapes the scenes are built from (tubes, slabs,
@@ -77,16 +77,16 @@ Environment variables, all optional:
 | `TOUR_SEED` | `8` | Where the crowd stands and whose cameras flash. |
 | `HEAT_SEED` | `6` | How the flames sway, and the embers. |
 | `HEAT_STYLE` | `tongues` | `tongues` is flat cartoon fire; `volume` is soft fire shaped by noise; `fluid` is simulated fire. The last two are far slower. |
-| `HEAT_CACHE`, `HEAT_RES`, `HEAT_FRAMES` | none, `112`, `60` | For `fluid` only: an empty folder the simulation bakes into (required), its resolution, and how many frames it runs before the picture is taken. |
+| `HEAT_CACHE`, `HEAT_RES`, `HEAT_FRAMES` | none, `64`, `60` | For `fluid` only: an empty folder the simulation bakes into (required), its resolution, and how many frames it runs before the picture is taken. |
 | `HEAT_FIRE` | `1.0` | The fire's brightness, either style. |
 | `CLOWN_SEED` | `9` | The wig's curls and the confetti. |
 | `CLOWN_TWIST` | `0.5` | How tightly the backdrop's vortex winds: 0 is straight rays, over 1 is nearly rings. |
 | `CLOWN_EYE_X`, `CLOWN_EYE_Z` | `0.9`, `2.7` | Where the vortex's eye is on the card. |
 | `VIBES_SEED` | `4` | The soft lights in the room and the spilled salt. |
 | `SAYING_SEED` | `3` | The lengths of the words on the screen and past it. |
-| `LOOMING_SEED` | `5` | The smoke, and which windows are lit. |
-| `HAZY_SEED` | `7` | Where the smoke's balls sit. |
-| `GUMSHOE_SEED` | `2` | Which bricks are missing or pale, and the rain. |
+| `OVERREACTION_SEED` | `5` | The smoke, the rubble, and which windows are lit. |
+| `HAZY_SEED` | `7` | Hot Box: where the smoke's balls sit. |
+| `WHODUNNIT_SEED` | `2` | Which bricks are missing or pale, and the rain. |
 
 Every scene but Whoops! puts the card on the xz plane, 5.4 wide by 8.4 tall and centered on the origin, with the
 camera looking along +y, so one unit is 100 px of the canvas and a position can be read off the card template
@@ -126,7 +126,8 @@ after later-style fire from a fluid simulation. The fluid solver fails inside th
 `HEAT_STYLE=volume` was made first: columns of light in a volume, shaped by noise and not simulated
 (`heat-magnet-volume.png`, at 64 samples), which the owner liked. The owner then allowed the full Blender build to be
 fetched, where the solver works, and `HEAT_STYLE=fluid` is that: a real simulation, baked and then rendered
-(`heat-magnet-fluid.png`). It runs only under the full build:
+(`heat-magnet-fluid.png`). Its settings are the owner's pick of the tests: a wall of flame, over white in its heart,
+which this session had first tuned away from as overexposed. The owner: "it's pretty much what I want." It runs only under the full build:
 
 ```
 HEAT_STYLE=fluid HEAT_CACHE=/some/empty/folder blender -b -P docs/research/2026-11-11-card-renders/heat.py -- out/heat-magnet-fluid.png
