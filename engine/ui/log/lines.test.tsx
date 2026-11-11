@@ -676,6 +676,23 @@ describe('a card play that the old voice did not answer', () => {
     expect(text(rows[1]!)).not.toContain('came back');
   });
 
+  const unloaded = (cards: Log['cards'], wallet: WalletEvent[]) =>
+    logRows(data({ log: { ...empty, cards, wallet }, mine: [char('c', 'Spritey', 'heel')], acts: new Map() }), w, 600, null);
+
+  test('a take-back returned row whose Act is not loaded, with no refund event, gets no refund line', () => {
+    const rows = unloaded([{ card: key, kind: 'returned' as const, act: 'k1', price: 0, at }], []);
+    /* The card row says nothing of its own: a take-back's words are the setter's end row's (setEndRows), which needs the Act. */
+    expect(rows).toEqual([]);
+    expect(rows.map(text).join('')).not.toContain("The old voice didn't answer");
+  });
+
+  test('a refund returned row whose Act is not loaded, with its refund event, gets the refund line and its amount', () => {
+    const rows = unloaded([{ card: key, kind: 'returned' as const, act: 'k1', price: 75, at }], [refund(75)]);
+    expect(rows.map((r) => r.kind)).toEqual(['returned']);
+    expect(text(rows[0]!)).toBe(`The old voice didn't answer for your ${name} on a post, so your 0.75 came back, and the card is back in your hand.`);
+    expect(rows[0]!.aura).toBe(75);
+  });
+
   test('a returned row names the instance\'s card it is for, never another', () => {
     const rows = rowsOf([{ card: 'other', kind: 'returned' as const, act: 'k1', price: 0, at }], []);
     const returned = rows.find((r) => r.kind === 'returned')!;

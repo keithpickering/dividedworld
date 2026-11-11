@@ -1362,6 +1362,23 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account.wallet += amount;
     recordWallet(account.id, stamp ?? now(), { settlement: null, kind: 'refund', change: amount, overflow: 0, floored: 0, balanceAfter: account.wallet, ref });
   }
+  /**
+   * refund_card_write (0149): the price the payer paid for the play goes back to their wallet, at most to the cap, and the card returns to the
+   * hand as a `returned` row naming the play. A play nobody paid for (no `played` row) moves nothing. The caller guards that it runs once.
+   */
+  function refundWrite(play: Id): void {
+    const row = cardLedger.find((l) => l.event.kind === 'played' && l.event.act === play);
+    if (!row) return;
+    const account = accounts.get(row.account)!;
+    const paid = -walletEvents.filter((w) => w.account === row.account && w.event.kind === 'play' && w.event.ref === play).reduce((sum, w) => sum + w.event.change, 0);
+    const moved = paid > 0 ? Math.min(paid, Math.max(0, settings.walletCap - account.wallet)) : 0;
+    if (moved > 0) {
+      account.wallet += moved;
+      recordWallet(account.id, now(), { settlement: null, kind: 'refund', change: moved, overflow: paid - moved, floored: 0, balanceAfter: account.wallet, ref: play });
+    }
+    account.cards[row.event.card] = (account.cards[row.event.card] ?? 0) + 1;
+    recordCard(account.id, now(), { card: row.event.card, kind: 'returned', act: play, price: moved });
+  }
   /** The reports whose judgment failed and were refunded: they do not count toward the day's quota (open_report). */
   const refundedReports = new Set<Id>();
   /** The appeals whose judgment failed and were refunded: the punishment can be appealed again. */
@@ -3860,7 +3877,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       texts.push({ play, version, text: 'text' in result ? result.text : null, at: now(), order: ++order });
       if (job && job.version === version) jobs.delete(play);
       /* finish_card_write (0149): a failure with no newer job waiting, for a play that never made a text, refunds it, and the play is over. */
-      if (!('text' in result) && !jobs.has(play) && !texts.some((t) => t.play === play && t.text !== null) && !reversedPlays.has(play)) untakenPlays.add(play);
+      if (!('text' in result) && !jobs.has(play) && !texts.some((t) => t.play === play && t.text !== null) && !reversedPlays.has(play)) {
+        untakenPlays.add(play);
+        refundWrite(play);
+      }
       if (o?.quiet) return;
       send(`thread:${k.thread}`, 'card_text', () => { for (const l of [...(threadListeners.get(k.thread) ?? [])]) l.onText?.(play, version); });
     },

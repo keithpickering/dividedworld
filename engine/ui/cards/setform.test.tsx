@@ -117,6 +117,18 @@ describe('a card that writes, where the instance runs no old voice', () => {
   test('is not among them where it does not', async () => {
     expect(await castable(false)).not.toContain('Typewriter');
   });
+  test('is not offered Set face down on the player\'s own post, where a Move that does not write is', async () => {
+    const user = userEvent.setup();
+    const played: Instance = { ...instance, cards: [...instance.cards, typewriter], settings: { ...instance.settings, oldVoice: true } };
+    const w = world({ blot: 1, typewriter: 1 }, played);
+    await open(w, played);
+    const move = await armAndOpen(user, 'Blot', 'Play Blot on post 3', 3);
+    expect(within(move).getByRole('radio', { name: 'Set face down' })).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    const writing = await armAndOpen(user, 'Typewriter', 'Play Typewriter on post 3', 3);
+    expect(within(writing).queryByRole('radio', { name: 'Set face down' })).toBeNull();
+    expect(within(writing).getByRole('button', { name: 'Play as Pipewrench' })).toBeInTheDocument();
+  });
 });
 
 describe('a Move on one\'s own post', () => {

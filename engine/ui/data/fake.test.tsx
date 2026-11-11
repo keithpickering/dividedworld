@@ -3139,6 +3139,41 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
     expect((await fake.tails([post])).some((r) => r.play === lost && r.text !== null)).toBe(false);
   });
 
+  test('a first generation that fails refunds what the play paid and returns the card, once, as refund_card_write does (0149); a play nobody paid for moves nothing', async () => {
+    const { fake } = world();
+    const ana = fake.seed.account('ana2');
+    const other = fake.seed.character(ana, 'Ana Two', 'heel');
+    const { act: theirs } = fake.seed.thread('general', other, 'Another', 'Other post');
+    fake.seed.wallet(ana, 462);
+    const lost = fake.seed.card(other, theirs, 'typewriter', { paid: 75 });
+    fake.signInAs(ana);
+    expect((await fake.wallet()).balance).toBe(387);
+    expect(await fake.myCards()).toEqual([]);
+    fake.seed.text(lost, theirs, { failed: true }, { quiet: true });
+    expect((await fake.wallet()).balance).toBe(462);
+    expect(await fake.myCards()).toEqual([{ card: 'typewriter', held: 1 }]);
+    const log = await fake.log();
+    expect(log.cards.filter((c) => c.kind === 'returned')).toMatchObject([{ card: 'typewriter', act: lost, price: 75 }]);
+    expect(log.wallet.filter((w) => w.kind === 'refund')).toMatchObject([{ change: 75, ref: lost, balanceAfter: 462 }]);
+    /* A second failure moves nothing more. */
+    fake.seed.text(lost, theirs, { failed: true }, { quiet: true });
+    expect((await fake.wallet()).balance).toBe(462);
+    expect(await fake.myCards()).toEqual([{ card: 'typewriter', held: 1 }]);
+    expect((await fake.log()).cards.filter((c) => c.kind === 'returned')).toHaveLength(1);
+    /* A failed regeneration of a play that made a text refunds nothing. */
+    const kept = fake.seed.card(other, theirs, 'typewriter', { paid: 50 });
+    fake.seed.text(kept, theirs, { text: 'a' }, { quiet: true });
+    expect((await fake.wallet()).balance).toBe(412);
+    fake.seed.text(kept, theirs, { failed: true }, { quiet: true });
+    expect((await fake.wallet()).balance).toBe(412);
+    expect(await fake.myCards()).toEqual([{ card: 'typewriter', held: 1 }]);
+    /* A play nobody paid for (no ledger row) moves nothing. */
+    const free = fake.seed.card(other, theirs, 'typewriter');
+    fake.seed.text(free, theirs, { failed: true }, { quiet: true });
+    expect((await fake.wallet()).balance).toBe(412);
+    expect(await fake.myCards()).toEqual([{ card: 'typewriter', held: 1 }]);
+  });
+
   test('a play that did not take is refused in plain words, not as an admin\'s end', async () => {
     const { fake, face, post } = world();
     const lost = fake.seed.card(face, post, 'typewriter');
