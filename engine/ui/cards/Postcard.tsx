@@ -73,7 +73,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
       {!face.unknown && face.play === 'set' && <span className="kb-postcard-fold" aria-hidden="true" />}
       {/* The canvas: the card's ground, a glow in its color and its art, clipped to the canvas's corners. Nothing in it is a word. */}
       <span className="kb-postcard-canvas" aria-hidden="true">
-        {canvas ? <img className="kb-postcard-art" src={canvas} alt="" aria-hidden="true" draggable={false} /> : null}
+        {canvas ? <img className="kb-postcard-art" src={canvas} alt="" aria-hidden="true" draggable={false} decoding="async" /> : null}
       </span>
       {/*
         * WCAG 2.5.3 (Label in Name): a button's visible words must appear, in order and together, in its

@@ -83,7 +83,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -126,12 +126,14 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
 describe('Divided World\'s InstanceUi covers its rules', () => {
   /* The bundler resolves a small SVG to a data URI and a larger one to a file ending .svg; either is an SVG the card draws. */
   const SVG_URL = /\.svg$|^data:image\/svg\+xml/u;
-  test('every card of the rules has art from its folder: a canvas and a mark that are SVGs, and a credit', () => {
+  /* A card's canvas is its art.svg or its art.webp (specs/card-art.md); a WebP is never small enough to be inlined. */
+  const CANVAS_URL = /\.svg$|^data:image\/svg\+xml|\.webp$/u;
+  test('every card of the rules has art from its folder: a canvas that is an SVG or a WebP, a mark that is an SVG, and a credit', () => {
     expect(instance.cards.length).toBeGreaterThan(0);
     for (const rules of instance.cards) {
       const art = instanceUi.cards?.find((u) => u.key === rules.key)?.art;
       expect(art, `${rules.key} has a CardUi`).toBeDefined();
-      expect(art!.canvas, `${rules.key} canvas`).toMatch(SVG_URL);
+      expect(art!.canvas, `${rules.key} canvas`).toMatch(CANVAS_URL);
       expect(art!.mark, `${rules.key} mark`).toMatch(SVG_URL);
       expect(art!.credit.length, `${rules.key} credit`).toBeGreaterThan(0);
     }

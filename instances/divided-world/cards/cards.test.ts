@@ -8,7 +8,7 @@ import { STROKES, whoops } from './whoops.ts';
 import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { atOrBelow, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { atOrBelow, castOnPost, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -21,7 +21,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['jimmy-wails', 'sweet', 200]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['below-the-fold', 'salty', 100], ['jimmy-wails', 'sweet', 200]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -260,6 +260,28 @@ test("Feelin' Fab lands on a post alone, up to three, and a fourth is refused in
   assert.deepEqual(feelinFab.canApply({ reach: 'thread', thread: 't1' }, []), { ok: false, why: 'this card lands on a post' });
 });
 
+/* Below the Fold (docs/plans/2026-11-11-below-the-fold-plan.md, Task 1). */
+test('Below the Fold is a common Salty Cast on a post, one to a post, that costs 1.00 and nothing more to play', async () => {
+  const { belowTheFold } = await import('./below-the-fold.ts');
+  assert.deepEqual([belowTheFold.key, belowTheFold.name, belowTheFold.alignment, belowTheFold.rarity, belowTheFold.play ?? 'cast', belowTheFold.reaches, belowTheFold.stack, belowTheFold.lasts], ['below-the-fold', 'Below the Fold', 'salty', 'common', 'cast', undefined, undefined, undefined]);
+  assert.equal(priceOf('below-the-fold'), 100);
+  assert.equal(belowTheFold.playPrice(settings, post(6000), {}), 0);
+  assert.equal(belowTheFold.playPrice(settings, post(10), {}), 0);
+  assert.deepEqual(belowTheFold.validateConfig({ anything: 1 }), { ok: true, value: {} });
+  assert.deepEqual(belowTheFold.validateConfig(undefined), { ok: true, value: {} });
+  const listed = cards.find((c) => c.key === 'below-the-fold');
+  assert.ok(listed, 'it is in the instance\'s cards');
+  assert.ok(castOnPost(listed), 'a Cast on a post, so Card Collector can name it');
+});
+
+test('Below the Fold lands on a post with no fold, and a second is refused in plain words', async () => {
+  const { belowTheFold } = await import('./below-the-fold.ts');
+  assert.equal(belowTheFold.canApply(post(10), []).ok, true);
+  assert.equal(belowTheFold.canApply(post(10), [{ card: 'whoops', act: 'w1', reach: 'post' as const }]).ok, true, 'another card is no fold');
+  assert.deepEqual(belowTheFold.canApply(post(10), [{ card: 'below-the-fold', act: 'f1', reach: 'post' as const }]), { ok: false, why: 'this post already carries that card' });
+  assert.deepEqual(belowTheFold.canApply({ reach: 'character', character: 'c1' }, []), { ok: false, why: 'this card lands on a post' });
+});
+
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
 const on = (body: string): CardTarget => postTarget('p1', 'post', body);
 const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
@@ -484,8 +506,8 @@ test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the unco
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks (the card types plan) joined the Booster by their rarity, as a new card does: nine uncommons share the 75 (You Were Saying? is a common, and the hit pull takes none): Jimmy Wails is an uncommon, and joined the Booster by its rarity with nothing listed in packs.ts.
-  assert.equal(cards.length, 15);
+  // The Gimmicks (the card types plan) joined the Booster by their rarity, as a new card does: nine uncommons share the 75 (You Were Saying? and Below the Fold are commons, and the hit pull takes none). Jimmy Wails is an uncommon, and joined the Booster by its rarity with nothing listed in packs.ts.
+  assert.equal(cards.length, 16);
   assert.ok(Math.abs(chance.get('main-event')! - 0.25) < 1e-9, `Main Event at ${chance.get('main-event')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
   assert.equal(uncommons.length, 9);

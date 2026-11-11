@@ -1,18 +1,23 @@
 # Card art: the engine's contract
 
 Current. This is what the engine holds a card's art to; the build enforces it with `tools/check-card-art.mjs`, whose
-self-test is `tools/test-card-art.mjs`. The design behind it is `docs/plans/2026-11-05-card-template-design.md`
-(section 6), a record.
+self-test is `tools/test-card-art.mjs`. The designs behind it are `docs/plans/2026-11-05-card-template-design.md`
+(section 6) and `docs/plans/2026-11-11-rendered-card-art-design.md`, which let a card's own canvas be a raster image;
+both are records.
 
 ## An art set
 
 Every card has an art set, one folder per card in an instance: `instances/<name>/ui/cards/<key>/`. Plain files directly
 in `ui/cards/` are not folders and the guard does not read them.
 
-- **`art.svg`**, the card's canvas. Vector, so it is sharp from the smallest size to the largest. Its root `svg` has a
-  viewBox of exactly `0 0 540 840`. The art fills the whole canvas; a design that keeps to one area puts its subject in
-  the focus zone on a transparent ground, because the engine always draws the card's dark ground and a soft glow in the
-  card's color under it. The zone is a guide, never a mask.
+- **The canvas**, the card's picture: `art.svg` or `art.webp`, exactly one.
+  - **`art.svg`** is vector, so it is sharp from the smallest size to the largest. Its root `svg` has a viewBox of
+    exactly `0 0 540 840`. The art fills the whole canvas; a design that keeps to one area puts its subject in the focus
+    zone on a transparent ground, because the engine always draws the card's dark ground and a soft glow in the card's
+    color under it. The zone is a guide, never a mask.
+  - **`art.webp`** is a raster image, for painted or rendered art: a still WebP of exactly 1080 by 1680 pixels (twice
+    the canvas, sharp at the largest size on a 3× screen), at most 400 KB. It fills the canvas and covers the ground
+    under it. One file serves all four sizes.
 - **`mark.svg`**, the mark. A square viewBox. A silhouette drawn to read at 18px in a post's mark tile. It is required,
   not a fallback to the canvas, because a full-art canvas shrunk to 18px is mud.
 - **`art.json`**, the manifest: `credit` (who made it) and `license` (the terms they offer it under), both non-empty
@@ -51,11 +56,12 @@ keep-clear line, the focus zone and the plate zone) over an empty art layer. It 
 
 Run `node tools/check-card-art.mjs [--root <directory>]`. For every card folder of every instance:
 
-1. All three files are there.
-2. `art.svg`'s root viewBox is four numbers, exactly `0 0 540 840`.
+1. There is exactly one canvas, `art.svg` or `art.webp`, and `mark.svg` and `art.json` are there.
+2. `art.svg`'s root viewBox is four numbers, exactly `0 0 540 840`. `art.webp` is a WebP image (its header says so, and
+   its first chunk is `VP8 `, `VP8L` or `VP8X`), exactly 1080 by 1680, and not animated.
 3. `mark.svg`'s viewBox is square.
 4. `art.json` parses, and `credit` and `license` are non-empty strings.
-5. Size caps: `art.svg` 200 KB, `mark.svg` 20 KB, `art.json` 2 KB.
+5. Size caps: `art.svg` 200 KB, `art.webp` 400 KB, `mark.svg` 20 KB, `art.json` 2 KB.
 6. Nothing in either SVG runs or reaches out, read case-insensitively over the whole file: no `<script`,
    `<foreignObject` or `<image`; no attribute whose name starts with `on`; no `@import`; every `href`, `xlink:href` and
    `url(` value starts with `#`.
@@ -70,9 +76,16 @@ inside an `<img>`, which is how a card's SVG is shown: a browser runs no script 
 the second wall, for the template's other readers (an artist's editor, a raw view on GitHub). Text and comments are read
 as markup, deliberately: a false positive is cheap and a miss is not.
 
+A WebP runs nothing and fetches nothing, so it has no such reading. The guard reads its header and its length and
+decodes nothing, so it does not catch a file whose header is right and whose image data is corrupt: the browser then
+draws no picture, and the card's name and rules still say everything, since the art is decoration. Metadata chunks in an
+extended file (EXIF, XMP) are not read; they are inert in an `<img>`.
+
+The guard reads only the files named here. Anything else in a card's folder is the instance's, such as the scene a
+rendered picture was made from.
+
 ## A variant is the same canvas
 
-A variant of a card is another canvas of the same size, not a different frame. Its canvas is an SVG on the same
-`0 0 540 840` viewBox, or, once the variant design builds it, a raster image at 1080 by 1680 (twice the canvas). The
-required set above is SVG; the raster rule is written for the variant design to build, and `tools/check-card-art.mjs`
-does not read a raster yet. The mark stays an SVG.
+A variant of a card is another canvas of the same size, not a different frame: an SVG on the same `0 0 540 840`
+viewBox, or a WebP of 1080 by 1680, held to the rules above for a card's own canvas. Who owns a variant, how it is found
+and how a played one shows are the variant design's, which is not written yet. The mark stays an SVG.
