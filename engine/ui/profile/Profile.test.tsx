@@ -412,6 +412,57 @@ describe('the Wearing row and the trophy case', () => {
     expect(within(rows[0]!).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${spritey}`);
   });
 
+  test('an award links to the move or the season it came from, and an admin\'s links nowhere', async () => {
+    const { fake, spritey } = await dressed();
+    fake.seed.staff('sighbot', 'Sighbot', 'boss');
+    const move = fake.seed.trophyMove('sighbot', { character: spritey, trophy: 'belt' });
+    const anno = fake.seed.trophyMove('sighbot', { character: spritey, trophy: 'met' });
+    fake.seed.award(spritey, 'belt', { at: Date.UTC(2026, 9, 21, 12), by: 'boss', move });
+    fake.seed.award(spritey, 'met', { at: Date.UTC(2026, 9, 14, 12), by: 'demand', move: anno });
+    fake.seed.award(spritey, 'p2', { at: Date.UTC(2026, 9, 29, 12), by: 'season' });
+    fake.seed.award(spritey, 'p1', { at: Date.UTC(2026, 9, 30, 12), by: 'admin' });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const table = await screen.findByRole('table', { name: /trophies/iu });
+    const row = (name: string) => within(table).getAllByRole('row').find((r) => r.querySelector('.kb-trophy-name')?.textContent === name)!;
+    const post = within(row('Test Belt')).getByRole('link', { name: 'its post' });
+    expect(post.getAttribute('href')).toMatch(new RegExp(`^/t/[^#?]+#post-\\d+$`, 'u'));
+    expect(row('Test Belt')).toHaveTextContent('Given by Sighbot, the Boss, Oct 21');
+    expect(within(row('Met')).getByRole('link', { name: 'the move' }).getAttribute('href')).toMatch(/^\/t\//u);
+    expect(within(row('P2')).getByRole('link', { name: 'season 1' })).toHaveAttribute('href', '/season?tab=rankings&season=1');
+    expect(within(row('P1')).queryByRole('link')).toBeNull();
+  });
+
+  test('the case says which trophies the mask shows on posts, and a held belt since when', async () => {
+    const { fake, spritey } = await dressed();
+    const chosen = fake.seed.award(spritey, 'p1', { at: Date.UTC(2026, 9, 21, 12), by: 'admin' });
+    fake.seed.award(spritey, 'p2', { at: Date.UTC(2026, 9, 20, 12), by: 'admin' });
+    fake.seed.award(spritey, 'belt', { at: Date.UTC(2026, 10, 2, 12), by: 'admin' });
+    expect((await fake.showTrophies(spritey, [chosen])).ok).toBe(true);
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const table = await screen.findByRole('table', { name: /trophies/iu });
+    const row = (name: string) => within(table).getAllByRole('row').find((r) => r.querySelector('.kb-trophy-name')?.textContent === name)!;
+    expect(row('Test Belt')).toHaveTextContent('champion since Nov 2');
+    expect(row('Test Belt').querySelector('td.kb-trophy-shown')).toHaveTextContent('On posts');
+    expect(row('P1').querySelector('td.kb-trophy-shown')).toHaveTextContent('On posts');
+    expect(row('P2').querySelector('td.kb-trophy-shown')).toBeEmptyDOMElement();
+    expect(row('P2')).not.toHaveTextContent('champion since');
+  });
+
+  test('a lineage row says how its reign began, and earlier holders come by a button from the cursor', async () => {
+    const { fake, spritey, rival } = await dressed();
+    fake.seed.staff('sighbot', 'Sighbot', 'boss');
+    for (let i = 0; i < 22; i++) fake.seed.award(i % 2 ? spritey : rival, 'belt', { at: Date.UTC(2026, 8, 1) + i * 86_400_000, by: i === 0 ? 'admin' : 'boss' });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const lineage = await screen.findByRole('table', { name: /Test Belt.*holders/iu });
+    const rows = () => within(lineage).getAllByRole('row').filter((r) => r.querySelector('td.kb-lineage-span'));
+    expect(rows()).toHaveLength(20);
+    expect(rows()[0]).toHaveTextContent('by Sighbot, the Boss');
+    act(() => screen.getByRole('button', { name: 'Earlier holders' }).click());
+    await waitFor(() => expect(rows()).toHaveLength(22));
+    expect(rows()[21]).toHaveTextContent('by an admin');
+    expect(screen.queryByRole('button', { name: 'Earlier holders' })).toBeNull();
+  });
+
   test('passes axe with the row, the case and a lineage drawn', async () => {
     const { fake, spritey } = await dressed();
     fake.seed.award(spritey, 'belt', { by: 'boss' });

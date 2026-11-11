@@ -3265,7 +3265,7 @@ describe('gear, trophies and Random Events', () => {
     // The belt goes to Bo One with a later award; it leaves Ana One's shelf, and the lineage names both reigns.
     fake.seed.award(b1, 'belt', { at: t0 + 3000 });
     expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['Pet', 'First']);
-    expect(must(await fake.beltLineage('belt')).map((r) => [r.name, r.ended !== null])).toEqual([['Ana One', true], ['Bo One', false]]);
+    expect(must(await fake.beltLineage('belt')).reigns.map((r) => [r.name, r.ended !== null, r.by])).toEqual([['Bo One', false, 'the season'], ['Ana One', true, 'the Boss']]);
     expect(await fake.beltLineage('pet')).toEqual(refused('"pet" is not a belt'));
     expect(await fake.beltLineage('nope')).toEqual(refused('there is no trophy "nope"'));
     // A page is newest first; an admin's reversal takes an award off the page and out of the shown set.
@@ -3276,6 +3276,33 @@ describe('gear, trophies and Random Events', () => {
     expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['First']);
     expect(await fake.showTrophies(a1, [pet])).toEqual(refused('that trophy has been taken back'));
     expect((await fake.trophies(a1)).awards.map((t) => t.name)).toEqual(['The Belt', 'First']);
+  });
+
+  test('an award names its move and says whether it is shown; a belt\'s reigns page newest first from a cursor', async () => {
+    const { fake, a1, b1 } = dressing();
+    const boss = fake.seed.staff('s-boss', 'Boss Staff', 'boss');
+    const move = fake.seed.trophyMove('s-boss', { character: a1, trophy: 'pet' });
+    const t0 = Date.parse('2026-10-01T00:00:00Z');
+    const pet = fake.seed.award(a1, 'pet', { at: t0, by: 'boss', move });
+    fake.seed.award(a1, 'p1', { at: t0 + 1000, by: 'season' });
+    fake.seed.award(a1, 'p2', { at: t0 + 2000, by: 'admin' });
+    expect(boss).toBeTruthy();
+    must(await fake.showTrophies(a1, [pet]));
+    const items = (await fake.trophies(a1)).awards;
+    expect(items.map((t) => [t.name, t.move !== null, t.season, t.shown])).toEqual([['P2', false, null, false], ['First', false, 1, false], ['Pet', true, null, true]]);
+    expect(items[2]!.move).toMatchObject({ act: move });
+    expect(items[2]!.move!.seq).toBeGreaterThan(0);
+    expect(items[2]!.by).toBe('Boss Staff, the Boss');
+    for (let i = 0; i < 25; i++) fake.seed.award(i % 2 ? a1 : b1, 'belt', { at: t0 + 10_000 + i * 1000, by: 'admin' });
+    const first = must(await fake.beltLineage('belt'));
+    expect(first.reigns).toHaveLength(20);
+    expect(first.more).toBe(true);
+    expect(first.reigns[0]).toMatchObject({ ended: null, by: 'an admin' });
+    const last = first.reigns[19]!;
+    const rest = must(await fake.beltLineage('belt', { before: last.began, beforeId: last.award }));
+    expect(rest.reigns).toHaveLength(5);
+    expect(rest.more).toBe(false);
+    expect(rest.reigns[0]!.ended).toBe(last.began);
   });
 
   test('an admin\'s hand is an admin\'s alone; a player is refused in only_admins\'s words', async () => {

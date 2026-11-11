@@ -77,6 +77,7 @@ begin
   perform pg_temp.expect((select payload ->> 'body' from acts where id = got.landed_act) = 'It is done: the giving of the Pet trophy to Aw Ann.', 'the announcement names the trophy and the character: ' || (select payload ->> 'body' from acts where id = got.landed_act));
   shown := trophies_of(ann) -> 'awards' -> 0;
   perform pg_temp.expect(shown ->> 'trophy' = 'aw-pet' and shown ->> 'by' = 'Aw Boss, the Boss', 'the trophy shows, given by the Boss in plain words: ' || shown::text);
+  perform pg_temp.expect(shown -> 'move' = (select jsonb_build_object('act', x.id, 'thread', x.thread, 'seq', x.seq) from acts_public x where x.id = got.landed_act) and shown -> 'move' ->> 'seq' is not null, 'the award links to the move: ' || shown::text);
 end $$;
 
 -- ---- 2. The limits at landing ----
@@ -150,7 +151,8 @@ begin
   got := pg_temp.land(pg_temp.queue('aw-belt', bob));
   perform pg_temp.expect(got.landed_act is not null, 'a belt passes to a second character: ' || coalesce(got.failure, 'no failure'));
   lineage := belt_lineage('aw-belt');
-  perform pg_temp.expect(jsonb_array_length(lineage) = 2 and lineage -> 0 ->> 'name' = 'Aw Ann' and lineage -> 1 ->> 'name' = 'Aw Bob' and lineage -> 1 ->> 'ended' is null and lineage -> 0 ->> 'ended' is not null, 'the lineage is in order: ' || lineage::text);
+  perform pg_temp.expect(jsonb_array_length(lineage -> 'reigns') = 2 and lineage #>> '{reigns,1,name}' = 'Aw Ann' and lineage #>> '{reigns,0,name}' = 'Aw Bob' and lineage #>> '{reigns,0,ended}' is null and lineage #>> '{reigns,1,ended}' is not null, 'the lineage is newest first: ' || lineage::text);
+  perform pg_temp.expect(lineage #>> '{reigns,0,by}' = 'Aw Boss, the Boss' and lineage #>> '{reigns,1,by}' = 'Aw Boss, the Boss', 'a reign says the Boss gave it: ' || lineage::text);
   perform pg_temp.expect((select (t ->> 'held')::boolean from jsonb_array_elements(trophies_of(ann) -> 'awards') t where t ->> 'trophy' = 'aw-belt') is false, 'the first holder no longer holds it');
   perform pg_temp.expect((select (t ->> 'held')::boolean from jsonb_array_elements(trophies_of(bob) -> 'awards') t where t ->> 'trophy' = 'aw-belt') is true, 'the second holds it');
   -- A belt is not given to its holder; it may go back to one who held it.

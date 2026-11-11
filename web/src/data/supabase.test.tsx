@@ -543,16 +543,20 @@ describe('reads and their rows', () => {
   it('reads the wardrobe, a page of trophies and a belt\'s lineage through their functions, and keeps the words of a refusal', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/my_wardrobe')) return json([{ gear: 'hat', rarity: 'rare', held: 2, worn_by: [B] }]);
-      if (r.url.pathname.endsWith('/rpc/trophies_of')) return json({ awards: [{ award: A, trophy: 'p1', name: 'First', line: null, art: null, belt: false, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3, held: null }], more: true });
-      if (r.url.pathname.endsWith('/rpc/belt_lineage')) return r.body && (r.body as { trophy_key: string }).trophy_key === 'pet' ? json({ code: '22023', message: '"pet" is not a belt', details: null, hint: 'kayfabb.refusal' }, 400) : json([{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null }]);
+      if (r.url.pathname.endsWith('/rpc/trophies_of')) return json({ awards: [{ award: A, trophy: 'p1', name: 'First', line: null, art: null, belt: false, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3, move: null, shown: true, held: null }, { award: T, trophy: 'pet', name: 'Pet', line: null, art: null, belt: false, at: '2026-10-01T00:00:00+00:00', by: 'Bo, the Boss', season: null, move: { act: B, thread: A, seq: 7 }, shown: false, held: null }], more: true });
+      if (r.url.pathname.endsWith('/rpc/belt_lineage')) return r.body && (r.body as { trophy_key: string }).trophy_key === 'pet' ? json({ code: '22023', message: '"pet" is not a belt', details: null, hint: 'kayfabb.refusal' }, 400) : json({ reigns: [{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null, by: 'an admin' }], more: true });
       return undefined;
     });
     expect(await h.api.wardrobe()).toEqual({ ok: true, value: [{ gear: 'hat', rarity: 'rare', held: 2, wornBy: [B] }] });
     expect(await h.api.trophies(B, { before: '2026-10-02T00:00:00+00:00', beforeId: T })).toEqual({
-      awards: [{ award: A, trophy: 'p1', name: 'First', art: null, belt: false, held: false, line: null, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3 }], more: true,
+      awards: [{ award: A, trophy: 'p1', name: 'First', art: null, belt: false, held: false, line: null, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3, move: null, shown: true },
+        { award: T, trophy: 'pet', name: 'Pet', art: null, belt: false, held: false, line: null, at: '2026-10-01T00:00:00+00:00', by: 'Bo, the Boss', season: null, move: { act: B, thread: A, seq: 7 }, shown: false }], more: true,
     });
     expect(h.to('rpc/trophies_of')[0]?.body).toEqual({ of_character: B, before: '2026-10-02T00:00:00+00:00', before_id: T, most: 50 });
-    expect(await h.api.beltLineage('belt')).toEqual({ ok: true, value: [{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null }] });
+    expect(await h.api.beltLineage('belt')).toEqual({ ok: true, value: { reigns: [{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null, by: 'an admin' }], more: true } });
+    expect(h.to('rpc/belt_lineage')[0]?.body).toEqual({ trophy_key: 'belt', before: null, before_id: null, most: 20 });
+    await h.api.beltLineage('belt', { before: '2026-10-02T00:00:00+00:00', beforeId: T });
+    expect(h.to('rpc/belt_lineage')[1]?.body).toEqual({ trophy_key: 'belt', before: '2026-10-02T00:00:00+00:00', before_id: T, most: 20 });
     expect(await h.api.beltLineage('pet')).toEqual({ ok: false, error: '"pet" is not a belt' });
   });
 

@@ -487,6 +487,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The trophy's name, line and giver take the row's free width; the giver sits on its own line under the name; the "On posts"
+   mark and how a reign began are short and kept on one line. */
+.kb-trophies .kb-trophy-what {
+  width: 100%;
+}
+
+.kb-trophies .kb-trophy-by {
+  display: inline-block;
+}
+
+.kb-trophies .kb-trophy-shown,
+.kb-lineage .kb-lineage-by {
+  white-space: nowrap;
+}
+
 /* "More trophies" is a control that reads as a link: the case continues where it stands. */
 .kb-profile-trophies button.kb-link {
   font: inherit;

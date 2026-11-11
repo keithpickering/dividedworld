@@ -31,7 +31,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, TROPHIES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, REIGNS_PAGE, TROPHIES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -46,7 +46,7 @@ import type {
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
-  BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
+  BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -134,7 +134,7 @@ export interface Seed {
   /** Copies of gear the account holds (`gear_ledger`), added to any it holds. */
   gear(account: Id, held: Readonly<Record<string, number>>): void;
   /** A standing award of a trophy kind (the instance's or an admin's) for a character, dated `at` (else now), by the season unless `by` says; returns its id. A belt's holder is the latest. */
-  award(character: Id, trophy: string, options?: { at?: number; by?: 'season' | 'boss' | 'demand' | 'admin'; line?: string }): Id;
+  award(character: Id, trophy: string, options?: { at?: number; by?: 'season' | 'boss' | 'demand' | 'admin'; line?: string; move?: Id }): Id;
   /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the weighted draw; null is a roll that finds nothing. */
   nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string } | null): void;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
@@ -450,7 +450,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const byEmail = new Map<string, Id>();
   const characters = new Map<Id, CharRec>();
   /** trophy_awards and trophy_reversals (0151): an award stands until `reversed`. */
-  const awards: { id: Id; trophy: string; character: Id; at: number; by: 'season' | 'boss' | 'demand' | 'admin'; line: string | null; season: number | null; reversed: boolean }[] = [];
+  const awards: { id: Id; trophy: string; character: Id; at: number; by: 'season' | 'boss' | 'demand' | 'admin'; line: string | null; season: number | null; move: Id | null; reversed: boolean }[] = [];
   /** The kinds an admin made (`make_trophy`), beside the instance's own. */
   const madeKinds: { key: string; name: string; line: string | null; belt: boolean; art: string | null }[] = [];
   /** The Random Events a test scripted (`Seed.nextEvent`), taken in order before the weighted draw; null is a roll that finds nothing. */
@@ -1843,6 +1843,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return [...shown, ...belts];
   }
   const WORDS: Record<string, string> = { season: 'the season', demand: 'a met demand', admin: 'an admin'};
+  /** The link data `trophy_item` gives for a Boss's or a met demand's award: the move's Act, thread and number there. */
+  const moveOf = (a: (typeof awards)[number]): TrophyItem['move'] => {
+    const m = a.move === null ? undefined : acts.get(a.move);
+    return m && m.kind === 'move' && m.seq !== null ? { act: m.id, thread: m.thread, seq: m.seq } : null;
+  };
   /** `trophy_item`'s words for who gave: the Boss's own name, "<Name>, the Boss", where one stands. */
   const givenBy = (by: string): string => {
     if (by !== 'boss') return WORDS[by]!;
@@ -1904,18 +1909,24 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const all = awards.filter((a) => a.character === character && !a.reversed && (before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId)))
       .sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
     return {
-      awards: all.slice(0, PAGE).map((a): TrophyItem => ({ ...shownOf(a), line: a.line ?? kindOf(a.trophy)!.line, at: iso(a.at), by: givenBy(a.by), season: a.season })),
+      awards: all.slice(0, PAGE).map((a): TrophyItem => ({ ...shownOf(a), line: a.line ?? kindOf(a.trophy)!.line, at: iso(a.at), by: givenBy(a.by), season: a.season, move: moveOf(a), shown: characters.get(a.character)?.shown.includes(a.id) === true })),
       more: all.length > PAGE,
     };
   }
 
-  /** `belt_lineage` (0151). */
-  function beltLineage(trophy: string): Answer<BeltReign[]> {
+  /** `belt_lineage` (0151, 0156): a page of reigns, newest first, from the cursor (the last reign's `began` and award). */
+  function beltLineage(trophy: string, cursor?: BeltCursor): Answer<BeltPage> {
     const k = kindOf(trophy);
     if (!k) return refuse(`there is no trophy "${trophy}"`);
     if (!k.belt) return refuse(`"${trophy}" is not a belt`);
     const line = standing(trophy).sort((x, y) => x.at - y.at || (x.id < y.id ? -1 : 1));
-    return ok(line.map((a, i): BeltReign => ({ award: a.id, character: a.character, name: characters.get(a.character)?.name ?? '', began: iso(a.at), ended: line[i + 1] ? iso(line[i + 1]!.at) : null })));
+    const before = cursor ? Date.parse(cursor.before) : null;
+    const newest = line.map((a, i) => ({ a, ended: line[i + 1] ? iso(line[i + 1]!.at) : null })).reverse()
+      .filter(({ a }) => before === null || a.at < before || (a.at === before && a.id < cursor!.beforeId));
+    return ok({
+      reigns: newest.slice(0, REIGNS_PAGE).map(({ a, ended }): BeltReign => ({ award: a.id, character: a.character, name: characters.get(a.character)?.name ?? '', began: iso(a.at), ended, by: givenBy(a.by) })),
+      more: newest.length > REIGNS_PAGE,
+    });
   }
 
   /** `show_trophies` (0151): the whole set replaces the one before. */
@@ -3503,7 +3514,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     wardrobe: () => wardrobe(),
     setOutfit: lossy(setOutfit),
     trophies: (character, cursor) => trophiesOf(character, cursor),
-    beltLineage: (trophy) => beltLineage(trophy),
+    beltLineage: (trophy, cursor) => beltLineage(trophy, cursor),
     showTrophies: lossy(showTrophies),
     randomEvent: lossy(randomEvent),
     grantGear(character, gear, copies) {
@@ -3528,7 +3539,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (c.staff) return refuse('a staff character is never given a trophy');
       if (c.debutedAt === null) return refuse('that character has not debuted');
       const id = uuid();
-      awards.push({ id, trophy, character, at: now(), by: 'admin', line: said, season: null, reversed: false });
+      awards.push({ id, trophy, character, at: now(), by: 'admin', line: said, season: null, move: null, reversed: false });
       return ok({ award: id });
     },
     reverseAward(award) {
@@ -3734,7 +3745,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!characters.has(character)) throw new Error(`no such character ${character}`);
       if (!kindOf(trophy)) throw new Error(`no trophy ${trophy}`);
       const id = uuid();
-      awards.push({ id, trophy, character, at: o?.at ?? now(), by: o?.by ?? 'season', line: o?.line ?? null, season: o?.by === undefined || o.by === 'season' ? 1 : null, reversed: false });
+      awards.push({ id, trophy, character, at: o?.at ?? now(), by: o?.by ?? 'season', line: o?.line ?? null, season: o?.by === undefined || o.by === 'season' ? 1 : null, move: o?.move ?? null, reversed: false });
       return id;
     },
     /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the draw; null is a roll that finds nothing. */

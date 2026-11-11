@@ -509,6 +509,17 @@ export interface TrophyItem extends ShownTrophy {
   readonly by: string;
   /** The season's number for a season's place; null for any other award. */
   readonly season: number | null;
+  /** The move that gave it, for the Boss's award and a met demand's: its Act, its thread and its number there (the address of a post); null for any other award. */
+  readonly move: TrophyMove | null;
+  /** Whether the character's posts show this award (its own choice, which a post makes public). */
+  readonly shown: boolean;
+}
+
+/** A move's Act and where it stands: `/t/<thread>#post-<seq>`. Public, as every move is. */
+export interface TrophyMove {
+  readonly act: Id;
+  readonly thread: Id;
+  readonly seq: number;
 }
 
 /** How many awards a page of `trophies` holds. */
@@ -533,6 +544,23 @@ export interface BeltReign {
   readonly name: string;
   readonly began: string;
   readonly ended: string | null;
+  /** How the reign began, in the words `TrophyItem.by` uses ("<Name>, the Boss", "an admin"); never which admin. */
+  readonly by: string;
+}
+
+/** How many reigns a page of `beltLineage` holds. */
+export const REIGNS_PAGE = 20;
+
+/** A page of a belt's reigns, newest first; `more` is whether earlier ones remain. */
+export interface BeltPage {
+  readonly reigns: readonly BeltReign[];
+  readonly more: boolean;
+}
+
+/** Where a page of reigns continues from: the last reign of the page before it, by when it began and its award (`belt_lineage`'s `before` and `before_id`). */
+export interface BeltCursor {
+  readonly before: string;
+  readonly beforeId: Id;
 }
 
 /** A gear the player holds: how many copies, its rarity, and which of the player's own characters wear it (`my_wardrobe`). Private to the player. */
@@ -2348,8 +2376,8 @@ export interface KayfaApi {
   setOutfit(character: Id, pieces: readonly Piece[]): Promise<Answer<{ readonly worn: number }>>;
   /** A page of a character's standing awards, newest first, `TROPHIES_PAGE` to a page; `cursor` continues after the last of the page before. Public. */
   trophies(character: Id, cursor?: TrophyCursor): Promise<TrophyPage>;
-  /** A belt's holders in order, each reign with its end (`belt_lineage`); refused for a trophy that is no belt. */
-  beltLineage(trophy: string): Promise<Answer<readonly BeltReign[]>>;
+  /** A page of a belt's holders, newest first, each reign with how it began and its end (`belt_lineage`); refused for a trophy that is no belt. */
+  beltLineage(trophy: string, cursor?: BeltCursor): Promise<Answer<BeltPage>>;
   /** Chooses which of a character's standing awards its postbit shows, in order, the whole set replacing the one before (`show_trophies`). Through a character the player plays. */
   showTrophies(character: Id, awards: readonly Id[]): Promise<Answer<{ readonly shown: number }>>;
   /** A chance at a Random Event for a character the player plays: null where none comes (inside the window, at the day's most, or a draw of nothing). Never says which. */

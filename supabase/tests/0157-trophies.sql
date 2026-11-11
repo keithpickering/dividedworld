@@ -125,10 +125,22 @@ begin
   if pg_temp.held(b, 'tt-belt') is distinct from true then raise exception 'the belt given to B is B''s: %', trophies_of(b); end if;
   if pg_temp.has(a, 'tt-belt') is distinct from true then raise exception 'A keeps the award it once held, as not held'; end if;
   lineage := belt_lineage('tt-belt');
-  if jsonb_array_length(lineage) is distinct from 2 or lineage #>> '{0,character}' is distinct from a::text or lineage #>> '{1,character}' is distinct from b::text
-     or lineage #>> '{0,ended}' is distinct from lineage #>> '{1,began}' or lineage #>> '{1,ended}' is not null or lineage #>> '{0,name}' is distinct from 'Tt Ann' then
-    raise exception 'belt_lineage lists A then B, A''s reign ending as B''s began: %', lineage;
+  -- Newest reign first, as {reigns, more}: B's reign (still going), then A's, ended as B's began; each says in plain words how it began, never which admin.
+  if jsonb_array_length(lineage -> 'reigns') is distinct from 2 or lineage #>> '{reigns,1,character}' is distinct from a::text or lineage #>> '{reigns,0,character}' is distinct from b::text
+     or lineage #>> '{reigns,1,ended}' is distinct from lineage #>> '{reigns,0,began}' or lineage #>> '{reigns,0,ended}' is not null or lineage #>> '{reigns,1,name}' is distinct from 'Tt Ann'
+     or lineage ->> 'more' is distinct from 'false' then
+    raise exception 'belt_lineage lists B then A, A''s reign ending as B''s began: %', lineage;
   end if;
+  if lineage #>> '{reigns,0,by}' is distinct from 'an admin' or lineage #>> '{reigns,1,by}' is distinct from 'an admin' or lineage::text like '%' || boss::text || '%' then raise exception 'a reign says how it began, never which admin: %', lineage; end if;
+  -- Paged as trophies_of is: one at a time, the cursor the last reign's (began, award).
+  lineage := belt_lineage('tt-belt', null, 1);
+  if jsonb_array_length(lineage -> 'reigns') is distinct from 1 or lineage ->> 'more' is distinct from 'true' or lineage #>> '{reigns,0,character}' is distinct from b::text then raise exception 'the first page of one reign: %', lineage; end if;
+  lineage := belt_lineage('tt-belt', (lineage #>> '{reigns,0,began}')::timestamptz, 1, (lineage #>> '{reigns,0,award}')::uuid);
+  if jsonb_array_length(lineage -> 'reigns') is distinct from 1 or lineage ->> 'more' is distinct from 'false' or lineage #>> '{reigns,0,character}' is distinct from a::text or lineage #>> '{reigns,0,ended}' is null then raise exception 'the second page: %', lineage; end if;
+  if jsonb_array_length(belt_lineage('tt-belt', null, 0) -> 'reigns') is distinct from 1 or jsonb_array_length(belt_lineage('tt-belt', null, 100000) -> 'reigns') is distinct from 2 then raise exception 'a page holds at least one and at most 100'; end if;
+  -- An admin's award carries no link and the award is not shown until its character chooses it.
+  if (select t -> 'move' from jsonb_array_elements(trophies_of(b) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'null'::jsonb then raise exception 'an admin''s award has no move: %', trophies_of(b); end if;
+  if (select t ->> 'shown' from jsonb_array_elements(trophies_of(b) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'false' then raise exception 'an award not chosen is not shown: %', trophies_of(b); end if;
   -- The words: the line of the award wins over the kind's; who gave it is "an admin", never which.
   if (select t ->> 'line' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'First holder.' then raise exception 'an award''s own line is shown: %', trophies_of(a); end if;
   if (select t ->> 'line' from jsonb_array_elements(trophies_of(b) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'One at a time.' then raise exception 'the kind''s line is shown otherwise: %', trophies_of(b); end if;
@@ -138,7 +150,7 @@ begin
   perform reverse_award(award_b);
   if pg_temp.held(a, 'tt-belt') is distinct from true then raise exception 'reversing B''s award does not return the belt to A: %', trophies_of(a); end if;
   if pg_temp.has(b, 'tt-belt') then raise exception 'a reversed award leaves B''s trophies'; end if;
-  if jsonb_array_length(belt_lineage('tt-belt')) is distinct from 1 or belt_lineage('tt-belt') #>> '{0,ended}' is not null then raise exception 'a reversed award leaves the lineage: %', belt_lineage('tt-belt'); end if;
+  if jsonb_array_length(belt_lineage('tt-belt') -> 'reigns') is distinct from 1 or belt_lineage('tt-belt') #>> '{reigns,0,ended}' is not null then raise exception 'a reversed award leaves the lineage: %', belt_lineage('tt-belt'); end if;
   said := pg_temp.refusal(format('select reverse_award(%L)', award_b));
   if said is distinct from 'that trophy was already taken back' then raise exception 'reversing twice: %', said; end if;
   said := pg_temp.refusal(format('select reverse_award(%L)', gen_random_uuid()));
@@ -185,6 +197,9 @@ begin
   perform show_trophies(cat, c, array[third, pet, champion]);
   shelf := profile_projection(c) -> 'trophies';
   if (select string_agg(t ->> 'trophy', ',') from jsonb_array_elements(shelf) t) is distinct from 'tt-third,tt-pet,tt-champion,tt-belt' then raise exception 'the shown awards in order, then the belt: %', shelf; end if;
+  -- `shown` is whether the character's posts show the award: its own choice, public as the posts are.
+  if (select string_agg(t ->> 'trophy' || '=' || (t ->> 'shown'), ',' order by t ->> 'trophy') from jsonb_array_elements(trophies_of(c) -> 'awards') t)
+     is distinct from 'tt-belt=false,tt-champion=true,tt-met=false,tt-pet=true,tt-third=true' then raise exception 'each award says whether it is shown: %', trophies_of(c); end if;
   said := pg_temp.refusal(format('select show_trophies(%L, %L, %L)', cat, c, array[third, pet, champion, extra]));
   if said is distinct from '4 trophies are shown; at most 3' then raise exception 'a fourth shown: %', said; end if;
   said := pg_temp.refusal(format('select show_trophies(%L, %L, %L)', cat, c, array[third, other]));
@@ -302,6 +317,7 @@ begin
   if exists (select 1 from trophy_awards a where a.season = s1 and a.by is distinct from 'season') or exists (select 1 from trophy_awards a join characters c on c.id = a.character where c.staff is not null) then raise exception 'season awards are the season''s, and none is a staff character''s'; end if;
   if (select t ->> 'by' from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 'the season' then raise exception 'a season award says "the season"'; end if;
   if (select (t ->> 'season')::integer from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 1 then raise exception 'a season award names its season'; end if;
+  if (select t -> 'move' from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 'null'::jsonb then raise exception 'a season award names no move'; end if;
   -- The next season: a tie at first. Places 1, 1, 3, 4, 5: two Champion, one Third.
   s2 := (select id from seasons where ends_at is null);
   insert into standings (character, season, amount) values (c1, s2, 500), (c2, s2, 500), (c3, s2, 300), (c4, s2, 200), (c5, s2, 100)
@@ -417,6 +433,11 @@ begin
   if exists (select 1 from trophy_awards a where a.character in (reactor, boss, c)) then raise exception 'the reactor, the Boss or Cat was given a trophy'; end if;
   if (ran ->> 'awardsFailed')::integer is distinct from 0 then raise exception 'the tick counted failed awards: %', ran; end if;
   if (select t ->> 'by' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-met' limit 1) is distinct from 'a met demand' then raise exception 'a met demand''s award says so'; end if;
+  -- It links to the move: its Act, its thread and its number there, and nothing else of the Act.
+  if (select t -> 'move' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-met' limit 1)
+     is distinct from (select jsonb_build_object('act', x.id, 'thread', x.thread, 'seq', x.seq) from acts_public x where x.id = mv_quad) then
+    raise exception 'a met demand''s award links to its move: %', trophies_of(a);
+  end if;
   perform system_tick();
   if (select count(*) from trophy_awards where act = mv_quad) is distinct from 2::bigint then raise exception 'a later tick gave the trophies again'; end if;
 

@@ -33,7 +33,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
@@ -42,7 +42,7 @@ import { RARITIES } from '../../../engine/rules/cards.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -807,7 +807,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
   /** An award as `trophy_item` has it; `held` is a belt's alone, null otherwise. */
   const toShownTrophy = (t: Row): ShownTrophy => ({ award: t['award'], trophy: t['trophy'], name: t['name'], art: trophyArtUrl(str(t['art'])), belt: t['belt'] === true, held: t['held'] === true });
-  const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null });
+  const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null,
+    move: ((m: Row | null) => (m ? { act: m['act'], thread: m['thread'], seq: m['seq'] } : null))(typeof t['move'] === 'object' ? (t['move'] as Row | null) : null), shown: t['shown'] === true });
 
   const toCharacter = (c: Row, p: Row | undefined): Character => ({
     id: c['id'],
@@ -1946,10 +1947,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = (await read(() => client.rpc('trophies_of', { of_character: character, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: TROPHIES_PAGE }))).data as Row | null;
       return { awards: rowsOf(d?.['awards']).map(toTrophyItem), more: d?.['more'] === true };
     },
-    async beltLineage(trophy) {
+    async beltLineage(trophy, cursor) {
       /* rpcWrite for its refusal words, as wardrobe does: "not a belt" is the server's answer to show. */
-      const a = await rpcWrite(() => client.rpc('belt_lineage', { trophy_key: trophy }));
-      return a.ok ? { ok: true, value: rowsOf(a.value).map((r): BeltReign => ({ award: r['award'], character: r['character'], name: r['name'], began: r['began'], ended: str(r['ended']) })) } : a;
+      const a = await rpcWrite(() => client.rpc('belt_lineage', { trophy_key: trophy, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: REIGNS_PAGE }));
+      return a.ok ? { ok: true, value: { reigns: rowsOf(a.value['reigns']).map((r): BeltReign => ({ award: r['award'], character: r['character'], name: r['name'], began: r['began'], ended: str(r['ended']), by: r['by'] })), more: a.value['more'] === true } } : a;
     },
     async showTrophies(character, awards) {
       const a = await edge('wardrobe', { action: 'showTrophies', character, awards }, LOST);
