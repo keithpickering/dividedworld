@@ -5,7 +5,7 @@
  */
 import { describe, expect, test } from 'vitest';
 import { landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
-import { QUADRANTS } from '../../rules/types.ts';
+import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { effectsOf, landing, landingOn, lengthOf } from './land.ts';
 import type { CardPlay } from './types.ts';
@@ -146,7 +146,7 @@ describe('a card whose canApply reads its configuration, as a screen offers it',
     validateConfig: (c) => ((c as { quadrant?: unknown } | null)?.quadrant === undefined ? { ok: false, why: 'choose the reactions' } : { ok: true, value: c }),
     canApply: (t, e, config, now) => {
       const lands = landsOn({ key: 'reader', stack: 4 }, t, e, now);
-      const quadrant = (config as { quadrant: never } | undefined)?.quadrant;
+      const quadrant = (config as { quadrant: Quadrant } | undefined)?.quadrant as Quadrant;
       return lands.ok && config ? quadrantFree({ key: 'reader' }, t, [{ card: 'reader', act: 'x', quadrant: QUADRANTS[0], ends: '2999-01-01T00:00:00Z' }], quadrant, now) : lands;
     },
   };
