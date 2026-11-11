@@ -20,6 +20,8 @@
  *    the list has four more rows (55px each): the hidden Main Event's cell and note stand 165px lower again (495 in all) and, under Off Day's row, Save changes and its note 220px lower (550 in all).
  *  - Jimmy Wails was then added after 4D Chess, the last on-sale slot (before the hidden Main Event), so no slot above it moves and Glitter Bomb's tag stays 272px lower;
  *    the list has one more row (55px): the hidden Main Event's cell and note stand 550px lower in all, and Save changes and its note 605px lower in all.
+ *  - Graffiti was then added as the last slot, hidden (after Off Day), so no slot above it moves; the list has one more row (55px) under every hidden row: the hidden Main Event's cell and note stay 550px lower in all,
+ *    and Save changes and its note stand 660px lower in all.
  *  - The build's controls are the glass's own measure, so a button is compared by its place and not its size, and a field's type is the glass's.
  *  - A control's accessible name in the build says whose it is ("Whoops!: move up"), where the board's arrows are named "Move up" alone.
  *  - The note beside Save changes says what a price is held to (between 0.01 and 1,000,000.00) where the board's note says a Boss move reads the new price; the
@@ -55,8 +57,8 @@ const manifest: BoardManifest = {
     at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 272 }, origin: 'head-slot', originEdge: 'bottom' }),
     at('code-none', 'cell', '–', { buildShift: { y: 550 }, origin: 'head-slot', originEdge: 'bottom' }),
     at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 550 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 605 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 605 } }),
+    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 660 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 660 } }),
   ],
 };
 export default manifest;
