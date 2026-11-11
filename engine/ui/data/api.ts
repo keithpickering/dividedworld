@@ -1023,7 +1023,7 @@ export interface WalletEvent {
   /** What the floor held back of a settlement's debit. */
   readonly floored: number;
   readonly balanceAfter: number;
-  /** A play's Act, or a trap's spring for its payout; null for a settlement and a purchase. */
+  /** A play's Act, or a trap's spring for its payout; null for a settlement, a purchase and a grant. */
   readonly ref: Id | null;
   readonly at: string;
 }
