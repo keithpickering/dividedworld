@@ -212,6 +212,43 @@ describe('the back', () => {
     expect(render(<PostcardBack size="sheet" />).container.querySelector('img')).toBeNull();
   });
 
+  /* The instance may give the back its picture (docs/plans/2026-11-11-rendered-card-back-design.md): the picture holds the emblem. */
+  test('with a picture it draws that, as a face draws its art, and no separate mark though one is given', () => {
+    const { container } = render(<PostcardBack size="sheet" mark="/coin.svg" canvas="/back.webp" hitCanvas="/hit.webp" />);
+    const back = container.firstElementChild as HTMLElement;
+    const imgs = back.querySelectorAll('img');
+    expect(imgs.length).toBe(1);
+    expect(imgs[0]!.className).toBe('kb-postcard-art');
+    expect(imgs[0]!.getAttribute('src')).toBe('/back.webp');
+    expect(imgs[0]!.getAttribute('alt')).toBe('');
+    expect(imgs[0]!.getAttribute('aria-hidden')).toBe('true');
+    expect(imgs[0]!.getAttribute('decoding')).toBe('async');
+    expect(imgs[0]!.closest('.kb-postcard-canvas')).not.toBeNull();
+    expect(back.querySelector('.kb-postcard-emblem')).toBeNull();
+    expect(back.hasAttribute('data-kb-pictured')).toBe(true);
+    expect(back.textContent).toBe('');
+  });
+
+  test('the hit pull draws its own picture', () => {
+    const { container } = render(<PostcardBack size="sheet" hit mark="/coin.svg" canvas="/back.webp" hitCanvas="/hit.webp" />);
+    expect(container.querySelector('img')!.getAttribute('src')).toBe('/hit.webp');
+    expect(container.firstElementChild!.hasAttribute('data-hit')).toBe(true);
+  });
+
+  test('a hit pull with no picture of its own keeps the stylesheet\'s gold back and the mark, never the default picture', () => {
+    const { container } = render(<PostcardBack size="sheet" hit mark="/coin.svg" canvas="/back.webp" />);
+    const back = container.firstElementChild as HTMLElement;
+    expect(back.querySelector('img.kb-postcard-art')).toBeNull();
+    expect(back.querySelector('.kb-postcard-emblem img')!.getAttribute('src')).toBe('/coin.svg');
+    expect(back.hasAttribute('data-kb-pictured')).toBe(false);
+  });
+
+  test('the stylesheet lays no smoke under a pictured back, so a late picture shows the plain field and not a second back', () => {
+    const rule = css.match(/\.kb-postcard-back\[data-kb-pictured\]\s+\.kb-postcard-canvas\s*\{([^}]*)\}/u);
+    expect(rule, 'a rule for a pictured back\'s canvas').not.toBeNull();
+    expect(rule![1]).toMatch(/background-image:\s*none/u);
+  });
+
   test('a hit sets data-hit, and the caller names it', () => {
     const { container } = render(<PostcardBack size="fan" hit aria-label="A face-down postcard" />);
     const back = container.firstElementChild!;

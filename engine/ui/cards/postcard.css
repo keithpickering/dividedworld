@@ -365,6 +365,12 @@ button.kb-postcard {
   background-color: var(--kb-glass-field);
 }
 
+/* A back the instance gave a picture: the picture is the whole back, so no smoke is laid under it, and one that is late
+   shows the plain field, never a second back. */
+.kb-postcard-back[data-kb-pictured] .kb-postcard-canvas {
+  background-image: none;
+}
+
 /* The instance's mark on the back, as a TCG back's emblem: two thirds of the card's width, glowing; the mark draws its own
    rim, so no disc is laid under it. */
 .kb-postcard-emblem {

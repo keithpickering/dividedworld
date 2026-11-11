@@ -770,6 +770,13 @@ describe('a pack in the machine', () => {
     for (const g of document.querySelectorAll('.kb-vending-odds .kb-gem')) expect(g).toHaveAttribute('aria-hidden', 'true');
   });
 
+  test('where the instance gives the back its pictures, the small backs draw them: the default four times and the hit pull\'s once', async () => {
+    renderIn(stockedWorld(562), <Vending />, { instance: stocked, cards: stockedFaces, packs: packsUi, path: '/vending', cardBack: { mark: '/coin.svg', canvas: '/back.webp', hitCanvas: '/hit.webp' } });
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    const inPack = screen.getByRole('region', { name: 'In this pack' });
+    expect([...inPack.querySelectorAll('.kb-postcard-back img')].map((i) => i.getAttribute('src'))).toEqual(['/back.webp', '/back.webp', '/back.webp', '/back.webp', '/hit.webp']);
+  });
+
   test('selected, the pack shows five small backs, the last gold, and what opening does; the odds and what is not sold on its own stand beside the machine', async () => {
     openStocked(stockedWorld(562));
     fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));

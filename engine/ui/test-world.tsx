@@ -125,8 +125,8 @@ export interface WorldOptions {
   readonly classLooks?: Kayfa['ui']['classLooks'];
   /** The instance's pictures for its personas, by key (`InstanceUi.avatars`); none by default. */
   readonly avatars?: Readonly<Record<string, string>>;
-  /** The instance's mark for a card's back (`InstanceUi.cardBack`), which a face-down mark is drawn without. */
-  readonly cardBack?: { readonly mark: string };
+  /** The instance's mark and pictures for a card's back (`InstanceUi.cardBack`), which a face-down mark is drawn without. */
+  readonly cardBack?: { readonly mark: string; readonly canvas?: string; readonly hitCanvas?: string };
   /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
   readonly guide?: GuideUi;
   /** Copy words of the test's own, laid over the test world's (a marquee list). */

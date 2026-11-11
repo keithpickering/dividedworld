@@ -33,7 +33,7 @@ function Backs() {
     <div style={row}>
       <p style={{ flexBasis: '100%', margin: 0 }}>Card backs at the four sizes: the default, then the hit pull's gold. A back names no card.</p>
       {[false, true].flatMap((hit) => sizes.map((size) => (
-        <PostcardBack key={`${size}${hit}`} size={size} hit={hit} mark={ui.cardBack?.mark} role="img" aria-label={`A face-down postcard, ${size}${hit ? ', the hit pull' : ''}`} />
+        <PostcardBack key={`${size}${hit}`} size={size} hit={hit} {...(ui.cardBack ?? {})} role="img" aria-label={`A face-down postcard, ${size}${hit ? ', the hit pull' : ''}`} />
       )))}
     </div>
   );

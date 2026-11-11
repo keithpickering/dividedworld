@@ -112,7 +112,8 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
   const instantly = useInstantTransition();
   const primary = useRef<HTMLButtonElement>(null);
   const delays = useMemo(() => stagger(feel, 4), [feel]);
-  const mark = ui.cardBack?.mark;
+  /* The instance's mark and pictures for a back, passed to each as they are (none: the stylesheet's back). */
+  const back = ui.cardBack ?? {};
   const all = turned >= count;
   const hitShown = feel ? hitDone && all && count > 0 : all && count > 0;
   const shownIndex = Math.max(0, turned - 1);
@@ -468,7 +469,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
 
   /* ---- what is drawn ---- */
 
-  const backOf = (i: number, size: 'fan' | 'sheet') => <PostcardBack size={size} hit={i === count - 1} {...(mark ? { mark } : {})} />;
+  const backOf = (i: number, size: 'fan' | 'sheet') => <PostcardBack size={size} hit={i === count - 1} {...back} />;
   const faceUp = (c: CardFace, size: 'fan' | 'sheet') => <Postcard face={c} size={size} />;
 
   /** Under a feel: one element per pull, which stands in its row slot or in the spotlight, moved between them by a shared layout. */
@@ -568,7 +569,7 @@ export function PackOpening({ name, art, cards, note, onClose, returnFocusTo, ha
             {feel === null
               ? (turned > 0 && shown
                 ? <Postcard as="article" face={shown} size="sheet" aria-label={saidOf(shown)} />
-                : <PostcardBack size="sheet" hit={count === 1} {...(mark ? { mark } : {})} aria-hidden="true" />)
+                : <PostcardBack size="sheet" hit={count === 1} {...back} aria-hidden="true" />)
               : spot >= 0 && cardBox(spot, 'sheet')}
           </div>
         </div>

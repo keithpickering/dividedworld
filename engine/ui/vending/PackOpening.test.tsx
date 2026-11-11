@@ -28,11 +28,11 @@ const face = (key: string) => faces.find((f) => f.key === key)!;
 const pulled = ['whoops', 'stick', 'dud', 'stick', 'main'].map(face);
 const packArt = { color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '', credit: 'Test' };
 
-function open(o: { onClose?: () => void; note?: string | null; opener?: HTMLElement } = {}) {
+function open(o: { onClose?: () => void; note?: string | null; opener?: HTMLElement; cardBack?: { mark: string; canvas?: string; hitCanvas?: string } } = {}) {
   const onClose = o.onClose ?? vi.fn();
   const view = renderIn(buildWorld(), (
     <Layers><PackOpening name="Booster" art={packArt} cards={pulled} note={o.note ?? null} onClose={onClose} {...(o.opener ? { returnFocusTo: () => o.opener! } : {})} /></Layers>
-  ));
+  ), o.cardBack ? { cardBack: o.cardBack } : {});
   cleanupOpen = () => view.unmount();
   return { onClose, ...view };
 }
@@ -55,6 +55,11 @@ describe('the reveal before any card is turned', () => {
     /* Nothing of the cards is on the screen yet: no name of any of them. */
     for (const f of pulled) expect(screen.queryByText(f.name)).toBeNull();
     expect(screen.getByText('Click the next card or press Space to turn it. All five are already in your hand.')).toBeInTheDocument();
+  });
+
+  test('where the instance gives the back its pictures, the row\'s backs draw them, the hit pull\'s last', () => {
+    open({ cardBack: { mark: '/coin.svg', canvas: '/back.webp', hitCanvas: '/hit.webp' } });
+    expect([...document.querySelectorAll('.kb-opening-row .kb-postcard-back img')].map((i) => i.getAttribute('src'))).toEqual(['/back.webp', '/back.webp', '/back.webp', '/back.webp', '/hit.webp']);
   });
 
   test('the hit is last, and its back is marked as the hit: gold', () => {
