@@ -45,7 +45,7 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn still, saves, releas
   const Effect = card.Effect!;
   const props: EffectProps = {
     post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: true, caster: true }, place: 'thread', reach: 'post', still: true,
-    show: () => {}, met, holdScreen, marks: null, save, release, nameOf: () => 'Spritey', children: <p>hi</p>,
+    show: () => {}, met, holdScreen, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
   };
   const { container } = renderInWorld(<Effect {...props} />, { settings: { cardSettings: { 'whoops.clean': 95 } } });
   act(() => { vi.advanceTimersByTime(100); });
