@@ -827,3 +827,53 @@ test('a request that names no account schedules nothing after: a body refused be
     assert.equal(later, 0, 'a caller with no account schedules no drain');
   }
 });
+
+// The kick for a card's written text: after the answer, for the post a play or an edit named, and only where it may have jobs.
+const kicking = {
+  ...instance,
+  settings: { ...instance.settings, oldVoice: true },
+  cards: instance.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 10, frame: () => ({ prompt: 'p', stop: [] }) } } : c)),
+} as typeof instance;
+async function kickedBy(body: unknown, answers: Record<string, unknown>, who: typeof instance = kicking) {
+  const { dbs } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, ...answers });
+  const posts: string[] = [];
+  let later!: () => Promise<void>;
+  const out = await handleAction({ dbs, instance: who, body, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async (p) => { posts.push(p); } });
+  await later();
+  return { out, posts };
+}
+
+test('the kick: a play of a card that writes kicks the writer for its post, after the answer', async () => {
+  const { out, posts } = await kickedBy({ action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } }, { play_card: { id: 'k', kind: 'card' } });
+  assert.equal(out.status, 200);
+  assert.deepEqual(posts, [target]);
+});
+
+test('the kick: a play of another card makes no claim at all', async () => {
+  // The same play of a card whose rules do not write.
+  const plain = await kickedBy({ action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } }, { play_card: { id: 'k', kind: 'card' } }, instance);
+  assert.equal(plain.out.status, 200);
+  assert.deepEqual(plain.posts, []);
+  const other = await kickedBy(reacting, { react: { act: target, thread: id, tally: {} } });
+  assert.deepEqual(other.posts, []);
+});
+
+test('the kick: an edit kicks, since any post may have a tail waiting', async () => {
+  const { posts } = await kickedBy({ action: 'edit', post: target, character: id, body: 'y' }, { edit_post: { id: 'e', thread: id } });
+  assert.deepEqual(posts, [target]);
+});
+
+test('the kick: a refused play or edit kicks nothing, and a kick that throws is logged and never escapes', async () => {
+  const refusing: Db = { rpc: async () => { throw new DatabaseError('x', '55000', 400, 'no', REFUSAL_HINT); } };
+  let later!: () => Promise<void>;
+  const posts: string[] = [];
+  await handleAction({ dbs: { player: refusing, service: refusing }, instance: kicking, body: { action: 'edit', post: target, character: id, body: 'y' }, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async (p) => { posts.push(p); } });
+  await later();
+  assert.deepEqual(posts, []);
+  const { dbs } = pair({ edit_post: { id: 'e', thread: id } });
+  const was = console.error; console.error = () => {};
+  try {
+    await handleAction({ dbs, instance: kicking, body: { action: 'edit', post: target, character: id, body: 'y' }, send: async () => {}, drain: async () => {}, after: (w) => { later = w; }, write: async () => { throw new Error('endpoint down'); } });
+    await later();
+  } finally { console.error = was; }
+});
