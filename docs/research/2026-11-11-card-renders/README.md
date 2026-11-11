@@ -173,6 +173,11 @@ also asked to see from below and at a truer sunset: its camera now stands low in
 with a banded sunset sky, the sun going down behind far hills, and daisies on a near one. The two sheets here were made
 before that and show the first compositions.
 
+**The art then shipped** (`docs/plans/2026-11-11-rendered-card-art-design.md`): each of the ten cards' scenes was copied
+beside its art as `scene.py`, and its picture rendered from there as `art.webp`. `shipped-cards-sheet.png` and
+`shipped-cards-small.png` are the engine's own Postcard story with that art, nothing swapped, at the four sizes. From
+that change on, the copies in the card folders are the ones kept up, and the scenes here are the record of this day.
+
 ## What using these on cards would need
 
 Card art is vector only today: `tools/check-card-art.mjs` refuses an `<image>` in `art.svg`, and the art README says
