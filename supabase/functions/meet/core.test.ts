@@ -336,6 +336,16 @@ test('an answer the repair cannot save closes the meeting rejected', async () =>
   assert.match(d.state.failed[0]!.error, /memory/);
 });
 
+test('a merged answer the repair rejects closes the meeting rejected with each part\'s outcome on the record', async () => {
+  const d = fakeDb();
+  const m = fakeModels({ ...answer(), memory: 'I forget' });
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'rejected');
+  const record = d.state.failed[0]!.record;
+  assert.ok(Array.isArray(record.parts) && record.parts.length === MEETING_PARTS.length, JSON.stringify(record));
+  assert.ok(record.parts.every((p: any) => p.outcome === 'ok'), JSON.stringify(record.parts));
+});
+
 test('a database error is thrown, not swallowed, and so is an unrecorded model call', async () => {
   const d = fakeDb({ failOn: 'system_digest' });
   await assert.rejects(run(d.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds), /connection dropped/);

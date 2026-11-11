@@ -220,6 +220,8 @@ test('a setRule\'s param given as text is read as its predicate wants it, and th
   assert.ok(none.ok && none.moves.length === 1, JSON.stringify(none));
   assert.equal(none.ok && none.moves[0]!.params['param'], null);
   assert.ok(none.ok && none.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNone'), JSON.stringify(none.trims));
+  const left = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'noAllCaps', band: 'minor' }), ctx());
+  assert.ok(left.ok && left.moves.length === 1 && !left.trims.some((t) => t.predicate === 'asNone'), JSON.stringify(left));
   const word = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'bannedWord', param: 'toast', band: 'minor' }), ctx());
   assert.ok(word.ok && word.moves.length === 1 && word.moves[0]!.params['param'] === 'toast', JSON.stringify(word));
 });
@@ -541,6 +543,16 @@ test('a percent or hours one past its bound is clamped to the bound and recorded
   assert.equal(short.moves[0]!.params['hours'], 24);
   dropped(plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 120.5 })]), 'moves[0].params.percent', 'isWhole');
   dropped(plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 30.5 }, { demand: undefined })]), 'moves[0].params.hours', 'isWhole');
+});
+
+test('a 0 in a kind\'s own number field is not given: it is refused by name, never clamped to the least', () => {
+  const percent = plan([machineMove('repriceSlot', { slot: SLOT_A, percent: 0 })]);
+  assert.equal(percent.moves.length, 0, JSON.stringify(percent.trims));
+  dropped(percent, 'moves[0].params.percent', 'required');
+  assert.ok(!percent.trims.some((t) => t.before === 0 && t.after === 50), JSON.stringify(percent.trims));
+  const hours = plan([machineMove('flashSale', { slot: SLOT_HIDDEN, hours: 0 }, { demand: undefined })]);
+  assert.equal(hours.moves.length, 0, JSON.stringify(hours.trims));
+  dropped(hours, 'moves[0].params.hours', 'required');
 });
 
 test('a slot id in capitals is found, lowercased, and the change is recorded', () => {
@@ -883,6 +895,24 @@ test('a move that needs a demand and gives a blank demand kind is dropped, recor
   assert.ok(r.trims.some((t) => t.path.startsWith('moves[0].demand')), JSON.stringify(r.trims));
 });
 
+test('a blank name on a rename, and a 0 count in a demand, are refused by name', () => {
+  const name = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: '', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })));
+  assert.equal(name.moves.length, 0, JSON.stringify(name.trims));
+  assert.ok(name.trims.some((t) => t.path === 'moves[0].params.name'), JSON.stringify(name.trims));
+  const count = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 0 } })));
+  assert.equal(count.moves.length, 0, JSON.stringify(count.trims));
+  assert.ok(count.trims.some((t) => t.path.startsWith('moves[0].demand') && /atLeast/.test(t.predicate)), JSON.stringify(count.trims));
+});
+
+test('a number in a text field that is not an any field is not read as text: the move is refused, the answer stands', () => {
+  const r = repairAnswer(movesOnly(askedMove('renameBoard', { board: BOARD, name: 42, premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } })), ctx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 0);
+  assert.ok(!r.trims.some((t) => t.predicate === 'asText'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.name' && t.predicate === 'isString'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.name' && t.predicate !== 'isString'), JSON.stringify(r.trims));
+});
+
 test('a setRule\'s param sent as a JSON number keeps the move, read as its text and then as the count, both recorded', () => {
   const r = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 20, band: 'minor' }), ctx());
   assert.ok(r.ok, JSON.stringify(r));
@@ -894,7 +924,6 @@ test('a setRule\'s param sent as a JSON number keeps the move, read as its text 
   assert.ok(demand.ok && demand.moves.length === 1, JSON.stringify(demand));
 });
 
-const noParts = { moves: [] as unknown[] };
 test('an answer with a part missing is an answer with none of it', () => {
   const none = plain({});
   assert.deepEqual([none.moves, none.inherited, none.successor, none.orders, none.patrols, none.memory, none.profile], [[], [], null, [], [], undefined, undefined]);
@@ -911,7 +940,6 @@ test('an answer with a part missing is an answer with none of it', () => {
   const self = plain({ memory: answer(null).memory, profile: answer(null).profile });
   assert.ok(self.memory !== undefined && self.profile !== undefined);
   assert.deepEqual([self.moves, self.inherited, self.successor], [[], [], null]);
-  assert.deepEqual(noParts.moves, []);
 });
 
 test('a memory without a profile, or a profile without a memory, is whole: the missing one is undefined', () => {

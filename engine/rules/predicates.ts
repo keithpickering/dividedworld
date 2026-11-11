@@ -51,9 +51,9 @@ export interface PredicateProblem {
 }
 
 /**
- * A model's parameter read as its predicate wants it: a count given as digits is its number, and "no parameter" given as empty text (or left out) is none.
+ * A model's parameter read as its predicate wants it: a count given as digits is its number, and "no parameter" given as empty text is none (a parameter left out is none too, with no trim: nothing was converted).
  * Both are the same choice written another way, so each is a repair with a trim at `param` (`asNumber`, `asNone`); `before` is the length of the text given
- * (0 for none left out) and `after` the number (0 for none). Anything else comes back unchanged for `predicateProblems` to judge by name.
+ * and `after` the number (0 for none). Anything else comes back unchanged for `predicateProblems` to judge by name.
  */
 export function readParam(predicateKey: string, given: unknown): { value: unknown; trim?: Trim } {
   const p = predicate(predicateKey);
@@ -61,8 +61,10 @@ export function readParam(predicateKey: string, given: unknown): { value: unknow
     const value = Number(given);
     return { value, trim: { path: 'param', predicate: 'asNumber', before: given.length, after: value } };
   }
-  if (p?.param === 'none' && (given === '' || given === undefined)) {
-    return { value: null, trim: { path: 'param', predicate: 'asNone', before: given === undefined ? 0 : given.length, after: 0 } };
+  if (p?.param === 'none') {
+    // A field left out is not a repair; only text that was converted (the empty text a schema's required field sends) is recorded.
+    if (given === undefined) return { value: null };
+    if (given === '') return { value: null, trim: { path: 'param', predicate: 'asNone', before: 0, after: 0 } };
   }
   return { value: given };
 }

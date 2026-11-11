@@ -95,9 +95,9 @@ test('readParam reads a count given as digits as its number, with a trim', () =>
   assert.deepEqual(readParam('noNecropost', ' 30 '), { value: 30, trim: { path: 'param', predicate: 'asNumber', before: 4, after: 30 } });
 });
 
-test('readParam reads empty or missing text on a none predicate as none, with a trim', () => {
+test('readParam reads empty text on a none predicate as none, with a trim, and a missing one as none with no trim', () => {
   assert.deepEqual(readParam('noAllCaps', ''), { value: null, trim: { path: 'param', predicate: 'asNone', before: 0, after: 0 } });
-  assert.deepEqual(readParam('noDoublePost', undefined), { value: null, trim: { path: 'param', predicate: 'asNone', before: 0, after: 0 } });
+  assert.deepEqual(readParam('noDoublePost', undefined), { value: null });
 });
 
 test('readParam passes everything else through unchanged, with no trim', () => {

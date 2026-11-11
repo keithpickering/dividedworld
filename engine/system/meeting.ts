@@ -639,24 +639,26 @@ export function namedCharacters(raw: unknown): string[] {
 /**
  * What the shape pass needs of the moves before it runs. A move's params and demand are the loose objects of every kind's fields, so a field of another
  * kind is dropped here, whatever it holds (the schema asked for it, so there is nothing to record, and a number or a blank in it must never cost the
- * answer); and a number in one of the kind's own fields the schema sends as text (a rule's `param: 20`) is read as its text, recorded at its path
- * (`asText`), for `readParam` to read as the count. Local to the meeting: the shape pass keeps its strictness for every other job.
+ * answer); and a number in one of the kind's own `any` fields, which the schema sends as text (a rule's `param: 20`), is read as its text, recorded at its path
+ * (`asText`), for `readParam` to read as the count; a non-text value in any other text field is left out and recorded (`isString`), so its move is refused by name later and the answer is not lost. Local to the meeting: the shape pass keeps its strictness for every other job.
  */
 function readLooseFields(raw: unknown): { readonly value: unknown; readonly trims: readonly Trim[] } {
   const a = record(raw);
   if (!Array.isArray(a['moves'])) return { value: raw, trims: [] };
   const trims: Trim[] = [];
-  const paramsLoose = looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params));
-  const demandLoose = looseFields(MEETING_DEMAND_KINDS.map((d) => d.params));
-  const ownOnly = (given: unknown, own: Rule | undefined, loose: Record<string, Rule>, path: string): unknown => {
+  const ownOnly = (given: unknown, own: Rule | undefined, path: string): unknown => {
     if (typeof given !== 'object' || given === null || Array.isArray(given)) return given;
     const fields = own?.type === 'object' ? own.fields : {};
     const out: Record<string, unknown> = {};
     for (const [name, v] of Object.entries(given)) {
       if (!(name in fields)) continue;
-      if (typeof v === 'number' && Number.isFinite(v) && loose[name]?.type === 'string') {
+      if (typeof v === 'number' && Number.isFinite(v) && fields[name]?.type === 'any') {
         out[name] = String(v);
         trims.push({ path: `${path}.${name}`, predicate: 'asText', before: v, after: String(v).length });
+      } else if (fields[name]?.type === 'string' && typeof v !== 'string' && v !== undefined && v !== null) {
+        // A non-text value in a text field is not read as text: the field is left out (recorded), so the move meets `moveParamsProblems` and is refused by name
+        // there, rather than the shape pass's isString rejecting the whole answer over one move.
+        trims.push({ path: `${path}.${name}`, predicate: 'isString', before: 1, after: 0 });
       } else out[name] = v;
     }
     return out;
@@ -665,10 +667,10 @@ function readLooseFields(raw: unknown): { readonly value: unknown; readonly trim
     if (typeof m !== 'object' || m === null || Array.isArray(m)) return m;
     const one = m as Record<string, unknown>;
     const kind = typeof one['kind'] === 'string' ? moveKind(one['kind']) : undefined;
-    const out: Record<string, unknown> = { ...one, params: ownOnly(one['params'], kind?.params, paramsLoose, `moves[${i}].params`) };
+    const out: Record<string, unknown> = { ...one, params: ownOnly(one['params'], kind?.params, `moves[${i}].params`) };
     const demand = record(one['demand']);
     if (typeof demand['kind'] === 'string' && 'params' in demand) {
-      out['demand'] = { ...demand, params: ownOnly(demand['params'], demandKind(demand['kind'])?.params, demandLoose, `moves[${i}].demand.params`) };
+      out['demand'] = { ...demand, params: ownOnly(demand['params'], demandKind(demand['kind'])?.params, `moves[${i}].demand.params`) };
     }
     return out;
   });
@@ -740,7 +742,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     // The kind's shape comes first: a group move's demand depends on its params. A description the Boss gave is bounded and trimmed there; a missing or blank one is
     // not the Boss's to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
     const offered = { ...record(m['params']) };
-    // A kind's own optional field left as empty text is absent (a rule's board, a conferral's board and check time).
+    // A kind's own optional field left as empty text is absent (a rule's board, a conferral's board and check time). A rule's param is read from what was given
+    // below, before this: empty text on a predicate that takes none is the converted choice `readParam` records (`asNone`); a field left out records nothing.
     for (const [name, rule] of Object.entries((kind.params as { fields: Record<string, Rule> }).fields)) if (rule.optional && offered[name] === '') delete offered[name];
     const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
     // A machine move's whole number one past its bound (201 of at most 200, 49 of at least 50, 49 hours of at most 48) is the ordinary overshoot: it is clamped to the
@@ -748,6 +751,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     const clamps: Trim[] = [];
     const bounded = (name: string, least: number, most: number): void => {
       const v = offered[name];
+      // The schema says 0 is "not given": a value the model never chose is not clamped into one, it is left out for moveParamsProblems to refuse by name.
+      if (v === 0) { delete offered[name]; return; }
       if (typeof v !== 'number' || !Number.isInteger(v) || (v >= least && v <= most)) return;
       const to = v < least ? least : most;
       clamps.push({ path: name, predicate: v < least ? `atLeast(${least})` : `atMost(${most})`, before: v, after: to });
@@ -755,9 +760,9 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     };
     if (kind.key === 'repriceSlot') bounded('percent', limits.repriceLeast, limits.repriceMost);
     if (kind.key === 'flashSale') bounded('hours', limits.flashHoursLeast, limits.flashHoursMost);
-    // A rule's param is text on the wire: a count's digits are its number, and empty text is none (recorded; a word or a tag is left for moveParamsProblems).
+    // A rule's param is text on the wire: a count's digits are its number, and empty text is none (each recorded; a left-out param is none with no record; a word or a tag is left for moveParamsProblems).
     if (kind.key === 'setRule' && typeof offered['predicate'] === 'string') {
-      const read = readParam(offered['predicate'], offered['param']);
+      const read = readParam(offered['predicate'], record(m['params'])['param']);
       if (read.trim) { offered['param'] = read.value; clamps.push(read.trim); }
     }
     const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits);

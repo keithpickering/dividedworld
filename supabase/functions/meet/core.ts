@@ -350,7 +350,7 @@ export async function runMeeting(
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
-      await close('rejected', error, { phase: phase.phase, trims: repaired.trims });
+      await close('rejected', error, { phase: phase.phase, trims: repaired.trims, parts });
       return { status: 'rejected', meeting, error };
     }
 

@@ -148,10 +148,12 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   const params: Record<string, unknown> = { ...raw['params'] };
   // A model gives a number as digits and "no parameter" as empty text: both are the same choice, so they are read as the predicate wants them.
   const read = typeof params['predicate'] === 'string' ? readParam(params['predicate'], params['param']) : { value: params['param'] };
-  if (read.trim) params['param'] = read.value;
+  if (read.trim || read.value !== params['param']) params['param'] = read.value;
+  // The Mod's param is optional in its schema, so empty text there is no field, as a left-out one is: only the count's digits are a repair worth recording.
+  const kept = read.trim?.predicate === 'asNone' ? undefined : read.trim;
   const checked = moveParamsProblems(kind.key, params);
   const under = (path: string): string => `move.params.${path}`;
-  const trims: Trim[] = read.trim ? [{ ...read.trim, path: under(read.trim.path) }] : [];
+  const trims: Trim[] = kept ? [{ ...kept, path: under(kept.path) }] : [];
   const carried = (): Trim[] => checked.trims.map((t) => ({ ...t, path: under(t.path) }));
   if (!checked.ok) return no(under(checked.path), checked.predicate, [...trims, ...carried()]);
   trims.push(...carried());
