@@ -22,6 +22,12 @@ begin
   on conflict (key) do update set value = excluded.value;
 end $$;
 
+-- Only the rarity weights of the gear pool changed.
+create function pg_temp.events_rarity(gear jsonb) returns void language plpgsql as $$
+begin
+  update settings set value = jsonb_set(value, '{events,gearRarity}', gear) where key = 'cosmetics';
+end $$;
+
 -- A roll as the service role, back to the test's own role to read what it wrote.
 create function pg_temp.roll(who uuid, through uuid) returns jsonb language plpgsql as $$
 declare got jsonb;
@@ -74,7 +80,7 @@ declare
 begin
   perform pg_temp.events(1, 2, '{"line": 1000000000, "gear": 1, "card": 1}');
   -- An event 25 hours old does not count toward the day.
-  insert into random_events (account, character, at, outcome, line) values (bob, b1, now() - interval '25 hours', 'line', 'te-line-1');
+  insert into random_events (account, character, at, outcome, line, line_text) values (bob, b1, now() - interval '25 hours', 'line', 'te-line-1', 'A line.');
   perform setseed(0.5);
   if pg_temp.roll(bob, b1) is null then raise exception 'the first roll of the day'; end if;
   update random_event_rolls set rolled_at = now() - interval '2 minutes' where account = bob;
@@ -100,7 +106,8 @@ begin
     raise exception 'one found gear row naming the event: %', (select jsonb_agg(l) from gear_ledger l where account = cat);
   end if;
   if gear_held(cat, got ->> 'item') <> 1 then raise exception 'gear_held counts the found copy'; end if;
-  if got ->> 'rarity' is distinct from (select rarity from gear_kinds where key = got ->> 'item') or got ->> 'line' is distinct from 'te-gear-1' then raise exception 'rarity and line: %', got; end if;
+  if got ->> 'rarity' is distinct from (select rarity from gear_kinds where key = got ->> 'item') or got ->> 'lineKey' is distinct from 'te-gear-1' or got ->> 'line' is distinct from 'A gear line.' then raise exception 'rarity and line: %', got; end if;
+  if (select line || '|' || line_text from random_events where id = ev) is distinct from 'te-gear-1|A gear line.' then raise exception 'the event keeps its line''s key and text: %', (select jsonb_agg(e) from random_events e where id = ev); end if;
   if (select item from random_events where id = ev) is distinct from got ->> 'item' or (select character from random_events where id = ev) is distinct from c1 then raise exception 'the event row'; end if;
   update random_event_rolls set rolled_at = now() - interval '2 minutes' where account = cat;
   perform pg_temp.events(1, 100, '{"line": 1, "gear": 1, "card": 1000000000}');
@@ -117,6 +124,59 @@ begin
   if pg_temp.refusal(format('insert into card_ledger (account, card, kind, price, event) values (%L, %L, %L, 0, %L)', cat, 'te-c1', 'bought', ev)) is null then raise exception 'a bought card naming an event'; end if;
   if pg_temp.refusal(format('update random_events set item = %L where id = %L', 'x', ev)) is null then raise exception 'an event was updated'; end if;
   if pg_temp.refusal(format('delete from random_events where id = %L', ev)) is null then raise exception 'an event was deleted'; end if;
+end $$;
+
+-- ---- Nothing to show or nothing to give: the window stays stamped and nothing is written ----
+do $$
+declare
+  dan uuid := tests.account('te-dan'); d1 uuid := tests.character(dan, 'Te Dan One');
+  eva uuid := tests.account('te-eva'); e1 uuid := tests.character(eva, 'Te Eva One');
+  got jsonb;
+begin
+  perform tests.unbecome();
+  -- A pool with nothing to give: no gear of this rarity exists.
+  delete from gear_kinds where rarity = 'uncommon';
+  perform pg_temp.events(15, 100, '{"line": 1, "gear": 1000000000, "card": 1}');
+  perform pg_temp.events_rarity('{"uncommon": 1}');
+  got := pg_temp.roll(dan, d1);
+  if got is not null then raise exception 'a pool with nothing to give answered %', got; end if;
+  if (select rolled_at from random_event_rolls where account = dan) is null then raise exception 'the window stays stamped'; end if;
+  if (select count(*) from random_events where account = dan) is distinct from 0 or (select count(*) from gear_ledger where account = dan) is distinct from 0 then raise exception 'a pool with nothing to give wrote'; end if;
+  -- An outcome with no line to say: nothing is written either, since an event with nothing to show would only count toward the day.
+  perform pg_temp.events(15, 100, '{"line": 1, "gear": 1000000000, "card": 1}');
+  delete from event_lines where outcome = 'gear';
+  got := pg_temp.roll(eva, e1);
+  if got is not null then raise exception 'an outcome with no line answered %', got; end if;
+  if (select rolled_at from random_event_rolls where account = eva) is null then raise exception 'the window stays stamped without a line'; end if;
+  if (select count(*) from random_events where account = eva) is distinct from 0 or (select count(*) from gear_ledger where account = eva) is distinct from 0 then
+    raise exception 'an outcome with no line wrote an event or a found row';
+  end if;
+  insert into event_lines (key, outcome, text) values ('te-gear-1', 'gear', 'A gear line.');
+end $$;
+
+-- ---- The settings and the character: plain refusals ----
+do $$
+declare
+  fay uuid := tests.account('te-fay'); f1 uuid := tests.character(fay, 'Te Fay One');
+  gus uuid := tests.account('te-gus'); g1 uuid := tests.character(gus, 'Te Gus One');
+  boss uuid; said text; expect text; saved jsonb;
+begin
+  perform tests.unbecome();
+  select value into saved from settings where key = 'cosmetics';
+  delete from settings where key = 'cosmetics';
+  said := pg_temp.refusal(format('select random_event(%L, %L)', fay, f1));
+  if said is distinct from 'this instance has no event settings' then raise exception 'no cosmetics setting: %', said; end if;
+  if (select count(*) from random_event_rolls where account = fay) is distinct from 0 then raise exception 'a refusal for the missing setting stamped a roll'; end if;
+  insert into settings (key, value) values ('cosmetics', saved);
+  -- A character the caller does not play, and a staff character, are refused as played_by refuses them, with nothing written.
+  expect := pg_temp.refusal(format('select played_by(%L, %L)', g1, fay));
+  said := pg_temp.refusal(format('select random_event(%L, %L)', fay, g1));
+  if said is null or said is distinct from expect then raise exception 'another player''s mask: % against %', said, expect; end if;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Te Boss', 'te-boss', 'persona', now()) returning id into boss;
+  expect := pg_temp.refusal(format('select played_by(%L, %L)', boss, fay));
+  said := pg_temp.refusal(format('select random_event(%L, %L)', fay, boss));
+  if said is null or said is distinct from expect then raise exception 'a staff mask: % against %', said, expect; end if;
+  if (select count(*) from random_event_rolls where account = fay) is distinct from 0 then raise exception 'a refused roll stamped'; end if;
 end $$;
 
 -- ---- One account's events are its own to read; a roll through another player's mask is refused ----
@@ -140,7 +200,8 @@ begin
 end $$;
 
 -- ---- The shared draw: buy_pack writes what roll_pack wrote before the draw was shared ----
--- (The expected list was recorded from 0149's roll_pack with this seed, before 0152 shared the draw. Every card but this file's is left out of the pool.)
+-- (The expected list was recorded from 0149's roll_pack with this seed, before 0152 shared the draw, on PostgreSQL 16.15: random() under setseed is the server's own
+-- generator, so a major version that changes it changes this list, and the list is then re-recorded from the old roll_pack on that version, not edited to fit. Every card but this file's is left out of the pool.)
 do $$
 declare
   rolled text[]; again text[];

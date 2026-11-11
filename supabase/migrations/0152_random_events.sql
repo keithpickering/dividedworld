@@ -10,12 +10,15 @@
 -- Cost at a busy instance's scale: one roll locks and reads the account's own roll row and counts its own events of the last day (random_events_account_at), so it is
 -- linear in the account's events in a day, which `dayMost` bounds, never in the instance's.
 --
+-- The foreign key on gear_ledger.event (below) and card_ledger's found check validate the rows that exist; no instance is deployed yet, so no row predates them and none is
+-- left unchecked (a pre-alpha note, not a rule for a later migration).
+--
 -- draw_by_rarity is the pack's draw taken out of roll_pack so an event and a pack draw alike: a rarity by weight among the rarities that have something to give, then a key uniformly.
 -- roll_pack calls it a pull at a time and consumes random() as it did, so a seed rolls the pack it rolled before.
 
 -- ---------------------------------------------------------------------------------------------------------- the lines ----
 
--- The lines an instance's Random Events say (Instance.events.lines): replaced by each seed. An event keeps its line's key; the text is the instance's.
+-- The lines an instance's Random Events say (Instance.events.lines): replaced by each seed. An event keeps its line's key and text; the instance's lines are free to change after.
 create table event_lines (
   key text primary key check (key ~ '^[a-z][a-z0-9-]*$'),
   outcome text not null check (outcome in ('line', 'gear', 'card')),
@@ -26,7 +29,8 @@ revoke all on event_lines from public, anon, authenticated;
 
 -- ------------------------------------------------------------------------------------------------------ the events ----
 
--- A thing that happened to a character, one row each: append-only like every ledger. A `line` event has no item; a `gear` or `card` event names the item it dropped, and
+-- A thing that happened to a character, one row each: append-only like every ledger. It keeps its line's text beside the key, so a past event and an export read the same
+-- after a re-seed has dropped or reworded the line. A `line` event has no item; a `gear` or `card` event names the item it dropped, and
 -- the found row in the gear or card ledger names the event back.
 create table random_events (
   id uuid primary key default gen_random_uuid(),
@@ -35,7 +39,8 @@ create table random_events (
   at timestamptz not null default now(),
   outcome text not null check (outcome in ('line', 'gear', 'card')),
   item text,
-  line text,
+  line text not null,
+  line_text text not null,
   check ((outcome = 'line') = (item is null))
 );
 create index random_events_account_at on random_events (account, at);
@@ -143,7 +148,9 @@ end $$;
 -- A roll for a character its player plays. The character's row first, then who plays it (as set_outfit does), then the account's roll row, locked: inserted if it is
 -- not there and then read for update, so two rolls of one account at once are taken one after the other, and the second reads the first's stamp. Refused for another
 -- player's character, a retired one and a staff one, before anything is written. Null, and nothing written, inside the window or at the day's most; otherwise the roll
--- is stamped, and a draw of `none` (or of a pool with nothing to give) answers null, the window still closed. The item and the found ledger row come in one transaction with the event.
+-- is stamped, and a draw of `none`, of a pool with nothing to give, or of an outcome the instance has no line for answers null, the window still closed and nothing written
+-- (an event with nothing to show would only count toward the day). The answer is {event, outcome, item, rarity, lineKey, line, character}: `line` is the line's text as the
+-- event row keeps it, and the dialog fills {item} itself. The item and the found ledger row come in one transaction with the event.
 create function random_event(who uuid, through uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -158,6 +165,7 @@ declare
   item_key text;
   item_rarity text;
   line_key text;
+  line_text text;
   lines integer;
   ev uuid;
 begin
@@ -189,24 +197,22 @@ begin
     select rarity into item_rarity from card_kinds where key = item_key;
   end if;
   select count(*) into lines from event_lines where outcome = chosen;
-  if lines > 0 then
-    select l.key into line_key from event_lines l where l.outcome = chosen order by l.key offset floor(random() * lines)::integer limit 1;
-  end if;
-  insert into random_events (account, character, outcome, item, line) values (who, through, chosen, item_key, line_key) returning id into ev;
+  if lines = 0 then return null; end if;
+  select l.key, l.text into line_key, line_text from event_lines l where l.outcome = chosen order by l.key offset floor(random() * lines)::integer limit 1;
+  insert into random_events (account, character, outcome, item, line, line_text) values (who, through, chosen, item_key, line_key, line_text) returning id into ev;
   if chosen = 'gear' then
     insert into gear_ledger (account, gear, kind, event) values (who, item_key, 'found', ev);
   elsif chosen = 'card' then
     insert into card_ledger (account, card, kind, price, event) values (who, item_key, 'found', 0, ev);
   end if;
-  return jsonb_build_object('event', ev, 'outcome', chosen, 'item', item_key, 'rarity', item_rarity, 'line', line_key, 'character', through);
+  return jsonb_build_object('event', ev, 'outcome', chosen, 'item', item_key, 'rarity', item_rarity, 'lineKey', line_key, 'line', line_text, 'character', through);
 end $$;
 revoke execute on function random_event(uuid, uuid) from public, anon, authenticated;
 grant execute on function random_event(uuid, uuid) to service_role;
 
 -- ------------------------------------------------------------------------------------------------------ the seed ----
 
--- seed_instance (0151), also writing the instance's Random Event lines (event_lines, below): replaced as the seed gives them, so a line the instance dropped is gone, since a past event
--- keeps its line's key and the text is the instance's own. Everything else as 0151 wrote it.
+-- seed_instance (0151), also writing the instance's Random Event lines (event_lines, below): replaced as the seed gives them, so a line the instance dropped is gone, and a past event keeps its line's text on its own row. Everything else as 0151 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare

@@ -101,8 +101,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into gear_kinds (key, rarity) values ('expgear', 'uncommon');
       -- Random Events (0152): a gear event and a card event, each with its found row naming it, the account's last roll and the instance's event lines.
       insert into event_lines (key, outcome, text) values ('exp-line', 'line', 'Carried across.'), ('exp-gear-line', 'gear', 'Found a thing.');
-      insert into random_events (id, account, character, outcome, item, line) values
-        ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-gear-line'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line');
+      insert into random_events (id, account, character, outcome, item, line, line_text) values
+        ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-gear-line', 'Found a thing.'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line', 'Carried across.');
       insert into random_event_rolls (account, rolled_at) values (ann, '2000-01-02T03:04:05Z');
       insert into gear_ledger (account, gear, kind, event) values (ann, 'expgear', 'found', '00000000-0000-4000-8000-0000000000e2');
       insert into card_ledger (account, card, kind, price, event) values (ann, 'splat', 'found', 0, '00000000-0000-4000-8000-0000000000e3');
