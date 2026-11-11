@@ -954,7 +954,8 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
     const i = { ...withDrive({}), settings: { ...eco.settings, economy: { ...eco.settings.economy, 'g.over': bad } } } as unknown as Instance;
     assert.match(say(i), /card "splat" has a drive overhead of .*; it is a whole number from 0 to 100/, String(bad));
   }
-  assert.match(say(withDrive({}, { lasts: { unit: 'minute', count: 7 } })), /card "splat" has a drive that lasts .*; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000/);
+  assert.match(say(withDrive({}, { lasts: { unit: 'minute', count: 7 } })), /card "splat" has a drive that lasts .*; it must be a span: a unit of hour, day or week and a whole count from 1 to 1000/);
+  assert.match(say(withDrive({}, { lasts: { unit: 'month', count: 1 } })), /card "splat" has a drive that lasts .*"month".*; it must be a span: a unit of hour, day or week and a whole count from 1 to 1000/);
   assert.match(say(withDrive({}, { lasts: { unit: 'day', count: 31 } })), /card "splat" has a drive that lasts 31 days, longer than the 30 days a drive may/);
   assert.deepEqual(instanceProblems(withDrive({}, { lasts: { unit: 'day', count: 30 } })), []);
 });
