@@ -2,6 +2,7 @@
 // (`runMinute`: the clock, every cron job that is due, the dispatcher) and then any filler action due in it, through `runAction`, so every
 // filler Act is written by the code that writes a player's. The System's switch is off through backstory and on at day 1's first minute.
 // Each day's filler is drawn at that day's first minute from the public world read back then (`readWorld`).
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Instance } from "../../engine/rules/types.ts";
 import type { RehearsalContent, RehearsalCorpus, Scenario } from "../../engine/rehearsal/types.ts";
@@ -14,6 +15,8 @@ import { connect, type Connection } from "./db.ts";
 import { rehearsalFetch, rehearsalModels, type KeptCall, type Mode } from "./models.ts";
 import { runMinute, type JobRun, type ScheduleCtx } from "./schedule.ts";
 import type { Dispatched } from "./dispatch.ts";
+import { collect } from "./collect.ts";
+import { reportHtml } from "../../engine/rehearsal/report.ts";
 import { rehearsedInstance } from "./instance.ts";
 import { setUp, timeline, type CastMember, type Players, type Setup, type Timeline } from "./setup.ts";
 
@@ -58,6 +61,8 @@ export interface RehearseOptions {
   readonly profile?: string;
   /** Where the cassette is kept; defaults to `rehearsals/<scenario>/cassette`. */
   readonly cassetteDir?: string;
+  /** Where the run's directory is made; defaults to `rehearsals/<scenario>`. */
+  readonly runsDir?: string;
   readonly keep?: boolean;
   /** A line a day, as it goes. */
   readonly onDay?: (line: string) => void;
@@ -77,6 +82,8 @@ export interface RawRun {
   readonly systemOnAt: number | null;
   readonly notes: readonly string[];
   readonly liveMicrodollars: number;
+  /** Where report.html and log.json were written. */
+  readonly reportDir?: string;
   /** Set when the cluster was kept: where to reach it. */
   readonly kept?: { readonly dir: string; readonly port: number; readonly database: string };
 }
@@ -131,6 +138,8 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
   const instance = o.instance ?? chosen.instance;
   const content = o.content ?? chosen.content;
   const tl = timeline(scenario, instance);
+  // Real time, taken before the simulated clock replaces Date: the run's directory name.
+  const startedReal = new Date().toISOString();
   const cassetteDir = o.cassetteDir ?? join("rehearsals", scenario.key, "cassette");
 
   const cluster = await startCluster({ at: tl.clusterStart });
@@ -139,6 +148,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
   let admin: Connection | undefined;
   let setup: Setup | undefined;
   let kept: RawRun["kept"];
+  let reportDir: string | undefined;
   try {
     admin = await connect(cluster.dir, cluster.port, "postgres");
     setup = await setUp(cluster, admin, instance, content, scenario, tl);
@@ -236,13 +246,18 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       systemOnAt, notes: setup.notes,
     };
     await o.onFinish?.(ctx);
-    // Task 9 collects here: collect(conn, models.calls, sched.jobs, sched.dispatched) gives the RehearsalLog; reportHtml(log) and the JSON
-    // are written to rehearsals/<scenario>/<run>/, and the cassette stays in rehearsals/<scenario>/cassette/.
+    // Task 9: the collector reads the run back; the report and the JSON go to rehearsals/<scenario>/<run>/ (the cassette is beside it).
+    const log = await collect(ctx);
+    const runDir = join(o.runsDir ?? join("rehearsals", scenario.key), `${startedReal.replace(/[:.]/g, "-")}-${mode}`);
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, "report.html"), reportHtml(log));
+    writeFileSync(join(runDir, "log.json"), `${JSON.stringify(log, null, 2)}\n`);
+    reportDir = runDir;
 
     if (o.keep) kept = { dir: cluster.dir, port: cluster.port, database: "rehearsal" };
     return {
       scenario, mode, timeline: tl, jobs: sched.jobs, dispatched: sched.dispatched, calls: models.calls, filler, systemOnAt,
-      notes: setup.notes, liveMicrodollars: models.cap.liveMicrodollars(), ...(kept ? { kept } : {}),
+      notes: setup.notes, liveMicrodollars: models.cap.liveMicrodollars(), ...(reportDir ? { reportDir } : {}), ...(kept ? { kept } : {}),
     };
   } finally {
     clock.restore();

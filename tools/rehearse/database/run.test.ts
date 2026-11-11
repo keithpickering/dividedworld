@@ -1,6 +1,9 @@
 // The rehearsal's run, end to end in stub mode: a one-day tiny scenario on a real fake-clock cluster. Needs libfaketime and
 // Postgres; run by `npm run test:rehearse`.
 import { test } from "node:test";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import assert from "node:assert/strict";
 import { matches } from "../cron.ts";
 import { rehearse, readWorld, type RunContext } from "../run.ts";
@@ -24,9 +27,12 @@ const tiny: Scenario = {
 test("a one-day stub run: a meeting, every job at its minutes, nothing undispatched, the filler's posts, the switch on from day 1", async () => {
   const started = performance.now();
   let seen = false;
+  const out = mkdtempSync(join(tmpdir(), "rehearsal-run-"));
   const raw = await rehearse({
     scenario: tiny,
     mode: "stub",
+    cassetteDir: join(out, "cassette"),
+    runsDir: out,
     onFinish: async (ctx: RunContext) => {
       seen = true;
       const { conn, timeline } = ctx;
@@ -67,7 +73,7 @@ test("a one-day stub run: a meeting, every job at its minutes, nothing undispatc
       assert.equal(Number(early[0]?.n), 0, "a move landed before day 1");
 
       // The world reader leaves out The System's own posts and staff characters.
-      const staff = await conn.sql("select id, staff from characters where staff is not null order by id limit 1");
+      const staff = await conn.sql("select id, staff from characters where staff_kind = 'persona' order by staff limit 1");
       assert.equal(staff.length, 1, "the instance has no staff character");
       const open = await conn.sql("select t.id from threads t join boards b on b.id = t.board where not b.is_system order by t.created_at limit 1");
       await ctx.conn.db("service").rpc("write_staff_act", { staff_key: staff[0]!.staff, kind: "post", thread: open[0]!.id, target: null, payload: { body: "a staff post" } });
@@ -91,6 +97,11 @@ test("a one-day stub run: a meeting, every job at its minutes, nothing undispatc
     },
   });
   assert.ok(seen, "onFinish never ran");
+  // The report and the log are written, and the log has a meeting on day 1.
+  assert.ok(raw.reportDir && existsSync(join(raw.reportDir, "report.html")), "no report.html");
+  const log = JSON.parse(readFileSync(join(raw.reportDir!, "log.json"), "utf8"));
+  assert.ok(log.days[0].meetings.length >= 1, "the log has no meeting on day 1");
+  assert.match(readFileSync(join(raw.reportDir!, "report.html"), "utf8"), /<h2>Day 1,/);
   assert.ok(raw.jobs.length > 0 && raw.dispatched.length > 0);
   console.log(`one-day stub run (1 backstory day + 1 day): ${Math.round(performance.now() - started)} ms`);
 });
