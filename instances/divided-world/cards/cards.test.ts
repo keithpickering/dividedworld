@@ -686,6 +686,7 @@ const wash = (input: unknown) => surf.validateWash(input);
 const covered = (cells: Cells, x: number, y: number) => (cells[(y * GRID + x) >> 3]! & (0x80 >> ((y * GRID + x) & 7))) !== 0;
 const stroke = (over: Record<string, unknown> = {}) => ({ can: 'red', cap: 'stock', aspect: 1.5, points: [[0.1, 0.2], [0.3, 0.4]], ...over });
 const strokesOf = (v: ReturnType<typeof draw>) => { assert.equal(v.ok, true, JSON.stringify(v)); return v.ok ? v.value.strokes : []; };
+const STENCIL_KEYS_FOR_TEST = ['mustache', 'horns', 'crown', 'kilroy', 'x', 'smiley'] as const;
 const STENCIL_KEYS = ['mustache', 'horns', 'crown', 'kilroy', 'x', 'smiley'] as const;
 
 test('Graffiti: a draw keeps a stroke\'s can and cap and drops a sent width; the engine gets the cap\'s width', () => {
@@ -786,7 +787,7 @@ test('Graffiti is a rare Pepperoni surface on a post, one a post, in the machine
 });
 
 test('Graffiti: every staff config is a valid draw, and a Mod Bot\'s options are one too', () => {
-  const configs = graffiti.staffConfigs as unknown as Record<string, unknown>[];
+  const configs = graffiti.staffConfigs!;
   assert.ok(configs.length >= 6);
   assert.deepEqual(new Set(configs.map((c) => c.stencil)), new Set(STENCIL_KEYS), 'each stencil is offered');
   for (const c of configs) { assert.equal(draw(c).ok, true, JSON.stringify(c)); assert.equal(graffiti.validateConfig(c).ok, true); }
@@ -796,4 +797,27 @@ test('Graffiti: every staff config is a valid draw, and a Mod Bot\'s options are
   assert.deepEqual(schema.properties.stencil!.enum, [...STENCIL_KEYS]);
   assert.deepEqual(schema.properties.can!.enum, Object.keys(CANS));
   for (const word of [...STENCIL_KEYS, ...Object.keys(CANS)]) assert.match(graffiti.staffOptions!.prompt, new RegExp(word));
+});
+
+test('Graffiti: a refusal names the stroke and the point that failed', () => {
+  const v = draw({ strokes: [stroke(), stroke(), stroke({ points: [[0.5, 0.5], [0.5, 2]] })] });
+  assert.equal(v.ok, false);
+  assert.match(!v.ok ? v.why : '', /^stroke 3, point 2: a point is across and down from 0 to 1/);
+  assert.match((draw({ strokes: [stroke({ can: 'nope' })] }) as { why: string }).why, /^stroke 1: the can is one of/);
+  assert.match((draw({ strokes: [stroke(), [1, 2]] }) as { why: string }).why, /^stroke 2: a stroke is an object with/);
+  assert.match((wash({ strokes: [{ aspect: 1, points: [[0, 0]] }, { aspect: 0, points: [[0, 0]] }] }) as { why: string }).why, /^stroke 2: /);
+});
+
+test('Graffiti: every stencil at the last spot fits 64 KiB as Postgres writes it, and a stencil lands in its own ninth', () => {
+  for (const key of STENCIL_KEYS_FOR_TEST) {
+    const v = draw({ stencil: key, can: 'orange', spot: 8 });
+    assert.equal(v.ok, true, key);
+    assert.ok(Buffer.byteLength(JSON.stringify(v.ok && v.value.payload).replace(/([,:])/g, '$1 ')) < 65_536, key);
+  }
+  const top = draw({ stencil: 'x', can: 'black', spot: 0 });
+  const cells = cellsOf(top.ok ? top.value.strokes : []);
+  let inTopLeft = false;
+  for (let y = 0; y < 34; y++) for (let x = 0; x < 34; x++) inTopLeft ||= covered(cells, x, y);
+  assert.equal(inTopLeft, true);
+  assert.equal(covered(cells, 50, 50), false);
 });

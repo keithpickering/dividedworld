@@ -10,11 +10,12 @@
  *   three significant figures, as Whoops!'s is.
  * - **A draw** is `{ strokes }`, at most 120 strokes of at most 300 points, 3,000 points in all, which fits 64 KiB as Postgres writes it;
  *   or `{ stencil, can, spot }`, a stencil placed in one cell of a 3 x 3 grid over the body. A stencil is expanded here, so the server,
- *   the chatter and the screen place it the same, and is kept with its key and its strokes.
+ *   the chatter and the screen place it the same, and is kept with its key and its strokes. A stencil is drawn at aspect 1 and so stretches
+ *   with the post body's shape, a third of its width by a third of its height, as any stroke does when the body reflows.
  * - **A wash** is `{ strokes }` of `{ aspect, points }` with the same bounds, at the sponge's width: 0.06 of the box's width.
  * - **A Mod Bot** names `{ stencil, can, spot }` and never freehands (The System acts inside bounded choices). Its options are a
- *   configuration `validateConfig` keeps, and `staffConfigs` are valid draws of the same shape, one for each stencil, for the engine to
- *   fall back on where a persona's own fail.
+ *   configuration `validateConfig` keeps, and `staffConfigs` are valid draws of the same shape, one for each stencil, which a Mod Bot's
+ *   first draw is chosen from (the plan's Task 3 wires that: `staffConfigOf` returns `{}` for this card, since `validateConfig({})` accepts).
  */
 import { landsOn, ok, refuse, type CardRules, type Verdict } from '../../../engine/rules/cards.ts';
 import type { SurfaceStroke } from '../../../engine/rules/surface.ts';
@@ -50,20 +51,21 @@ function strokesOf<T extends Kept>(input: unknown, each: (s: Record<string, unkn
   if (list.length > BOUNDS.strokes) return refuse(`at most ${BOUNDS.strokes} strokes`);
   const out: T[] = [];
   let total = 0;
-  for (const s of list) {
-    if (typeof s !== 'object' || s === null) return refuse('a stroke is a path');
+  for (const [i, s] of list.entries()) {
+    const at = `stroke ${i + 1}`;
+    if (typeof s !== 'object' || s === null || Array.isArray(s)) return refuse(`${at}: a stroke is an object with a can, a cap, an aspect and points`);
     const { aspect, points } = s as { aspect?: unknown; points?: unknown };
-    if (typeof aspect !== 'number' || !(aspect >= ASPECT.least && aspect <= ASPECT.most)) return refuse(`a stroke's aspect is the drawer's box width over its height, from ${ASPECT.least} to ${ASPECT.most}`);
-    if (!Array.isArray(points) || points.length < 1 || points.length > BOUNDS.points) return refuse(`a stroke has 1 to ${BOUNDS.points} points`);
+    if (typeof aspect !== 'number' || !(aspect >= ASPECT.least && aspect <= ASPECT.most)) return refuse(`${at}: the aspect is the drawer's box width over its height, from ${ASPECT.least} to ${ASPECT.most}`);
+    if (!Array.isArray(points) || points.length < 1 || points.length > BOUNDS.points) return refuse(`${at}: a stroke has 1 to ${BOUNDS.points} points`);
     total += points.length;
-    if (total > BOUNDS.totalPoints) return refuse(`at most ${BOUNDS.totalPoints} points in all`);
-    for (const p of points) {
-      if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n))) return refuse('a point is two numbers, across then down');
-      if (!(p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= 1)) return refuse('a point is across and down from 0 to 1, in shares of the box');
+    if (total > BOUNDS.totalPoints) return refuse(`${at}: at most ${BOUNDS.totalPoints} points in all`);
+    for (const [j, p] of points.entries()) {
+      if (!Array.isArray(p) || p.length !== 2 || !p.every((n) => typeof n === 'number' && Number.isFinite(n))) return refuse(`${at}, point ${j + 1}: a point is two numbers, across then down`);
+      if (!(p[0] >= 0 && p[0] <= 1 && p[1] >= 0 && p[1] <= 1)) return refuse(`${at}, point ${j + 1}: a point is across and down from 0 to 1, in shares of the box`);
     }
     const kept = { aspect: threeFigures(aspect), points: (points as [number, number][]).map(([x, y]): [number, number] => [tenThousandth(x), tenThousandth(y)]) };
     const one = each(s as Record<string, unknown>, kept);
-    if (!one.ok) return one;
+    if (!one.ok) return refuse(`${at}: ${one.why}`);
     out.push(one.value);
   }
   return ok(out);
@@ -99,8 +101,8 @@ function validateDraw(input: unknown): Verdict<{ readonly strokes: readonly Surf
     return ok({ strokes: strokes.map(engine), payload: { stencil: n.value.stencil, can: n.value.can, spot: n.value.spot, strokes } });
   }
   const drawn = strokesOf<Drawn>(input, (s, kept) => {
-    if (!isCan(s.can)) return refuse(`a stroke's can is one of the cans: ${CAN_WORDS}`);
-    if (!isCap(s.cap)) return refuse(`a stroke's cap is ${Object.keys(CAPS).join(', ')}`);
+    if (!isCan(s.can)) return refuse(`the can is one of the cans: ${CAN_WORDS}`);
+    if (!isCap(s.cap)) return refuse(`the cap is ${Object.keys(CAPS).join(', ')}`);
     return ok({ can: s.can, cap: s.cap, ...kept });
   });
   if (!drawn.ok) return drawn;
@@ -114,7 +116,7 @@ function validateWash(input: unknown): Verdict<{ readonly strokes: readonly Surf
 }
 
 /** What a Mod Bot names: a stencil, a can and a spot. */
-export type GraffitiConfig = { stencil?: StencilKey; can?: Can; spot?: number };
+export type GraffitiConfig = { readonly stencil?: never } | { readonly stencil: StencilKey; readonly can: Can; readonly spot: number };
 
 export const graffiti: CardRules<GraffitiConfig> = {
   key: 'graffiti',
@@ -127,7 +129,7 @@ export const graffiti: CardRules<GraffitiConfig> = {
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(graffiti, target, effects, now),
   // A player's play names nothing (the draw is the first draw); a Mod Bot's names a stencil, a can and a spot, all or none.
-  validateConfig: (config) => {
+  validateConfig: (config): Verdict<GraffitiConfig> => {
     if (typeof config !== 'object' || config === null || !('stencil' in config || 'can' in config || 'spot' in config)) return ok({});
     return named(config);
   },

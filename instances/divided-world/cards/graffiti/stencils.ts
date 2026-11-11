@@ -60,13 +60,13 @@ export const STENCILS = {
   ] },
   // The nose over a wall, and the words under it, in two lines.
   kilroy: { strokes: [
-    { cap: 'stock', points: [[0.05, 0.38], [0.95, 0.38]] },
-    { cap: 'stock', points: [[0.3, 0.38], [0.32, 0.22], [0.4, 0.12], [0.5, 0.1], [0.6, 0.12], [0.68, 0.22], [0.7, 0.38]] },
-    { cap: 'fat', points: [[0.4, 0.2]] },
-    { cap: 'fat', points: [[0.6, 0.2]] },
-    { cap: 'stock', points: [[0.5, 0.2], [0.5, 0.38]] },
-    ...line('KILROY WAS', 0.5, 0.06, 0.13),
-    ...line('HERE', 0.72, 0.06, 0.13),
+    { cap: 'stock', points: [[0.02, 0.3], [0.98, 0.3]] },
+    { cap: 'stock', points: [[0.3, 0.3], [0.32, 0.18], [0.4, 0.08], [0.5, 0.06], [0.6, 0.08], [0.68, 0.18], [0.7, 0.3]] },
+    { cap: 'fat', points: [[0.4, 0.16]] },
+    { cap: 'fat', points: [[0.6, 0.16]] },
+    { cap: 'stock', points: [[0.5, 0.16], [0.5, 0.3]] },
+    ...line('KILROY', 0.4, 0.08, 0.2),
+    ...line('WAS HERE', 0.7, 0.08, 0.2),
   ] },
   x: { strokes: [
     { cap: 'fat', points: [[0.1, 0.1], [0.9, 0.9]] },
