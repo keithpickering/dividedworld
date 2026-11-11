@@ -64,19 +64,32 @@ test('url: near misses do not hit', () => {
   for (const t of ['version 1.2.3', 'e.g. a thing', 'etc. and more', 'end.Next sentence', 'Mr. Smith', 'game.com' + 'puter', 'a.b']) assert.equal(scrubHit(t, []), null, t);
 });
 
-test('phone: seven or more digits in a run with the usual separators hits', () => {
-  for (const t of ['call 555-1234', 'call (555) 123-4567', 'call +1 555 123 4567', 'call 555.123.4567', 'call 5551234', '12345678']) assert.equal(scrubHit(t, []), 'phone', t);
+test('phone: a number shaped like one hits: grouped with one separator, an area code in parentheses, a leading +, or ten digits and more', () => {
+  for (const t of ['call 555-1234', 'call (555) 123-4567', 'call +1 555 123 4567', 'call 555.123.4567', 'call 555 123 4567', 'ring 07700 900123', 'ring 020 7946 0958', '+44 7700 900123', 'call 5551234567']) assert.equal(scrubHit(t, []), 'phone', t);
 });
 
-test('phone: near misses do not hit', () => {
-  for (const t of ['in 2021', '1,000,000 points', '123456', '12 34 56']) assert.equal(scrubHit(t, []), null, t);
+test('phone: near misses do not hit: years, dates, times, scores, versions, addresses and plain counts', () => {
+  for (const t of [
+    'in 2021', '1,000,000 points', '123456', '12 34 56', '1000000', 'Posted: 2003-04-12 18:22', '2019-10-28', 'Wed Apr 12 2003 18:22',
+    'v1.2.3.4567', '192.168.1.100', '100 200 300', 'level 1-1 1-2 1-3 1-4', '2003-2004', 'from 1999 to 2003 and 2007', '10-7 2-1 14-12',
+  ]) assert.equal(scrubHit(t, []), null, t);
+});
+
+test('url: a short country TLD that is also a word needs a path after it; a sentence join or a file name is clean', () => {
+  for (const t of ['end.To be fair', 'the end.Us too', 'ok.me too', 'wait.co', 'Mr.Co', 'Dr.De Niro', 'all.de', 'readme.me', 'index.dev', 'so.be it']) assert.equal(scrubHit(t, []), null, t);
+  for (const t of ['bit.ly/abc', 'youtu.be/xyz', 'see t.co/1', 'example.co/path', 'EXAMPLE.COM', 'site.nl']) assert.equal(scrubHit(t, []), 'url', t);
+});
+
+test('word: a space in an entry also matches a hyphen', () => {
+  assert.equal(scrubHit('some two-words here', WORDS), 'word');
+  assert.equal(scrubHit('some twowords here', WORDS), null);
 });
 
 test('predicate order: word, email, url, phone', () => {
-  assert.equal(scrubHit('badword a@b.com www.x.com 5551234', WORDS), 'word');
-  assert.equal(scrubHit('a@b.com www.x.com 5551234', WORDS), 'email');
-  assert.equal(scrubHit('www.x.com 5551234', WORDS), 'url');
-  assert.equal(scrubHit('5551234', WORDS), 'phone');
+  assert.equal(scrubHit('badword a@b.com www.x.com 555-1234', WORDS), 'word');
+  assert.equal(scrubHit('a@b.com www.x.com 555-1234', WORDS), 'email');
+  assert.equal(scrubHit('www.x.com 555-1234', WORDS), 'url');
+  assert.equal(scrubHit('555-1234', WORDS), 'phone');
   assert.equal(scrubHit('a clean sentence.', WORDS), null);
 });
 
@@ -120,4 +133,10 @@ test('scrubbedComplete: a rejection or error from the model passes through untou
   const g = fake([boom]);
   await assert.rejects(scrubbedComplete(g.models, REQUEST, WORDS), (e: unknown) => e === boom);
   assert.equal(g.calls.length, 1);
+});
+
+test('scrubbedComplete: two hits of different kinds reject naming the second', async () => {
+  const f = fake(['you badword', 'see example.com']);
+  await assert.rejects(scrubbedComplete(f.models, REQUEST, WORDS), (e: unknown) => e instanceof AnswerRejected && e.predicate === 'scrub:url');
+  assert.equal(f.calls.length, 2);
 });
