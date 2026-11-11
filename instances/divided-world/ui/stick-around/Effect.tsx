@@ -10,7 +10,8 @@
  *
  * The post's words are this effect's `children`, and nothing in them is ever drawn twice or drawn again: they are drawn once,
  * by a portal into an element this effect makes and keeps (`words`), and a layout effect moves that element between its place
- * in the thread and its place in the current view (`appendChild`): each stacked play has a view of its own, one after another. React never unmounts what is inside, so a lift and a release keep every
+ * in the thread and its place in the current view (`appendChild`): each stacked play has a view of its own, one after
+ * another. React never unmounts what is inside, so a lift and a release keep every
  * inner effect's state, a reader's unsaved scrubbing in Whoops! included (marks-and-the-lens design, section 4). The thread keeps a
  * space of the same height while the words are in the view, so the page does not jump when they leave.
  *

@@ -456,7 +456,6 @@ describe('for a keyboard and a screen reader', () => {
   });
 });
 
-
 /* ------------------------------------------------------------------- two plays on one post ---- */
 describe('two plays stacked on one post (#325)', () => {
   const SECOND = 'I read it twice, since I was asked twice.';
@@ -489,8 +488,6 @@ describe('two plays stacked on one post (#325)', () => {
     expect(screen.getAllByText(WORDS)).toHaveLength(1);
   });
 });
-
-
 
 /* --------------------------------------------------------------------------- touch ---- */
 describe('touch', () => {
