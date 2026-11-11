@@ -22,6 +22,7 @@ import { LOST_ANSWER, type Answer, type Preferences, type PreferencesPatch } fro
 import { applyAppearance } from '../appearance.ts';
 import { announceToastChoice } from '../alerts/toast-choice.ts';
 import { setTiltPreference } from '../shine/tilt.ts';
+import { setSoundPreference } from '../audio/sound.ts';
 import { pagePreferences } from './pagePreferences.ts';
 
 /** A patch of exactly one setting: `change` saves one at a time, so it takes one. */
@@ -90,7 +91,7 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     if (!account) { pagePreferences.clear(); return undefined; }
     let live = true;
     /* What the account has: a read, or what the page already holds, or (only with nothing held) what the caller supplied. */
-    const take = (p: Preferences) => { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); };
+    const take = (p: Preferences) => { current.current = p; confirmed.current = p; setRead({ account, prefs: p }); setTiltPreference(p.tilt); setSoundPreference(p); };
     if (supplied !== undefined) {
       const held = pagePreferences.get(account);
       const known = held ?? supplied;
@@ -119,7 +120,7 @@ export function usePreferenceSaves(account: string | null, supplied?: Preference
     const mine = ++queued.current;
     const madeFor = account;
     if (madeFor === null || current.current === null) return;
-    const show = (next: Preferences) => { commit(madeFor, next); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); };
+    const show = (next: Preferences) => { commit(madeFor, next); applyAppearance(document, next, ui.themes, ui.glass); setTiltPreference(next.tilt); setSoundPreference(next); };
     show({ ...current.current, ...patch });
     setRefusal(null);
     setSaved(null);
