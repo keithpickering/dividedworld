@@ -57,7 +57,7 @@ create unique index trophy_awards_once_per_season on trophy_awards (season, char
 -- A taking back, by an admin's account (which no client reads). An award with a row here no longer stands.
 create table trophy_reversals (
   award uuid primary key references trophy_awards (id),
-  at timestamptz not null default now(),
+  at timestamptz not null default clock_timestamp(),
   by uuid not null references accounts (id)
 );
 

@@ -10,7 +10,7 @@
 -- Gear an admin gave names the mask it was given through (`gear_ledger.through`, written by grant_gear), so the line can say "through Dr. Bones" to the player whose mask it is; a grant made
 -- before the column, or one of no mask, says nothing of one. The column is added, never updated: the ledger stays append-only. A grant is one statement and one instant, so its copies are one line.
 --
--- Alerts: `trophy` and `beltLost` are written kinds (engine/rules/alerts.ts). A trigger on trophy_awards writes a `trophy` alert to the owner of the character an award is for, whoever gave it, and a
+-- Alerts: `trophy`, `beltLost` and `beltBack` are written kinds (engine/rules/alerts.ts). A trigger on trophy_awards writes a `trophy` alert to the owner of the character an award is for, whoever gave it, and a
 -- `beltLost` alert to the owner of the character that held the belt just before, when the belt passes to another character. An award by an admin or the season has no Act, so alerts.act may be
 -- null (the Alerts read already left-joins it). Neither alert names who gave or took: the log says. A staff character has no owner and is never given a trophy. The cost is one indexed read
 -- and one alert per award, and one more per belt passed, so a season's three places cost three. alerts_kind_check and account_preferences_toasts_check, set_preferences and settings_held list the kinds as
@@ -257,11 +257,11 @@ end;
 
 alter table alerts alter column act drop not null;
 alter table alerts drop constraint alerts_kind_check;
-alter table alerts add constraint alerts_kind_check check (kind in ('quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded', 'framed', 'trophy', 'beltLost'));
+alter table alerts add constraint alerts_kind_check check (kind in ('quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'));
 
 alter table account_preferences drop constraint account_preferences_toasts_check;
 alter table account_preferences add constraint account_preferences_toasts_check
-  check (toasts is null or toasts <@ array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost']);
+  check (toasts is null or toasts <@ array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack']);
 
 -- set_preferences (0145), with the new kinds among those a toast may name. Everything else as 0145 wrote it; its signature is 0145's.
 create or replace function set_preferences(theme text default null, postbit text default null, motion text default null,
@@ -271,7 +271,7 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   caller uuid := signed_in_account();
   kept account_preferences%rowtype;
-  known text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost'];
+  known text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
   bad text;
   once text[];
 begin
@@ -314,7 +314,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -431,7 +431,7 @@ revoke execute on function trophy_awards_alert() from public, anon, authenticate
 create trigger trophy_awards_alert after insert on trophy_awards for each row execute function trophy_awards_alert();
 
 -- A belt that comes back (the cosmetics plan, Task 12, review): an admin's taking back of the holder's award hands the belt to the character that held it before, and that character's player is
--- told, so the beltLost alert they were sent never points at nothing. The alert is a `trophy` one whose sub is `again:` and the trophy's name, which its words read; the log says whose award was
+-- told, so the beltLost alert they were sent never points at nothing. The alert is a `beltBack` one whose sub is the trophy's name; the log says whose award was
 -- taken back. Cheap: one reversal, one look at the belt's awards. A reversal of an award that was not the holder's, or of a non-belt, tells no one.
 create function trophy_reversals_alert() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -447,7 +447,7 @@ begin
   select y.character into held from trophy_awards y
   where y.trophy = x.trophy and y.id <> x.id and (y.at, y.id) < (x.at, x.id) and not exists (select 1 from trophy_reversals r where r.award = y.id)
   order by y.at desc, y.id desc limit 1;
-  if held is not null and held <> x.character then perform write_alert(held, 'trophy', 'again:' || its_name, null); end if;
+  if held is not null and held <> x.character then perform write_alert(held, 'beltBack', its_name, null); end if;
   return null;
 end $$;
 revoke execute on function trophy_reversals_alert() from public, anon, authenticated, service_role;

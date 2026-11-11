@@ -14,7 +14,7 @@ import { onToastChoice } from './toast-choice.ts';
 export type ToastDefaults = Readonly<Record<AlertKind, boolean>>;
 
 export const TOAST_DEFAULTS: ToastDefaults = {
-  quote: true, framed: true, cardOnYours: true, cardEnded: true, trapStruck: true, trapSprang: true, ruling: true, settlement: true, update: true, trophy: true, beltLost: true,
+  quote: true, framed: true, cardOnYours: true, cardEnded: true, trapStruck: true, trapSprang: true, ruling: true, settlement: true, update: true, trophy: true, beltLost: true, beltBack: true,
   followed: false, hint: false, seasonNews: false,
 };
 

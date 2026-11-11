@@ -344,7 +344,7 @@ describe('a trophy alert and a belt lost alert (the cosmetics plan, Task 12)', (
     });
   });
   test('a belt that came back says the mask holds it again', () => {
-    expect(said(row({ kind: 'trophy', sub: 'again:The Belt', character: 'c1', name: 'Pipewrench', thread: null }), ctx())).toEqual({
+    expect(said(row({ kind: 'beltBack', sub: 'The Belt', character: 'c1', name: 'Pipewrench', thread: null }), ctx())).toEqual({
       line: 'Pipewrench holds The Belt again', detail: 'The log says what changed.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
     });
   });
@@ -356,5 +356,6 @@ describe('a trophy alert and a belt lost alert (the cosmetics plan, Task 12)', (
   test('read without a name or a trophy they stay plain', () => {
     expect(said({ ...trophy, name: null, sub: null }, ctx()).line).toBe('One of your characters was given a trophy');
     expect(said({ ...lost, name: null, sub: null }, ctx()).line).toBe('One of your characters lost a belt');
+    expect(said({ ...lost, kind: 'beltBack', name: null, sub: null }, ctx()).line).toBe('One of your characters holds a belt again');
   });
 });

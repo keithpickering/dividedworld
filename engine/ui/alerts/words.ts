@@ -249,9 +249,9 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
     }
     /* A trophy and a lost belt are the character's own player's: the Alert says which mask and which trophy (`sub`), and the log says who gave it or took it. */
     case 'trophy':
-      /* A `trophy` alert whose sub starts `again:` is a belt that came back to the mask after an admin took the taker's award back. */
-      if (row.sub !== null && row.sub.startsWith('again:')) return { line: [row.name !== null ? `${row.name} holds ${row.sub.slice(6)} again` : `One of your characters holds ${row.sub.slice(6)} again`], detail: ['The log says what changed.'], ways: [{ text: 'Open My log', to: '/log' }], who };
       return { line: [row.name !== null && row.sub !== null ? `${row.name} was given ${row.sub}` : 'One of your characters was given a trophy'], detail: ['The log says who gave it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
+    case 'beltBack':
+      return { line: [row.name !== null && row.sub !== null ? `${row.name} holds ${row.sub} again` : 'One of your characters holds a belt again'], detail: ['The log says what changed.'], ways: [{ text: 'Open My log', to: '/log' }], who };
     case 'beltLost':
       return { line: [row.name !== null && row.sub !== null ? `${row.name} lost ${row.sub}` : 'One of your characters lost a belt'], detail: ['The log says who took it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
     case 'ruling':

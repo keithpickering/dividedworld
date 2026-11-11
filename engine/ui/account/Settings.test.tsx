@@ -498,6 +498,7 @@ describe('Settings › Notifications', () => {
     ['Traps you set', 'A card you set face down sprang.'],
     ['Trophies', 'One of your characters is given a trophy.'],
     ['Belts lost', 'One of your characters loses a belt to another.'],
+    ['Belts back', 'One of your characters holds a belt again after an admin took a taker\'s award back.'],
     ['Rulings', 'A ruling lands on one of your characters.'],
     ['Settlements', 'A settlement is in and moved your characters.'],
     ['Updates', 'The developer posts an update.'],

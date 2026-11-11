@@ -73,7 +73,7 @@ begin
 
   -- The alerts are no more than the account's own, in Alerts: Ann reads hers and Bob his.
   perform tests.become(ann);
-  if (select count(*) from my_alerts(null, 30) where kind in ('trophy', 'beltLost')) is distinct from 3 then raise exception 'Ann''s alerts: %', (select count(*) from my_alerts(null, 30)); end if;
+  if (select count(*) from my_alerts(null, 30) where kind in ('trophy', 'beltLost', 'beltBack')) is distinct from 3 then raise exception 'Ann''s alerts: %', (select count(*) from my_alerts(null, 30)); end if;
   perform tests.unbecome();
 end $$;
 
@@ -90,9 +90,11 @@ begin
   insert into trophy_awards (trophy, character, by) values ('cb-belt', a, 'admin') returning id into ann_award;
   insert into trophy_awards (trophy, character, by) values ('cb-belt', b, 'admin') returning id into bob_award;
   if (select count(*) from alerts where account = ann and kind = 'beltLost') is distinct from 1 then raise exception 'Ann was told she lost it'; end if;
-  insert into trophy_reversals (award, by, at) values (bob_award, boss, clock_timestamp());
-  if (select count(*) from alerts where account = ann and kind = 'trophy' and sub = 'again:The Cb Belt' and character = a and act is null) is distinct from 1 then raise exception 'Ann is told she holds it again'; end if;
-  if exists (select 1 from alerts where account in (bob, cat) and sub like 'again:%') then raise exception 'only the holder is told'; end if;
+  perform tests.become(boss);
+  perform reverse_award(bob_award);
+  perform tests.unbecome();
+  if (select count(*) from alerts where account = ann and kind = 'beltBack' and sub = 'The Cb Belt' and character = a and act is null) is distinct from 1 then raise exception 'Ann is told she holds it again'; end if;
+  if exists (select 1 from alerts where account in (bob, cat) and kind = 'beltBack') then raise exception 'only the holder is told'; end if;
   -- A reversal of an award that was not the holder's (Ann's own, now the holder's, is not a taker's) tells no one new about a belt coming back to Bob.
   perform tests.become(ann);
   rows := log_page(null) -> 'sources' -> 'cosmetics';
@@ -108,6 +110,8 @@ begin
   if exists (select 1 from jsonb_array_elements(log_page(null) -> 'sources' -> 'cosmetics')) then raise exception 'an unrelated player has no lines'; end if;
   perform tests.unbecome();
   -- A reversal of a non-holder's award or a non-belt's tells no one: Ann's own award reversed after Bob's has no earlier holder.
-  insert into trophy_reversals (award, by, at) values (ann_award, boss, clock_timestamp());
-  if (select count(*) from alerts where sub like 'again:%') is distinct from 1 then raise exception 'one belt-back alert in all'; end if;
+  perform tests.become(boss);
+  perform reverse_award(ann_award);
+  perform tests.unbecome();
+  if (select count(*) from alerts where kind = 'beltBack') is distinct from 1 then raise exception 'one belt-back alert in all'; end if;
 end $$;

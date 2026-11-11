@@ -75,6 +75,7 @@ const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string
   { kind: 'trapSprang', title: 'Traps you set', sentence: 'A card you set face down sprang.' },
   { kind: 'trophy', title: 'Trophies', sentence: 'One of your characters is given a trophy.' },
   { kind: 'beltLost', title: 'Belts lost', sentence: 'One of your characters loses a belt to another.' },
+  { kind: 'beltBack', title: 'Belts back', sentence: 'One of your characters holds a belt again after an admin took a taker\'s award back.' },
   { kind: 'ruling', title: 'Rulings', sentence: 'A ruling lands on one of your characters.' },
   { kind: 'settlement', title: 'Settlements', sentence: 'A settlement is in and moved your characters.' },
   { kind: 'update', title: 'Updates', sentence: 'The developer posts an update.' },
