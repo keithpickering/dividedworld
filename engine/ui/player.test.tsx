@@ -214,6 +214,24 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     render(<PlayerProvider api={api}><Loaded /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true'));
   });
+  test('a failed read sets charactersFailed and refresh answers false; the next good read clears it', async () => {
+    let fail = true;
+    const { api } = stubApi({ myCharacters: async () => { if (fail) throw new Error('down'); return [char('a')]; } });
+    let answers: boolean[] = [];
+    function Failed() {
+      const p = usePlayer();
+      return <div><span data-testid="failed">{String(p.charactersFailed)}</span><span data-testid="loaded">{String(p.loaded)}</span><button onClick={() => void p.refresh().then((ok) => { answers = [...answers, ok]; })}>again</button></div>;
+    }
+    render(<PlayerProvider api={api}><Failed /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('failed').textContent).toBe('true'));
+    expect(screen.getByTestId('loaded').textContent).toBe('true');
+    await act(async () => { screen.getByText('again').click(); });
+    await waitFor(() => expect(answers).toEqual([false]));
+    fail = false;
+    await act(async () => { screen.getByText('again').click(); });
+    await waitFor(() => expect(answers).toEqual([false, true]));
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+  });
   test('signing in is not "loaded" until the player\'s rows have come', async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => { release = r; });

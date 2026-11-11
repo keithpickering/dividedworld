@@ -6,13 +6,16 @@
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Id, MyCharacter } from '../data/api.ts';
+import { LOST_ANSWER, type Id, type MyCharacter } from '../data/api.ts';
 import { words } from '../../rules/pronouns.ts';
 import { usePlayer } from '../player.tsx';
 import { withArticle } from './format.ts';
 
 /** The most characters of the character's own words, as the server holds them (0027_unmask.sql). */
 export const MAX = 200;
+
+/** Added to a done line when the write landed and the player's rows could not be read again. */
+export const STALE_PAGE = ' This page may be out of date until you reload it.';
 
 /** The dialog's own words, which both shells show. */
 export function revealWords(character: MyCharacter, className: string, gameWord: string) {
@@ -41,17 +44,19 @@ export function useReveal(character: MyCharacter) {
     if (over || busy) return { ok: false };
     setBusy(true);
     setRefusal(null);
+    let answer;
     try {
-      const answer = await api.unmask(character.id, thread, message);
-      if (!answer.ok) { setRefusal(answer.error); return { ok: false }; }
-      await refresh();
-      return { ok: true, done: `${character.name} revealed as ${className} in ${threadTitle}.` };
+      answer = await api.unmask(character.id, thread, message);
     } catch {
-      setRefusal('The reveal could not be sent. Check your connection and try again.');
-      return { ok: false };
-    } finally {
+      /* The adapter does not throw; if the call did, nothing says it did not go through. */
+      setRefusal(LOST_ANSWER);
       setBusy(false);
+      return { ok: false };
     }
+    if (!answer.ok) { setRefusal(answer.error); setBusy(false); return { ok: false }; }
+    /* Written: the dialog ends, so the button stays busy and a second press cannot send a second reveal. */
+    const fresh = await refresh();
+    return { ok: true, done: `${character.name} revealed as ${className} in ${threadTitle}.${fresh ? '' : STALE_PAGE}` };
   };
 
   return { className, message, setMessage, count, over, busy, refusal, setRefusal, submit };

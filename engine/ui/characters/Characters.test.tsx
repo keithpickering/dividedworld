@@ -1537,3 +1537,49 @@ describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () =>
     expect(within(row('Pipewrench')).getByText('Revealed')).toHaveFocus();
   });
 });
+
+describe('a write that landed whose page could not be read back', () => {
+  const sentence = ' This page may be out of date until you reload it.';
+
+  test('a Turn that lands and whose refresh fails closes with the done line and the added sentence, sending once', async () => {
+    const w = world();
+    const turn = vi.spyOn(w.fake, 'turn');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm Turn' });
+    w.fake.seed.failNextRead('server');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent(`Pipewrench's Turn is waiting for the next settlement.${sentence}`);
+    expect(turn).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/could not be sent/u)).toBeNull();
+  });
+
+  test('a debut that lands and whose refresh fails closes with the done line and the added sentence, sending once', async () => {
+    const w = world();
+    const setDebut = vi.spyOn(w.fake, 'setDebut');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    w.fake.seed.failNextRead('server');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent(`Spritey has debuted.${sentence}`);
+    expect(setDebut).toHaveBeenCalledTimes(1);
+  });
+
+  test('a write that throws says the lost-answer words, and the dialog stays for another try', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'setDebut').mockRejectedValue(new Error('gone'));
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('no answer came back, so this may have gone through: look before you try again');
+  });
+});

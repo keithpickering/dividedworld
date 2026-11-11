@@ -6,12 +6,13 @@
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { DebutLoudness, DebutTiming, MyCharacter } from '../data/api.ts';
+import { LOST_ANSWER, type DebutLoudness, type DebutTiming, type MyCharacter } from '../data/api.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { FormFoot } from '../glass/FormFoot.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { usePlayer } from '../player.tsx';
 import { DebutChoice } from './DebutChoice.tsx';
+import { STALE_PAGE } from './reveal.ts';
 import { debutFooter } from './footers.ts';
 import { untilWords } from './format.ts';
 import './characters.css';
@@ -40,16 +41,19 @@ export function DebutDialog({ character, timing, nextSettlement = null, onClose,
     if (busy) return;
     setBusy(true);
     setRefusal(null);
+    let answer;
     try {
-      const answer = await api.setDebut(character.id, timing, loudness);
-      if (!answer.ok) { setRefusal(answer.error); return; }
-      await refresh();
-      onDone(drop ? `${character.name} has debuted.` : `${character.name} will debut at the next settlement, as you chose.`);
+      answer = await api.setDebut(character.id, timing, loudness);
     } catch {
-      setRefusal('That could not be sent. Check your connection and try again.');
-    } finally {
+      /* The adapter does not throw; if the call did, nothing says it did not go through. */
+      setRefusal(LOST_ANSWER);
       setBusy(false);
+      return;
     }
+    if (!answer.ok) { setRefusal(answer.error); setBusy(false); return; }
+    /* Written: the dialog ends, so the button stays busy and a second press cannot send a second one. */
+    const fresh = await refresh();
+    onDone((drop ? `${character.name} has debuted.` : `${character.name} will debut at the next settlement, as you chose.`) + (fresh ? '' : STALE_PAGE));
   };
 
   return (
