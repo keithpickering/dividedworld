@@ -21,6 +21,7 @@ import type { PronounSet } from '../../rules/pronouns.ts';
 import type { BeyondPost, Rarity, Reach, SetConditions } from '../../rules/cards.ts';
 import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
+import type { HandoffFacts } from '../../system/meeting.ts';
 import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
@@ -770,6 +771,13 @@ export interface HandoverTodo {
   /** How the new Boss was chosen: `nomination` or `rotation`. */
   readonly how: string;
   readonly landedAt: string;
+  /**
+   * The outgoing Boss's handoff note (0180): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * It is the Boss's own words, shown as its note and never as the glass's.
+   */
+  readonly note: string | null;
+  /** What the code knows of the season that ended (`handoff_facts`): boards made, merged and closed, beats played, moves in force, the busiest and quietest boards. True whatever the note says. */
+  readonly facts: HandoffFacts;
 }
 
 /** What the admin screen shows. Each group holds at most `cap` rows; `more` says a group was cut. */

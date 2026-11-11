@@ -47,7 +47,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { shortDate } from '../postbit/dates.ts';
-import { todoFacts, todoSentence } from './handover-words.ts';
+import { todoFacts, todoHandoff, todoSentence } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
 import { AdminPages } from './AdminPages.tsx';
 import './queue.css';
@@ -326,6 +326,24 @@ function Boards({ rows, onDescribed }: { readonly rows: readonly BoardSummary[];
   );
 }
 
+/**
+ * The outgoing Boss's handoff in a handover's to-do (0180): its note, in the Boss's own words and quoted as such, or that it left none, and under it the facts the code counted for the season it
+ * ended. Out of character and the admins' alone: no player reads either.
+ */
+function Handoff({ todo }: { readonly todo: HandoverTodo }) {
+  const h = todoHandoff(todo);
+  return (
+    <>
+      <p>{h.lead}</p>
+      {h.note === null ? <p>{h.none}</p> : <p className="kb-queue-quote">“{h.note}”</p>}
+      <details>
+        <summary>The season in facts, counted by the code</summary>
+        <ul>{h.facts.map((line, i) => <li key={i}>{line}</li>)}</ul>
+      </details>
+    </>
+  );
+}
+
 /** The handovers waiting for an announcement. Dismiss is not asked twice: it only puts a reminder away, and the form stays open to any admin. */
 function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; readonly onDismissed: () => Promise<void> }) {
   const { api, ui } = useKayfa();
@@ -359,6 +377,7 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           <div className="kb-queue-body">
             <h3 className="kb-queue-sentence">{todoSentence(t)}</h3>
             {todoFacts(t, ui.copy.roleWord).map((line) => <p key={line}>{line}</p>)}
+            <Handoff todo={t} />
             <p>The announcement is yours to write; no model writes it. This goes away when an update is posted after the handover, or when you dismiss it.</p>
           </div>
           <div className="kb-queue-act">

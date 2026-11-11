@@ -161,6 +161,18 @@ begin
     bad := bad || E'\n  a guard of arc_beat_events is missing';
   end if;
   if bad <> '' then raise exception 'arc_beat_events can be changed:%', bad; end if;
+
+  -- A Boss's farewell and handoff (0180) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
+  -- always, and no grant to an API role on the table or on the view that reads its latest row.
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and t.tgname in ('handoffs_no_update', 'handoffs_no_delete', 'handoffs_no_truncate')) is distinct from 3 then
+    bad := bad || E'\n  a guard of handoffs is missing';
+  end if;
+  for r in select c.relname, a.rolname from pg_class c cross join (values ('anon'), ('authenticated')) a(rolname)
+    where c.relname in ('handoffs', 'handoffs_latest') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
+  loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
+  if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
 end $$;
 
 -- Replica mode, as a restore with triggers disabled runs, still cannot change an Act.

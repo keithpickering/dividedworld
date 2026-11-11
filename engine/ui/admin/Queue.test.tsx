@@ -449,6 +449,40 @@ describe('a nomination of a successor', () => {
       expect(dismiss).toHaveBeenCalledWith(2);
     });
 
+    test('the to-do shows the outgoing Boss\'s handoff note and the code\'s facts of its season, out of character; where the last meeting failed it says there is no note and shows the facts alone', async () => {
+      const facts = {
+        created: [{ board: 'b1', name: 'Pirate Puns Palace' }], merged: [{ board: 'b2', name: 'Old Corner', into: 'b1', intoName: 'General' }],
+        busiest: [{ board: 'b1', name: 'Pirate Puns Palace', posts: 41 }], quietest: [{ board: 'b2', name: 'Old Corner', posts: 0 }],
+      };
+      open({
+        build: (fake) => {
+          fake.seed.staff('old-boss', 'Old Boss', 'boss');
+          fake.seed.staff('comptroller', 'Comptroller', 'mod');
+          fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member', note: 'Merge the fangame board first.', facts });
+        },
+      });
+      const todo = await group(/^To do/u);
+      expect(todo).toHaveTextContent('Merge the fangame board first.');
+      expect(todo).toHaveTextContent(/Old Boss.s handoff note/u);
+      expect(todo).toHaveTextContent(/Players never see/u);
+      expect(todo).toHaveTextContent('Pirate Puns Palace');
+      expect(todo).toHaveTextContent('Old Corner into General');
+      expect(todo).toHaveTextContent('Pirate Puns Palace (41 posts)');
+    });
+
+    test('a handover whose outgoing Boss left no note says so, and still shows the facts', async () => {
+      open({
+        build: (fake) => {
+          fake.seed.staff('old-boss', 'Old Boss', 'boss');
+          fake.seed.staff('comptroller', 'Comptroller', 'mod');
+          fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: fake.clock.now() - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'member', facts: { created: [{ board: 'b1', name: 'Toast Corner' }] } });
+        },
+      });
+      const todo = await group(/^To do/u);
+      expect(todo).toHaveTextContent(/left no handoff note/u);
+      expect(todo).toHaveTextContent('Toast Corner');
+    });
+
     test('a change of Boss is a row above Waiting, with the plain facts, a link to the form for that season, and a Dismiss', async () => {
       open({ build: (fake) => handover(fake) });
       const todo = await group(/^To do/u);

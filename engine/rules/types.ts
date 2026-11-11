@@ -270,6 +270,8 @@ export interface Settings {
   readonly digestBoardDays: number;
   /** How many days a board lists a thread that was moved away from it, as a stub row that says where it went (board_page). After that the board forgets it; the thread is on its new board for good. */
   readonly movedStubDays: number;
+  /** How many hours before a season's end a Boss's meeting is told to write its farewell (in character) and its handoff note (out of character); a meeting outside the window is not. The bound is held in SQL's settings_held too. */
+  readonly farewellWindowHours: number;
   /** The most parts a bundle the Boss composes in a meeting holds (the design's section 5; 4 by default). The bound is held in SQL's settings_held too. */
   readonly bundleMostParts: number;
   /** The most parts a bundle a persona's file authors (an arc beat's template) holds. An authored bundle costs nothing from the bank, so it is bounded by what a writer may write (8 by default). */

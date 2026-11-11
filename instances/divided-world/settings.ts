@@ -79,6 +79,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   digestBoardDays: 21,
   /** A thread moved off a board is listed on it for a week as a stub that says where it went, then the board forgets it. */
   movedStubDays: 7,
+  /** The Boss writes its farewell and its handoff at its last meeting, within a day and a half of the season's end. */
+  farewellWindowHours: 36,
   /** A bundle the Boss composes in a meeting holds at most four parts. */
   bundleMostParts: 4,
   /** A bundle an arc's beat authors holds at most eight: it costs nothing from the bank, so a writer's bundle is bounded here and not by the bank. */

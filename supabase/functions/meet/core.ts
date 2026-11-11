@@ -38,12 +38,16 @@ import {
   MEETING_RULE,
   REFERENCE_MOST,
   SUCCESSOR_WINDOW_MS,
+  farewellFactsText,
+  inFarewellWindow,
   inheritedText,
   meetingSystemPrompt,
   namedCharacters,
+  predecessorText,
   referenceText,
   repairAnswer,
   meetingSchema,
+  type HandoffFacts,
   type InheritedMove,
   type MachineSlotFacts,
   type ModFacts,
@@ -107,6 +111,13 @@ interface Context {
   readonly machine?: readonly MachineSlotFacts[];
   /** The Boss's arc as the database reads it (0166, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
   readonly arc?: ArcRead;
+  /**
+   * What the code knows of the open season (0180), handed over only to a meeting within farewellWindowHours of the season's end, to write its handoff from; null or absent otherwise, and from an
+   * older database, which keeps no handoff.
+   */
+  readonly handoffFacts?: HandoffFacts | null;
+  /** What a new Boss is handed for inheritanceGraceDays after the handover (0180): the outgoing Boss, the facts of the season it led and its note (null where its last meeting failed). Null or absent otherwise. */
+  readonly predecessor?: { readonly staff: string; readonly season: number; readonly note: string | null; readonly facts: HandoffFacts } | null;
   /**
    * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
    * group it is in now. Absent from an older database, which confers none.
@@ -244,6 +255,9 @@ export async function runMeeting(
     const heldBack = context.arc?.heldBack ?? [];
     const due = context.inheritanceDue ?? [];
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
+    // A meeting within farewellWindowHours of the season's end is told to write a farewell (in character) and a handoff (out of character) and shown the facts to write it from. The window is the clock's
+    // and the database's both: a database that handed over no facts (an older one, or one whose clock says otherwise) leaves the meeting outside it, and the apply holds the same line.
+    const farewell = context.handoffFacts && inFarewellWindow(context.season.endsAt, now, settings.farewellWindowHours) ? { postMaxLength: settings.postMaxLength } : undefined;
     const system = meetingSystemPrompt({
       boss,
       bossPronouns: personaSet(boss.pronouns),
@@ -258,6 +272,7 @@ export async function runMeeting(
       groups: { conferred: context.groups?.conferred ?? [] },
       beats,
       heldBack,
+      ...(farewell ? { farewell } : {}),
       career,
       notes: bossNotes,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name, pronouns: personaSet(b.pronouns) })),
@@ -271,6 +286,8 @@ export async function runMeeting(
     const message = [
       renderDigest(digest, memory, titles),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
+      ...(context.predecessor ? ['', ...predecessorText(context.predecessor)] : []),
+      ...(farewell && context.handoffFacts ? ['', ...farewellFactsText(context.handoffFacts)] : []),
       ...(notes.length ? ['', ...notes] : []),
       '',
       referenceText({
@@ -333,6 +350,7 @@ export async function runMeeting(
       machine: context.machine?.slice(0, REFERENCE_MOST.machine),
       beats,
       heldBack: new Set(heldBack),
+      ...(farewell ? { farewell } : {}),
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
@@ -388,6 +406,9 @@ export async function runMeeting(
         // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
         successor: repaired.successor,
         inherited: repaired.inherited,
+        // The Boss's last words, in character, and its note out of character (0180): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
+        ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
+        ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
         orders: repaired.orders.map((o) => ({ mod: o.mod, boards: o.boards, order: o.order, allowance: o.allowance, ...(o.memory ? { memory: o.memory } : {}) })),
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.

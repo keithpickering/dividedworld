@@ -38,6 +38,7 @@ import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
+import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
@@ -458,10 +459,29 @@ function toQueued(r: Row): QueuedMove {
   };
 }
 
+/** The facts of a season as admin_queue hands them (handoff_facts, 0180): each list read defensively, so a row the database could not make is an empty list and not a crash. */
+function toHandoffFacts(v: unknown): HandoffFacts {
+  const r = params(v) as Row;
+  const board = (x: Row) => ({ board: String(x['board'] ?? ''), name: String(x['name'] ?? '') });
+  const ranked = (x: Row) => ({ ...board(x), posts: num(x['posts']) });
+  return {
+    created: rowsOf(r['created']).map(board),
+    merged: rowsOf(r['merged']).map((x) => ({ ...board(x), into: String(x['into'] ?? ''), intoName: String(x['intoName'] ?? '') })),
+    closed: rowsOf(r['closed']).map(board),
+    beats: rowsOf(r['beats']).map((x) => ({ staff: String(x['staff'] ?? ''), beat: String(x['beat'] ?? ''), at: String(x['at'] ?? '') })),
+    moves: rowsOf(r['moves']).map((x) => ({
+      act: String(x['act'] ?? ''), kind: String(x['kind'] ?? ''), params: params(x['params']), landedAt: String(x['landedAt'] ?? ''), expiresAt: orNull(x['expiresAt']), by: String(x['by'] ?? ''), boardName: orNull(x['boardName']),
+    })),
+    busiest: rowsOf(r['busiest']).map(ranked),
+    quietest: rowsOf(r['quietest']).map(ranked),
+  };
+}
+
 function toTodo(r: Row): HandoverTodo {
   return {
     season: num(r['season']), boss: String(r['boss'] ?? ''), bossName: String(r['bossName'] ?? r['boss'] ?? ''), bossPronouns: pronounsOrDefault(r['bossPronouns']), bossWas: orNull(r['bossWas']), outgoing: orNull(r['outgoing']),
     outgoingName: orNull(r['outgoingName']), outgoingPronouns: pronounsOrDefault(r['outgoingPronouns']), outgoingOffice: orNull(r['outgoingOffice']), how: String(r['how'] ?? ''), landedAt: String(r['landedAt'] ?? ''),
+    note: orNull(r['note']), facts: toHandoffFacts(r['facts']),
   };
 }
 

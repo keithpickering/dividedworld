@@ -251,6 +251,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   digestBoardDays: whole(1, 'days', DIGEST_MOST.boardDays),
   /** A year at most: a stub is a pointer for a while, not a second index of where threads went. SQL's settings_held holds the same. */
   movedStubDays: whole(1, 'days', 365),
+  /** A month at most (720 hours): the window before a season's end in which the Boss writes its farewell and its handoff. SQL's settings_held holds the same. */
+  farewellWindowHours: whole(1, 'hours', 720),
   /** A bundle holds one to sixteen parts, as SQL's settings_held holds: a composed bundle is bounded by a setting, never by what a model proposes. */
   bundleMostParts: whole(1, 'parts', 16),
   bundleAuthoredMostParts: whole(1, 'parts', 16),
