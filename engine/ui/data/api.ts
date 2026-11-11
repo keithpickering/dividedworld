@@ -1051,7 +1051,8 @@ export interface WalletEvent {
 export interface CardEvent {
   readonly card: string;
   /** `caught`: a card a Trap Card of the player's took (0142); its `act` is the spring, and it cost nothing. */
-  readonly kind: 'bought' | 'played' | 'pulled' | 'caught';
+  /** `returned`: a play whose old voice did not answer, so its price went back and its card with it (0146); its `act` is the play. */
+  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */

@@ -34,7 +34,7 @@ import { quotedWords, shortQuote, springConditions, whoWords } from '../cards/le
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'onMine' | 'saved'
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'returned' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
   | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
@@ -358,7 +358,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -578,6 +578,21 @@ function cardRows(data: LogData, words: Words): LogRow[] {
         key: `pack:${e.pack}`, kind: 'pack', at: e.at, what: `You bought ${withArticle(ui.packs[bought?.kind ?? '']?.name ?? 'pack')}`,
         details: [`${list}. From the ${ui.copy.shopName}${bought ? `, for ${plain(bought.price)}` : ''}.${bossSaid(bought?.repriced)}`],
         aura: bought ? -bought.price : 0, wallet: spent?.balanceAfter ?? null, characters: [],
+      });
+      return;
+    }
+    /* A play the old voice did not answer: its price went back to the caster's wallet (the refund's own event, `ref` the play), and its card
+       to the hand. Its own line, after the play's; the card is the instance's, and the engine names none. */
+    if (e.kind === 'returned') {
+      const acted = e.act ? data.acts.get(e.act) : undefined;
+      const actedPost = acted?.targetActId ? data.acts.get(acted.targetActId) : undefined;
+      const refund = data.log.wallet.find((w) => w.kind === 'refund' && w.ref === e.act);
+      const where = (acted ? placeOf(acted, data) : null) ?? (actedPost ? actLink(actedPost, data, words, acted?.character ?? undefined) : null);
+      const back = refund && refund.change > 0 ? `so your ${plain(refund.change)} came back, and the card is back in your hand.` : 'so the card is back in your hand.';
+      rows.push({
+        key: `returned:${e.act}`, kind: 'returned', at: e.at, what: `Your ${cardName(e.card)} came back`,
+        details: [`The old voice didn't answer for your ${cardName(e.card)} on `, where ?? 'a post', `, ${back}`],
+        aura: refund?.change ?? 0, wallet: refund?.balanceAfter ?? null, characters: acted?.character ? [acted.character] : [],
       });
       return;
     }

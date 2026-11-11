@@ -4,7 +4,7 @@
  * the class the window scored, and two pages of one settlement merged.
  */
 import { describe, expect, test } from 'vitest';
-import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced } from '../data/api.ts';
+import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { testInstance } from '../test-world.tsx';
 import { actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { around, mergeLogs } from './useLog.ts';
@@ -609,6 +609,49 @@ describe('a card\'s own words for a play', () => {
     const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }] };
     const [row] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), quiet, 600, null);
     expect(text(row!)).not.toContain('covers');
+  });
+});
+
+/**
+ * A card play the old voice did not answer (the design's section 13, the refund): the caster's play line stays, and a returned row says
+ * what came back, from the refund's own wallet event, and that the card is back in the hand. The engine names no card.
+ */
+describe('a card play that the old voice did not answer', () => {
+  const key = testInstance.cards[0]!.key;
+  const name = testInstance.cards[0]!.name;
+  const other = { ...testInstance.cards[0]!, key: 'other', name: 'Other Card' };
+  const w: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, other] } };
+  const at = '2026-11-08T10:00:00.000Z';
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const post = act('post3', 'post', 'c', { seq: 3 });
+  const play = act('k1', 'card', 'c', { targetActId: 'post3', payload: { card: key } });
+  const refund = (change: number): WalletEvent => ({ settlement: null, kind: 'refund', change, overflow: 0, floored: 0, balanceAfter: 500 + change, ref: 'k1', at });
+  const playedRow = { card: key, kind: 'played' as const, act: 'k1', price: 0, at };
+  const rowsOf = (cards: Log['cards'], wallet: WalletEvent[]) =>
+    logRows(data({ log: { ...empty, cards, wallet }, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), w, 600, null);
+
+  test('a refund says what came back and that the card is in the hand, after the play line, with no second play', () => {
+    const rows = rowsOf([playedRow, { card: key, kind: 'returned' as const, act: 'k1', price: 75, at }], [refund(75)]);
+    expect(rows.map((r) => r.kind)).toEqual(['played', 'returned']);
+    expect(text(rows[0]!)).toMatch(/^As Spritey, on your post #3/u);
+    expect(text(rows[1]!)).toBe(`The old voice didn't answer for your ${name} on your post #3, so your 0.75 came back, and the card is back in your hand.`);
+    expect(rows[1]!.aura).toBe(75);
+  });
+
+  test('a refund with nothing paid to play says the card is back, and does not say Aura came back', () => {
+    const rows = rowsOf([playedRow, { card: key, kind: 'returned' as const, act: 'k1', price: 0, at }], []);
+    expect(rows.map((r) => r.kind)).toEqual(['played', 'returned']);
+    expect(text(rows[1]!)).toBe(`The old voice didn't answer for your ${name} on your post #3, so the card is back in your hand.`);
+    expect(text(rows[1]!)).not.toContain('came back');
+  });
+
+  test('a returned row names the instance\'s card it is for, never another', () => {
+    const rows = rowsOf([{ card: 'other', kind: 'returned' as const, act: 'k1', price: 0, at }], []);
+    const returned = rows.find((r) => r.kind === 'returned')!;
+    expect(text(returned)).toContain('Other Card');
+    expect(text(returned)).not.toContain(name);
   });
 });
 
