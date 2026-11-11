@@ -76,12 +76,19 @@ declare
   until_at timestamptz := '2040-06-01T12:00:00Z';
   inside timestamptz := '2040-05-25T12:00:00Z';
   acct uuid; acct2 uuid; a uuid; b uuid;
-  toast uuid; sys uuid; t uuid; p uuid; q bigint;
+  toast uuid; sys uuid; t uuid; p uuid; q bigint; stray uuid;
   d jsonb; d2 jsonb;
 begin
   acct := tests.account('db-a'); acct2 := tests.account('db-b');
   a := tests.character(acct, 'Db Ann'); b := tests.character(acct2, 'Db Bo');
   sys := (select id from boards where is_system);
+
+  -- The digest lists every open board, and an earlier file's race test (0060-card-reach.sql) commits one ('race-board') through dblink, which this file's
+  -- rollback cannot take back and which cannot be deleted (a play_reach row points at it). It holds nothing this file counts, so it is merged into General,
+  -- by the game's own move, and the seven below are the whole list.
+  for stray in select id from boards_now where not closed and not is_system and slug <> 'general' loop
+    perform pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', stray, 'into', pg_temp.board('general'))));
+  end loop;
 
   insert into boards (slug, name, description) values
     ('busy', 'Busy Place', 'Where it is loud.'), ('mid', 'Middle Place', 'In between.'), ('low', 'Low Place', 'Hardly a sound.'),
