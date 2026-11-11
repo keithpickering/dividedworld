@@ -194,7 +194,7 @@ const ruleMove = (params: unknown) => ({ ...move({ kind: 'postsOnBoard', params:
 const ruleAnswer = (params: unknown) => ({ ...answer(null), moves: [ruleMove(params)] });
 
 test('a setRule on a listed board, or on every board, is kept; a numeric param stays a number', () => {
-  const on = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 20, band: 'minor' }), ctx());
+  const on = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '20', band: 'minor' }), ctx());
   assert.ok(on.ok && on.moves.length === 1, JSON.stringify(on));
   assert.deepEqual(on.ok && on.moves[0]!.params, { board: BOARD, predicate: 'minLength', param: 20, band: 'minor' });
   const all = repairAnswer(ruleAnswer({ predicate: 'noDoublePost', band: 'severe' }), ctx());
@@ -202,10 +202,35 @@ test('a setRule on a listed board, or on every board, is kept; a numeric param s
   assert.equal(all.ok && all.moves[0]!.params['board'], null);
 });
 
+test('a setRule\'s param given as text is read as its predicate wants it, and the trim is recorded', () => {
+  const count = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '3', band: 'minor' }), ctx());
+  assert.ok(count.ok && count.moves.length === 1, JSON.stringify(count));
+  assert.equal(count.ok && count.moves[0]!.params['param'], 3);
+  assert.ok(count.ok && count.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNumber' && t.before === 1 && t.after === 3), JSON.stringify(count.trims));
+  const none = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'noAllCaps', param: '', band: 'minor' }), ctx());
+  assert.ok(none.ok && none.moves.length === 1, JSON.stringify(none));
+  assert.equal(none.ok && none.moves[0]!.params['param'], null);
+  assert.ok(none.ok && none.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'asNone'), JSON.stringify(none.trims));
+  const word = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'bannedWord', param: 'toast', band: 'minor' }), ctx());
+  assert.ok(word.ok && word.moves.length === 1 && word.moves[0]!.params['param'] === 'toast', JSON.stringify(word));
+});
+
+test('the meeting\'s schema has no empty schema anywhere, and an any rule has no schema to send', () => {
+  const empties: string[] = [];
+  const walk = (node: any, path: string): void => {
+    if (node === null || typeof node !== 'object') return;
+    if (!Array.isArray(node) && !('type' in node) && !('properties' in node) && !('items' in node) && !('enum' in node) && path.split('.').pop() !== 'properties') empties.push(path);
+    for (const [k, v] of Object.entries(node)) walk(v, `${path}.${k}`);
+  };
+  walk(ruleSchema(MEETING_RULE), '$');
+  assert.deepEqual(empties, []);
+  assert.throws(() => ruleSchema({ type: 'object', fields: { xs: { type: 'list', of: { type: 'object', fields: { p: { type: 'any' } } } } } }), { message: 'ruleSchema: an "any" rule at xs[].p has no schema to send' });
+});
+
 test('a setRule on a board outside the meeting\'s list, or with a param its predicate refuses, is dropped and recorded', () => {
   const off = repairAnswer(ruleAnswer({ board: OTHER_BOARD, predicate: 'noDoublePost', band: 'minor' }), ctx());
   assert.ok(off.ok && off.moves.length === 0 && off.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'), JSON.stringify(off));
-  const high = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: 9000, band: 'minor' }), ctx());
+  const high = repairAnswer(ruleAnswer({ board: BOARD, predicate: 'minLength', param: '9000', band: 'minor' }), ctx());
   assert.ok(high.ok && high.moves.length === 0 && high.trims.some((t) => t.path === 'moves[0].params.param' && t.predicate === 'atMost(200)'), JSON.stringify(high));
 });
 
@@ -309,7 +334,7 @@ const inForce = [{ board: BOARD, predicate: 'bannedWord', param: 'toast', number
 
 test('a rule that conflicts with the rules in force is dropped and recorded, and spends nothing', () => {
   const clash = ruleMove({ board: BOARD, predicate: 'requiredWord', param: 'Toast', band: 'minor' });
-  const houseClash = ruleMove({ board: B2, predicate: 'maxLength', param: 50, band: 'minor' });
+  const houseClash = ruleMove({ board: B2, predicate: 'maxLength', param: '50', band: 'minor' });
   const fine = ruleMove({ board: BOARD, predicate: 'noAllCaps', band: 'minor' });
   const r = repairAnswer({ ...answer(null), moves: [clash, houseClash, fine] }, modCtx({ rules: inForce, bank: 1 }));
   assert.ok(r.ok);

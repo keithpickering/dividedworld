@@ -58,6 +58,13 @@ test('a whole move passes, its board in lowercase and its parameter as the predi
   assert.equal(none.move?.params['param'], null, 'a predicate with no parameter takes the empty text as none');
 });
 
+test('a count given as digits, and a none given as empty text, are read as the predicate wants them, with the trims under move.params', () => {
+  const count = repairModMove({ ...good, params: { board: GAMES, predicate: 'minLength', param: ' 12 ', band: 'moderate' } }, ctx);
+  assert.deepEqual(count.trims, [{ path: 'move.params.param', predicate: 'asNumber', before: 4, after: 12 }]);
+  const none = repairModMove({ ...good, params: { board: GAMES, predicate: 'noAllCaps', param: '', band: 'minor' } }, ctx);
+  assert.deepEqual(none.trims, [{ path: 'move.params.param', predicate: 'asNone', before: 0, after: 0 }]);
+});
+
 test('a move is dropped when the Mod has no allowance, and the reason is the allowance', () => {
   const out = repairModMove(good, { ...ctx, allowance: 0 });
   assert.equal(out.move, null);

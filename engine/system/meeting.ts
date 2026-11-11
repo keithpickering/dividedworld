@@ -31,7 +31,7 @@ import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
 import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
-import { PREDICATES, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
+import { PREDICATES, readParam, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
 import { ASKABLE_MOVE_KINDS, UUID, machineLimits, moveKind, moveParamsProblems, type MachineLimits } from './moves.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
@@ -66,8 +66,8 @@ function looseFields(rules: readonly Rule[]): Record<string, Rule> {
       // A string keeps its own bound where that is longer than the loose 500 (a rename's description, 2000), so the loose
       // bound never cuts it short: the answer's own `repair` trims it at that bound and records the trim, once, and
       // `moveParamsProblems` then finds nothing to trim.
-      // A field of any shape (a rule's parameter, a count or a word) stays so: its kind's `check` holds it to the predicate's.
-      out[name] = sub.type === 'any' ? { type: 'any', optional: true } : sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
+      // A field of any shape (a rule's parameter, a count or a word) is sent as text: a provider's schema has no "any", and `readParam` reads the text as its predicate wants it.
+      out[name] = sub.type === 'any' ? { type: 'string', optional: true } : sub.type === 'number' ? { type: 'number', optional: true } : { type: 'string', maxLength: Math.max(500, sub.type === 'string' ? (sub.maxLength ?? 0) : 0), optional: true };
     }
   }
   return out;
@@ -141,18 +141,18 @@ export const MEETING_RULE: Rule = {
 };
 
 /** A rule as the JSON schema a provider's structured output takes: types, properties and requireds, none of the bounds it cannot express. */
-export function ruleSchema(rule: Rule): Record<string, unknown> {
+export function ruleSchema(rule: Rule, path = ''): Record<string, unknown> {
   switch (rule.type) {
     case 'string': return { type: 'string' };
-    case 'any': return {};
+    case 'any': throw new Error(`ruleSchema: an "any" rule at ${path} has no schema to send`);
     case 'number': return { type: 'number' };
     case 'boolean': return { type: 'boolean' };
     case 'enum': return { type: 'string', enum: [...rule.values] };
-    case 'list': return { type: 'array', items: ruleSchema(rule.of) };
+    case 'list': return { type: 'array', items: ruleSchema(rule.of, `${path}[]`) };
     case 'object':
       return {
         type: 'object',
-        properties: Object.fromEntries(Object.entries(rule.fields).map(([k, v]) => [k, ruleSchema(v)])),
+        properties: Object.fromEntries(Object.entries(rule.fields).map(([k, v]) => [k, ruleSchema(v, path ? `${path}.${k}` : k)])),
         required: Object.entries(rule.fields).filter(([, v]) => !v.optional).map(([k]) => k),
         additionalProperties: false,
       };
@@ -238,7 +238,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
   const kinds = ASKABLE_MOVE_KINDS.map(
-    (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
+    (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is written as text: the number's digits, the word, the tag, or empty for none. It is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = MEETING_DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
   const m = machineLimits(s.economy);
@@ -646,6 +646,11 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     };
     if (kind.key === 'repriceSlot') bounded('percent', limits.repriceLeast, limits.repriceMost);
     if (kind.key === 'flashSale') bounded('hours', limits.flashHoursLeast, limits.flashHoursMost);
+    // A rule's param is text on the wire: a count's digits are its number, and empty text is none (recorded; a word or a tag is left for moveParamsProblems).
+    if (kind.key === 'setRule' && typeof offered['predicate'] === 'string') {
+      const read = readParam(offered['predicate'], offered['param']);
+      if (read.trim) { offered['param'] = read.value; clamps.push(read.trim); }
+    }
     const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits);
     const given = params.ok ? { ...(params.value as Record<string, unknown>) } : {};
     if (blank) delete given['description'];
