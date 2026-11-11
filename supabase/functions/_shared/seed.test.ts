@@ -99,6 +99,7 @@ test('the seed carries the engine\'s catalogs of moves (with whether each is str
     { key: 'pullSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
     { key: 'repriceSlot', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
     { key: 'flashSale', structural: false, shapesBoard: false, offices: ['boss'], derived: [] },
+    { key: 'awardTrophy', structural: false, shapesBoard: false, offices: ['boss'], derived: ['trophyName', 'characterName'] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));
   assert.ok(demands.length >= 5);
@@ -152,4 +153,11 @@ test('the seed carries the trophy catalog: the kinds with their words and belts,
   assert.deepEqual(trophies.boss, [...instance.trophies.boss]);
   assert.equal(trophies.demandMet, instance.trophies.demandMet);
   assert.ok(trophies.kinds.every((k) => !k.key.startsWith('made-')), 'an instance key never begins with the admin page\'s prefix');
+});
+
+test('the seed carries the instance\'s Random Event lines, each with its key, outcome and text (0152)', () => {
+  const { eventLines } = instanceSeed(instance);
+  assert.ok(eventLines.length > 0, 'the instance has event lines');
+  assert.deepEqual(eventLines.map((l) => [l.key, l.outcome, l.text]), instance.events.lines.map((l) => [l.key, l.outcome, l.text]));
+  assert.ok(['line', 'gear', 'card'].every((o) => eventLines.some((l) => l.outcome === o)), 'every outcome has a line to say');
 });

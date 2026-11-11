@@ -55,6 +55,8 @@ export function instanceSeed(instance: Instance) {
     machine: instance.machine.map((m) => ({ ...('card' in m.item ? { card: m.item.card } : { pack: m.item.pack }), availability: m.availability, price: m.price })),
     // The gear the instance offers (0150): keys and rarities only, which seed_instance adds and keeps current; names, lines and art stay in the instance.
     gear: instance.gear.map((g) => ({ key: g.key, rarity: g.rarity })),
+    // The lines a Random Event says (0152), each with the outcome it belongs to: seed_instance replaces its event_lines with these.
+    eventLines: instance.events.lines.map((l) => ({ key: l.key, outcome: l.outcome, text: l.text })),
     // The trophy catalog (0151): each kind's key, name, words and whether it is a belt, and where the lists point (the place for each of first, second and third, the kinds the Boss
     // may give, the one a met demand gives). seed_instance writes the kinds and sets the three as columns of the kinds they name; the badges stay in the instance's UI.
     trophies: {
