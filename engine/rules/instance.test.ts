@@ -934,6 +934,10 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
   assert.match(say(withDraws(['a', 'a'])), /card "splat" draws "a" twice/);
   assert.match(say(withDraws(['Bad Key'])), /card "splat" draws "Bad Key"; a draw is lowercase letters, digits and hyphens, 1 to 40/);
   assert.match(say(withDraws('a')), /card "splat" draws "a"; draws is a list/);
+  assert.match(say(withDraws([7])), /card "splat" draws 7; a draw is lowercase letters/);
+  assert.match(say({ ...eco, cards: [testCard({ drive: 'weekly' })] } as unknown as Instance), /card "splat" has a drive that is not an object of lasts, gifts and overhead/);
+  assert.match(say(withDrive({}, { gifts: [] })), /card "splat" has a drive with no gift amounts \(gifts\)/);
+  assert.match(say(withDrive({}, { gifts: 'g.small' })), /card "splat" has a drive with no gift amounts \(gifts\)/);
   assert.match(say(withDrive({ play: 'use', gimmick: { kind: 'ward', upTo: 'common' }, lasts: { unit: 'day', count: 1 } })), /card "splat" has a drive, and only a cast card does/);
   assert.match(say(withDrive({ reaches: ['post', 'thread'], rarity: 'rare', lasts: { unit: 'day', count: 1 } })), /card "splat" has a drive, and a drive card reaches a post alone/);
   assert.match(say(withDrive({}, { gifts: ['g.small', 'g.gone'] })), /card "splat" has a drive gift "g\.gone", which the economy does not hold/);
