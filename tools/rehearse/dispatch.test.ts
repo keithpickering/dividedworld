@@ -2,7 +2,7 @@
 // handler as a Request. A fake queue and fake handlers here; the real handlers are Task 1's.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drain, REAL, UnknownFunction, type DispatchCtx, type QueueRow } from "./dispatch.ts";
+import { drain, REAL, Stalled, UnknownFunction, type DispatchCtx, type QueueRow } from "./dispatch.ts";
 
 function setup(rows: QueueRow[], capped = false) {
   const seen: { name: string; body: unknown; auth: string | null; method: string }[] = [];
@@ -71,6 +71,13 @@ test("write is a function the dispatcher knows, and one that calls a model: hand
   await drain(capped.ctx);
   assert.deepEqual(capped.ctx.dispatched.map((d) => [d.function, d.skipped ?? null]), [["write", "cost cap"]]);
   assert.ok(REAL.includes("write"), "the real set holds it, so a rehearsal's sweep is served");
+});
+
+test("a handler that never answers stops the run with Stalled naming the function and the request", async () => {
+  const { ctx } = setup([row(7, "settle")]);
+  ctx.handlers!.settle = () => new Promise<Response>(() => {});
+  ctx.stallMs = 30;
+  await assert.rejects(() => drain(ctx), (e: unknown) => e instanceof Stalled && /the settle function \(request 7\) has not answered/.test((e as Error).message));
 });
 
 test("a path named like an Object property (constructor) is unknown, not resolved", async () => {

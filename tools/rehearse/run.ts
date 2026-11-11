@@ -14,7 +14,7 @@ import { simulateClock } from "./clock.ts";
 import { connect, type Connection } from "./db.ts";
 import { rehearsalFetch, rehearsalModels, type KeptCall, type Mode } from "./models.ts";
 import { runMinute, type JobRun, type ScheduleCtx } from "./schedule.ts";
-import type { Dispatched } from "./dispatch.ts";
+import { STALL_MS, within, type Dispatched } from "./dispatch.ts";
 import { collect } from "./collect.ts";
 import { reportHtml } from "../../engine/rehearsal/report.ts";
 import { rehearsedInstance } from "./instance.ts";
@@ -234,7 +234,8 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
         await conn.sql("update settings set value = 'true'::jsonb where key = 'systemEnabled'");
         systemOnAt = minute;
       }
-      await runMinute(sched, minute);
+      // A step inside the minute names itself first (dispatch.ts, Stalled); this is for whatever else the minute waits on.
+      await within(`the minute ${new Date(minute).toISOString()}`, runMinute(sched, minute), 2 * STALL_MS);
       if (dayStarts) {
         if (index > 0) o.onDay?.(`${dayName(minute - DAY_MS)}: ${dayPosts} filler actions through, ${filler.filter((f) => !f.ok && f.at >= minute - DAY_MS).length} refused, ${sched.dispatched.length} requests dispatched so far`);
         dayPosts = 0;
@@ -251,7 +252,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
         const action = String(a.request.action);
         // The generator names only players that setup made: one it does not know is a bug here, and so is any throw below.
         if (!account) throw new Error(`filler: ${action} names ${a.player}, who setup did not make`);
-        const answer = await (o.act ?? runAction)({ player: conn.db({ player: account }), service }, instance, a.request);
+        const answer = await within(`the filler's ${action} by ${a.player}`, (o.act ?? runAction)({ player: conn.db({ player: account }), service }, instance, a.request));
         if (answer.status === 200) { filler.push({ at: a.at, player: a.player, action, ok: true, status: 200 }); dayPosts++; }
         else if (answer.status >= 400 && answer.status < 500) {
           // A refusal a player would see: recorded, and the run goes on.
