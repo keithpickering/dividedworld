@@ -84,9 +84,19 @@ export function inSquare(piece: Piece, square: SquareFrame): Piece {
   return { ...piece, x: (piece.x - square.x) / square.w, y: (piece.y - square.y) / square.h, w: piece.w / square.w };
 }
 
-/** The character who holds a belt now: the latest award not reversed, or null when none stands. */
+/**
+ * The character who holds a belt now: the award with the latest instant not reversed, or null when none stands. Instants are compared as
+ * instants (`Date.parse`), never as strings, since `Z`, `+00:00` and fractional seconds spell one moment several ways; an award whose
+ * `at` does not parse is skipped. An exact tie goes to the larger `character` id, since the order awards arrive in (from SQL) is not
+ * fixed and the holder must not depend on it.
+ */
 export function beltHolder(awards: readonly BeltAward[]): string | null {
-  let best: BeltAward | null = null;
-  for (const a of awards) if (!a.reversed && (best === null || a.at > best.at)) best = a;
+  let best: { character: string; t: number } | null = null;
+  for (const a of awards) {
+    if (a.reversed) continue;
+    const t = Date.parse(a.at);
+    if (Number.isNaN(t)) continue;
+    if (best === null || t > best.t || (t === best.t && a.character > best.character)) best = { character: a.character, t };
+  }
   return best?.character ?? null;
 }

@@ -210,16 +210,16 @@ function cosmeticsRule(v: unknown): string | null {
   const shape = 'an object giving gear (wornMost, a whole number, at least 1; reach, a fraction of the portrait\'s width from 0 to 2), trophies (shownMost, a whole number, at least 1) and events (windowMinutes, a whole number from 1 to 1440; dayMost, a whole number, at least 1; outcomes, a positive whole weight for line, gear and card and an optional whole weight, at least 0, for none; gearRarity and cardRarity, each a positive whole weight for one or more of ' + RARITIES.join(', ') + ')';
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   const exactly = (x: unknown, keys: readonly string[], name: string): string | null => {
-    if (!object(x)) return `${shape}; "${name}" is not`;
+    if (!object(x)) return name === 'cosmetics' ? shape : `"${name}" must be an object giving ${keys.join(', ')}`;
     const extra = Object.keys(x).find((k) => !keys.includes(k));
-    return extra === undefined ? null : `${shape}; "${name}.${extra}" is not one of its fields`;
+    return extra === undefined ? null : `"${name}.${extra}" is not one of ${name}'s fields (${keys.join(', ')})`;
   };
   const weights = (x: unknown, keys: readonly string[], name: string, zeroOk: readonly string[] = []): string | null => {
     const bad = exactly(x, keys, name);
     if (bad) return bad;
     const o = x as Record<string, unknown>;
-    if (!Object.keys(o).length) return `${shape}; "${name}" has no weight`;
-    for (const [k, w] of Object.entries(o)) if (!isWhole(w, zeroOk.includes(k) ? 0 : 1)) return `${shape}; "${name}.${k}" has a weight of ${JSON.stringify(w)}, and a weight is a positive whole number`;
+    if (!Object.keys(o).length) return `"${name}" must give at least one weight`;
+    for (const [k, w] of Object.entries(o)) if (!isWhole(w, zeroOk.includes(k) ? 0 : 1)) return `"${name}.${k}" has a weight of ${JSON.stringify(w)}, and a weight is a positive whole number`;
     return null;
   };
   const top = exactly(v, ['gear', 'trophies', 'events'], 'cosmetics');
@@ -228,20 +228,20 @@ function cosmeticsRule(v: unknown): string | null {
   const gear = exactly(c.gear, ['wornMost', 'reach'], 'gear');
   if (gear) return gear;
   const g = c.gear as Record<string, unknown>;
-  if (!isWhole(g.wornMost, 1)) return `${shape}; "gear.wornMost" is not`;
-  if (!(typeof g.reach === 'number' && g.reach >= 0 && g.reach <= 2)) return `${shape}; "gear.reach" is not`;
+  if (!isWhole(g.wornMost, 1)) return `"gear.wornMost" must be a whole number, at least 1`;
+  if (!(typeof g.reach === 'number' && g.reach >= 0 && g.reach <= 2)) return `"gear.reach" must be a number from 0 to 2`;
   const trophies = exactly(c.trophies, ['shownMost'], 'trophies');
   if (trophies) return trophies;
-  if (!isWhole((c.trophies as Record<string, unknown>).shownMost, 1)) return `${shape}; "trophies.shownMost" is not`;
+  if (!isWhole((c.trophies as Record<string, unknown>).shownMost, 1)) return `"trophies.shownMost" must be a whole number, at least 1`;
   const events = exactly(c.events, ['windowMinutes', 'dayMost', 'outcomes', 'gearRarity', 'cardRarity'], 'events');
   if (events) return events;
   const e = c.events as Record<string, unknown>;
-  if (!isWhole(e.windowMinutes, 1) || e.windowMinutes > 1440) return `${shape}; "events.windowMinutes" is not`;
-  if (!isWhole(e.dayMost, 1)) return `${shape}; "events.dayMost" is not`;
+  if (!isWhole(e.windowMinutes, 1) || e.windowMinutes > 1440) return `"events.windowMinutes" must be a whole number from 1 to 1440`;
+  if (!isWhole(e.dayMost, 1)) return `"events.dayMost" must be a whole number, at least 1`;
   const outcomes = weights(e.outcomes, [...COSMETICS_OUTCOMES, 'none'], 'events.outcomes', ['none']);
   if (outcomes) return outcomes;
   const o = e.outcomes as Record<string, unknown>;
-  for (const k of COSMETICS_OUTCOMES) if (!(k in o)) return `${shape}; "events.outcomes.${k}" is missing`;
+  for (const k of COSMETICS_OUTCOMES) if (!(k in o)) return `"events.outcomes.${k}" is missing; it must be a positive whole weight`;
   return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
 }
 
@@ -421,19 +421,17 @@ function cosmeticsProblems(instance: Instance): string[] {
   for (const l of lines) {
     if (typeof l.text !== 'string' || l.text.trim() === '') out.push(`event line "${l.key}" has no text`);
     else if ((l.outcome === 'gear' || l.outcome === 'card') && !l.text.includes('{item}')) out.push(`event line "${l.key}" is a ${l.outcome} line and does not say {item}, the found item's name`);
-    if (!(COSMETIC_OUTCOMES as readonly string[]).includes(l.outcome)) out.push(`event line "${l.key}" has the outcome ${JSON.stringify(l.outcome)}; an outcome is line, gear or card`);
+    if (!(COSMETICS_OUTCOMES as readonly string[]).includes(l.outcome)) out.push(`event line "${l.key}" has the outcome ${JSON.stringify(l.outcome)}; an outcome is line, gear or card`);
   }
   // Settings are checked on their own; the odds read here only once they hold.
   const events = instance.settings?.cosmetics?.events;
   if (cosmeticsRule(instance.settings?.cosmetics) === null && events) {
-    for (const o of COSMETIC_OUTCOMES) if (!lines.some((l) => l.outcome === o)) out.push(`the events' outcome "${o}" has no event line, and a Random Event that picks it would have nothing to say`);
+    for (const o of COSMETICS_OUTCOMES) if (!lines.some((l) => l.outcome === o)) out.push(`the events' outcome "${o}" has no event line, and a Random Event that picks it would have nothing to say`);
     for (const rarity of Object.keys(events.gearRarity)) if (!gear.some((g) => g.rarity === rarity)) out.push(`events.gearRarity names ${rarity}, and the instance has no gear of that rarity`);
     for (const rarity of Object.keys(events.cardRarity)) if (!instance.cards.some((c) => c.rarity === rarity)) out.push(`events.cardRarity names ${rarity}, and the instance has no card of that rarity`);
   }
   return out;
 }
-const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
-
 export function instanceProblems(instance: Instance): string[] {
   const out: string[] = [];
   const lists = ['classes', 'cards', 'reactions', 'boards', 'ranks', 'pipStyles'] as const;

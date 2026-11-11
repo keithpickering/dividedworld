@@ -1019,3 +1019,16 @@ test('the cosmetics settings are held as their words say', () => {
   assert.match(bad({ ...c, stray: 1 }), /stray/);
   assert.deepEqual(settingsProblems(settings), []);
 });
+
+test('a cosmetics field that fails names that one field and what it must be, and only the object failure gives the whole shape', () => {
+  const one = (cosmetics: unknown) => settingsProblems({ ...settings, cosmetics } as unknown as Settings).join('\n');
+  const c = settings.cosmetics;
+  const wornMost = one({ ...c, gear: { ...c.gear, wornMost: 0 } });
+  assert.match(wornMost, /"gear\.wornMost" must be a whole number, at least 1/);
+  assert.doesNotMatch(wornMost, /an object giving/);
+  assert.match(one({ ...c, gear: { ...c.gear, reach: 3 } }), /"gear\.reach" must be a number from 0 to 2/);
+  assert.match(one({ ...c, trophies: { shownMost: 0 } }), /"trophies\.shownMost" must be a whole number, at least 1/);
+  assert.match(one({ ...c, events: { ...c.events, windowMinutes: 2000 } }), /"events\.windowMinutes" must be a whole number from 1 to 1440/);
+  assert.match(one({ ...c, events: { ...c.events, dayMost: 0 } }), /"events\.dayMost" must be a whole number, at least 1/);
+  assert.match(one(null), /an object giving/);
+});

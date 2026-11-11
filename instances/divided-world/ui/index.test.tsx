@@ -17,6 +17,7 @@ import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { spanWords } from './cards.ts';
+import { gearUi } from './cosmetics.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 describe('Divided World\'s developer persona', () => {
@@ -506,5 +507,31 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
     expect(rows.map((r) => r.kind)).toEqual(['pack', 'pack']);
     expect(new Set(rows.map((r) => r.wallet))).toEqual(new Set([900, 600]));
     expect(rows.map(said).sort()[0]).toContain('Glitter Bomb, Glitter Bomb, Glitter Bomb, Glitter Bomb and Glitter Bomb');
+  });
+});
+
+describe('the cosmetics art files', () => {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const files = (kind: 'gear' | 'trophies') => fs.readdirSync(path.join(dir, kind)).filter((f) => f.endsWith('.svg')).map((f) => [`${kind}/${f}`, fs.readFileSync(path.join(dir, kind, f), 'utf8')] as const);
+
+  test('each gear piece\'s aspect is its viewBox height over width', () => {
+    for (const [key, ui] of Object.entries(gearUi)) {
+      const svg = fs.readFileSync(path.join(dir, 'gear', `${key}.svg`), 'utf8');
+      const box = /viewBox="\s*[\d.-]+[\s,]+[\d.-]+[\s,]+([\d.]+)[\s,]+([\d.]+)\s*"/u.exec(svg);
+      expect(box, key).not.toBeNull();
+      expect(ui.aspect, key).toBeCloseTo(Number(box![2]) / Number(box![1]), 10);
+    }
+    expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')).length).toBe(Object.keys(gearUi).length);
+  });
+
+  test('each art file is a bare SVG: no script, no link, no event attribute', () => {
+    const all = [...files('gear'), ...files('trophies')];
+    expect(all.length).toBeGreaterThan(0);
+    for (const [name, svg] of all) {
+      expect(svg.trimStart().startsWith('<svg'), name).toBe(true);
+      expect(/<script/iu.test(svg), `${name} has a script`).toBe(false);
+      expect(/href\s*=/iu.test(svg), `${name} has an href`).toBe(false);
+      expect(/\son[a-z]+\s*=/iu.test(svg), `${name} has an event attribute`).toBe(false);
+    }
   });
 });

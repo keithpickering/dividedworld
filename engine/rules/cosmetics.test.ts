@@ -61,3 +61,21 @@ test('a belt is held by the latest standing award, and the one before it again o
   assert.equal(beltHolder([first, { ...second, reversed: true }]), 'ann');
   assert.equal(beltHolder([{ ...first, reversed: true }, { ...second, reversed: true }]), null);
 });
+
+test('a belt is held by the truly latest award, whatever form its time is written in, and a tie never depends on array order', () => {
+  const whole = { character: 'ann', at: '2026-01-01T00:00:00Z' };
+  const half = { character: 'bo', at: '2026-01-01T00:00:00.500Z' };
+  assert.equal(beltHolder([whole, half]), 'bo');
+  assert.equal(beltHolder([half, whole]), 'bo');
+  const offset = { character: 'cy', at: '2026-01-01T01:00:00+00:00' };
+  const zulu = { character: 'di', at: '2026-01-01T00:30:00Z' };
+  assert.equal(beltHolder([zulu, offset]), 'cy');
+  const west = { character: 'ed', at: '2026-01-01T00:00:00-05:00' };
+  assert.equal(beltHolder([west, offset]), 'ed');
+  assert.equal(beltHolder([{ character: 'zz', at: 'not a time' }, whole]), 'ann');
+  assert.equal(beltHolder([{ character: 'zz', at: 'not a time' }]), null);
+  const a = { character: 'ann', at: '2026-03-01T00:00:00Z' };
+  const b = { character: 'bo', at: '2026-03-01T00:00:00+00:00' };
+  assert.equal(beltHolder([a, b]), 'bo');
+  assert.equal(beltHolder([b, a]), 'bo');
+});
