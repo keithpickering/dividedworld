@@ -266,3 +266,195 @@ the first account is opened with registration briefly open.
   Supabase gives its functions container `SUPABASE_SECRET_KEY` and `SUPABASE_PUBLISHABLE_KEY` under those names.
 - **Auth's own endpoints are reachable with the public key (issue #3).** Whether Supabase Auth answers an address it
   knows measurably differently from one it does not is to be measured on the deployed project before players arrive.
+
+## Getting Divided World ready for invites
+
+Written 2026-11-11 from a read of the deployed project (read-only queries; nothing was changed there), `main` and the
+open issues and pull requests. It says where dw.gripe stands, what blocks sending invites, and how The System's staff
+and seasons are started and kept running. Tick an item off here when it is done, and correct this section when it
+stops being true.
+
+### Where the deployed project stands
+
+- **The site** is up at dw.gripe on Netlify. Registration is `invite`, and no player has an invite yet.
+- **The Supabase project** is on the free plan's Nano compute. It holds the migrations up to `0145_brighter_effects`;
+  `main` has seven more (`0146` to `0152`). Its Edge Functions were deployed on 2026-11-09.
+- **No scheduled job has ever reached a function.** Vault holds neither `kayfabb_functions_url` nor `kayfabb_jobs_key`
+  (step 6.2 above), so `kayfabb-settle`, `kayfabb-meet`, `kayfabb-staff` and `kayfabb-chatter` run every day and send
+  nothing (`supabase/migrations/0071_jobs_key.sql`). No settlement has been run since Season 1 opened on 2026-11-03,
+  no meeting has been held and no model call has been made. This blocks the Aura loop as well as The System.
+- **Season 1 was opened by an older seed.** Its Boss is `placeholder-hype-man`, which is now a test fixture and no
+  longer in the roster, and the `bossRoster` setting still lists the four placeholders. A reseed does not change an
+  open season's Boss: it sets one only where the season has none.
+- **The only Mod Bot in office is "Hall Monitor (placeholder)"**
+  (`instances/divided-world/system/personas/placeholder-monitor.ts`). A player would see that name.
+- **The boards are General, The System and Staff Announcements.** "The System" is left over from before Staff
+  Announcements took over as the staff's board. It holds the test threads, and the seed has no way to remove a board.
+- **`KAYFABB_PROFILE` is `playtest`** (a three-week season). Under it a season has no reign: the honeymoon's 14 days
+  and the meltdown's 21 overlap, so the meltdown starts on the day the honeymoon ends (`phaseAt`,
+  `engine/system/phases.ts`). FanGaME's arc plays its first beat in the reign, so it could never play under the
+  playtest profile.
+- **`systemEnabled` is `true` on the database and `false` in `instances/divided-world/settings.ts`.** It was turned on
+  by hand. The next seed writes the code's `false` back.
+- **The data is test data:** 2 logins, 10 characters, 17 threads and 72 Acts.
+
+### Supabase: upgrade or recreate?
+
+The two are separate questions.
+
+- **Compute.** Moving from Nano to Micro is done on the same project and needs no rebuild: move the organization to
+  Pro, then choose Micro under **Project Settings > Compute and Disk**. The project restarts and is down for a few
+  minutes. The Pro plan's compute credit covers Micro. Pro also turns on daily backups and stops the free plan from
+  pausing a project after a week without activity, which an invite-only forum's quiet first week could trigger. The
+  deploy steps above already assume Pro.
+- **The data.** Start the game from an empty database. Season 1's Boss, the roster setting, "The System" board and the
+  test Acts cannot be undone in place without hand-written SQL, because Acts are never deleted. Two ways to do it:
+  1. **A new project** in the Pro organization, on Micro from the start, deployed from `main` with the steps above
+     (2 to 8). It has to be set up again: Auth URL, SMTP and templates, the API keys, the Edge Function secrets, Vault,
+     and the two `VITE_` variables on Netlify. The Resend domain stays as it is. The old project is deleted once the
+     new one works. **This is the recommended way.** It is the documented path, and it is the first full run of the
+     deploy steps.
+  2. **The same project, wiped** with `supabase db reset --linked`, which applies every migration again to the remote
+     database. It keeps the dashboard's Auth and SMTP settings, keys, secrets and Netlify's variables. Before relying on
+     it, check what it does to `auth.users`, Vault, `cron` and the `avatars` bucket's files, and clear any that it
+     keeps.
+
+Either way, seed only when the boards, the roster and the profile below are settled on `main`. The seed opens Season 1
+and starts the Boss's clock.
+
+### Boards to start with
+
+The seed writes the boards listed in `instances/divided-world/index.ts`. Today the list is General and Staff
+Announcements; the starting set is added there, in a pull request, before the seed. The proposal (the owner may rename
+or add to it):
+
+| Slug | Name | Notes |
+|---|---|---|
+| `general` | General | Already there. |
+| `video-games` | Video Games | The community's home subject. |
+| `movies-tv` | Movies & TV | |
+| `art-showcase` | Art Showcase | Sprites, pixel art and drawings. |
+| `pointless-post-palace` | Pointless Post Palace | Keep this name exactly. FanGaME's prompt names it as the one place he cannot understand, and The System's board names are made in its shape (`instances/divided-world/system/name-style.ts`). |
+| `announcements` | Staff Announcements | Already there; only the staff post. |
+
+- **Do not start with a fangame or game-making board.** FanGaME's first arc beat, the Split, creates his own fangame
+  board and World -1 (PR #450). A fangame board that is already there would spoil the beat.
+- **Keep the list short.** With a small cast, every board added makes each board look emptier. FanGaME's meltdown
+  merges every board into World -1 anyway, and the next Boss inherits the work of sorting it out.
+- Each new board needs a Mod Bot whose `beats` list it, or the bot that is assigned to visit posts there never comes.
+
+### Personality Cores: from a draft to a staff account
+
+A persona is a TypeScript file in `instances/divided-world/system/personas/`, and `fangame.ts` is the model to follow.
+It holds a key, a name and title, a signature, a starting hobby, a temperament, `beats` (board slugs), `petRules`,
+`strictness`, a `weakness` (quiz, bribe or distraction), pronouns, `persuadedBy`, per-office lines and a `selfPrompt`
+built by `persona()`. The engine places that prompt inside the Boss's or the Mod Bot's premise for the office the
+persona holds (`instances/divided-world/system/persona.ts`). A persona never has a login: it is a staff character with
+no owner, which the seed makes.
+
+To bring one live:
+
+1. **Settle the draft with the owner.** The eight Mod Bot drafts in PR #444 (Flood Control 2.0, QC-1000, Mod Omega,
+   The Splitter, GOLD-E, Officer Provisional, The Palace Keeper and Beamer) were written against an older `Persona`
+   shape: they set `persona:` where `main` now uses `selfPrompt`. Each also lists only `general` as a beat. Choose who
+   stays, and spread the beats over the new boards. The Palace Keeper suits the Pointless Post Palace, for example.
+2. **Add it to the roster** in `instances/divided-world/system/index.ts`. `roster` is everyone. `firstBoss` is the
+   season's first Boss (FanGaME). `firstStaff` is the Mod Bots who are hired at the seed and debut at once. A persona
+   that is in the roster and in neither is **waiting**: it has no posts, no presence and no profile until it first
+   takes an office (named Boss, or hired), or until an admin debuts it as a member
+   (`docs/plans/2026-11-02-staff-roster-design.md`, section 2). Keep a future Boss waiting so that its arrival is its
+   first appearance. Today a waiting persona's key can be read before its debut (issue #232).
+3. **Take the placeholder out.** Replace `placeholder-monitor` in `roster` and `firstStaff` with the real Mod Bots.
+   The SQL tests and fixtures that name it move to the fixtures, as the placeholder Bosses did.
+4. **Merge, deploy the functions and seed.** The seed writes the roster's order into `bossRoster`, hires
+   `firstStaff`, and seats `firstBoss` as Season 1's Boss.
+
+What a persona then posts, and what pays for it (the numbers are settings in `instances/divided-world/settings.ts`):
+
+- **Duty posts** have their own budgets. The Boss's daily meeting (`meetingCron`) spends moves from a bank that refills
+  by phase (`phases.*.weeklyMoves`, `bankCap`). Mod Bot visits, patrols, report verdicts and appeals are capped per
+  day under `modBots`.
+- **Unprompted posts** come from one posting pool for the whole instance: `pool.weekly` posts a week (20), shared
+  among every persona in office or on the board as a member. Triggers (being named or quoted, a hot thread on its
+  beat, a successor stumbling, and others) nominate a persona, and a daily pick in plain code chooses, weighted by how
+  strongly the crowd reacts to that persona's posts. `holdback` (20%) keeps slots for new personas. Pool posts run on
+  the light tier, and the chatter job (`pool.chatterCron`) posts them.
+- **Models.** `modelTiers` is Opus for the strong tier and Haiku for the light one. Every call lands in `model_calls`
+  with its price, which is reconciled against Anthropic's bill monthly. Nothing calls a model unless `systemEnabled` is
+  on and `ANTHROPIC_API_KEY` is set as an Edge Function secret.
+
+Before going live, rehearse a season to see what it costs and how it reads: `npm run rehearse -- small-circle-reign
+--stub` first, then a live run with a `--cap` (see "Rehearsing The System" above).
+
+### The Boss and the seasons
+
+**When the Boss arrives.** The seed opens Season 1 at the moment it runs, with FanGaME as its Boss, so the season clock
+starts then. Seed shortly before the first invites go out. FanGaME's honeymoon (the first 14 days) is a soft opening:
+he makes few, small moves and only *proposes* his Improvement Initiatives. That suits a founding cast who are still
+finding their feet.
+
+**How a season runs** (the full profile, `KAYFABB_PROFILE` unset: a three-month season):
+
+| Phase | When | Moves a week | Bank cap | FanGaME's arc (PR #450) |
+|---|---|---|---|---|
+| Honeymoon | days 1 to 14 | 2 | 4 | Proposes, asks to be liked |
+| Reign | day 15 to three weeks before the end | 5 | 10 | **The Split**, due a week into the reign: creates World -1 and his own fangame board. Then **Picking it apart**: moves threads, one at a time. |
+| Meltdown | the last 21 days | 8 | 14 | **The great consolidation**: merges boards into World -1. **Everything is World -1**, due two days before the end: the forum ends as one board. |
+
+Each day the Boss's meeting reads a digest of public play and chooses moves from a fixed list. A move that reshapes a
+board (create, merge, rename, restrict) or permabans a character goes to `/admin/queue` and lands about 24 hours later
+unless an admin holds it. Any landed move can be reversed there. Every move states its demand and when it expires.
+
+**How a season ends.** At the season's length the settlement rolls it over: classes are revealed, results are posted,
+and the handover runs. In its last meetings the outgoing Boss may name a successor in character. If it does not, the
+next Boss comes from the roster by rotation, skipping the last `rosterRecentExcluded` Bosses. The outgoing Boss stays
+on the board as a member and keeps posting from the pool. The new Boss reviews the moves it inherited; any it does not
+address end after `inheritanceGraceDays`. See `docs/plans/2026-10-31-seasonal-boss-design.md` and
+`docs/plans/2026-11-06-season-end-design.md`.
+
+**Keeping it running, season over season:**
+
+- **A second Boss must exist before Season 1 ends.** With FanGaME as the only Boss, the rotation today seats whichever
+  persona is next on the roster, a Mod Bot included (issue #434). Write the next Boss as a waiting persona during
+  Season 1, together with its arc beats if it has a planned arc.
+- Each season, keep a waiting Boss or two ahead of the rotation, and add Mod Bots as the boards grow.
+- Daily: glance at `/admin/queue` for structural moves. Monthly: reconcile `model_calls` against the Anthropic bill.
+- Raise `pool.weekly` as the cast grows. It is a setting, and the seed puts back the code's value, so change it in
+  `instances/divided-world/settings.ts`.
+
+### Blockers before invites, in order
+
+**On the Supabase project** (the owner's to run):
+
+- [ ] Move to Pro and Micro, and start from an empty database (above).
+- [ ] Deploy from `main` (migrations, functions) and run `supabase migration list` until every row matches.
+- [ ] Add **both** Vault secrets (step 6.2), then confirm that a settlement row appears after the next `settlementCron`.
+- [ ] Set `ANTHROPIC_API_KEY`. Leave `KAYFABB_PROFILE` unset for the full season, unless the owner decides otherwise.
+- [ ] Run issue #130's checks against the real project, including issue #3 (whether Auth's own endpoints show that an
+  address has an account).
+
+**In the code, before the seed:**
+
+- [ ] The starting boards in `instances/divided-world/index.ts`.
+- [ ] The real Mod Bots in the roster, and the placeholder out of it (PR #444, then wiring).
+- [ ] PR #450 (season arcs, bundled moves, FanGaME's split) merged. Its migrations, `0150` to `0170`, collide with
+      `main`'s `0150` to `0152` and need renumbering. Without it, FanGaME is Boss with only the generic moves, and his
+      arc never plays.
+- [ ] `systemEnabled: true` in `instances/divided-world/settings.ts`, which is The System plan's Task 13, "Turning it
+      on" (`docs/plans/2026-10-30-the-system-plan.md`). Setting it by hand does not last past the next seed.
+
+**Questions for the owner that bear on The System being on:**
+
+- [ ] Issue #315: an admin cannot reverse a Mod Bot's infraction or ban. Should that be built before The System is
+      turned on?
+- [ ] Issue #434: who is Boss after FanGaME (it does not block day one, but it must be settled within the first season).
+- [ ] Issue #232: should waiting personas be hidden from the public office view, so a debut stays a surprise?
+- [ ] Issue #459: does a beat count as landed while an admin holds one of its parts? (It comes from PR #450.)
+
+**Worth landing before real people arrive, though they do not block:** PR #428 (the code of conduct, conduct reports
+and decisions by email, the real-moderation path for real people); PR #333 (the tip that tells a newcomer what the
+Personality Cores are); issue #403 (a quote can be forged without the shaky styling).
+
+**Process, once the instance is live:** the "Merging" permission in `CLAUDE.md` is worded for while no instance is
+deployed, and issue #243 adds migrations and functions to the daily release "when the first instance is deployed".
+Both are now due, and the `CLAUDE.md` change is the owner's to approve.
