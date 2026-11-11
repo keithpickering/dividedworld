@@ -30,7 +30,7 @@
  * would not move. It reaches `LOG_ROWS` only where rows were written in bulk at one time (a backfill),
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, WalletEvent, WrittenOnMine } from './api.ts';
+import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -73,6 +73,7 @@ export interface LogRead {
   readonly groupMoves: readonly LogGroupMove[];
   readonly reports: readonly LogReport[];
   readonly appeals: readonly LogAppeal[];
+  readonly cosmetics: readonly LogCosmetic[];
 }
 
 /**
@@ -104,6 +105,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.groupMoves, () => read.groupMoves[read.groupMoves.length - 1]!.at),
     ...reached(read.reports, () => read.reports[read.reports.length - 1]!.at),
     ...reached(read.appeals, () => read.appeals[read.appeals.length - 1]!.at),
+    ...reached(read.cosmetics, () => read.cosmetics[read.cosmetics.length - 1]!.at),
   ];
   /* The newest of the times a full source reached, as that source wrote it, so the next read starts exactly there. */
   const after = edges.length === 0 ? null : edges.reduce((a, b) => (micros(b) > micros(a) ? b : a));
@@ -146,6 +148,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     groupMoves: read.groupMoves.filter((e) => keep(e.at)),
     reports: read.reports.filter((e) => keep(e.at)),
     appeals: read.appeals.filter((e) => keep(e.at)),
+    cosmetics: read.cosmetics.filter((e) => keep(e.at)),
     before: after,
   };
 }

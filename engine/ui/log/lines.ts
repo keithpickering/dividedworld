@@ -22,7 +22,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pron
 import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance } from '../../rules/types.ts';
-import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, CardEvent, LogCosmetic, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -44,7 +44,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* Member groups, Task 11: a staff move into a group, how it ended and an appeal's ruling on it. */
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
-  | 'grant';
+  | 'grant'
+  /* The cosmetics plan, Task 12: a Random Event's find, gear an admin gave, a trophy given or taken back, and a belt lost. */
+  | 'found' | 'gearGranted' | 'trophy' | 'beltLost';
 
 /** One row of the log. */
 export interface LogRow {
@@ -364,8 +366,9 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
+  rows.push(...cosmeticRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -383,6 +386,59 @@ function grantRows(data: LogData): LogRow[] {
       details: [`An admin gave you ${plain(w.change)} Aura.${w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : ''}`],
       aura: w.change, wallet: w.balanceAfter, characters: [],
     });
+  }
+  return rows;
+}
+
+const aOrAn = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
+/** A name's plural as a sentence needs it: "Headbands", "Mustaches", and a name already in the plural ("Shades") as it is. */
+const pluralName = (name: string) => (/s$/iu.test(name) ? name : /(x|z|ch|sh)$/iu.test(name) ? `${name}es` : `${name}s`);
+/** A trophy's name inside a sentence: "The Hardcore Belt" is "the Hardcore Belt". */
+const inSentence = (name: string) => name.replace(/^The /u, 'the ');
+const PLACES = ['first', 'second', 'third'];
+
+/**
+ * The cosmetics lines (the cosmetics plan, Task 12): the rows of `my_cosmetic_log`, which are the caller's own and name no other account. A Random Event's find says what the character found and
+ * its rarity in words; an admin's gear says how many copies and the mask it went through; a trophy says who gave it, and why where the season or a met demand did; a belt lost names the character that
+ * took it (public) and whose move it was; a taken-back award says an admin did. Each is true and plain: none says who reacted or any class, and none moves Aura.
+ */
+function cosmeticRows(data: LogData, words: Words): LogRow[] {
+  const { instance } = words;
+  const nameOf = (id: Id | null) => (id === null ? 'one of your characters' : data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'one of your characters');
+  const gearName = (key: string | null) => instance.gear.find((g) => g.key === key)?.name ?? null;
+  const rows: LogRow[] = [];
+  for (const e of data.log.cosmetics) {
+    const mine = e.character !== null ? [e.character] : [];
+    const row = (key: string, kind: LineKind, what: string, sentence: string, characters: readonly Id[]): LogRow =>
+      ({ key, kind, at: e.at, what, details: [sentence], aura: 0, wallet: null, characters });
+    const who = nameOf(e.character);
+    const trophy = inSentence(e.name ?? 'a trophy');
+    const role = lowerFirst(words.ui.copy.roleWord);
+    const byWords = e.by === 'boss' ? `by ${e.byName === null ? role : `${e.byName}, ${role}`}` : e.by === 'season' ? 'by the season' : e.by === 'demand' ? 'by a met demand' : 'by an admin';
+    if (e.kind === 'found') {
+      let found: string;
+      if (e.outcome === 'gear') {
+        const g = instance.gear.find((x) => x.key === e.item);
+        found = g ? `you found ${aOrAn(g.name)} (${g.rarity} gear)` : 'you found a piece of gear';
+      } else if (e.outcome === 'card') {
+        const c = instance.cards.find((x) => x.key === e.item);
+        found = c ? `you found ${aOrAn(c.name)} (${c.rarity} card)` : 'you found a card';
+      } else found = (e.text ?? 'something odd').replace(/[.!?]$/u, '');
+      rows.push(row(`found:${e.id}`, 'found', `Something happened to ${who}`, `Something happened to ${who}: ${found}.`, mine));
+    } else if (e.kind === 'granted') {
+      const name = gearName(e.item);
+      const copies = e.copies ?? 1;
+      const what = name === null ? (copies === 1 ? 'a piece of gear' : `${copies} pieces of gear`) : copies === 1 ? aOrAn(name) : `${copies} ${pluralName(name)}`;
+      rows.push(row(`gearGranted:${e.id}`, 'gearGranted', 'An admin gave you gear', `An admin gave you ${what}${e.character === null ? '' : `, through ${who}`}.`, []));
+    } else if (e.kind === 'awarded') {
+      const why = e.by === 'season' ? `, for ${e.place !== null ? PLACES[e.place - 1] ?? `place ${e.place}` : 'its place'} place${e.season !== null ? ` in Season ${e.season}` : ''}` : e.by === 'demand' ? ', for posting toward it' : ` ${byWords}`;
+      rows.push(row(`trophy:${e.id}`, 'trophy', `${who} was given a trophy`, `${who} was given ${trophy}${why}.`, mine));
+    } else if (e.kind === 'reversed') {
+      rows.push(row(`reversed:${e.id}`, 'trophy', `A trophy was taken back from ${who}`, `An admin took back ${who}'s ${e.name ?? 'trophy'}.`, mine));
+    } else {
+      const by = e.by === 'boss' ? `by ${e.byName ?? role}'s move` : byWords;
+      rows.push(row(`lost:${e.id}`, 'beltLost', `${who} lost ${trophy}`, `${who} lost ${trophy} to ${e.toName ?? 'another character'}, ${by}.`, mine));
+    }
   }
   return rows;
 }
@@ -569,6 +625,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   /* A pack is one line: its pulled rows (one per card) with the pack row that holds its kind, its price and the cards in pull order. */
   const packsDone = new Set<Id>();
   data.log.cards.forEach((e, i) => {
+    /* A card an Event found is the Event's line (`cosmeticRows`), once. */
+    if (e.kind === 'found') return;
     if (e.kind === 'bought') {
       const spent = take((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
       rows.push({

@@ -31,7 +31,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, REIGNS_PAGE, TROPHIES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -48,7 +48,7 @@ import type {
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -138,7 +138,7 @@ export interface Seed {
   /** The outcome of the next Random Event roll that comes past the window and the day's most, in place of the weighted draw; null is a roll that finds nothing. */
   nextEvent(event: { outcome: RandomEvent['outcome']; item?: string; line?: string } | null): void;
   /** An award that could not be written, as `trophyAwardFailures` lists it, for an admin to give by hand. */
-  awardFailure(failure: Omit<TrophyAwardFailure, 'id'>): Id;
+  awardFailure(failure: Omit<TrophyAwardFailure, 'id' | 'open' | 'characters'> & { readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null }): Id;
   /** The account's settled wallet, as a purchase or a card play leaves it between settlements (`settle` sets it at one, and dates it). Writes no wallet event: it is the state the seed starts from. */
   wallet(account: Id, balance: number): void;
   /**
@@ -404,6 +404,8 @@ interface InviteRec { readonly id: number; readonly owner: Id; code: string; rea
 const refuse = (error: string, field?: string): Refusal => (field === undefined ? { ok: false, error } : { ok: false, error, field });
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
+/** A `my_cosmetic_log` row with nothing said: each kind fills what it uses. */
+const NO_COSMETIC = { character: null, outcome: null, item: null, text: null, copies: null, trophy: null, name: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
 const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 
@@ -452,12 +454,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const byEmail = new Map<string, Id>();
   const characters = new Map<Id, CharRec>();
   /** trophy_awards and trophy_reversals (0151): an award stands until `reversed`. */
-  const awards: { id: Id; trophy: string; character: Id; at: number; by: 'season' | 'boss' | 'demand' | 'admin'; line: string | null; season: number | null; move: Id | null; reversed: boolean }[] = [];
+  const awards: { id: Id; trophy: string; character: Id; at: number; by: 'season' | 'boss' | 'demand' | 'admin'; line: string | null; season: number | null; move: Id | null; reversed: boolean; reversedAt?: number }[] = [];
+  /** What `my_cosmetic_log` reads beside the awards: the finds of Random Events and the gear an admin gave, each of one account, newest last. */
+  const cosmeticEvents: { account: Id; ms: number; row: LogCosmetic }[] = [];
   /** The kinds an admin made (`make_trophy`), beside the instance's own. */
   const madeKinds: { key: string; name: string; line: string | null; belt: boolean; art: string | null }[] = [];
   /** The Random Events a test scripted (`Seed.nextEvent`), taken in order before the weighted draw; null is a roll that finds nothing. */
   const scripted: (Pick<RandomEvent, 'outcome'> & { item?: string; line?: string } | null)[] = [];
-  const awardFailures: TrophyAwardFailure[] = [];
+  const awardFailures: (Omit<TrophyAwardFailure, 'open' | 'characters'> & { characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null })[] = [];
+  /** trophy_failure_resolutions: `${failure}:${character}` for each award an admin gave by hand. */
+  const failureGiven = new Set<string>();
   const acts = new Map<Id, ActRec>();
   /** Moves whose demand the tick has not counted (SeedMove.uncounted). */
   const uncounted = new Set<Id>();
@@ -2000,11 +2006,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account.eventsAt.push(now());
     /* The line is its text with `{item}` still in it, which the dialog fills; a key the instance does not have says nothing. */
     const said = lineKey === null ? undefined : instance.events.lines.find((l) => l.key === lineKey);
-    return ok({ event: uuid(), outcome, item, rarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
+    const event = uuid();
+    cosmeticEvents.push({ account: account.id, ms: now(), row: { ...NO_COSMETIC, kind: 'found', id: event, at: iso(now()), character, outcome, item, text: said?.text ?? null } });
+    return ok({ event, outcome, item, rarity, line: said?.text ?? null, ...(said ? { lineKey: said.key } : {}), character });
   }
 
   /** The admin's hand over gear and trophies (0150, 0151): the words are `only_admins`'s and each function's own. */
   const adminOnly = (doing: string): Refusal | null => (me()?.admin ? null : refuse(`only an admin ${doing}`));
+  /** award_trophy's checks and its row, once an admin is known to be the caller. */
+  const awardByAdmin = (trophy: string, character: Id, line?: string): Answer<{ readonly award: Id }> => {
+    if (!kindOf(trophy)) return refuse(`there is no trophy "${trophy}"`);
+    const said = lineWords(line);
+    if (typeof said === 'object' && said !== null) return said;
+    const c = characters.get(character);
+    if (!c) return refuse('there is no such character');
+    if (c.staff) return refuse('a staff character is never given a trophy');
+    if (c.debutedAt === null) return refuse('that character has not debuted');
+    const id = uuid();
+    awards.push({ id, trophy, character, at: now(), by: 'admin', line: said, season: null, move: null, reversed: false });
+    return ok({ award: id });
+  };
   const lineWords = (said: string | null | undefined): string | Refusal | null => {
     const t = said == null ? null : said.trim() === '' ? null : said.trim();
     return t !== null && [...t].length > 200 ? refuse('a trophy\'s words are at most 200 characters') : t;
@@ -2086,6 +2107,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const charges = (visit?.payload.charges ?? []) as { rule?: string; rule_number?: number | null }[];
     const found = charges.find((c) => c.rule_number === (inf.payload.rule_number ?? null) && c.rule)?.rule;
     return found ?? (typeof inf.payload.rule_number === 'number' ? `Rule ${inf.payload.rule_number}` : 'the board\'s premise');
+  }
+  /**
+   * `my_cosmetic_log` (0158): the finds and gear grants of the account, and the awards, takings back and passed belts of its own characters, newest first. A belt passes from
+   * the holder to the next standing award of its kind to another character; a reversed award is no standing one.
+   */
+  function cosmeticLogOf(account: Id | undefined, fits: (ms: number) => boolean, cap: <T>(rows: T[]) => T[]): LogCosmetic[] {
+    if (account === undefined) return [];
+    const owned = (id: Id) => characters.get(id)?.owner === account;
+    const bossName = () => [...characters.values()].find((c) => c.staff?.office === 'boss' && c.debutedAt !== null && c.retiredAt === null)?.name ?? null;
+    const place = (trophy: string): number | null => { const i = instance.trophies.seasonPlaces.indexOf(trophy); return i < 0 ? null : i + 1; };
+    const rows: { ms: number; row: LogCosmetic }[] = cosmeticEvents.filter((e) => e.account === account && fits(e.ms)).map((e) => ({ ms: e.ms, row: e.row }));
+    for (const a of awards) {
+      if (!owned(a.character)) continue;
+      const kind = kindOf(a.trophy)!;
+      const given = { trophy: a.trophy, name: kind.name, by: a.by, byName: a.by === 'boss' ? bossName() : null, season: a.season, place: a.by === 'season' ? place(a.trophy) : null };
+      if (fits(a.at)) rows.push({ ms: a.at, row: { ...NO_COSMETIC, ...given, kind: 'awarded', id: a.id, at: iso(a.at), character: a.character, line: a.line } });
+      if (a.reversed && a.reversedAt !== undefined && fits(a.reversedAt)) rows.push({ ms: a.reversedAt, row: { ...NO_COSMETIC, trophy: a.trophy, name: kind.name, kind: 'reversed', id: a.id, at: iso(a.reversedAt), character: a.character } });
+      const next = kind.belt && !a.reversed ? awards.filter((x) => x.trophy === a.trophy && !x.reversed && x.at > a.at).sort((x, y) => x.at - y.at)[0] : undefined;
+      if (next && next.character !== a.character && fits(next.at)) {
+        rows.push({ ms: next.at, row: { ...NO_COSMETIC, ...given, by: next.by, byName: next.by === 'boss' ? bossName() : null, season: null, place: null, kind: 'lost', id: a.id, at: iso(next.at), character: a.character, toName: characters.get(next.character)?.name ?? null } });
+      }
+    }
+    return cap(rows.sort((x, y) => y.ms - x.ms).map((r) => r.row));
   }
   /**
    * The log's Mod Bots sources as the views read them (my_infractions, my_bans, my_reports, my_appeals, 0111): the rows of the account's own characters, each as the view says
@@ -2838,6 +2882,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const onMine = [...acts.values()].filter((a) => a.kind === 'card' && a.target !== null && a.character !== null
           && targetOwner(a) === account && characters.get(a.character)?.owner !== account);
         return {
+          cosmetics: cosmeticLogOf(account, fits, cap),
           ledger,
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
@@ -3529,21 +3574,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!c) return refuse('there is no such character');
       const owner = accounts.get(c.owner)!;
       owner.gear[gear] = (owner.gear[gear] ?? 0) + copies;
+      cosmeticEvents.push({ account: owner.id, ms: now(), row: { ...NO_COSMETIC, kind: 'granted', id: uuid(), at: iso(now()), character, item: gear, copies } });
       return ok({ granted: copies });
     },
     awardTrophy(trophy, character, line) {
       const no = adminOnly('gives a trophy');
       if (no) return no;
-      if (!kindOf(trophy)) return refuse(`there is no trophy "${trophy}"`);
-      const said = lineWords(line);
-      if (typeof said === 'object' && said !== null) return said;
-      const c = characters.get(character);
-      if (!c) return refuse('there is no such character');
-      if (c.staff) return refuse('a staff character is never given a trophy');
-      if (c.debutedAt === null) return refuse('that character has not debuted');
-      const id = uuid();
-      awards.push({ id, trophy, character, at: now(), by: 'admin', line: said, season: null, move: null, reversed: false });
-      return ok({ award: id });
+      return awardByAdmin(trophy, character, line);
     },
     reverseAward(award) {
       const no = adminOnly('takes a trophy back');
@@ -3552,6 +3589,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!a) return refuse('there is no such trophy');
       if (a.reversed) return refuse('that trophy was already taken back');
       a.reversed = true;
+      a.reversedAt = now();
       for (const c of characters.values()) c.shown = c.shown.filter((id) => id !== award);
       return ok({ reversed: award });
     },
@@ -3566,10 +3604,32 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       madeKinds.push({ key, name: n, line: said, belt, art: art === null ? null : `${key}.webp` });
       return ok({ trophy: key });
     },
-    trophyAwardFailures() {
+    trophyAwardFailures(cursor) {
       const no = adminOnly('reads the trophies that could not be given');
       if (no) return no;
-      return ok([...awardFailures].sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0)));
+      const view = (f: (typeof awardFailures)[number]): TrophyAwardFailure => {
+        const characters = f.characters === null ? null : f.characters.map((c) => ({ ...c, given: failureGiven.has(`${f.id}:${c.id}`) }));
+        return { ...f, characters, open: characters === null || characters.length === 0 || characters.some((c) => !c.given) };
+      };
+      /* The unresolved first, each group newest first; the cursor continues from the last row's open, instant and id. */
+      const order = (x: TrophyAwardFailure, y: TrophyAwardFailure): number => Number(y.open) - Number(x.open) || (x.at < y.at ? 1 : x.at > y.at ? -1 : x.id < y.id ? 1 : x.id > y.id ? -1 : 0);
+      const all = awardFailures.map(view).sort(order)
+        .filter((f) => !cursor || order({ ...f, open: cursor.beforeOpen, at: cursor.before, id: cursor.beforeId }, f) < 0);
+      return ok({ failures: all.slice(0, TROPHY_FAILURES_PAGE), more: all.length > TROPHY_FAILURES_PAGE });
+    },
+    giveFailedAward(failure, character) {
+      const no = adminOnly('gives an award that could not be written');
+      if (no) return no;
+      const f = awardFailures.find((x) => x.id === failure);
+      if (!f) return refuse('there is no such failed award');
+      if (failureGiven.has(`${failure}:${character}`)) return refuse('that award was already given to that character');
+      if (f.characters === null) return refuse('the characters that award was for cannot be read now; give it from Award a trophy');
+      const c = f.characters.find((x) => x.id === character);
+      const key = f.trophy ?? (c?.place === undefined ? undefined : instance.trophies.seasonPlaces[c.place - 1]);
+      if (!c || key === undefined) return refuse('that character was not one the failed award was for');
+      const done = awardByAdmin(key, character);
+      if (done.ok) failureGiven.add(`${failure}:${character}`);
+      return done;
     },
     adminAwards(cursor) {
       const no = adminOnly('reads the trophies given');

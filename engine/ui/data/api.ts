@@ -591,8 +591,26 @@ export interface TrophyAwardFailure {
   readonly at: string;
   readonly error: string;
   readonly trophy: string | null;
-  /** Who the trophy was for, where that can be read now; null where it cannot. */
-  readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number }[] | null;
+  /** Whether an award is still owed: no character has had it from an admin yet, one has not, or the characters cannot be read now. A failure with every character given is closed. */
+  readonly open: boolean;
+  /** Who the trophy was for, where that can be read now (null where it cannot), and whether an admin has given each theirs by hand (`give_failed_award`). */
+  readonly characters: readonly { readonly id: Id; readonly name: string; readonly place?: number; readonly given: boolean }[] | null;
+}
+
+/** How many failed awards a page of `trophyAwardFailures` holds. */
+export const TROPHY_FAILURES_PAGE = 50;
+
+/** A page of the failed awards, the unresolved first and each group newest first; `more` is whether later ones remain. */
+export interface TrophyAwardFailuresPage {
+  readonly failures: readonly TrophyAwardFailure[];
+  readonly more: boolean;
+}
+
+/** Where a page of `trophyAwardFailures` continues from: the last failure of the page before it, by its instant, id and whether it was open. */
+export interface TrophyAwardFailuresCursor {
+  readonly before: string;
+  readonly beforeId: Id;
+  readonly beforeOpen: boolean;
 }
 
 /** A trophy kind as the admin page's choice lists it (`admin_awards`'s `kinds`): `made` is whether an admin made it, `art` the picture's URL for an admin's kind (null for the instance's). */
@@ -1218,7 +1236,7 @@ export interface CardEvent {
    * `returned`: a card back in the hand. A face-down card taken back (0148; its `act` is the take-back) or whose time passed unsprung (no
    * `act`), or a play whose old voice did not answer, so its price went back and its card with it (0149; its `act` is the play).
    */
-  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
+  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned' | 'found';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */
@@ -1644,8 +1662,35 @@ export interface Log {
   readonly caught: readonly CaughtPlay[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
   readonly ended: readonly CardEnded[];
+  /** What happened to the player's characters beside the game's Aura: a Random Event's find, an admin's gear, a trophy given or taken back and a belt lost, by when each happened (`my_cosmetic_log`). */
+  readonly cosmetics: readonly LogCosmetic[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
   readonly before: string | null;
+}
+
+/**
+ * One line of the cosmetics log (`my_cosmetic_log`, 0158), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
+ * `text` the line the Event was rolled with); a `granted` row is gear an admin gave (`item`, `copies`, `character` the mask it was given through, or null where the grant did not name one); an `awarded` row is a trophy given
+ * (`by`, and the Boss's name in `byName`; a season's `season` and `place`; the award's own `line` where an admin wrote one); a `reversed` row is an award an admin took back; a `lost` row is a belt that passed from the character to
+ * `toName`, a character's name, which is public (`by`, `byName` as an award's). A field a kind does not use is null.
+ */
+export interface LogCosmetic {
+  readonly kind: 'found' | 'granted' | 'awarded' | 'reversed' | 'lost';
+  readonly id: string;
+  readonly at: string;
+  readonly character: Id | null;
+  readonly outcome: 'line' | 'gear' | 'card' | null;
+  readonly item: string | null;
+  readonly text: string | null;
+  readonly copies: number | null;
+  readonly trophy: string | null;
+  readonly name: string | null;
+  readonly by: 'season' | 'boss' | 'demand' | 'admin' | null;
+  readonly byName: string | null;
+  readonly season: number | null;
+  readonly place: number | null;
+  readonly line: string | null;
+  readonly toName: string | null;
 }
 
 /* ------------------------------------------------------------------ actions ---- */
@@ -2427,12 +2472,17 @@ export interface KayfaApi {
   grantGear(character: Id, gear: string, copies: number): Promise<Answer<{ readonly granted: number }>>;
   /** Gives a trophy to a character, with words of its own or none (`award_trophy`). An admin's alone. */
   awardTrophy(trophy: string, character: Id, line?: string): Promise<Answer<{ readonly award: Id }>>;
-  /** Takes an award back (`reverse_award`); a belt it took returns to the holder before. An admin's alone. */
+  /** Takes an award back (`reverse_award`); a belt it took passes back to whoever held it before, if anyone did. An admin's alone. */
   reverseAward(award: Id): Promise<Answer<{ readonly reversed: Id }>>;
   /** Makes a trophy kind of the admin's own: `art`, a WebP the `trophy-art` function stores first, then the kind (`make_trophy`). An admin's alone. A `make_trophy` that fails after the art is stored leaves that file behind, unlisted and size-bound; nothing names it. */
   makeTrophy(name: string, line: string | null, art: Blob | null, belt: boolean): Promise<Answer<{ readonly trophy: string }>>;
-  /** The awards that could not be written, newest first, for an admin to give by hand. An admin's alone. */
-  trophyAwardFailures(): Promise<Answer<readonly TrophyAwardFailure[]>>;
+  /** The awards that could not be written, the unresolved first and each group newest first, a page at a time (`trophy_award_failures`). An admin's alone. */
+  trophyAwardFailures(cursor?: TrophyAwardFailuresCursor): Promise<Answer<TrophyAwardFailuresPage>>;
+  /**
+   * Gives a failed award by hand to one of the characters it was for and records that, in one step (`give_failed_award`): the kind is the failure's own (a met demand's, or the
+   * season place's). Refused for a character already given it, one the failure was not for, and a failure whose characters cannot be read now. An admin's alone.
+   */
+  giveFailedAward(failure: Id, character: Id): Promise<Answer<{ readonly award: Id }>>;
   /** The recent awards, newest first, with every trophy kind (`admin_awards`): the trophies admin page's list. An admin's alone. */
   adminAwards(cursor?: AdminAwardsCursor): Promise<Answer<AdminAwardsPage>>;
   /** The character a name means, folded as names are kept (`admin_character_named`), or null for none; its id and name only, never who plays it. An admin's alone. */

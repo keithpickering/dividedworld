@@ -334,3 +334,22 @@ describe('every player\'s news', () => {
     expect(said(row({ kind: 'seasonNews', sub: 'results', count: 12 }), own).line).toBe('The season\'s results are in');
   });
 });
+
+describe('a trophy alert and a belt lost alert (the cosmetics plan, Task 12)', () => {
+  const trophy = row({ kind: 'trophy', sub: 'Boss\'s Pet', character: 'c1', name: 'Pipewrench', thread: null });
+  const lost = row({ kind: 'beltLost', sub: 'The Belt', character: 'c1', name: 'Pipewrench', thread: null });
+  test('a trophy says which mask was given what, and sends the player to the log, which says by whom', () => {
+    expect(said(trophy, ctx())).toEqual({
+      line: 'Pipewrench was given Boss\'s Pet', detail: 'The log says who gave it.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
+    });
+  });
+  test('a belt lost says the mask no longer holds it, and never names who took it', () => {
+    expect(said(lost, ctx())).toEqual({
+      line: 'Pipewrench lost The Belt', detail: 'The log says who took it.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
+    });
+  });
+  test('read without a name or a trophy they stay plain', () => {
+    expect(said({ ...trophy, name: null, sub: null }, ctx()).line).toBe('One of your characters was given a trophy');
+    expect(said({ ...lost, name: null, sub: null }, ctx()).line).toBe('One of your characters lost a belt');
+  });
+});

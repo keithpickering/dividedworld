@@ -44,7 +44,7 @@ declare
                            -- A player's wardrobe and an admin's grant of gear (0150): each asks who is calling inside.
                            'my_wardrobe()', 'grant_gear(uuid,text,integer)',
                            -- Trophies (0151): a character's standing awards and a belt's line of holders, each a public fact of its argument, and an admin's three (give, take back, make), which check the caller inside.
-                           'trophies_of(uuid,timestampwithtimezone,integer,uuid)', 'trophy_award_failures()', 'belt_lineage(text,timestampwithtimezone,integer,uuid)', 'award_trophy(text,uuid,text)', 'reverse_award(uuid)', 'make_trophy(text,text,text,boolean)',
+                           'trophies_of(uuid,timestampwithtimezone,integer,uuid)', 'trophy_award_failures(timestampwithtimezone,integer,uuid,boolean)', 'give_failed_award(uuid,uuid)', 'belt_lineage(text,timestampwithtimezone,integer,uuid)', 'award_trophy(text,uuid,text)', 'reverse_award(uuid)', 'make_trophy(text,text,text,boolean)',
                            -- The trophies admin page's two reads (0157), each asking who is calling inside.
                            'admin_awards(timestampwithtimezone,integer,uuid)', 'admin_character_named(text)',
                            -- A finished season's results (0099): its list, a page of 50 and a character's place, invoker reads for a signed-in player.

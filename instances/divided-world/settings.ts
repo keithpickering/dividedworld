@@ -167,7 +167,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * What toasts until a player chooses (the alerts design's section 8): news about their own characters and the rulings and updates that
    * concern them. Followed threads, hints and season news are the quieter kinds, and wait in Alerts unless a player turns them on.
    */
-  toastDefaults: ['quote', 'cardOnYours', 'cardEnded', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
+  toastDefaults: ['quote', 'cardOnYours', 'cardEnded', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update', 'trophy', 'beltLost'],
   /**
    * The numbers a card gives the screens: a Whoops! layer is washed clean at 95%, the last specks not being worth chasing across a phone.
    * Autocorrect's tape: `pace` is how fast a strip peels, in pixels a second; `pickMs` how long a finger holds before it picks at the

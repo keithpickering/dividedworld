@@ -596,7 +596,8 @@ describe('reads and their rows', () => {
       if (r.url.pathname.endsWith('/rpc/award_trophy')) return json({ award: A });
       if (r.url.pathname.endsWith('/rpc/reverse_award')) return json({ reversed: A });
       if (r.url.pathname.endsWith('/rpc/make_trophy')) return json({ trophy: 'made-1' });
-      if (r.url.pathname.endsWith('/rpc/trophy_award_failures')) return json([{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', characters: [{ id: B, name: 'Bea' }] }]);
+      if (r.url.pathname.endsWith('/rpc/give_failed_award')) return json({ award: A });
+      if (r.url.pathname.endsWith('/rpc/trophy_award_failures')) return json({ failures: [{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', open: true, characters: [{ id: B, name: 'Bea', given: false }, { id: C, name: 'Cy', place: 2, given: true }] }, { id: B, move: null, season: 3, at: '2026-10-01T00:00:00+00:00', error: 'y', trophy: null, open: false, characters: null }], more: true });
       return undefined;
     });
     expect(await h.api.grantGear(B, 'hat', 2)).toEqual({ ok: true, value: { granted: 2 } });
@@ -613,7 +614,12 @@ describe('reads and their rows', () => {
     const keyless = harness((r) => (r.url.pathname === '/functions/v1/trophy-art' ? json({}) : undefined));
     expect(await keyless.api.makeTrophy('Mine', null, new Blob(['x'], { type: 'image/webp' }), false)).toMatchObject({ ok: false });
     expect(keyless.to('rpc/make_trophy')).toHaveLength(0);
-    expect(await h.api.trophyAwardFailures()).toEqual({ ok: true, value: [{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', characters: [{ id: B, name: 'Bea' }] }] });
+    expect(await h.api.trophyAwardFailures({ before: '2026-10-02T00:00:00+00:00', beforeId: C, beforeOpen: true })).toEqual({ ok: true, value: { more: true, failures: [
+      { id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', open: true, characters: [{ id: B, name: 'Bea', given: false }, { id: C, name: 'Cy', place: 2, given: true }] },
+      { id: B, move: null, season: 3, at: '2026-10-01T00:00:00+00:00', error: 'y', trophy: null, open: false, characters: null }] } });
+    expect(h.to('rpc/trophy_award_failures')[0]?.body).toEqual({ before: '2026-10-02T00:00:00+00:00', before_id: C, before_open: true, most: 50 });
+    expect(await h.api.giveFailedAward(A, B)).toEqual({ ok: true, value: { award: A } });
+    expect(h.to('rpc/give_failed_award')[0]?.body).toEqual({ failure: A, of_character: B });
   });
 
   it('an admin reads the awards given and finds a character by name, through their functions', async () => {
@@ -1531,6 +1537,7 @@ describe('the log', () => {
       if (name === 'my_infractions') return rows([{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, rule_number: 2, rule: 'Rule 2: No double posting', mod_name: 'The Clerk', post: A, post_seq: 41, thread: T, expires_at: '2026-11-12T20:30:00+00:00', relief: 0, emptied_at: null }]);
       if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }]);
       if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }]);
+      if (name === 'my_cosmetic_log') return rows([{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', by_name: 'Sighbot', season: null, place: null, line: null, to_name: 'Sock Puppet' }]);
       if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null }]);
       if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null },
         { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishment_kind: 'move', post_seq: null, thread: T, verdict: null, ruled_at: null, points_delta: null, hearer_name: null, refund: null }]);
@@ -1568,6 +1575,7 @@ describe('the log', () => {
       reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null }],
       appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null },
         { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishmentKind: 'move', postSeq: null, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null }],
+      cosmetics: [{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', byName: 'Sighbot', season: null, place: null, line: null, toName: 'Sock Puppet' }],
       before: null,
     });
     const [ledger] = h.to('my_ledger');
@@ -1594,7 +1602,7 @@ describe('the log', () => {
     const [ended] = h.to('my_cards_ended');
     expect([ended?.url.searchParams.get('order'), ended?.url.searchParams.get('limit')]).toEqual(['at.desc', '200']);
     /* The Mod Bots' four views (0111): each newest first and a page long, and every one the caller's own on the server. */
-    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) {
+    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) {
       const [req] = h.to(name);
       expect([name, req?.url.searchParams.get('order'), req?.url.searchParams.get('limit')]).toEqual([name, 'at.desc', '200']);
     }
@@ -1616,7 +1624,7 @@ describe('the log', () => {
     expect(h.to('my_posts_written_on')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_caught')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
     expect(h.to('my_cards_ended')[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
-    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
+    for (const name of ['my_infractions', 'my_bans', 'my_group_moves', 'my_reports', 'my_appeals', 'my_cosmetic_log']) expect(h.to(name)[0]?.url.searchParams.get('at')).toBe(`lte.${before}`);
   });
 
   /* #89 F2: a settlement made before its shares were kept says so, and the log says it plainly rather than "no post". */

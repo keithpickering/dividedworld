@@ -1630,7 +1630,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
+  const empty = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -3332,6 +3332,42 @@ describe('gear, trophies and Random Events', () => {
     const award = must(await fake.awardTrophy(made, a1, '  Well done '));
     expect((await fake.trophies(a1)).awards).toMatchObject([{ award: award.award, name: 'Mine', belt: true, held: true, line: 'Well done', by: 'an admin' }]);
     expect(await fake.awardTrophy('pet', a1, 'x'.repeat(201))).toEqual(refused('a trophy\'s words are at most 200 characters'));
+  });
+
+  test('failed awards: unresolved first and paged, a hand give is recorded once, and what the failure was not for is refused, as give_failed_award does', async () => {
+    const { fake, ana, a1, a2, b1 } = dressing();
+    expect(await fake.trophyAwardFailures()).toEqual(refused('only an admin reads the trophies that could not be given'));
+    expect(await fake.giveFailedAward('x', a1)).toEqual(refused('only an admin gives an award that could not be written'));
+    fake.seed.admin(ana);
+    const move = fake.seed.awardFailure({ move: 'm1', season: null, at: '2026-10-01T00:00:00.000Z', error: 'm', trophy: 'met', characters: [{ id: a1, name: 'Ana One' }, { id: b1, name: 'Bo One' }] });
+    const season = fake.seed.awardFailure({ move: null, season: 1, at: '2026-10-02T00:00:00.000Z', error: 's', trophy: null, characters: [{ id: a2, name: 'Ana Two', place: 2 }] });
+    const unread = fake.seed.awardFailure({ move: 'm2', season: null, at: '2026-10-03T00:00:00.000Z', error: 'u', trophy: 'met', characters: null });
+    expect(must(await fake.trophyAwardFailures()).failures.map((f) => [f.id, f.open])).toEqual([[unread, true], [season, true], [move, true]]);
+    expect(must(await fake.trophyAwardFailures()).failures[2]!.characters!.map((c) => c.given)).toEqual([false, false]);
+    const award = must(await fake.giveFailedAward(move, a1));
+    expect((await fake.trophies(a1)).awards).toMatchObject([{ award: award.award, trophy: 'met', by: 'an admin' }]);
+    expect(await fake.giveFailedAward(move, a1)).toEqual(refused('that award was already given to that character'));
+    expect((await fake.trophies(a1)).awards).toHaveLength(1);
+    expect(must(await fake.trophyAwardFailures()).failures.find((f) => f.id === move)).toMatchObject({ open: true, characters: [{ id: a1, given: true }, { id: b1, given: false }] });
+    expect(await fake.giveFailedAward(move, a2)).toEqual(refused('that character was not one the failed award was for'));
+    expect(await fake.giveFailedAward(unread, a1)).toEqual(refused('the characters that award was for cannot be read now; give it from Award a trophy'));
+    expect(await fake.giveFailedAward('nope', a1)).toEqual(refused('there is no such failed award'));
+    // A season's failure gives the place's own kind; once every character has had theirs the failure is closed and goes behind the open ones.
+    must(await fake.giveFailedAward(season, a2));
+    expect((await fake.trophies(a2)).awards).toMatchObject([{ trophy: 'p2' }]);
+    must(await fake.giveFailedAward(move, b1));
+    expect(must(await fake.trophyAwardFailures()).failures.map((f) => [f.id, f.open])).toEqual([[unread, true], [season, false], [move, false]].sort((x, y) => Number(y[1]) - Number(x[1])));
+    // Paged: the cursor is the last row's instant, id and open.
+    for (let i = 0; i < 52; i += 1) fake.seed.awardFailure({ move: null, season: 2 + i, at: new Date(Date.parse('2026-09-01T00:00:00Z') + i * 60_000).toISOString(), error: `e${i}`, trophy: null, characters: [{ id: a1, name: 'Ana One', place: 1 }] });
+    const first = must(await fake.trophyAwardFailures());
+    expect(first.failures).toHaveLength(50);
+    expect(first.more).toBe(true);
+    const last = first.failures.at(-1)!;
+    const rest = must(await fake.trophyAwardFailures({ before: last.at, beforeId: last.id, beforeOpen: last.open }));
+    expect(rest.failures).toHaveLength(5);
+    expect(rest.more).toBe(false);
+    expect(new Set([...first.failures, ...rest.failures].map((f) => f.id)).size).toBe(55);
+    expect(rest.failures.slice(-2).map((f) => f.open)).toEqual([false, false]);
   });
 
   test('the wardrobe lists a character once for each piece of a gear it wears, as my_wardrobe does', async () => {

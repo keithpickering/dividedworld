@@ -247,6 +247,11 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         ways: postWay(post, row, ctx), who,
       };
     }
+    /* A trophy and a lost belt are the character's own player's: the Alert says which mask and which trophy (`sub`), and the log says who gave it or took it. */
+    case 'trophy':
+      return { line: [row.name !== null && row.sub !== null ? `${row.name} was given ${row.sub}` : 'One of your characters was given a trophy'], detail: ['The log says who gave it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
+    case 'beltLost':
+      return { line: [row.name !== null && row.sub !== null ? `${row.name} lost ${row.sub}` : 'One of your characters lost a belt'], detail: ['The log says who took it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
     case 'ruling':
       return { line: [`A ruling landed on ${row.name ?? 'your character'}`], detail: sentences(['The ruling is public, on the board.'], inTitle(row)), ways: postWay(aboutPost(act, ctx), row, ctx), who };
     case 'settlement': {

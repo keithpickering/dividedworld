@@ -496,6 +496,8 @@ describe('Settings › Notifications', () => {
     ['Cards an admin ended', 'An admin ended a card one of your characters played.'],
     ['Traps that hit', 'A face-down card struck one of your posts, or a trap caught a card you cast.'],
     ['Traps you set', 'A card you set face down sprang.'],
+    ['Trophies', 'One of your characters is given a trophy.'],
+    ['Belts lost', 'One of your characters loses a belt to another.'],
     ['Rulings', 'A ruling lands on one of your characters.'],
     ['Settlements', 'A settlement is in and moved your characters.'],
     ['Updates', 'The developer posts an update.'],

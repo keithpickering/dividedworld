@@ -11,7 +11,7 @@ import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
 
-const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], before: null };
+const empty: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 const settled = (id: number, endsAt: string, lines: LogSettlement['lines']): LogSettlement => ({ id, startsAt: new Date(Date.parse(endsAt) - 86_400_000).toISOString(), endsAt, sharesKept: true, lines });
 const char = (id: string, name: string, cls: string, classSince = '2026-10-01T00:00:00.000Z', pronouns: PronounSet = ENGINE_DEFAULT_PRONOUNS): MyCharacter =>
   ({ id, name, pronouns, class: cls, classSince, classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00.000Z', debutLoudness: 'announced', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -1025,5 +1025,80 @@ describe('a card\'s boost in a settlement', () => {
     const said = rows.map((r) => `${r.what} ${r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('')}`).join(' | ');
     expect(said).toContain('Publicity Tour added +0.10');
     expect(said).not.toContain('publicity Tour');
+  });
+});
+
+/**
+ * The cosmetics lines (the cosmetics plan, Task 12): a Random Event's find, an admin's gear, a trophy given, a belt lost and an award taken back. Each is the player's own
+ * character's, in plain and true words; no line says who reacted or any class, and a belt lost names the character that took it, which is public.
+ */
+describe('the cosmetics lines', () => {
+  const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Quinn', 'heel')];
+  const w: Words = { ...words, instance: { ...testInstance, gear: [{ key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'common' }, { key: 'tall', name: 'Tall Hat', line: 'Tall.', rarity: 'rare' }] } };
+  const base = { at: '2026-11-09T12:00:00.000Z', id: 'e1', character: 'p', trophy: null, name: null, item: null, outcome: null, text: null, copies: null, by: null, byName: null, season: null, place: null, line: null, toName: null } as const;
+  const rowsOf = (cosmetics: Log['cosmetics'], tab: string | null = null) => logRows(data({ log: { ...empty, cosmetics }, mine }), w, 600, tab).filter((r) => ['found', 'gearGranted', 'trophy', 'beltLost'].includes(r.kind));
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a found piece of gear and a found card say what, and its rarity in words, for the character it happened to', () => {
+    const [gear, card] = rowsOf([{ ...base, kind: 'found', outcome: 'gear', item: 'band' }, { ...base, id: 'e2', at: '2026-11-09T11:00:00.000Z', kind: 'found', outcome: 'card', item: 'whoops' }]);
+    expect(gear).toMatchObject({ kind: 'found', aura: 0, wallet: null, characters: ['p'] });
+    expect(said(gear!)).toBe('Something happened to Pipewrench: you found a Headband (common gear).');
+    expect(said(card!)).toBe('Something happened to Pipewrench: you found a Whoops! (common card).');
+  });
+
+  test('a line event keeps the words it was rolled with', () => {
+    const [row] = rowsOf([{ ...base, kind: 'found', outcome: 'line', text: 'a pigeon watched you type' }]);
+    expect(said(row!)).toBe('Something happened to Pipewrench: a pigeon watched you type.');
+  });
+
+  test('an admin\'s gear is counted, and names the character it was given through where the grant did', () => {
+    const [through, bare] = rowsOf([{ ...base, kind: 'granted', id: 'g1', item: 'band', copies: 5 }, { ...base, kind: 'granted', id: 'g2', at: '2026-11-08T12:00:00.000Z', character: null, item: 'tall', copies: 1 }]);
+    expect(through).toMatchObject({ kind: 'gearGranted', aura: 0 });
+    expect(said(through!)).toBe('An admin gave you 5 Headbands, through Pipewrench.');
+    expect(said(bare!)).toBe('An admin gave you a Tall Hat.');
+    expect(bare!.characters).toEqual([]);
+  });
+
+  test('a trophy says who gave it, and why where the season or a demand did', () => {
+    const lines = rowsOf([
+      { ...base, kind: 'awarded', id: 'a1', trophy: 'bosss-pet', name: 'Boss\'s Pet', by: 'boss', byName: 'Sighbot' },
+      { ...base, kind: 'awarded', id: 'a2', at: '2026-11-09T11:00:00.000Z', trophy: 'champ', name: 'Season Champion', by: 'season', season: 1, place: 1 },
+      { ...base, kind: 'awarded', id: 'a3', at: '2026-11-09T10:00:00.000Z', trophy: 'met', name: 'Met the Demand', by: 'demand' },
+      { ...base, kind: 'awarded', id: 'a4', at: '2026-11-09T09:00:00.000Z', trophy: 'x', name: 'Odd Medal', by: 'admin' },
+    ]).map(said);
+    expect(lines).toEqual([
+      'Pipewrench was given Boss\'s Pet by Sighbot, the Boss.',
+      'Pipewrench was given Season Champion, for first place in Season 1.',
+      'Pipewrench was given Met the Demand, for posting toward it.',
+      'Pipewrench was given Odd Medal by an admin.',
+    ]);
+  });
+
+  test('a belt lost names who took it, and whose move it was', () => {
+    const [boss, admin] = rowsOf([
+      { ...base, kind: 'lost', id: 'l1', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet', by: 'boss', byName: 'Sighbot' },
+      { ...base, kind: 'lost', id: 'l2', at: '2026-11-09T11:00:00.000Z', trophy: 'belt', name: 'The Belt', toName: 'Sock Puppet', by: 'admin' },
+    ]);
+    expect(boss).toMatchObject({ kind: 'beltLost', characters: ['p'] });
+    expect(said(boss!)).toBe('Pipewrench lost the Belt to Sock Puppet, by Sighbot\'s move.');
+    expect(said(admin!)).toBe('Pipewrench lost the Belt to Sock Puppet, by an admin.');
+  });
+
+  test('a reversed award says an admin took it back', () => {
+    const [row] = rowsOf([{ ...base, kind: 'reversed', id: 'a1', trophy: 'bosss-pet', name: 'Boss\'s Pet' }]);
+    expect(row).toMatchObject({ kind: 'trophy' });
+    expect(said(row!)).toBe('An admin took back Pipewrench\'s Boss\'s Pet.');
+  });
+
+  test('are in their character\'s tab and in All, and in no other character\'s', () => {
+    const log: Log['cosmetics'] = [{ ...base, kind: 'found', outcome: 'gear', item: 'band' }];
+    expect(rowsOf(log, 'p')).toHaveLength(1);
+    expect(rowsOf(log, null)).toHaveLength(1);
+    expect(rowsOf(log, 'q')).toHaveLength(0);
+  });
+
+  test('a card the Event found is no line of the card ledger\'s', () => {
+    const cards: Log['cards'] = [{ card: 'whoops', kind: 'found', act: null, price: 0, at: '2026-11-09T12:00:00.000Z' }];
+    expect(logRows(data({ log: { ...empty, cards }, mine }), w, 600, null).filter((r) => r.kind !== 'estimate')).toEqual([]);
   });
 });

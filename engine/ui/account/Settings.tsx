@@ -73,6 +73,8 @@ const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string
   { kind: 'cardEnded', title: 'Cards an admin ended', sentence: 'An admin ended a card one of your characters played.' },
   { kind: 'trapStruck', title: 'Traps that hit', sentence: 'A face-down card struck one of your posts, or a trap caught a card you cast.' },
   { kind: 'trapSprang', title: 'Traps you set', sentence: 'A card you set face down sprang.' },
+  { kind: 'trophy', title: 'Trophies', sentence: 'One of your characters is given a trophy.' },
+  { kind: 'beltLost', title: 'Belts lost', sentence: 'One of your characters loses a belt to another.' },
   { kind: 'ruling', title: 'Rulings', sentence: 'A ruling lands on one of your characters.' },
   { kind: 'settlement', title: 'Settlements', sentence: 'A settlement is in and moved your characters.' },
   { kind: 'update', title: 'Updates', sentence: 'The developer posts an update.' },
