@@ -293,3 +293,113 @@ test('a window in which an Earn Gimmick boosts a card\'s Heel is applied, and th
     ('${gone.card}', '${t.characters.Author}', '${t.who('author')}', 'tomato', 1, '${t.at(26)}')`);
   assert.equal((await runSettlement(db, instance, t.at(48))).status, 'applied', 'the next window settles');
 });
+
+// The card payouts (plan Task 5): a Mooch, a Toll, a 4D Chess spring and an Off Day settle through runSettlement, minted into the paid player's own ledger and never taken from anyone, and a
+// control run without the plays is the same for everyone they do not pay.
+async function payoutWorld(db: ReturnType<typeof psqlDb>, label: string, plays: boolean) {
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
+  const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
+  const who = ['poster', 'mooch', 'author', 'setter', 'caster', 'target', 'offcaster', 'f1', 'f2', 'f3'] as const;
+  const classes: Record<string, string> = { poster: 'heel', caster: 'heel', offcaster: 'heel' };
+  const ids = JSON.parse(sql(`
+    with u as (insert into auth.users (email) values ${who.map((w) => `('e2e-${label}-${w}@test.invalid')`).join(', ')} returning id, email),
+    a as (insert into accounts (id) select id from u returning id)
+    select json_object_agg(split_part(split_part(email, '@', 1), '-', 3), id) from u`)) as Record<(typeof who)[number], string>;
+  const c = JSON.parse(sql(`
+    with c as (insert into characters (owner, name, created_at, debuted_at) values
+      ${who.map((w) => `('${ids[w]}', '${label} ${w}', '${at(-1)}', '${at(-1)}')`).join(', ')} returning id, name),
+    h as (insert into class_history (character, class_key, started_at)
+      select id, case ${who.map((w) => `when name = '${label} ${w}' then '${classes[w] ?? 'face'}'`).join(' ')} end, '${at(-1)}' from c returning 1)
+    select json_object_agg(substr(name, length('${label} ') + 1), id) from c`)) as Record<(typeof who)[number], string>;
+  const thread = sql(`insert into threads (board, title) select id, '${label} payouts' from boards where slug = 'general' returning id`);
+  const act = (character: string, hours: number, kind: string, payload: object, target?: string) =>
+    sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at)
+      values ('${character}', '${kind}', '${thread}', ${target ? `'${target}'` : 'null'}, '${JSON.stringify(payload).replaceAll("'", "''")}', '${at(hours)}') returning id`);
+  let slot = 0;
+  const vote = (target: string, w: 'f1' | 'f2' | 'f3', kind: string, hours: number) => {
+    slot += 1;
+    sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values ('${target}', '${c[w]}', '${ids[w]}', '${kind}', ${slot}, '${at(hours)}')`);
+  };
+  const week = (from: number) => at(from + 168);
+
+  // The window before: an Off Day names the class heel for the Face "target", played by the Heel "offcaster" (it names the window after the next settlement).
+  if (plays) {
+    const anchor = act(c.offcaster, 1, 'post', { body: 'Naming a class.' });
+    act(c.offcaster, 2, 'card', { card: 'off-day', message: '', config: { class: 'heel' }, reach: 'character', character: c.target, targetName: 'target', starts: at(24), ends: at(48) }, anchor);
+  }
+  assert.equal((await runSettlement(db, instance, at(24))).status, 'applied', 'the window before settles');
+
+  // The window itself.
+  const pp = act(c.poster, 25, 'post', { body: 'Mooch me.' });
+  const pt = act(c.author, 25, 'post', { body: 'Toll me.' });
+  const pc = act(c.setter, 25, 'post', { body: 'Back me.' });
+  const px = act(c.target, 25, 'post', { body: 'Name me.' });
+  const castT = act(c.caster, 25.6, 'card', { card: 'whoops', config: { color: 'red' } }, pt);
+  const castC = act(c.caster, 25.7, 'card', { card: 'whoops', config: { color: 'red' } }, pc);
+  if (plays) {
+    act(c.mooch, 25.5, 'card', { card: 'mooch', message: '', config: { quadrant: 'excitedNegative' }, layer: 1, ends: week(25.5) }, pp);
+    act(c.author, 25.2, 'card', { card: 'toll', message: '', config: {}, layer: 1, ends: week(25.2) }, pt);
+    const set = act(c.setter, 25.1, 'set', {}, pc);
+    act(c.setter, 25.7, 'spring', { card: '4d-chess', trigger: 'cast', did: 'rode', set, by: castC, quadrant: 'excitedNegative' }, pc);
+  }
+  for (const [i, w] of (['f1', 'f2'] as const).entries()) {
+    vote(pp, w, 'tomato', 26 + i); vote(castT, w, 'tomato', 28 + i); vote(castC, w, 'tomato', 30 + i); vote(px, w, 'tomato', 32 + i);
+  }
+  const cap = Number(sql(`select setting('walletCap')`));
+  if (plays) sql(`insert into wallets (account, balance) values ('${ids.mooch}', ${cap}) on conflict (account) do update set balance = ${cap}`);
+  const second = await runSettlement(db, instance, at(48));
+  assert.equal(second.status, 'applied', JSON.stringify(second));
+  const w1 = sql(`select id from settlements order by ends_at desc limit 1`);
+  const rows = (w: string, reasonLike = '%') => sql(`select coalesce(string_agg(reason || ':' || coalesce(params ->> 'card', '') || ':' || amount, ',' order by reason, params ->> 'card'), '') from ledger where character = '${c[w as keyof typeof c]}' and reason like '${reasonLike}'`);
+  const sum = (w: string, reason: string) => Number(sql(`select coalesce(sum(amount), 0) from ledger where character = '${c[w as keyof typeof c]}' and reason = '${reason}'`));
+  const wallet = (w: (typeof who)[number]) => Number(sql(`select coalesce((select balance from wallets where account = '${ids[w]}'), 0)`));
+  const ledgerTotal = (w: (typeof who)[number]) => Number(sql(`select coalesce(sum(amount), 0) from ledger where account = '${ids[w]}'`));
+  const settled = { window1: w1, rows, sum, wallet, ledgerTotal, ids, c, cap, act, vote, at, castC, castT, pp };
+  return settled;
+}
+
+test('Mooch, Toll, 4D Chess and Off Day settle: minted into the paid player\'s ledger, nothing taken, and a control without them agrees for everyone else', async () => {
+  const db = psqlDb();
+  const tag = Math.random().toString(36).slice(2, 7);
+  // Where no earlier file has settled a window, one is settled first, so that both worlds start where the history ends (not at now).
+  await db.rpc('seed_instance', { payload: scratchSeed(instance) });
+  if (sql(`select count(*) from settlements`) === '0') {
+    const first = await runSettlement(db, instance, sql(`select to_jsonb(min(starts_at) + interval '1 day')#>>'{}' from seasons`));
+    assert.equal(first.status, 'applied', JSON.stringify(first));
+  }
+  const control = await payoutWorld(db, `ctl${tag}`, false);
+  const played = await payoutWorld(db, `pay${tag}`, true);
+
+  // What each card paid, in the paid player's own ledger, naming its card.
+  assert.equal(played.sum('mooch', 'card.skim'), 2, 'a Mooch: 0.1 of a vote for each of two votes in its quadrant');
+  assert.equal(played.rows('mooch', 'card.skim'), 'card.skim:mooch:2');
+  assert.equal(played.sum('author', 'card.ride'), 10, 'a Toll: half a vote for each of two votes on a cast made while it was up');
+  assert.equal(played.rows('author', 'card.ride'), 'card.ride:toll:10');
+  assert.equal(played.sum('setter', 'card.ride'), 20, '4D Chess: a whole vote for each of two votes in its quadrant on the cast that sprang it');
+  assert.equal(played.rows('setter', 'card.ride'), 'card.ride:4d-chess:20');
+  assert.equal(control.sum('mooch', 'card.skim') + control.sum('author', 'card.ride') + control.sum('setter', 'card.ride'), 0, 'the control pays none');
+
+  // Nothing is taken: the poster's and the casters' entries, and the fans', equal the control's.
+  for (const w of ['poster', 'caster', 'f1', 'f2'] as const) assert.equal(played.rows(w), control.rows(w), `${w}'s entries are the control's`);
+  // Each paid account's wallet moved by its entries (the Mooch's wallet was at the cap: it takes none, and the standing takes all).
+  assert.equal(played.wallet('author'), played.ledgerTotal('author'), 'the Toll\'s player\'s wallet moved by the entries');
+  assert.equal(played.wallet('setter'), played.ledgerTotal('setter'), 'the 4D Chess setter\'s wallet moved by the entries');
+  assert.equal(played.wallet('mooch'), played.cap, 'a wallet at the cap takes none of it');
+  assert.ok(played.ledgerTotal('mooch') >= 2, 'but the entries are written');
+  assert.equal(Number(sql(`select coalesce(sum(amount), 0) from standings where character = '${played.c.mooch}'`)), played.ledgerTotal('mooch'), 'and the standing takes all of it');
+
+  // The Off Day: the target was scored as the named class for the window (a Face earning as a Heel), recorded in scored_as, once.
+  assert.ok(played.rows('target', 'heel.%').startsWith('heel.'), 'the Face named a Heel earns as one for the window');
+  assert.equal(control.rows('target', 'heel.%'), '', 'the control Face earns no Heel reasons');
+  assert.equal(sql(`select class_key || ':' || count(*) from scored_as where settlement = ${played.window1} and character = '${played.c.target}' group by class_key`), 'heel:1');
+  assert.equal(sql(`select count(*) from scored_as where settlement = ${control.window1}`), '0');
+
+  // The window after pays a late vote on the sprung cast, in the setter's ledger, with no end.
+  const before = played.sum('setter', 'card.ride');
+  played.vote(played.castC, 'f3', 'tomato', 50);
+  const third = await runSettlement(db, instance, played.at(72));
+  assert.equal(third.status, 'applied', JSON.stringify(third));
+  assert.equal(played.sum('setter', 'card.ride') - before, 10, 'a late vote on the cast a 4D Chess rode pays a whole vote');
+  assert.equal(sql(`select count(*) from scored_as where settlement = (select id from settlements order by ends_at desc limit 1)`), '0', 'a window with no named play writes no scored_as row');
+});

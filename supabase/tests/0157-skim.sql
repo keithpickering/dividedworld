@@ -147,6 +147,39 @@ begin
   end if;
 end $$;
 
+-- ---- A face-down skim card lands beside a live skim of another quadrant; a back holding a bad quadrant stays set ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('pa-g-ann'); bob uuid := tests.account('pa-g-bob');
+  a uuid := tests.character(ann, 'Pa G Ann'); b uuid := tests.character(bob, 'Pa G Bob');
+  t uuid := tests.thread('Pa face down two');
+  p uuid := tests.post(a, t, 'Backed with a Mooch.'); q1 uuid := tests.post(b, t, 'Quote one.');
+  p2 uuid := tests.post(a, t, 'Backed badly.'); q2 uuid := tests.post(b, t, 'Quote two.');
+  back uuid; sprung jsonb; landed uuid;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'pamooch', 'pamooch');
+  perform tests.become_service();
+  back := (set_card(ann, 'pamooch', a, p, '{"quadrant": "excitedNegative"}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  -- A live Mooch on another quadrant of the quoting post leaves this quadrant free: the back lands.
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'pamooch', 'message', '', 'config', '{"quadrant": "calmPositive"}'::jsonb, 'layer', 1, 'ends', now() + interval '2 days'), q1);
+  sprung := spring_traps('quote', p, q1);
+  if sprung is null then raise exception 'a face-down skim did not land beside a live skim of another quadrant'; end if;
+  landed := (sprung -> 'struck' ->> 'id')::uuid;
+  if not exists (select 1 from acts where id = landed and target_act_id = q1 and payload #>> '{config,quadrant}' = 'excitedNegative') then raise exception 'the landed skim names the wrong quadrant'; end if;
+  -- A back whose configuration names no quadrant of the four stays set when it is quoted, as a Move that cannot land does.
+  perform pg_temp.hand(ann, 'pamooch');
+  perform tests.become_service();
+  back := (set_card(ann, 'pamooch', a, p2, '{"quadrant": "nonsense"}', 0) ->> 'id')::uuid;
+  perform tests.unbecome();
+  sprung := spring_traps('quote', p2, q2);
+  if sprung is not null then raise exception 'a face-down skim with a bad quadrant landed: %', sprung; end if;
+  if exists (select 1 from acts where kind = 'spring' and (payload ->> 'set') = back::text) then raise exception 'a back with a bad quadrant sprang'; end if;
+  if exists (select 1 from acts where kind = 'card' and target_act_id = q2) then raise exception 'a bad quadrant wrote a play'; end if;
+end $$;
+
 -- ---- The seed's check: red on each poisoned card, in the engine's words, then green ----
 create function pg_temp.problem(card jsonb) returns text language sql as $$ select card_kinds_problem(jsonb_build_array(card)) $$;
 
@@ -221,4 +254,15 @@ begin
   if why is null or why not like '23514%card_kinds_ride_post%' then raise exception 'a ride on a character card was let in the catalog: %', why; end if;
   why := pg_temp.coded($q$insert into card_kinds (key, name, alignment, rarity, play, reaches, trap) values ('pboutcome', 'Pb', 'salty', 'common', 'set', '{post}', '{"trigger": {"on": "visit"}, "outcome": {"kind": "ride", "share": 1}}')$q$);
   if why is null or why not like '23514%card_kinds_outcome_set%' then raise exception 'an outcome on a visit trap was let in the catalog: %', why; end if;
+end $$;
+
+-- ---- A key that opens with a digit can be met (the catalog's check and meet_card agree) ----
+do $$
+declare ann uuid := tests.account('pa-m-ann'); said jsonb; why text;
+begin
+  perform tests.become(ann);
+  said := meet_card('4d-chess');
+  if said -> 'cards_met' is distinct from '["4d-chess"]'::jsonb then raise exception 'a card whose key opens with a digit was not kept as met: %', said; end if;
+  why := pg_temp.coded($q$select meet_card('-chess')$q$);
+  if why is distinct from '22023 a card is named in lowercase words joined by hyphens' then raise exception 'a key opening with a hyphen: %', why; end if;
 end $$;
