@@ -182,3 +182,19 @@ test('flapOf: theta is 150 with no lift and 92 with a full one, and the free end
     }
   }
 });
+
+test('peelStep: a keyboard step never builds strain at the fastest pace and least give the settings allow, at 10 frames a second', () => {
+  const s = { pace: 400, give: 8 };
+  let p = { rolled: 0, strain: 0 };
+  for (let i = 0; i < 100; i++) {
+    const r = peelStep(p, s.pace * 0.1, 0.1, s);
+    assert.equal(r.strain, 0);
+    assert.equal(r.tore, false);
+    p = r;
+  }
+});
+
+test('piecesOf: a stretch ending on a line break leaves no sliver on the next line of a screen that breaks a hair away', () => {
+  assert.deepEqual(piecesOf([[0, 0.5, 1]], [99.96, 100.04]), [[[0, 99.96, 1]], []]);
+  assert.deepEqual(piecesOf([[0.5, 1, 1]], [100.04, 99.96]), [[], [[0, 99.96, 1]]]);
+});

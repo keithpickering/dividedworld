@@ -137,6 +137,11 @@ export function stuckOf(saved: SavedTape, place: number): Stretch[] {
 }
 
 const EPS = 1e-7;
+/*
+ * Tape narrower than this on a piece is no tape there: a screen that breaks its line a hair from where another did would otherwise
+ * keep a sliver no hand can grip on the next line, and the strip could never be peeled. The edge moves to the line's end instead.
+ */
+const SLIVER = 0.5;
 const round4 = (n: number) => Math.round(n * 10_000) / 10_000;
 const total = (widths: readonly number[]) => widths.reduce((a, b) => a + b, 0);
 
@@ -154,9 +159,9 @@ export function piecesOf(stretches: readonly Stretch[], widths: readonly number[
     for (const [from, to, edges] of stretches) {
       const a = from * length;
       const b = to * length;
-      if (Math.min(b, base + w) - Math.max(a, base) <= EPS) continue;
-      const startsHere = a >= base - EPS;
-      const endsHere = b <= base + w + EPS;
+      if (Math.min(b, base + w) - Math.max(a, base) < SLIVER) continue;
+      const startsHere = a > base - SLIVER;
+      const endsHere = b < base + w + SLIVER;
       const lo = startsHere ? Math.max(0, a - base) : 0;
       const hi = endsHere ? Math.min(w, b - base) : w;
       out.push([lo, hi, (startsHere ? Math.floor(edges / 3) : 0) * 3 + (endsHere ? edges % 3 : 0)]);
@@ -187,12 +192,13 @@ export function fromPieces(intervals: readonly (readonly Stretch[])[], widths: r
 
 /**
  * One tick of an author's peel. `want` is how far the hand is ahead of the peel line; the line moves by at most `pace` px a
- * second of it, and what it moves is added to `rolled`. A hand more than `give` ahead builds strain at 1.2 + (lag - give) / 30 a
+ * second of it, and what it moves is added to `rolled`. A hand still more than `give` ahead after the move builds strain at 1.2 + (lag - give) / 30 a
  * second; a hand within `give` drains it at 2.5 a second; at 1 the tape tears.
  */
 export function peelStep(p: { readonly rolled: number; readonly strain: number }, want: number, dt: number, s: { readonly pace: number; readonly give: number }): { moved: number; rolled: number; strain: number; tore: boolean } {
-  const lag = Math.max(0, want);
-  const moved = Math.min(lag, s.pace * dt);
+  const moved = Math.min(Math.max(0, want), s.pace * dt);
+  /* The lag is what the hand is still ahead once the line has moved, as on the bench: a key that asks for the pace leaves none. */
+  const lag = Math.max(0, want - moved);
   const strain = Math.min(1, Math.max(0, lag > s.give ? p.strain + (1.2 + (lag - s.give) / 30) * dt : p.strain - 2.5 * dt));
   return { moved, rolled: p.rolled + moved, strain, tore: strain >= 1 };
 }
