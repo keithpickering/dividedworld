@@ -30,7 +30,16 @@ interface Brush { readonly rw: number; readonly k: number; readonly pts: readonl
 const OVERSPRAY = { reach: 1.9, alpha: 0.35 } as const;
 const CORE_ALPHA = 0.92, POOL_ALPHA = 0.2, SPECKLE_ALPHA = 0.5;
 const SPRITE_PX = 64;
+/** The speckle's places: from 1.9 to 3.1 core radii out, along a direction within 45 degrees of the path's normal (so out to 3.1 / cos 45). */
+const SPECKLE_FAR = { from: OVERSPRAY.reach, span: 1.2, tilt: Math.PI / 4 } as const;
+/** Speckles per unit of (path length + width) x width, both as shares of the box's width, so a tag has the same count on every screen. */
+const SPECKLE_DENSITY = 4000;
+/** The most speckles one stroke has. It caps the proportion above, a share-based number, so the cap too is the same on every screen. */
 const MOST_SPECKLES = 400;
+/** The least a stamp spacing is, in CSS px: a Skinny cap's quarter radius is under a pixel, and stamps closer than that add cost and nothing to see. */
+const LEAST_STEP = 1;
+/** How far past a Fat core's edge a speckle can lie, in CSS px of the box's width (a dot's own radius is under 1): what a wash must also clear from the halo layer. */
+const haloMargin = (box: Box) => ((CAPS.fat * box.w) / 2) * (SPECKLE_FAR.from + SPECKLE_FAR.span) / Math.cos(SPECKLE_FAR.tilt) + 1;
 
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 const validBox = (box: Box) => box.w > 0 && box.h > 0 && finite(box.w) && finite(box.h);
@@ -73,7 +82,7 @@ function seedOf(points: readonly Point[], box: Box, k: number): number {
 }
 
 const sprites = new Map<string, HTMLCanvasElement>();
-/** The overspray as a unit sprite, a square whose edge is 1.9 core radii from its center: alpha 0.35 over the core, falling to 0 at the edge. Built once per cap and color. */
+/** The overspray as a unit sprite, a square whose edge is 1.9 core radii from its center: full alpha over the core, falling to 0 at the edge. Built once per color (and cap). */
 function sprite(cap: string, color: string): HTMLCanvasElement | null {
   const key = `${cap}:${color}`;
   const had = sprites.get(key);
@@ -85,15 +94,35 @@ function sprite(cap: string, color: string): HTMLCanvasElement | null {
   const img = g.createImageData(SPRITE_PX, SPRITE_PX);
   const [r, gr, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
   for (let y = 0; y < SPRITE_PX; y++) for (let x = 0; x < SPRITE_PX; x++) {
-    /* Distance from the center in core radii: the sprite spans -1.9 to 1.9. */
-    const d = Math.hypot(((x + 0.5) / SPRITE_PX) * 2 - 1, ((y + 0.5) / SPRITE_PX) * 2 - 1) * OVERSPRAY.reach;
-    const a = d <= 1 ? 1 : d >= OVERSPRAY.reach ? 0 : (1 - (d - 1) / (OVERSPRAY.reach - 1)) ** 2;
+    const a = falloff(Math.hypot(((x + 0.5) / SPRITE_PX) * 2 - 1, ((y + 0.5) / SPRITE_PX) * 2 - 1) * OVERSPRAY.reach);
     const o = (y * SPRITE_PX + x) * 4;
-    img.data[o] = r!; img.data[o + 1] = gr!; img.data[o + 2] = b!; img.data[o + 3] = Math.round(a * OVERSPRAY.alpha * 255);
+    img.data[o] = r!; img.data[o + 1] = gr!; img.data[o + 2] = b!; img.data[o + 3] = Math.round(a * 255);
   }
   g.putImageData(img, 0, 0);
   sprites.set(key, c);
   return c;
+}
+/** The overspray's profile by distance from a stamp's center in core radii: 1 over the core, falling to 0 at 1.9. */
+const falloff = (d: number) => (d <= 1 ? 1 : d >= OVERSPRAY.reach ? 0 : (1 - (d - 1) / (OVERSPRAY.reach - 1)) ** 2);
+
+const stampAlphas = new Map<number, number>();
+/**
+ * The alpha each stamp is laid at, for stamps `ratio` core radii apart: the one at which a straight run of them accumulates to 0.35 at the
+ * core's edge, so the halo's peak is the plan's 0.35 however many stamps overlap (a quarter radius apart they pile about thirteen deep).
+ */
+function stampAlpha(ratio: number): number {
+  const key = Math.round(ratio * 1000);
+  const had = stampAlphas.get(key);
+  if (had !== undefined) return had;
+  const at = (c: number) => {
+    let keep = 1;
+    for (let j = -Math.ceil(OVERSPRAY.reach / ratio); j <= Math.ceil(OVERSPRAY.reach / ratio); j++) keep *= 1 - c * falloff(Math.hypot(j * ratio, 1));
+    return 1 - keep;
+  };
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (at(mid) < OVERSPRAY.alpha) lo = mid; else hi = mid; }
+  stampAlphas.set(key, lo);
+  return lo;
 }
 
 function trace(g: CanvasRenderingContext2D, pts: readonly (readonly [number, number])[]) {
@@ -103,50 +132,59 @@ function trace(g: CanvasRenderingContext2D, pts: readonly (readonly [number, num
   if (pts.length === 1) g.lineTo(pts[0]![0] + 0.0001, pts[0]![1]);
 }
 
-function drawStroke(g: CanvasRenderingContext2D, q: number, s: Brush, box: Box) {
+/** A stroke's halo, on the halo layer: the overspray stamps, then the speckle. */
+function drawHalo(g: CanvasRenderingContext2D, q: number, s: Brush, box: Box) {
   const { rw, k, pts } = s;
-  const circle = () => g.setTransform(q, 0, 0, q * k, 0, 0);
   g.globalCompositeOperation = 'source-over';
-  /* The overspray: stamps a quarter of the radius apart, each the sprite scaled to 1.9 radii a side. */
+  /* The overspray: stamps along the path, each the sprite scaled to 1.9 radii a side, at least a CSS pixel apart. */
   const spr = sprite(s.cap, s.color);
-  circle();
   if (spr) {
-    g.globalAlpha = 1;
-    const reach = rw * OVERSPRAY.reach, step = rw / 4;
+    g.setTransform(q, 0, 0, q * k, 0, 0);
+    const step = Math.max(rw / 4, LEAST_STEP);
+    g.globalAlpha = stampAlpha(step / rw);
+    const reach = rw * OVERSPRAY.reach;
     const stamp = (x: number, y: number) => g.drawImage(spr, x - reach, y - reach, reach * 2, reach * 2);
     stamp(pts[0]![0], pts[0]![1]);
     for (let i = 1; i < pts.length; i++) {
-      const [ax, ay] = pts[i - 1]!, [bx, by] = pts[i]!, len = Math.hypot(bx - ax, by - ay), n = Math.floor(len / step);
+      const [ax, ay] = pts[i - 1]!, [bx, by] = pts[i]!, len = Math.hypot(bx - ax, by - ay), n = Math.ceil(len / step);
       for (let j = 1; j <= n; j++) stamp(ax + ((bx - ax) * j) / n, ay + ((by - ay) * j) / n);
-      if (n === 0 && len > 0) stamp(bx, by);
     }
   }
-  /* The speckle: dots in CSS px (round on screen), placed from the stroke's own seed at 1.9 to 3.1 radii from the path, in the brush's space. */
-  let length = 0;
-  for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i]![0] - pts[i - 1]![0], (pts[i]![1] - pts[i - 1]![1]) * k);
-  const count = Math.min(MOST_SPECKLES, Math.round((length + 2 * rw) * rw * 0.05));
+  /* The speckle: dots in CSS px (round on screen), from the stroke's own seed, in the brush's space. Its count is of shares of the box's width. */
+  const along: number[] = [0];
+  for (let i = 1; i < pts.length; i++) along.push(along[i - 1]! + Math.hypot(pts[i]![0] - pts[i - 1]![0], (pts[i]![1] - pts[i - 1]![1]) * k));
+  const length = along.at(-1)!;
+  const width = (2 * rw) / box.w;
+  const count = Math.min(MOST_SPECKLES, Math.round((length / box.w + width) * width * SPECKLE_DENSITY));
   const rng = mulberry32(seedOf(pts, box, k));
   g.setTransform(q, 0, 0, q, 0, 0);
   g.globalAlpha = SPECKLE_ALPHA;
   g.fillStyle = s.color;
-  const along = pts.map((p, i) => (i ? Math.hypot(p[0] - pts[i - 1]![0], (p[1] - pts[i - 1]![1]) * k) : 0));
-  for (let i = 1; i < along.length; i++) along[i]! && (along[i] = along[i]! + along[i - 1]!);
   for (let n = 0; n < count; n++) {
-    const t = rng() * length, side = rng() < 0.5 ? 0 : Math.PI, jitter = (rng() - 0.5) * (Math.PI / 2), far = OVERSPRAY.reach + rng() * 1.2, r = 0.3 + rng() * 0.5, free = rng() * Math.PI * 2;
-    let i = 1;
-    while (i < pts.length - 1 && along[i]! < t) i++;
-    const p0 = pts[Math.max(0, i - 1)]!, p1 = pts[Math.min(i, pts.length - 1)]!;
-    const f = pts.length < 2 ? 0 : Math.min(1, Math.max(0, (t - along[i - 1]!) / Math.max(1e-9, along[i]! - along[i - 1]!)));
+    const t = rng() * length, side = rng() < 0.5 ? 0 : Math.PI, jitter = (rng() - 0.5) * SPECKLE_FAR.tilt * 2, far = SPECKLE_FAR.from + rng() * SPECKLE_FAR.span, r = 0.3 + rng() * 0.5, free = rng() * Math.PI * 2;
+    /* The segment holding t: the first point whose running length reaches it (a repeated point adds a zero step and is passed over). */
+    let lo = 1, hi = pts.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (along[mid]! < t) lo = mid + 1; else hi = mid; }
+    const i = Math.min(lo, pts.length - 1);
+    const p0 = pts[Math.max(0, i - 1)]!, p1 = pts[i]!;
+    const span = i > 0 ? along[i]! - along[i - 1]! : 0;
+    const f = span > 0 ? Math.min(1, Math.max(0, (t - along[i - 1]!) / span)) : 0;
     const cx = p0[0] + (p1[0] - p0[0]) * f, cy = p0[1] + (p1[1] - p0[1]) * f;
     /* Off the path's side, within 45 degrees of its normal, and out far enough that the normal's share is past the overspray; a dab has no side. */
-    const angle = pts.length < 2 || (p0[0] === p1[0] && p0[1] === p1[1]) ? free : Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) + Math.PI / 2 + side + jitter;
-    const dist = (rw * far) / (pts.length < 2 ? 1 : Math.cos(jitter));
+    const flat = length === 0 || (p0[0] === p1[0] && p0[1] === p1[1]);
+    const angle = flat ? free : Math.atan2(p1[1] - p0[1], p1[0] - p0[0]) + Math.PI / 2 + side + jitter;
+    const dist = (rw * far) / (flat ? 1 : Math.cos(jitter));
     g.beginPath();
     g.arc(cx + Math.cos(angle) * dist, (cy + Math.sin(angle) * dist) * k, r, 0, Math.PI * 2);
     g.fill();
   }
-  /* The core. */
-  circle();
+}
+
+/** A stroke's core and pooling, on the core layer. */
+function drawCore(g: CanvasRenderingContext2D, q: number, s: Brush) {
+  const { rw, k, pts } = s;
+  g.setTransform(q, 0, 0, q * k, 0, 0);
+  g.globalCompositeOperation = 'source-over';
   g.globalAlpha = CORE_ALPHA;
   g.strokeStyle = s.color;
   g.lineWidth = rw * 2;
@@ -163,20 +201,27 @@ function drawStroke(g: CanvasRenderingContext2D, q: number, s: Brush, box: Box) 
   }
 }
 
-function washStroke(g: CanvasRenderingContext2D, q: number, s: Brush) {
+function washStroke(g: CanvasRenderingContext2D, q: number, s: Brush, radius: number) {
   g.setTransform(q, 0, 0, q * s.k, 0, 0);
   g.globalCompositeOperation = 'destination-out';
   g.globalAlpha = 1;
   g.strokeStyle = '#000000';
-  g.lineWidth = s.rw * 2;
+  g.lineWidth = radius * 2;
   trace(g, s.pts);
   g.stroke();
   g.globalCompositeOperation = 'source-over';
 }
 
+let haloCanvas: HTMLCanvasElement | null = null;
+
 /**
  * Paints the wall's live Acts, in order, on `ctx`'s canvas, whose pixels are ceil(box.w * q) by ceil(box.h * q) for q = `wallDensity`
  * (set by the caller). Coordinates are CSS px of the box. A box with no area draws nothing, and what was drawn before is cleared.
+ *
+ * Two layers: the cores and pooling go on `ctx` itself, and every halo (overspray and speckle) on one scratch canvas shared by all
+ * walls, laid under the cores at the end (destination-over), so a halo is never over any core. A wash cuts the core layer at exactly
+ * the sponge's radius, which is what `hitAt` and the engine count, and the halo layer at that radius plus the widest halo's reach (a
+ * Fat cap's speckle), so no ghost of paint is left where the wash passed. A later draw's halo is not cut.
  */
 export function paintWall(ctx: CanvasRenderingContext2D, box: Box, density: number, acts: readonly WallAct[]): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -186,13 +231,44 @@ export function paintWall(ctx: CanvasRenderingContext2D, box: Box, density: numb
   if (!validBox(box)) return;
   const q = wallDensity(box, density);
   if (!(q > 0)) return;
+  haloCanvas ??= document.createElement('canvas');
+  const halo = haloCanvas.getContext('2d');
+  if (halo) {
+    if (haloCanvas.width !== ctx.canvas.width) haloCanvas.width = ctx.canvas.width;
+    if (haloCanvas.height !== ctx.canvas.height) haloCanvas.height = ctx.canvas.height;
+    halo.setTransform(1, 0, 0, 1, 0, 0);
+    halo.globalAlpha = 1;
+    halo.globalCompositeOperation = 'source-over';
+    halo.clearRect(0, 0, haloCanvas.width, haloCanvas.height);
+    halo.lineCap = halo.lineJoin = 'round';
+  }
   ctx.lineCap = ctx.lineJoin = 'round';
+  const margin = haloMargin(box);
   for (const act of acts) {
-    if (act.kind === 'draw') for (const s of brushes(act, box)) drawStroke(ctx, q, s, box);
-    else if (act.kind === 'wash') for (const s of brushes(act, box)) washStroke(ctx, q, s);
+    for (const s of strokesOf(act, box)) {
+      if (act.kind === 'draw') { if (halo) drawHalo(halo, q, s, box); drawCore(ctx, q, s); }
+      else if (act.kind === 'wash') { washStroke(ctx, q, s, s.rw); if (halo) washStroke(halo, q, s, s.rw + margin); }
+    }
   }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (halo) {
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.drawImage(haloCanvas, 0, 0, haloCanvas.width, haloCanvas.height);
+  }
+  ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+}
+
+/** An Act's brushes, kept for as long as the Act object and the box are the same, so a click does not rebuild a wall's strokes act by act. */
+const kept = new WeakMap<object, { w: number; h: number; list: Brush[] }>();
+function strokesOf(act: WallAct, box: Box): Brush[] {
+  if (act.kind !== 'draw' && act.kind !== 'wash') return [];
+  const had = kept.get(act);
+  if (had && had.w === box.w && had.h === box.h) return had.list;
+  const list = brushes(act, box);
+  kept.set(act, { w: box.w, h: box.h, list });
+  return list;
 }
 
 /** Whether the point (CSS px of the box) lies in the core of a stroke: within `rw` of its path in the brush's space. */
@@ -208,13 +284,15 @@ function inCore(s: Brush, x: number, y: number): boolean {
   return false;
 }
 
-/** Whether any ink lies under the point (CSS px of the box): in a draw's core and in no later wash's core. Overspray and speckle are not ink. */
+/**
+ * Whether any ink lies under the point (CSS px of the box): in a draw's core and in no later wash's core. Overspray and speckle are not
+ * ink. The last Act whose core holds the point decides, so the walk is from the newest and stops there.
+ */
 export function hitAt(acts: readonly WallAct[], box: Box, x: number, y: number): boolean {
   if (!validBox(box)) return false;
-  let inked = false;
-  for (const act of acts) {
-    if (act.kind !== 'draw' && act.kind !== 'wash') continue;
-    if (brushes(act, box).some((s) => inCore(s, x, y))) inked = act.kind === 'draw';
+  for (let i = acts.length - 1; i >= 0; i--) {
+    const act = acts[i]!;
+    if (strokesOf(act, box).some((s) => inCore(s, x, y))) return act.kind === 'draw';
   }
-  return inked;
+  return false;
 }

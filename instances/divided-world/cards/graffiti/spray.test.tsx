@@ -3,8 +3,9 @@
  * uses (round-capped polylines and circles under a scale-and-shift transform, drawImage of a sprite, putImageData) with source-over and
  * destination-out, so a test reads the ink's alpha at a pixel, and it logs every arc, so the speckle can be compared between calls.
  */
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test } from 'vitest';
 import { CAPS } from '../graffiti.ts';
+import { cellsOf, GRID } from '../../../../engine/rules/surface.ts';
 import { hitAt, paintWall, wallDensity, type WallAct } from './spray.ts';
 import { MAX_CANVAS_PX } from '../whoops/paint.ts';
 
@@ -17,9 +18,11 @@ const rgb = (s: string): [number, number, number] => [1, 3, 5].map((i) => parseI
 
 const buffers = new WeakMap<HTMLCanvasElement, () => Px[]>();
 /** One pixel-buffer context per canvas; `arcs` collects every arc a fill drew, in user space and with the alpha it was filled at. */
+const arcs: Arc[] = [];
+const strokes: { alpha: number; width: number; op: string }[] = [];
 function fakeCanvases() {
-  const arcs: Arc[] = [];
-  const strokes: { alpha: number; width: number; op: string }[] = [];
+  /* Module-level, because spray.ts keeps canvases (sprites, the halo layer) between calls and their contexts log to these. */
+  arcs.length = 0; strokes.length = 0;
   HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
     const cv = this;
     const px = (): Px[] => {
@@ -37,6 +40,12 @@ function fakeCanvases() {
     const put = (i: number, c: [number, number, number], sa: number, op: string) => {
       const d = px()[i]!;
       if (op === 'destination-out') { d.a *= 1 - sa; return; }
+      if (op === 'destination-over') {
+        const a = d.a + sa * (1 - d.a);
+        if (a <= 0) return;
+        d.r = (d.r * d.a + c[0] * sa * (1 - d.a)) / a; d.g = (d.g * d.a + c[1] * sa * (1 - d.a)) / a; d.b = (d.b * d.a + c[2] * sa * (1 - d.a)) / a; d.a = a;
+        return;
+      }
       const a = sa + d.a * (1 - sa);
       if (a <= 0) return;
       d.r = (c[0] * sa + d.r * d.a * (1 - sa)) / a; d.g = (c[1] * sa + d.g * d.a * (1 - sa)) / a; d.b = (c[2] * sa + d.b * d.a * (1 - sa)) / a; d.a = a;
@@ -116,12 +125,10 @@ function paintOn(acts: readonly WallAct[], box = BOX) {
   c.width = box.w; c.height = box.h;
   paintWall(c.getContext('2d') as CanvasRenderingContext2D, box, 1, acts);
   const p = f.pixels(c);
-  return { alpha: (x: number, y: number) => p[y * box.w + x]!.a, px: p, arcs: f.arcs, strokes: f.strokes };
+  return { alpha: (x: number, y: number) => p[y * box.w + x]!.a, px: p, arcs: [...f.arcs], strokes: [...f.strokes] };
 }
 
 describe('paintWall', () => {
-  beforeEach(() => {});
-
   test('the core is the can\'s color at alpha 0.92, a capsule of the cap\'s width', () => {
     const w = paintOn([draw(stroke([[0.25, 0.5], [0.75, 0.5]], 'fat'))]);
     /* Fat: 0.04 across the 400 px box is 16 px wide, so 8 px from the line; down, 8 px * aspect 2 on a box 200 tall / 400 wide, which is 8 px too at aspect 2. */
@@ -189,6 +196,89 @@ describe('paintWall', () => {
   test('a wash in the same paint cuts only what was drawn before it, in order, onto one layer', () => {
     const w = paintOn([wash([[0.5, 0.5]]), draw(stroke([[0.4, 0.5], [0.6, 0.5]], 'fat'))]);
     expect(w.alpha(200, 100)).toBeGreaterThanOrEqual(0.92);
+  });
+});
+
+describe('paintWall, review findings', () => {
+  const dots = (acts: readonly WallAct[], box = BOX) => paintOn(acts, box).arcs.filter((a) => a.r < 1);
+
+  test('the speckle is the same tag on every screen: equal counts and equal places, normalized to the box', () => {
+    const acts = [draw(stroke([[0.2, 0.3], [0.5, 0.35], [0.6, 0.5]], 'fat'))];
+    const a = dots(acts, { w: 400, h: 200 }), b = dots(acts, { w: 800, h: 400 });
+    expect(a.length).toBeGreaterThan(10);
+    expect(b).toHaveLength(a.length);
+    a.forEach((d, i) => { expect(b[i]!.x / 800).toBeCloseTo(d.x / 400, 6); expect(b[i]!.y / 400).toBeCloseTo(d.y / 200, 6); });
+  });
+
+  test('a repeated point leaves no gap or NaN in the speckle, which still lies beside the path and within its span', () => {
+    const rw = (CAPS.fat / 2) * BOX.w;
+    const d = dots([draw(stroke([[0.1, 0.5], [0.5, 0.5], [0.5, 0.5], [0.5, 0.5], [0.9, 0.5]], 'fat'))]);
+    expect(d.length).toBeGreaterThan(50);
+    for (const a of d) {
+      expect(Number.isFinite(a.x) && Number.isFinite(a.y)).toBe(true);
+      expect(Math.abs(a.y - 100)).toBeGreaterThanOrEqual(1.9 * rw * Math.cos(Math.PI / 4) * 0 + 1.9 * rw - 1e-6);
+      expect(a.x).toBeGreaterThan(0.1 * 400 - 4 * rw);
+      expect(a.x).toBeLessThan(0.9 * 400 + 4 * rw);
+    }
+    /* Dots follow the whole path: some lie past the repeated point on either side. */
+    const right = d.filter((a) => a.x > 0.5 * 400).length / d.length;
+    expect(right).toBeGreaterThan(0.35);
+    expect(right).toBeLessThan(0.65);
+    /* Spread along the path past the repeat, not piled at its end. */
+    expect(d.filter((a) => a.x > 250 && a.x < 310).length).toBeGreaterThan(d.length / 10);
+  });
+
+  test('on a box whose aspect is not the stroke\'s (k = 0.5) the core is the ellipse: 16 px across and 8 px down', () => {
+    const w = paintOn([draw(stroke([[0.25, 0.5], [0.75, 0.5]], 'fat', 'red', 1))]);
+    expect(w.strokes.filter((s) => s.op === 'source-over')[0]).toEqual({ alpha: 0.92, width: 16, op: 'source-over' });
+    expect(w.alpha(200, 100 + 3)).toBeGreaterThanOrEqual(0.92);
+    expect(w.alpha(200, 100 + 6)).toBeLessThan(0.92);
+    expect(w.alpha(200, 100 + 6)).toBeGreaterThan(0);
+    expect(w.alpha(200, 100 + 8 * 1.9 * 0.5 + 8)).toBe(0);
+  });
+
+  test('hitAt agrees with cellsOf at every cell center except those on a core\'s edge, with k = 0.5 and k = 1', () => {
+    for (const aspect of [1, 2, 0.6]) {
+      const points: [number, number][] = [[0.15, 0.2], [0.5, 0.6], [0.85, 0.3], [0.85, 0.3], [0.4, 0.9]];
+      const acts = [draw(stroke(points, 'fat', 'red', aspect))];
+      const cells = cellsOf([{ width: CAPS.fat, aspect, points }]);
+      const bit = (x: number, y: number) => (cells[(y * GRID + x) >> 3]! & (0x80 >> ((y * GRID + x) & 7))) !== 0;
+      let ink = 0, edge = 0, bad = 0;
+      for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+        const mine = hitAt(acts, BOX, ((x + 0.5) / GRID) * BOX.w, ((y + 0.5) / GRID) * BOX.h), theirs = bit(x, y);
+        if (theirs) ink++;
+        if (mine === theirs) continue;
+        const onEdge = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => { const nx = x + dx!, ny = y + dy!; return nx >= 0 && ny >= 0 && nx < GRID && ny < GRID && bit(nx, ny) !== theirs; });
+        edge++;
+        if (!onEdge) bad++;
+      }
+      expect(ink, `aspect ${aspect}`).toBeGreaterThan(300);
+      expect(bad, `aspect ${aspect}`).toBe(0);
+      expect(edge, `aspect ${aspect}`).toBeLessThan(ink * 0.05);
+    }
+  });
+
+  test('the overspray does not pile up: at 1.5 core radii on a straight stroke its accumulated alpha is at most about 0.4, and not 0', () => {
+    const w = paintOn([draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))]);
+    const at = w.alpha(200, 100 + 12);
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThanOrEqual(0.4);
+    /* At the core's edge, just outside it, the halo peaks near 0.35. */
+    const edge = w.alpha(200, 100 + 9);
+    expect(edge).toBeGreaterThan(0.2);
+    expect(edge).toBeLessThanOrEqual(0.42);
+  });
+
+  test('a wash along a Fat stroke leaves no ghost: no alpha within the sponge and the widest halo of its path', () => {
+    const w = paintOn([draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat')), wash([[0.3, 0.5], [0.7, 0.5]])]);
+    for (let y = 70; y <= 130; y++) for (let x = 130; x <= 270; x++) expect(w.alpha(x, y), `(${x}, ${y})`).toBe(0);
+    /* Past the wash's ends the stroke is still there. */
+    expect(w.alpha(100, 100)).toBeGreaterThanOrEqual(0.92);
+  });
+
+  test('a draw after a wash keeps its own halo', () => {
+    const w = paintOn([wash([[0.5, 0.2], [0.5, 0.8]]), draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))]);
+    expect(w.alpha(200, 100 + 12)).toBeGreaterThan(0);
   });
 });
 
