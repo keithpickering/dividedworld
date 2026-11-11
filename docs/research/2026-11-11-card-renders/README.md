@@ -6,16 +6,25 @@ still show the vector art in `instances/divided-world/ui/cards/`.
 
 ## What is here
 
-Three scenes, each a Python script that builds a Blender scene from nothing and renders it, and the image it gave:
+Ten scenes, one for each card in the roster on this date, each a Python script that builds a Blender scene from
+nothing and renders it, and the image it gave:
 
 | Card | Scene | Render | After |
 | --- | --- | --- | --- |
 | Whoops! | `whoops.py` | `whoops.png` | the card's placeholder `art.svg`, with the splat the game itself draws |
 | Stick Around | `stick.py` | `stick-around.png` | Minus World's original icon: a pointer caught in a web, in a wood |
 | Feelin' Fab | `fab.py` | `feelin-fab.png` | Minus World's original icon: a grinning cloud under a rainbow |
+| Autocorrect | `autocorrect.py` | `autocorrect.png` | the placeholder `art.svg`: label tape over a post's words |
+| Bluff | `bluff.py` | `bluff.png` | the placeholder `art.svg`: a card held face down, in smoke |
+| Force Field | `force.py` | `force-field.png` | the placeholder `art.svg`: a dome of light, a card bouncing off |
+| Glitter Bomb | `glitter.py` | `glitter-bomb.png` | the placeholder `art.svg`: an envelope going off |
+| Hall Pass | `pass.py` | `hall-pass.png` | the placeholder `art.svg`: a pass on a lanyard, held up to a Mod Bot |
+| Main Event | `main.py` | `main-event.png` | the placeholder `art.svg`: a title belt under the house lights |
+| Trap Card | `trap.py` | `trap-card.png` | the placeholder `art.svg`: a trap with a card for bait |
 
-`rig.py` is what the three share: the scene reset, the Standard view transform (saturated, with no filmic roll-off,
-which is most of the period look), materials, lights, the card's camera and the render call.
+`rig.py` is what they all share: the scene reset, the Standard view transform (saturated, with no filmic roll-off,
+which is most of the period look), materials, lights, the card's camera, the render call, and the small shapes the scenes are built from (tubes, slabs,
+rounded outlines, stars, raised letters).
 
 The scenes are the source. No `.blend` file is committed: each script rebuilds its scene in seconds, and the Whoops!
 scene saved as a `.blend` is 75 MB. To get one to open in Blender, set `ART_BLEND` (below).
@@ -38,16 +47,21 @@ Environment variables, all optional:
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `ART_SCALE` | `2` | The image is 540 by 840, the card's canvas, times this. `1` for a draft. |
-| `ART_SAMPLES` | `256` | Cycles samples. `40` is enough to judge a draft. The committed images used 256 (Whoops!) and 200. |
+| `ART_SAMPLES` | `256` | Cycles samples. `40` is enough to judge a draft. The committed images used 256 (Whoops!) and 200 (the rest). |
 | `ART_BLEND` | unset | A path: the built scene is also saved there as a `.blend`. |
 | `WHOOPS_SEED` | `7` | The seed of the main splat; the others are drawn from seeds beside it. |
 | `WHOOPS_MESH` | `130` | Mesh points per world unit. The committed image used `170`; `90` for a draft. |
 | `WHOOPS_TILT` | `9` | How far the camera leans off straight-on, in degrees. |
 | `STICK_SEED` | `4` | The web's and the wood's random layout. |
 | `STICK_FSTOP` | `0.22` | The background's blur: lower is blurrier. |
+| `BLUFF_SEED` | `5` | Where the smoke's balls sit. |
+| `GLITTER_SEED` | `11` | Where the glitter has got to. |
+| `AUTOCORRECT_SEED` | `2` | The lengths of the post's words. |
 
-Every scene puts the card on a plane 5.4 wide by 8.4 tall, centered on the origin, so one unit is 100 px of the canvas
-and a position can be read off the card template (`engine/ui/cards/card-template.svg`).
+Every scene but Whoops! puts the card on the xz plane, 5.4 wide by 8.4 tall and centered on the origin, with the
+camera looking along +y, so one unit is 100 px of the canvas and a position can be read off the card template
+(`engine/ui/cards/card-template.svg`). Whoops! lies on the xy plane with its camera above it. A scene with a floor
+raises its camera a few degrees (`rig.camera`'s `elev`), which moves things a little off those positions.
 
 ## Notes on each
 
@@ -61,6 +75,11 @@ flat pool with a rounded lip for the body. The runs down the wall are this scene
 period. Two strands are thrown over the pointer so it reads as held.
 
 **Feelin' Fab.** The rainbow is six glossy pipes; the cloud is one ellipsoid for the face with lumps around its rim.
+
+**The other seven** were made in one pass after the owner approved the first three, each from its placeholder
+`art.svg`, in its alignment's color: orange for Pepperoni, cyan for Sweet, pink for Salty. They had two or three
+drafts each and no review by the owner on this date. Bluff, Hall Pass and Trap Card are face-down cards in play; the
+art here is the card's own face, as its placeholder's is.
 
 ## What using these on cards would need
 

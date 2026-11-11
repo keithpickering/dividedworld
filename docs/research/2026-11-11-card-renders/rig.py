@@ -65,13 +65,14 @@ def mix_color(nodes, links, fac, a, b):
             s.default_value = (*v, 1)
     return sock(mx.outputs, 'Result_Color')
 
-def area(name, loc, size, energy, rgb=(1, 1, 1), look_at=(0, 0, 0), size_y=None):
+def area(name, loc, size, energy, rgb=(1, 1, 1), look_at=(0, 0, 0), size_y=None, glossy=True):
     from mathutils import Vector
     d = bpy.data.lights.new(name, 'AREA'); d.energy = energy; d.color = rgb
     d.shape = 'RECTANGLE'; d.size = size; d.size_y = size_y or size
     o = bpy.data.objects.new(name, d); bpy.context.scene.collection.objects.link(o)
     o.location = loc
     o.rotation_euler = (Vector(look_at) - Vector(loc)).to_track_quat('-Z', 'Y').to_euler()
+    o.visible_glossy = glossy          # off: it lights the scene and never shows as a glare in a shiny floor
     return o
 
 def render(path):
@@ -126,15 +127,17 @@ def backdrop(y, stops, strength=1.0):
     o = bpy.context.object; o.scale = (26, 30, 1); o.data.materials.append(m)
     return o
 
-def camera(lens=60, fstop=None):
-    """The card's camera: looks along +y at the 5.4 by 8.4 card on the xz plane."""
+def camera(lens=60, fstop=None, elev=0.0, target=(0, 0, 0)):
+    """The card's camera: looks along +y at the 5.4 by 8.4 card on the xz plane. `elev` raises it, in degrees,
+    on an arc about `target`, so it looks down on a floor."""
     sc = bpy.context.scene
     cam = bpy.data.cameras.new('cam'); cam.sensor_fit = 'VERTICAL'; cam.sensor_height = 36; cam.lens = lens
     d = lens * 8.4 / 36
     if fstop:
         cam.dof.use_dof = True; cam.dof.focus_distance = d; cam.dof.aperture_fstop = fstop
     o = bpy.data.objects.new('cam', cam); sc.collection.objects.link(o); sc.camera = o
-    o.location = (0, -d, 0); o.rotation_euler = (math.radians(90), 0, 0)
+    e = math.radians(elev)
+    o.location = (target[0], target[1] - d * math.cos(e), target[2] + d * math.sin(e)); o.rotation_euler = (math.radians(90) - e, 0, 0)
     return o
 
 def world(rgb, strength):
@@ -142,3 +145,64 @@ def world(rgb, strength):
     w = bpy.data.worlds.new('w'); sc.world = w; w.use_nodes = True
     w.node_tree.nodes['Background'].inputs['Color'].default_value = (*rgb, 1)
     w.node_tree.nodes['Background'].inputs['Strength'].default_value = strength
+
+def glow(name, rgb, strength=1.0, alpha=1.0):
+    """Light with no surface: a lamp, a beam (alpha under 1 lets what is behind show through)."""
+    m, n, l, b = material(name)
+    em = n.new('ShaderNodeEmission'); em.inputs['Color'].default_value = (*rgb, 1); em.inputs['Strength'].default_value = strength
+    out = n['Material Output'].inputs['Surface']
+    if alpha >= 1:
+        l.new(em.outputs[0], out)
+    else:
+        tr = n.new('ShaderNodeBsdfTransparent'); mx = n.new('ShaderNodeMixShader'); mx.inputs[0].default_value = alpha
+        l.new(tr.outputs[0], mx.inputs[1]); l.new(em.outputs[0], mx.inputs[2]); l.new(mx.outputs[0], out)
+    return m
+
+def checker(name, hex_a, hex_b, scale, rough=0.15):
+    m, n, l, b = material(name)
+    ch = n.new('ShaderNodeTexChecker'); ch.inputs['Scale'].default_value = scale
+    ch.inputs['Color1'].default_value = (*hexrgb(hex_a), 1); ch.inputs['Color2'].default_value = (*hexrgb(hex_b), 1)
+    l.new(ch.outputs['Color'], b.inputs['Base Color']); b.inputs['Roughness'].default_value = rough
+    return m
+
+def floor(z, mat, size=80, y=10):
+    bpy.ops.mesh.primitive_plane_add(size=size, location=(0, y, z))
+    o = bpy.context.object; o.data.materials.append(mat)
+    return o
+
+def rrect(w, h, r, n=6):
+    """A rounded rectangle's outline, w by h about the origin."""
+    out = []
+    for cx, cy, a0 in ((w / 2 - r, h / 2 - r, 0), (-w / 2 + r, h / 2 - r, 90), (-w / 2 + r, -h / 2 + r, 180), (w / 2 - r, -h / 2 + r, 270)):
+        for k in range(n + 1):
+            a = math.radians(a0 + 90 * k / n); out.append((cx + math.cos(a) * r, cy + math.sin(a) * r))
+    return out
+
+def star(points, r_out, r_in, rot=0.0):
+    """A star's outline, its first point up when rot is 0."""
+    return [(math.cos(math.pi / 2 + rot + j * math.pi / points) * (r_out if j % 2 == 0 else r_in),
+             math.sin(math.pi / 2 + rot + j * math.pi / points) * (r_out if j % 2 == 0 else r_in)) for j in range(points * 2)]
+
+def text(body, size, mat, loc, depth=0.05, bevel=0.01, rot=(0, 0, 0)):
+    """Raised letters facing the camera, centered on `loc`."""
+    cu = bpy.data.curves.new('text', 'FONT'); cu.body = body; cu.size = size; cu.extrude = depth; cu.bevel_depth = bevel
+    cu.align_x = 'CENTER'; cu.align_y = 'CENTER'
+    o = bpy.data.objects.new('text', cu); bpy.context.scene.collection.objects.link(o); cu.materials.append(mat)
+    o.location = loc; o.rotation_euler = (math.radians(90) + rot[0], rot[1], rot[2])
+    return o
+
+def group(objs, loc=(0, 0, 0), rot=(0, 0, 0), scale=1.0):
+    """Parent the objects to one empty, then move, turn and size them as one (rot in degrees, XYZ)."""
+    root = bpy.data.objects.new('group', None); bpy.context.scene.collection.objects.link(root)
+    for o in objs: o.parent = root
+    root.location = loc; root.rotation_euler = tuple(math.radians(a) for a in rot); root.scale = (scale,) * 3
+    return root
+
+def cone(p0, p1, r0, r1, mat, verts=24):
+    """A cone or a cylinder from p0 (radius r0) to p1 (radius r1)."""
+    from mathutils import Vector
+    a, b = Vector(p0), Vector(p1); d = b - a
+    bpy.ops.mesh.primitive_cone_add(radius1=r0, radius2=r1, depth=d.length, vertices=verts, location=(a + b) / 2)
+    o = bpy.context.object; o.rotation_euler = d.to_track_quat('Z', 'Y').to_euler(); o.data.materials.append(mat)
+    bpy.ops.object.shade_smooth()
+    return o
