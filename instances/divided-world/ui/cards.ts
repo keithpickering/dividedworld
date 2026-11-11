@@ -39,7 +39,7 @@ import feelinFabArt from './cards/feelin-fab/art.json';
 import hallPassCanvas from './cards/hall-pass/art.webp?url';
 import hallPassMark from './cards/hall-pass/mark.svg?url';
 import hallPassArt from './cards/hall-pass/art.json';
-import belowTheFoldCanvas from './cards/below-the-fold/art.svg?url';
+import belowTheFoldCanvas from './cards/below-the-fold/art.webp?url';
 import belowTheFoldMark from './cards/below-the-fold/mark.svg?url';
 import belowTheFoldArt from './cards/below-the-fold/art.json';
 import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
