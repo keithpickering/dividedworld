@@ -17,6 +17,7 @@ import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { spanWords } from './cards.ts';
+import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 describe('Divided World\'s developer persona', () => {
@@ -494,5 +495,75 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
     expect(rows.map((r) => r.kind)).toEqual(['pack', 'pack']);
     expect(new Set(rows.map((r) => r.wallet))).toEqual(new Set([900, 600]));
     expect(rows.map(said).sort()[0]).toContain('Glitter Bomb, Glitter Bomb, Glitter Bomb, Glitter Bomb and Glitter Bomb');
+  });
+});
+
+/* Staff pictures (the fangame split plan, Task 10): a persona's face is a file the bundler gave, held to the shapes the postbit and the profile draw. */
+type Picture = { readonly kind: 'png' | 'webp'; readonly width: number; readonly height: number; readonly bytes: number };
+
+/** A bundler URL or data URL as the file's bytes; a URL names a file by its basename in the given folder. */
+function bytesOfUrl(url: string, folder: string): Uint8Array {
+  if (url.startsWith('data:')) return Uint8Array.from(Buffer.from(url.slice(url.indexOf(',') + 1), url.includes(';base64') ? 'base64' : 'utf8'));
+  return new Uint8Array(fs.readFileSync(path.join(folder, path.basename(url.split('?')[0]!))));
+}
+
+/** A PNG's or WebP's shape, or why it is neither. */
+function pictureOf(bytes: Uint8Array): Picture | string {
+  const view = Buffer.from(bytes);
+  if (view.subarray(1, 4).toString('latin1') === 'PNG') return { kind: 'png', width: view.readUInt32BE(16), height: view.readUInt32BE(20), bytes: bytes.length };
+  const size = webpSize(bytes);
+  return size === null ? 'is neither a PNG nor a WebP' : { kind: 'webp', ...size, bytes: bytes.length };
+}
+
+/** What is wrong with a persona's pictures, as sentences. */
+function staffPictureProblems(map: NonNullable<typeof instanceUi.staffAvatars>, personas: readonly string[], folder: string): string[] {
+  const problems: string[] = [];
+  for (const [key, faces] of Object.entries(map)) {
+    if (!personas.includes(key)) problems.push(`${key} names no persona in the roster`);
+    const square = pictureOf(bytesOfUrl(faces.square, folder));
+    if (typeof square === 'string') problems.push(`${key}'s square ${square}`);
+    else {
+      if (square.width !== square.height) problems.push(`${key}'s square is ${square.width} by ${square.height}, not square`);
+      if (square.width < 256) problems.push(`${key}'s square is ${square.width} wide, under 256`);
+      if (square.bytes > 100 * 1024) problems.push(`${key}'s square is ${square.bytes} bytes, over 100 KB`);
+    }
+    if (faces.portrait === undefined) continue;
+    const portrait = pictureOf(bytesOfUrl(faces.portrait, folder));
+    if (typeof portrait === 'string') problems.push(`${key}'s portrait ${portrait}`);
+    else {
+      if (portrait.width < 256 || portrait.width > 512) problems.push(`${key}'s portrait is ${portrait.width} wide, outside 256 to 512`);
+      if (portrait.height < portrait.width || portrait.height > 2 * portrait.width) problems.push(`${key}'s portrait is ${portrait.width} by ${portrait.height}, outside 1 to 2 times as tall as wide`);
+      if (portrait.bytes > 400 * 1024) problems.push(`${key}'s portrait is ${portrait.bytes} bytes, over 400 KB`);
+    }
+  }
+  return problems;
+}
+
+describe('Divided World\'s staff pictures', () => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const avatars = path.join(here, 'avatars');
+  const fixtures = path.join(here, 'fixtures-staff-avatars');
+  const roster = instance.system!.roster.map((p) => p.key);
+  const fixtureUrl = (name: string) => `/fixtures/${name}`;
+
+  test('every key names a persona in the roster, and every picture holds its shape', () => {
+    expect(instanceUi.staffAvatars, 'the instance gives staff pictures').toBeDefined();
+    expect(staffPictureProblems(instanceUi.staffAvatars!, roster, avatars)).toEqual([]);
+  });
+  test('a key that names nobody is red', () => {
+    const problems = staffPictureProblems({ nobody: instanceUi.staffAvatars!['fangame']! }, roster, avatars);
+    expect(problems).toEqual(['nobody names no persona in the roster']);
+  });
+  test('a 255-wide square is red', () => {
+    const problems = staffPictureProblems({ fangame: { square: fixtureUrl('square-255.webp') } }, roster, fixtures);
+    expect(problems).toEqual(expect.arrayContaining(['fangame\'s square is 255 wide, under 256']));
+  });
+  test('a 3:1 portrait is red', () => {
+    const problems = staffPictureProblems({ fangame: { square: fixtureUrl('square-ok.png'), portrait: fixtureUrl('portrait-3to1.webp') } }, roster, fixtures);
+    expect(problems).toEqual(['fangame\'s portrait is 300 by 900, outside 1 to 2 times as tall as wide']);
+  });
+  test('FanGaME has both pictures', () => {
+    expect(instanceUi.staffAvatars?.['fangame']?.square).toMatch(/fangame-square.*\.webp|^data:image\/webp/u);
+    expect(instanceUi.staffAvatars?.['fangame']?.portrait).toMatch(/fangame-portrait.*\.webp|^data:image\/webp/u);
   });
 });

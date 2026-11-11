@@ -56,6 +56,8 @@ export interface SupabaseApiOptions {
   readonly fetch?: typeof fetch;
   /** For tests of the live channels: a client made elsewhere. */
   readonly client?: SupabaseClient;
+  /** Applied to every character the adapter reads, once, where it is made: the instance's pictures for its staff (engine/ui/data/staff-faces.ts). */
+  readonly face?: (character: Character) => Character;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -634,6 +636,7 @@ type Res = { data: unknown; error: { message: string; hint?: string | null } | n
 
 export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const { url, publishableKey, settingsFallback } = options;
+  const face = options.face ?? ((c: Character) => c);
   const doFetch: typeof fetch = options.fetch ?? ((...a) => globalThis.fetch(...a));
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
@@ -799,7 +802,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
 
-  const toCharacter = (c: Row, p: Row | undefined): Character => ({
+  const toCharacter = (c: Row, p: Row | undefined): Character => face({
     id: c['id'],
     name: c['name'],
     title: p?.['title'] ?? '',

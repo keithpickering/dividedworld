@@ -394,7 +394,7 @@ type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R
  * export and keeps a property of an object that is built.
  */
 export const FAKE_BACKEND_MARKER = 'KAYFA_FAKE_BACKEND';
-export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number }): Fake {
+export function createFake(options: { instance: Instance; settings?: Partial<ScreenSettings>; now?: () => number; /** Applied to every character the fake shows, as the adapter's `face` is (engine/ui/data/staff-faces.ts). */ face?: (character: Character) => Character }): Fake {
   /* A screen's economy (ScreenSettings.economy) is laid over the instance's, as economyNow does, never in place of it: a world given the
      web's fallback, which holds none, keeps the compiled numbers. */
   const settings: Settings = { ...options.instance.settings, ...options.settings, economy: { ...options.instance.settings.economy, ...options.settings?.economy } };
@@ -679,7 +679,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return latest;
   };
   function publicCharacter(c: CharRec): Character {
-    return {
+    return (options.face ?? ((x: Character) => x))({
       id: c.id, name: c.name, title: c.title, signature: c.signature, avatarSquare: c.square, avatarPortrait: c.portrait, squareFrame: c.squareFrame,
       portraitFrame: c.portraitFrame, pipStyle: c.pipStyle, pronouns: c.pronouns,
       joined: `${iso(c.debutedAt!).slice(0, 7)}-01`,
@@ -687,7 +687,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
       ...(c.staff ? { staff: c.staff.key, office: c.staff.office } : {}),
       group: groupOf(c),
-    };
+    });
   }
   /** The group a character is in: the highest rung it holds (a conferred group is the moves' business, not this fake's). */
   function groupOf(c: CharRec): string {
