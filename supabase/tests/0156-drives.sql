@@ -951,3 +951,35 @@ begin
   if doc::text ~* gv::text then raise exception 'the author''s page holds the giver''s account'; end if;
   perform tests.unbecome();
 end $$;
+
+-- A card that draws, needs a message or runs a drive is cast face up and never set face down: set_card is refused in the words decideSet says
+-- (engine/rules/cards.ts, faceUpOnly), and the set is refused whole (no back, no set Act, and the card is still in the hand), while a plain card is set on the same post.
+do $$
+declare
+  ann uuid := tests.account('dv-setter');
+  a uuid := tests.character(ann, 'Dv Setter');
+  t uuid := tests.thread('Dv set thread');
+  p uuid := tests.post(a, t, 'Words a back would sit under.');
+  k text;
+  why text;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, stack, drive, draws, needs_message) values
+    ('dv-up-drive', 'Dv Up Drive', 'sweet', 'common', 'cast', 2, '{"lasts": {"unit": "hour", "count": 1}, "gifts": ["dv.g1"], "overhead": "dv.over"}', null, null),
+    ('dv-up-draws', 'Dv Up Draws', 'sweet', 'common', 'cast', 2, null, '{x,y}', null),
+    ('dv-up-says', 'Dv Up Says', 'sweet', 'common', 'cast', 2, null, null, 'say why'),
+    ('dv-up-plain', 'Dv Up Plain', 'sweet', 'common', 'cast', 2, null, null, null);
+  insert into card_ledger (account, card, kind, price) select ann, c, 'bought', 0 from unnest(array['dv-up-drive', 'dv-up-draws', 'dv-up-says', 'dv-up-plain']) c;
+  foreach k in array array['dv-up-drive', 'dv-up-draws', 'dv-up-says'] loop
+    perform tests.become_service();
+    why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, k, a, p, '{}'));
+    perform tests.unbecome();
+    if why is distinct from '22023 ' || (select name from card_kinds where key = k) || ' is cast face up and never set face down' then raise exception 'a face-up-only card % was set face down, or refused in other words: %', k, why; end if;
+    if exists (select 1 from face_down f where f.post = p) or exists (select 1 from acts s where s.kind = 'set' and s.target_act_id = p) or card_held(ann, k) is distinct from 1 then
+      raise exception 'a refused set of % left something behind', k;
+    end if;
+  end loop;
+  perform tests.become_service();
+  perform set_card(ann, 'dv-up-plain', a, p, '{}', 0);
+  perform tests.unbecome();
+  if not exists (select 1 from face_down f where f.post = p and f.card = 'dv-up-plain') then raise exception 'a plain card was not set face down beside the refusals'; end if;
+end $$;

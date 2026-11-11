@@ -547,3 +547,8 @@ test('Jimmy Wails: a blank message is refused, in the card\'s words', () => {
   for (const blank of ['', '   ', undefined, null]) assert.deepEqual(decidePlay(j, settings, post(10), [], {}, blank), { ok: false, why: 'an appeal needs a sob story' }, String(blank));
   assert.equal(decidePlay(j, settings, post(10), [], {}, 'My cat needs a sweater.').ok, true);
 });
+
+test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a message, so it is cast now and face up (issue #446)', () => {
+  const j = jimmy();
+  assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is cast face up and never set face down' });
+});

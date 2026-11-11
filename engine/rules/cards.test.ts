@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -503,4 +503,15 @@ test('a drive card is full by its open drive\'s plays, never by the post\'s play
   const closed = [play('a', 'a', gone), play('b', 'a', gone), play('c', 'a', gone)];
   assert.equal(decidePlay(drive, settings, post, closed, {}, '').ok, true, 'a play after the close opens another drive');
   assert.equal(decidePlay(drive, settings, post, [...closed, ...open], {}, '').ok, true, 'earlier closed drives do not count against the open one');
+});
+
+test('a Move that writes, needs a message, draws or runs a drive is cast face up only, and decideSet refuses it in plain words', () => {
+  const needy: CardRules = { ...cast('needy', 'common'), needsMessage: 'say why' };
+  const dealer: CardRules = { ...cast('dealer', 'common'), draws: ['a', 'b'] };
+  const driver: CardRules = { ...cast('driver', 'common'), drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g'], overhead: 'o' } };
+  for (const card of [writer, needy, dealer, driver]) assert.equal(faceUpOnly(card), true, `${card.key} is face up only`);
+  assert.equal(faceUpOnly(plain), false);
+  for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is cast face up and never set face down` });
+  assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  assert.equal(decideSet(plain, settings, post, [], {}, [plain]).ok, true);
 });
