@@ -37,6 +37,8 @@ declare
                            'presence_box(text,uuid)',
                            -- A board's page and the index, each in one read (0095): invoker, stable, and readable by a signed-in player alone.
                            'board_page(text,integer,text[])', 'index_page()',
+                           -- The cosmetics every screen's face carries (0155): a public fact of its argument (a worn piece, a shown or held trophy), a definer because trophy_shelf is not the caller's to run.
+                           'profile_cosmetics(uuid)',
                            -- A character's two pages, each in one read (0096): invoker and stable, held to the web's read lists by the screen-function guard.
                            'profile_page(uuid)', 'record_page(uuid,text,integer)',
                            -- A player's wardrobe and an admin's grant of gear (0150): each asks who is calling inside.

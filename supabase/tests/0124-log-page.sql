@@ -191,7 +191,7 @@ begin
   -- adapter's characters() reads and no others (not warn_points or banned_until), as the faces carry them; none of her own.
   if doc -> 'people' is distinct from (
       select jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
-        select to_jsonb(p) from (
+        select to_jsonb(p) || profile_cosmetics(p.character) from (
           select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name, cp.id)
       from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c where c.id in (b1, cc, modc)) cp) or jsonb_array_length(doc -> 'people') is distinct from 3 then raise exception 'people: %', doc -> 'people'; end if;

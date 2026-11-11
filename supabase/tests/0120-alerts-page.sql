@@ -76,7 +76,7 @@ begin
   -- Only the authors of the posts the ended cards landed on (today's `authors`), with the columns characters() reads and no others.
   if doc -> 'people' is distinct from (
       select coalesce(jsonb_agg(to_jsonb(cp) || jsonb_build_object('profile', (
-        select to_jsonb(p) from (
+        select to_jsonb(p) || profile_cosmetics(p.character) from (
           select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
           from character_profiles r where r.character = cp.id) p)) order by cp.name), '[]'::jsonb)
       from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c
