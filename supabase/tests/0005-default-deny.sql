@@ -103,7 +103,9 @@ declare
                            'search_matches_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_walk_sql(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,boolean,timestampwithtimezone,uuid,integer)', 'search_cursor_ok(jsonb,boolean)', 'search_cursor_cast(jsonb)', 'search_updates_thread()',
                            'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
-                           'pack_pulls_problem(jsonb)', 'card_held(uuid,text)'];
+                           'pack_pulls_problem(jsonb)', 'card_held(uuid,text)',
+                           -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0158); the page is a signed-in read of public facts.
+                           'board_stubs(uuid)', 'board_closed_to(uuid)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.

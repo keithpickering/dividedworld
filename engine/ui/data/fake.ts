@@ -43,7 +43,7 @@ import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -197,7 +197,15 @@ export interface Seed {
   /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
   keepMove(act: Id, staff: string, options?: { at?: number }): Id;
   /** A move the Boss chose that waits in the admin queue; returns its queue id. */
-  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string } }): number;
+  queueMove(staff: string, move: SeedMove & { goLiveAt: number; why?: string; failure?: { at: number; text: string }; refusal?: { at: number; text: string };
+    /** A lasting move (`createBoard`, `moveThread`, `mergeBoard`) in place of a rename: its kind and params, a board or thread named by slug or id as the move's params name them. */
+    lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> } }): number;
+  /** A board of the players beyond the instance's own, for a scene that moves threads between boards or closes one. */
+  board(slug: string, name: string, description?: string): void;
+  /** A thread moved to another board (a landed `moveThread`), dated `at` (default now): it is on the new board, and the board it left lists it as a stub until `movedStubDays` pass. */
+  moveThread(thread: Id, board: string, options?: { at?: number }): void;
+  /** A board closed: merged into another (its threads go there), or closed with its threads going to `fallback` (default: the first open board of the players). */
+  closeBoard(board: string, how: { mergedInto: string } | { fallback?: string }): void;
   /** A nomination of a successor waiting in the admin queue (`boss` is a roster key); returns its queue id. */
   queueSuccessor(staff: string, boss: string, options: { goLiveAt: number; why?: string }): number;
   /** An admin's hold on a queued move, dated `at`: it never lands. */
@@ -360,7 +368,7 @@ interface ActRec {
   readonly at: number;
   readonly payload: Readonly<Record<string, unknown>>;
 }
-interface ThreadRec { readonly id: Id; readonly board: Id; readonly title: string; readonly origin: Id | null; readonly at: number; nextSeq: number }
+interface ThreadRec { readonly id: Id; board: Id; readonly title: string; readonly origin: Id | null; readonly at: number; nextSeq: number }
 interface AccountRec {
   readonly id: Id;
   readonly email: string;
@@ -453,8 +461,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
+  interface QueueRec { id: number; staff: string; successor?: string; lasting?: { kind: string; params: Readonly<Record<string, unknown>> }; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
+  /** Where a landed `moveThread` took a thread from (thread_departures, 0158). */
+  const departures: { thread: Id; from: Id; to: Id; at: number }[] = [];
+  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0152). */
+  const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
+  const isClosed = (b: Board): boolean => closedBoards.has(b.id);
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
@@ -1072,6 +1085,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = boards.find((b) => b.slug === boardSlug);
     if (!board) return refuse('there is no such board');
     if (board.isSystem) return refuse(SYSTEM_BOARD);
+    const closed = closedBoards.get(board.id);
+    if (closed) {
+      const went = boards.find((b) => b.id === (closed.mergedInto ?? closed.fallback));
+      return refuse(closed.mergedInto !== null
+        ? `this board was merged into ${went ? boardNow(went).name : 'another board'}; its threads are there, so start your thread there`
+        : `this board was closed; its threads are in ${went ? boardNow(went).name : 'another board'}, so start your thread there`);
+    }
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
     sendThread(t);
@@ -2150,7 +2170,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     setAdminContact: (links) => (me()?.admin ? writeContact(links) : refuse('only an admin sets how players reach the admins')),
     settings: () => screen,
 
-    boards: () => boards.map((b): BoardSummary => {
+    boards: () => boards.filter((b) => !isClosed(b)).map((b): BoardSummary => {
       const mine = [...threads.values()].filter((t) => t.board === b.id && listed(t)).map(summary);
       const latest = mine.sort((x, y) => Date.parse(y.lastAt) - Date.parse(x.lastAt) || y.id.localeCompare(x.id))[0];
       return { ...boardNow(b), threadCount: mine.length, lastAt: latest?.lastAt ?? null, lastCharacter: latest?.lastCharacter ?? null, lastThread: latest?.id ?? null, lastTitle: latest?.title ?? null };
@@ -2251,8 +2271,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'nameSuccessor', params: { boss: q.successor }, demand: null, why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: null, structural: true, boardName: null, failedAt: null, failure: null, replacedAt: q.replacedAt === undefined ? null : iso(q.replacedAt), adminDescription: null,
       }) : ({
-        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: 'renameBoard', params: paramsOf(q.move), demand: demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
-        expiresAt: q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: true, boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
+        id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
+        expiresAt: q.lasting || q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: q.lasting?.kind !== 'moveThread', boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
         failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null,
       }));
       const rowOf = (a: ActRec) => {
@@ -2937,6 +2957,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boardPage(slug, page, effectCards): BoardPage | null {
       const board = core.board(slug);
       if (!board) return null;
+      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0158). */
+      const gone = closedBoards.get(board.id);
+      if (gone) {
+        const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };
+        return {
+          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback) }, stubs: [], total: 0, page: 1, threads: [], pins: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
+          reading: {}, views: {}, characters: [], presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
+        };
+      }
       const THREADS = 20; // THREADS_PER_PAGE (engine/ui/board/Board.tsx), which the SQL's board_page also holds.
       const want = Math.max(1, page);
       let listed = core.threads(board.id, { offset: (want - 1) * THREADS, limit: THREADS });
@@ -2949,8 +2978,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const threads = [...pins.map((p) => p.thread), ...listed.threads];
       const ids = [...new Set(threads.map((t) => t.id))];
       const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
+      /* The threads moved away within movedStubDays, newest move first, each once (the latest move of it away from here) and only if it is not back: the stub says where it is now. */
+      const since = now() - settings.movedStubDays * 86_400_000;
+      const stubs = [...departures].filter((d) => d.from === board.id && d.at >= since).sort((x, y) => y.at - x.at)
+        .filter((d, i, all) => all.findIndex((e) => e.thread === d.thread) === i && core.thread(d.thread)!.board !== board.id)
+        .map((d): BoardStub => {
+          const moved = core.thread(d.thread)!;
+          const here = boards.find((b) => b.id === moved.board)!;
+          return { thread: d.thread, title: moved.title, movedTo: { id: here.id, slug: here.slug, name: boardNow(here).name }, movedAt: iso(d.at) };
+        });
       return {
-        board, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        board, closed: null, stubs, total: listed.total, page: shown, threads: listed.threads, pins, banner, states: core.effectStates(wanted), releases: core.myReleases(wanted),
         tallies: core.tallies(marked.map((a) => a.id)), mine: core.myReactions(marked.map((a) => a.id)), reading: core.reading(ids), views: core.viewCounts(ids),
         characters: core.characters(people), presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
       };
@@ -3696,9 +3734,29 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       moveKeeps.set(act, staff);
       return write({ character: staffId(staff), kind: 'move_keep', thread: a.thread, target: act, payload: {}, at: o?.at }).id;
     },
+    board(slug, name, description = `About ${name}`) {
+      if (boards.some((x) => x.slug === slug)) throw new Error(`there is a board ${slug} already`);
+      boards.push({ id: uuid(), slug, name, description, isSystem: false, moveAct: null });
+    },
+    moveThread(thread, slug, o) {
+      const t = threads.get(thread);
+      const to = boards.find((b) => b.slug === slug || b.id === slug);
+      if (!t || !to) throw new Error(`cannot move ${thread} to ${slug}`);
+      departures.push({ thread, from: t.board, to: to.id, at: o?.at ?? now() });
+      t.board = to.id;
+    },
+    closeBoard(slug, how) {
+      const b = boards.find((x) => x.slug === slug || x.id === slug);
+      if (!b) throw new Error(`no board ${slug}`);
+      const into = 'mergedInto' in how ? boards.find((x) => x.slug === how.mergedInto || x.id === how.mergedInto) : boards.find((x) => !x.isSystem && !isClosed(x) && x.id !== b.id && ('fallback' in how && how.fallback ? x.slug === how.fallback : true));
+      if (!into) throw new Error('no board for its threads to go to');
+      closedBoards.set(b.id, 'mergedInto' in how ? { mergedInto: into.id, fallback: null } : { mergedInto: null, fallback: into.id });
+      for (const t of threads.values()) if (t.board === b.id) t.board = into.id;
+    },
     queueMove(staff, m) {
       staffId(staff);
-      const rec: QueueRec = { id: queue.length + 1, staff, move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
+      const lasting = m.lasting === undefined ? undefined : { kind: m.lasting.kind, params: Object.fromEntries(Object.entries(m.lasting.params).map(([k, v]) => [k, (k === 'board' || k === 'into' || k === 'fallback') && typeof v === 'string' ? boards.find((b) => b.slug === v)?.id ?? v : v])) };
+      const rec: QueueRec = { id: queue.length + 1, staff, ...(lasting ? { lasting } : {}), move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
       queue.push(rec);
       return rec.id;
     },

@@ -7,7 +7,7 @@ import type { BoardName } from '../data/api.ts';
 import { Link } from '../router.tsx';
 import { moveParts } from './move-words.ts';
 
-export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed, character }: {
+export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed, character, thread }: {
   readonly kind: string;
   readonly params: Readonly<Record<string, unknown>>;
   readonly boards: readonly BoardName[];
@@ -20,14 +20,22 @@ export function MoveSentence({ kind, params, boards, tense, was, bosses, unnamed
   readonly unnamed?: string;
   /** The character a group move names, where the caller knows it (the params hold only its id); absent, the sentence says "a member". */
   readonly character?: string;
+  /** The thread a `moveThread` moved, by its title now, and the board it left, where the caller knows them (the params hold only ids); absent, the sentence says "a thread". */
+  readonly thread?: { readonly title: string; readonly from?: BoardName };
 }) {
   const { settings } = useKayfa();
   const named = boards.find((b) => b.id === params['board']);
+  /* A merge names two boards: `board` is the one that closes (read by `was`, its name now), `into` the one that takes its threads (the sentence's second board). */
+  const merged = kind === 'mergeBoard';
+  const target = merged ? boards.find((b) => b.id === params['into']) : named;
   const boss = kind === 'nameSuccessor' ? bosses?.find((b) => b.staff === params['boss'])?.name ?? unnamed : undefined;
   /* A group move names its group by the instance's name for it (the params hold the key) and its board by the board's name now. */
   const group = settings.groups.find((g) => g.key === params['group'])?.name;
-  const names = { ...(character !== undefined ? { character } : {}), ...(group !== undefined ? { group } : {}), ...(named ? { board: named.name } : {}) };
-  const parts = moveParts(kind, params, was ?? boss ?? named?.was ?? null, tense, names);
+  const names = {
+    ...(character !== undefined ? { character } : {}), ...(group !== undefined ? { group } : {}), ...(target ? { board: target.name } : {}),
+    ...(thread ? { thread: thread.title, ...(thread.from ? { from: thread.from.name, fromId: thread.from.id } : {}) } : {}),
+  };
+  const parts = moveParts(kind, params, was ?? boss ?? (merged ? named?.name : named?.was) ?? null, tense, names);
   return (
     <>
       {parts.map((p, i) => {

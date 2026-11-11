@@ -267,6 +267,8 @@ export interface Settings {
   readonly digestBoards: number;
   /** How many days back, from the digest's end, a board line counts its posts. A starting point. */
   readonly digestBoardDays: number;
+  /** How many days a board lists a thread that was moved away from it, as a stub row that says where it went (board_page). After that the board forgets it; the thread is on its new board for good. */
+  readonly movedStubDays: number;
   /** How many top posts the digest quotes. A starting point. */
   readonly digestExcerpts: number;
   /** How many characters of a post the digest quotes. A starting point. */

@@ -247,6 +247,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   digestThreads: whole(1, 'threads', DIGEST_MOST.threads),
   digestBoards: whole(1, 'boards', DIGEST_MOST.boards),
   digestBoardDays: whole(1, 'days', DIGEST_MOST.boardDays),
+  /** A year at most: a stub is a pointer for a while, not a second index of where threads went. SQL's settings_held holds the same. */
+  movedStubDays: whole(1, 'days', 365),
   digestExcerpts: whole(1, 'posts', DIGEST_MOST.excerpts),
   digestExcerptChars: whole(1, 'characters', DIGEST_MOST.excerptChars),
   memoryOpinions: whole(1, 'opinions'),

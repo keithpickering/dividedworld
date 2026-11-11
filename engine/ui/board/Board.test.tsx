@@ -816,3 +816,67 @@ describe('pinned threads and the banner', () => {
     expect(await within(banner).findByRole('button', { name: /^Rumble, 1 play\b.*Opens the cards on this board\./u })).toBeInTheDocument();
   });
 });
+
+describe('a thread that moved away leaves a stub, and a closed board says where its threads went', () => {
+  test('a stub row reads "Moved: <title>", links to the thread, and says the board it is on now; it sits below the board\'s own threads', async () => {
+    const { seeded } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 2 }); f.seed.moveThread(w.ids[0]!, 'off-topic', { at: f.clock.now() - 2 * DAY }); return w; },
+    });
+    const stub = await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    expect(stub).toHaveAttribute('href', `/t/${seeded.ids[0]}?page=1`);
+    const row = stub.closest('tr')!;
+    expect(within(row).getByRole('link', { name: 'Off Topic' })).toHaveAttribute('href', '/b/off-topic');
+    expect(row).toHaveTextContent('now on Off Topic');
+    const own = rowOf('Thread 002');
+    expect(own.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    /* The board it is on lists it as its own thread, with no stub. */
+    expect(screen.queryByRole('link', { name: 'Thread 001' })).toBeNull();
+  });
+
+  test('a board with no move away draws no stub, and a stub row is no thread row: it has no reading folder or counts', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f) });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect(screen.queryByText(/^Moved:/u)).toBeNull();
+  });
+
+  test('a board that only has a stub is not "No threads here yet": the stub is the page', async () => {
+    renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.moveThread(w.ids[0]!, 'off-topic', { at: f.clock.now() - DAY }); return w; },
+    });
+    await screen.findByRole('link', { name: 'Moved: Thread 001' });
+  });
+
+  test('a merged board shows one plain line, linked, and no New Thread control and no list', async () => {
+    renderInWorld(<LoadedBoard slug="off-topic" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.closeBoard('off-topic', { mergedInto: 'general' }); return w; },
+    });
+    expect(await screen.findByRole('heading', { level: 1, name: 'Off Topic' })).toBeInTheDocument();
+    const line = await screen.findByText(/^This board was merged into /u);
+    expect(line).toHaveTextContent('This board was merged into General.');
+    expect(within(line).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByText('No threads here yet.')).toBeNull();
+  });
+
+  test('a closed board that was not merged says where its threads are', async () => {
+    renderInWorld(<LoadedBoard slug="off-topic" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.closeBoard('off-topic', { fallback: 'general' }); return w; },
+    });
+    const line = await screen.findByText(/^This board was closed\./u);
+    expect(line).toHaveTextContent('This board was closed. Its threads are in General.');
+    expect(within(line).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+    expect(screen.queryByRole('button', { name: 'Start a thread' })).toBeNull();
+  });
+
+  test('the index lists no closed board, and starting a thread on one is refused in words that name where its threads went', async () => {
+    const { fake, seeded } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f); f.seed.closeBoard('off-topic', { mergedInto: 'general' }); return w; },
+    });
+    await screen.findByRole('link', { name: 'Thread 001' });
+    expect((await fake.boards()).map((b) => b.slug)).not.toContain('off-topic');
+    const refused = await fake.startThread('off-topic', seeded.mine!, 'Late', 'Hello.');
+    expect(refused.ok).toBe(false);
+    expect(JSON.stringify(refused)).toMatch(/merged into General/u);
+  });
+});

@@ -43,7 +43,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -1548,8 +1548,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const marked = [...pins.map((p) => p.act.id), ...banner.map((p) => p.act.id)];
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
+      const ref = (v: unknown): BoardRef | null => (isObject(v) && typeof v['id'] === 'string' ? { id: v['id'], slug: str(v['slug']) ?? '', name: str(v['name']) ?? '' } : null);
+      const stubs = rowsOf(d['stubs']).flatMap((s): BoardStub[] => {
+        const to = ref({ id: s['moved_to'], slug: s['moved_to_slug'], name: s['moved_to_name'] });
+        return to ? [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: to, movedAt: str(s['moved_at']) ?? '' }] : [];
+      });
       return {
-        board: toBoard(d['board'] as Row), total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
+        board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']) } : null, stubs,
+        total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
         states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
         tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,
         views: toViews([...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),

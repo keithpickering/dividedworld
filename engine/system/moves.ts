@@ -122,7 +122,13 @@ export interface MoveKind {
 export interface MoveNames {
   readonly character?: string;
   readonly group?: string;
+  /** The board a move names: a rename's, a thread's new board, the board a merge goes into. */
   readonly board?: string;
+  /** The title of the thread a `moveThread` moves, as it is called now. */
+  readonly thread?: string;
+  /** The board a `moveThread` took the thread from (and its id, so the sentence can link it), as it is called now. */
+  readonly from?: string;
+  readonly fromId?: string;
 }
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -369,8 +375,12 @@ export const MOVE_THREAD: MoveKind = {
   uuids: ['thread', 'board'],
   demand: () => 'none',
   plain: 'the moving of a thread to another board',
-  template: (_p, role) => `${role} moved a thread to another board. It was not changed; the board it left lists where it went for a few days.`,
-  parts: (p, _was, tense, names) => [tense === 'plan' ? 'Move a thread to ' : 'Moved a thread to ', { board: text(p['board']), name: names?.board ?? 'a board' }],
+  template: (p, role, names) => `${role} moved ${names?.thread ?? 'a thread'}${names?.from ? ` from ${names.from}` : ''} to ${names?.board ?? 'another board'}. Nothing in the thread was changed; the board it left lists where it went for a few days.`,
+  parts: (p, _was, tense, names) => {
+    const head = `${tense === 'plan' ? 'Move' : 'Moved'} ${names?.thread ?? 'a thread'}`;
+    const to = { board: text(p['board']), name: names?.board ?? 'a board' };
+    return names?.from ? [`${head} from `, { board: names.fromId ?? '', name: names.from }, ' to ', to] : [`${head} to `, to];
+  },
 };
 
 /** The Boss merges one board into another: its threads join the other and it closes, kept as a record. `board` and `into` differ; the database also refuses a cycle. */
@@ -387,7 +397,7 @@ export const MERGE_BOARD: MoveKind = {
   check: (g) => (text(g['board']) === text(g['into']) ? { path: 'into', predicate: 'differsFromBoard' } : null),
   demand: () => 'none',
   plain: 'the merging of a board into another',
-  template: (_p, role) => `${role} merged a board into another. Its threads moved with it, and the board is closed.`,
+  template: (_p, role, names) => `${role} merged ${names?.from ?? 'a board'} into ${names?.board ?? 'another'}. Its threads moved with it, and the board is closed.`,
   parts: (p, was, tense, names) => [tense === 'plan' ? 'Merge ' : 'Merged ', { board: text(p['board']), name: was ?? 'a board' }, ' into ', { board: text(p['into']), name: names?.board ?? 'a board' }],
 };
 

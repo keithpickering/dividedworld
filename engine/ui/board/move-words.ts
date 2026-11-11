@@ -71,4 +71,7 @@ export function moveParts(kind: string, params: Readonly<Record<string, unknown>
 
 /** What a move asks, without progress: for a move that has not landed. */
 export const demandNeeds = (demand: Demand | null, kind?: string): string =>
-  demand ? demandAsk(demand) : kind === 'nameSuccessor' ? 'It asks nothing: it ends at the handover, or when an admin reverses it.' : 'It asks nothing: it ends at its expiry, or when an admin reverses it.';
+  demand ? demandAsk(demand)
+    : kind === 'nameSuccessor' ? 'It asks nothing: it ends at the handover, or when an admin reverses it.'
+      : kind !== undefined && moveKind(kind)?.lasting ? 'It asks nothing and does not run out: it stays until an admin reverses it or a later move replaces it.'
+        : 'It asks nothing: it ends at its expiry, or when an admin reverses it.';

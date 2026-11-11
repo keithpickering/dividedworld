@@ -77,6 +77,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   digestBoards: 30,
   /** A starting point: a board line counts its posts over the last three weeks. */
   digestBoardDays: 21,
+  /** A thread moved off a board is listed on it for a week as a stub that says where it went, then the board forgets it. */
+  movedStubDays: 7,
   /** A starting point: the digest quotes the eight top posts. */
   digestExcerpts: 8,
   /** A starting point: each quoted post is cut to 280 characters. */

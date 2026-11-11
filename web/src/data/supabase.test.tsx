@@ -2090,6 +2090,22 @@ describe('a screen in one call', () => {
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
   });
 
+  it('board_page: maps the stubs of moved threads, and a closed board\'s merge or fallback; an open board is not closed', async () => {
+    const rest = { board: BOARD_ROW, total: 0, page: 1, threads: [], pins: [], banner: [], states: [], releases: [], tallies: [], mine: [], reading: [], views: [], characters: [], presence: PRESENCE, unread: 0 };
+    const open = await once('board_page', { ...rest, closed: false, mergedInto: null, fallback: null, stubs: [{ id: T, title: 'Best bread', moved_to: C, moved_to_slug: 'off-topic', moved_to_name: 'Off Topic', moved_at: '2026-10-01T10:00:00+00:00' }] }).api.boardPage('general', 1, []);
+    expect(open?.closed).toBeNull();
+    expect(open?.stubs).toEqual([{ thread: T, title: 'Best bread', movedTo: { id: C, slug: 'off-topic', name: 'Off Topic' }, movedAt: '2026-10-01T10:00:00+00:00' }]);
+    const merged = await once('board_page', { ...rest, closed: true, mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null, stubs: [], presence: null }).api.boardPage('minus', 1, []);
+    expect(merged?.closed).toEqual({ mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null });
+    expect(merged?.threads).toEqual([]);
+    const made = await once('board_page', { ...rest, closed: true, mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, stubs: [], presence: null }).api.boardPage('short', 1, []);
+    expect(made?.closed).toEqual({ mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' } });
+    /* A page from before the stubs (no keys) is an open board with none. */
+    const older = await once('board_page', rest).api.boardPage('general', 1, []);
+    expect(older?.closed).toBeNull();
+    expect(older?.stubs).toEqual([]);
+  });
+
   it('search_posts and search_threads: send the filters by their column names and the cursor as given, and map the page to camelCase', async () => {
     const hit = { act: A, thread: T, title: 'Mario Kart', board: C, board_slug: 'general', board_name: 'General', seq: 3, page: 2, character: B, name: 'Bea', created_at: '2026-10-01T10:00:00+00:00', snippet: 'a <<banana>> day', cards: ['splat', 7] };
     const query = { q: 'banana', author: B, board: C, fromAt: '2026-10-01T00:00:00Z', toAt: '2026-10-02T00:00:00Z', titlesOnly: true, sort: 'newest', perPage: 10 } as const;

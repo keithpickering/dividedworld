@@ -69,6 +69,29 @@ describe('the admin queue', () => {
     expect(within(waiting).getByRole('link', { name: w.secondName })).toHaveAttribute('href', `/b/${w.second}`);
   });
 
+  test('a waiting createBoard and mergeBoard read in the queue\'s words: the board made, the boards merged (linked), and that neither expires', async () => {
+    const { w } = open({
+      build: (fake, w) => {
+        const soon = fake.clock.now() + 3_600_000;
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'The forum needs a basement.', lasting: { kind: 'createBoard', params: { name: 'Minus World', premise: 'Where the glitches live.', description: 'Walk through walls.' } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon + 60_000, why: 'Too many rooms.', lasting: { kind: 'mergeBoard', params: { board: w.second, into: w.general } } });
+      },
+    });
+    const waiting = await group(/^Waiting to land/u);
+    const make = within(waiting).getAllByRole('heading', { level: 3 }).find((h) => /^Create a board/u.test(h.textContent ?? ''))!;
+    expect(make).toHaveTextContent('Create a board named "Minus World"');
+    expect(make.closest('article')).toHaveTextContent('New subject: Where the glitches live.');
+    /* The board that took the threads is named as it is called now (the first board's rename is in force). */
+    const merge = within(waiting).getAllByRole('heading', { level: 3 }).find((h) => /^Merge /u.test(h.textContent ?? ''))!;
+    expect(merge).toHaveTextContent(`Merge ${w.secondName} into Pointless Toast Palace`);
+    expect(within(merge).getByRole('link', { name: w.secondName })).toHaveAttribute('href', `/b/${w.second}`);
+    expect(within(merge).getByRole('link', { name: 'Pointless Toast Palace' })).toHaveAttribute('href', `/b/${w.general}`);
+    expect(waiting).toHaveTextContent('Why, in The Director\'s words: “Too many rooms.”');
+    expect(waiting).toHaveTextContent(/does not run out: it stays until an admin reverses it or a later move replaces it/u);
+    expect(waiting).not.toHaveTextContent(/it ends at its expiry/u);
+    expect(within(waiting).getByRole('button', { name: 'Hold: Minus World' })).toBeInTheDocument();
+  });
+
   test('a move the tick could not land shows the failure in the server\'s words, and stays open to a hold', async () => {
     open({ build: (fake, w) => { fake.seed.queueMove('director', { board: w.second, name: 'Stuck Hall', goLiveAt: fake.clock.now() - 60_000, failure: { at: fake.clock.now() - 30_000, text: 'the board no longer exists' } }); } });
     const waiting = await group(/^Waiting to land/u);

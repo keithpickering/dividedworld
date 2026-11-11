@@ -1649,9 +1649,41 @@ export interface IndexPage {
   readonly unread: number;
 }
 
+/** A board named where a closed board's threads went, or where a thread moved to: enough to link it. */
+export interface BoardRef {
+  readonly id: Id;
+  readonly slug: string;
+  readonly name: string;
+}
+
+/**
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0158): a row that links to the thread
+ * and names the board it is on now. It is a fact of the move, public as the move is.
+ */
+export interface BoardStub {
+  readonly thread: Id;
+  readonly title: string;
+  readonly movedTo: BoardRef;
+  /** When the move landed. */
+  readonly movedAt: string;
+}
+
+/**
+ * A board that is closed (board_page, 0158): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * Its page lists no threads and no stubs.
+ */
+export interface BoardClosed {
+  readonly mergedInto: BoardRef | null;
+  readonly fallback: BoardRef | null;
+}
+
 /** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */
 export interface BoardPage {
   readonly board: Board;
+  /** Null for an open board. */
+  readonly closed: BoardClosed | null;
+  /** The threads moved away from this board within `movedStubDays`, newest move first: drawn below the board's own threads, taking none of the page's slots. */
+  readonly stubs: readonly BoardStub[];
   readonly total: number;
   readonly page: number;
   readonly threads: readonly ThreadSummary[];
