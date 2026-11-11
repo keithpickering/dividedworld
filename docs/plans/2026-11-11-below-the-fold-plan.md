@@ -50,6 +50,8 @@ for anything; it is in `cards` and `castOnPost` holds for it (so Trap Card can n
 
 ## Task 2. The machine and the art
 
+*Note, 2026-11-11: the slot stands at the end of the on-sale slots (after Glitter Bomb, before the hidden Main Event), not after Whoops! as written below: a slot after Whoops! moved every later slot and failed the booster packs boards 01 and 05, which hold the build to the drawn boards by place. The boards' manifests record the added row.*
+
 Model: sonnet
 
 **Files:** `instances/divided-world/machine.ts` (one slot, after Whoops!:
