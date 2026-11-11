@@ -368,6 +368,15 @@ describe('gear on the postbit', () => {
     expect(phone).toMatch(/\.kb-outfit\[data-kb-on="square"\]\s*\{[^}]*display:\s*block/u);
   });
 
+  test('no rule hides the square outfit outside the side layout, and the phone crops the portrait slot with cover', () => {
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const hides = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => /display:\s*none/u.test(m[2]!) && m[1]!.includes('data-kb-on="square"'));
+    expect(hides.length).toBeGreaterThan(0);
+    for (const m of hides) expect(m[1]).toContain('data-kb-postbit="side"');
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(phone).toMatch(/data-kb-slot="portrait"\]\s*>\s*picture\s*>\s*img\s*\{[^}]*object-fit:\s*cover/u);
+  });
+
   test('a mask with no portrait draws its square or initial and no gear', () => {
     show(person({}, { avatarPortrait: null, outfit: worn }));
     expect(slot().querySelector('.kb-outfit')).toBeNull();
@@ -401,7 +410,9 @@ describe('the postbit\'s text over the outfit, in the stylesheet', () => {
   test('the tall slot lets gear reach past its edge and does not crop the portrait', () => {
     const slot = decls('.kb-postbit-avatar[data-kb-slot="portrait"]');
     expect(slot).toMatch(/overflow:\s*visible/u);
-    expect(decls('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).not.toMatch(/object-fit:\s*cover/u);
+    const wide = css.slice(0, css.indexOf('@media (max-width: 40em)'));
+    const wideImg = [...wide.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.trim().endsWith('.kb-postbit-avatar[data-kb-slot="portrait"] > picture > img')).map((m) => m[2]!).join('');
+    expect(wideImg).not.toMatch(/object-fit:\s*cover/u);
   });
 });
 

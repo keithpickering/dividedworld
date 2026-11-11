@@ -153,7 +153,7 @@
   }
 
   /* The square's gear is for the phone. */
-  .kb-postbit-avatar > .kb-outfit[data-kb-on="square"] {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
     display: none;
   }
 
@@ -185,11 +185,16 @@
     aspect-ratio: 1 !important;
   }
 
+  /* A portrait with no square never stretches in the small square slot. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > picture > img {
+    object-fit: cover;
+  }
+
   .kb-postbit-avatar[data-kb-square] > .kb-outfit[data-kb-on="portrait"] {
     display: none;
   }
 
-  .kb-postbit-avatar > .kb-outfit[data-kb-on="square"] {
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"] > .kb-outfit[data-kb-on="square"] {
     display: block;
   }
 
