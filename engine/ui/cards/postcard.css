@@ -175,10 +175,22 @@ button.kb-postcard {
 }
 
 .kb-postcard[data-size='slot'] .kb-postcard-plate { top: auto; bottom: 7cqw; width: calc(100% - 9cqw); height: 20cqw; }
-/* instances/divided-world/ui/index.test.tsx reads this rule to hold the longest name legible at the slot. */
+/* instances/divided-world/ui/index.test.tsx reads these name rules and plate heights to hold every name's type at 10px or more at the slot and the phone. */
 .kb-postcard[data-size='slot'] .kb-postcard-name { font-size: max(7px, min(15cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
 .kb-postcard[data-size='phone'] .kb-postcard-plate { top: auto; bottom: 8cqw; width: calc(100% - 9cqw); height: 18cqw; }
 .kb-postcard[data-size='phone'] .kb-postcard-name { font-size: max(7px, min(13.5cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+
+/*
+ * A long name with a space breaks onto two lines at the slot and the phone (nameLines.ts, Postcard.tsx: data-lines='2', each line its own
+ * block, --kb-name-chars the longer line's length). The plate is anchored at the card's foot, so it grows upward over the art, and only for
+ * these names: its content box (the height less the 0.8cqw top padding) holds two lines of the name's 0.95 line height at the type's cap,
+ * 26cqw: 25.2 >= 2 * 0.95 * 13 = 24.7; 22cqw: 21.2 >= 2 * 0.95 * 11 = 20.9. 13cqw is 11.2px on the slot and 11cqw is 11.4px on the phone.
+ */
+.kb-postcard[data-size='slot'][data-lines='2'] .kb-postcard-plate { height: 26cqw; }
+.kb-postcard[data-size='slot'][data-lines='2'] .kb-postcard-name { font-size: max(7px, min(13cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+.kb-postcard[data-size='phone'][data-lines='2'] .kb-postcard-plate { height: 22cqw; }
+.kb-postcard[data-size='phone'][data-lines='2'] .kb-postcard-name { font-size: max(7px, min(11cqw, calc(165cqw / var(--kb-name-chars, 8)))); }
+.kb-postcard-name-line { display: block; white-space: nowrap; }
 
 /* The text plate, chamfered at two corners by the glass's cut. */
 .kb-postcard-line {

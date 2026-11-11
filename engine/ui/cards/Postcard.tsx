@@ -14,6 +14,7 @@
  */
 import type { CSSProperties, ElementType, HTMLAttributes, Ref } from 'react';
 import { gemOf, priceOf, rarityName, type CardFace } from './faces.ts';
+import { nameLines } from './nameLines.ts';
 import { templateVars, type PostcardSize } from './template.ts';
 import './postcard.css';
 
@@ -50,7 +51,10 @@ export function cardLabel(face: CardFace, size: PostcardSize): string {
 }
 
 export function Postcard({ face, size, price = null, as: As = 'span', armed = false, className, style, ...rest }: PostcardProps) {
-  const vars = { ...templateVars(size), '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, '--kb-name-chars': face.name.length, ...style } as CSSProperties;
+  /* A long name breaks onto two lines at the two sizes whose plate is narrow; the other sizes draw it on one. */
+  const wrapped = size === 'slot' || size === 'phone' ? nameLines(face.name) : null;
+  const twoLines = wrapped !== null && wrapped.lines.length === 2;
+  const vars = { ...templateVars(size), '--kb-card-color': face.art.color, '--kb-card-ink': face.art.ink, '--kb-name-chars': wrapped ? wrapped.longest : face.name.length, ...style } as CSSProperties;
   const { canvas, credit } = face.art;
   return (
     <As
@@ -58,6 +62,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
       className={`kb-postcard${className ? ` ${className}` : ''}`}
       style={vars}
       data-size={size}
+      data-lines={twoLines ? '2' : undefined}
       data-kb-card={face.key}
       data-kb-alignment={face.unknown ? undefined : face.alignment}
       data-armed={armed ? '' : undefined}
@@ -72,7 +77,7 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
         * name (`cardLabel`). So the name is drawn before the tag and the tagline in the markup, with a space
         * between (every part is placed, so the order is not the eye's), and every word stays real text.
         */}
-      <span className="kb-postcard-plate" aria-hidden="true" data-kb-art><span className="kb-postcard-name">{face.name}</span></span>
+      <span className="kb-postcard-plate" aria-hidden="true" data-kb-art><span className="kb-postcard-name">{twoLines ? wrapped.lines.map((line, i) => <span key={i} className="kb-postcard-name-line">{i > 0 ? ' ' : ''}{line}</span>) : face.name}</span></span>
       {' '}
       {/* The alignment and how it is played, as two badges on the top border; the slot holds neither. */}
       {size !== 'slot' && !face.unknown && (

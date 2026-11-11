@@ -11,6 +11,7 @@ import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
 import { TIP_KEYS } from '../../../engine/ui/tips/keys.ts';
 import { instance } from '../index.ts';
 import { faceOf, facesOf } from '../../../engine/ui/cards/faces.ts';
+import { nameLines } from '../../../engine/ui/cards/nameLines.ts';
 import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
@@ -121,14 +122,45 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(instanceUi.cardBack?.mark).toMatch(SVG_URL);
   });
 
-  /* The slot's name is laid out at no more than 165cqw over its length (engine/ui/cards/postcard.css), so the longest name sets the smallest type a card's name has. */
-  test('the longest card name stays legible at the slot', () => {
-    const css = fs.readFileSync(path.join(process.cwd(), 'engine/ui/cards/postcard.css'), 'utf8');
-    const m = /data-size='slot'\] \.kb-postcard-name \{ font-size: max\(7px, min\(([\d.]+)cqw, calc\(([\d.]+)cqw/u.exec(css);
-    expect(m, 'the slot\'s name rule').not.toBeNull();
-    const [share, fit] = [Number(m![1]), Number(m![2])];
-    const longest = Math.max(...instance.cards.map((c) => c.name.length));
-    expect((Math.min(share, fit / longest) * SIZES.slot) / 100).toBeGreaterThanOrEqual(10);
+  /* A card's name is laid out at no more than 165cqw over its longest line (engine/ui/cards/postcard.css), and a name of more than 14
+     characters with a space breaks onto two lines at the slot and the phone (engine/ui/cards/nameLines.ts), each line on a taller plate that
+     holds both. So the type a name gets is the smallest of its width bound and, for two lines, its plate's height bound. */
+  const cardCss = fs.readFileSync(path.join(process.cwd(), 'engine/ui/cards/postcard.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  const rule = (selector: string) => cardCss.split('}').map((r) => r.split('{')).find(([sel]) => sel?.trim() === selector)?.[1] ?? '';
+  const nameFont = (size: string, lines: 1 | 2) => {
+    const sel = lines === 2 ? `.kb-postcard[data-size='${size}'][data-lines='2'] .kb-postcard-name` : `.kb-postcard[data-size='${size}'] .kb-postcard-name`;
+    const m = /font-size: max\(7px, min\(([\d.]+)cqw, calc\(([\d.]+)cqw/u.exec(rule(sel));
+    expect(m, `the ${size}'s ${lines}-line name rule`).not.toBeNull();
+    return { share: Number(m![1]), fit: Number(m![2]) };
+  };
+  const plateHeight = (size: string, lines: 1 | 2) => {
+    const sel = lines === 2 ? `.kb-postcard[data-size='${size}'][data-lines='2'] .kb-postcard-plate` : `.kb-postcard[data-size='${size}'] .kb-postcard-plate`;
+    const m = /height: ([\d.]+)cqw/u.exec(rule(sel));
+    expect(m, `the ${size}'s ${lines}-line plate height`).not.toBeNull();
+    return Number(m![1]);
+  };
+  const lineHeight = Number(/line-height: ([\d.]+)/u.exec(rule('.kb-postcard-name'))![1]);
+  const padTop = Number(/padding: ([\d.]+)cqw/u.exec(rule('.kb-postcard-plate'))![1]);
+  /** The px a name's type is at a size: its width bound over its longest line and, on two lines, the plate's height bound over two line-heights. */
+  const nameSize = (name: string, size: 'slot' | 'phone') => {
+    const { lines, longest } = nameLines(name);
+    const { share, fit } = nameFont(size, lines.length === 2 ? 2 : 1);
+    let cqw = Math.min(share, fit / longest);
+    if (lines.length === 2) cqw = Math.min(cqw, (plateHeight(size, 2) - padTop) / (2 * lineHeight));
+    return (cqw * SIZES[size]) / 100;
+  };
+  test('every card name stays legible at the slot and the phone', () => {
+    for (const size of ['slot', 'phone'] as const) {
+      for (const c of instance.cards) expect(nameSize(c.name, size), `${c.name} at the ${size}`).toBeGreaterThanOrEqual(10);
+    }
+  });
+  test('a name that wraps does so on a plate tall enough for both lines, and a very long one would still fall short', () => {
+    for (const size of ['slot', 'phone'] as const) {
+      const { share } = nameFont(size, 2);
+      expect(plateHeight(size, 2) - padTop, `the ${size}'s two lines at the largest size`).toBeGreaterThanOrEqual(2 * lineHeight * share);
+      expect(nameSize('You Were Saying?', size)).toBeGreaterThanOrEqual(10);
+      expect(nameSize('Wonderfully Extraordinarily Overlong Names', size), 'the guard goes red on a name too long even for two lines').toBeLessThan(10);
+    }
   });
 
   test('every class has a look, a description and a hurtsBy', () => {
