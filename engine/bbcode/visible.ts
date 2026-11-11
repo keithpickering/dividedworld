@@ -120,10 +120,7 @@ export function quotedActs(nodes: readonly BbNode[]): string[] {
         pushAll(n.children);
         break;
       case 'bold': case 'italic': case 'underline': case 'strike': case 'color': case 'size': case 'counterfeit': case 'spoiler': case 'ispoiler':
-      case 'align': case 'sub': case 'sup': case 'font': case 'marquee': case 'glow': case 'shadow': case 'rainbow': case 'highlight':
-        pushAll(n.children);
-        break;
-      case 'url':
+      case 'align': case 'sub': case 'sup': case 'font': case 'marquee': case 'glow': case 'shadow': case 'rainbow': case 'highlight': case 'url':
         pushAll(n.children);
         break;
       case 'list': {

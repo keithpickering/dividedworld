@@ -1729,7 +1729,6 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
   });
 });
 
-/* An admin's end of a card (supabase/migrations/0092_card_end.sql): its layer is off for everyone, whether the page read it ended or heard it end. */
 /* ------------------------------------------------------------------------ a post that cannot be quoted ---- */
 describe('a post under a no-quote card', () => {
   const stops = {
@@ -1794,19 +1793,22 @@ describe('a post under a no-quote card', () => {
   test('with the play ended, or reversed, the button is there', async () => {
     const ended = stopped({ ends: new Date(Date.now() - 60_000).toISOString() });
     openStopped(ended.w);
-    await screen.findByRole('article', { name: /^Post 3 /u });
-    await waitFor(() => expect(quoteOf(2)).not.toBeNull());
+    /* The mark stays on an ended play: it proves the plays were read before the button is asserted. */
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).not.toBeNull();
   });
 
   test('a play reversed by an admin leaves the Quote button', async () => {
     const { w, played } = stopped();
     expect((await w.fake.reverseCard(played)).ok).toBe(true);
     openStopped(w);
-    await screen.findByRole('article', { name: /^Post 3 /u });
-    await waitFor(() => expect(quoteOf(2)).not.toBeNull());
+    /* The mark stays on an ended play: it proves the plays were read before the button is asserted. */
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: /^Stopper, 1 play\b/u });
+    expect(quoteOf(2)).not.toBeNull();
   });
 });
 
+/* An admin's end of a card (supabase/migrations/0092_card_end.sql): its layer is off for everyone, whether the page read it ended or heard it end. */
 describe('a card an admin ended', () => {
   test('draws no effect on its post, where the same card live beside it does, and its mark stays', async () => {
     const w = world(3);

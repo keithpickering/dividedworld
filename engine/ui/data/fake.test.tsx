@@ -3478,14 +3478,17 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
   });
 
   test('an edit that adds the quote is refused; one that keeps a quote the post already held is written', async () => {
-    const { fake, bo, boFace, thread, opener, anaFace } = setup();
+    const { fake, thread, opener, anaFace } = setup();
     const held = must(await fake.post(thread, anaFace, `[quote=${opener}]x[/quote] first`, null));
     must(await fake.useCard('hush', anaFace, opener, {}, ''));
     expect(must(await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] changed words`)).kind).toBe('post');
     const plain = must(await fake.post(thread, anaFace, `No quote yet.`, null));
     const refusedEdit = await fake.edit(plain.id, anaFace, `[quote=${opener}]x[/quote] now`);
     expect((refusedEdit as Refusal).error).toContain(words(1));
-    void bo;
+    /* An edit compares against the post's current body: once an edit drops the quote, one that puts it back adds it. */
+    expect(must(await fake.edit(held.id, anaFace, `Dropped the quote.`)).kind).toBe('post');
+    const readded = await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] back again`);
+    expect((readded as Refusal).error).toContain(words(1));
   });
 
   test('a no-quote card is refused on a post with a live back, and a set is refused on a stopped post', async () => {
@@ -3502,7 +3505,7 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
   });
 
   test('a cast card that carries an earn lands on another account\'s character and shows among that character\'s effects', async () => {
-    const { fake, bo, boFace, thread, anaFace } = setup();
+    const { fake, boFace, thread, anaFace } = setup();
     const theirs = fake.seed.post(thread, boFace, 'Bo here.');
     const board = (await fake.thread(thread))!.board;
     const played = must(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs));
@@ -3510,6 +3513,5 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     expect(typeof played.payload.ends).toBe('string');
     expect((await fake.effectsAbove([boFace], thread, board)).map((e) => [e.play, e.target])).toEqual([[played.id, boFace]]);
     expect(await fake.playCard('glow', anaFace, boFace, {}, '', 'character', theirs)).toEqual(refused('this character already carries that card', 'config'));
-    void bo;
   });
 });

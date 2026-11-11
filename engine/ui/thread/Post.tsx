@@ -114,7 +114,12 @@ function Body({ act, name, spoken, person, editing, onDone, marks, visit }: { re
 /** What the post's spin form is open for: the post itself, or a play on it (from its Lens), with what gives focus back when it closes. */
 export interface SpinOrigin { readonly id: Id; readonly label: string | null; readonly opener: HTMLElement | null }
 
-/** Whether a post's plays stop a quote of it right now (`quoteStop`): read when drawn, so a play that has ended frees the link at the next render after its end. */
+/**
+ * Whether a post's plays stop a quote of it as of the moment this is called (`quoteStop`). `quotableAt` calls it when a selection is made, so it reads the
+ * time then. The post's own Quote link and the toolbar's (`Thread.tsx`, `latest`, a `useMemo`) call it while drawing, so a play that has ended frees them
+ * when that post or the toolbar next renders after the end (a change to that post's plays, or a new page read), not at the moment itself. Meanwhile nothing
+ * on the client refuses a quote typed by hand; the server's guard is the authority.
+ */
 export function quoteStopped(plays: readonly CardPlay[], instance: Pick<Instance, 'cards' | 'settings'>): boolean {
   return quoteStop(effectsOf(plays, instance.cards, instance.settings.setLasts)) !== undefined;
 }

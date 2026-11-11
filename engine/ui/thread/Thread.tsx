@@ -579,7 +579,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     return null;
   }, [shown]);
-  /* Drawn again when the last post's plays change, so a no-quote that lands or ends there takes the toolbar's Quote away or gives it back. */
+  /* Drawn again when the last post's plays change, so a no-quote that lands or is reversed there takes the toolbar's Quote away or gives it back; one that merely runs out is seen at the next such draw or page read, not at its end. The server's guard decides a quote regardless. */
   const lastPlays = usePlays(plays, lastPost?.id ?? '');
   const latest = useMemo(
     () => (lastPost && !quoteStopped(lastPlays.plays, instance) ? { id: lastPost.id, body: text(lastPost.currentPayload.body) } : null),
