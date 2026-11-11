@@ -35,12 +35,18 @@ function mount(o: Options = {}) {
   const save = vi.fn(o.save ?? (ok as unknown as EffectProps['save']));
   const views: (CardView | null)[] = [];
   let setBody: (b: string) => void = () => {};
+  let setStates: (s: Record<string, EffectState>) => void = () => {};
+  let bump: () => void = () => {};
   function Host() {
     const [body, set] = useState(o.body ?? 'Mario and mario, MARIO! ' + QUOTE);
+    const [held, setHeld] = useState(o.states ?? {});
+    const [, setN] = useState(0);
     setBody = set;
+    setStates = setHeld;
+    bump = () => setN((n) => n + 1);
     return (
       <AutocorrectEffect
-        post={postOf(body)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={o.states ?? {}} released={new Set()} reader={{ author: o.author ?? false, caster: false }}
+        post={postOf(body)} plays={o.plays ?? [playOf(1, 'mario', 'Luigi')]} states={held} released={new Set()} reader={{ author: o.author ?? false, caster: false }}
         place="thread" reach="post" still={o.still ?? false} save={save} release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}}
         holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'}
       >
@@ -49,7 +55,7 @@ function mount(o: Options = {}) {
     );
   }
   const world = renderInWorld(<Host />);
-  return { ...world, save, views, edit: (b: string) => act(() => setBody(b)) };
+  return { ...world, save, views, edit: (b: string) => act(() => setBody(b)), setStates: (st: Record<string, EffectState>) => act(() => setStates(st)), rerender: () => act(() => bump()) };
 }
 const anchors = () => [...document.querySelectorAll<HTMLElement>('[data-kb-ac-anchor]')];
 const buttons = () => anchors().filter((a) => a.tagName === 'BUTTON');
@@ -97,6 +103,7 @@ beforeEach(() => {
   (Range.prototype as unknown as { getClientRects: () => unknown[] }).getClientRects = function (this: Range) {
     return [...document.querySelectorAll('[data-kb-ac-seg], .dw-ac-room')].filter((e) => this.intersectsNode(e)).map(rectOf);
   };
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(() => ({ x: 0, y: 0, left: 0, top: 0, right: 300, bottom: 60, width: 300, height: 60, toJSON: () => ({}) }));
   const real = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation(((el: Element, pseudo?: string | null) => {
     const s = real(el, pseudo);
@@ -410,6 +417,88 @@ describe('Autocorrect: the Lens', () => {
     expect(last(m).notes).toEqual({ k1: '“big cats” → “tiny dogs”, 1 place, layer 1 of 2', k2: '“cats” → “kittens”, 1 place, layer 2 of 2' });
     const none = mount({ body: 'nothing here' });
     expect(last(none).state).toBe('Phrase not in this version');
+  });
+});
+
+describe('Autocorrect: review fixes', () => {
+  test('plays on disjoint phrases get no layer note', () => {
+    const m = mount({ body: 'Mario met Zelda', plays: [playOf(1, 'mario', 'Luigi'), playOf(2, 'zelda', 'Link')] });
+    expect(last(m).notes.k1).not.toMatch(/layer/u);
+    expect(last(m).notes.k2).not.toMatch(/layer/u);
+  });
+
+  test('the author\'s progress is the share of all strips\' length peeled, not of their count', () => {
+    const m = mount({ author: true, body: 'Mario met Princess Peach', plays: [playOf(1, 'mario', 'Luigi'), playOf(2, 'princess peach', 'Toad')], states: { k1: savedOf({ peeled: [0] }) } });
+    expect(last(m).progress).toBeCloseTo(5 / 19);
+    const half = mount({ author: true, body: 'Mario met Princess Peach', plays: [playOf(1, 'mario', 'Luigi'), playOf(2, 'princess peach', 'Toad')], states: { k2: savedOf({ peeled: [], stuck: { 0: [[0.5, 1, 1]] } }) } });
+    expect(last(half).progress).toBeCloseTo(7 / 19);
+  });
+
+  test('a buried strip\'s anchor is hidden from a quote until it is exposed', () => {
+    mount({ body: 'Mario Kart', plays: [playOf(1, 'mario kart', 'Wii Sports'), playOf(2, 'mario', 'Luigi')] });
+    const marks = Object.fromEntries(anchors().map((a) => [a.getAttribute('data-kb-ac-anchor'), a.getAttribute('data-kb-quotable')]));
+    expect(marks).toEqual({ 'k1:0': 'hidden', 'k2:0': 'shown' });
+    const article = document.createElement('article');
+    article.className = 'kb-act';
+    article.dataset.kbSeq = '3';
+    article.append(...document.body.children);
+    document.body.append(article);
+    const body = article.querySelector('.kb-bb')!;
+    const r = document.createRange();
+    r.setStart(body, 0);
+    r.setEnd(body, body.childNodes.length);
+    expect(readRange(r)?.text).toBe('Luigi');
+  });
+
+  test('a residue host that leaves view releases its pixels, and draws fresh on return', () => {
+    const watched: { cb: IntersectionObserverCallback; seen: Set<Element> }[] = [];
+    vi.stubGlobal('IntersectionObserver', class {
+      readonly e = { cb: undefined as unknown as IntersectionObserverCallback, seen: new Set<Element>() };
+      constructor(cb: IntersectionObserverCallback) { this.e.cb = cb; watched.push(this.e); }
+      observe(el: Element) { this.e.seen.add(el); }
+      unobserve(el: Element) { this.e.seen.delete(el); }
+      disconnect() { this.e.seen.clear(); }
+      takeRecords() { return []; }
+    });
+    const see = (el: Element, isIntersecting: boolean) => act(() => { for (const o of watched) if (o.seen.has(el)) o.cb([{ target: el, isIntersecting } as IntersectionObserverEntry], o as unknown as IntersectionObserver); });
+    mount({ body: 'Mario', states: { k1: savedOf({ peeled: [0] }) } });
+    const cv = document.querySelector<HTMLCanvasElement>('.dw-ac-residue')!;
+    expect(cv.width).toBeGreaterThan(0);
+    see(cv, true);
+    see(cv, false);
+    expect([cv.width, cv.height]).toEqual([0, 0]);
+  });
+
+  test('a new array of equal plays does not measure again', () => {
+    const m = mount({ body: 'Mario and Mario' });
+    const n = measures.mock.calls.length;
+    m.rerender();
+    expect(measures.mock.calls.length).toBe(n);
+  });
+
+  test('a peel that landed in the saved state is no longer on its way: a later state without it brings the strip back', async () => {
+    vi.useFakeTimers();
+    const m = mount({ author: true, body: 'Mario and Mario' });
+    await hold(buttons()[0]!, 700);
+    await act(async () => { vi.advanceTimersByTime(500); });
+    expect(buttons()).toHaveLength(1);
+    m.setStates({ k1: savedOf({ peeled: [0] }) });
+    m.setStates({ k1: savedOf({ peeled: [] }) });
+    expect(buttons()).toHaveLength(2);
+  });
+
+  test('a play\'s moment measures once more when fonts are ready, with no observer', async () => {
+    vi.stubGlobal('document', document);
+    Object.defineProperty(document, 'fonts', { configurable: true, value: { load: () => Promise.resolve([]), ready: Promise.resolve() } });
+    try {
+      mount({ body: 'Mario', still: true });
+      const n = measures.mock.calls.length;
+      await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+      expect(measures.mock.calls.length).toBeGreaterThan(n);
+      expect(resizes.every((r) => r.watching.size === 0)).toBe(true);
+    } finally {
+      delete (document as unknown as { fonts?: unknown }).fonts;
+    }
   });
 });
 

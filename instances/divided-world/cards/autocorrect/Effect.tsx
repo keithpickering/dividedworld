@@ -165,7 +165,7 @@ function Anchor({ strip, author, still, open, onPeel, onMeet, onFocus }: AnchorP
   useEffect(() => letGo, [letGo]);
   const name = `Autocorrected text: “${strip.replacement}”. Hold Enter or Space to ${author ? 'peel it off for good' : 'lift it and read under it'}`;
   if (still) {
-    return <span className="kb-visually-hidden" data-kb-ac-anchor={strip.key} data-kb-quotable="shown">{strip.replacement}</span>;
+    return <span className="kb-visually-hidden" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}>{strip.replacement}</span>;
   }
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -177,7 +177,7 @@ function Anchor({ strip, author, still, open, onPeel, onMeet, onFocus }: AnchorP
   };
   return (
     <button
-      ref={ref} type="button" className="kb-visually-hidden dw-ac-anchor" data-kb-ac-anchor={strip.key} data-kb-quotable="shown"
+      ref={ref} type="button" className="kb-visually-hidden dw-ac-anchor" data-kb-ac-anchor={strip.key} data-kb-quotable={open ? 'shown' : 'hidden'}
       tabIndex={open ? 0 : -1} aria-label={name}
       onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') letGo(); }}
       onFocus={() => onFocus(strip.key)} onBlur={() => { letGo(); onFocus(null); }}
@@ -333,7 +333,7 @@ function Residue({ regions, width, host, still }: ResidueProps) {
     };
     if (still) { size(); paint(REST); return () => films.clear(); }
     const me = token.current;
-    density = register(me, cv, { w: width, h: height }, density, (frame) => { paint(frame.light); return false; }, { quiet: true, share: 0.5, hidden: () => films.clear() });
+    density = register(me, cv, { w: width, h: height }, density, (frame) => { paint(frame.light); return false; }, { quiet: true, share: 0.5, hidden: () => { films.clear(); cv.width = 0; cv.height = 0; } });
     size();
     const board = typeof MutationObserver === 'function' ? new MutationObserver(() => { band = readBand(); wake(me); }) : null;
     board?.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-mode', 'data-kb-effects'] });
@@ -358,7 +358,9 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     const { phrase, replacement } = p.config as { phrase?: unknown; replacement?: unknown };
     return !p.caught && typeof phrase === 'string' && typeof replacement === 'string' ? [{ id: p.id, phrase, replacement }] : [];
   }), [plays]);
-  const { strips, stacks, total } = useMemo(() => stripsOf(text, configs), [text, configs]);
+  /* The plays by content, so a new array of equal plays is not a new set of plays. */
+  const configsKey = JSON.stringify(configs);
+  const { strips, stacks, total } = useMemo(() => stripsOf(text, configs), [text, configsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* What was peeled before this load keeps no room (design section 1); what is peeled during the visit keeps its footprint until the next. */
   const [loaded] = useState<ReadonlySet<string>>(() => new Set(configs.flatMap((c) => savedOf(states[c.id]?.state).peeled.map((i) => `${c.id}:${i}`))));
@@ -442,6 +444,23 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     if (was) clearTimeout(was);
     timers.current.set(play, setTimeout(() => { void flush(play); }, SAVE_AFTER_MS));
   }, [flush]);
+
+  /* A save that landed is in `states`: what it carried is no longer on its way. */
+  useEffect(() => {
+    setSending((was) => {
+      let changed = false;
+      const next: Record<string, readonly number[]> = {};
+      for (const [play, places] of Object.entries(was)) {
+        const held = savedOf(states[play]?.state).peeled;
+        const left = places.filter((i) => !held.includes(i));
+        if (left.length !== places.length) changed = true;
+        next[play] = left;
+      }
+      if (!changed) return was;
+      now.current.sending = next;
+      return next;
+    });
+  }, [states]);
 
   const meet = useRef(met);
   meet.current = met;
@@ -550,13 +569,13 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   const layoutNow = useRef(layout);
   layoutNow.current = layout;
   /* A new version of the post, a new set of plays, or new rooms in the line: measured before the page paints. */
-  useLayoutEffect(() => { layoutNow.current(); }, [text, configs, rooms]);
+  useLayoutEffect(() => { layoutNow.current(); }, [text, configsKey, rooms]);
   /* A resize of the post's box, and fonts that arrive late. A play's moment measures once and is done. */
   useEffect(() => {
-    if (still) return undefined;
     let live = true;
     const again = () => { if (live) layoutNow.current(); };
-    const resize = typeof ResizeObserver === 'function' ? new ResizeObserver(again) : null;
+    /* A play's moment has no observer, but measures once more when the marker's face is in, so its room is measured in it. */
+    const resize = !still && typeof ResizeObserver === 'function' ? new ResizeObserver(again) : null;
     if (box.current) resize?.observe(box.current);
     const fonts = typeof document !== 'undefined' ? document.fonts : undefined;
     void Promise.all([fonts?.load?.('1em "Gochi Hand"'), fonts?.ready]).then(again, () => {});
@@ -613,14 +632,28 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
   const all = strips.length;
   const done = strips.filter((s) => !liveKeys.has(s.key)).length;
   const started = strips.filter((s) => liveKeys.has(s.key) && !isWhole(stuckBy.get(s.key) ?? [])).length;
-  const share = all ? strips.reduce((n, s) => n + (1 - (stuckBy.get(s.key) ?? []).reduce((a, [lo, hi]) => a + (hi - lo), 0)), 0) / all : null;
+  const length = strips.reduce((n, s) => n + (s.to - s.from), 0);
+  const share = length ? strips.reduce((n, s) => n + (s.to - s.from) * (1 - (stuckBy.get(s.key) ?? []).reduce((a, [lo, hi]) => a + (hi - lo), 0)), 0) / length : null;
+  /* A play stacked with another's strips says its layer among the plays of its stacks, by order. */
+  const layers = new Map<string, [number, number]>();
+  for (const c of configs) {
+    const mates = new Set<string>();
+    for (const st of stacks) if (st.some((q) => q.play === c.id)) for (const q of st) mates.add(q.play);
+    if (mates.size > 1) {
+      const order = configs.filter((q) => mates.has(q.id)).map((q) => q.id);
+      layers.set(c.id, [order.indexOf(c.id) + 1, order.length]);
+    }
+  }
   const view: CardView = {
     progress: reader.author ? share : null,
     state: all ? `${all} ${all === 1 ? 'strip' : 'strips'}, ${done} peeled${reader.author && started > 0 ? `, ${started} started` : ''}` : 'Phrase not in this version',
     ends: reader.author ? LENS.authorEnds : LENS.readerEnds,
     yours: live.length > 0,
     controls: [],
-    notes: Object.fromEntries(configs.map((c, z) => [c.id, `“${c.phrase}” → “${c.replacement}”, ${total[c.id] ?? 0} ${(total[c.id] ?? 0) === 1 ? 'place' : 'places'}${configs.length > 1 ? `, layer ${z + 1} of ${configs.length}` : ''}`])),
+    notes: Object.fromEntries(configs.map((c) => {
+      const layer = layers.get(c.id);
+      return [c.id, `“${c.phrase}” → “${c.replacement}”, ${total[c.id] ?? 0} ${(total[c.id] ?? 0) === 1 ? 'place' : 'places'}${layer ? `, layer ${layer[0]} of ${layer[1]}` : ''}`];
+    })),
     ...(report ? { report } : null),
   };
   const viewKey = JSON.stringify(view);
