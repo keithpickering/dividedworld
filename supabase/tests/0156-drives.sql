@@ -652,7 +652,7 @@ begin
   why := pg_temp.refused('select drive_gifts(array[gen_random_uuid()])');
   perform tests.unbecome();
   if why is null or why not like '42501 %' then raise exception 'a visitor read a drive''s gifts: %', why; end if;
-  if not has_function_privilege('authenticated', 'drive_gifts(uuid[])', 'execute') or not has_function_privilege('authenticated', 'drive_gifts_page(uuid, timestamptz)', 'execute') then
+  if not has_function_privilege('authenticated', 'drive_gifts(uuid[])', 'execute') or not has_function_privilege('authenticated', 'drive_gifts_page(uuid, timestamptz, uuid)', 'execute') then
     raise exception 'a signed-in player cannot read the gifts';
   end if;
   if exists (select 1 from pg_indexes where indexname = 'acts_donations' and indexdef ~ '\(target_act_id, created_at\) WHERE \(kind = ''donation''::text\)') is not true then
@@ -696,13 +696,49 @@ begin
   if (got #>> '{2,count}')::integer is distinct from 0 then raise exception 'an id that is no drive has no gifts: %', got #> '{2}'; end if;
   -- The next 20: the six beyond the first twenty, older than the twentieth shown.
   oldest := (got #>> '{0,gifts,19,at}')::timestamptz;
-  page := drive_gifts_page(d, oldest);
+  page := drive_gifts_page(d, oldest, (got #>> '{0,gifts,19,id}')::uuid);
   if jsonb_array_length(page -> 'gifts') is distinct from 6 or (page ->> 'more')::boolean is distinct from false then raise exception 'the page after the first 20: %', page; end if;
   if (page #>> '{gifts,0,at}')::timestamptz >= oldest then raise exception 'the page is older than what was shown: %', page; end if;
   -- A page of 20 with more behind it says so.
-  page := drive_gifts_page(d, now());
+  page := drive_gifts_page(d, now() + interval '1 second', 'ffffffff-ffff-ffff-ffff-ffffffffffff');
   if jsonb_array_length(page -> 'gifts') is distinct from 20 or (page ->> 'more')::boolean is distinct from true then raise exception 'a full page says more follows: %', page #- '{gifts}'; end if;
   perform tests.unbecome();
+end $$;
+
+-- ---- drive_gifts_page: gifts sharing a created_at are each returned once across the pages (keyset on created_at, id) ----
+do $$
+declare
+  gv uuid := tests.account('dk-giver'); gch uuid := tests.character(gv, 'Dk Giver');
+  au uuid := tests.account('dk-author'); ach uuid := tests.character(au, 'Dk Author');
+  cs uuid := tests.account('dk-caster'); cch uuid := tests.character(cs, 'Dk Caster');
+  t uuid := tests.thread('Dk ties');
+  p uuid := tests.post(ach, t, 'A drive with ties.');
+  d uuid;
+  tied timestamptz := now() - interval '1 hour';
+  first_page jsonb; page jsonb; seen uuid[] := '{}'; g jsonb; guard integer := 0;
+begin
+  perform pg_temp.eco();
+  insert into card_ledger (account, card, kind, price) values (cs, 'dv-gift', 'bought', 0);
+  d := pg_temp.open_drive(cs, cch, p);
+  -- Fifteen newer gifts, then ten that share one instant, so the page boundary falls inside the tie (ids explicit).
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select gch, 'donation', t, d, '{"amount": 10, "overhead": 3, "arrives": 7}', now() - make_interval(secs => n) from generate_series(1, 15) n;
+  insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
+  select ('00000000-0000-0000-0000-0000000000' || lpad(n::text, 2, '0'))::uuid, gch, 'donation', t, d, '{"amount": 10, "overhead": 3, "arrives": 7}', tied from generate_series(1, 10) n;
+  perform tests.become(gv);
+  first_page := drive_gifts(array[d]) #> '{0,gifts}';
+  for g in select * from jsonb_array_elements(first_page) loop seen := seen || (g ->> 'id')::uuid; end loop;
+  page := jsonb_build_object('gifts', first_page, 'more', true);
+  while (page ->> 'more')::boolean loop
+    guard := guard + 1;
+    if guard > 5 then raise exception 'the pages do not end'; end if;
+    page := drive_gifts_page(d, (page #>> '{gifts,19,at}')::timestamptz, (page #>> '{gifts,19,id}')::uuid);
+    for g in select * from jsonb_array_elements(page -> 'gifts') loop seen := seen || (g ->> 'id')::uuid; end loop;
+  end loop;
+  perform tests.unbecome();
+  if cardinality(seen) is distinct from 25 or (select count(distinct x) from unnest(seen) x) is distinct from 25 then
+    raise exception 'each of 25 gifts once across the pages, ties included: % read, % distinct', cardinality(seen), (select count(distinct x) from unnest(seen) x);
+  end if;
 end $$;
 
 -- ---- settlement: a window holding gifts is the window without them ----
@@ -737,11 +773,19 @@ begin
     raise exception 'a window with gifts is not the window without them: % gifts in acts, characters % then %', (select count(*) from jsonb_array_elements(with_gifts -> 'acts') x where x ->> 'kind' = 'donation'),
       jsonb_array_length(without_gifts -> 'characters'), jsonb_array_length(with_gifts -> 'characters');
   end if;
-  -- A reaction to a gift (react() does not yet refuse one) is no one's to settle either: it and the gift are left out, and the reactor's mask is not named for it.
+  -- react() refuses a gift (design, section 5), in plain words and writing nothing.
   declare
     one uuid := (select a.id from acts a where a.kind = 'donation' and a.target_act_id = d and a.character = gch limit 1);
     reacted_to jsonb;
+    why text;
+    held bigint := (select count(*) from reactions) + (select count(*) from reaction_tallies);
   begin
+    perform tests.become(gw);
+    why := pg_temp.refused(format('select react(%L, %L, %L)', one, gch2, 'up'));
+    perform tests.unbecome();
+    if why is distinct from '22023 | kayfabb.refusal | a gift cannot be reacted to' then raise exception 'react() on a gift: %', why; end if;
+    if (select count(*) from reactions) + (select count(*) from reaction_tallies) is distinct from held then raise exception 'a refused reaction to a gift wrote something'; end if;
+    -- A reaction row to a gift that is there all the same (inserted directly, as the table allows: the poisoned input) is no one's to settle either: it and the gift are left out, and the reactor's mask is not named for it.
     reacted_to := settlement_input(w_from, w_to);
     insert into reactions (act, reactor_character, reactor_account, kind, slot) values (one, cch, cs, 'up', 1);
     if settlement_input(w_from, w_to) is distinct from reacted_to then raise exception 'a reaction to a gift reached the settlement''s input'; end if;

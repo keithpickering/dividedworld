@@ -863,20 +863,22 @@ end $$;
 revoke execute on function drive_gifts(uuid[]) from public, anon;
 grant execute on function drive_gifts(uuid[]) to authenticated;
 
--- drive_gifts_page(drive, before): a screen function (the name says so, and tools' screen guard holds it to a SQL-standard body reading acts_public): the next 20 gifts, those older than `before` (the `at` of the last one shown), newest first, and whether more follow. The wall's "and N more". Two gifts at the very same
--- microsecond are not told apart by a time; each is its own transaction's, so they are not made at once.
-create function drive_gifts_page(drive uuid, before timestamptz) returns jsonb
+-- drive_gifts_page(drive, before_at, before_id): a screen function (the name says so, and tools' screen guard holds it to a SQL-standard body reading acts_public): the next 20 gifts after a cursor, newest first, and whether
+-- more follow. The wall's "and N more". The cursor is the (`at`, `id`) of the last gift shown, and the order is (created_at desc, id desc), the order drive_gifts takes its latest 20 in: gifts that share a created_at
+-- (a transaction's now() is one instant, and one transaction can write two gifts, or an import can) are told apart by id, so a page boundary inside a tie loses and repeats none. Both halves of the cursor are required.
+create function drive_gifts_page(drive uuid, before_at timestamptz, before_id uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
   select jsonb_build_object('gifts', coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at)
                                                          order by x.created_at desc, x.id desc) filter (where x.n <= 20), '[]'::jsonb),
                             'more', coalesce(bool_or(x.n > 20), false))
   from (select l.id, l.character, l.payload, l.created_at, row_number() over (order by l.created_at desc, l.id desc) as n
-        from acts_public l where l.kind = 'donation' and l.target_act_id = drive_gifts_page.drive and l.created_at < drive_gifts_page.before
+        from acts_public l where l.kind = 'donation' and l.target_act_id = drive_gifts_page.drive
+          and (l.created_at, l.id) < (drive_gifts_page.before_at, drive_gifts_page.before_id)
         order by l.created_at desc, l.id desc limit 21) x;
 end;
-revoke execute on function drive_gifts_page(uuid, timestamptz) from public, anon;
-grant execute on function drive_gifts_page(uuid, timestamptz) to authenticated;
+revoke execute on function drive_gifts_page(uuid, timestamptz, uuid) from public, anon;
+grant execute on function drive_gifts_page(uuid, timestamptz, uuid) to authenticated;
 
 -- ------------------------------------------------------------------------------------------------ 10. settlement_input and estimate_input ----
 
@@ -1123,3 +1125,72 @@ begin
     'systemActs', coalesce((select jsonb_agg(id order by id) from system_acts), '[]'))
   );
 end $$;
+
+-- ---------------------------------------------------------------------------------------------------------------------- 11. react refuses a gift ----
+
+-- react (0142), refusing a gift as it refuses an edit: a gift is no one's to react to (design, section 5). No other function lists the reactable kinds: the reactions table takes any Act, so this refusal is the whole of it, and
+-- settlement_input and estimate_input (section 10) still leave a reaction row to a gift out, should one be written some other way. Everything else as 0142 wrote it.
+CREATE OR REPLACE FUNCTION public.react(target uuid, through uuid, reaction text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  caller uuid := auth.uid();
+  cap integer := (setting('reactionCap'))::integer;
+  target_kind text;
+  author_owner uuid;
+  held text[];
+  free_slot integer;
+begin
+  if caller is null then raise exception 'sign in to react' using hint = 'kayfabb.refusal', errcode = '28000'; end if;
+  perform played_by(through, caller);
+  perform not_banned(through);
+  if not exists (select 1 from reaction_kinds k where k.key = reaction) then
+    raise exception 'there is no reaction "%"', reaction using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- The System's own Acts (a tally, the reveal) have no author, and no author's owner to hold the
+  -- caller apart from: they are reacted to like any Act, and pay nobody (settle.ts).
+  select a.kind, c.owner into target_kind, author_owner
+  from acts a left join characters c on c.id = a.character where a.id = target;
+  if target_kind is null then
+    raise exception 'there is no such Act' using hint = 'kayfabb.refusal', errcode = 'P0002';
+  end if;
+  if target_kind = 'edit' then raise exception 'an edit is not reacted to; react to the post' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  -- A gift is no one's to react to (design, section 5): it earns nothing, and settlement and the estimate leave it out.
+  if target_kind = 'donation' then raise exception 'a gift cannot be reacted to' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  -- The author's owner now: a character changing hands is not in this slice, and the session
+  -- that adds it decides what becomes of reactions between its old and new owner's characters.
+  if author_owner = caller then
+    raise exception 'your characters cannot react to each other' using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+
+  select coalesce(array_agg(r.kind order by r.slot), '{}') into held
+  from reactions r where r.act = target and r.reactor_account = caller;
+  -- The lowest free slot, so a slot given back (a reaction removed, later) is taken again rather
+  -- than colliding for ever. The slot only makes two reactions at once collide; the cap is held
+  -- by the count above, so lowering reactionCap later leaves existing reactions as they are.
+  select min(g) into free_slot from generate_series(1, cardinality(held) + 1) g
+  where not exists (select 1 from reactions r where r.act = target and r.reactor_account = caller and r.slot = g);
+  if reaction = any (held) then
+    raise exception 'you have already left that reaction here' using hint = 'kayfabb.refusal', errcode = '23505';
+  end if;
+  if cardinality(held) >= cap then
+    raise exception 'you have left % reactions here, the most there are', cap using hint = 'kayfabb.refusal', errcode = '23514';
+  end if;
+
+  begin
+    insert into reactions (act, reactor_character, reactor_account, kind, slot)
+    values (target, through, caller, reaction, free_slot);
+  exception when unique_violation then
+    -- Another reaction of this player's landed between the read above and this write.
+    raise exception 'you reacted here twice at once; try again' using hint = 'kayfabb.refusal', errcode = '40001';
+  end;
+  insert into reaction_tallies (act, kind, count) values (target, reaction, 1)
+  on conflict (act, kind) do update set count = reaction_tallies.count + 1;
+  -- A reaction springs nothing: who reacted is a private fact, so no card lands on or by it (face-down Moves, design section 2).
+
+  return jsonb_build_object('act', target, 'thread', (select thread from acts where id = target),
+    'tally', (select coalesce(jsonb_object_agg(t.kind, t.count order by t.kind), '{}') from reaction_tallies t where t.act = target));
+end $function$;

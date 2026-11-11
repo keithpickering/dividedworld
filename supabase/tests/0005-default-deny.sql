@@ -40,7 +40,7 @@ declare
                            -- A thread's page in one read (0094), a security invoker function.
                            'thread_page(uuid,integer,integer,integer,text[])',
                            -- A drive's gifts (0150): its total, count and donor wall, and the next 20, security invoker reads of the donation Acts, which every Act is public.
-                           'drive_gifts(uuid[])', 'drive_gifts_page(uuid,timestampwithtimezone)',
+                           'drive_gifts(uuid[])', 'drive_gifts_page(uuid,timestampwithtimezone,uuid)',
                            -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.
                            'boot()',
                            -- The glass screens, each in one read (the glass-load plan, Tasks 5 to 9): invoker, stable, a signed-in player alone, writing nothing.
