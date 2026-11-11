@@ -1055,8 +1055,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * Act is written (null for a thread not yet made), so a quote from another thread says so.
    */
   function stoppedQuote(thread: Id | null, target: Id | null, body: string, already: string = ''): string | null {
-    const held = new Set(quotedActs(parse(already)));
-    const quoted = [...new Set([...(target === null ? [] : [target]), ...quotedActs(parse(body))])].filter((q) => !held.has(q));
+    // As the guard on acts does, a body is walked only where it holds a quote tag, and the current body only where the first list holds an Act.
+    const inBody = (text: string): string[] => (/\[quote=/i.test(text) ? quotedActs(parse(text)) : []);
+    const named = [...new Set([...(target === null ? [] : [target]), ...inBody(body)])];
+    if (named.length === 0) return null;
+    const held = new Set(inBody(already));
+    const quoted = named.filter((q) => !held.has(q));
     for (const q of quoted) {
       const stop = quoteStop(effectsOn(q), new Date(now()));
       if (!stop) continue;
