@@ -643,6 +643,11 @@ begin
 end $$;
 revoke execute on function spring_facts(face_down, text, uuid, text) from public, anon, authenticated, service_role;
 
+-- Locks, for a scored-as Move that lands on the quoting character: spring_facts reads `class_taken` for the quoting character, and place_cast reads the same fact for its target after taking that character's row
+-- (`for no key update`, step 2b's row too). A quote takes that same row before spring_facts reads, in lock_for_quote (0142, 0148): the poster's `characters` row, taken whenever the quoted post holds a live
+-- back (a public fact, so the same whatever is face down), ahead of step 3 onward. So the order is the one 0075's header wrote with 2b in it: accounts (1) and the target post (2), then the character row (2b, where
+-- a card reaches a character), then `face_down` (3), the thread (4), `character_post_counts` (5), `wallets` (6). place_cast on a character takes 1, 2b, 5, 6 and a quote takes 2b, 3, 4, 5: no pair crosses, and
+-- spring_traps itself takes nothing before 3 (its `for update` on the back, held by the quote) and nothing after it that the quote does not already hold, so it takes no lock here and the two writers are laid one at a time.
 create or replace function spring_traps(trigger text, post uuid, by_act uuid, incoming_card text default null, held uuid[] default null, actor uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1071,7 +1076,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   join acts k on k.kind = 'card' and k.created_at >= lw.from_at and k.created_at < lw.ends_at
   join card_kinds ck on ck.key = k.payload ->> 'card' and ck.scores_as
   join class_kinds cl on cl.key = k.payload #>> '{config,class}'
-  join characters c on c.id::text = k.payload ->> 'character'
+  join characters c on c.id = case when k.payload ->> 'character' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (k.payload ->> 'character')::uuid end
   where k.payload ->> 'reach' = 'character'
     and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = k.id and e.created_at < window_end)
   order by c.id, k.created_at, k.id

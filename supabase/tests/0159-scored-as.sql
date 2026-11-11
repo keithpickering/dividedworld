@@ -46,6 +46,64 @@ begin
   return (select max(ends_at) from settlements);
 end $$;
 
+-- ---- Race: a quote that springs a face-down Off Day on its own character, and a cast of the same on that character at once ----
+-- Races first, so the rows they commit wait on nothing this file has written. The quote lands the back's play on the quoting character (spring_traps -> spring_facts -> lay_sprung) and the cast lands one on it
+-- (place_cast); a character has one class named per window, so whichever lands second must find the first. Both read "none named" unless the two are laid one at a time, which is the lock on the character's
+-- row: place_cast takes it as the target's, and the quote takes it as the poster's (lock_for_quote's step 2b, taken whenever the quoted post holds a live back, a public fact), before spring_facts reads
+-- `class_taken`. Whichever lands, the character carries exactly one, the quote is never refused, and nothing deadlocks. The window needs a settlement behind it, committed here where the suite left none and
+-- removed again after.
+do $$
+declare
+  setter uuid := gen_random_uuid(); caster uuid := gen_random_uuid(); quoter uuid;
+  s uuid := gen_random_uuid(); c uuid := gen_random_uuid(); q uuid; qpost uuid; x uuid; qquote uuid;
+  t uuid := gen_random_uuid();
+  made boolean := false;
+  said text[];
+  round integer;
+  landed bigint;
+begin
+  if not exists (select 1 from settlements) then
+    perform tests.commit(format($sql$insert into settlements (starts_at, ends_at, season) values (now() - interval '29 hours', now() - interval '5 hours', (select id from seasons where ends_at is null))$sql$));
+    made := true;
+  end if;
+  perform tests.commit(format($sql$
+    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, scores_as, stack) values
+      ('sfrace', 'Sf Race', 'salty', 'uncommon', 'cast', null, '{character}', interval '2 days', true, 1) on conflict (key) do nothing;
+    insert into auth.users (id, email) values (%1$L, 'sf-race-setter-' || %1$L || '@test.invalid'), (%2$L, 'sf-race-caster-' || %2$L || '@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Sf Race Setter', now(), now()), (%4$L, %2$L, 'Sf Race Caster', now(), now());
+    insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
+    insert into threads (id, board, title) select %5$L, b.id, 'Sf race' from boards b where b.slug = 'general';
+    insert into card_ledger (account, card, kind, price) select %1$L, 'sfrace', 'bought', 0 from generate_series(1, 12);
+    insert into card_ledger (account, card, kind, price) select %2$L, 'sfrace', 'bought', 0 from generate_series(1, 12);
+  $sql$, setter, caster, s, c, t));
+  for round in 1 .. 12 loop
+    q := gen_random_uuid(); qpost := gen_random_uuid(); x := gen_random_uuid(); quoter := gen_random_uuid();
+    perform tests.commit(format($sql$
+      insert into auth.users (id, email) values (%5$L, 'sf-race-quoter-' || %5$L || '@test.invalid');
+      insert into accounts (id) values (%5$L);
+      insert into characters (id, owner, name, created_at, debuted_at) values (%1$L, %5$L, 'Sf Race Quoter ' || %6$s, now(), now());
+      insert into class_history (character, class_key, started_at) values (%1$L, 'alpha', now());
+      insert into acts (id, character, kind, thread, payload) values (%2$L, %1$L, 'post', %4$L, '{"body": "Soon to be named."}'), (%3$L, %7$L, 'post', %4$L, '{"body": "Backed."}');
+      do $d$ begin perform set_card(%8$L, 'sfrace', %7$L, %3$L, '{"class": "beta"}', 0); end $d$;
+    $sql$, q, qpost, x, t, quoter, round, s, setter));
+    said := tests.race_as(quoter, format('select post(%L, %L, %L, %L)', t, q, 'Quoting it.', x),
+                          null, format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', caster, 'sfrace', c, q, '{"class": "alpha"}', '', 'character', qpost));
+    if said[1] is not null then raise exception 'a quote that lands an Off Day was refused, round %: %', round, said[1]; end if;
+    if said[2] is not null and said[2] not like '%already has a class named%' then raise exception 'a cast of an Off Day racing a quote, round %: %', round, said[2]; end if;
+    select count(*) into landed from acts where kind = 'card' and payload ->> 'card' = 'sfrace' and payload ->> 'reach' = 'character' and payload ->> 'character' = q::text;
+    if landed is distinct from 1::bigint then
+      raise exception 'a quote and a cast at once on one character, round %: the character has % class(es) named for the window (cast said %, back sprang %)', round, landed, said[2],
+        exists (select 1 from acts where kind = 'spring' and target_act_id = x);
+    end if;
+    -- Whichever won, the other lost cleanly: a refused cast means the back landed; a landed cast means the back is still set.
+    if (said[2] is not null) is distinct from exists (select 1 from acts where kind = 'spring' and target_act_id = x) then
+      raise exception 'a quote and a cast at once, round %: cast said %, back sprang %', round, said[2], exists (select 1 from acts where kind = 'spring' and target_act_id = x);
+    end if;
+  end loop;
+  if made then perform tests.commit('delete from settlements'); end if;
+end $$;
+
 -- ---- The class, the window, one per window, and what is written ----
 select tests.unbecome();
 do $$
@@ -155,6 +213,57 @@ begin
   -- A class the instance lacks never lands (it would stop the settlement), whoever quotes.
   sprung := spring_traps('quote', p3, q3);
   if sprung is not null then raise exception 'a face-down Off Day naming no class landed: %', sprung; end if;
+end $$;
+
+-- ---- The stack meets the window: a card of stack 2 names the next window while this one's play is still up; a card of stack 1 does not ----
+-- A play's play_reach end is its window's close, so after the settlement that opens a window the play that named it is still up until the settlement that closes it, and the character's next play (naming the window
+-- after) finds one up. Stack 2 has room for that one and a third at the settlement after; stack 1 refuses it with the stack's own words ("this character already carries that card"), not the window's. This file cannot
+-- let time pass, so the settlements are written as the settlements that close each window and the passing of W1's close is written on the first play's reach row (append-only, so with triggers off for that one write, as time passing would end it). The settlements are taken out again, as the next block reads the open window.
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('sf-k-ann'); bob uuid := tests.account('sf-k-bob');
+  a1 uuid := tests.character(ann, 'Sf K Ann One'); a2 uuid := tests.character(ann, 'Sf K Ann Two'); b uuid := tests.character(bob, 'Sf K Bob');
+  t uuid := tests.thread('Sf stack'); p1 uuid := tests.post(a1, t, 'One.'); p2 uuid := tests.post(a2, t, 'Two.');
+  last_end timestamptz := pg_temp.last_end(); opens timestamptz := next_settlement_at(); first_ jsonb; second_ jsonb; third_ jsonb; why text; pl jsonb; reach_ends timestamptz;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, scores_as, stack) values
+    ('sfstk1', 'Sf Stack One', 'salty', 'uncommon', 'cast', null, '{character}', interval '2 days', true, 1),
+    ('sfstk2', 'Sf Stack Two', 'salty', 'uncommon', 'cast', null, '{character}', interval '2 days', true, 2);
+  perform pg_temp.hand(bob, 'sfstk1', 'sfstk1', 'sfstk2', 'sfstk2', 'sfstk2');
+  perform tests.become_service();
+  -- W0: both cards name the window after the next settlement (W1).
+  first_ := play_card(bob, 'sfstk2', b, a2, '{"class": "beta"}', 0, '', 'character', p2);
+  perform play_card(bob, 'sfstk1', b, a1, '{"class": "beta"}', 0, '', 'character', p1);
+  -- S1 closes W0: the next play names W2 and finds W1's still up. Stack 2 takes it; stack 1 refuses it, in the stack's words.
+  perform tests.unbecome();
+  insert into settlements (starts_at, ends_at, season) values (last_end, opens, (select id from seasons where ends_at is null));
+  perform tests.become_service();
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', bob, 'sfstk1', b, a1, '{"class": "alpha"}', '', 'character', p1));
+  if why is distinct from '23505 this character already carries that card' then raise exception 'a second play of a stack-1 card while the first is up: %', why; end if;
+  second_ := play_card(bob, 'sfstk2', b, a2, '{"class": "alpha"}', 0, '', 'character', p2);
+  select c.payload into pl from acts c where c.id = (second_ ->> 'id')::uuid;
+  if (pl ->> 'starts')::timestamptz is distinct from opens + interval '1 day' or (pl ->> 'ends')::timestamptz is distinct from opens + interval '2 days' then
+    raise exception 'a stack-2 play after the next settlement does not name the window after it: %', pl;
+  end if;
+  -- A third while both are up: the stack's words, and only they.
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', bob, 'sfstk2', b, a2, '{"class": "alpha"}', '', 'character', p2));
+  if why is distinct from '23505 this character already carries 2 of that card, the most it takes' then raise exception 'a third play of a stack-2 card while two are up: %', why; end if;
+  -- S2 closes W1: its play is no longer up (its reach ended at W1's close), and a third lands, naming W3.
+  perform tests.unbecome();
+  insert into settlements (starts_at, ends_at, season) values (opens, opens + interval '1 day', (select id from seasons where ends_at is null));
+  alter table play_reach disable trigger play_reach_no_update;
+  update play_reach set ends_at = now() - interval '1 minute' where play = (first_ ->> 'id')::uuid;
+  alter table play_reach enable trigger play_reach_no_update;
+  perform tests.become_service();
+  third_ := play_card(bob, 'sfstk2', b, a2, '{"class": "beta"}', 0, '', 'character', p2);
+  select c.payload into pl from acts c where c.id = (third_ ->> 'id')::uuid;
+  if (pl ->> 'starts')::timestamptz is distinct from opens + interval '2 days' or (pl ->> 'ends')::timestamptz is distinct from opens + interval '3 days' then
+    raise exception 'a stack-2 play after the second settlement does not name the window after it: %', pl;
+  end if;
+  -- The settlements this block wrote go, so the next block reads the open window as it was.
+  perform tests.unbecome();
+  delete from settlements where ends_at >= opens;
 end $$;
 
 -- ---- After the next settlement the window after it is the next one: the same character takes another, naming the window after that ----
