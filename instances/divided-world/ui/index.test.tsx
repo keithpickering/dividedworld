@@ -18,6 +18,12 @@ import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
 import { spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
+import { mooch } from '../cards/mooch.ts';
+import { toll } from '../cards/toll.ts';
+import { fourDChess } from '../cards/4d-chess.ts';
+import { offDay } from '../cards/off-day.ts';
+import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
+import type { CardPlay } from '../../../engine/ui/cards/types.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 describe('Divided World\'s developer persona', () => {
@@ -84,7 +90,7 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
-    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
+    const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'below-the-fold': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
     for (const [key, reach] of Object.entries(lands)) {
       expect(face(key).describe, key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
@@ -127,12 +133,14 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
 describe('Divided World\'s InstanceUi covers its rules', () => {
   /* The bundler resolves a small SVG to a data URI and a larger one to a file ending .svg; either is an SVG the card draws. */
   const SVG_URL = /\.svg$|^data:image\/svg\+xml/u;
-  test('every card of the rules has art from its folder: a canvas and a mark that are SVGs, and a credit', () => {
+  /* A card's canvas is its art.svg or its art.webp (specs/card-art.md); a WebP is never small enough to be inlined. */
+  const CANVAS_URL = /\.svg$|^data:image\/svg\+xml|\.webp$/u;
+  test('every card of the rules has art from its folder: a canvas that is an SVG or a WebP, a mark that is an SVG, and a credit', () => {
     expect(instance.cards.length).toBeGreaterThan(0);
     for (const rules of instance.cards) {
       const art = instanceUi.cards?.find((u) => u.key === rules.key)?.art;
       expect(art, `${rules.key} has a CardUi`).toBeDefined();
-      expect(art!.canvas, `${rules.key} canvas`).toMatch(SVG_URL);
+      expect(art!.canvas, `${rules.key} canvas`).toMatch(CANVAS_URL);
       expect(art!.mark, `${rules.key} mark`).toMatch(SVG_URL);
       expect(art!.credit.length, `${rules.key} credit`).toBeGreaterThan(0);
     }
@@ -565,5 +573,116 @@ describe('Divided World\'s staff pictures', () => {
   test('FanGaME has both pictures', () => {
     expect(instanceUi.staffAvatars?.['fangame']?.square).toMatch(/fangame-square.*\.webp|^data:image\/webp/u);
     expect(instanceUi.staffAvatars?.['fangame']?.portrait).toMatch(/fangame-portrait.*\.webp|^data:image\/webp/u);
+  });
+});
+
+describe('Mooch, Toll, 4D Chess and Off Day in plain words (card notes Part 6, Task 9)', () => {
+  const ui = (key: string) => instanceUi.cards.find((c) => c.key === key)!;
+  const play = (config: Record<string, unknown>, over: Partial<CardPlay> = {}): CardPlay => ({ id: 'k', card: 'x', layer: 1, caster: null, message: '', config, playedAt: '2026-11-12T00:00:00.000Z', post: 'p', ...over });
+  /* A rule's share, retuned for one test and put back: the words are read from the rules, never restated. */
+  const retuned = <T,>(rules: object, key: string, value: unknown, run: () => T): T => {
+    const held = (rules as Record<string, unknown>)[key];
+    (rules as Record<string, unknown>)[key] = value;
+    try { return run(); } finally { (rules as Record<string, unknown>)[key] = held; }
+  };
+
+  test('each wears Salty\'s pink or Pepperoni\'s color with its ink, and says what it does in a tagline and a summary', () => {
+    for (const [key, color, ink, tagline] of [
+      ['mooch', '#ff3d7f', '#14030a', 'Ride a post\'s reactions.'], ['toll', '#d24a2c', '#1a0602', 'Get paid when a Move lands here.'],
+      ['4d-chess', '#ff3d7f', '#14030a', 'Get paid for the Move you saw coming.'], ['off-day', '#ff3d7f', '#14030a', 'Give a character somebody else\'s day.'],
+    ] as const) {
+      expect([ui(key).art.color, ui(key).art.ink, ui(key).art.tagline], key).toEqual([color, ink, tagline]);
+      expect(ui(key).art.canvas, key).toMatch(/\.webp$/u);
+      expect(ui(key).art.mark, key).toMatch(/\.svg$|^data:image\/svg\+xml/u);
+    }
+    expect(ui('mooch').summary).toBe('Names one kind of reaction on a post. For a week, each new vote the post draws there pays you a little, and costs its author nothing.');
+    expect(ui('toll').summary).toBe('Used on your post. For a week, every reaction to a Move another player casts there pays you too.');
+    expect(ui('4d-chess').summary).toBe('Set face down on your post, naming a Move up to uncommon and one kind of reaction. When that Move is cast there it lands as usual, and its reactions of that kind pay you.');
+    expect(ui('off-day').summary).toBe('Cast on a character, naming a class. For the one settlement window after the next settlement, that character scores as that class.');
+  });
+
+  test('every status is within the Lens\'s word rules, for one play and for as many as the card stacks', () => {
+    for (const key of ['mooch', 'toll', '4d-chess', 'off-day']) {
+      const status = ui(key).status!;
+      const rules = instance.cards.find((c) => c.key === key)!;
+      for (let n = 1; n <= (rules.stack ?? 1); n++) expect(wordsProblems('status', typeof status === 'string' ? status : status(Array.from({ length: n }, () => ({}) as CardPlay))), `${key} with ${n}`).toEqual([]);
+    }
+  });
+
+  test('Mooch says the reactions it names, counts its Mooches, and its words follow the rules\' share and week', () => {
+    const status = ui('mooch').status as (p: readonly CardPlay[]) => string;
+    expect(status([play({ quadrant: 'excitedNegative' })])).toBe('Mooching Heat off this post');
+    expect(status([play({ quadrant: 'excitedNegative' }), play({ quadrant: 'calmPositive' })])).toBe('2 Mooches on this post');
+    expect(ui('mooch').hint).toBe('A Mooch pays its caster when this post draws the reactions it named.');
+    const say = () => ui('mooch').describe(instance.settings);
+    expect(say()).toBe('A Salty card, uncommon. You name one of the four kinds of reaction. For a week, each vote the post draws there, from a player who had not reacted to the post before, pays you a tenth of a vote, whatever the author\'s class. It takes nothing from the author, and it pays nothing on a post of your own. A post holds one Mooch for each kind of reaction. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
+    expect(ui('mooch').logPlay!({ quadrant: 'boredNegative' }, {})).toBe('It names Groan: for a week, each new vote of Groan this post draws pays its caster a tenth of a vote. The post\'s author loses nothing.');
+    expect(ui('mooch').logPlay!({}, {})).toBeUndefined();
+    retuned(mooch, 'skim', { share: 0.5 }, () => {
+      expect(say()).toContain('pays you half a vote, whatever');
+      expect(ui('mooch').logPlay!({ quadrant: 'boredNegative' }, {})).toContain('pays its caster half a vote.');
+    });
+    retuned(mooch, 'lasts', { unit: 'day', count: 3 }, () => expect(say()).toContain('For 3 days, each vote'));
+  });
+
+  test('Toll says it pays its author for Moves cast on the post, from the rules\' share and week', () => {
+    expect(ui('toll').status).toBe('Charging a toll on Moves');
+    expect(ui('toll').hint).toBe('A Toll pays this post\'s author when a Move cast here draws reactions.');
+    const say = () => ui('toll').describe(instance.settings);
+    expect(say()).toBe('A Pepperoni card, uncommon, used on one of your own posts. For a week, each vote on a Move another player casts on that post pays you half a vote, on top of everything its caster earns: the caster loses nothing. A Move cast by one of your own characters pays you nothing. It costs nothing more to use.');
+    expect(ui('toll').logPlay!({}, {})).toBe('Until it ends, each vote on a Move another player casts on that post pays you half a vote.');
+    retuned(toll, 'gimmick', { kind: 'ride', share: 0.1 }, () => {
+      expect(say()).toContain('pays you a tenth of a vote, on top');
+      expect(ui('toll').logPlay!({}, {})).toContain('pays you a tenth of a vote.');
+    });
+  });
+
+  test('4D Chess says what it waits for and what it pays, with the same words as every Reversal for its status, from the rules\' share, rarity and set time', () => {
+    expect(ui('4d-chess').status).toBe('Set, face down to everyone else');
+    expect(ui('4d-chess').status).toBe(ui('card-collector').status);
+    const say = () => ui('4d-chess').describe(instance.settings);
+    expect(say()).toBe(`A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name one Move, uncommon or commoner, and one of the four kinds of reaction. When that Move is cast on your post, this springs and shows itself; the Move lands as usual and its caster keeps everything it earns, and from then on each vote of your kind on that Move pays you a vote. A Move cast by one of your own characters springs it and pays you nothing. It springs once, or comes back to your hand after ${instance.settings.setLasts.count} ${instance.settings.setLasts.unit}s if nothing springs it. It costs nothing more to set.`);
+    retuned(fourDChess, 'trap', { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } }, () => expect(say()).toContain('pays you half a vote.'));
+    expect(ui('4d-chess').describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day if nothing');
+  });
+
+  test('Off Day says the class it names and when, before its window opens and from then', () => {
+    const status = ui('off-day').status as (p: readonly CardPlay[]) => string;
+    const soon = new Date(Date.now() + 3_600_000).toISOString();
+    const later = new Date(Date.now() + 90_000_000).toISOString();
+    const before = play({ class: 'heel' }, { starts: soon, ends: later });
+    expect(status([before])).toBe('Scores as a Heel next window');
+    const open = play({ class: 'heel' }, { starts: new Date(Date.now() - 3_600_000).toISOString(), ends: soon });
+    expect(status([open])).toBe('Scoring as a Heel now');
+    expect(status([open, before])).toBe('Scoring as a Heel now');
+    expect(status([play({ class: 'face' }, { starts: soon, ends: later })])).toBe('Scores as a Face next window');
+    expect(ui('off-day').hint).toBe('An Off Day makes a character score as another class for one settlement window.');
+    expect(ui('off-day').describe(instance.settings)).toBe('A Salty card, legendary, cast from any post by the character it lands on. You name a class, and everyone can see which. From the next settlement until the one after it, that character is scored as that class, whatever its own. Its own class does not change, no Turn is used and its Turn cooldown is untouched. You are never told whether it made a difference; the character\'s player is told exactly what happened. A character takes one Off Day for each window. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post\'s character at no further cost, using up the card. It costs nothing more to play.');
+    expect(ui('off-day').logPlay!({ class: 'tweener' }, { starts: '2026-11-12T08:17:00.000Z', ends: '2026-11-13T08:17:00.000Z' }))
+      .toBe('From the settlement of Nov 12 \u00b7 08:17 UTC to the settlement of Nov 13 \u00b7 08:17 UTC, that character scores as a Tweener. Its own class does not change, no Turn is used, and its Turn cooldown is untouched.');
+    expect(ui('off-day').logPlay!({ class: 'tweener' }, {})).toBeUndefined();
+    expect(ui('off-day').logPlay!({}, { starts: '2026-11-12T08:17:00.000Z', ends: '2026-11-13T08:17:00.000Z' })).toBeUndefined();
+    expect(offDay.reaches).toEqual(['character']);
+  });
+
+  test('a settled payout names its card, says the share from the card\'s rules, and a card this instance does not have is "A card"', () => {
+    expect(REASON_KEYS).toEqual(expect.arrayContaining(['card.skim', 'card.ride']));
+    const said = (reason: string, card: unknown) => instanceUi.reasonWords(reason, { card: card as string });
+    expect(said('card.skim', 'mooch')).toBe('Mooch: a tenth of a vote for each vote its post drew in the reactions it named, from players who first reacted after it');
+    expect(said('card.ride', 'toll')).toBe('Toll: half a vote for each vote on a Move another player cast on the post');
+    expect(said('card.ride', '4d-chess')).toBe('4D Chess: a vote for each vote, of the kind it named, on the Move that sprang it');
+    for (const reason of ['card.skim', 'card.ride']) {
+      expect(said(reason, 'gone'), reason).toMatch(/^A card: what its payout on a reaction earned$/u);
+      expect(said(reason, undefined)).toBe('A card: what its payout on a reaction earned');
+    }
+    /* A card that is neither a skim for a skim reason, nor a ride for a ride reason, is "A card" too. */
+    expect(said('card.skim', 'toll')).toBe('A card: what its payout on a reaction earned');
+    expect(said('card.ride', 'mooch')).toBe('A card: what its payout on a reaction earned');
+    retuned(mooch, 'skim', { share: 0.25 }, () => expect(said('card.skim', 'mooch')).toContain('Mooch: a quarter of a vote for each vote'));
+    retuned(toll, 'gimmick', { kind: 'ride', share: 1 }, () => expect(said('card.ride', 'toll')).toContain('Toll: a vote for each vote'));
+  });
+
+  test('every status passes the instance check, and the check is run against the real instance', () => {
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
   });
 });

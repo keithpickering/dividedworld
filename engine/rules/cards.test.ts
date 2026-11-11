@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -427,4 +427,57 @@ test('a set card names, or matches, only cards at or below its own rarity', () =
 test('a set card with no trap is refused', () => {
   const none: CardRules = { ...watcher, trap: undefined };
   assert.deepEqual(decideSet(none, settings, post, [], {}, []), { ok: false, why: 'Test Watcher has no trap to spring' });
+});
+
+// A skim card as the engine reads one (Mooch's kind, in test-world words): a quadrant in its checked configuration.
+const quadrants = ['excitedPositive', 'calmPositive', 'excitedNegative', 'boredNegative'];
+const takeQuadrant = (c: unknown) => (quadrants.includes((c as { quadrant?: string } | null)?.quadrant as string) ? ok({ quadrant: (c as { quadrant: never }).quadrant }) : refuse('choose a quadrant'));
+const leech: CardRules<{ quadrant: never }> = {
+  ...base, key: 'leech', name: 'Test Leech', rarity: 'uncommon', skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4,
+  canApply: (t, e, config, now) => { const lands = landsOn({ key: 'leech', stack: 4 }, t, e, now); return lands.ok && config ? quadrantFree({ key: 'leech' }, t, e, config.quadrant, now) : lands; },
+  validateConfig: takeQuadrant as CardRules<{ quadrant: never }>['validateConfig'],
+};
+
+test('a skim card whose validator drops the quadrant is a fault in the card, thrown and never a refusal', () => {
+  const dropped: CardRules = { ...leech as CardRules, validateConfig: () => ok({}) };
+  assert.throws(() => decidePlay(dropped, settings, post, [], { quadrant: 'excitedPositive' }, ''), /card leech/);
+  assert.equal(decidePlay(leech as CardRules, settings, post, [], { quadrant: 'excitedPositive' }, '').ok, true);
+  // A bad configuration is the caster's, and a refusal.
+  assert.deepEqual(decidePlay(leech as CardRules, settings, post, [], {}, ''), { ok: false, why: 'choose a quadrant' });
+});
+
+test('a card that scores as a class throws where its validator drops the class, and decides where it names one', () => {
+  const takeClass = (c: unknown) => (typeof (c as { class?: unknown } | null)?.class === 'string' && (c as { class: string }).class !== '' ? ok({ class: (c as { class: string }).class }) : refuse('choose the class'));
+  const off: CardRules = { ...cast('off', 'rare'), reaches: ['character'], scoresAs: true, lasts: { unit: 'day', count: 2 }, validateConfig: takeClass, canApply: (t, e, _config, now) => landsOn({ key: 'off', reaches: ['character'] }, t, e, now) };
+  const who = { reach: 'character', character: 'c' } as const satisfies CardTarget;
+  assert.equal(decidePlay(off, settings, who, [], { class: 'k' }, '').ok, true);
+  assert.deepEqual(decidePlay(off, settings, who, [], {}, ''), { ok: false, why: 'choose the class' });
+  for (const dropped of [{}, { class: '' }, { class: 5 }]) assert.throws(() => decidePlay({ ...off, validateConfig: () => ok(dropped) }, settings, who, [], { class: 'k' }, ''), /card off/, JSON.stringify(dropped));
+});
+
+test('quadrantFree refuses the same quadrant of the same card on the post, and lets another, an ended play and a play above the post through', () => {
+  const live = (quadrant: string, more: Partial<CardEffect> = {}): CardEffect => ({ card: 'leech', act: 'm', ends: soon, quadrant: quadrant as never, ...more });
+  const free = (effects: CardEffect[], quadrant: string) => quadrantFree({ key: 'leech' }, post, effects, quadrant as never, new Date());
+  assert.deepEqual(free([live('excitedPositive')], 'excitedPositive'), { ok: false, why: 'this post already carries that card for that quadrant' });
+  assert.equal(free([live('excitedPositive')], 'calmPositive').ok, true);
+  assert.equal(free([live('excitedPositive', { ends: gone })], 'excitedPositive').ok, true);
+  assert.equal(free([live('excitedPositive', { reach: 'thread' })], 'excitedPositive').ok, true);
+  assert.equal(free([live('excitedPositive', { card: 'other' })], 'excitedPositive').ok, true);
+  // Through the card's own canApply: a second Leech on the same quadrant is refused, on another it lands, and with no configuration only the stack is read.
+  const first = live('excitedPositive');
+  assert.deepEqual(decidePlay(leech as CardRules, settings, post, [first], { quadrant: 'excitedPositive' }, ''), { ok: false, why: 'this post already carries that card for that quadrant' });
+  assert.equal(decidePlay(leech as CardRules, settings, post, [first], { quadrant: 'calmPositive' }, '').ok, true);
+  assert.equal(leech.canApply(post, [first]).ok, true);
+});
+
+test('a ride trap names its quadrant in its configuration: a card that drops it throws in decideSet, and the name checks stand', () => {
+  const ride: CardRules = { ...snare, key: 'ride-set', name: 'Test Ride', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, validateConfig: (c) => ok({ card: (c as { card: string }).card, quadrant: (c as { quadrant: string }).quadrant }) };
+  const named = { card: 'inky', quadrant: 'excitedPositive' };
+  assert.equal(decideSet(ride, settings, post, [], named, [inky]).ok, true);
+  for (const quadrant of [undefined, 'spicy', 5]) assert.throws(() => decideSet(ride, settings, post, [], { card: 'inky', quadrant }, [inky]), /card ride-set/, String(quadrant));
+  assert.match((decideSet(ride, settings, post, [], { ...named, card: 'grand' }, [grand]) as { why: string }).why, /names cards up to uncommon/);
+  assert.match((decideSet(ride, settings, post, [], { ...named, card: 'shield' }, [shield]) as { why: string }).why, /names a card that is cast on a post/);
+  assert.match((decideSet(ride, settings, post, [], { ...named, card: 'nothing' }, [inky]) as { why: string }).why, /names a card that is cast on a post/);
+  // A catching trap has no outcome and needs no quadrant.
+  assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
 });

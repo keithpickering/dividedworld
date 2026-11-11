@@ -103,7 +103,7 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
       entries: result.entries.map((e) => ({ player: e.player, character: e.character, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}) })),
       class_totals: result.byClass,
       paid: result.paid,
-      shares: shares.map((s) => ({ character: s.character, reason: s.reason, act: s.act, ...(s.quadrant ? { quadrant: s.quadrant } : {}), amount: s.amount })),
+      shares: shares.map((s) => ({ character: s.character, reason: s.reason, ...(typeof s.params?.card === 'string' ? { card: s.params.card } : {}), act: s.act, ...(s.quadrant ? { quadrant: s.quadrant } : {}), amount: s.amount })),
     });
     // A tally or a reveal that could not be written leaves what waited for the next settlement;
     // said in the log, so an admin sees what to seed, and in the outcome.

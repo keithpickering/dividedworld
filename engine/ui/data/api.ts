@@ -462,8 +462,10 @@ export interface Character {
   readonly squareFrame: Frame | null;
   readonly portraitFrame: Frame | null;
   readonly pipStyle: string;
-  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row has the engine's it/its. */
+  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row, or whose set a read did not carry (`pronounsUnread`), has the engine's it/its. */
   readonly pronouns: PronounSet;
+  /** Set only when a read gave this character's profile row without its set: `pronouns` is then the engine's it/its for display only, and is never offered for saving, so a save cannot overwrite the set the player chose. A character with no profile row at all is not marked: nothing is stored to overwrite. */
+  readonly pronounsUnread?: true;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
   /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
@@ -684,9 +686,9 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
-  /** The queued moves it builds on that have not landed (admin_queue, 0163): it lands after them. Empty for a move that waits for none. */
+  /** The queued moves it builds on that have not landed (admin_queue, 0166): it lands after them. Empty for a move that waits for none. */
   readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
-  /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0164), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -706,7 +708,7 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
-  /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0164), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -732,7 +734,7 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
-  /** The bundle the move is a part of (admin_queue, 0161), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0164), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -772,7 +774,7 @@ export interface HandoverTodo {
   readonly how: string;
   readonly landedAt: string;
   /**
-   * The outgoing Boss's handoff note (0169): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * The outgoing Boss's handoff note (0172): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
    * It is the Boss's own words, shown as its note and never as the glass's.
    */
   readonly note: string | null;
@@ -1334,6 +1336,25 @@ export interface FaceDownEnd {
   readonly endedBy: 'sprung' | 'taken back' | 'time';
 }
 
+/**
+ * A class an Off Day-shaped play (a card with `scoresAs`) named for one of the player's characters, as the settlement that scored it
+ * recorded it (`my_scored_as`, sent by `log_page` as `scoredAs`): the settled window's own dates, the class the character was scored as
+ * there and the play that named it. Its character is one of the caller's own, so it is the only reader's.
+ */
+export interface ScoredAs {
+  readonly settlement: number;
+  readonly character: Id;
+  /** The class the character was scored as for that window (`class_key`). */
+  readonly classKey: string;
+  /** The play's Act. */
+  readonly play: Id;
+  /** The play's card key. */
+  readonly card: string;
+  /** The settled window's start and end (`settlements.starts_at`, `ends_at`). */
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
 export interface CaughtPlay {
   readonly play: Id;
@@ -1508,6 +1529,8 @@ export interface Log {
   readonly setEnds: readonly FaceDownEnd[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
+  /** The classes the player's characters were scored as for a settled window, newest settlement first. Absent from a payload older than the card that names them; read it as none. */
+  readonly scoredAs?: readonly ScoredAs[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
   readonly ended: readonly CardEnded[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
@@ -1679,7 +1702,7 @@ export interface BoardRef {
 }
 
 /**
- * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0158): a row that links to the thread
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0161): a row that links to the thread
  * and names the board it is on now. It is a fact of the move, public as the move is.
  */
 export interface BoardStub {
@@ -1691,7 +1714,7 @@ export interface BoardStub {
 }
 
 /**
- * A board that is closed (board_page, 0158): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * A board that is closed (board_page, 0161): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
  * Its page lists no threads and no stubs.
  */
 export interface BoardClosed {
@@ -1960,7 +1983,7 @@ export interface KayfaApi {
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
   /**
-   * The words that name the threads a `moveThread` moves (move_thread_names, 0159): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0162): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
    * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
    */
   moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly left: Id | null }>>>;

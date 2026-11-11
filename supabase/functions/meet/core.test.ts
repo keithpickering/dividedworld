@@ -82,11 +82,11 @@ interface World {
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;
-  /** What meeting_context() says of the Boss's arc (0166): the beats unlocked and not played, and the kinds held back; absent: an older database. */
+  /** What meeting_context() says of the Boss's arc (0169): the beats unlocked and not played, and the kinds held back; absent: an older database. */
   arc?: { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[] };
-  /** What meeting_context() hands a meeting in the farewell window (0169): the season's facts. Absent or null: the meeting was not handed any. */
+  /** What meeting_context() hands a meeting in the farewell window (0172): the season's facts. Absent or null: the meeting was not handed any. */
   handoffFacts?: unknown | null;
-  /** What meeting_context() hands a new Boss (0169): its predecessor's note and facts. Absent or null: none. */
+  /** What meeting_context() hands a new Boss (0172): its predecessor's note and facts. Absent or null: none. */
   predecessor?: unknown | null;
 }
 function fakeDb(w: World = {}) {

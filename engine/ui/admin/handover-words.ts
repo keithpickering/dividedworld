@@ -48,7 +48,7 @@ export function todoDraft(t: HandoverTodo, role: string): { readonly title: stri
 }
 
 /**
- * The outgoing Boss's handoff as an admin reads it (0169): who it was written by, that it is out of character and no player's, its note or that it left none, and the facts the code counted for its
+ * The outgoing Boss's handoff as an admin reads it (0172): who it was written by, that it is out of character and no player's, its note or that it left none, and the facts the code counted for its
  * season. The note is the Boss's own words, kept apart from the glass's sentences; the facts are the code's and are true whatever the note says.
  */
 export function todoHandoff(t: HandoverTodo): { readonly lead: string; readonly note: string | null; readonly none: string; readonly facts: readonly string[] } {

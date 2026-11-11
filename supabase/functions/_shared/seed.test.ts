@@ -23,15 +23,15 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const readKeys = (c: (typeof instance.cards)[number]) => (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key));
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
-    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined,
+    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, reaches: ['post'], pins: false, writes: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
-  assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 75, rare: 25 } }, 'the hit pull reaches the SQL as written');
+  assert.deepEqual(seed.packs[0]!.pulls[4], { weights: { uncommon: 74, rare: 24, legendary: 2 } }, 'the hit pull reaches the SQL as written');
   assert.deepEqual(seed.machine.map((m) => ('card' in m ? m.card : m.pack)), instance.machine.map((m) => ('card' in m.item ? m.item.card : m.item.pack)));
   assert.deepEqual(seed.machine.find((m) => 'pack' in m), { pack: 'booster', availability: 'onSale', price: 300 });
   assert.deepEqual(seed.machine.find((m) => 'card' in m && m.card === 'main-event'), { card: 'main-event', availability: 'hidden', price: 300 });
@@ -139,6 +139,17 @@ test('a card\'s trap (and its match), gimmick and time up travel in the seed as 
   assert.deepEqual([seed.cards[1]!.play, seed.cards[1]!.gimmick, seed.cards[1]!.lasts], ['use', gimmick, { unit: 'day', count: 7 }]);
 });
 
+test('a card\'s skim, its scored-as flag and a trap\'s outcome travel in the seed, and an absent one is absent in the JSON', () => {
+  const skim = { ...instance.cards[0]!, key: 'test-skim', skim: { share: 0.1 }, lasts: { unit: 'week' as const, count: 1 } };
+  const named = { ...instance.cards[0]!, key: 'test-named', reaches: ['character' as const], scoresAs: true as const };
+  const trap = { trigger: { on: 'cast' as const }, outcome: { kind: 'ride' as const, share: 1 } };
+  const ride = { ...instance.cards[0]!, key: 'test-ride', play: 'set' as const, trap };
+  const sent = JSON.parse(JSON.stringify(instanceSeed({ ...instance, cards: [skim, named, ride] }).cards));
+  assert.deepEqual([sent[0].skim, 'scoresAs' in sent[0]], [{ share: 0.1 }, false], 'seed_instance reads a missing scored-as flag as false');
+  assert.deepEqual([sent[1].scoresAs, 'skim' in sent[1]], [true, false], 'and a missing skim as none');
+  assert.deepEqual(sent[2].trap, trap, 'a trap carries its outcome');
+});
+
 test('the seed carries the developer persona: the instance\'s, or the engine\'s plain default, and no prompt (a model never writes it)', () => {
   assert.deepEqual(instanceSeed(instance).developer, { name: 'Gabe', title: 'Made this. Sorry.', avatar: 'gabe', pronouns: PRONOUN_PRESETS.he }, 'Divided World\'s is Gabe, with his tagline as the profile title');
   assert.deepEqual(instanceSeed({ ...instance, developer: undefined }).developer, { name: 'The developers', title: '' }, 'an instance with no persona gets the engine\'s plain one, with no avatar key');
@@ -147,7 +158,7 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });
 
-test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0164)', () => {
+test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0167)', () => {
   const first = instance.system.roster[0]!;
   const arced: Persona = {
     ...first,
@@ -170,7 +181,7 @@ test('the seed carries the conditions and each persona\'s arc as SQL checks it: 
   assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
 });
 
-test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0165)', () => {
+test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0168)', () => {
   const first = instance.system.roster[0]!;
   const days = (h: number, m: number) => instanceSeed({ ...instance, system: { ...instance.system, roster: [{ ...first, phases: { honeymoon: { days: h }, meltdown: { days: m } } }, ...instance.system.roster.slice(1)] } }).system.staff[0]!.phaseDays;
   assert.deepEqual(days(2.5, 500), { honeymoon: 2, meltdown: PHASE_CAPS.meltdown.days });

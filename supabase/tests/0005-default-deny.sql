@@ -17,7 +17,7 @@ declare
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
-                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
+                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'play_reach', 'play_moments', 'play_moment_layers',
                            'alerts', 'thread_follows', 'my_followed_threads', 'thread_open',
                            -- The log's lines for the Mod Bots (0111): each the caller's own characters' rows.
@@ -104,9 +104,9 @@ declare
                            'search_match_conds(text,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_thread_matches(uuid,tsquery,uuid,timestampwithtimezone,timestampwithtimezone,boolean)', 'search_post_cards(uuid)',
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)',
-                           -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0158); the page is a signed-in read of public facts.
+                           -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0161); the page is a signed-in read of public facts.
                            'board_stubs(uuid)', 'board_closed_to(uuid)',
-                           -- The title of a moved thread and the board it left, for a move's sentence (0159): public facts.
+                           -- The title of a moved thread and the board it left, for a move's sentence (0162): public facts.
                            'move_thread_names(jsonb)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
@@ -146,7 +146,7 @@ begin
   end if;
   if bad <> '' then raise exception 'acts can be changed:%', bad; end if;
 
-  -- The dependencies of the moves (0161) are insert-only too, and no client's: the guards fire always, so not even a restore in replica mode can change one.
+  -- The dependencies of the moves (0164) are insert-only too, and no client's: the guards fire always, so not even a restore in replica mode can change one.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
   if (select count(*) from pg_trigger t where t.tgrelid = 'public.move_dependencies'::regclass and t.tgname in ('move_dependencies_insert', 'move_dependencies_no_update', 'move_dependencies_no_truncate')) is distinct from 3 then
@@ -154,7 +154,7 @@ begin
   end if;
   if bad <> '' then raise exception 'move_dependencies can be changed:%', bad; end if;
 
-  -- A beat's events (0164) are insert-only too, and no client's: four guards (insert, update, delete, truncate), each firing always.
+  -- A beat's events (0167) are insert-only too, and no client's: four guards (insert, update, delete, truncate), each firing always.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
   if (select count(*) from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and t.tgname in ('arc_beat_events_insert', 'arc_beat_events_no_update', 'arc_beat_events_no_delete', 'arc_beat_events_no_truncate')) is distinct from 4 then
@@ -162,7 +162,7 @@ begin
   end if;
   if bad <> '' then raise exception 'arc_beat_events can be changed:%', bad; end if;
 
-  -- A Boss's farewell and handoff (0169) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
+  -- A Boss's farewell and handoff (0172) are insert-only too, and no client's: it is out of character and never shown to players. Three guards (update, delete, truncate), each firing
   -- always, and no grant to an API role on the table or on the view that reads its latest row.
   for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.handoffs'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;

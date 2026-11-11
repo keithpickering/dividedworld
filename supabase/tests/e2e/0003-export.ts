@@ -20,6 +20,9 @@ const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly s
 const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
+/** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs'];
+
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
@@ -162,6 +165,34 @@ test('an instance exported and imported into a fresh database is the same instan
       timed_post := tests.post(a, t, 'Left to its time.');
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, timed_post, '{}') returning id into timed_set;
       insert into face_down (play, account, card, config, post, thread, round, ends_at) values (timed_set, ann, 'exptime', '{}', timed_post, t, 1, now() - interval '1 hour');
+      -- The payout cards (0150, 0151): a skim play (a cast on a post that names a quadrant, with the end lasts gave it), a ride Gimmick play, a ride Reversal set face down that a cast springs (did: rode,
+      -- carrying its quadrant, and the cast carrying rode), and a scored-as play on a character with the window it starts (a play_reach row too). Their kinds hold skim, scores_as, a ride gimmick and a trap outcome.
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick, skim, scores_as) values
+        ('expskim', 'Exported Skim', 'salty', 'uncommon', 'cast', null, '{post}', interval '7 days', null, '{"share": 0.1}', false),
+        ('expride', 'Exported Ride', 'pepperoni', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "ride", "share": 0.5}', null, false),
+        ('exprode', 'Exported Rode Reversal', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "outcome": {"kind": "ride", "share": 1}}', '{post}', null, null, null, false),
+        ('expscore', 'Exported Scored As', 'salty', 'legendary', 'cast', null, '{character}', interval '1 day', null, null, true);
+      insert into card_ledger (account, card, kind, price) values (ann, 'expskim', 'bought', 0), (ann, 'expride', 'bought', 0), (ann, 'exprode', 'bought', 0), (ann, 'expscore', 'bought', 0), (bob, 'blot', 'bought', 0);
+      declare skim_post uuid; skim_play uuid; ride_post uuid; ride_play uuid; rode_post uuid; rode_cast uuid; score_play uuid;
+      begin
+        skim_post := tests.post(a, t, 'Skimmed, and carried across.');
+        perform play_card(ann, 'expskim', a, skim_post, '{"quadrant": "excitedPositive"}', 0, '');
+        select id into skim_play from acts where kind = 'card' and target_act_id = skim_post and payload ->> 'card' = 'expskim';
+        ride_post := tests.post(a, t, 'Ridden, and carried across.');
+        perform play_card(ann, 'expride', a, ride_post, '{}', 0, '');
+        select id into ride_play from acts where kind = 'card' and target_act_id = ride_post and payload ->> 'card' = 'expride';
+        rode_post := tests.post(a, t, 'Under a ride back.');
+        perform set_card(ann, 'exprode', a, rode_post, '{"quadrant": "excitedPositive"}', 0, 'blot');
+        perform play_card(bob, 'blot', b, rode_post, '{}', 0, '');
+        assert (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive') = 1, 'the ride back sprang as a rode spring, carrying its quadrant';
+        assert (select count(*) from acts where kind = 'card' and target_act_id = rode_post and payload ? 'rode') = 1, 'the cast that met it carries rode';
+        -- Raw rows, not play_card: play_card refuses a scored-as card unless scored_as_window names a window after the next settlement, and the settlements e2e/0001 and 0002 leave end in 2000, so
+        -- next_settlement_at is null here for good. The rows are the ones place_cast writes (a card Act with reach, starts and ends, and its play_reach).
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p,
+          jsonb_build_object('card', 'expscore', 'message', '', 'config', jsonb_build_object('class', 'heel'), 'layer', 1, 'reach', 'character', 'character', b,
+            'starts', to_char(now() + interval '1 day', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'), 'ends', to_char(now() + interval '2 days', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'))) returning id into score_play;
+        insert into play_reach (play, reach, character, ends_at) values (score_play, 'character', b, now() + interval '2 days');
+      end;
       -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
       insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
@@ -208,6 +239,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
       -- A share of a ledger line in e2e/0001's settlement (0034), on Ann's post.
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
+      -- What a settlement scored a character as (0151, append-only), and a ledger row that names the card that paid it (0150: params.card).
+      insert into scored_as (settlement, character, class_key, play) select (select max(id) from settlements), b, 'heel', id from acts where kind = 'card' and payload ->> 'card' = 'expscore';
+      insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'card.skim', 7, jsonb_build_object('card', 'expskim', 'share', 0.1) from settlements;
       -- A ledger line with the numbers its words state (0073), and a settle run's claim on a window long settled.
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
       insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
@@ -224,10 +258,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_memory (staff, meeting, body) select 'exp-boss', max(id), '{"opinions": [], "grudges": []}' from meetings;
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
-      -- An arc (0164): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
+      -- An arc (0167): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
       insert into persona_arcs (staff, beats, holds_back, phase_days) values ('exp-boss', '[{"key": "split", "mini": false, "repeatable": false, "unlock": [{"kind": "phase", "phase": "reign"}], "due": null}]', '[{"kind": "createBoard", "until": "split"}]', '{"honeymoon": 3}');
       insert into arc_beat_events (season, staff, beat, event) select id, 'exp-boss', 'split', 'unlocked' from seasons where ends_at is null;
-      -- A farewell and a handoff note (0169): insert-only, no client's, carried across like the rest.
+      -- A farewell and a handoff note (0172): insert-only, no client's, carried across like the rest.
       insert into handoffs (season, staff, farewell, note) select id, 'exp-boss', 'So long, and thanks for the posts.', 'Mind the fangame board.' from seasons where ends_at is null;
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
       -- A note the Boss wrote with that post (0085).
@@ -269,7 +303,7 @@ test('an instance exported and imported into a fresh database is the same instan
       kept := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
         'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
-      -- A thread moved to another board (0152, 0158): the move Act writes its thread_departures row, the thread's stored board follows it, and its origin_board stays where it started,
+      -- A thread moved to another board (0155, 0161): the move Act writes its thread_departures row, the thread's stored board follows it, and its origin_board stays where it started,
       -- so a thread's place, its departure and its origin are real rows to carry across.
       insert into boards (slug, name) values ('exp-elsewhere', 'Exported Elsewhere');
       perform write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'moveThread', 'body', 'Moved.',
@@ -277,7 +311,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform rebuild_thread_places(array[t]);
       if not exists (select 1 from thread_departures where thread = t) or not exists (select 1 from threads where id = t and board <> origin_board) then raise exception 'the fixture did not land a moveThread'; end if;
       -- Its cause (0106): the Act that drew a move, carried across with the row.
-      -- A part of a bundle (0161): its bundle, name and role are columns of the row, carried across with it.
+      -- A part of a bundle (0164): its bundle, name and role are columns of the row, carried across with it.
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act, bundle, bundle_name, role)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p, gen_random_uuid(), 'The Exported Bundle', 'palace' from meetings m;
@@ -285,7 +319,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform set_config('session_replication_role', 'replica', true);
       update queued_moves set depends_on = array[queued_moves.id] where landed_act = kept;
       perform set_config('session_replication_role', 'origin', true);
-      -- A move that built on another (0161): written when the dependent lands, insert-only, carried across with the Acts it names.
+      -- A move that built on another (0164): written when the dependent lands, insert-only, carried across with the Acts it names.
       insert into move_dependencies (act, on_act) values (kept, moved);
       -- An apology to the move in force (0129), carried across with the Acts it names.
       insert into apologies (move_act, apology_act, character, state) values (kept, p, b, 'pending');
@@ -356,10 +390,18 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs']) {
+  for (const t of HELD) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
+  // The payout cards' own rows, each asserted by what it holds (the table lists above are satisfied by any row): the ledger row naming the skim card, a scored-as row for the scored-as play,
+  // that play's `starts`, and the rode spring's quadrant.
+  const payouts = (url: string) => psqlOn(url, `select
+    (select count(*) from ledger where params ? 'card' and params ->> 'card' = 'expskim') || '|' ||
+    (select count(*) from scored_as s join acts k on k.id = s.play where k.payload ->> 'card' = 'expscore' and s.class_key = 'heel') || '|' ||
+    (select count(*) from acts where kind = 'card' and payload ->> 'card' = 'expscore' and payload ->> 'starts' is not null) || '|' ||
+    (select count(*) from acts where kind = 'spring' and payload ->> 'did' = 'rode' and payload ->> 'quadrant' = 'excitedPositive')`);
+  assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
   const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
@@ -567,7 +609,8 @@ test('an instance exported and imported into a fresh database is the same instan
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of HELD) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');

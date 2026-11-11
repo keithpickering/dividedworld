@@ -19,7 +19,7 @@
  *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
-import type { Instance, Settings, Span } from '../../rules/types.ts';
+import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
 import { atOrBelow, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
@@ -118,7 +118,7 @@ export interface Seed {
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
-   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0169). The season is the next number: the first season is the seed's, and each handover opens the one after.
+   * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0172). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
   handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts> }): void;
   /**
@@ -292,7 +292,7 @@ export interface SeedLine {
 }
 
 /** A rename a seed lands or queues: the board by slug, its new name, subject and description, and the demand it carries. */
-/** A part of a bundle (0161): the bundle's id and name, and the part's role in it. */
+/** A part of a bundle (0164): the bundle's id and name, and the part's role in it. */
 export interface SeedBundle {
   readonly id: string;
   readonly name: string;
@@ -495,9 +495,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     return found;
   };
-  /** Where a landed `moveThread` took a thread from (thread_departures, 0158). */
+  /** Where a landed `moveThread` took a thread from (thread_departures, 0161). */
   const departures: { thread: Id; origin: Id; to: Id; at: number }[] = [];
-  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0152). */
+  /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0155). */
   const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
   const isClosed = (b: Board): boolean => closedBoards.has(b.id);
   /** The first open board a closed board's threads are in, following merges and fallbacks on. */
@@ -673,7 +673,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     : a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq }
     : null;
 
-  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. */
+  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
   function originPlace(origin: ActRec): OriginPlace | null {
     if (origin.kind === 'update') return placeOf(origin);
     if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
@@ -684,7 +684,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const named = beyond.reach === 'character' ? characters.get(beyond.target) : undefined;
         on = beyond.reach === 'character' ? { kind: 'character', id: beyond.target, name: named?.debutedAt != null ? named.name : null }
           : beyond.reach === 'thread' ? { kind: 'thread', id: beyond.target, title: threads.get(beyond.target)!.title }
-          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boards.find((b) => b.id === beyond.target)!.name };
+          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boardNow(boards.find((b) => b.id === beyond.target)!).name };
       } else {
         // A play with no play_reach row is on a post (0079 joins the target post only then; every beyond-post play has a reach row).
         on = origin.target !== null ? placeOf(acts.get(origin.target)) : null;
@@ -1503,21 +1503,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const match = trapRules?.trap?.match;
     const matched = match !== undefined && (match.flavors === undefined || match.flavors.includes(rules.alignment)) && (match.upTo === undefined || atOrBelow(rules.rarity, match.upTo)) && atOrBelow(rules.rarity, trapRules!.rarity);
     const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
+    /* A back with an outcome rides instead of catching: the cast lands as usual and the spring says it rode (spring_traps, 0151). The setter takes no card. */
+    const rides = catches && trapRules?.trap?.outcome?.kind === 'ride';
+    /* A skim play carries its end, as a Use's does (place_cast, 0151). */
+    const at = stamp ?? now();
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
     const playId = uuid();
     let spring: ActRec | null = null;
     if (catches) {
-      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
+      spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: rides
+        ? { card: trap.card, trigger: 'cast', did: 'rode', quadrant: faceDown.get(trap.set)!.quadrant, set: trap.set, by: playId }
+        : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches ? { caught: trap!.set } : { layer }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}) } });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
     if (spring) {
-      /* The caught card is the setter's: one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
-      const setter = accounts.get(faceDown.get(trap!.set)!.account);
+      /* The caught card is the setter's (a ride takes none): one more in the hand, and a `caught` row in their own ledger (nothing is paid). */
+      const setter = rides ? undefined : accounts.get(faceDown.get(trap!.set)!.account);
       if (setter) {
         setter.cards[card] = (setter.cards[card] ?? 0) + 1;
         recordCard(setter.id, spring.at, { card, kind: 'caught', act: spring.id, price: 0 });
@@ -1534,7 +1540,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
   /** The back of each card set face down: `catches` is the card a catching set card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; takenBack?: Id; catches?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean; refunded?: true }>();
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; takenBack?: Id; catches?: string; quadrant?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean; refunded?: true }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.takenBack === undefined && f.endsAt > now()) return { set, card: f.card };
     return null;
@@ -1555,7 +1561,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (a.target !== target) continue;
       if (a.kind === 'card' && a.payload.caught === undefined && !over(a.id) && onPost(a)) {
         const r = instance.cards.find((c) => c.key === a.payload.card);
-        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
+        /* A skim play carries the quadrant it names, so its card's rules can refuse a second for the same one (card_target, 0151). */
+        const named = r?.skim ? (a.payload.config as { quadrant?: unknown } | undefined)?.quadrant : undefined;
+        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
       } else if (a.kind === 'set') {
         const f = faceDown.get(a.id);
         out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.takenBack ? acts.get(f.takenBack)!.at : f?.endsAt ?? a.at) });
@@ -1622,16 +1630,46 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
     const short = covers(account, decided.value.price);
     if (short) return short;
+    /* A scored-as card on a character names a class the instance has and a window that can be named, once for the character in that window (place_cast, 0151). */
+    let window: { opens: number; closes: number } | null = null;
+    if (rules.scoresAs) {
+      if (!instance.classes.some((k) => k.key === (decided.value.config as { class?: unknown } | null)?.class)) return refuse('there is no such class');
+      const w = scoredAsWindow();
+      if (typeof w === 'string') return refuse(w);
+      if ([...reachPlays].some(([play, r]) => r.reach === 'character' && r.target === target && instance.cards.find((c) => c.key === acts.get(play)!.payload.card)?.scoresAs && (lastSettled === null || acts.get(play)!.at >= lastSettled) && !reversedPlays.has(play))) {
+        return refuse('this character already has a class named for the window after the next settlement');
+      }
+      window = w;
+    }
     account.cards[card]! -= 1;
     const bound = span(settings.reachLasts[reach]);
-    const endsAt = at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);
-    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ends: iso(endsAt) } });
+    /* A scored-as play lasts until its window closes, not a time from now, and names where the window starts. */
+    const endsAt = window ? window.closes : at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);
+    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ...(window ? { starts: iso(window.opens) } : {}), ends: iso(endsAt) } });
     reachPlays.set(written.id, { reach, target, endsAt });
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
     sendAct(written);
     sendReach(written);
     return ok(publicAct(written));
+  }
+
+  /**
+   * scored_as_window (0151): the window a scored-as card names when it is played now: the one after the next settlement, which is the same
+   * for every caster (it reads only settlements, seasons and settings), or the words of why none can be named.
+   */
+  function scoredAsWindow(): { opens: number; closes: number } | string {
+    const opens = nextSettlement;
+    const unknown = 'the next settlement\'s time is not known yet, so no window can be named; play it after that settlement';
+    /* next_settlement_at (0014) is null with no settlement applied, whatever time was seeded. */
+    if (opens === null || lastSettled === null) return unknown;
+    /* The season the next window is in, and where it ends: an open season whose length was cut past what is settled ends at that next window. */
+    const lastEnd = lastSettled;
+    const s = seasons.find((z) => Date.parse(z.startsAt) <= lastEnd && (z.endsAt === null || Date.parse(z.endsAt) > lastEnd));
+    const longest = s === undefined ? null : Math.max(Date.parse(s.startsAt) + span(settings.seasonLength), lastEnd);
+    const seasonEnd = s === undefined ? null : s.endsAt !== null ? Date.parse(s.endsAt) : longest === lastEnd ? null : longest;
+    if (seasonEnd === null || seasonEnd <= opens) return 'this season ends at the next settlement, so there is no window after it to name';
+    return { opens, closes: Math.min(opens + span(settings.settlementLength), seasonEnd) };
   }
 
   /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
@@ -1657,7 +1695,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (short) return short;
     account.cards[card]! -= 1;
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
-    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
+    faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(rules.trap?.outcome && typeof (decided.value.config as { quadrant?: unknown } | null)?.quadrant === 'string' ? { quadrant: (decided.value.config as { quadrant: string }).quadrant } : {}), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     spend(account, decided.value.price, 'play', written.id);
     /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a set card that carries a trap, or a Move (it springs on a quote). */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast', ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
@@ -1778,7 +1816,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
-  /** The SQL's words (pronouns_hold, 0124): a set is held after it is lowercased, as set_profile and create_character store it. */
+  /** The SQL's words (pronouns_hold, 0124): a set is held and stored normalized (trimmed and lowercased), as the real client's setProfile sends it and the act function normalizes it. */
   const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
   const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
 
@@ -2250,6 +2288,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
     },
     apologize(move, character, title, body, framing) {
+      const bad = request({ action: 'apologize', move, character, title, body, ...(framing ? { framing } : {}) });
+      if (bad) return bad;
       const c = acting(character);
       if (isRefusal(c)) return c;
       const banned = bannedUntilOf(character);
@@ -3030,7 +3070,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     boardPage(slug, page, effectCards): BoardPage | null {
       const board = core.board(slug);
       if (!board) return null;
-      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0158). */
+      /* A closed board lists no thread and no stub, and says where its threads went (board_page, 0161). */
       const gone = closedBoards.get(board.id);
       if (gone) {
         const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };
@@ -3242,7 +3282,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     meetCard(card) {
       const account = me();
       if (!account) return refuse('sign in with an account first');
-      if (!/^[a-z][a-z0-9-]{0,39}$/.test(card)) return refuse('a card is named in lowercase words joined by hyphens');
+      if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(card)) return refuse('a card is named in lowercase words joined by hyphens');
       const met = account.prefs.cardsMet;
       if (!met.includes(card)) {
         if (met.length >= 64) return refuse('at most 64 cards are kept as met');

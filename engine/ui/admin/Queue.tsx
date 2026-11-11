@@ -327,7 +327,7 @@ function Boards({ rows, onDescribed }: { readonly rows: readonly BoardSummary[];
 }
 
 /**
- * The outgoing Boss's handoff in a handover's to-do (0169): its note, in the Boss's own words and quoted as such, or that it left none, and under it the facts the code counted for the season it
+ * The outgoing Boss's handoff in a handover's to-do (0172): its note, in the Boss's own words and quoted as such, or that it left none, and under it the facts the code counted for the season it
  * ended. Out of character and the admins' alone: no player reads either.
  */
 function Handoff({ todo }: { readonly todo: HandoverTodo }) {
