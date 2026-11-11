@@ -53,6 +53,8 @@ export function instanceSeed(instance: Instance) {
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.
     packs: instance.packs.map((p) => ({ key: p.key, pulls: p.pulls.map((pull) => ({ weights: { ...pull.weights } })), leaves: [...(p.leaves ?? [])] })),
     machine: instance.machine.map((m) => ({ ...('card' in m.item ? { card: m.item.card } : { pack: m.item.pack }), availability: m.availability, price: m.price })),
+    // The gear the instance offers (0150): keys and rarities only, which seed_instance adds and keeps current; names, lines and art stay in the instance.
+    gear: instance.gear.map((g) => ({ key: g.key, rarity: g.rarity })),
     // The developer persona (0062): the instance's, else the engine's plain one. It is not in `system`, which a model reads, and its tagline is its
     // profile title. seed_instance makes the character and the updates thread from it; `avatar` is a key the UI turns into a picture.
     developer: { name: dev.name, title: dev.tagline, ...(dev.avatar !== undefined ? { avatar: dev.avatar } : {}), ...(dev.pronouns !== undefined ? { pronouns: dev.pronouns } : {}) },

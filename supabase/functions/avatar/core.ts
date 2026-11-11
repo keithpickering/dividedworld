@@ -151,6 +151,12 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
     const why = check(field, bytes);
     if (why) return refused(field, `the ${field} ${why}`);
   }
+  // How tall the portrait is as a multiple of its width, from its own bytes (set_avatar, 0150); a recrop sends no portrait and keeps the stored one.
+  let tallness: number | null = null;
+  if (request.portrait) {
+    const read = readWebp(request.portrait);
+    if (read.ok) tallness = read.value.height / read.value.width;
+  }
   const stored: string[] = [];
   try {
     const who = await dbs.player.rpc<string | null>('whoami', {}).catch((e) => { if (sessionRefused(e)) return null; throw e; });
@@ -164,7 +170,7 @@ export async function runAvatar(dbs: { player: Db; service: Db }, storage: Stora
     }
     const written = await dbs.service.rpc<{ profile: unknown; replaced: string[] }>('set_avatar', {
       who, through: request.character, square: names.square, portrait: names.portrait,
-      square_frame: request.frames.square, portrait_frame: request.frames.portrait,
+      square_frame: request.frames.square, portrait_frame: request.frames.portrait, portrait_tallness: tallness,
     });
     stored.length = 0;
     // What the new avatar replaced is the player's own to lose; a removal that fails leaves a file nobody names, logged.

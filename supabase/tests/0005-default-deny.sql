@@ -12,6 +12,8 @@ declare
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
+                           -- Gear (0150): the kinds and what each mask wears are public, the ledger is cut to the caller's own rows by its policy, and the wardrobe and an admin's grant check the caller inside.
+                           'gear_kinds', 'gear_ledger', 'gear_worn',
                            -- The machine (0139): its slots as players see them, a pack's pulls, and a buyer's own packs. The slots table itself is nobody's to read.
                            'machine_now', 'pack_kinds', 'packs', 'my_packs', 'my_invites', 'pending_turns', 'effect_releases',
                            'reading', 'my_reactions', 'thread_view_counts',
@@ -35,6 +37,8 @@ declare
                            'board_page(text,integer,text[])', 'index_page()',
                            -- A character's two pages, each in one read (0096): invoker and stable, held to the web's read lists by the screen-function guard.
                            'profile_page(uuid)', 'record_page(uuid,text,integer)',
+                           -- A player's wardrobe and an admin's grant of gear (0150): each asks who is calling inside.
+                           'my_wardrobe()', 'grant_gear(uuid,text,integer)',
                            -- A finished season's results (0099): its list, a page of 50 and a character's place, invoker reads for a signed-in player.
                            'finished_seasons()', 'results_page(integer,integer)', 'result_place(integer,uuid)',
                            -- A thread's page in one read (0094), a security invoker function.

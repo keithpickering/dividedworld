@@ -97,6 +97,11 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into reaction_tallies (act, kind, count) values (p, 'fire', 1);
       insert into wallets (account, balance) values (ann, 0) on conflict (account) do nothing;
       insert into card_ledger (account, card, kind, price) values (ann, 'splat', 'bought', 100);
+      -- Gear (0150): a kind, a copy found and a copy granted, and a piece worn, each carried across as it was.
+      insert into gear_kinds (key, rarity) values ('expgear', 'uncommon');
+      insert into gear_ledger (account, gear, kind, event) values (ann, 'expgear', 'found', gen_random_uuid());
+      insert into gear_ledger (account, gear, kind) values (ann, 'expgear', 'granted');
+      insert into gear_worn (character, layer, gear, x, y, w, turn) values (a, 2, 'expgear', 0.25, 0.75, 0.5, -30);
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
@@ -594,6 +599,14 @@ test('an instance exported and imported into a fresh database is the same instan
     // And every file its rows name is in the new project's Storage, byte for byte.
     assert.deepEqual(new Map(newStore.objects), new Map(Object.entries(avatar)));
     assert.ok(!(imported.stdout + imported.stderr).includes(STORAGE_KEY), 'the import printed the Storage key');
+
+    // The gear's three tables are carried as they were: the kind, both ledger rows (the found one naming its event) and the worn piece.
+    for (const t of ['gear_kinds', 'gear_ledger', 'gear_worn']) assert.notEqual(psqlOn(from, `select count(*) from public.${t}`), '0', `the exported instance holds ${t} rows`);
+    const gearRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
+      select to_jsonb(k)::text x from gear_kinds k union all select to_jsonb(l)::text from gear_ledger l union all select to_jsonb(gw)::text from gear_worn gw) q`);
+    assert.match(gearRows(from), /"kind": "found"/, 'the found copy is in the export');
+    assert.match(gearRows(from), /"turn": -30/, 'the worn piece is in the export');
+    assert.equal(gearRows(fresh.toString()), gearRows(from), 'gear_kinds, gear_ledger and gear_worn survive the round trip');
 
     // The imported instance goes on: each identity column's next value is past every row it holds.
     const identities = psqlOn(fresh.toString(), `
