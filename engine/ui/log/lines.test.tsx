@@ -1027,3 +1027,92 @@ describe('a card\'s boost in a settlement', () => {
     expect(said).not.toContain('publicity Tour');
   });
 });
+
+/* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 9): the lines a skim, a ride and a scored-as card write, said word for word. */
+describe('the payout cards\' lines', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const later = '2026-10-31T10:00:00.000Z';
+  const day0 = '2026-10-29T08:17:00.000Z';
+  const day1 = '2026-10-30T08:17:00.000Z';
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const card = (key: string, name: string, over: Record<string, unknown> = {}) => ({ ...testInstance.cards[0]!, key, name, ...over });
+  const w: Words = {
+    ...words,
+    instance: { ...testInstance, cards: [...testInstance.cards,
+      card('chess', '4D Chess', { play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } } }),
+      card('offday', 'Off Day', { rarity: 'legendary', reaches: ['character'], scoresAs: true })] },
+    ui: { ...words.ui, cards: [{ key: 'offday', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '', logPlay: (_c, r) => `Window ${r.starts} to ${r.ends}.` }] },
+  };
+  const posts = [act('post3', 'post', 'p', { seq: 3 }), act('post4', 'post', 's', { seq: 4 })];
+  const names = new Map([['s', 'Spritey']]);
+
+  test('scoredAs leaves a card\'s payout out, so a paid character still reads as the class it was scored as', () => {
+    const lines = [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }, { character: 'p', reason: 'card.skim', amount: 1, params: { card: 'mooch' }, shares: [] }];
+    expect(scoredAs(lines, testInstance)).toBe('heel');
+    expect(scoredAs([lines[1]!], testInstance)).toBeNull();
+  });
+
+  test('a 4D Chess that rode says what sprang it, that the cast landed as usual, and what each vote pays, from the card\'s own share', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', rode: 'set1' } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'chess', trigger: 'cast', did: 'rode', quadrant: 'excitedPositive', set: 'set1', by: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'chess', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows.map((r) => r.kind)).toEqual(['sprung']);
+    expect(text(rows[0]!)).toBe('4D Chess on your post #3 sprang when Spritey cast Whoops! on it. Whoops! landed as usual, and its caster keeps what it earns. Each vote of Hype it draws pays you a vote, in each settlement\'s lines.');
+    /* Retuned, the new share is the one said. */
+    const half = { ...w, instance: { ...w.instance, cards: w.instance.cards.map((c) => (c.key === 'chess' ? { ...c, trap: { trigger: { on: 'cast' as const }, outcome: { kind: 'ride' as const, share: 0.5 } } } : c)) } };
+    expect(text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), half, 600, null)[0]!)).toContain('pays you half a vote,');
+  });
+
+  /* An Off Day on Pipewrench, played from post 3 by Pipewrench: it names a Heel for the window of Oct 29 to Oct 30. */
+  const named = act('k1', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: day0, ends: day1 } });
+  const scoredRow = { settlement: 1, character: 'p', classKey: 'heel', play: 'k1', card: 'offday', startsAt: day0, endsAt: day1 };
+  const OWN = 'Off Day named a Heel for Pipewrench in this window, so it was scored as one whatever its own class. That ended with this settlement, and its own class never changed.';
+
+  test('the target\'s and the caster\'s rows for an Off Day carry the card\'s sentence, given the window it named', () => {
+    const log = { ...empty, cards: [{ card: 'offday', kind: 'played' as const, act: 'k1', price: 0, at }], playsOnMine: [{ play: 'k1', post: 'post3', at, reach: 'character' as const, targetName: 'Pipewrench', targetCharacter: 'p' }] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'face')], acts: new Map([...posts, named].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows.map((r) => r.kind).sort()).toEqual(['onMine', 'played']);
+    expect(text(rows.find((r) => r.kind === 'onMine')!)).toBe(`Off Day was played on Pipewrench. Window ${day0} to ${day1}.`);
+    expect(text(rows.find((r) => r.kind === 'played')!)).toContain(`Window ${day0} to ${day1}.`);
+  });
+
+  test('a settlement that scored the named class says so in the character\'s sentence, in a tab and in All', () => {
+    const log = { ...empty, settlements: [settled(1, day1, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }, { character: 'p', reason: 'card.skim', amount: 1, params: { card: 'mooch' }, shares: [] }])], scoredAs: [scoredRow] };
+    const mine = [char('p', 'Pipewrench', 'face')];
+    const [tabbed] = logRows(data({ log, mine, acts: new Map([...posts, named].map((a) => [a.id, a])) }), w, 600, 'p').filter((r) => r.kind === 'settlement');
+    expect(text(tabbed!)).toBe(`Scored as a Heel for Oct 29: drew heat +0.05, card.skim +0.01. ${OWN}`);
+    const [all] = logRows(data({ log, mine, acts: new Map([...posts, named].map((a) => [a.id, a])) }), w, 600, null).filter((r) => r.kind === 'settlement');
+    expect(text(all!)).toBe(`Scored for Oct 29. Pipewrench as a Heel: drew heat +0.05, card.skim +0.01. ${OWN}`);
+  });
+
+  test('a window in which the character has no line gets a row of its own at the settlement\'s end', () => {
+    const log = { ...empty, scoredAs: [scoredRow] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'face')], acts: new Map([...posts, named].map((a) => [a.id, a])) }), w, 600, null);
+    expect(rows).toHaveLength(1);
+    expect([rows[0]!.kind, rows[0]!.what, rows[0]!.at, rows[0]!.characters, rows[0]!.aura]).toEqual(['gimmickEnded', 'Off Day on Pipewrench ended', day1, ['p'], 0]);
+    expect(text(rows[0]!)).toBe('Pipewrench was to be scored as a Heel for Oct 29, and nothing was scored for it in that window. Its own class never changed.');
+    /* Another tab does not hold it. */
+    expect(logRows(data({ log, mine: [char('p', 'Pipewrench', 'face'), char('q', 'Hooligan', 'face')], acts: new Map() }), w, 600, 'q')).toEqual([]);
+  });
+
+  test('the live estimate says a character is scored as the named class this window, by which card, and not outside it', () => {
+    const now = Date.now();
+    const open = act('k2', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now - 3_600_000).toISOString(), ends: new Date(now + 3_600_000).toISOString() } });
+    const soon = act('k3', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now + 3_600_000).toISOString(), ends: new Date(now + 7_200_000).toISOString() } });
+    const estimate = { entries: [], asOf: new Date(now).toISOString(), freshAfter: null, lines: [{ character: 'p', reason: 'heel.drewHeat', amount: 5 }] };
+    const mine = [char('p', 'Pipewrench', 'face')];
+    const [row] = logRows(data({ estimate, mine, acts: new Map([...posts, open].map((a) => [a.id, a])) }), w, 600, 'p');
+    expect(text(row!)).toContain(' Scored as a Heel this window by Off Day.');
+    expect(text(logRows(data({ estimate, mine, acts: new Map([...posts, soon].map((a) => [a.id, a])) }), w, 600, 'p')[0]!)).not.toContain('Scored as');
+    /* An Off Day an admin ended is not in force. */
+    const ended = { ...empty, ended: [{ cardEnd: 'e1', play: 'k2', side: 'onMine' as const, at: later, card: 'offday', character: 'p', reach: 'character' as const, targetName: 'Pipewrench', casterName: 'Pipewrench', postAuthorName: null }] };
+    expect(text(logRows(data({ estimate, log: ended as never, mine, acts: new Map([...posts, open].map((a) => [a.id, a])) }), w, 600, 'p').find((r) => r.kind === 'estimate')!)).not.toContain('Scored as');
+  });
+
+  test('actsNamed leaves a scored-as row\'s play to the played and on-mine rows that name it', () => {
+    expect(actsNamed({ ...empty, scoredAs: [scoredRow] }, null, [])).toEqual([]);
+  });
+});

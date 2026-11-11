@@ -114,6 +114,29 @@ describe('where a card beyond a post is offered', () => {
   });
 });
 
+/* A card that names something when it is played (a skim card's quadrant, a scored-as card's class, a ride back's quadrant) is offered where it lands, before
+   its player has named anything: the settings are the form's, and the screen asks only where the card lands. */
+describe('a card that names a quadrant or a class, as a screen offers it', () => {
+  const setLasts = { unit: 'day' as const, count: 7 };
+  const base: CardRules = { key: 'base', name: 'Base', alignment: 'salty', rarity: 'uncommon', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: () => ({ ok: true, value: undefined }) };
+  const named = (config: unknown) => (config as { quadrant?: unknown; class?: unknown } | null) ?? {};
+  const skim: CardRules = { ...base, key: 'skim', name: 'Skim', skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4, validateConfig: (c) => (typeof named(c).quadrant === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the reactions' }), canApply: (t, e, c, now) => landsOn({ key: 'skim', stack: 4 }, t, e, now) };
+  const scores: CardRules = { ...base, key: 'scores', name: 'Scores', reaches: ['character'], scoresAs: true, lasts: { unit: 'day', count: 2 }, validateConfig: (c) => (typeof named(c).class === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the class' }) };
+  const ride: CardRules = { ...base, key: 'ride', name: 'Ride', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, validateConfig: (c) => (typeof named(c).quadrant === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the reactions' }) };
+  const cards = [skim, scores, ride];
+
+  test('a skim card lands on a post, a scored-as card on a character, a ride back on a post, each with nothing named yet', () => {
+    expect(landing(skim, post('hi'), [], { cards, setLasts }).ok).toBe(true);
+    expect(landingOn(scores, { reach: 'character', character: 'c1' }, [], { cards, setLasts }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { cards, setLasts }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { cards, setLasts, faceDown: true }).ok).toBe(true);
+  });
+
+  test('a skim card is still offered on a post that carries one of its own, for the quadrants left', () => {
+    expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { cards, setLasts }).ok).toBe(true);
+  });
+});
+
 /* An admin's end (supabase/migrations/0092_card_end.sql): a play an admin ended is no effect the rules see, as a caught one is none. */
 describe('a play an admin ended, as the rules see the post', () => {
   const setLasts = { unit: 'day' as const, count: 7 };

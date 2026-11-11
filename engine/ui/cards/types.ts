@@ -295,9 +295,10 @@ export interface CardUi {
    * What a play of this card did, in a sentence, for the caster's played line and the author's "a card on your post" line, read
    * from the play's configuration ("It covers “Mario” with “Luigi”."). A card that gives none, or answers undefined, adds nothing.
    * Out of character and true. It is given what the play recorded with itself (`tokens`, for a card that writes: the length it bought, written
-   * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded.
+   * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded, and `starts` and `ends` (ISO times, as the server wrote them with the play) for a card whose play is said with the window it
+   * names (a scored-as card's two settlements).
    */
-  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number }) => string | undefined;
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number; readonly starts?: string; readonly ends?: string }) => string | undefined;
   /**
    * What a card that writes (`CardRules.writes`) did to a post of the author's, for the author's log, as the verb phrase after its subject; the
    * engine names the card and the post, and says nothing of who played it or what it cost. `continued` follows "<card> on your post #3" (the
