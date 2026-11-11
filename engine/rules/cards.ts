@@ -381,12 +381,23 @@ export interface SetConditions {
 
 const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 
+/**
+ * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
+ * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
+ * back that sprang later on a quote would land with none of it. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
+ * server holds the same on face_down (supabase/migrations/0150_drives.sql, face_down_never_writes).
+ */
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive'>): boolean =>
+  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined;
+
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
+  // So is one that needs a message, draws or runs a drive: faceUpOnly says which, and one sentence covers them.
+  if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.

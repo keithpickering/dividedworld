@@ -12,6 +12,7 @@
 --   8. donate              the one write: the post's lock, the refusals, the split from the economy now, both wallets locked in account order, the Act, then the two moves. Service role only.
 --   9. drive_gifts, drive_gifts_page   a drive's total, count and donor wall, and the next 20; signed-in players read them.
 --  10. settlement_input, estimate_input   leave a gift out of every set they build.
+--  11. face_down_never_writes   widened (0149): a card that draws, needs a message or runs a drive is cast face up and never set face down, as one that writes already was (engine faceUpOnly; issue #446).
 --
 -- Ways out: a drive closes by itself, `lasts` after its latest play, and a full drive refuses a play only until then; a refusal writes nothing and costs nothing.
 -- A gift is a finished Act with no state; a refused gift writes nothing and costs nothing.
@@ -1379,3 +1380,23 @@ end;
 
 revoke all on function log_page(timestamptz) from public, anon, authenticated;
 grant execute on function log_page(timestamptz) to authenticated;
+
+-- ---- 11. face_down_never_writes: every card that can only be cast now and face up (issue #446) ----
+-- 0149 refused a set of a card that writes, on the face_down row, since every back (place_set, which set_card and the staff's set go through, 0148) writes one,
+-- so this is held on that row and the set is refused whole (its Act and its spend with it). A card that draws, needs a message or runs a drive is done at the cast
+-- (place_cast: the draw, the drive and the message check), and a back that sprang later through spring_traps and lay_sprung would land with none of it. The words are
+-- the engine's (decideSet, faceUpOnly): a card that writes keeps 0149's own sentence, and the others get the general one. The trigger itself stays as 0149 made it.
+create or replace function face_down_never_writes() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare k card_kinds;
+begin
+  select * into k from card_kinds c where c.key = new.card;
+  if k.writes then
+    raise exception '% writes, so it is cast face up and never set face down', k.name
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  elsif k.draws is not null or k.drive is not null or k.needs_message is not null then
+    raise exception '% is cast face up and never set face down', k.name
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  return new;
+end $$;

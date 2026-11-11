@@ -62,8 +62,8 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 export function landingOn(rules: CardRules, target: CardTarget, plays: readonly CardPlay[], context: LandingContext): Verdict {
   const effects = effectsOnTarget(target, effectsOf(plays, context.cards, context.setLasts), context.above ?? {});
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
-  /* Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. */
-  const lenient: CardRules = { ...rules, validateConfig: (c) => ({ ok: true, value: c }), playPrice: () => 0 };
+  /* Only where the card lands is asked here: its settings and its message are the form's, so the card's own refusal of none is set aside. */
+  const lenient: CardRules = { ...rules, validateConfig: (c) => ({ ok: true, value: c }), playPrice: () => 0, needsMessage: undefined };
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
