@@ -372,6 +372,24 @@ test('a price effect on a thread raises a Salty cast on a post under it, and lea
   assert.deepEqual(ended.ok && ended.value.price, 50, 'an ended one adds nothing');
 });
 
+test('a price surcharges a Pepperoni cast only where a price effect names Pepperoni', () => {
+  const pepPriced: CardRules = { ...priced, alignment: 'pepperoni' };
+  const saltyOnly = decidePlay(pepPriced, settings, post, [toll(200)], {}, '');
+  assert.deepEqual(saltyOnly.ok && saltyOnly.value.price, 50, 'a Salty price effect leaves Pepperoni alone');
+  const named = decidePlay(pepPriced, settings, post, [wardOf({ kind: 'price', flavors: ['pepperoni'], add: 200 }, { reach: 'thread' })], {}, '');
+  assert.deepEqual(named.ok && named.value.price, 250, 'a price effect naming Pepperoni raises it');
+  const salty = decidePlay(priced, settings, post, [wardOf({ kind: 'price', flavors: ['pepperoni'], add: 200 }, { reach: 'thread' })], {}, '');
+  assert.deepEqual(salty.ok && salty.value.price, 50, 'and a Salty cast is not raised by it');
+});
+
+test('a price effect on the thread above a post reaches the cast through effectsOnTarget', () => {
+  const above = { board: [], thread: [toll(200)], character: [] };
+  const effects = effectsOnTarget(post, [], above);
+  assert.equal(effects.length, 1);
+  const cast = decidePlay(priced, settings, post, effects, {}, '');
+  assert.deepEqual(cast.ok && cast.value.price, 250);
+});
+
 test('a price is never below zero, and a use or a set takes no surcharge', () => {
   const cheap = decidePlay(plain, settings, post, [toll(-500)], {}, '');
   assert.deepEqual(cheap.ok && cheap.value.price, 0);

@@ -687,6 +687,10 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 1.5 }), /card "splat" has an earn of 1.5; by is above 0 and at most 1/);
   assert.match(use({ kind: 'earn', by: 0.5 }), /card "splat" has an earn that names no quadrant and no reaction/);
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'] }), /an earn with no by/);
+  for (const bad of [[], 'excitedPositive', null]) assert.match(use({ kind: 'earn', quadrants: bad, by: 0.5 }), /card "splat" has an earn naming no quadrant/, JSON.stringify(bad));
+  for (const bad of [[], 'fire', null]) assert.match(use({ kind: 'earn', reactions: bad, by: 0.5 }), /card "splat" has an earn naming no reaction/, JSON.stringify(bad));
+  for (const bad of [[], [1], ['splat', 2]]) assert.match(use({ kind: 'ward', cards: bad }), /card "splat" has a ward of the cards .*; cards are named by key/, JSON.stringify(bad));
   assert.match(use({ kind: 'earn', reactions: ['laugh'], by: 0.5 }), /card "splat" has an earn naming the reaction "laugh", which the instance does not have/);
   assert.match(use({ kind: 'earn', quadrants: ['spicy'], by: 0.5 }), /card "splat" has an earn naming the quadrant "spicy"/);
   assert.equal(use({ kind: 'price', flavors: ['salty'], add: 100 }), '');
@@ -717,6 +721,8 @@ test('a cast trap names its card or matches cards, never both; a visit trap does
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' } , match: { upTo: 'common' } } })).join('\n'), /card "splat" has a match, and only a set card that springs on a cast does/);
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { upTo: 'common' } }, catches })).join('\n'), /card "splat" names a card \(catches\) and has a match; a set card has one of the two/);
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: {} } })).join('\n'), /card "splat" has a match that names no flavor and no rarity/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { flavors: [] } } })).join('\n'), /card "splat" has a match of the flavors \[\]; a flavor is/);
+  for (const bad of ['salty', 5, null]) assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: bad } })).join('\n'), /card "splat" has a match that is not an object/, String(bad));
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { upTo: 'mythic' } } })).join('\n'), /card "splat" has a match up to "mythic"/);
   assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { flavors: ['bitter'] } } })).join('\n'), /card "splat" has a match of the flavors \["bitter"\]/);
 });

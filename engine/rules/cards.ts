@@ -55,9 +55,10 @@ export function postTarget(act: string, kind: PostTarget['kind'], body: unknown,
 }
 
 /**
- * An effect already on a target: a card played there before. A live use card carries its gimmick (what it does while it is up) and when it ends; a card set face down names no card (`card: null`), only that it is
- * face down and when it ends, since which card it is is its setter's alone (card_target,
- * supabase/migrations/0054_card_plays.sql). `ends` is an ISO time; an effect with none does not end.
+ * An effect already on a target: a card played there before. A live use card carries its gimmick (what it does while it is
+ * up) and when it ends; a card set face down names no card (`card: null`), only that it is face down and when it ends,
+ * since which card it is is its setter's alone (card_target, supabase/migrations/0054_card_plays.sql). `ends` is an ISO
+ * time; an effect with none does not end.
  */
 export interface CardEffect {
   readonly card: string | null;
