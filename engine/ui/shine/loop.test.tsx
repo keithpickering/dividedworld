@@ -532,4 +532,20 @@ describe('the shine loop', () => {
     stop();
     unregister(a); unregister(b);
   });
+
+  it('a quiet host is drawn but never named as the shiny post in view', () => {
+    const q = {}, o = {}, cq = canvas(), co = canvas();
+    const heard: (HTMLCanvasElement | null)[] = [];
+    const stop = watchShinyInView((c) => heard.push(c));
+    register(q, cq, BOX, 1, () => false, { quiet: true });
+    register(o, co, BOX, 1, () => false);
+    see(cq, true);
+    frames(1);
+    expect(probe.draws(q), 'the quiet host in view is drawn').toBeGreaterThan(0);
+    expect(heard.at(-1), 'only a quiet host in view: no shiny post').toBeNull();
+    see(co, true);
+    expect(heard.at(-1), 'the ordinary host in view is the one named, though the quiet one registered first').toBe(co);
+    stop();
+    unregister(q); unregister(o);
+  });
 });
