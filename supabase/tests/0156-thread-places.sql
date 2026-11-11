@@ -194,7 +194,7 @@ begin
   t_in := pg_temp.mk('In D', 'md');
   perform pg_temp.end_it(c, 'superseded');
   if thread_place(t_in) is distinct from pg_temp.board('third') then raise exception 'a createBoard ended superseded did not close its board'; end if;
-  -- A moveThread onto a board that has since closed follows its merge, or its fallback.
+  -- A moveThread onto a board that has since been merged follows the merge; onto a created board that has since ended it no longer counts, and the thread goes back to where it was.
   t_moved := pg_temp.mk('Moved', 'general');
   m := pg_temp.land('moveThread', jsonb_build_object('thread', t_moved, 'board', pg_temp.board('third')), now() - interval '3 minutes');
   perform pg_temp.land('mergeBoard', jsonb_build_object('board', pg_temp.board('third'), 'into', pg_temp.board('fourth')), now() - interval '2 minutes');
@@ -205,7 +205,7 @@ begin
   perform pg_temp.land('moveThread', jsonb_build_object('thread', t_moved, 'board', pg_temp.board('me')), now() - interval '1 minute');
   if thread_place(t_moved) is distinct from pg_temp.board('me') then raise exception 'a moveThread onto a live created board'; end if;
   perform pg_temp.end_it(a, 'reversed');
-  if thread_place(t_moved) is distinct from pg_temp.board('elsewhere') then raise exception 'a moveThread onto a board since reversed did not follow its fallback'; end if;
+  if thread_place(t_moved) is distinct from pg_temp.board('general') then raise exception 'a moveThread onto a board since reversed did not go back to where the thread was'; end if;
   perform pg_temp.agree('moved onto a reversed board');
 end $$;
 

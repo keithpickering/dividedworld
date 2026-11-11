@@ -356,13 +356,23 @@ begin
   perform pg_temp.reverse(cmove);
   perform pg_temp.expect((select closed and merged_into is null from boards_now where id = nb), 'a reversed createBoard did not close its board');
   perform pg_temp.expect(pg_temp.at(started) = fb, 'a thread started in a reversed createBoard did not go to its fallback');
-  perform pg_temp.expect(pg_temp.at(moved) = fb, 'a thread moved into a reversed createBoard did not leave it (its move still names a closed board, so it follows the board''s fallback)');
+  perform pg_temp.expect(pg_temp.at(moved) = pg_temp.board('general'), 'a thread moved into a reversed createBoard did not go back to its origin');
   perform pg_temp.settled('a reversed createBoard with a fallback');
   -- With the move that put it there reversed too, the moved thread is back where it started.
   perform pg_temp.reverse(mt);
   perform pg_temp.expect(pg_temp.at(moved) = pg_temp.board('general'), 'reversing the move into a closed board did not return the thread to its origin');
   perform pg_temp.settled('a reversed moveThread onto a closed board');
-  -- No fallback: the first open board that is not The System's.
+  -- A thread that had an earlier move to another board returns to that board, not to its origin and not to the fallback.
+  cmove := pg_temp.land(pg_temp.queue('createBoard', jsonb_build_object('name', 'Briefly', 'premise', 'p', 'description', 'd', 'fallback', fb)));
+  nb := (select id from boards where created_by_act = cmove);
+  moved := pg_temp.mk('Moved twice', 'general');
+  perform pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', moved, 'board', pg_temp.board('third'))));
+  perform pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', moved, 'board', nb)));
+  perform pg_temp.expect(pg_temp.at(moved) = nb, 'setup: the second move did not place the thread on the made board');
+  perform pg_temp.reverse(cmove);
+  perform pg_temp.expect(pg_temp.at(moved) = pg_temp.board('third'), 'a thread moved into a reversed createBoard did not go back to its earlier move''s board');
+  perform pg_temp.settled('a reversed createBoard, a thread with an earlier move');
+
   nmove := pg_temp.land(pg_temp.queue('createBoard', jsonb_build_object('name', 'No Fallback', 'premise', 'p', 'description', 'd')));
   nnb := (select id from boards where created_by_act = nmove);
   started2 := pg_temp.mk('Started in the other made board', 'no-fallback');
