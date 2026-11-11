@@ -69,6 +69,10 @@ const announcement = (a: Row): Broadcast[] => {
   return told ? [...thread(told.thread), ...act(told.act)] : [];
 };
 
+/** The wall's count after a draw or a wash: `{ play, covered }` on its thread, never the strokes or who drew. */
+const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): Broadcast[] =>
+  typeof play === 'string' && thread && answer && typeof answer.covered === 'number'
+    ? [{ topic: `thread:${thread}`, event: 'surface', payload: { play, covered: answer.covered } }] : [];
 /**
  * What each SQL function's answer sends live. Each is the public projection the function
  * returned, never more; a purchase, which is the player's alone, sends nothing, and so does a
@@ -80,10 +84,6 @@ const announcement = (a: Row): Broadcast[] => {
  * play and saved_at, never the state, which can be 256 KB and every reader fetches once, newest
  * saved_at wins.
  */
-/** The wall's count after a draw or a wash: `{ play, covered }` on its thread, never the strokes or who drew. */
-const surfaceHeard = (play: unknown, answer: Row | undefined, thread: unknown): Broadcast[] =>
-  typeof play === 'string' && thread && answer && typeof answer.covered === 'number'
-    ? [{ topic: `thread:${thread}`, event: 'surface', payload: { play, covered: answer.covered } }] : [];
 const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   post: (a) => withSprung(a, act(without(a, 'sprung'))),
   edit_post: (a) => act(a),

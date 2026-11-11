@@ -1046,7 +1046,7 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     assert.ok(!bad.calls.some((c) => c.includes('draw_on_surface')));
   });
 
-  test('a surface card played with no first draw is refused before the database is asked (instanceProblems allows a surface on a cast card only, so a set one is held by decide alone)', async () => {
+  test('a surface card played with no first draw is refused before the database is asked', async () => {
     for (const action of ['playCard']) {
       const { dbs, calls } = pair({ whoami });
       const out = await runAction(dbs, walled, { action, card: 'wall', character: id, target, config: {}, message: '' });

@@ -102,8 +102,8 @@ export function chatterSchema(c: { readonly askedTitle: boolean; readonly offere
       properties: {
         key: { type: 'string', enum: c.offered.map((o) => o.key) },
         on: { type: 'string', enum: ['reply', 'own'] },
-        // One optional property per card that has options, named by its key: no anyOf, so any provider's structured output holds it.
         ...(walls.length ? { wall: { type: 'string', enum: walls } } : {}),
+        // One optional property per card that has options, named by its key: no anyOf, so any provider's structured output holds it.
         ...(withOptions.length ? {
           config: {
             type: 'object',
