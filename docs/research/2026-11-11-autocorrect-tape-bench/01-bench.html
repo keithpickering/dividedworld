@@ -203,9 +203,9 @@ button.b:hover { background: var(--shade); }
   </fieldset>
   <fieldset>
     <legend>Marker</legend>
-    <label><input type="radio" name="font" value="kalam" id="fontKalam" checked> Kalam Bold</label>
+    <label><input type="radio" name="font" value="kalam" id="fontKalam"> Kalam Bold</label>
     <label><input type="radio" name="font" value="pm" id="fontPm"> Permanent Marker</label>
-    <label><input type="radio" name="font" value="gochi" id="fontGochi"> Gochi Hand</label>
+    <label><input type="radio" name="font" value="gochi" id="fontGochi" checked> Gochi Hand (chosen)</label>
     <label><input type="radio" name="font" value="caveat" id="fontCaveat"> Caveat Bold</label>
   </fieldset>
   <fieldset>
@@ -215,6 +215,12 @@ button.b:hover { background: var(--shade); }
     <div class="slider"><label for="give">Tear past</label><input type="range" id="give" min="12" max="120" step="2" value="34"><output for="give" id="giveOut">34</output></div>
     <label><input type="checkbox" id="tear" checked> Tape tears when pulled too fast</label>
     <span class="hint">Pace in pixels a second. Pick in milliseconds. Tear past: how far ahead of the peel your hand can get before the tape starts to strain.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Stacks</legend>
+    <label><input type="radio" name="stack" value="layered" id="stackLayered" checked> Layered tape: each strip over its own words</label>
+    <label><input type="radio" name="stack" value="union" id="stackUnion"> One strip over the whole stack (today)</label>
+    <span class="hint">The last post holds three plays: “big cats” → “small dogs”, then “cats are” → “nobody asked”, then “big cats” → “Wigglers”. Only a strip with nothing over it can be peeled or peeked.</span>
   </fieldset>
   <fieldset>
     <legend>Look and loads</legend>
@@ -262,20 +268,23 @@ button.b:hover { background: var(--shade); }
   const seeded = (seed) => { let a = hashOf(seed); return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-  /* ---------- The posts and their plays (invented, in the community's voice). ---------- */
+  /* ---------- The posts and their plays, in the order they were cast (invented, in the community's voice). ---------- */
   const POSTS = [
     { id: 'p1', name: 'Shellcreeper', counts: 'Posts: 412', when: 'Posted: Nov 9 2026, 08:14 PM',
       text: ['Finally beat the last castle in my Mario fangame. Mario controls a lot better than he did in the demo, and the new Mario sprites are all by Sloopy.', 'Feedback welcome, but be nice.'],
-      play: { phrase: 'Mario', replacement: 'Luigi' } },
+      plays: [{ phrase: 'Mario', replacement: 'Luigi' }] },
     { id: 'p2', name: 'Ninjikun', counts: 'Posts: 1,288', when: 'Posted: Nov 9 2026, 09:02 PM',
       text: ['Honestly the Mushroom Kingdom tileset is the best thing in this release. I would put the Mushroom Kingdom tileset in every game I make if I could.'],
-      play: { phrase: 'the Mushroom Kingdom tileset', replacement: 'Ohio' } },
+      plays: [{ phrase: 'the Mushroom Kingdom tileset', replacement: 'Ohio' }] },
     { id: 'p3', name: 'Waddle', counts: 'Posts: 77', when: 'Posted: Nov 10 2026, 12:40 AM',
       text: ['My review, for what it is worth: the boss fight is fine. Music slaps though.'],
-      play: { phrase: 'the boss fight is fine', replacement: 'the boss fight is the single greatest achievement in the history of fangames' } },
+      plays: [{ phrase: 'the boss fight is fine', replacement: 'the boss fight is the single greatest achievement in the history of fangames' }] },
     { id: 'p4', name: 'Pidgit', counts: 'Posts: 2,903', when: 'Posted: Nov 10 2026, 07:55 AM',
       text: ['Look, I have been on this forum since the Klik days and I will say it plainly: I have never once played a fangame I did not secretly enjoy, and I am not about to start with this one.'],
-      play: { phrase: 'I have never once played a fangame I did not secretly enjoy', replacement: 'I am legally required to be nice about fangames' } },
+      plays: [{ phrase: 'I have never once played a fangame I did not secretly enjoy', replacement: 'I am legally required to be nice about fangames' }] },
+    { id: 'p5', name: 'Koopa Kid', counts: 'Posts: 58', when: 'Posted: Nov 10 2026, 11:31 AM',
+      text: ['Big cats are the best enemies in the whole game, and I cheer every time big cats are back for another level.'],
+      plays: [{ phrase: 'big cats', replacement: 'small dogs' }, { phrase: 'cats are', replacement: 'nobody asked' }, { phrase: 'big cats', replacement: 'Wigglers' }] },
   ];
   const FONTS = {
     kalam: { family: '"Kalam", "Comic Sans MS", cursive', weight: 700, scale: 1.18 },
@@ -285,22 +294,25 @@ button.b:hover { background: var(--shade); }
   };
 
   /* ---------- The bench's settings. ---------- */
-  const S = { role: 'author', board: 'light', width: 'desk', font: 'kalam', pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
-  /* Each occurrence's state: 'taped', 'peeled' (peeled this visit: the footprint stays) or 'saved' (peeled before this load: the words' own width). */
-  const occState = new Map();
+  const S = { role: 'author', board: 'light', width: 'desk', font: 'gochi', stack: 'layered', pace: 90, pick: 450, give: 34, tear: true, gloss: true, reduce: matchMedia('(prefers-reduced-motion: reduce)').matches };
+  /* Each strip's state: 'taped', 'peeled' (peeled this visit: its footprint stays) or 'saved' (peeled before this load: the words' own width). */
+  const memberState = new Map();
+  /* A half-peeled piece's progress, kept across the bench's own redraws within a visit. */
+  const partial = new Map();
   const wrap = document.getElementById('boardwrap');
   const say = (t) => { document.getElementById('say').textContent = t; };
   const meter = (t) => { document.getElementById('meter').textContent = t; };
 
-  /* ---------- Matching: whole words, any case, as match.ts does. ---------- */
+  /* ---------- Matching: whole words, any case, as match.ts does; each play against the author's own words. ---------- */
   const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const occurrencesIn = (text, phrase) => {
     const re = new RegExp(`(?<![\\p{L}\\p{N}])${escape(phrase)}(?![\\p{L}\\p{N}])`, 'giu');
     const out = []; let m; while ((m = re.exec(text))) out.push({ from: m.index, to: m.index + m[0].length });
     return out;
   };
+  const overlap = (a, b) => a.from < b.to && b.from < a.to;
 
-  /* ---------- Measuring words, to give each footprint the wider of its two widths. ---------- */
+  /* ---------- Measuring words, to give each strip room for its replacement. ---------- */
   const ctx = document.createElement('canvas').getContext('2d');
   const textWidth = (text, font) => { ctx.font = font; return ctx.measureText(text).width; };
   const bodyFont = () => { const cs = getComputedStyle(wrap); return `${cs.fontSize} ${cs.fontFamily}`; };
@@ -312,78 +324,153 @@ button.b:hover { background: var(--shade); }
   /* ---------- Building the board. ---------- */
   let pieces = [];
   function build() {
-    pieces.forEach((p) => p.el.remove());
+    for (const P of pieces) if (!P.done && (P.a > 0 || P.bEnd < P.W || P.torn.a || P.torn.b || P.side)) partial.set(P.pkey, { W: P.W, a: P.a, bEnd: P.bEnd, torn: { ...P.torn }, jag: P.jag, side: P.side, rolled: P.rolled, ready: P.ready });
+    const focused = pieces.find((P) => P.el === document.activeElement)?.member.key;
+    busy.clear();
     pieces = [];
     wrap.textContent = '';
     for (const post of POSTS) {
       const act = document.createElement('article');
       act.className = 'act';
-      act.innerHTML = `<div class="bit"><span class="name">${post.name}</span><span class="counts">${post.counts}</span></div><div class="meta"><span>${post.when}</span><span class="card">Autocorrect ×1</span></div><div class="main"><div class="words"></div><div class="layer"></div></div>`;
+      act.innerHTML = `<div class="bit"><span class="name">${post.name}</span><span class="counts">${post.counts}</span></div><div class="meta"><span>${post.when}</span><span class="card">Autocorrect ×${post.plays.length}</span></div><div class="main"><div class="words"></div><div class="layer"></div></div>`;
       wrap.append(act);
       const words = act.querySelector('.words');
-      let n = 0;
-      for (const para of post.text) {
+      const counters = post.plays.map(() => 0);
+      const members = [];
+      post.text.forEach((para) => {
+        const ms = [];
+        post.plays.forEach((play, z) => {
+          for (const o of occurrencesIn(para, play.phrase)) {
+            const key = `${post.id}:${z}:${counters[z]++}`;
+            if (!memberState.has(key)) memberState.set(key, 'taped');
+            ms.push({ key, z, play, from: o.from, to: o.to, covered: para.slice(o.from, o.to) });
+          }
+        });
+        /* A stack: strips whose words overlap share one footprint in the text. */
+        const clusters = [];
+        for (const m of [...ms].sort((a, b) => a.from - b.from)) {
+          const last = clusters[clusters.length - 1];
+          if (last && m.from < last.to) { last.members.push(m); last.to = Math.max(last.to, m.to); }
+          else clusters.push({ from: m.from, to: m.to, members: [m] });
+        }
         const p = document.createElement('p');
         let at = 0;
-        for (const o of occurrencesIn(para, post.play.phrase)) {
-          p.append(para.slice(at, o.from));
-          const key = `${post.id}:${n++}`;
-          if (!occState.has(key)) occState.set(key, 'taped');
-          const fp = document.createElement('span');
-          fp.className = 'fp'; fp.dataset.occ = key;
-          const covered = para.slice(o.from, o.to);
-          fp.textContent = covered;
-          if (occState.get(key) !== 'saved') {
-            /* The footprint is the wider of the two: break-spaces after the words make up any difference, and wrap like words do. */
-            const extra = textWidth(post.play.replacement, markerFont(markerPx())) + 2 * TEXT_PAD - textWidth(covered, bodyFont());
-            if (extra > 0) {
-              const fill = document.createElement('span');
-              fill.className = 'fill';
-              fill.textContent = ' '.repeat(Math.ceil(extra / textWidth(' ', bodyFont())));
-              fp.append(fill);
-            }
-          }
-          p.append(fp);
-          at = o.to;
+        for (const cl of clusters) {
+          p.append(para.slice(at, cl.from));
+          p.append(footprint(para, cl));
+          at = cl.to;
         }
         p.append(para.slice(at));
         words.append(p);
-      }
-      layOut(act, post);
+        members.push(...ms);
+      });
+      layOut(act, members);
     }
+    const back = focused && pieces.find((P) => P.member.key === focused && P.exposed) || (focused && pieces.find((P) => P.exposed));
+    back?.el.focus({ preventScroll: true });
+    relight();
   }
 
-  /** Cuts the tape for a post: one piece per line box of each footprint, and residue under each. */
-  function layOut(act, post) {
+  /**
+   * One stack's footprint: its words, cut at every strip's ends, with room made after each strip's words for its replacement
+   * (break-spaces, which wrap as words do), so no strip ever has to squeeze and nothing moves when one comes off.
+   */
+  function footprint(para, cl) {
+    const fp = document.createElement('span');
+    fp.className = 'fp';
+    const kept = cl.members.filter((m) => memberState.get(m.key) !== 'saved');
+    const body = bodyFont(), mf = markerFont(markerPx()), spaceW = textWidth(' ', body);
+    const fills = new Map();
+    for (const e of [...new Set(kept.map((m) => m.to))].sort((a, b) => a - b)) {
+      let need = 0;
+      for (const m of kept.filter((q) => q.to === e)) {
+        let have = textWidth(para.slice(m.from, e), body);
+        for (const [fe, n] of fills) if (fe > m.from && fe < e) have += n * spaceW;
+        need = Math.max(need, textWidth(m.play.replacement, mf) + 2 * TEXT_PAD - have);
+      }
+      if (need > 0) fills.set(e, Math.ceil(need / spaceW));
+    }
+    const cuts = [...new Set([cl.from, cl.to, ...cl.members.flatMap((m) => [m.from, m.to])])].sort((a, b) => a - b);
+    const startNode = new Map(), endText = new Map(), endFill = new Map();
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const t = document.createTextNode(para.slice(cuts[i], cuts[i + 1]));
+      fp.append(t);
+      startNode.set(cuts[i], t); endText.set(cuts[i + 1], t);
+      const n = fills.get(cuts[i + 1]);
+      if (n) { const f = document.createElement('span'); f.className = 'fill'; f.textContent = ' '.repeat(n); fp.append(f); endFill.set(cuts[i + 1], f); }
+    }
+    for (const m of cl.members) Object.assign(m, { fp, startNode: startNode.get(m.from), endText: endText.get(m.to), endFill: endFill.get(m.to) });
+    return fp;
+  }
+
+  /** The line boxes of a stretch of the footprint: one per line, the words and the room after them joined. */
+  function boxesOf(start, end, origin) {
+    const r = document.createRange();
+    r.setStartBefore(start); r.setEndAfter(end);
+    const lines = [];
+    for (const q of [...r.getClientRects()].filter((x) => x.width > 2)) {
+      const same = lines.find((l) => Math.abs(l.top - q.top) < 3);
+      if (same) { same.left = Math.min(same.left, q.left); same.right = Math.max(same.right, q.right); same.bottom = Math.max(same.bottom, q.bottom); }
+      else lines.push({ left: q.left, right: q.right, top: q.top, bottom: q.bottom });
+    }
+    return lines.map((l) => ({ x: l.left - origin.left - 2, y: l.top - origin.top - 1, w: l.right - l.left + 4, h: l.bottom - l.top + 2 }));
+  }
+
+  /** Lays the tape and the residue for a post's strips. */
+  function layOut(act, members) {
     const main = act.querySelector('.main');
     const layer = act.querySelector('.layer');
-    const box = main.getBoundingClientRect();
-    for (const fp of act.querySelectorAll('.fp')) {
-      const key = fp.dataset.occ;
-      const state = occState.get(key);
-      /* One box per line: the words and the fill after them report rects of their own, so those on one line are joined. */
-      const lines = [];
-      for (const r of [...fp.getClientRects()].filter((q) => q.width > 2)) {
-        const same = lines.find((l) => Math.abs(l.top - r.top) < 3);
-        if (same) { same.left = Math.min(same.left, r.left); same.right = Math.max(same.right, r.right); same.bottom = Math.max(same.bottom, r.bottom); }
-        else lines.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
-      }
-      const boxes = lines.map((r) => ({ x: r.left - box.left - 2, y: r.top - box.top - 1, w: r.right - r.left + 4, h: r.bottom - r.top + 2 }));
-      const shared = shareOut(post.play.replacement, boxes);
-      boxes.forEach((b, i) => {
-        const seed = `${key}:${i}`;
-        const residue = makeResidue(b, seed);
-        layer.append(residue.el);
-        if (state === 'taped') pieces.push(makePiece({ key, index: i, of: boxes.length, box: b, seed, words: shared.words[i], px: shared.px, residue, post, layer, fp }));
-      });
-      fp.style.userSelect = state === 'taped' ? 'none' : 'text';
+    const origin = main.getBoundingClientRect();
+    const live = members.filter((m) => memberState.get(m.key) === 'taped');
+    /* Which strips are drawn, over which stretch: each over its own words, or the top of each live stack over all of it. */
+    let drawn;
+    if (S.stack === 'layered') drawn = live.map((m) => ({ m, start: m.startNode, end: m.endFill || m.endText }));
+    else {
+      drawn = [];
+      const byFrom = [...live].sort((a, b) => a.from - b.from);
+      let group = [];
+      const close = () => {
+        if (!group.length) return;
+        const top = group.reduce((a, b) => (b.z > a.z ? b : a));
+        const first = group.reduce((a, b) => (b.from < a.from ? b : a)), last = group.reduce((a, b) => (b.to > a.to ? b : a));
+        drawn.push({ m: top, start: first.startNode, end: last.endFill || last.endText });
+        group = [];
+      };
+      let reach = -1;
+      for (const m of byFrom) { if (m.from >= reach) close(); group.push(m); reach = Math.max(reach, m.to); }
+      close();
     }
+    /* A strip's residue is only where it touched the post, never where it lay on a strip beneath it. */
+    const beneath = (m) => members.filter((q) => q.z < m.z && overlap(q, m)).flatMap((q) => boxesOf(q.startNode, q.endText, origin));
+    for (const m of members.filter((q) => memberState.get(q.key) !== 'taped')) {
+      const natural = memberState.get(m.key) === 'saved';
+      const under = beneath(m);
+      for (const [i, b] of boxesOf(m.startNode, natural ? m.endText : m.endFill || m.endText, origin).entries()) {
+        const res = makeResidue(b, `${m.key}:${i}`, under);
+        res.show(0, 0);
+        layer.append(res.el);
+      }
+    }
+    for (const d of drawn) {
+      const boxes = boxesOf(d.start, d.end, origin);
+      const shared = shareOut(d.m.play.replacement, boxes);
+      const exposed = !live.some((q) => q.z > d.m.z && overlap(q, d.m));
+      const under = beneath(d.m);
+      boxes.forEach((b, i) => {
+        const seed = `${d.m.key}:${i}`;
+        const residue = makeResidue(b, seed, under);
+        layer.append(residue.el);
+        pieces.push(makePiece({ member: d.m, index: i, of: boxes.length, box: b, seed, words: shared.words[i], px: shared.px, residue, layer, exposed }));
+      });
+    }
+    for (const m of members) m.fp.style.userSelect = members.some((q) => q.fp === m.fp && memberState.get(q.key) === 'taped') ? 'none' : 'text';
   }
 
   /** Deals the replacement's words across the pieces, in order, shrinking the marker a little if the last piece would overflow. */
   function shareOut(replacement, boxes) {
     const all = replacement.split(' ');
-    for (let k = 1; k >= 0.6; k -= 0.05) {
+    let out = { words: [replacement], px: markerPx() };
+    for (let k = 1; k >= 0.6 - 1e-9; k -= 0.05) {
       const px = markerPx() * k;
       const words = []; let w = 0;
       boxes.forEach((b, i) => {
@@ -393,11 +480,11 @@ button.b:hover { background: var(--shade); }
         else { while (w < all.length && textWidth([...line, all[w]].join(' '), markerFont(px)) <= cap) line.push(all[w++]); }
         words.push(line.join(' '));
       });
+      out = { words, px };
       const last = boxes[boxes.length - 1];
-      if (!last || textWidth(words[words.length - 1], markerFont(px)) <= last.w - 2 * TEXT_PAD + 1) return { words, px };
-      if (k - 0.05 < 0.6) return { words, px };
+      if (!last || textWidth(words[words.length - 1], markerFont(px)) <= last.w - 2 * TEXT_PAD + 1) return out;
     }
-    return { words: [replacement], px: markerPx() };
+    return out;
   }
 
   /* ---------- Drawing masking tape: crepe paper, factory edges, ends torn by hand. ---------- */
@@ -455,7 +542,16 @@ button.b:hover { background: var(--shade); }
   }
 
   /* ---------- Drawing the residue: patchy film, crepe pressed in, an edge line, dust, and torn fibers. ---------- */
-  function makeResidue(b, seed) {
+  /** Spans [x0, x1] of [0, W] left after cutting out `cuts`. */
+  const without = (spans, cuts) => cuts.reduce((acc, [c0, c1]) => acc.flatMap(([a, b]) => (c1 <= a || c0 >= b ? [[a, b]] : [...(c0 > a ? [[a, c0]] : []), ...(c1 < b ? [[c1, b]] : [])])), spans);
+  const maskOf = (W, spans) => {
+    if (!spans.length) return 'linear-gradient(transparent, transparent)';
+    const stops = []; let x = 0;
+    for (const [a, b] of spans) { stops.push(`transparent ${x.toFixed(1)}px`, `transparent ${a.toFixed(1)}px`, `#000 ${a.toFixed(1)}px`, `#000 ${b.toFixed(1)}px`); x = b; }
+    stops.push(`transparent ${x.toFixed(1)}px`, `transparent ${W.toFixed(1)}px`);
+    return `linear-gradient(90deg, ${stops.join(', ')})`;
+  };
+  function makeResidue(b, seed, under) {
     const el = document.createElement('div');
     el.className = 'residue';
     Object.assign(el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
@@ -483,7 +579,6 @@ button.b:hover { background: var(--shade); }
     c.putImageData(img, 0, 0);
     /* Where the tape's edge sat, the film is thickest: a line that follows the torn outline. */
     const ends = endJags(seed, W, H);
-    c.globalCompositeOperation = 'source-over';
     c.strokeStyle = 'rgb(255 255 255 / .9)'; c.lineWidth = 0.9; tapePath(c, ends); c.stroke();
     c.globalCompositeOperation = 'destination-in'; c.fillStyle = '#fff'; tapePath(c, ends); c.fill();
     const url = `url(${m.toDataURL()})`;
@@ -503,40 +598,51 @@ button.b:hover { background: var(--shade); }
       }
     };
     for (let i = 0; i < Math.round(W / 140); i++) fibers(r() * W, 1, 0);
-    return { el, fibers: (x) => fibers(x, 4 + Math.round(r() * 4), 5) };
+    /* What lay beneath another strip on this line is cut out: the glue there is on that strip, not the post. */
+    const cuts = under.filter((u) => Math.abs(u.y - b.y) < 3).map((u) => [u.x - b.x, u.x + u.w - b.x]);
+    /** Shows the residue everywhere but the stretch [a, z] the tape still covers. */
+    const show = (a, z) => {
+      const mask = maskOf(b.w, without([[0, a], [z, b.w]].filter(([x0, x1]) => x1 - x0 > 0.1), cuts));
+      el.style.webkitMaskImage = mask; el.style.maskImage = mask;
+    };
+    return { el, show, fibers: (x) => fibers(x, 4 + Math.round(r() * 4), 5) };
   }
 
   /* ---------- A piece of tape and its handling. ---------- */
   function makePiece(o) {
-    const { box: b, seed, residue } = o;
+    const { box: b, seed, residue, member } = o;
     const el = document.createElement('div');
     el.className = 'piece';
-    el.tabIndex = 0;
-    el.setAttribute('role', 'button');
     const r = seeded(`${seed}:hand`);
     const tilt = (r() - 0.5) * 1.6;
-    Object.assign(el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, transform: `rotate(${tilt.toFixed(2)}deg)` });
+    Object.assign(el.style, { left: `${b.x}px`, top: `${b.y}px`, width: `${b.w}px`, height: `${b.h}px`, zIndex: String(2 + member.z), transform: `rotate(${tilt.toFixed(2)}deg)` });
     el.innerHTML = '<div class="tape"><canvas class="paper"></canvas><div class="ink"><span></span></div></div><div class="flap"></div><div class="roll"></div><div class="corner"></div>';
     const tape = el.querySelector('.tape'), ink = el.querySelector('.ink span'), roll = el.querySelector('.roll'), flap = el.querySelector('.flap'), corner = el.querySelector('.corner');
     drawPaper(el.querySelector('canvas'), b.w, b.h, seed);
     ink.textContent = o.words;
     Object.assign(ink.style, { font: markerFont(o.px), lineHeight: `${b.h}px`, transform: `translateY(${((r() - 0.5) * 1.2).toFixed(1)}px) rotate(${((r() - 0.5) * 1.4).toFixed(2)}deg)` });
-    const label = o.post.play.replacement;
-    el.setAttribute('aria-label', S.role === 'author'
-      ? `Autocorrected text: “${label}”${o.of > 1 ? `, piece ${o.index + 1} of ${o.of}` : ''}. Hold Enter or Space to peel it off for good`
-      : `Autocorrected text: “${label}”. Hold Enter or Space to lift it and peek`);
+    const label = member.play.replacement;
+    if (o.exposed) {
+      el.tabIndex = 0;
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', S.role === 'author'
+        ? `Autocorrected text: “${label}”${o.of > 1 ? `, piece ${o.index + 1} of ${o.of}` : ''}. Hold Enter or Space to peel it off for good`
+        : `Autocorrected text: “${label}”. Hold Enter or Space to lift it and peek`);
+    } else el.setAttribute('aria-hidden', 'true');
     o.layer.append(el);
 
     const P = {
-      ...o, el, W: b.w, H: b.h, a: 0, bEnd: b.w,
+      ...o, el, pkey: seed, W: b.w, H: b.h, a: 0, bEnd: b.w,
       torn: { a: false, b: false }, side: null, rolled: 0, ready: false,
       pick: null, hand: null, keyHeld: false, tension: 0, lift: 0, liftSide: 'a', settling: false, done: false,
       jag: { a: [], b: [] },
     };
+    const kept = partial.get(seed);
+    if (kept && Math.abs(kept.W - b.w) < 1) { Object.assign(P, { a: kept.a, bEnd: kept.bEnd, torn: kept.torn, jag: kept.jag, side: kept.side, rolled: kept.rolled, ready: kept.ready }); }
+    partial.delete(seed);
     const END = Math.max(16, b.h * 0.9);
     const localX = (e) => { const rr = el.getBoundingClientRect(); return e.clientX - rr.left; };
 
-    const jagFor = (x) => { const rj = seeded(`${seed}:tear:${x.toFixed(0)}`); const pts = []; const steps = Math.max(4, Math.round(P.H / 2.5)); for (let i = 0; i <= steps; i++) pts.push([(rj() - 0.5) * 3.2, (P.H * i) / steps]); return pts; };
     function render() {
       /* What is still stuck: from a to bEnd, cut ragged where it tore, and folded back from the peeked end. */
       const a = P.a + (P.liftSide === 'a' ? P.lift : 0), z = P.bEnd - (P.liftSide === 'b' ? P.lift : 0);
@@ -545,8 +651,7 @@ button.b:hover { background: var(--shade); }
       const full = a <= 0.01 && z >= P.W - 0.01;
       tape.style.clipPath = full ? '' : `polygon(${[...left, ...[...right].reverse()].join(',')})`;
       /* The residue shows only where the tape has come off for good; a peek lifts the tape with its glue still on it. */
-      const m = P.done ? 'none' : `linear-gradient(90deg, #000 ${P.a.toFixed(1)}px, transparent ${P.a.toFixed(1)}px, transparent ${P.bEnd.toFixed(1)}px, #000 ${P.bEnd.toFixed(1)}px)`;
-      P.residue.el.style.webkitMaskImage = m; P.residue.el.style.maskImage = m;
+      residue.show(P.done ? P.W : P.a, P.done ? P.W : P.bEnd);
       /* The roll: a cylinder of the peeled tape lying across the strip at the peel line, fatter the more it holds. */
       if (P.side && !P.done) {
         const d = Math.sqrt(9 + 0.55 * P.rolled);
@@ -564,16 +669,14 @@ button.b:hover { background: var(--shade); }
         const t = clamp((performance.now() - P.pick.at) / Math.max(1, S.pick), 0, 1);
         const s = (0.25 + 0.6 * t) * P.H;
         corner.style.display = 'block'; corner.style.width = corner.style.height = `${s.toFixed(1)}px`;
-        const at = P.pick.side === 'a' ? P.a : P.bEnd - s;
-        corner.style.left = `${at.toFixed(1)}px`;
+        corner.style.left = `${(P.pick.side === 'a' ? P.a : P.bEnd - s).toFixed(1)}px`;
         corner.style.clipPath = P.pick.side === 'a' ? 'polygon(0 0, 100% 0, 0 100%)' : 'polygon(0 0, 100% 0, 100% 100%)';
       } else corner.style.display = 'none';
       /* Strain: the paper whitens toward the peel line as the hand gets ahead of it. */
       if (P.tension > 0.05 && P.side) {
         el.dataset.tension = '';
-        const at = ((P.side === 'a' ? P.a : P.bEnd) / P.W) * 100;
-        const dir = P.side === 'a' ? 90 : 270;
-        tape.style.setProperty('--stretch', `linear-gradient(${dir}deg, transparent ${(P.side === 'a' ? at : 100 - at) - 0.1}%, rgb(255 255 255 / ${(P.tension * 0.6).toFixed(2)}) ${(P.side === 'a' ? at : 100 - at)}%, transparent ${(P.side === 'a' ? at : 100 - at) + 22}%)`);
+        const at = P.side === 'a' ? (P.a / P.W) * 100 : 100 - (P.bEnd / P.W) * 100;
+        tape.style.setProperty('--stretch', `linear-gradient(${P.side === 'a' ? 90 : 270}deg, transparent ${at - 0.1}%, rgb(255 255 255 / ${(P.tension * 0.6).toFixed(2)}) ${at}%, transparent ${at + 22}%)`);
       } else delete el.dataset.tension;
     }
     P.render = render;
@@ -590,6 +693,7 @@ button.b:hover { background: var(--shade); }
     el.addEventListener('pointerdown', (e) => {
       if (P.done || (e.pointerType === 'mouse' && e.button !== 0)) return;
       e.preventDefault();
+      if (!o.exposed) { say('Another strip is stuck over this one. That one comes off first.'); return; }
       const x = localX(e);
       el.setPointerCapture(e.pointerId);
       if (S.role === 'reader') {
@@ -618,19 +722,19 @@ button.b:hover { background: var(--shade); }
     el.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
-      if (e.repeat || P.keyHeld || P.done) return;
+      if (e.repeat || P.keyHeld || P.done || !o.exposed) return;
       P.keyHeld = true;
       if (S.role === 'reader') { P.liftSide = 'a'; P.settling = false; wake(P); return; }
-      const side = P.side ?? (P.torn.a || !P.torn.b ? 'a' : 'b');
-      startPick(side) ; wake(P);
+      startPick(P.side ?? (P.torn.a && !P.torn.b ? 'b' : 'a'));
+      wake(P);
     });
-    el.addEventListener('keyup', (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; letGoKey(); });
-    el.addEventListener('blur', () => { if (P.keyHeld) letGoKey(); });
-    function letGoKey() {
+    const letGoKey = () => {
       P.keyHeld = false;
       if (S.role === 'reader') { P.settling = true; if (S.reduce) P.lift = 0; wake(P); return; }
       if (P.pick) { P.pick = null; render(); }
-    }
+    };
+    el.addEventListener('keyup', (e) => { if (e.key === 'Enter' || e.key === ' ') letGoKey(); });
+    el.addEventListener('blur', () => { if (P.keyHeld) letGoKey(); });
     render();
     return P;
   }
@@ -641,10 +745,12 @@ button.b:hover { background: var(--shade); }
   const wake = (P) => { busy.add(P); if (!running) { running = true; last = performance.now(); requestAnimationFrame(tick); } };
   function tick(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
-    for (const P of busy) {
+    for (const P of [...busy]) {
+      if (!busy.has(P)) continue;
       step(P, dt, now);
+      if (!busy.has(P)) continue;
       P.render();
-      const still = !P.pick && !(P.hand) && !P.keyHeld && !(P.settling && P.lift > 0);
+      const still = !P.pick && !P.hand && !P.keyHeld && !(P.settling && P.lift > 0);
       if (still || P.done) busy.delete(P);
     }
     if (busy.size) requestAnimationFrame(tick); else running = false;
@@ -657,8 +763,9 @@ button.b:hover { background: var(--shade); }
       return;
     }
     if (P.pick) {
-      if (now - P.pick.at >= S.pick) { P.side = P.pick.side; P.ready = true; P.pick = null; P.torn[P.side] = P.torn[P.side]; say(P.keyHeld ? 'Peeling at the pace.' : 'Pulling. Slowly.'); }
-      else return;
+      if (now - P.pick.at < S.pick) return;
+      P.side = P.pick.side; P.ready = true; P.pick = null;
+      say(P.keyHeld ? 'Peeling at the pace.' : 'Pulling. Slowly.');
     }
     if (!P.side || !P.ready) return;
     let want = 0;
@@ -678,33 +785,38 @@ button.b:hover { background: var(--shade); }
       const at = P.side === 'a' ? P.a : P.bEnd;
       dropRoll(P);
       P.residue.fibers(at);
-      P.torn[P.side] = true; P.jag[P.side] = jag(P, at);
+      P.torn[P.side] = true; P.jag[P.side] = jagAt(P, at);
       P.side = null; P.ready = false; P.rolled = 0; P.tension = 0; P.hand = null;
       say('Too fast: it tore. Pick the new end and go slower.');
       meter('');
     }
   }
-  const jag = (P, at) => { const rj = seeded(`${P.seed}:tear:${at.toFixed(0)}`); const pts = []; const steps = Math.max(4, Math.round(P.H / 2.5)); for (let i = 0; i <= steps; i++) pts.push([(rj() - 0.5) * 3.2, (P.H * i) / steps]); return pts; };
+  const jagAt = (P, at) => { const rj = seeded(`${P.seed}:tear:${at.toFixed(0)}`); const pts = []; const steps = Math.max(4, Math.round(P.H / 2.5)); for (let i = 0; i <= steps; i++) pts.push([(rj() - 0.5) * 3.2, (P.H * i) / steps]); return pts; };
 
   function finish(P) {
     dropRoll(P);
     P.done = true; P.side = null; P.a = P.bEnd; P.el.dataset.gone = '';
     P.el.querySelector('.tape').style.clipPath = 'inset(0 100% 0 0)';
-    P.el.removeAttribute('tabindex'); P.el.setAttribute('aria-hidden', 'true');
-    const siblings = pieces.filter((q) => q.key === P.key);
+    P.residue.show(P.W, P.W);
     meter('');
-    if (siblings.every((q) => q.done)) {
-      occState.set(P.key, 'peeled');
-      P.fp.style.userSelect = 'text';
-      say(`Peeled for good. Under it: “${P.fp.firstChild.textContent}”.`);
-    } else say('That piece is off. The rest of this one is on the next line.');
-    const next = pieces.find((q) => !q.done && pieces.indexOf(q) > pieces.indexOf(P)) ?? pieces.find((q) => !q.done);
-    if (next && document.activeElement === P.el) next.el.focus({ preventScroll: true });
+    busy.delete(P);
+    if (pieces.filter((q) => q.member === P.member).every((q) => q.done)) {
+      memberState.set(P.member.key, 'peeled');
+      say(`Peeled for good. Under it: “${P.member.covered}”.`);
+      /* The strips beneath may now be uncovered, and a stack's top changes: the bench lays the post out again. */
+      const hadFocus = document.activeElement === P.el;
+      build();
+      if (hadFocus) pieces.find((q) => q.exposed)?.el.focus({ preventScroll: true });
+    } else {
+      say('That piece is off. The rest of this strip is on another line.');
+      const next = pieces.find((q) => q.member === P.member && !q.done);
+      if (next && document.activeElement === P.el) next.el.focus({ preventScroll: true });
+    }
   }
 
   /** The rolled-up tape drops: a quick fall under gravity, turning as it goes, and gone below the screen. */
   function dropRoll(P) {
-    if (P.rolled < 0.5 && !P.done && P.bEnd - P.a > 1.5) return;
+    if (P.rolled < 0.5) return;
     const roll = P.el.querySelector('.roll');
     const rr = roll.getBoundingClientRect();
     roll.style.display = 'none';
@@ -727,25 +839,27 @@ button.b:hover { background: var(--shade); }
 
   /* ---------- One light for the page: the residue's gloss is lit from where the pointer is, resting up and to the left. ---------- */
   let light = { x: innerWidth * 0.22, y: innerHeight * 0.14 }, lightQueued = false;
-  const relight = () => {
+  function relight() {
     lightQueued = false;
     for (const g of wrap.querySelectorAll('.residue .gloss')) {
       const rr = g.getBoundingClientRect();
       g.style.setProperty('--gx', `${(light.x - rr.left).toFixed(0)}px`);
       g.style.setProperty('--gy', `${(light.y - rr.top).toFixed(0)}px`);
     }
-  };
+  }
   const queueLight = () => { if (!lightQueued) { lightQueued = true; requestAnimationFrame(relight); } };
   addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse' && !S.reduce) { light = { x: e.clientX, y: e.clientY }; queueLight(); } }, { passive: true });
   addEventListener('scroll', queueLight, { passive: true });
 
   /* ---------- The bench's controls. ---------- */
   const radios = (name, fn) => document.querySelectorAll(`input[name="${name}"]`).forEach((i) => i.addEventListener('change', () => { if (i.checked) fn(i.value); }));
-  const rebuild = () => fontReady().then(() => { build(); relight(); });
+  const fontReady = () => (document.fonts ? document.fonts.load(markerFont(20)).catch(() => {}).then(() => document.fonts.ready) : Promise.resolve());
+  const rebuild = () => fontReady().then(build);
   radios('role', (v) => { S.role = v; rebuild(); say(v === 'author' ? 'Grab an end of a strip.' : 'Drag from an end to peek under it.'); });
   radios('board', (v) => { S.board = v; wrap.dataset.board = v; rebuild(); });
-  radios('width', (v) => { S.width = v; wrap.dataset.width = v; rebuild(); });
-  radios('font', (v) => { S.font = v; rebuild(); });
+  radios('width', (v) => { S.width = v; wrap.dataset.width = v; partial.clear(); pieces = []; rebuild(); });
+  radios('font', (v) => { S.font = v; partial.clear(); pieces = []; rebuild(); });
+  radios('stack', (v) => { S.stack = v; partial.clear(); pieces = []; rebuild(); });
   const slider = (id, key) => { const i = document.getElementById(id), out = document.getElementById(`${id}Out`); i.addEventListener('input', () => { S[key] = Number(i.value); out.textContent = i.value; }); };
   slider('pace', 'pace'); slider('pick', 'pick'); slider('give', 'give');
   document.getElementById('tear').addEventListener('change', (e) => { S.tear = e.target.checked; });
@@ -753,17 +867,13 @@ button.b:hover { background: var(--shade); }
   const reduceBox = document.getElementById('reduce'); reduceBox.checked = S.reduce;
   reduceBox.addEventListener('change', (e) => { S.reduce = e.target.checked; if (S.reduce) { light = { x: innerWidth * 0.22, y: innerHeight * 0.14 }; relight(); } });
   document.getElementById('reload').addEventListener('click', () => {
-    for (const [k, v] of occState) if (v === 'peeled') occState.set(k, 'saved');
+    for (const [k, v] of memberState) if (v === 'peeled') memberState.set(k, 'saved');
+    partial.clear(); pieces = [];
     rebuild(); say('Reloaded. The author’s peels are saved; anything half done is taped again.');
   });
-  document.getElementById('fresh').addEventListener('click', () => { occState.clear(); rebuild(); say('Fresh tape, as if just cast.'); });
+  document.getElementById('fresh').addEventListener('click', () => { memberState.clear(); partial.clear(); pieces = []; rebuild(); say('Fresh tape, as if just cast.'); });
   let resizeTimer = 0;
-  addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(rebuild, 200); });
-
-  const fontReady = () => {
-    const f = FONTS[S.font];
-    return document.fonts ? document.fonts.load(markerFont(20)).catch(() => {}).then(() => document.fonts.ready) : Promise.resolve();
-  };
+  addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { partial.clear(); pieces = []; rebuild(); }, 200); });
   rebuild();
 })();
 </script>
