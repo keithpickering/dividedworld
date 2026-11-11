@@ -265,7 +265,7 @@ async function writeBossMemory(conn: Connection, instance: Instance, memory: Mem
 export async function writeModelTiers(conn: Connection, tiers: { readonly strong?: string; readonly light?: string }): Promise<void> {
   const named = { ...(tiers.strong === undefined ? {} : { strong: tiers.strong }), ...(tiers.light === undefined ? {} : { light: tiers.light }) };
   if (Object.keys(named).length === 0) return;
-  // The settings trigger wants both tiers in the row; with no row to merge over, a lone tier would be refused in its words, so say it in ours.
+  // The settings check (supabase/migrations/0149_card_writes.sql) wants both tiers in the row; with no row to merge over, a lone tier would be refused in its words, so say it in ours.
   const row = (await conn.sql("select value from settings where key = 'modelTiers'"))[0]?.value as { strong?: unknown; light?: unknown } | undefined;
   for (const tier of ["strong", "light"] as const) {
     if (named[tier as keyof typeof named] === undefined && (typeof row?.[tier] !== "string" || row[tier] === "")) {
