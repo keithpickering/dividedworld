@@ -146,7 +146,8 @@ export async function startCluster(opts: { at: number; preload?: boolean; extraS
       // no log yet
     }
     entry.stopNow();
-    throw new Error(`${e instanceof Error ? e.message : String(e)}\n--- server log tail ---\n${log}`);
+    // The error names the directory, so a caller (and the cleanup test) can check that it is gone.
+    throw Object.assign(new Error(`${e instanceof Error ? e.message : String(e)}\n--- server log tail ---\n${log}`), { dir });
   }
   return cluster;
 }

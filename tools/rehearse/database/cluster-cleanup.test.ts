@@ -2,12 +2,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import { startCluster } from "../cluster.ts";
 
 const T = Date.UTC(2027, 2, 1, 9, 0, 0);
-const leftovers = () => readdirSync(tmpdir()).filter((n) => n.startsWith("rehearse-pg-"));
 const procsFor = (dir: string) => {
   try {
     return execFileSync("pgrep", ["-f", dir], { encoding: "utf8" }).trim();
@@ -35,9 +33,14 @@ test("stop({ keep: true }) leaves the directory", async () => {
 });
 
 test("a start that fails leaves no directory and no process, and the error carries the server log", async () => {
-  const before = leftovers();
-  await assert.rejects(() => startCluster({ at: T, extraServerOptions: "-c no_such_setting=1" }), /no_such_setting/);
-  assert.deepEqual(leftovers().sort(), before.sort());
+  // Only this start's own directory is checked: other test files start clusters of their own at the same time.
+  let dir = "";
+  await assert.rejects(
+    () => startCluster({ at: T, extraServerOptions: "-c no_such_setting=1" }).catch((e) => ((dir = e.dir), Promise.reject(e))),
+    /no_such_setting/,
+  );
+  assert.ok(dir.includes("rehearse-pg-"), `the error names its directory: ${dir}`);
+  assert.ok(!existsSync(dir), `${dir} is removed`);
 });
 
 test("setClock never leaves an empty clock file", async () => {
