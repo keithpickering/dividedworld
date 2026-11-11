@@ -71,7 +71,7 @@ const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${nam
  * from another's. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
  * `note`, and when it ends is its `ends`, in the reader's zone. Once it has sprung, the card is public, and its name is said.
  * The end is the one the server stored when the card was set (`back.endsAt`), the same span for every Set, so it names no card either; a back
- * with none says only that it ends when it springs or is taken back. `cardName` is asked only of a back that sprang.
+ * with none (a read from before 0152 carried no end) says only that its end is not shown, which is true where nothing else is known. `cardName` is asked only of a back that sprang.
  */
 export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
   if (back.revealed) {
@@ -79,7 +79,7 @@ export function backWords(back: CardPlay, setter: string, cardName: (key: string
     return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
   }
   if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
-  const ends = back.endsAt ? `${endsWords(back.endsAt)}, unless it springs first.` : 'It ends when it springs or is taken back.';
+  const ends = back.endsAt ? `${endsWords(back.endsAt)}, unless it springs first.` : 'Its end is not shown here.';
   return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends };
 }
 

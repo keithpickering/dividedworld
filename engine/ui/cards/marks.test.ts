@@ -43,6 +43,10 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.equal(words.ends, `${endsWords('2026-11-20T12:00:00.000Z')}, unless it springs first.`);
   });
 
+  test('a back read with no end claims none: it does not say it ends only by springing', () => {
+    assert.equal(backWords(back({ endsAt: null }), 'PIPEWRENCH', () => 'Card Collector').ends, 'Its end is not shown here.');
+  });
+
   test('a back that sprang names its card, which is public from then', () => {
     const words = backWords(back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'Card Collector');
     assert.deepEqual(words, { name: 'Card Collector, set face down by PIPEWRENCH', state: `Sprang on ${localDate('2026-10-30T02:00:00.000Z')}`, note: 'A Card Collector set face down by PIPEWRENCH.', ends: 'It has sprung, and ended.' });
