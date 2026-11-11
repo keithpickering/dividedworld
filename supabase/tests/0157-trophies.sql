@@ -324,7 +324,7 @@ begin
   insert into admins (account) values (adm);
   perform tests.become(adm);
   seen := trophy_award_failures();
-  if jsonb_array_length(seen) is distinct from 1 or (seen -> 0 ->> 'season')::bigint is distinct from s3 or seen -> 0 ->> 'move' is not null or seen -> 0 ->> 'error' not like '%tt_poison%' then raise exception 'an admin reads the failed season: %', seen; end if;
+  if jsonb_array_length(seen) is distinct from 1 or (seen -> 0 ->> 'season')::bigint is distinct from (select number from seasons where id = s3) or seen -> 0 ->> 'move' is not null or seen -> 0 ->> 'error' not like '%tt_poison%' then raise exception 'an admin reads the failed season: %', seen; end if;
   perform tests.become(p1);
   if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the award failures'; end if;
   perform tests.unbecome();
