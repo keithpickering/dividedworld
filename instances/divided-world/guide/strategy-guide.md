@@ -97,8 +97,8 @@ A played card is an Act of its own. It shows on the post as a **mark**. Press th
 
 A plus after a price means that playing the card on a long post costs more; the Vending Machine tells you how much. Three words on every card are worth knowing:
 
-- **Sweet, Salty, Pepperoni.** Sweet helps the post or character it lands on, Salty gets in its way, and Pepperoni depends entirely on context. At the settlement, a Pepperoni card turns out Sweet or Salty depending on how the room reacted to it. The room is everybody except whoever cast it and, for a card on a post, whoever wrote that post.
-- **Move, Gimmick, Ward.** There are three kinds of card. A Move is cast on a target or set face down on your own post to spring on whoever quotes it. A Gimmick is only set face down, and springs on its own trigger. A Ward is used on your own post to guard it. A set card is a card back to everyone else, and every card back looks the same, so a back might be any card.
+- **Sweet, Salty, Pepperoni.** A card's flavor says which side of the line the play is on. Sweet is babyface work, Salty is heel work: a Sweet Move helps, a Salty one gets in the way; a Sweet Reversal is a clean save, a Salty one a dirty counter; a Sweet Gimmick rewards clean play, a Salty one underhanded play. Pepperoni could go either way, and at the settlement it turns out Sweet or Salty depending on how the room reacted to it. The room is everybody except whoever cast it and, for a card on a post, whoever wrote that post.
+- **Move, Reversal, Gimmick.** There are three kinds of card, and the frame shows which: a Move's is solid, a Reversal's is doubled with a folded corner, and a Gimmick's is dashed like a ticket. A Move is cast on a target, or set face down on your own post to spring on whoever quotes it. A Reversal is only ever set face down on your own post, and springs once on something aimed at that post: a cast it names, or matches by flavor or rarity, or a Mod Bot's visit. A Gimmick is played face up on your own post, your own character, or a thread your own character started, and lasts a stated time. A card set face down is a trap. To everyone else it's a card back, and every card back looks the same, so a back might be any Move or any Reversal. A face-down card that hasn't sprung comes back to your hand whenever you take it back, and on its own when its time runs out: the only cost of a trap is that the card is tied up while it waits.
 - **Rarity.** Common, uncommon, rare or legendary. The rarer a card, the further it can reach beyond a single post.
 
 ### Setting a Move face down
@@ -109,7 +109,7 @@ A Move set with no conditions springs on the first quote of your post, from anyo
 - **Quotes.** What the quote holds of your post contains a passage you pick from it. Highlight it in your post's text when you set the card, or type it.
 - **Who.** **Anyone**, **Only these** or **Anyone but these**. The last two take a short list of characters. You can name any character you can search for, your own other masks included. A retired character can be named too, but it can't match while it's retired.
 
-A phrase or passage is short, and the form tells you how short. A Gimmick takes no conditions, and Autocorrect's Says is already filled in with its own phrase and can't be changed.
+A phrase or passage is short, and the form tells you how short. A Reversal takes no conditions, and Autocorrect's Says is already filled in with its own phrase and can't be changed.
 
 **How a phrase matches.** Says, Autocorrect and the passage all use the same looser matching, so you only learn it once:
 

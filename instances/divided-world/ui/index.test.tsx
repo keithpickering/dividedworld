@@ -89,11 +89,15 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
-    expect(guideMd).toMatch(/- \*\*Move, Gimmick, Ward\.\*\*/u);
-    expect(guideMd).toMatch(/A Move is cast on a target or set face down on your own post/u);
-    expect(guideMd).toMatch(/A Gimmick is only set face down, and springs on its own trigger/u);
-    expect(guideMd).toMatch(/A Ward is used on your own post to guard it/u);
+    expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
+    expect(guideMd).toMatch(/A Move is cast on a target, or set face down on your own post/u);
+    expect(guideMd).toMatch(/A Reversal is only ever set face down on your own post/u);
+    expect(guideMd).toMatch(/A Gimmick is played face up on your own post, your own character, or a thread your own character started/u);
     expect(guideMd).toMatch(/every card back looks the same/u);
+    expect(guideMd).toMatch(/Sweet is babyface work, Salty is heel work/u);
+    expect(guideMd).toMatch(/comes back to your hand/u);
+    expect(guideMd).toMatch(/A Reversal takes no conditions/u);
+    expect(guideMd).not.toMatch(/A Gimmick takes no conditions|\bWard\b/u);
     expect(guideMd).not.toMatch(/pays you|what it cost/u);
   });
 });
@@ -375,9 +379,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
 });
 
 describe('Divided World\'s kind words', () => {
-  test('Whoops! is a Move, Hall Pass a Gimmick, Force Field a Ward', () => {
+  test('Whoops! is a Move, Hall Pass a Reversal, Force Field a Gimmick', () => {
     const kind = (key: string): string => faceOf(instance.cards.find((c) => c.key === key)!, instanceUi.cards.find((c) => c.key === key), instance.settings, instanceUi.copy.cardKinds).kind;
-    expect([kind('whoops'), kind('hall-pass'), kind('force-field')]).toEqual(['Move', 'Gimmick', 'Ward']);
+    expect([kind('whoops'), kind('hall-pass'), kind('force-field')]).toEqual(['Move', 'Reversal', 'Gimmick']);
   });
 });
 

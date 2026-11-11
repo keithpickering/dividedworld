@@ -153,8 +153,8 @@ export const instanceUi: InstanceUi = Object.freeze({
     staffBoardTag: 'Staff post here; you react and spin',
     // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
     badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
-    // A card's kind tag: a Move is cast (or set face down), a Gimmick is only set, a Ward guards your own post.
-    cardKinds: Object.freeze({ cast: 'Move', set: 'Gimmick', use: 'Ward' }),
+    // A card's kind tag: a Move is cast (or set face down), a Reversal is only set face down, a Gimmick is used face up on your own post, character or thread.
+    cardKinds: Object.freeze({ cast: 'Move', set: 'Reversal', use: 'Gimmick' }),
     // What the log and the machine's group label call the shop, in plain words; the sign draws one of `marquees`.
     shopName: 'Vending Machine',
     // The sign's names, one picked each time the Vending screen opens (decoration; none claims anything untrue; at most 20 characters each).

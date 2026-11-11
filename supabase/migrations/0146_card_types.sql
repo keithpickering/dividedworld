@@ -1617,3 +1617,34 @@ end;
 
 -- acts_card_created: settlement_input's and estimate_input's earn_up read card plays by creation time over the longest Earn `lasts`; this index holds card plays alone, so that read is its own rows and not every Act's in the span.
 create index acts_card_created on acts (created_at) where kind = 'card';
+
+-- staff_set_card (0142), its refusal in the engine's words: a persona sets set cards, whatever an instance calls them. Everything else as 0142
+-- wrote it, its grants included (create or replace keeps them).
+create or replace function staff_set_card(staff_key text, card text, target uuid, config jsonb default '{}', catches text default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  whose text;
+  held text;
+  kind_of card_kinds%rowtype;
+  flag text;
+  placed jsonb;
+begin
+  select c.id, c.staff_kind into who, whose from characters c where c.staff = staff_key;
+  if who is null then raise exception 'there is no staff member "%"', staff_key using errcode = 'P0002'; end if;
+  if whose is distinct from 'persona' then raise exception 'only a persona plays a card' using errcode = '42501'; end if;
+  select o.office into held from staff_office_now o where o.staff = staff_key;
+  if held in ('waiting', 'benched') then raise exception 'a % persona writes nothing', held using errcode = '55000'; end if;
+  select * into kind_of from card_kinds k where k.key = staff_set_card.card;
+  if kind_of.key is null then raise exception 'there is no such card' using errcode = 'P0002'; end if;
+  if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('pool') #>> '{cardRarityMost}'), false) then
+    raise exception '% is above the rarity the pool plays', kind_of.name using errcode = '55000';
+  end if;
+  if kind_of.play is distinct from 'set' then raise exception '% is not a set card; a persona sets set cards', kind_of.name using errcode = '55000'; end if;
+  if kind_of.trap #>> '{trigger,on}' = 'visit' then raise exception '% waits for a Mod Bot''s visit; a persona sets none', kind_of.name using errcode = '55000'; end if;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  placed := place_set(who, card, target, coalesce(config, '{}'), null, 0, staff_set_card.catches, null);
+  perform set_config('kayfabb.staff_writer', flag, true);
+  return placed;
+end $$;

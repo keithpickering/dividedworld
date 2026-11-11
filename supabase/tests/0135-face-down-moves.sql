@@ -529,7 +529,7 @@ begin
   if (select catches from face_down where play = (placed ->> 'id')::uuid) is distinct from 'fdpmove' then raise exception 'a persona''s Trap Card did not store its named catch'; end if;
   if (select account from face_down where play = (placed ->> 'id')::uuid) is not null then raise exception 'a persona''s back has an account'; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpmove', p2));
-  if why is distinct from 'Persona Move is not a Gimmick; a persona sets Gimmicks' then raise exception 'a persona set a Move: %', why; end if;
+  if why is distinct from 'Persona Move is not a set card; a persona sets set cards' then raise exception 'a persona set a Move: %', why; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpvisit', p3));
   if why is distinct from 'Persona Visit waits for a Mod Bot''s visit; a persona sets none' then raise exception 'a persona set a visit Gimmick: %', why; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L, %L, %L)', 'fdm-mod', 'fdptrap', p3, '{"card": "nosuch"}', 'nosuch'));
