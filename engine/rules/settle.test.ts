@@ -1416,3 +1416,176 @@ test('the lists in a standing and a drawn crowd are in one order that names no p
   const drawn = playOf(inputs, 'k1').drawnAfter!.now;
   assert.deepEqual(drawn, [{ ...noVote, excitedNegative: 1 }, { ...noVote, excitedPositive: 1 }]);
 });
+
+/* ---- skim, ride and scored-as (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 3) ----
+   Test cards of the test world: a skim card (a tenth of a vote), a ride gimmick (half a vote), a ride trap (a whole vote) and a Salty
+   one that is a play like any other. Each pays a character as no class's earning, under `card.skim` and `card.ride`. */
+const skimmer: ClassRules = { key: 'skimmer', name: 'Skimmer', earn: () => [] };
+const payWorld: Instance = {
+  ...cardsWorld,
+  classes: [...cardsWorld.classes, skimmer],
+  cards: [
+    ...cardsWorld.cards,
+    { ...splat, key: 'mooch', skim: { share: 0.1 } },
+    { ...splat, key: 'toll', gimmick: { kind: 'ride', share: 0.5 } },
+    { ...splat, key: 'chess', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, catches: () => 'splat' },
+    { ...splat, key: 'offday', scoresAs: true },
+  ],
+};
+const WHO = ['tom', 'ann', 'bob', 'cat', 'dee', 'eve', 'fay'];
+/** Tom's post `tp`; every player has a mask `<player>-1` and Tom and Ann a second, `-2`, on the quiet class. */
+function payBoard(acts: InputAct[], reactions: InputReaction[], extra: Partial<SettlementInput> = {}): SettlementInput {
+  return {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [...WHO.map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })), ...['tom', 'ann'].map((p) => ({ id: `${p}-2`, player: p, classes: [{ class: 'quiet', from: 0 }] }))],
+    acts: [post('tp', 'tom-1', FROM + 1 * H), ...acts],
+    reactions,
+    ...extra,
+  };
+}
+const mooch = (id: string, character: string, over: Partial<InputAct> = {}): InputAct => ({ id, character, kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp', card: 'mooch', quadrant: 'calmPositive', ends: FROM + 20 * H, ...over });
+const sk = (r: ReturnType<typeof settle>, character: string) => amountOf(r, character, 'card.skim');
+
+test('a skim pays its caster a tenth of a vote per vote in the named quadrant on another player\'s post, and the poster is paid as without it', () => {
+  const votes = [react('tp', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp', 'cat', 'cat-1', 'tea', FROM + 6 * H), react('tp', 'dee', 'dee-1', 'fire', FROM + 7 * H)];
+  const r = settle(payBoard([mooch('sk', 'ann-1')], votes), payWorld);
+  assert.equal(sk(r, 'ann-1'), 2, 'two calm votes, a tenth of a vote (1) each; the fire pays nothing');
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.skim')!.params, { card: 'mooch' });
+  assert.deepEqual(r.details.filter((d) => d.reason === 'card.skim').map((d) => [d.act, d.quadrant, d.at, d.amount]), [['tp', 'calmPositive', FROM + 5 * H, 1], ['tp', 'calmPositive', FROM + 6 * H, 1]]);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'tom-1'), settle(payBoard([], votes), payWorld).entries.filter((e) => e.character === 'tom-1'));
+  assert.deepEqual(r.byClass, settle(payBoard([], votes), payWorld).byClass, 'a skim is in no class\'s total');
+});
+test('a skim pays nothing before the play, at or after its end, or from a player who reacted to the post before the play', () => {
+  const r = settle(payBoard([mooch('sk', 'ann-1')], [
+    react('tp', 'bob', 'bob-1', 'tea', FROM + 2 * H - 1),
+    react('tp', 'cat', 'cat-1', 'tea', FROM + 20 * H),
+    react('tp', 'dee', 'dee-1', 'tea', FROM + 2 * H - 2), react('tp', 'dee', 'dee-1', 'tea', FROM + 5 * H),
+    react('tp', 'eve', 'eve-1', 'tea', FROM + 20 * H - 1),
+  ]), payWorld);
+  assert.equal(sk(r, 'ann-1'), 1, 'only Eve, who arrived after the play and before its end');
+});
+test('a vote that was there before the play and moves out takes nothing back', () => {
+  const r = settle(payBoard([mooch('sk', 'ann-1')], [react('tp', 'bob', 'bob-1', 'tea', FROM + 1 * H + 1), react('tp', 'bob', 'bob-1', 'zzz', FROM + 6 * H)]), payWorld);
+  assert.equal(sk(r, 'ann-1'), 0);
+});
+test('a vote that arrives and moves out in a later window takes back exactly what it paid', () => {
+  const play = mooch('sk', 'ann-1', { ends: FROM + 100 * H });
+  const first = settle(payBoard([play], [react('tp', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), payWorld);
+  assert.equal(sk(first, 'ann-1'), 1);
+  const second = settle(payBoard([play], [react('tp', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp', 'bob', 'bob-1', 'zzz', TO + 3 * H)], { window: { id: 'w2', from: TO, to: TO + 24 * H }, paid: first.paid }), payWorld);
+  assert.equal(sk(second, 'ann-1'), -1, 'the whole of it comes back');
+  assert.equal(sk(first, 'ann-1') + sk(second, 'ann-1'), 0, 'the play never costs more than it paid');
+});
+test('a skim played in an earlier window and still up pays this window\'s votes', () => {
+  const r = settle(payBoard([mooch('sk', 'ann-1', { at: FROM - 10 * H, ends: FROM + 100 * H })], [react('tp', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), payWorld);
+  assert.equal(sk(r, 'ann-1'), 1);
+});
+test('a skim on the caster\'s own player\'s post pays nothing, whichever mask; nor does the caster\'s own player\'s vote', () => {
+  const votes = [react('tp', 'bob', 'bob-1', 'tea', FROM + 5 * H)];
+  assert.equal(sk(settle(payBoard([mooch('sk', 'tom-2')], votes), payWorld), 'tom-2'), 0);
+  const own = settle(payBoard([mooch('sk', 'ann-1')], [react('tp', 'ann', 'ann-2', 'tea', FROM + 5 * H), react('tp', 'cat', 'cat-1', 'tea', FROM + 6 * H)]), payWorld);
+  assert.equal(sk(own, 'ann-1'), 1, 'Cat\'s vote only');
+});
+test('a skim with no quadrant or no end pays nothing, and neither does one on a staff post', () => {
+  const votes = [react('tp', 'bob', 'bob-1', 'tea', FROM + 5 * H)];
+  const { quadrant: _q, ...noQuadrant } = mooch('sk', 'ann-1');
+  const { ends: _e, ...noEnd } = mooch('sk', 'ann-1');
+  assert.equal(sk(settle(payBoard([noQuadrant], votes), payWorld), 'ann-1'), 0);
+  assert.equal(sk(settle(payBoard([noEnd], votes), payWorld), 'ann-1'), 0);
+  const staff = settle(payBoard([mooch('sk', 'ann-1', { target: 'visit1' })], [react('visit1', 'bob', 'bob-1', 'tea', FROM + 5 * H)], { unscoredTargets: [{ id: 'visit1', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }] }), payWorld);
+  assert.equal(sk(staff, 'ann-1'), 0);
+});
+test('two skims by two players on one post each pay their own caster', () => {
+  const r = settle(payBoard([mooch('sk1', 'ann-1'), mooch('sk2', 'bob-1', { at: FROM + 2 * H + 1 })], [react('tp', 'cat', 'cat-1', 'tea', FROM + 5 * H), react('tp', 'dee', 'dee-1', 'tea', FROM + 6 * H)]), payWorld);
+  assert.equal(sk(r, 'ann-1'), 2);
+  assert.equal(sk(r, 'bob-1'), 2);
+});
+
+/** Tom's Toll (a ride gimmick) on his own post, Ann's cast on it, and the votes on the cast. */
+const toll = (over: Partial<InputAct> = {}): InputAct => ({ id: 'rg', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp', card: 'toll', ends: FROM + 20 * H, ...over });
+const cast = (id = 'cast', character = 'ann-1', at = FROM + 3 * H): InputAct => ({ id, character, kind: 'card', at, thread: 't1', target: 'tp', card: 'splat' });
+const ride = (r: ReturnType<typeof settle>, character: string) => amountOf(r, character, 'card.ride');
+
+test('a ride gimmick pays half a vote per vote, in any quadrant, on another player\'s cast made while it was up', () => {
+  const votes = [react('cast', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'zzz', FROM + 6 * H)];
+  const r = settle(payBoard([toll(), cast()], votes), payWorld);
+  assert.equal(ride(r, 'tom-1'), 10, 'half a vote (5) each');
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.ride')!.params, { card: 'toll' });
+  assert.deepEqual(r.details.filter((d) => d.reason === 'card.ride').map((d) => [d.act, d.quadrant, d.amount]).sort(), [['cast', 'boredNegative', 5], ['cast', 'excitedPositive', 5]]);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'ann-1'), settle(payBoard([cast()], votes), payWorld).entries.filter((e) => e.character === 'ann-1'), 'the caster is paid as without it');
+});
+test('a ride gimmick pays nothing for the author\'s own cast, own vote, a cast outside its time or a vote at its end', () => {
+  const votes = [react('cast', 'bob', 'bob-1', 'fire', FROM + 5 * H)];
+  assert.equal(ride(settle(payBoard([toll(), cast('cast', 'tom-2')], votes), payWorld), 'tom-1'), 0, 'a cast by the author\'s other mask');
+  assert.equal(ride(settle(payBoard([toll(), cast()], [react('cast', 'tom', 'tom-2', 'fire', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 6 * H)]), payWorld), 'tom-1'), 5, 'the author\'s own vote on the cast is Cat\'s alone');
+  assert.equal(ride(settle(payBoard([toll(), cast('cast', 'ann-1', FROM + 2 * H - 1)], votes), payWorld), 'tom-1'), 0, 'a cast made before it');
+  assert.equal(ride(settle(payBoard([toll({ ends: FROM + 10 * H }), cast('cast', 'ann-1', FROM + 12 * H)], votes), payWorld), 'tom-1'), 0, 'a cast made after it ended');
+  assert.equal(ride(settle(payBoard([toll({ ends: FROM + 10 * H }), cast()], [react('cast', 'bob', 'bob-1', 'fire', FROM + 10 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 10 * H - 1)]), payWorld), 'tom-1'), 5, 'a vote at its end pays nothing');
+});
+
+/** Tom's 4D Chess sprung by Ann's cast, setting the calm quadrant. */
+const spring = (over: Partial<InputAct> = {}): InputAct => ({ id: 'sp', character: 'tom-1', kind: 'spring', at: FROM + 4 * H, thread: 't1', target: 'tp', card: 'chess', by: 'cast', quadrant: 'calmPositive', ...over });
+
+test('a ride spring pays a whole vote per vote in its quadrant on the cast that sprang it, in this window and a later one', () => {
+  const votes = [react('cast', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 6 * H)];
+  const r = settle(payBoard([cast(), spring()], votes), payWorld);
+  assert.equal(ride(r, 'tom-1'), 10, 'the calm vote at a whole vote; the fire pays nothing');
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.ride')!.params, { card: 'chess' });
+  const later = settle(payBoard([cast(), spring()], [...votes, react('cast', 'dee', 'dee-1', 'tea', TO + 2 * H)], { window: { id: 'w2', from: TO, to: TO + 24 * H } }), payWorld);
+  assert.equal(ride(later, 'tom-1'), 10, 'a later window pays the votes it holds, with no end');
+  assert.equal(ride(settle(payBoard([cast('cast', 'tom-2'), spring()], votes), payWorld), 'tom-1'), 0, 'a cast by the setter\'s own player');
+});
+test('a ride spring is still scored as a play of its card on the cast: a Salty one that outdraws it steals thunder', () => {
+  const salty = { ...payWorld, cards: payWorld.cards.map((c) => (c.key === 'chess' ? { ...c, alignment: 'salty' as const } : c)) };
+  const input = payBoard([cast(), spring()], [react('cast', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('sp', 'cat', 'cat-1', 'fire', FROM + 5 * H), react('sp', 'dee', 'dee-1', 'fire', FROM + 6 * H)]);
+  const r = settle({ ...input, characters: input.characters.map((c) => (c.id === 'tom-1' ? { ...c, classes: [{ class: 'snatcher', from: 0 }] } : c)) }, salty);
+  assert.equal(amountOf(r, 'tom-1', 'snatcher.stole'), 20);
+  assert.equal(ride(r, 'tom-1'), 10);
+});
+test('a post with a ride gimmick and a ride spring pays one entry per card, and each is shared over its own Acts', () => {
+  const input = payBoard([toll(), cast('c1'), cast('c2', 'ann-1', FROM + 3 * H + 1), spring({ by: 'c1' })], [
+    react('c1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('c2', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+  ]);
+  const r = settle(input, payWorld);
+  const entries = r.entries.filter((e) => e.reason === 'card.ride');
+  assert.deepEqual(entries.map((e) => [e.params, e.amount]), [[{ card: 'chess' }, 10], [{ card: 'toll' }, 10]]);
+  const shares = shareEntries(input, payWorld, r.entries).filter((s) => s.reason === 'card.ride');
+  assert.deepEqual(shares.map((s) => [s.params, s.act, s.amount]).sort(), [[{ card: 'chess' }, 'c1', 10], [{ card: 'toll' }, 'c1', 5], [{ card: 'toll' }, 'c2', 5]]);
+});
+
+test('a character named in scoredAs earns the named class\'s reasons for the whole window, and none of its own', () => {
+  const input = payBoard([post('ap', 'ann-1', FROM + 3 * H), post('ap2', 'ann-1', FROM + 12 * H)], [react('ap', 'bob', 'bob-1', 'fire', FROM + 5 * H)], { scoredAs: [{ character: 'ann-1', class: 'fan', play: 'od' }] });
+  const r = settle(input, payWorld);
+  assert.equal(amountOf(r, 'ann-1', 'fan.love'), 10);
+  assert.equal(amountOf(r, 'ann-1', 'quiet.post'), 0);
+  assert.equal(amountOf(r, 'bob-1', 'quiet.post'), 0, 'bob posted nothing');
+  assert.deepEqual(r.byClass, { fan: 10, quiet: amountOf(r, 'tom-1', 'quiet.post') + amountOf(r, 'tom-2', 'quiet.post') }, 'under the named class');
+  assert.equal(amountOf(settle({ ...input, scoredAs: [] }, payWorld), 'ann-1', 'quiet.post'), 14, 'a character not named is untouched');
+});
+test('a character scored as a class that Turned inside the window is that class throughout; an unknown class throws', () => {
+  const turned = (scoredAs: SettlementInput['scoredAs']): SettlementInput => {
+    const input = payBoard([post('ap', 'ann-1', FROM + 3 * H), post('ap2', 'ann-1', FROM + 12 * H)], [react('ap2', 'bob', 'bob-1', 'fire', FROM + 13 * H)], { scoredAs });
+    return { ...input, characters: input.characters.map((c) => (c.id === 'ann-1' ? { ...c, classes: [{ class: 'fan', from: 0 }, { class: 'quiet', from: FROM + 10 * H }] } : c)) };
+  };
+  const r = settle(turned([{ character: 'ann-1', class: 'quiet', play: 'od' }]), payWorld);
+  assert.equal(amountOf(r, 'ann-1', 'quiet.post'), 14, 'both posts are the named class\'s');
+  assert.equal(amountOf(r, 'ann-1', 'fan.love'), 0);
+  assert.equal(amountOf(settle(turned(undefined), payWorld), 'ann-1', 'fan.love'), 0, 'unnamed, the fire on the later post is the quiet stretch\'s and pays nothing');
+  assert.equal(amountOf(settle(turned([{ character: 'ann-1', class: 'fan', play: 'od' }]), payWorld), 'ann-1', 'fan.love'), 10, 'named a class it Turned from, the whole window is that class');
+  assert.throws(() => settle(turned([{ character: 'ann-1', class: 'nope', play: 'od' }]), payWorld), /nope/);
+});
+test('card payouts are in no class\'s total, the log adds up to the entries, and the order of the input changes nothing', () => {
+  const input = payBoard([mooch('sk', 'ann-1'), toll(), cast('c1', 'bob-1'), cast('c2', 'ann-1', FROM + 3 * H + 1), spring({ by: 'c2', character: 'cat-1' }), post('ap', 'ann-2', FROM + 3 * H)], [
+    react('tp', 'dee', 'dee-1', 'tea', FROM + 5 * H), react('tp', 'eve', 'eve-1', 'tea', FROM + 6 * H),
+    react('c1', 'dee', 'dee-1', 'fire', FROM + 5 * H), react('c1', 'eve', 'eve-1', 'tea', FROM + 6 * H), react('c2', 'fay', 'fay-1', 'tea', FROM + 6 * H), react('c2', 'dee', 'dee-1', 'tea', FROM + 6 * H),
+    react('ap', 'fay', 'fay-1', 'fire', FROM + 7 * H),
+  ], { scoredAs: [{ character: 'ann-2', class: 'fan', play: 'od' }] });
+  const r = settle(input, payWorld);
+  const paid = r.entries.filter((e) => e.reason.startsWith('card.'));
+  assert.ok(paid.length >= 3, 'a skim, a ride gimmick and a ride spring were all paid');
+  const total = r.entries.reduce((s, e) => s + e.amount, 0);
+  assert.equal(Object.values(r.byClass).reduce((s, x) => s + x, 0), total - paid.reduce((s, e) => s + e.amount, 0), 'no payout in byClass');
+  for (const e of r.entries) assert.equal(r.details.filter((d) => d.character === e.character && d.reason === e.reason && d.params?.card === e.params?.card).reduce((s, d) => s + d.amount, 0), e.amount, `${e.character} ${e.reason}`);
+  const shuffled: SettlementInput = { ...input, characters: [...input.characters].reverse(), acts: [...input.acts].reverse(), reactions: [...input.reactions].reverse() };
+  assert.deepEqual(settle(shuffled, payWorld), r);
+});

@@ -363,10 +363,12 @@ export interface InputAct {
   readonly reach?: BeyondPost;
   /** The Act that sprang a `spring`: the cast it caught or the visit that tripped it. A spring is scored against it, not its trapped post; absent on older rows, which keep the trapped post. */
   readonly by?: string;
-  /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing. An admin-ended play is not in the input. */
+  /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing; so for a ride gimmick and a skim play. An admin-ended play is not in the input. */
   readonly ends?: number;
   /** The character a character-reach play is on. */
   readonly on?: string;
+  /** The quadrant a skim play names (its `config.quadrant`), or a ride spring was set with: the quadrant whose votes pay. */
+  readonly quadrant?: Quadrant;
 }
 
 /** A staff post a card landed on: its author is staff, so it is named but never settled. */
@@ -421,6 +423,11 @@ export interface SettlementInput {
    * nothing for reacting there, as for any of The System's Acts.
    */
   readonly unscoredTargets?: readonly UnscoredTarget[];
+  /**
+   * The plays that name a class a character is scored as for this window, at most one per character (a scored-as card's `config.class`):
+   * the character earns that class's reasons in every stretch of the window, whatever class it holds. `play` is the Act that named it.
+   */
+  readonly scoredAs?: readonly { readonly character: string; readonly class: string; readonly play: string }[];
   /**
    * What earlier windows paid for each player's vote on each Act this window's reactions touch
    * (engine/rules/votes.ts's payVotes): its weight, and each quadrant's share at it.
