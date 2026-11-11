@@ -1751,7 +1751,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
-  /** The SQL's words (pronouns_hold, 0124): a set is held after it is lowercased, as set_profile and create_character store it. */
+  /** The SQL's words (pronouns_hold, 0124): a set is held and stored normalized (trimmed and lowercased), as the real client's setProfile sends it and the act function normalizes it. */
   const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
   const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
 

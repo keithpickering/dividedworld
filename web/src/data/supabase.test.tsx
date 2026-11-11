@@ -504,6 +504,17 @@ describe('reads and their rows', () => {
     ]);
   });
 
+  it('marks a set as unread only where a profile row came without one: a row with a set, and a character with no row, carry no marker', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: A, name: 'Al', joined: '2026-09-01' }, { id: B, name: 'Bea', joined: '2026-10-01' }, { id: C, name: 'Cy', joined: '2026-10-02' }]) : rows([{ character: A, title: 'T' }, { character: B, pronouns: PRONOUN_PRESETS.she }])));
+    const [al, bea, cy] = await h.api.characters([A, B, C]);
+    expect(al).toMatchObject({ pronouns: ENGINE_DEFAULT_PRONOUNS, pronounsUnread: true });
+    expect(bea?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect(bea).not.toHaveProperty('pronounsUnread');
+    /* No profile row at all: nothing is stored to overwrite, so the engine's it/its may be shown and saved (set_profile makes the row). */
+    expect(cy?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
+    expect(cy).not.toHaveProperty('pronounsUnread');
+  });
+
   it('builds the board index from boards_now (the names as Acts say them now) and thread_list', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/boards_now')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);
@@ -754,6 +765,13 @@ describe('failures', () => {
       { through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: null },
     ]);
     expect(set).toMatchObject({ ok: true, value: { pronouns: PRONOUN_PRESETS.she } });
+  });
+
+  it('sends set_profile a custom set trimmed and lowercased, as the picker judged it', async () => {
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const h = harness(() => json({ character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: xe }));
+    await h.api.setProfile(B, 'T', 's', 'default', { subject: 'xe ', object: ' Xem', determiner: 'xyr\t', possessive: ' xyrs', reflexive: ' XEMSELF ', plural: false });
+    expect(h.to('rpc/set_profile').map((r) => r.body)).toEqual([{ through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: xe }]);
   });
 
   it('passes an rpc refusal through by its hint, and quotes nothing else', async () => {
