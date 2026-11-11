@@ -725,6 +725,11 @@ export interface SystemContent {
   readonly feeds: readonly FeedSource[];
   /** Subjects never amplified (politics, real tragedies); a starting list admins edit. */
   readonly realWorld: readonly string[];
+  /**
+   * Words the old-voice scrubber (engine/system/scrub.ts) refuses in a raw completion; a moderation blocklist, lower case, a
+   * starting list admins edit. An entry may be several words.
+   */
+  readonly scrubWords: readonly string[];
   /** Material the community likes, a starting list The System learns more of. */
   readonly wheelhouse: readonly string[];
   /** Problems with a board name The System proposes; empty when it is in style. */

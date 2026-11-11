@@ -19,6 +19,8 @@
  * here names a model id as a default, so the setting is the one place a tier's model is chosen.
  */
 import type { CallContext, ChatRequest, CompletionRequest, ModelResult, Models, Tier, Usage } from '../../../../engine/system/model.ts';
+import { AnswerRejected } from '../../../../engine/system/model.ts';
+export { AnswerRejected };
 import { cutCompletion, repair } from '../../../../engine/system/validate.ts';
 import type { Trim } from '../../../../engine/system/validate.ts';
 import { anthropicChat } from './anthropic.ts';
@@ -45,15 +47,6 @@ export interface ModelOptions {
 
 /** At most this many retries after the first attempt. */
 export const MAX_RETRIES = 3;
-
-/** An answer that could not be used: the provider refused, it was not JSON, or a bound could not be repaired. */
-export class AnswerRejected extends Error {
-  readonly predicate: string;
-  constructor(message: string, predicate: string) {
-    super(message);
-    this.predicate = predicate;
-  }
-}
 
 /** The ledger could not be written; the call it was for is not trusted. */
 export class LedgerWriteFailed extends Error {}

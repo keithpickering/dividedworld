@@ -63,6 +63,7 @@ import {
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
+import { scrubbedComplete } from '../../../engine/system/scrub.ts';
 import {
   allowance,
   candidates,
@@ -317,9 +318,9 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     try {
       if (persona.voice === 'oldVoice') {
         const frame = chatterCompletion({ name: persona.name, thread, limits });
-        const out = await models.complete({
+        const out = await scrubbedComplete(models, {
           duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens: 400, maxChars: settings.postMaxLength,
-        });
+        }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({

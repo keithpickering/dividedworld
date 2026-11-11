@@ -86,3 +86,12 @@ export interface Models {
   chat(request: ChatRequest): Promise<ModelResult<unknown>>;
   complete(request: CompletionRequest): Promise<ModelResult<string>>;
 }
+
+/** An answer that could not be used: the provider refused, it was not JSON, or a bound could not be repaired. */
+export class AnswerRejected extends Error {
+  readonly predicate: string;
+  constructor(message: string, predicate: string) {
+    super(message);
+    this.predicate = predicate;
+  }
+}

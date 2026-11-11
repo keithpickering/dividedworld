@@ -451,6 +451,25 @@ test('a persona on the old voice writes its words in raw completion and gives no
   assert.equal(d.count('write_staff_note') + d.count('staff_play_card') + d.count('staff_set_card'), 0);
 });
 
+test('an old-voice answer that hits the scrubber twice files a rejected pick and writes nothing; one hit is retried', async () => {
+  const withWords = (scrubWords: string[]): Instance => ({ ...dividedWorld, system: { ...dividedWorld.system, scrubWords, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } });
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const m = fakeModels(() => ({ words: 'chat' }), 'you absolute badword');
+  const out = await run(d, m, withWords(['badword']));
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 2, 'asked again once');
+  assert.equal(out.picks[0]!.status, 'rejected');
+  assert.equal(d.count('write_staff_act'), 0);
+  const once = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const answers = ['you absolute badword', 'a kinder post'];
+  const m2 = fakeModels(() => ({ words: 'chat' }));
+  m2.models.complete = async (r) => { m2.completions.push(r); return result(answers[m2.completions.length - 1]!); };
+  const ok = await run(once, m2, withWords(['badword']));
+  assert.ok(ok.status === 'ok');
+  assert.equal(m2.completions.length, 2);
+  assert.equal(once.of('write_staff_act')[0]!.payload.body, 'a kinder post');
+});
+
 test('a thread start whose persona has no beats board replies in its trigger\'s thread', async () => {
   const d = fakeDb({ boards: { [GENERAL]: 'elsewhere' } });
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));

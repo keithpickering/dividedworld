@@ -575,7 +575,13 @@ function systemProblems(instance: Instance): string[] {
   if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   if (typeof sys.announcementsTitle !== 'string' || sys.announcementsTitle.trim() === '') out.push('system.announcementsTitle is empty; the seed makes The System\'s announcements thread from it, and with none no move can land');
-  for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  for (const key of ['feeds', 'realWorld', 'scrubWords', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  if (Array.isArray(sys.scrubWords)) {
+    for (const w of sys.scrubWords) {
+      if (typeof w !== 'string' || w.trim() === '') out.push('a scrubWords entry is empty; it would hit every text');
+      else if (w !== w.toLowerCase()) out.push(`scrubWords entry "${w}" is not lower case; the scrubber folds the text to lower case, so it could never match`);
+    }
+  }
   // A feed is fetched by the meeting: only over https, so nothing in between reads or rewrites what the Boss is told.
   if (Array.isArray(sys.feeds)) {
     for (const f of sys.feeds) {

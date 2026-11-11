@@ -89,6 +89,7 @@ const system: SystemContent = {
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
+  scrubWords: ['badword'],
   wheelhouse: ['games'],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
@@ -844,4 +845,13 @@ test('a stock line may use a staff token\'s pronoun forms and no other token\'s'
   assert.deepEqual(instanceProblems(line('visitFiled', '{mod} filed it.')), []);
   assert.match(said(line('visitFiled', '{mod.} left.')), /stock line "visitFiled".*\{mod\.\}/);
   assert.match(said(line('visitFiled', '{mod.they.x} left.')), /stock line "visitFiled".*\{mod\.they\.x\}/);
+});
+
+test('a scrubWords entry that is empty or not lower case is a problem', () => {
+  const withWords = (scrubWords: string[]) => ({ ...good, system: { ...system, scrubWords } }) as Instance;
+  assert.deepEqual(instanceProblems(withWords(['badword', 'two words'])), []);
+  assert.match(instanceProblems(withWords(['badword', ''])).join('\n'), /scrubWords entry is empty/);
+  assert.match(instanceProblems(withWords(['  '])).join('\n'), /scrubWords entry is empty/);
+  assert.match(instanceProblems(withWords(['BadWord'])).join('\n'), /scrubWords entry "BadWord" is not lower case/);
+  assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
 });

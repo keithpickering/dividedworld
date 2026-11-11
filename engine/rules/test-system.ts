@@ -51,7 +51,7 @@ export const testSystem: SystemContent = {
   firstStaff: ['bot-a'],
   duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
-  feeds: [], realWorld: [], wheelhouse: [],
+  feeds: [], realWorld: [], scrubWords: ['badword'], wheelhouse: [],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
 };
