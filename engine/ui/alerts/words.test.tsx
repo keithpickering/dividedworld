@@ -345,13 +345,16 @@ describe('a trophy alert and a belt lost alert (the cosmetics plan, Task 12)', (
   });
   test('a belt that came back says the mask holds it again', () => {
     expect(said(row({ kind: 'beltBack', sub: 'The Belt', character: 'c1', name: 'Pipewrench', thread: null }), ctx())).toEqual({
-      line: 'Pipewrench holds The Belt again', detail: 'The log says what changed.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
+      line: 'Pipewrench holds the Belt again', detail: 'The log says what changed.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
     });
   });
   test('a belt lost says the mask no longer holds it, and never names who took it', () => {
     expect(said(lost, ctx())).toEqual({
-      line: 'Pipewrench lost The Belt', detail: 'The log says who took it.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
+      line: 'Pipewrench lost the Belt', detail: 'The log says who took it.', ways: [{ text: 'Open My log', to: '/log' }], who: 'Pipewrench',
     });
+  });
+  test('a trophy named with a leading "The" reads as a sentence: "the Hardcore Belt"', () => {
+    expect(said({ ...trophy, sub: 'The Hardcore Belt' }, ctx()).line).toBe('Pipewrench was given the Hardcore Belt');
   });
   test('read without a name or a trophy they stay plain', () => {
     expect(said({ ...trophy, name: null, sub: null }, ctx()).line).toBe('One of your characters was given a trophy');

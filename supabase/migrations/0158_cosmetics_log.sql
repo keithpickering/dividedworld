@@ -16,9 +16,15 @@
 -- and one alert per award, and one more per belt passed, so a season's three places cost three. alerts_kind_check and account_preferences_toasts_check, set_preferences and settings_held list the kinds as
 -- one list (engine/rules/alerts.test.ts holds them to it), each redefined whole from its latest definition: set_preferences from 0145, settings_held from 0150, log_page from 0155.
 --
+-- Scale: a busy instance has many belt passes and many players. The belt branches (lost, beltBack) are driven only by belts the caller's own characters have ever held (a by-character read of the
+-- caller's awards), so another player's belt passes are never visited; their lateral previous-holder lookups run per pass of those belts alone, on trophy_awards_by_trophy. The granted branch reads
+-- gear_ledger by (account, at). log_page's `in_before` bound is a filter on the view's `at`, pushed down by the planner into each branch. Grants are grouped by (at, gear, through), which relies on
+-- one grant per transaction (grant_gear's own: one statement, one instant); two grants in one transaction would read as one line of the summed copies.
+--
 -- Ways out: nothing here adds a state a player can be put in; an alert is read and cleared as every alert is.
 
 alter table gear_ledger add column through uuid references characters (id);
+create index gear_ledger_granted_by_time on gear_ledger (account, at) where kind = 'granted';
 
 -- grant_gear (0150), naming the character it was given through. Everything else as 0150 wrote it.
 create or replace function grant_gear(of_character uuid, gear_key text, copies integer) returns jsonb
@@ -68,6 +74,7 @@ create view my_cosmetic_log as
                       order by x.at desc, x.id desc limit 1) p
   join characters o on o.id = p.character
   where o.owner = auth.uid() and p.character <> n.character
+    and n.trophy in (select a.trophy from trophy_awards a join characters c on c.id = a.character where c.owner = auth.uid())
   union all
   -- The belt that came back: an admin took the holder's award back, and the character that held it before holds it again. Said as of the reversal, so a later one changes nothing of it.
   select 'beltBack', x.id::text, rv.at, h.character, null, null, null, null,
@@ -81,6 +88,7 @@ create view my_cosmetic_log as
                       order by y.at desc, y.id desc limit 1) h
   join characters o on o.id = h.character
   where o.owner = auth.uid() and h.character <> x.character
+    and x.trophy in (select a.trophy from trophy_awards a join characters c on c.id = a.character where c.owner = auth.uid())
     and not exists (select 1 from trophy_awards z
                     where z.trophy = x.trophy and z.id <> x.id and (z.at, z.id) > (x.at, x.id) and z.at <= rv.at and not exists (select 1 from trophy_reversals r where r.award = z.id and r.at <= rv.at));
 revoke all on my_cosmetic_log from anon, public;

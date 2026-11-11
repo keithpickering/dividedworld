@@ -394,7 +394,7 @@ const aOrAn = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}
 /** A name's plural as a sentence needs it: "Headbands", "Mustaches", and a name already in the plural ("Shades") as it is. */
 const pluralName = (name: string) => (/s$/iu.test(name) ? name : /(x|z|ch|sh)$/iu.test(name) ? `${name}es` : `${name}s`);
 /** A trophy's name inside a sentence: "The Hardcore Belt" is "the Hardcore Belt". */
-const inSentence = (name: string) => name.replace(/^The /u, 'the ');
+export const inSentence = (name: string) => name.replace(/^The /u, 'the ');
 const PLACES = ['first', 'second', 'third'];
 
 /**
