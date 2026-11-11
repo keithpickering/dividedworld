@@ -161,10 +161,23 @@
  * marks the cell `data-kb-landed`. The cell is positioned so the tiles (absolute, in the cell's px) lie in it, and isolated so the
  * tiles' z-index -1 puts them over the cell's own ground and under its content, never behind the next post. No cell set a position
  * before (the only positioned things in a post are inside `.kb-act-main`), so this overrides nothing.
+ *
+ * Isolating a cell makes it a stacking context, and what hangs out of a cell is then painted inside that context. Only the meta
+ * cell has anything that hangs over a neighbor: the marks strip (`.kb-marks`, z-index 3, marks.css) hangs over the body's first
+ * line and the first-time callout (z-index 4) hangs under it over the body. Before the glitter the meta cell was no stacking context,
+ * so both shared `.kb-act`'s and painted above `.kb-act-main` (itself isolated, at level auto). Isolated at z-index auto the meta
+ * cell would paint before `.kb-act-main`, which comes later in the tree, and the body would cover the marks. So a landed meta cell
+ * takes a positive level of its own, 1, above the body, and the marks and callout keep their order inside it. The other cells
+ * have nothing that hangs: the postbit's overflow is its own (postbit.css clips inside its text), the foot's buttons have no
+ * popovers, and the body is isolated already. The tiles stay at -1 inside each cell, so none of this changes where glitter lies.
  */
 .kb-act > [data-kb-landed] {
   position: relative;
   isolation: isolate;
+}
+
+.kb-act > .kb-act-meta[data-kb-landed] {
+  z-index: 1;
 }
 
 .kb-act > [data-kb-landed] > canvas[data-kb-landing] {
