@@ -1,28 +1,12 @@
-import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
+import { DEFAULT_PREFERENCES } from '../engine/ui/data/api.ts';
+import { pageViolations } from './axe.ts';
 
 /**
  * Settings > Sound in the browser (the Laugh Track plan, Task 7): each row saves its choice to the account and keeps it across a reload, the volume
  * shows only while its sound is on, and axe finds nothing on the section or on the welcome page, which carries the same rows.
  */
 test.use({ bypassCSP: true });
-
-/* axe in the page, as e2e/a11y.spec.ts runs it (its own helper is not imported: importing a spec would run all of its tests here too), with the smoke layers hidden for the reason it gives. */
-const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
-const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
-interface Found { readonly id: string; readonly nodes: readonly { readonly target: unknown; readonly html: string }[] }
-async function pageViolations(page: Page): Promise<string[]> {
-  await page.addStyleTag({ content: '.kb-smoke-layers { display: none !important; }' });
-  await page.addScriptTag({ path: axePath });
-  const found = await page.evaluate(async (tags) => {
-    const axe = (window as unknown as { axe: { run(c: unknown, o: unknown): Promise<{ violations: Found[] }> } }).axe;
-    return (await axe.run(document, { runOnly: { type: 'tag', values: tags } })).violations;
-  }, TAGS);
-  /* The body's own scroll is the viewport's (a11y.spec.ts lets it go for the same reason). */
-  return found.map((v) => v.id === 'scrollable-region-focusable'
-    ? { ...v, nodes: v.nodes.filter((n) => !(Array.isArray(n.target) && n.target.length === 1 && (n.target[0] === 'body' || n.target[0] === 'html'))) }
-    : v).filter((v) => v.nodes.length > 0).map((v) => `${v.id}: ${v.nodes.slice(0, 8).map((n) => `${JSON.stringify(n.target)} ${n.html.slice(0, 100)}`).join(' | ')}`);
-}
 
 const ROWS = [
   { legend: 'Game sounds', volume: 'Game volume' },
@@ -59,15 +43,17 @@ test('a volume is saved and is still there after a reload', async ({ page }) => 
   await page.keyboard.press('Space');
   const range = page.getByLabel('Game volume');
   await range.focus();
-  const before = Number(await range.inputValue());
-  await page.keyboard.press(before > 50 ? 'ArrowLeft' : 'ArrowRight');
-  const after = Number(await range.inputValue());
-  expect(after).not.toBe(before);
+  const before = DEFAULT_PREFERENCES.gameVolume;
+  await expect(range).toHaveValue(String(before));
+  await page.keyboard.press('ArrowLeft');
+  const after = before - 5;
+  await expect(range).toHaveValue(String(after));
   /* A release is saved once the range is left (or after a short quiet); leaving it is the sure way, and the account's save follows. */
   await page.keyboard.press('Tab');
-  await page.waitForTimeout(800);
+  /* The account's save, as the demo world keeps it for the tab (web/src/demo.ts), is what a reload reads back; the note under the rows is already up from the On press. */
+  await expect.poll(() => page.evaluate(() => (JSON.parse(sessionStorage.getItem('kb-demo-preferences') ?? '{}') as { gameVolume?: number }).gameVolume)).toBe(after);
   await page.reload();
-  expect(Number(await page.getByLabel('Game volume').inputValue())).toBe(after);
+  await expect(page.getByLabel('Game volume')).toHaveValue(String(after));
 });
 
 test('axe finds nothing on Settings > Sound, off and on', async ({ page }) => {
