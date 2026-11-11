@@ -50,6 +50,8 @@
 
 .kb-trophies-head {
   margin: 0 0 14px;
+  /* The board's base sets every h2 in its mono (engine/ui/base.css); a glass heading names the glass's family, as the queue's do. */
+  font-family: var(--kb-glass-font-body);
   font-size: var(--kb-glass-size-body);
   font-weight: 800;
   letter-spacing: 2.5px;

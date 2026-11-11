@@ -382,13 +382,14 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
 
   const portrait = face?.avatarPortrait ?? null;
   if (face === null || portrait === null) {
+    /* One region for the column, as the dressing's columns are one: the trophy choice's notes stand in the calm with the notice. */
     return (
-      <>
-        <CalmRegion as="p" className="kb-notice">
+      <CalmRegion>
+        <p className="kb-notice">
           Gear is worn on a portrait. Upload one in <GlassLink to="/characters/edit" state={{ character: id }}>profile edit</GlassLink>.
-        </CalmRegion>
+        </p>
         <Trophies key={id} id={id} face={face} reload={reload} />
-      </>
+      </CalmRegion>
     );
   }
   const tallness = face.portraitTallness ?? tall ?? FALLBACK_TALLNESS;
