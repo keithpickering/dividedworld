@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { ReadFailure } from '../../engine/ui/data/api.ts';
 import { createFake } from '../../engine/ui/data/fake.ts';
 import { instance } from '../../instances/divided-world/index.ts';
 import { instanceUi } from '../../instances/divided-world/ui/index.ts';
@@ -584,6 +585,14 @@ describe('the welcome', () => {
     await flush();
     expect(window.location.pathname).toBe('/');
     expect(screen.queryByRole('heading', { level: 1, name: 'Welcome' })).toBeNull();
+  });
+
+  test('a boot that could not be sent says it was never sent when the device is offline', async () => {
+    const fake = createFake({ instance, settings: fallbackSettings });
+    fake.signInAs(fake.seed.account('unread'));
+    vi.spyOn(fake, 'boot').mockRejectedValue(new ReadFailure('offline'));
+    render(<App api={fake} />);
+    expect(await screen.findByText(/You are not connected/u)).toBeInTheDocument();
   });
 
   test('a player whose roster boot brought, with a character, is not sent, and the roster is not read again', async () => {

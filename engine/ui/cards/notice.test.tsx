@@ -26,6 +26,7 @@ describe('the notice\'s words', () => {
     expect(noticeWords([charge({ rule: null, ruleNumber: null, cause: 'tail' })])).toBe('This post was found in violation of Obstruction.');
   });
   test('says an appeal overturned the finding, and says nothing more for the others', () => {
+    expect(noticeWords([charge({ rule: 'House Rule 1: Be kind', ruleNumber: 1 })])).toBe('This post was found in violation of House Rule 1: Be kind.');
     expect(noticeWords([charge()], 'overturned')).toBe('This post was found in violation of Rule 2: No double posting. On appeal, that finding was overturned.');
     for (const r of ['upheld', 'reduced', 'increased', undefined]) expect(noticeWords([charge()], r)).toBe('This post was found in violation of Rule 2: No double posting.');
   });

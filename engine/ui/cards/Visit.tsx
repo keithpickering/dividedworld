@@ -115,7 +115,7 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string,
     const by = story.attempts.find((a) => a.id === end.byAct);
     out.push({
       act: end.act, at: end.at, character: end.outcome === 'filed' ? visit.mod : null, ...(end.outcome === 'filed' ? { staff: true as const } : {}), label: `${mod}'s visit ending`,
-      did: end.outcome === 'filed' ? 'filed' : end.outcome === 'intercepted' ? `The visit was talked down${by ? ` by ${name(by.character)}` : ''}` : end.outcome === 'trapped' ? 'The visit was ended by a trap set on the post' : 'The visit was ended by an admin',
+      did: end.outcome === 'filed' ? 'filed' : end.outcome === 'intercepted' ? `The visit was talked down${by ? ` by ${name(by.character)}` : ''}` : end.outcome === 'trapped' ? 'The visit was ended by a trap set on the post' : end.outcome === 'dropped' ? 'The visit could not be filed and was dropped' : 'The visit was ended by an admin',
       quote: end.outcome === 'filed' ? end.line : '',
     });
   }
@@ -321,6 +321,7 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
     intercepted: <>was talked down</>,
     trapped: <>was stopped by a trap</>,
     reversed: <>was ended by an admin</>,
+    dropped: <>could not be filed and was dropped</>,
   }[state];
 
   const marked = top ? markedAs(top) : 'a rule';
@@ -351,6 +352,7 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
         )}
         {state === 'intercepted' && <p className="kb-visit-facts">The visit ended on {dayAndTime(end!.at)}. Nothing landed on {authorName}.</p>}
         {state === 'trapped' && <p className="kb-visit-facts">A trap set on this post sprang when the visit began, and the visit ended on {dayAndTime(end!.at)}. Nothing landed on {authorName}.</p>}
+        {state === 'dropped' && <p className="kb-visit-facts">The visit could not be filed and was dropped on {dayAndTime(end!.at)}. Nothing landed on {authorName}.</p>}
         {state === 'reversed' && <p className="kb-visit-facts">An admin ended the visit on {dayAndTime(end!.at)}. Nothing landed on {authorName}.</p>}
         {state === 'filed' && story?.ruling && <p className="kb-visit-facts">{mod} heard an appeal of it and {rulingWords(said(story.ruling.payload['verdict'] as string | undefined))}.</p>}
         {state === 'filed' && appealWaiting && <p className="kb-visit-facts">An appeal of it is waiting to be heard. If it cannot be heard, the fee is refunded.</p>}

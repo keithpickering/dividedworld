@@ -11,7 +11,7 @@ const meta: Meta<typeof GlassCannotDisplay> = {
   title: 'Boards/Glass unavailable',
   component: GlassCannotDisplay,
   parameters: { world: playerWorld, path: '/t/3f2a9c1e', layout: 'fullscreen' },
-  args: { onRetry: () => {} },
+  args: { kind: 'silent', onRetry: () => {} },
   render: (args) => <Page surface="settings"><GlassCannotDisplay {...args} /></Page>,
 };
 export default meta;
@@ -20,6 +20,15 @@ type Story = StoryObj<typeof GlassCannotDisplay>;
 
 /** The page did not load: Try again and Back to the board. */
 export const Display: Story = {};
+
+/** The device is offline. */
+export const DisplayOffline: Story = { args: { kind: 'offline' } };
+
+/** The server answered with an error. */
+export const DisplayServer: Story = { args: { kind: 'server' } };
+
+/** The page's own code failed. */
+export const DisplayBroken: Story = { args: { kind: 'broken' } };
 
 /** No screen answers to the address. */
 export const Find: Story = {

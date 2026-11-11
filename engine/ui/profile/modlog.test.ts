@@ -27,7 +27,7 @@ describe('the moderation log\'s words for a Mod\'s acts', () => {
 
   test('how each ended, in a few plain words', () => {
     const visit = (outcome: string | null) => endedModWords({ kind: 'visit', outcome, params: {} });
-    assert.deepEqual([null, 'filed', 'intercepted', 'trapped', 'reversed', 'odd'].map(visit), ['open', 'filed', 'talked down', 'ended by a trap', 'ended by an admin', 'ended']);
+    assert.deepEqual([null, 'filed', 'intercepted', 'trapped', 'reversed', 'dropped', 'odd'].map(visit), ['open', 'filed', 'talked down', 'ended by a trap', 'ended by an admin', 'dropped, never filed', 'ended']);
     const report = (outcome: string | null) => endedModWords({ kind: 'report', outcome, params: {} });
     assert.deepEqual(['visit', 'dismissed', 'backfire', null].map(report), ['sent a visit', 'dismissed', 'backfired onto the reporter', 'judged']);
     const appeal = (outcome: string | null, points_delta: number | null = null) => endedModWords({ kind: 'appeal', outcome, params: { points_delta } });

@@ -141,7 +141,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
 
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. */
   const carried = livePlays(usePlays(target.plays, home).plays);
-  const context = { cards: instance.cards, setLasts: instance.settings.setLasts, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
+  const context = { cards: instance.cards, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   /* The live price effects above the target, from the plays the page holds on its thread, board and author (a post's) or the ones the reach was read with: each says which card adds what, where. */
@@ -204,7 +204,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const ownBoth = hud !== null && other !== null && other !== hud.id && player.actingCharacters.some((c) => c.id === other);
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
-  const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
+  const shortWords = short && wallet ? plainRefusal(`that costs ${orbs(price)}, and your wallet holds ${orbs(wallet.balance)}`) : '';
   /* A Set waits for the card's own settings to be accepted, as a cast's price does (a set card that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
   const flawed = Object.keys(problems).length > 0;
@@ -342,7 +342,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
           {conditional && post && (
             <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
           )}
-          {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(instance.settings.setLasts)}</p>}
+          {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(screen.setLasts)}</p>}
           {/* A Set's Act says nothing, so it carries no message and costs no more than the card: every card set face down is alike. */}
           {!setting && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label">Your message</label>

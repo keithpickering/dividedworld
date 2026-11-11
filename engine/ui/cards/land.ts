@@ -23,22 +23,20 @@ export function targetOf(post: Act): PostTarget {
 }
 
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */
-export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity'>[], setLasts: Span): CardEffect[] {
-  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'hour' ? 3_600_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity'>[]): CardEffect[] {
   return plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p): CardEffect => {
-    if (p.faceDown) return { card: null, act: p.id, faceDown: true, ends: p.revealed?.at ?? p.takenBack?.at ?? new Date(Date.parse(p.playedAt) + span).toISOString() };
+    if (p.faceDown) { const ends = p.revealed?.at ?? p.takenBack?.at ?? p.endsAt; return { card: null, act: p.id, faceDown: true, ...(ends ? { ends } : {}) }; }
     const ward = cards.find((c) => c.key === p.card);
     return { card: p.card, act: p.id, ...(ward?.gimmick ? { gimmick: ward.gimmick } : {}), ...(p.ends ? { ends: p.ends } : {}) };
   });
 }
 
 /**
- * What `landing` reads beyond the card: the instance's cards (a ward's rarity and name, a strike's card), how long a Set lasts, and
+ * What `landing` reads beyond the card: the instance's cards (a ward's rarity and name, a strike's card) and
  * the live effects above the target (its board's, thread's and author's, from `effectsAbove`), which a card's rules see too.
  */
 export interface LandingContext {
   readonly cards: readonly CardRules[];
-  readonly setLasts: Span;
   readonly above?: EffectsAbove;
   /** Ask whether a Move can be set face down on the post, which is `decideSet`, instead of whether it can be cast. */
   readonly faceDown?: true;
@@ -61,7 +59,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
  * banner are drawn from.
  */
 export function landingOn(rules: CardRules, target: CardTarget, plays: readonly CardPlay[], context: LandingContext): Verdict {
-  const effects = effectsOnTarget(target, effectsOf(plays, context.cards, context.setLasts), context.above ?? {});
+  const effects = effectsOnTarget(target, effectsOf(plays, context.cards), context.above ?? {});
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
   /*
    * Only where the card lands is asked here: its settings and its message are the form's, so the card's own refusal of none is set aside. A

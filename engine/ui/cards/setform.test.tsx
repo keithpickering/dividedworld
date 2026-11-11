@@ -281,7 +281,7 @@ describe('a set card', () => {
 
 describe('landing, asked as a Set', () => {
   test('a Move lands face down where its cast is not offered, and a cast set card without a configuration still lands', () => {
-    const ctx = { cards: instance.cards, setLasts: instance.settings.setLasts };
+    const ctx = { cards: instance.cards };
     const target = { id: 'p', kind: 'post', currentPayload: { body: 'x' } } as never;
     expect(landing(spark, target, [], { ...ctx, faceDown: true }).ok).toBe(true);
     expect(landing(snare, target, [], ctx).ok).toBe(true);

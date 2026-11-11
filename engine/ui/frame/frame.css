@@ -980,6 +980,18 @@ button.kb-hud-secret:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* Where the player's characters could not be read: the plain words and a Try again, in the HUD's own label size. */
+.kb-hud-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.25;
+  color: var(--kb-glass-text);
+}
+
 .kb-hud-door-line {
   margin: 0.5rem 0 0;
   font-size: var(--kb-glass-size-label);
