@@ -43,7 +43,7 @@ const FALLBACK_TALLNESS = 1.5;
 type Drag = { readonly mode: 'move' | 'size' | 'turn'; readonly index: number; readonly start: Piece; readonly sx: number; readonly sy: number; readonly d0: number; readonly a0: number };
 
 export function Wardrobe() {
-  const { api, instance, ui } = useKayfa();
+  const { api } = useKayfa();
   const player = usePlayer();
   const signedIn = player.session.signedIn;
   const acting = player.actingCharacters;
@@ -54,6 +54,9 @@ export function Wardrobe() {
   const [faces, setFaces] = useState<ReadonlyMap<Id, Character> | null>(null);
   const [items, setItems] = useState<readonly WardrobeItem[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [stale, setStale] = useState(false);
+  /* Each mask's arrangement not yet saved, kept while another mask is on the stage. */
+  const drafts = useRef(new Map<Id, Piece[]>());
 
   const own = (x: unknown): x is Id => typeof x === 'string' && acting.some((c) => c.id === x);
   const id: Id | null = [picked, carried, player.hudCharacter?.id].find(own) ?? acting[0]?.id ?? null;
@@ -64,6 +67,18 @@ export function Wardrobe() {
     if (answer.ok) setItems(answer.value);
     else setFailed(true);
   }, [api]);
+  /* After a save: fetch both again, and where that fails keep the page and say so. */
+  const refresh = useCallback(async () => {
+    try {
+      const [answer, list] = await Promise.all([api.wardrobe(), api.characters(ids.split(','))]);
+      if (!answer.ok) { setStale(true); return; }
+      setItems(answer.value);
+      setFaces(new Map(list.map((c) => [c.id, c])));
+      setStale(false);
+    } catch {
+      setStale(true);
+    }
+  }, [api, ids]);
   useEffect(() => {
     if (!signedIn || ids === '') return undefined;
     let live = true;
@@ -100,25 +115,29 @@ export function Wardrobe() {
           </select>
         </label>
       </CalmRegion>
-      {/* Keyed by the mask: choosing another starts its arrangement afresh. */}
-      <Dressing key={id} id={id} name={acting.find((c) => c.id === id)!.name} face={face} items={items} reload={loadWardrobe} />
+      {stale && <CalmRegion as="p" className="kb-notice">Your save went through, but the page could not be refreshed. Reload it to see everything as saved.</CalmRegion>}
+      {/* Keyed by the mask; an arrangement not yet saved waits in `drafts` while another mask is chosen. */}
+      <Dressing key={id} id={id} name={acting.find((c) => c.id === id)!.name} face={face} items={items} reload={refresh} drafts={drafts.current} />
     </div>
   );
 }
 
-function Dressing({ id, name, face, items, reload }: { readonly id: Id; readonly name: string; readonly face: Character | null; readonly items: readonly WardrobeItem[]; readonly reload: () => Promise<void> }) {
+function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; readonly name: string; readonly face: Character | null; readonly items: readonly WardrobeItem[]; readonly reload: () => Promise<void>; readonly drafts: Map<Id, Piece[]> }) {
   const { api, instance, ui } = useKayfa();
   const { characters } = usePlayer();
   const most = instance.settings.cosmetics.gear.wornMost;
   const reach = instance.settings.cosmetics.gear.reach;
   const group = useId();
-  const [pieces, setPieces] = useState<Piece[]>(() => renumber(face?.outfit ?? []));
+  const [pieces, setPieces] = useState<Piece[]>(() => drafts.get(id) ?? renumber(face?.outfit ?? []));
   const [at, setAt] = useState<number | null>(null);
   const [gear, setGear] = useState<string | null>(items[0]?.gear ?? null);
   const [say, setSay] = useState('');
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(() => drafts.has(id));
+  const latest = useRef({ pieces, dirty });
+  latest.current = { pieces, dirty };
+  useEffect(() => () => { if (latest.current.dirty) drafts.set(id, latest.current.pieces); else drafts.delete(id); }, [drafts, id]);
   const [tall, setTall] = useState<number | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const sel = useRef<HTMLDivElement>(null);
@@ -210,7 +229,7 @@ function Dressing({ id, name, face, items, reload }: { readonly id: Id; readonly
     else if (e.key === '-' || e.key === '_') moves.smaller!();
     else if (e.key === ']') moves.turnRight!();
     else if (e.key === '[') moves.turnLeft!();
-    else if (e.key === 'Delete' || e.key === 'Backspace') takeOff();
+    else if (e.key === 'Delete') takeOff();
     else return;
     e.preventDefault();
   };
@@ -293,9 +312,12 @@ function Dressing({ id, name, face, items, reload }: { readonly id: Id; readonly
   const portrait = face?.avatarPortrait ?? null;
   if (face === null || portrait === null) {
     return (
-      <CalmRegion as="p" className="kb-notice">
-        Gear is worn on a portrait. Upload one in <GlassLink to="/characters/edit" state={{ character: id }}>profile edit</GlassLink>.
-      </CalmRegion>
+      <>
+        <CalmRegion as="p" className="kb-notice">
+          Gear is worn on a portrait. Upload one in <GlassLink to="/characters/edit" state={{ character: id }}>profile edit</GlassLink>.
+        </CalmRegion>
+        <Trophies key={id} id={id} face={face} reload={reload} />
+      </>
     );
   }
   const tallness = face.portraitTallness ?? tall ?? FALLBACK_TALLNESS;
@@ -373,12 +395,12 @@ function Dressing({ id, name, face, items, reload }: { readonly id: Id; readonly
           </div>
         </section>
 
-        <p className="kb-wardrobe-note">{pieces.length} of {most} pieces worn. A new portrait takes all of them off; recropping the square keeps them.{dirty ? ' You have changes not saved yet.' : ''}</p>
+        <p className="kb-wardrobe-note">{pieces.length} of {most} pieces worn. A new portrait takes all of them off; recropping the square keeps them.{dirty ? ` You have changes not saved yet. Your changes to ${name} are kept until you save or leave this page.` : ''}</p>
         <ButtonRow><GlassButton kind="primary" busy={busy} onClick={() => void save()}>Save the outfit</GlassButton></ButtonRow>
         <div role="status" aria-label="Outfit messages" className="kb-wardrobe-say">{say}</div>
         {refusal !== null && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
 
-        <Trophies key={id} id={id} face={face} />
+        <Trophies key={id} id={id} face={face} reload={reload} />
       </div>
 
       <section className="kb-wardrobe-wardrobe" aria-label="The wardrobe">
@@ -437,11 +459,11 @@ function ChosenPanel({ item, name, line, mask, why, put }: { readonly item: Ward
 }
 
 /** The awards a mask can show on its posts: up to the most checked, saved with the awards' own button; a belt held shows without being chosen. */
-function Trophies({ id, face }: { readonly id: Id; readonly face: Character }) {
+function Trophies({ id, face, reload }: { readonly id: Id; readonly face: Character | null; readonly reload: () => Promise<void> }) {
   const { api, instance } = useKayfa();
   const most = instance.settings.cosmetics.trophies.shownMost;
   const [page, setPage] = useState<{ readonly awards: readonly TrophyItem[]; readonly more: boolean } | null>(null);
-  const [chosen, setChosen] = useState<readonly Id[]>(() => face.trophies.filter((t: ShownTrophy) => !(t.belt && t.held)).map((t) => t.award));
+  const [chosen, setChosen] = useState<readonly Id[]>(() => (face?.trophies ?? []).filter((t: ShownTrophy) => !(t.belt && t.held)).map((t) => t.award));
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
@@ -463,7 +485,7 @@ function Trophies({ id, face }: { readonly id: Id; readonly face: Character }) {
     try {
       const answer = await api.showTrophies(id, chosen);
       if (!answer.ok) setRefusal(answer.error);
-      else setSaved(`${answer.value.shown === 1 ? '1 trophy' : `${answer.value.shown} trophies`} shown on posts.`);
+      else { setSaved(`${answer.value.shown === 1 ? '1 trophy' : `${answer.value.shown} trophies`} shown on posts.`); await reload(); }
     } catch {
       setRefusal('The choice could not be saved. Check your connection and try again.');
     } finally {

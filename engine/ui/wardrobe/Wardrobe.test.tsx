@@ -192,6 +192,12 @@ describe('the selected piece', () => {
     expect(worn()).toHaveLength(0);
     expect(screen.getByText('2 held · 2 free')).toBeInTheDocument();
   });
+
+  test('Backspace does not take a piece off', async () => {
+    await withBand();
+    press(selected(), 'Backspace');
+    expect(worn()).toHaveLength(1);
+  });
 });
 
 describe('saving', () => {
@@ -219,6 +225,59 @@ describe('saving', () => {
     expect(await screen.findByText('the server says no')).toBeInTheDocument();
     expect(worn()).toHaveLength(1);
     expect(selected().style.left).toBe('51%');
+  });
+});
+
+const choose = (name: string) => {
+  const pick = screen.getByRole('combobox', { name: 'Character' }) as HTMLSelectElement;
+  fireEvent.change(pick, { target: { value: [...pick.options].find((o) => o.textContent === name)!.value } });
+};
+
+describe('drafts and saving again', () => {
+  test('an unsaved arrangement is kept when switching masks and back, and the page says so', async () => {
+    open(seeded().fake);
+    press(await item('Headband'), 'Enter');
+    press(selected(), 'ArrowRight');
+    expect(screen.getByText(/Your changes to Pipewrench are kept until you save or leave this page/u)).toBeInTheDocument();
+    choose('Dr. Bones');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Character' })).toHaveDisplayValue('Dr. Bones'));
+    expect(worn()).toHaveLength(0);
+    choose('Pipewrench');
+    await waitFor(() => expect(worn()).toHaveLength(1));
+    fireEvent.click(worn()[0]!);
+    expect(selected().style.left).toBe('51%');
+  });
+
+  test('after a save, switching away and back shows the saved outfit', async () => {
+    open(seeded().fake);
+    press(await item('Headband'), 'Enter');
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await screen.findByText('Outfit saved.');
+    choose('Dr. Bones');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Character' })).toHaveDisplayValue('Dr. Bones'));
+    choose('Pipewrench');
+    await waitFor(() => expect(worn()).toHaveLength(1));
+  });
+
+  test('a failed refresh after a save keeps the page', async () => {
+    const { fake } = seeded();
+    open(fake);
+    press(await item('Headband'), 'Enter');
+    vi.spyOn(fake, 'wardrobe').mockResolvedValue({ ok: false, error: 'down' });
+    vi.spyOn(fake, 'characters').mockRejectedValue(new Error('down'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await screen.findByText('Outfit saved.');
+    await screen.findByText(/could not be refreshed/u);
+    expect(screen.queryByText(/could not be loaded/u)).toBeNull();
+    expect(worn()).toHaveLength(1);
+  });
+
+  test('the trophies can be chosen on a mask with no portrait', async () => {
+    const { fake, pipe } = seeded({ portrait: false });
+    fake.seed.award(pipe, 'p1', { at: Date.parse('2026-10-01T00:00:00Z') });
+    open(fake);
+    expect(await screen.findByRole('group', { name: 'Shown on posts' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Save shown trophies' })).toBeInTheDocument();
   });
 });
 
