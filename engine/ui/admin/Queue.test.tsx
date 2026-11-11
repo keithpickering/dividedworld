@@ -906,3 +906,28 @@ describe('a bundle: each part named, and what waits says so', () => {
     expect(first).not.toHaveTextContent(/Waits for/u);
   });
 });
+
+describe('a bundle: a merge\'s label and a wait on a move', () => {
+  test('a part that merges one board into another is named for both, in the right order', async () => {
+    const { w } = open({
+      build: (fake, w) => {
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: fake.clock.now() + 3_600_000, why: 'Merge.', bundle: { id: 'mg', name: 'The Merge' }, lasting: { kind: 'mergeBoard', params: { board: w.second, into: w.general } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'The Merge' });
+    expect(within(bundle).getByRole('button', { name: `Hold: Merge ${w.secondName} into Pointless Toast Palace` })).toBeInTheDocument();
+  });
+
+  test('a wait with no role says it waits for a move, not a part', async () => {
+    open({
+      build: (fake, w) => {
+        const soon = fake.clock.now() - 60_000;
+        const first = fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'A.', bundle: { id: 'nr', name: 'No Roles' }, lasting: { kind: 'createBoard', params: { name: 'Roomy', premise: 'p', description: 'd' } } });
+        fake.seed.queueMove('director', { board: '', name: '', goLiveAt: soon, why: 'B.', bundle: { id: 'nr', name: 'No Roles' }, waitsOn: [first], lasting: { kind: 'mergeBoard', params: { board: w.second, into: w.general } } });
+      },
+    });
+    const bundle = await within(await group(/^Waiting to land/u)).findByRole('group', { name: 'No Roles' });
+    expect(bundle).toHaveTextContent('Waits for the move it builds on to land first.');
+    expect(bundle).not.toHaveTextContent(/Waits for the part/u);
+  });
+});

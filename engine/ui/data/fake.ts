@@ -201,7 +201,9 @@ export interface Seed {
     /** A lasting move (`createBoard`, `moveThread`, `mergeBoard`) in place of a rename: its kind and params, a board or thread named by slug or id as the move's params name them. */
     lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> };
     /** The move as a part of a bundle: the bundle's id and name (the same for every part) and the part's role, which another part's board param may name as `{role}`. */
-    bundle?: SeedBundle }): number;
+    bundle?: SeedBundle;
+    /** Queue ids of moves it builds on without naming them by role (a later move into a board one made): it waits for them. */
+    waitsOn?: readonly number[] }): number;
   /** A board of the players beyond the instance's own, for a scene that moves threads between boards or closes one. */
   board(slug: string, name: string, description?: string): void;
   /** A thread moved to another board (a landed `moveThread`), dated `at` (default now): it is on the new board, and the board it left lists it as a stub until `movedStubDays` pass. */
@@ -470,7 +472,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
-  interface QueueRec { id: number; staff: string; successor?: string; lasting?: { kind: string; params: Readonly<Record<string, unknown>> }; bundle?: { id: string; name: string; role: string | null }; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
+  interface QueueRec { id: number; staff: string; successor?: string; lasting?: { kind: string; params: Readonly<Record<string, unknown>> }; bundle?: { id: string; name: string; role: string | null }; waitsOn?: readonly number[]; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
   /** A queued part's bundle, role and the bundle's name, as admin_queue says them (null for a move that is no part of one). */
   const bundleOf = (q: QueueRec | undefined) => ({ bundle: q?.bundle?.id ?? null, role: q?.bundle?.role ?? null, bundleName: q?.bundle?.name ?? null });
@@ -2323,9 +2325,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         id: q.id, staff: q.staff, boss: nameOf(q.staff), bossPronouns: pronounsOf(q.staff), kind: q.lasting?.kind ?? 'renameBoard', params: q.lasting?.params ?? paramsOf(q.move), demand: q.lasting ? null : demandFor(q.move), why: q.why, goLiveAt: iso(q.goLiveAt),
         expiresAt: q.lasting || q.move.expiresAt === undefined ? null : iso(q.move.expiresAt), structural: q.lasting?.kind !== 'moveThread', boardName: boards.find((b) => b.slug === q.move.board) ? boardNow(boards.find((b) => b.slug === q.move.board)!).name : null,
         failedAt: q.failure ? iso(q.failure.at) : null, failure: q.failure?.text ?? null, replacedAt: null, adminDescription: q.adminDescription ?? null, ...bundleOf(q),
-        waitsFor: queue.filter((d) => d !== q && d.bundle?.id === q.bundle?.id && q.bundle !== undefined && d.bundle?.role && d.landed === null && d.heldAt === null && !d.refusal
-          && ['board', 'into', 'fallback'].some((k) => (q.lasting?.params[k] as { role?: unknown } | undefined)?.role === d.bundle!.role))
-          .map((d) => ({ id: d.id, role: d.bundle!.role, kind: d.lasting?.kind ?? 'renameBoard', name: typeof d.lasting?.params['name'] === 'string' ? d.lasting.params['name'] : null })),
+        waitsFor: queue.filter((d) => d !== q && d.landed === null && d.heldAt === null && !d.refusal
+          && ((q.waitsOn?.includes(d.id) ?? false) || (q.bundle !== undefined && d.bundle?.id === q.bundle.id && !!d.bundle?.role && ['board', 'into', 'fallback'].some((k) => (q.lasting?.params[k] as { role?: unknown } | undefined)?.role === d.bundle!.role))))
+          .map((d) => ({ id: d.id, role: d.bundle?.role ?? null, kind: d.lasting?.kind ?? 'renameBoard', name: typeof d.lasting?.params['name'] === 'string' ? d.lasting.params['name'] : null })),
       }));
       const rowOf = (a: ActRec) => {
         const q = queue.find((x) => x.landed === a.id);
@@ -3829,7 +3831,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     queueMove(staff, m) {
       staffId(staff);
       const lasting = m.lasting === undefined ? undefined : { kind: m.lasting.kind, params: lastingParams(m.lasting.params) };
-      const rec: QueueRec = { id: queue.length + 1, staff, ...(lasting ? { lasting } : {}), ...(m.bundle ? { bundle: { id: m.bundle.id, name: m.bundle.name, role: m.bundle.role ?? null } } : {}), move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
+      const rec: QueueRec = { id: queue.length + 1, staff, ...(lasting ? { lasting } : {}), ...(m.bundle ? { bundle: { id: m.bundle.id, name: m.bundle.name, role: m.bundle.role ?? null } } : {}), ...(m.waitsOn ? { waitsOn: m.waitsOn } : {}), move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
       queue.push(rec);
       return rec.id;
     },

@@ -36,7 +36,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words, type PronounSet } from '../../rules/pro
 import { demandAsk, demandKind, demandWords } from '../../system/demands.ts';
 import { moveKind } from '../../system/moves.ts';
 import { MoveSentence } from '../board/MoveSentence.tsx';
-import { demandNeeds } from '../board/move-words.ts';
+import { demandNeeds, moveBoardNames } from '../board/move-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { useKayfa } from '../context.tsx';
 import { EndCardDialog } from '../cards/Lens.tsx';
@@ -80,11 +80,10 @@ function partLabel(row: { readonly kind: string; readonly params: Readonly<Recor
   if (row.kind === 'nameSuccessor') return 'the naming of a successor';
   if (row.role !== null && row.bundleName !== null) return `the part "${row.role}" of ${row.bundleName}`;
   /* The kind's own plain sentence, with the boards it names where they are known. */
-  const to = boards.find((b) => b.id === row.params['board'])?.name;
-  const into = boards.find((b) => b.id === row.params['into'])?.name;
-  const parts = moveKind(row.kind)?.parts(row.params, null, 'plan', to ? { board: to } : undefined);
+  const names = moveBoardNames(row.kind, row.params, boards);
+  const parts = moveKind(row.kind)?.parts(row.params, names.source ?? null, 'plan', names);
   const said = parts?.map((p) => (typeof p === 'string' ? p : p.name)).join('');
-  return said ? (into && row.kind === 'mergeBoard' ? said.replace(/ into a board$/u, ` into ${into}`) : said) : 'this move';
+  return said ? said : 'this move';
 }
 
 /** Each label of a group once: where two parts read the same, each says its place in the group. */
@@ -394,7 +393,7 @@ function WaitingRow({ q, label, nested, boards, bosses, roster, now, onHold, onR
         {description && <p className="kb-queue-quote">Description: “{description}”</p>}
         {q.adminDescription && <p className="kb-queue-quote">An admin&apos;s replacement, which lands beside it: “{q.adminDescription}”</p>}
         {q.why && <p className="kb-queue-quote">Why, in {q.boss ?? 'the Boss'}&apos;s words: “{q.why}”</p>}
-        {q.waitsFor.map((d) => <p key={d.id}>Waits for the part {d.role ? `“${d.role}”` : 'it builds on'}{d.name ? ` (${d.name})` : ''} to land first.</p>)}
+        {q.waitsFor.map((d) => <p key={d.id}>{d.role ? `Waits for the part “${d.role}”` : 'Waits for the move it builds on'}{d.role && d.name ? ` (${d.name})` : ''} to land first.</p>)}
         {q.failedAt && (
           <p className="kb-queue-failure" role="note">
             It could not land at {dayAndTime(q.failedAt)}: {q.failure}. It stays in line and is tried again; hold it if it should not land.
