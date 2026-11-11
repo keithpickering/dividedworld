@@ -67,7 +67,11 @@ Environment variables, all optional:
 | `AUTOCORRECT_SEED` | `2` | The lengths of the post's words. |
 | `TOUR_SEED` | `8` | Where the crowd stands and whose cameras flash. |
 | `HEAT_SEED` | `6` | How the flames sway, and the embers. |
+| `HEAT_STYLE` | `tongues` | `tongues` is flat cartoon fire; `volume` is soft fire with depth, far slower to render. |
+| `HEAT_FIRE` | `1.0` | The fire's brightness, either style. |
 | `CLOWN_SEED` | `9` | The wig's curls and the confetti. |
+| `CLOWN_TWIST` | `0.5` | How tightly the backdrop's vortex winds: 0 is straight rays, over 1 is nearly rings. |
+| `CLOWN_EYE_X`, `CLOWN_EYE_Z` | `0.9`, `2.7` | Where the vortex's eye is on the card. |
 | `VIBES_SEED` | `4` | The soft lights in the room and the spilled salt. |
 | `SAYING_SEED` | `3` | The lengths of the words on the screen and past it. |
 
@@ -96,10 +100,19 @@ art here is the card's own face, as its placeholder's is.
 
 **The four new cards** had the same two or three drafts and no review. Publicity Tour is the one scene with real depth:
 its camera stands on the carpet with a 28 mm lens, so nothing in it sits at card positions. Heat Magnet's flames are
-flat tongues drawn three deep, the cartoon fire of the period, in the pink of its Salty flavor. Good Vibes had no idea
+flat tongues drawn three deep, the cartoon fire of the period. Good Vibes had no idea
 from the owner: the card makes Salty Moves cost 0.25 orbs more in a thread, so the scene is a calm thing sending rings
 out across a floor and a salt shaker at their edge with "+0.25" on a tag. The figure on the tag is the design's on
 this date and is part of the picture: if the price changes, the tag is wrong.
+
+**Two were changed the same day, on the owner's notes.** Class Clown's backdrop was straight rays; it is now a vortex
+after the owner's own Feelin' Fab swirl, a twist in the backdrop's shader, and the kit is lit harder and edged from
+behind so it stands off it. Heat Magnet's first fire was pure light at strengths well over white, which blew the
+picture out; the tongues are now graded up their length and held under white (`heat-magnet.png`). The owner also asked
+after later-style fire from a fluid simulation. That could not be made here: the fluid solver fails inside the `bpy`
+module (its own scripts raise errors and the process aborts), and fetching the full Blender build, where it works, was
+refused by the session's permission check. `HEAT_STYLE=volume` is the nearest thing without it: columns of light in a
+volume, shaped by noise and not simulated (`heat-magnet-volume.png`, at 64 samples).
 
 **You Were Saying?** The old voice is drawn as an old beige computer. On its screen a post starts in amber, the
 author's, and goes on in green with a block cursor, the colors the card's design gives the tail in play (Courier with

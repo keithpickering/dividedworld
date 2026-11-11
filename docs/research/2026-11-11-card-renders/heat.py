@@ -76,22 +76,23 @@ def volume_fire():
     info = n.new('ShaderNodeObjectInfo'); mp = n.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (1.6, 1.6, 2.6)
     comb = n.new('ShaderNodeCombineXYZ'); l.new(mth('MULTIPLY', info.outputs['Random'], 50.0), comb.inputs['X'])
     l.new(tc.outputs['Object'], mp.inputs['Vector']); l.new(comb.outputs[0], mp.inputs['Location'])
-    noise = n.new('ShaderNodeTexNoise'); noise.inputs['Scale'].default_value = 1.7; noise.inputs['Detail'].default_value = 4.0
+    noise = n.new('ShaderNodeTexNoise'); noise.inputs['Scale'].default_value = 2.0; noise.inputs['Detail'].default_value = 4.0
     noise.inputs['Distortion'].default_value = 0.8; l.new(mp.outputs['Vector'], noise.inputs['Vector'])
     shake = mth('MULTIPLY', mth('SUBTRACT', noise.outputs['Fac'], 0.5), mth('ADD', 0.35, mth('MULTIPLY', h, 1.5)))   # wilder higher up
-    r = mth('ADD', mth('SQRT', mth('ADD', mth('MULTIPLY', x, x), mth('MULTIPLY', y, y))), shake)
-    width = mth('MULTIPLY', mth('POWER', mth('SUBTRACT', 1.0, h, clamp=True), 0.65), mth('ADD', 0.72, mth('MULTIPLY', mth('MULTIPLY', h, 5.0, clamp=True), 0.12)))
-    heat = mth('SUBTRACT', 1.0, mth('DIVIDE', r, mth('MAXIMUM', width, 0.001)), clamp=True)   # 1 at the core, 0 at the edge
+    r = mth('MAXIMUM', mth('ADD', mth('SQRT', mth('ADD', mth('MULTIPLY', x, x), mth('MULTIPLY', y, y))), shake), 0.0)
+    width = mth('MULTIPLY', mth('POWER', mth('SUBTRACT', 1.0, h, clamp=True), 0.65), mth('ADD', 0.38, mth('MULTIPLY', mth('MULTIPLY', h, 5.0, clamp=True), 0.4)))
+    heat = mth('MULTIPLY', mth('SUBTRACT', 1.0, mth('DIVIDE', r, mth('MAXIMUM', width, 0.001)), clamp=True),   # 1 at the core, 0 at the edge,
+               mth('POWER', mth('SUBTRACT', 1.0, h, clamp=True), 0.7))                                       # and dying away toward the top
     ramp = n.new('ShaderNodeValToRGB'); cr = ramp.color_ramp
     cr.elements[0].position = 0.0; cr.elements[0].color = (*rig.hexrgb('#3a0410'), 1)
     cr.elements[1].position = 1.0; cr.elements[1].color = (*rig.hexrgb('#fff0a0'), 1)
     for pos, hx in ((0.25, '#c8142a'), (0.5, '#ff5a14'), (0.78, '#ffc23a')):
         e = cr.elements.new(pos); e.color = (*rig.hexrgb(hx), 1)
     l.new(heat, ramp.inputs['Fac'])
-    vol = n.new('ShaderNodeVolumePrincipled'); vol.inputs['Color'].default_value = (0.02, 0.005, 0.005, 1)
-    l.new(mth('MULTIPLY', heat, 0.6), vol.inputs['Density'])
+    vol = n.new('ShaderNodeVolumePrincipled'); vol.inputs['Color'].default_value = (0.0, 0.0, 0.0, 1)        # it only glows and dims what is behind; it never catches the lamps
+    l.new(mth('MULTIPLY', heat, 0.15), vol.inputs['Density'])
     l.new(ramp.outputs['Color'], vol.inputs['Emission Color'])
-    l.new(mth('MULTIPLY', mth('POWER', heat, 1.6), 5.0 * DIM), vol.inputs['Emission Strength'])
+    l.new(mth('MULTIPLY', mth('POWER', heat, 1.6), 2.6 * DIM), vol.inputs['Emission Strength'])
     out = n['Material Output']
     for lk in list(out.inputs['Surface'].links): l.remove(lk)
     l.new(vol.outputs[0], out.inputs['Volume'])
@@ -99,8 +100,8 @@ def volume_fire():
 
 if STYLE == 'volume':
     vf = volume_fire()
-    COLUMNS = [(-1.9, 1.3, G, 5.4, 1.5), (-0.7, 1.6, G, 7.0, 1.8), (0.6, 1.6, G, 6.4, 1.7), (1.8, 1.3, G, 5.0, 1.4), (-2.8, 1.0, G, 3.6, 1.1),
-               (2.8, 1.0, G, 3.8, 1.1), (0.0, 2.0, G, 7.6, 1.5), (-1.6, -1.0, G, 2.3, 1.0), (-0.3, -1.1, G, 2.8, 1.1), (1.0, -1.0, G, 2.4, 1.0), (2.2, -0.9, G, 1.8, 0.8), (-2.7, -0.8, G, 1.7, 0.8)]
+    COLUMNS = [(-1.9, 1.3, G, 5.6, 1.35), (-0.7, 1.6, G, 7.2, 1.6), (0.6, 1.6, G, 6.6, 1.5), (1.8, 1.3, G, 5.2, 1.3), (-2.8, 1.0, G, 3.8, 1.0),
+               (2.8, 1.0, G, 4.0, 1.0), (0.0, 2.0, G, 7.8, 1.35), (-1.6, -1.0, G, 2.4, 0.9), (-0.3, -1.1, G, 2.9, 1.0), (1.0, -1.0, G, 2.5, 0.9), (2.2, -0.9, G, 1.9, 0.75), (-2.7, -0.8, G, 1.8, 0.75)]
     for x, y, z, h, r in COLUMNS:                                 # a box each: foot at (x, y, z), h tall, r wide either way
         bpy.ops.mesh.primitive_cube_add(size=2, location=(x, y, z + h / 2)); o = bpy.context.object; o.scale = (r, r, h / 2); o.data.materials.append(vf)
 else:
