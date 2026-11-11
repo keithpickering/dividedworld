@@ -36,8 +36,8 @@
  *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
  *   positive earning of that character's Act that carries a time and a quadrant, falls in the
  *   gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. An earn may be a
- *   cast card's on a character. Each gimmick boosts on its own, except that earns sharing a `group` on one character or post do not add: for
- *   each earning the largest `by` among the applicable ones applies (a tie: the earliest play, then the smaller play id), under its card.
+ *   cast card's on a character. Each gimmick boosts on its own, except that earns sharing a `group` do not add: for
+ *   each earning, a group spans the boosts on its character and on its post, and the largest `by` among the applicable ones applies (a tie: the earliest play, then the smaller play id), under its card.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
@@ -497,7 +497,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const on = a.reach === 'character' ? a.on : a.reach === undefined ? a.target : undefined;
     if (!earn || on === undefined) continue;
     const list = boostsOn.get(on) ?? [];
-    // Every use card lasts, so a play always has `ends`; a row without one is malformed and boosts nothing.
+    // A use card lasts and so does a cast card's earn, so a play of an earn card always has `ends`; a row without one is malformed and boosts nothing.
     if (a.ends === undefined) continue;
     list.push({ card: a.card!, play: a.id, ...(earn.group !== undefined ? { group: earn.group } : {}), from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
     boostsOn.set(on, list);
@@ -535,7 +535,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     for (const e of contributions.slice(firstOfCharacter)) {
       if (!(e.amount > 0) || e.at === undefined || !e.quadrant || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
       const applicable = [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])].filter((g) => e.at! >= g.from && e.at! < g.ends && (g.quadrants.includes(e.quadrant!) || (e.kind !== undefined && g.reactions.includes(e.kind))));
-      // Earns of one group do not add: the largest `by` applies, then the earliest play, then the smaller play id.
+      // Earns of one group do not add, and per earning a group spans the boosts on its character and on its post: the largest `by` applies, then the earliest play, then the smaller play id.
       const best = new Map<string, Boost>();
       for (const g of applicable) {
         if (g.group === undefined) continue;

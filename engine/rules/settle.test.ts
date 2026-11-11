@@ -1135,6 +1135,8 @@ const cardsWorld: Instance = {
     { ...splat, key: 'castGrouped', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
     { ...splat, key: 'bigGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'warm' } },
     { ...splat, key: 'fireGrouped', play: 'use' as const, gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5, group: 'warm' } },
+    { ...splat, key: 'heatGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['excitedPositive'], by: 0.1, group: 'warm' } },
+    { ...splat, key: 'coolGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.3, group: 'cool' } },
   ],
 };
 function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: SettlementInput['unscoredTargets'] = []): SettlementInput {
@@ -1645,6 +1647,26 @@ test('a grouped earn beside an ungrouped one naming the same quadrant: both boos
   const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'calmBoost', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 2);
   assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params?.card).sort(), ['calmBoost', 'useGrouped']);
+});
+test('earns of two different groups both apply to one earning', () => {
+  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'coolGrouped', FROM + 3 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]).sort((x, y) => String((x[0] as { card: string }).card).localeCompare(String((y[0] as { card: string }).card))), [[{ card: 'coolGrouped' }, 3], [{ card: 'useGrouped' }, 1]], 'one boost per group');
+});
+test('within one group, an earn that matches by reaction kind and one that matches by quadrant do not add: the larger applies', () => {
+  const r = settle(earnBoard([onTom('g1', 'heatGrouped', FROM + 2 * H), onTom('g2', 'fireGrouped', FROM + 3 * H)], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp2', 'cat', 'cat-1', 'heart', FROM + 5 * H),
+  ]), cardsWorld);
+  const byAct = (act: string) => r.details.filter((d) => d.reason === 'card.boost' && d.act === act).map((d) => [d.params, d.amount]);
+  assert.deepEqual(byAct('tp1'), [[{ card: 'fireGrouped' }, 5]], 'a fire vote is in both arms; the larger alone');
+  assert.deepEqual(byAct('tp2'), [[{ card: 'heatGrouped' }, 1]], 'a heart vote is in the quadrant arm alone');
+});
+test('a group spans the boosts on an earning\'s character and on its post: one boost for an earning both apply to', () => {
+  const onPost: InputAct = { id: 'g1', character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'tp1', card: 'useGrouped', ends: FROM + 20 * H };
+  const r = settle(earnBoard([onPost, castOn('g2', 'bob-1', 'castGrouped', FROM + 3 * H, 'tom-1')], [
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+  ]), cardsWorld);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'useGrouped' }, 1]], 'the earlier play, once');
 });
 test('a tie in a group goes to the earliest play, then the smaller play id', () => {
   const r = settle(earnBoard([castOn('b', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1'), onTom('a', 'useGrouped', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
