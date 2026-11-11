@@ -49,9 +49,9 @@ describe('how long a post is', () => {
 /* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a Set lands where no back is live, a cast where no live ward
    covers it, and a caught play holds no place. */
 describe('wards, backs and catches, as a screen offers a card', () => {
-  const setLasts = { unit: 'day' as const, count: 7 };
   const at = new Date().toISOString();
-  const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, ...over });
+  const setLasts = { unit: 'day' as const, count: 7 };
+  const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, endsAt: '2999-01-01T00:00:00.000Z', ...over });
   const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', gimmick: { kind: 'ward', upTo: 'uncommon' }, lasts: setLasts, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
   const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', gimmick: undefined, lasts: undefined, trap: { trigger: { on: 'visit' } }, canApply: () => ({ ok: true, value: undefined }) };
   const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, gimmick: undefined, lasts: undefined, canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
@@ -59,38 +59,44 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   const ward = (ends: string): CardPlay => ({ ...play('shield', 1), ends });
 
   test('a Set is offered where no card back is live, and a sprung or ended back is none', () => {
-    expect(landing(snare, post('hi'), [], { cards, setLasts }).ok).toBe(true);
-    expect(landing(snare, post('hi'), [back()], { cards, setLasts })).toEqual({ ok: false, why: 'this post already holds a card face down' });
-    expect(landing(snare, post('hi'), [back({ revealed: { card: 'snare', spring: 's', at } })], { cards, setLasts }).ok).toBe(true);
-    expect(landing(snare, post('hi'), [back({ playedAt: '2020-01-01T00:00:00Z' })], { cards, setLasts }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [], { cards }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [back()], { cards })).toEqual({ ok: false, why: 'this post already holds a card face down' });
+    expect(landing(snare, post('hi'), [back({ revealed: { card: 'snare', spring: 's', at } })], { cards }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [back({ playedAt: '2020-01-01T00:00:00Z', endsAt: '2020-01-08T00:00:00Z' })], { cards }).ok).toBe(true);
+  });
+
+  test('a back ends at the end the server stored, whatever the setting says', () => {
+    const day = 86_400_000;
+    const long = back({ playedAt: new Date(Date.now() - 10 * day).toISOString(), endsAt: new Date(Date.now() + 20 * day).toISOString() });
+    expect(landing(snare, post('hi'), [long], { cards })).toEqual({ ok: false, why: 'this post already holds a card face down' });
+    expect(effectsOf([long], cards)[0]!.ends).toBe(long.endsAt);
   });
 
   test('a back its setter took back is no longer live, and its end is when it was taken', () => {
     const taken = back({ takenBack: { at } });
-    expect(landing(snare, post('hi'), [taken], { cards, setLasts }).ok).toBe(true);
-    expect(effectsOf([taken], cards, setLasts)[0]!.ends).toBe(at);
+    expect(landing(snare, post('hi'), [taken], { cards }).ok).toBe(true);
+    expect(effectsOf([taken], cards)[0]!.ends).toBe(at);
   });
 
   test('a cast is not offered where a live ward turns it away, and is where the ward has ended', () => {
-    expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { cards, setLasts })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
-    expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards, setLasts }).ok).toBe(true);
+    expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { cards })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
+    expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
   });
 
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {
     const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
-    expect(landing(writer, post('hi'), [], { cards: [...cards, writer], setLasts }).ok).toBe(true);
-    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' }, [], { cards: [...cards, writer], setLasts }).ok).toBe(true);
+    expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
+    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi' }, [], { cards: [...cards, writer] }).ok).toBe(true);
   });
 
   test('a caught play holds no place in its card\'s stack', () => {
-    expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { cards, setLasts }).ok).toBe(true);
+    expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { cards }).ok).toBe(true);
   });
 });
 
 /* Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): a card beyond a post is offered on the targets its reaches list, its
    stack counts that target's plays alone, and a board takes one board card at a time. */
 describe('where a card beyond a post is offered', () => {
-  const setLasts = { unit: 'day' as const, count: 7 };
   const lasts = { unit: 'day' as const, count: 1 };
   const reaching = (key: string, reaches: CardRules['reaches']): CardRules => ({
     key, name: key, alignment: 'pepperoni', rarity: 'legendary', reaches, lasts, playPrice: () => 0,
@@ -103,22 +109,21 @@ describe('where a card beyond a post is offered', () => {
   const on = (card: string, ends: string): CardPlay => ({ ...play(card, 1), ends });
 
   test('a character card on a character, never on a post', () => {
-    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [], { cards, setLasts }).ok).toBe(true);
-    expect(landing(sparkle, post('hi'), [], { cards, setLasts })).toEqual({ ok: false, why: 'this card lands on a character' });
-    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', soon)], { cards, setLasts })).toEqual({ ok: false, why: 'this character already carries that card' });
-    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', '2020-01-01T00:00:00Z')], { cards, setLasts }).ok).toBe(true);
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [], { cards }).ok).toBe(true);
+    expect(landing(sparkle, post('hi'), [], { cards })).toEqual({ ok: false, why: 'this card lands on a character' });
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', soon)], { cards })).toEqual({ ok: false, why: 'this character already carries that card' });
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', '2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
   });
 
   test('a board card where no board card is live', () => {
-    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { cards, setLasts })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
-    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { cards, setLasts }).ok).toBe(true);
+    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { cards })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
+    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { cards }).ok).toBe(true);
   });
 });
 
 /* A card that names something when it is played (a skim card's quadrant, a scored-as card's class, a ride back's quadrant) is offered where it lands, before
    its player has named anything: the settings are the form's, and the screen asks only where the card lands. */
 describe('a card that names a quadrant or a class, as a screen offers it', () => {
-  const setLasts = { unit: 'day' as const, count: 7 };
   const base: CardRules = { key: 'base', name: 'Base', alignment: 'salty', rarity: 'uncommon', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: () => ({ ok: true, value: undefined }) };
   const named = (config: unknown) => (config as { quadrant?: unknown; class?: unknown } | null) ?? {};
   const skim: CardRules = { ...base, key: 'skim', name: 'Skim', skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4, validateConfig: (c) => (typeof named(c).quadrant === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the reactions' }), canApply: (t, e, c, now) => landsOn({ key: 'skim', stack: 4 }, t, e, now) };
@@ -127,20 +132,19 @@ describe('a card that names a quadrant or a class, as a screen offers it', () =>
   const cards = [skim, scores, ride];
 
   test('a skim card lands on a post, a scored-as card on a character, a ride back on a post, each with nothing named yet', () => {
-    expect(landing(skim, post('hi'), [], { cards, setLasts }).ok).toBe(true);
-    expect(landingOn(scores, { reach: 'character', character: 'c1' }, [], { cards, setLasts }).ok).toBe(true);
-    expect(landing(ride, post('hi'), [], { cards, setLasts }).ok).toBe(true);
-    expect(landing(ride, post('hi'), [], { cards, setLasts, faceDown: true }).ok).toBe(true);
+    expect(landing(skim, post('hi'), [], { cards }).ok).toBe(true);
+    expect(landingOn(scores, { reach: 'character', character: 'c1' }, [], { cards }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { cards }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { cards, faceDown: true }).ok).toBe(true);
   });
 
   test('a skim card is still offered on a post that carries one of its own, for the quadrants left', () => {
-    expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { cards, setLasts }).ok).toBe(true);
+    expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { cards }).ok).toBe(true);
   });
 });
 
 /* The lenient wrapper asks a card's own landing with no settings at all: a card whose `canApply` reads its configuration (a skim card's, through quadrantFree) must see none. */
 describe('a card whose canApply reads its configuration, as a screen offers it', () => {
-  const setLasts = { unit: 'day' as const, count: 7 };
   const reading: CardRules = {
     key: 'reader', name: 'Reader', alignment: 'salty', rarity: 'uncommon', playPrice: () => 0, skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4,
     validateConfig: (c) => ((c as { quadrant?: unknown } | null)?.quadrant === undefined ? { ok: false, why: 'choose the reactions' } : { ok: true, value: c }),
@@ -151,20 +155,19 @@ describe('a card whose canApply reads its configuration, as a screen offers it',
     },
   };
   test('arming it neither throws nor applies the placeholder quadrant\'s check', () => {
-    expect(() => landing(reading, post('hi'), [], { cards: [reading], setLasts })).not.toThrow();
-    expect(landing(reading, post('hi'), [], { cards: [reading], setLasts }).ok).toBe(true);
+    expect(() => landing(reading, post('hi'), [], { cards: [reading] })).not.toThrow();
+    expect(landing(reading, post('hi'), [], { cards: [reading] }).ok).toBe(true);
   });
 });
 
 /* An admin's end (supabase/migrations/0092_card_end.sql): a play an admin ended is no effect the rules see, as a caught one is none. */
 describe('a play an admin ended, as the rules see the post', () => {
-  const setLasts = { unit: 'day' as const, count: 7 };
   const cards = [{ key: 'whoops', rarity: 'common' as const }];
   const ended = (n: number): CardPlay => ({ ...play('whoops', n), reversed: true });
 
   test('effectsOf leaves it out, and keeps the live one beside it', () => {
-    expect(effectsOf([play('whoops', 1), ended(2)], cards, setLasts).map((e) => e.act)).toEqual(['play-whoops-1']);
-    expect(effectsOf([ended(1)], cards, setLasts)).toEqual([]);
+    expect(effectsOf([play('whoops', 1), ended(2)], cards).map((e) => e.act)).toEqual(['play-whoops-1']);
+    expect(effectsOf([ended(1)], cards)).toEqual([]);
   });
 
   test('it holds no place against a card\'s stack limit', () => {

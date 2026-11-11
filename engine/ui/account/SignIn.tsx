@@ -41,6 +41,12 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const registering = mode === 'register';
   const asksInvite = registering && settings.registrationMode === 'invite';
   const closed = settings.registrationMode === 'closed';
+  /* The "New here?" words say how registration works in this instance's mode. */
+  const howToRegister = settings.registrationMode === 'open'
+    ? 'Anyone can register. The same email code signs you in after.'
+    : closed
+      ? 'Registration is closed right now. You can still leave your email; when an admin opens registration, your next sign-in opens your account.'
+      : 'Registering takes an invite from someone who plays. The same email code signs you in after.';
   const next = safeNext(query.get('next'));
   const toOther = (path: string) => (query.get('next') ? `${path}?next=${encodeURIComponent(next)}` : path);
   const errId = 'kb-sign-in-error';
@@ -119,7 +125,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     <CalmRegion as="aside" aria-label="Other ways in" className="kb-door-aside">
       <section aria-labelledby="kb-door-other">
         <h2 id="kb-door-other" className="kb-door-heading">{registering ? 'Already playing?' : 'New here?'}</h2>
-        <p className="kb-door-text">{registering ? 'Sign in with the email you registered.' : 'Registering takes an invite from someone who plays. The same email code signs you in after.'}</p>
+        <p className="kb-door-text">{registering ? 'Sign in with the email you registered.' : howToRegister}</p>
         <GlassButton to={toOther(registering ? '/sign-in' : '/register')}>{registering ? 'Sign in' : 'Register'}</GlassButton>
       </section>
       <section aria-labelledby="kb-door-stuck">
@@ -135,12 +141,11 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
       {title}
       <div className="kb-door">
         <CalmRegion className="kb-door-form">
-        {registering && closed && (
-          <p className="kb-acct-notice">Registration is closed. When an admin opens it, your next sign-in opens your account.</p>
-        )}
         {step === 'email' ? (
           <form aria-label={registering ? 'Register' : 'Sign in'} aria-busy={busy === 'sending'} onSubmit={(e) => void ask(e)} noValidate>
-            <p className="kb-acct-lead">{registering ? 'No password. We email you a code and a link; either one makes your account.' : 'No password. We email you a code and a link; either one signs you in.'}</p>
+            <p className="kb-acct-lead">{registering
+              ? (closed ? 'No password. We email you a code and a link. Registration is closed, so your account opens once an admin opens it.' : 'No password. We email you a code and a link; either one makes your account.')
+              : 'No password. We email you a code and a link; either one signs you in.'}</p>
             <label className="kb-acct-row kb-acct-field">
               <span className="kb-acct-row-label">Email address</span>
               <input className="kb-acct-input" type="email" name="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} {...tie('email')} />

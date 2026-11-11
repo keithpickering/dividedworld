@@ -5,7 +5,7 @@
  */
 import { useLayoutEffect, type ReactNode } from 'react';
 import { CannotDisplay, CannotFind } from './frame/Unavailable.tsx';
-import { addressOf, match, useRouterInternals, type RouteLike } from './router.tsx';
+import { addressOf, match, useRouterInternals, type Failure, type RouteLike } from './router.tsx';
 
 export interface Route extends RouteLike {
   /** A path with `:name` segments, e.g. `/t/:thread`. */
@@ -15,9 +15,12 @@ export interface Route extends RouteLike {
 
 export { match };
 
+/** The failures a load can end in, other than finding nothing: each names its cause. */
+export type DisplayFailure = Exclude<Failure, 'find'>;
+
 /** The screens the app draws for a failed load and an address no route matches; without them the board's two pages are drawn. */
 export interface Failures {
-  readonly display: (p: { readonly address: string; readonly onRetry: () => void }) => ReactNode;
+  readonly display: (p: { readonly kind: DisplayFailure; readonly address: string; readonly onRetry: () => void }) => ReactNode;
   readonly find: (p: { readonly address: string }) => ReactNode;
 }
 
@@ -25,7 +28,7 @@ export function Routes({ routes, failures }: { readonly routes: readonly Route[]
   const { shown, retry, attach } = useRouterInternals();
   useLayoutEffect(() => { attach(routes); });
   const address = addressOf(shown.location);
-  if (shown.failure === 'display') return failures ? <>{failures.display({ address, onRetry: retry })}</> : <CannotDisplay address={address} onRetry={retry} />;
+  if (shown.failure && shown.failure !== 'find') return failures ? <>{failures.display({ kind: shown.failure, address, onRetry: retry })}</> : <CannotDisplay kind={shown.failure} address={address} onRetry={retry} />;
   if (shown.failure === 'find') return failures ? <>{failures.find({ address })}</> : <CannotFind address={address} />;
   for (const r of routes) {
     const params = match(r.path, shown.location.path);

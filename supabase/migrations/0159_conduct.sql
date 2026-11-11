@@ -427,7 +427,7 @@ create view reviews_due as
     and exists (select 1 from acts x where x.kind = 'edit' and x.target_act_id = d.post and x.created_at > d.at)
     and not exists (select 1 from conduct_decisions l where l.post = d.post and l.id > d.id and l.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve'));
 
--- acts_public (0022), every column and grant as it was, with `hidden` last: a hidden version's body is null, `hidden` says so, and the
+-- acts_public (0156), every column and grant as it was, with `hidden` and `any_hidden` last, after 0156's `ends_at`: a hidden version's body is null, `hidden` says so, and the
 -- contents of a quote of a hidden post are empty in any body. `payload` is the version the Act is (a post's original, an edit's own words);
 -- `current_payload` is the post's current version, and `hidden` says whether that version is hidden. `any_hidden` says whether any version of the post is (quote_hidden, the predicate that empties a
 -- quote of it), which is what a quote's note stands on. A view calls its functions with its
@@ -445,6 +445,7 @@ create or replace view acts_public as
          case when e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')
            then e.created_at end as shown_edited_at,
          case when a.kind = 'card' then exists (select 1 from card_write_refunds r where r.play = a.id) end as untaken,
+         case when a.kind = 'set' then (select f.ends_at from face_down f where f.play = a.id) end as ends_at,
          h.cur as hidden,
          a.kind = 'post' and quote_hidden(a.id) as any_hidden
   from acts a
@@ -621,7 +622,8 @@ SELECT m.id AS move,
         CASE
             WHEN (jsonb_typeof((r.payload -> 'until'::text)) = 'string'::text) THEN ((r.payload ->> 'until'::text))::timestamp with time zone
             ELSE NULL::timestamp with time zone
-        END AS ruled_until
+        END AS ruled_until,
+    NULLIF((r.payload ->> 'office'::text), ''::text) AS ruled_office
    FROM (((characters c
      JOIN acts_public m ON (((m.kind = 'move'::text) AND ((m.payload ->> 'kind'::text) = 'conferGroup'::text) AND ((m.payload #>> '{params,character}'::text[]) = (c.id)::text))))
      LEFT JOIN acts_public e ON (((e.kind = 'move_end'::text) AND (e.target_act_id = m.id))))
@@ -1347,7 +1349,7 @@ begin atomic
     from my_face_down f where f.passed_at is not null and f.spring is null and (in_before is null or f.passed_at <= in_before)
     order by f.passed_at desc, f.play limit 200
   ), ca as materialized (
-    select c.play, c.card, c.post, c.trap, c.spring, c.price, c.bought_price, c.at
+    select c.play, c.card, c.post, c.trap, c.spring, c.price, c.at
     from my_caught c where in_before is null or c.at <= in_before
     order by c.at desc, c.play limit 200
   ), en as materialized (
@@ -1359,12 +1361,12 @@ begin atomic
     from my_infractions i where in_before is null or i.at <= in_before
     order by i.at desc, i.infraction limit 200
   ), bn as materialized (
-    select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread
+    select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread, b.ruling, b.own_until
     from my_bans b where in_before is null or b.at <= in_before
     order by b.at desc, b.ban limit 200
   ), gm as materialized (
     select g.move, g.character, g.at, g.thread, g.seq, g."group", g.board, g.board_name, g.expires_at, g.landed_until, g.check_at, g.demand, g.office,
-           g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until
+           g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until, g.ruled_office
     from my_group_moves g where in_before is null or g.at <= in_before
     order by g.at desc, g.move limit 200
   ), rp as materialized (

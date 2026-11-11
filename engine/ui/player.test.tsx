@@ -60,7 +60,7 @@ describe('a purchase from the Vending Machine', () => {
     let balance = 562;
     let held = 2;
     const buyCard = vi.fn(async (slot: Slot) => {
-      if (refuse) return { ok: false as const, error: 'that costs 100, and your wallet holds 62' };
+      if (refuse) return { ok: false as const, error: 'that costs 1.00, and your wallet holds 0.62' };
       balance -= 100;
       held += 1;
       return { ok: true as const, value: { card: 'whoops', balance, held } };
@@ -105,7 +105,7 @@ describe('a purchase from the Vending Machine', () => {
     render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×2'));
     act(() => screen.getByText('buy').click());
-    await waitFor(() => expect(bought).toEqual({ ok: false, error: 'that costs 100, and your wallet holds 62' }));
+    await waitFor(() => expect(bought).toEqual({ ok: false, error: 'that costs 1.00, and your wallet holds 0.62' }));
     expect(screen.getByTestId('wallet').textContent).toBe('562');
     expect(screen.getByTestId('hand').textContent).toBe('whoops×2');
   });
@@ -213,6 +213,50 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     function Loaded() { const p = usePlayer(); return <span data-testid="loaded">{String(p.loaded)}</span>; }
     render(<PlayerProvider api={api}><Loaded /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('loaded').textContent).toBe('true'));
+  });
+  test('a failed read sets charactersFailed and refresh answers false; the next good read clears it', async () => {
+    let fail = true;
+    const { api } = stubApi({ myCharacters: async () => { if (fail) throw new Error('down'); return [char('a')]; } });
+    let answers: boolean[] = [];
+    function Failed() {
+      const p = usePlayer();
+      return <div><span data-testid="failed">{String(p.charactersFailed)}</span><span data-testid="loaded">{String(p.loaded)}</span><button onClick={() => void p.refresh().then((ok) => { answers = [...answers, ok]; })}>again</button></div>;
+    }
+    render(<PlayerProvider api={api}><Failed /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('failed').textContent).toBe('true'));
+    expect(screen.getByTestId('loaded').textContent).toBe('true');
+    await act(async () => { screen.getByText('again').click(); });
+    await waitFor(() => expect(answers).toEqual([false]));
+    fail = false;
+    await act(async () => { screen.getByText('again').click(); });
+    await waitFor(() => expect(answers).toEqual([false, true]));
+    expect(screen.getByTestId('failed').textContent).toBe('false');
+  });
+  test('overlapping refreshes: the latest call decides, so an earlier one failing late changes nothing', async () => {
+    let calls = 0;
+    let failFirst!: () => void;
+    const { api } = stubApi({
+      myCharacters: async () => {
+        calls += 1;
+        if (calls === 1) return [char('a')];
+        if (calls === 2) return new Promise<never>((_, reject) => { failFirst = () => reject(new Error('late')); });
+        return [char('z')];
+      },
+    });
+    let answers: boolean[] = [];
+    function Seq() {
+      const p = usePlayer();
+      return <div><span data-testid="ids">{p.characters.map((c) => c.id).join(',')}</span><span data-testid="failed">{String(p.charactersFailed)}</span><button onClick={() => void p.refresh().then((ok) => { answers = [...answers, ok]; })}>go</button></div>;
+    }
+    render(<PlayerProvider api={api}><Seq /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('a'));
+    await act(async () => { screen.getByText('go').click(); });
+    await act(async () => { screen.getByText('go').click(); });
+    await waitFor(() => expect(screen.getByTestId('ids').textContent).toBe('z'));
+    await act(async () => { failFirst(); });
+    await waitFor(() => expect(answers).toContain(false));
+    expect(screen.getByTestId('ids').textContent).toBe('z');
+    expect(screen.getByTestId('failed').textContent).toBe('false');
   });
   test('signing in is not "loaded" until the player\'s rows have come', async () => {
     let release: () => void = () => {};

@@ -433,11 +433,30 @@ describe('Register', () => {
     expect(screen.getByLabelText('Invite')).toBeInTheDocument();
   });
 
-  test('registration closed is said plainly, with the way on: when an admin opens it, the next sign-in opens the account', async () => {
+  test('registration closed is said plainly and once, with the way on: the account opens once an admin opens registration', async () => {
     const w = world('closed');
     open(w, 'register', '/register', 'closed');
-    expect(await screen.findByText(/Registration is closed/u)).toBeInTheDocument();
-    expect(screen.getByText(/when an admin opens it/iu)).toBeInTheDocument();
+    expect(await screen.findByText('No password. We email you a code and a link. Registration is closed, so your account opens once an admin opens it.')).toBeInTheDocument();
+    expect(screen.getAllByText(/Registration is closed/u)).toHaveLength(1);
+  });
+
+  test('New here? says how registration works in each mode: invite, open and closed', async () => {
+    open(world('invite'), 'sign-in', '/sign-in', 'invite');
+    expect(await within(await screen.findByRole('complementary', { name: 'Other ways in' })).findByText('Registering takes an invite from someone who plays. The same email code signs you in after.')).toBeInTheDocument();
+    cleanup();
+    open(world('open'), 'sign-in', '/sign-in', 'open');
+    expect(await within(await screen.findByRole('complementary', { name: 'Other ways in' })).findByText('Anyone can register. The same email code signs you in after.')).toBeInTheDocument();
+    cleanup();
+    open(world('closed'), 'sign-in', '/sign-in', 'closed');
+    expect(await within(await screen.findByRole('complementary', { name: 'Other ways in' })).findByText('Registration is closed right now. You can still leave your email; when an admin opens registration, your next sign-in opens your account.')).toBeInTheDocument();
+  });
+
+  test('the register lead says the closed words only while registration is closed', async () => {
+    open(world('closed'), 'register', '/register', 'closed');
+    expect(await screen.findByText('No password. We email you a code and a link. Registration is closed, so your account opens once an admin opens it.')).toBeInTheDocument();
+    cleanup();
+    open(world('open'), 'register', '/register', 'open');
+    expect(await screen.findByText('No password. We email you a code and a link; either one makes your account.')).toBeInTheDocument();
   });
 
   test('a session with no account (the emailed link landed) is offered an invite to open it', async () => {

@@ -32,11 +32,11 @@ const isGlass = (path: string) => GLASS.has(path);
 /* What the backend says of the player's alerts: the count, and the channel the player's account hears (the test sends on it). */
 const alerts: { unread: number; account: AccountListener | null; subscribed: number; reads: number } = { unread: 0, account: null, subscribed: 0, reads: 0 };
 
-function setup(signedIn = true, characters = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240, face: (id: string) => Character = (id) => pub(id, id)) {
+function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240, face: (id: string) => Character = (id) => pub(id, id)) {
   const api = {
     session: async () => ({ signedIn, account: signedIn ? 'acc' : null }),
     onSession: () => () => {},
-    myCharacters: async () => characters,
+    myCharacters: async () => { if (characters === 'fails') throw new Error('down'); return characters; },
     wallet: async () => ({ balance, cap: 600 }),
     myCards: async () => [{ card: 'whoops', held: 2 }, { card: 'stick-around', held: 1 }],
     estimate: async () => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 85 }], lines: [], asOf: null, freshAfter: null }),
@@ -556,6 +556,13 @@ describe('signed out and new', () => {
     expect(within(h).queryByRole('link', { name: /^Register/ })).toBeNull();
     expect(within(h).queryByRole('link', { name: 'Sign in' })).toBeNull();
     expect(within(h).queryByText(/No invite|Registration is closed/)).toBeNull();
+  });
+  test('a player whose characters could not be read is told so and offered Try again, not told to make one', async () => {
+    setup(true, 'fails');
+    const h = await hud();
+    expect(await within(h).findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(within(h).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(within(h).queryByRole('link', { name: 'Make a character' })).toBeNull();
   });
   test('a player with no character that can act is told how to make one', async () => {
     setup(true, []);

@@ -456,4 +456,17 @@ describe('opening another update swaps the article\'s body only', () => {
     await screen.findByRole('article', { name: 'Traps now bite board cards' });
     expect(holder()).toHaveAttribute('data-kb-dir', '-1');
   });
+
+  test('a player whose characters could not be read is told so in the spin form, with Try again', async () => {
+    const fake = buildWorld(undefined, instance);
+    fake.seed.update({ title: 'Quiet', body: 'x', at: at(2) });
+    fake.signInAs(fake.seed.account('nobody'));
+    vi.spyOn(fake, 'myCharacters').mockRejectedValue(new Error('down'));
+    renderIn(fake, <LoadedUpdates />, { path: '/updates', instance });
+    const post = await screen.findByRole('article', { name: 'Quiet' });
+    await userEvent.click(within(post).getByRole('button', { name: 'Spin a thread on the board' }));
+    expect(await screen.findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(screen.queryByText(/None of your characters can post yet/u)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
 });

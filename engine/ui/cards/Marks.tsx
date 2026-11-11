@@ -97,7 +97,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const cardUi = ui.cards.find((c) => c.key === shownKind);
   const view = useResolvedView(store, post, kind, nameOf);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
-  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
+  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark;
   const caught = plays.every((p) => p.caught || p.reversed || p.untaken);
@@ -227,7 +227,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(here.billed, instance.settings.setLasts), now), [here.billed, instance.settings.setLasts, now]);
+  const billed = useMemo(() => markedPlays(shownPlays(here.billed), now), [here.billed, now]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);

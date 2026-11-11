@@ -75,7 +75,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo, at = 
   };
 
   return (
-    <Overlay title={`Reveal ${character.name}'s class`} kicker={kicker} surface="turn" className="kb-reveal-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
+    <Overlay title={`Reveal ${character.name}'s class`} kicker={kicker} surface="turn" className="kb-reveal-dialog" onClose={r.busy ? () => {} : onClose} returnFocusTo={returnFocusTo}>
       <form className="kb-reveal" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <p className="kb-reveal-line">{words.sentence}</p>
         {words.pendingTurn && <p className="kb-reveal-line kb-reveal-note">{words.pendingTurn}</p>}
@@ -111,7 +111,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo, at = 
         {r.over && <p role="alert" className="kb-notice" data-kb-tone="refusal">The message is at most {MAX} characters.</p>}
         {r.refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{r.refusal}</p>}
         <FormFoot line={revealFooter(ui.copy.gameWord)}>
-          <GlassButton onClick={onClose}>Cancel</GlassButton>
+          <GlassButton disabled={r.busy} onClick={onClose}>Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" busy={r.busy} disabled={!chosen || r.over}>{words.button}</GlassButton>
         </FormFoot>
       </form>

@@ -47,7 +47,9 @@ export interface Player {
   /** A reaction landed on one of the player's own Acts, or the player reacted: ask for the estimate. */
   readonly reactionLanded: () => void;
   /** Read the player's own rows again, after an action of theirs that changes them. */
-  readonly refresh: () => Promise<void>;
+  readonly refresh: () => Promise<boolean>;
+  /** The last read of the player's own rows failed, so `characters` may be empty for want of a read, not because there are none: a screen says so rather than draw its empty state. */
+  readonly charactersFailed: boolean;
   /** Buy a card from its slot of the Vending Machine; once it is bought the wallet and the hand are read again, so every screen shows the new ones. */
   readonly buyCard: (slot: Slot) => Promise<Answer<Bought>>;
   /** Buy a pack from its slot, the same way: the wallet and the hand are read again, and the cards it gave come back in pull order. */
@@ -82,10 +84,12 @@ interface Held {
   readonly walletSeen: number | null;
   readonly cards: readonly HeldCard[];
   readonly loaded: boolean;
+  /** The last read failed and none has landed since. */
+  readonly failed: boolean;
 }
 
 /** Nothing read yet for `account`. */
-const emptyFor = (account: Id | null): Held => ({ for: account, characters: [], chosen: null, wallet: null, walletSeen: null, cards: [], loaded: false });
+const emptyFor = (account: Id | null): Held => ({ for: account, characters: [], chosen: null, wallet: null, walletSeen: null, cards: [], loaded: false, failed: false });
 
 /**
  * What the first load already read (the forum-load plan, Task 12): the session, boot's rows and the estimate if it landed in time
@@ -105,7 +109,7 @@ function heldFrom(boot: Boot): Held {
   const account = boot.account;
   const seen = account ? store.get(`kb-wallet-seen:${account}`) : null;
   return {
-    for: account, characters: boot.characters, wallet: boot.wallet, cards: boot.cards, loaded: true,
+    for: account, characters: boot.characters, wallet: boot.wallet, cards: boot.cards, loaded: true, failed: false,
     walletSeen: seen !== null && Number(seen) !== boot.wallet.balance ? Number(seen) : null,
     chosen: account ? store.get(hudKey(account)) : null,
   };
@@ -131,6 +135,7 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
   const empty = useMemo(() => emptyFor(account), [account]);
   const mine = held.for === account ? held : empty;
   const { characters, chosen, wallet, walletSeen, cards } = mine;
+  const charactersFailed = account !== null && mine.failed;
   /* No account has nothing to load; an account's rows are loaded once they were read for it. */
   const loaded = account === null ? true : mine.loaded;
   const estimate = estimateHeld.for === account ? estimateHeld.estimate : null;
@@ -139,20 +144,25 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
   const current = useRef<Id | null>(null);
   current.current = account;
 
-  const refresh = useCallback(async () => {
-    if (!account) return;
+  /* Each call is numbered: an earlier read landing after a later one changes nothing, and answers as the later one's rows stand. */
+  const calls = useRef(0);
+  const refresh = useCallback(async (): Promise<boolean> => {
+    if (!account) return true;
+    const mineCall = ++calls.current;
     try {
       const [chars, w, hand] = await Promise.all([api.myCharacters(), api.wallet(), api.myCards()]);
-      if (current.current !== account) return;
+      if (current.current !== account || calls.current !== mineCall) return true;
       const seen = store.get(`kb-wallet-seen:${account}`);
       setHeld({
-        for: account, characters: chars, wallet: w, cards: hand, loaded: true,
+        for: account, characters: chars, wallet: w, cards: hand, loaded: true, failed: false,
         walletSeen: seen !== null && Number(seen) !== w.balance ? Number(seen) : null,
         chosen: store.get(hudKey(account)),
       });
+      return true;
     } catch {
       /* The rows as they were: the next action or page asks again. Loading still ends, so the HUD is never blank. */
-      if (current.current === account) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true }));
+      if (current.current === account && calls.current === mineCall) setHeld((h) => ({ ...(h.for === account ? h : emptyFor(account)), loaded: true, failed: true }));
+      return false;
     }
   }, [api, account]);
 
@@ -297,8 +307,8 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
 
   const value = useMemo<Player>(() => ({
     session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,
-    pending, estimate, cards, reactionLanded: ask, refresh, buyCard, buyPack, loaded,
-  }), [session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, buyCard, buyPack, loaded]);
+    pending, estimate, cards, reactionLanded: ask, refresh, charactersFailed, buyCard, buyPack, loaded,
+  }), [session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen, pending, estimate, cards, ask, refresh, charactersFailed, buyCard, buyPack, loaded]);
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }

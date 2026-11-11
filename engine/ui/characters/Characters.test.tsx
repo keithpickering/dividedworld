@@ -6,6 +6,7 @@ import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Instance } from '../../rules/types.ts';
+import { LOAD_LIMIT_MS } from '../router.tsx';
 import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
 import { LoadedCharacters } from '../loaded.tsx';
 import { Characters } from './Characters.tsx';
@@ -1535,5 +1536,116 @@ describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () =>
     await waitFor(() => expect(within(row('Pipewrench')).getByText('Revealed')).toBeInTheDocument());
     expect(document.body).not.toHaveFocus();
     expect(within(row('Pipewrench')).getByText('Revealed')).toHaveFocus();
+  });
+});
+
+describe('a write that landed whose page could not be read back', () => {
+  const sentence = ' This page may be out of date until you reload it.';
+
+  test('a Turn that lands and whose refresh fails closes with the done line and the added sentence, sending once', async () => {
+    const w = world();
+    const turn = vi.spyOn(w.fake, 'turn');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const confirm = within(dialog).getByRole('button', { name: 'Confirm Turn' });
+    w.fake.seed.failNextRead('server');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent(`Pipewrench's Turn is waiting for the next settlement.${sentence}`);
+    expect(turn).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/could not be sent/u)).toBeNull();
+  });
+
+  test('a debut that lands and whose refresh fails closes with the done line and the added sentence, sending once', async () => {
+    const w = world();
+    const setDebut = vi.spyOn(w.fake, 'setDebut');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    w.fake.seed.failNextRead('server');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent(`Spritey has debuted.${sentence}`);
+    expect(setDebut).toHaveBeenCalledTimes(1);
+  });
+
+  test('a write that throws says the lost-answer words, and the dialog stays for another try', async () => {
+    const w = world();
+    vi.spyOn(w.fake, 'setDebut').mockRejectedValue(new Error('gone'));
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('no answer came back, so this may have gone through: look before you try again');
+  });
+});
+
+describe('a write that landed while its refresh is still out', () => {
+  /* The refresh's wallet read hangs until released. */
+  const hang = (w: World) => {
+    let release!: () => void;
+    const real = w.fake.wallet.bind(w.fake);
+    vi.spyOn(w.fake, 'wallet').mockImplementation(() => new Promise((resolve) => { release = () => resolve(real()); }));
+    return () => release();
+  };
+
+  test('a Turn cannot be cancelled and sent again: Cancel is disabled and Esc does nothing', async () => {
+    const w = world();
+    const turn = vi.spyOn(w.fake, 'turn');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    const release = hang(w);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Turn Pipewrench' })).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(turn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a debut cannot be cancelled and sent again', async () => {
+    const w = world();
+    const setDebut = vi.spyOn(w.fake, 'setDebut');
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
+    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
+    const release = hang(w);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
+    await waitFor(() => expect(setDebut).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(setDebut).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a read-back that never answers', () => {
+  test('a Turn ends after the limit with the done line and the stale sentence, not held forever', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    vi.spyOn(w.fake, 'wallet').mockImplementation(() => new Promise(() => {}));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await vi.advanceTimersByTimeAsync(LOAD_LIMIT_MS - 1000);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await vi.advanceTimersByTimeAsync(2000);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent("Pipewrench's Turn is waiting for the next settlement. This page may be out of date until you reload it.");
   });
 });

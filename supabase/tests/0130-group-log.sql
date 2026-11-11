@@ -146,14 +146,14 @@ begin
   if (select count(*) from my_group_moves where character = mask) is distinct from 4::bigint then raise exception 'the other mask''s moves are not all here'; end if;
   -- The one-read Log (log_page, 0125 as 0134 redefines it) carries the same rows as its `groupMoves` source, newest first.
   if log_page(null) #> '{sources,groupMoves}' is distinct from (select jsonb_agg(to_jsonb(g) order by g.at desc, g.move) from (
-       select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until
+       select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until, v.ruled_office
        from my_group_moves v) g) or jsonb_array_length(log_page(null) #> '{sources,groupMoves}') is distinct from 10 then
     raise exception 'log_page''s groupMoves is not the player''s group moves: %', log_page(null) #> '{sources,groupMoves}';
   end if;
   -- A page cut at a move's own instant holds that move: the cursor is `at <= before`, as every other source's is, so the row the cut names is not lost between pages.
   cut := (select v.at from my_group_moves v order by v.at, v.move offset 4 limit 1);
   if log_page(cut) #> '{sources,groupMoves}' is distinct from (select jsonb_agg(to_jsonb(g) order by g.at desc, g.move) from (
-       select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until
+       select v.move, v.character, v.at, v.thread, v.seq, v."group", v.board, v.board_name, v.expires_at, v.landed_until, v.check_at, v.demand, v.office, v.ended_why, v.ended_by, v.ended_at, v.ruling, v.ruled_at, v.ruled_until, v.ruled_office
        from my_group_moves v where v.at <= cut) g)
      or not exists (select 1 from jsonb_array_elements(log_page(cut) #> '{sources,groupMoves}') x where (x ->> 'at')::timestamptz = cut) then
     raise exception 'log_page(cut)''s groupMoves is not the moves at or before the cut %: %', cut, log_page(cut) #> '{sources,groupMoves}';
