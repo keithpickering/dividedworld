@@ -18,6 +18,12 @@ if ! command -v pg_lsclusters >/dev/null 2>&1; then
   sudo_or_plain apt-get install -y -qq postgresql postgresql-contrib
 fi
 
+# libfaketime, for the System rehearsal's fake-clock Postgres (tools/rehearse/cluster.ts).
+if [ ! -e /usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1 ] && ! dpkg -L libfaketime 2>/dev/null | grep -q 'libfaketime.so.1$'; then
+  sudo_or_plain apt-get update -qq
+  sudo_or_plain apt-get install -y -qq faketime
+fi
+
 # Start the cluster the package created and give the default superuser a known password. The
 # statement lives in one script, which the session-start hook runs too.
 sudo_or_plain service postgresql start
