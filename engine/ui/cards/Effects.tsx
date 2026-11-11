@@ -145,6 +145,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   }, [api, author, plays, staged]);
   const surfaceOf = (key: string, mine: readonly CardPlay[], of: PostPlays): EffectProps['surface'] => {
     const rules = instance.cards.find((c) => c.key === key);
+    /* A surface card has a stack of 1 (engine/rules/instance.ts refuses otherwise), so one play per post: the first is the only. */
     const play = mine[0];
     if (!rules?.surface || !play) return undefined;
     const held = of.surfaces[play.id];
@@ -411,6 +412,14 @@ const stillSave: EffectProps['save'] = async () => ({ ok: false, error: NOTHING_
 const stillRelease: EffectProps['release'] = async () => ({ ok: false, error: NOTHING_SAVED });
 const stillGive: EffectProps['give'] = async () => ({ ok: false, error: NOTHING_SAVED });
 const stillMore: EffectProps['moreGifts'] = async () => {};
+/**
+ * A surface in a moment: nothing is drawn or washed, and the moment holds no read of the layer (it is not in the play's moment), so it has
+ * no cells and no acts (null, never read), and `near` does nothing.
+ */
+const stillSurface = (most: number): NonNullable<EffectProps['surface']> => ({
+  covered: 0, most, acts: null, near: nothing,
+  draw: async () => ({ ok: false, error: NOTHING_SAVED }), wash: async () => ({ ok: false, error: NOTHING_SAVED }),
+});
 const nothing = () => {};
 const NONE_RELEASED: ReadonlySet<Id> = new Set();
 
@@ -520,12 +529,15 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
   readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly onWords: (card: string, words: string | null) => void;
 }) {
   const plays = props.plays;
+  const { instance } = useKayfa();
+  const rules = instance.cards.find((c) => c.key === card);
+  const surface = useMemo(() => (rules?.surface ? stillSurface(surfaceMost(card, rules.surface.limitKey, instance.settings)) : undefined), [rules, card, instance.settings]);
   const show = useCallback((view: CardView | null) => {
     const notes = view ? [...plays].reverse().map((p) => view.notes[p.id]).filter((n): n is string => n !== undefined && n !== '') : [];
     onWords(card, view === null ? null : notes.length > 0 ? notes.join('; ') : view.state);
   }, [onWords, card, plays]);
   useEffect(() => () => onWords(card, null), [onWords, card]);
-  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} give={stillGive} moreGifts={stillMore} wallet={null} ink={NO_INK} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} give={stillGive} moreGifts={stillMore} wallet={null} ink={NO_INK} {...(surface ? { surface } : {})} /></Suspense>;
 }
 
 export { useNarrow, useSheet } from '../media.ts';
