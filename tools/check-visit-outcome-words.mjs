@@ -62,6 +62,7 @@ function wordsByOutcome(body, shape) {
   return out;
 }
 
+/** @type {readonly (readonly [{ readonly cause: string; readonly rule: string; readonly ruleNumber: number | null }, string])[]} */
 const RULES = [
   [{ cause: 'rule', rule: 'Rule 1: x', ruleNumber: 1 }, 'Rule 1: x'],
   [{ cause: 'rule', rule: 'House Rule 1: x', ruleNumber: 1 }, 'House Rule 1: x'],
