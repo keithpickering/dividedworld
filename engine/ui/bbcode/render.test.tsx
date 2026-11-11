@@ -386,6 +386,51 @@ describe('layout and effects', () => {
     expect(screen.getByTestId('lay3').querySelector('b[data-covers]')).toHaveAttribute('data-covers', 'https://x.example/a'.slice(0, 17));
   });
 
+  describe('a wrap run\'s trail', () => {
+    const wrapRun = (start: number, end: number, key: string, z = 0, trail?: (k: string) => React.ReactNode): TextRun => ({
+      start, end, key, z, mode: 'wrap', render: ({ text, key: k }) => <i key={k}>{text}</i>, ...(trail ? { trail } : {}),
+    });
+    const trailOf = (name: string) => (k: string) => <span key={k} data-trail={name} />;
+    const draw = (runs: TextRun[], text: string) => {
+      render(<RouterProvider><div data-testid="tr"><TextLayer runs={runs}><BbCode text={text} /></TextLayer></div></RouterProvider>);
+      return screen.getByTestId('tr');
+    };
+    const trailsIn = (el: HTMLElement) => [...el.querySelectorAll('[data-trail]')].map((t) => t.getAttribute('data-trail'));
+
+    test('is drawn once, between the run\'s last word and what follows', () => {
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t'))], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['t']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span> today/u);
+    });
+
+    test('sits inside the formatting of the run\'s last piece', () => {
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t'))], 'I love big [b]cats[/b] today');
+      const strong = el.querySelector('strong')!;
+      expect(strong.querySelector('[data-trail="t"]')).not.toBeNull();
+      expect(strong.innerHTML).toMatch(/cats<\/i><span data-trail="t"><\/span>$/u);
+      expect(trailsIn(el)).toEqual(['t']);
+    });
+
+    test('is not drawn where a higher replace run covers the run\'s end', () => {
+      const cover: TextRun = { start: 11, end: 15, key: 'c', z: 0, mode: 'replace', render: ({ key }) => <b key={key}>X</b> };
+      const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t')), cover], 'I love big cats today');
+      expect(el.querySelector('b')).toHaveTextContent('X');
+      expect(trailsIn(el)).toEqual([]);
+    });
+
+    test('of two touching wrap runs are both drawn, in order', () => {
+      const el = draw([wrapRun(2, 6, 'a', 0, trailOf('a')), wrapRun(6, 10, 'b', 0, trailOf('b'))], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['a', 'b']);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toMatch(/<span data-trail="a"><\/span><i>[^<]*<\/i><span data-trail="b">/u);
+    });
+
+    test('is absent from a run that has none: it draws what it always drew', () => {
+      const el = draw([wrapRun(7, 15, 'r')], 'I love big cats today');
+      expect(trailsIn(el)).toEqual([]);
+      expect(el.querySelector('.kb-bb')!.innerHTML).toBe('I love <i>big cats</i> today');
+    });
+  });
+
   test('all of them are axe clean', async () => {
     show('[center]a[/center][hr][sub]b[/sub][sup]c[/sup][font=Georgia]d[/font][marquee]e[/marquee][glow=red]f[/glow][shadow]g[/shadow][rainbow]h[/rainbow][highlight]i[/highlight][noparse][b]j[/b][/noparse]');
     expect(describeViolations(await axeViolations(out()))).toBe('');
