@@ -26,6 +26,12 @@ describe('a play, read from its card Act', () => {
     expect(playOf(card({ payload: { card: 'whoops', layer: 0 } }))?.layer).toBe(1);
     expect(playOf(card({ payload: { card: 'whoops', config: [1] } }))?.config).toEqual({});
   });
+
+  test('carries the plate the server drew, when the payload has one', () => {
+    expect(playOf(card({ payload: { card: 'jimmy-wails', drawn: 'close-up' } }))?.drawn).toBe('close-up');
+    expect(playOf(card({ payload: { card: 'jimmy-wails', drawn: 3 } }))).not.toHaveProperty('drawn');
+    expect(playOf(card({ payload: { card: 'whoops' } }))).not.toHaveProperty('drawn');
+  });
   test('is nothing for an Act that is no card, a card with no card in it, or one with no post', () => {
     expect(playOf(card({ kind: 'post' }))).toBeNull();
     expect(playOf(card({ payload: {} }))).toBeNull();
@@ -91,7 +97,7 @@ test('only the cards the instance draws an effect for have a state to read', () 
 
 describe('the kinds of Act that hold a card\'s effect', () => {
   test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a take-back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false };
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
@@ -415,6 +421,42 @@ describe('a play an admin ended', () => {
     const ended = [{ ...post, reversed: true as const }, { ...beyond, reversed: true as const }];
     expect(livePlays(ended)).toEqual([]);
     expect(markedPlays(ended).map((p) => p.id)).toEqual(['k1']);
+  });
+});
+
+/* A play above the posts that a later read of its page no longer holds was ended with no `card_end` to say so: the screen ends it by absence. */
+describe('a play ended by being absent from a page read again', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const card = (id: string): Act =>
+    ({ id, kind: 'card', character: 'c1', thread: 't', targetActId: 'p1', seq: null, createdAt: at, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' }, editedAt: null, shownEditedAt: null });
+
+  test('marks a held play reversed in place, waking only its post, and says so', () => {
+    const plays = createPlays();
+    const heard = vi.fn();
+    plays.add([card('k1'), card('k2')]);
+    plays.subscribe('p1', heard);
+    expect(plays.setEnded(['k1'])).toBe(true);
+    expect(plays.get('p1').billed.map((p) => [p.id, p.reversed])).toEqual([['k1', true], ['k2', undefined]]);
+    expect(livePlays(plays.get('p1').plays).map((p) => p.id)).toEqual(['k2']);
+    expect(heard).toHaveBeenCalledTimes(1);
+  });
+
+  test('remembers a play not held yet, which arrives reversed, as an early card_end does', () => {
+    const plays = createPlays();
+    expect(plays.setEnded(['k1'])).toBe(true);
+    expect(plays.get('p1').plays).toEqual([]);
+    plays.add([card('k1')]);
+    expect(plays.get('p1').plays.map((p) => p.reversed)).toEqual([true]);
+  });
+
+  test('says nothing changed for a play already ended, or for nothing', () => {
+    const plays = createPlays();
+    plays.add([card('k1')]);
+    expect(plays.setEnded(['k1'])).toBe(true);
+    const before = plays.get('p1');
+    expect(plays.setEnded(['k1'])).toBe(false);
+    expect(plays.setEnded([])).toBe(false);
+    expect(plays.get('p1')).toBe(before);
   });
 });
 

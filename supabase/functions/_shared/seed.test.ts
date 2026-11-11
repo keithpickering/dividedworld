@@ -24,10 +24,11 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
     rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined,
+    draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
   })));
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, draws: undefined, drive: undefined, needsMessage: undefined,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   assert.deepEqual(seed.packs.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));
@@ -158,7 +159,7 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
 });
 
-test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0167)', () => {
+test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0185)', () => {
   const first = instance.system.roster[0]!;
   const arced: Persona = {
     ...first,
@@ -181,7 +182,7 @@ test('the seed carries the conditions and each persona\'s arc as SQL checks it: 
   assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
 });
 
-test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0168)', () => {
+test('a persona\'s phase days are seeded as phaseAt reads them: whole, from 1 to the engine\'s cap (0186)', () => {
   const first = instance.system.roster[0]!;
   const days = (h: number, m: number) => instanceSeed({ ...instance, system: { ...instance.system, roster: [{ ...first, phases: { honeymoon: { days: h }, meltdown: { days: m } } }, ...instance.system.roster.slice(1)] } }).system.staff[0]!.phaseDays;
   assert.deepEqual(days(2.5, 500), { honeymoon: 2, meltdown: PHASE_CAPS.meltdown.days });

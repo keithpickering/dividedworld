@@ -73,6 +73,8 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.starts === 'string' ? { starts: act.payload.starts } : {}),
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
     ...(act.untaken === true ? { untaken: true as const } : {}),
+    ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
+    ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
   };
 }
 
@@ -194,6 +196,8 @@ export interface Plays {
   add(acts: readonly Act[]): boolean;
   /** Keep each play's newest saved state, by when it was saved; true when any was newer. A state for a play not here is kept for when it is. */
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
+  /** Mark each of these plays reversed in place, as its `card_end` would (one not held yet is remembered, as an early `card_end` is); true when a play was marked or newly remembered. */
+  setEnded(plays: readonly Id[]): boolean;
   /** The reader released themselves from these plays. */
   setReleased(plays: readonly Id[]): boolean;
   /** The reader's own card backs' cards, by set: drawn under the back on their screen alone, never sent. */
@@ -337,6 +341,22 @@ export function createPlays(): Plays {
       changed(touched);
       return touched.size > 0;
     },
+    setEnded(next) {
+      const touched = new Set<Id>();
+      let remembered = false;
+      for (const target of next) {
+        if (!ended.has(target)) { ended.add(target); remembered = true; }
+        const home = postOf.get(target);
+        const own = home === undefined ? undefined : byPost.get(home);
+        const was = own?.get(target);
+        if (own && was && !was.reversed) {
+          own.set(target, { ...was, reversed: true });
+          touched.add(home!);
+        }
+      }
+      changed(touched);
+      return remembered || touched.size > 0;
+    },
     setReleased(plays) {
       const touched = new Set<Id>();
       for (const play of plays) {
@@ -455,5 +475,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

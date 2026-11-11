@@ -277,7 +277,48 @@ export type OriginPlace =
 
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'take_back' | 'spring' | 'update' | 'card_end' | 'announce'
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
-  | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling';
+  | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
+  /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
+  | 'donation';
+
+/**
+ * One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown.
+ * `name` is the giver's public name (characters_public), carried with the gift so the wall names a giver who never posted in the thread; null only
+ * for a gift just heard on the channel, whose name the drive store reads next, or for a giver with no public name.
+ */
+export interface DriveGift {
+  readonly id: Id;
+  readonly character: Id | null;
+  readonly name: string | null;
+  readonly amount: number;
+  readonly at: string;
+}
+
+/** A drive's total given and count of gifts, with its latest gifts, newest first (`drive_gifts`): a drive nobody gave to is zeros. */
+export interface DriveGifts {
+  readonly id: Id;
+  readonly total: number;
+  readonly count: number;
+  readonly gifts: readonly DriveGift[];
+}
+
+/** The keyset cursor of a drive's wall: the `at` and `id` of the last gift shown. Gifts that share a time are told apart by id. */
+export interface GiftCursor {
+  readonly at: string;
+  readonly id: Id;
+}
+
+/** The next page of a drive's wall (`drive_gifts_page`), newest first, and whether more follow. */
+export interface DriveGiftsPage {
+  readonly gifts: readonly DriveGift[];
+  readonly more: boolean;
+}
+
+/** What `donate` answers the giver: the gift's Act and the giver's own balance after, which is no one else's to read. */
+export interface Donated {
+  readonly act: Act;
+  readonly balance: number;
+}
 
 /** An Act as every reader sees it (acts_public): the original and, where edited, what it shows now. */
 export interface Act {
@@ -686,9 +727,9 @@ export interface QueuedMove {
   readonly replacedAt: string | null;
   /** The words an admin has put in the place of the rename's description (`replace_queued_description`, 0101); null when none did. The Boss's own stay in `params`. */
   readonly adminDescription: string | null;
-  /** The queued moves it builds on that have not landed (admin_queue, 0166): it lands after them. Empty for a move that waits for none. */
+  /** The queued moves it builds on that have not landed (admin_queue, 0184): it lands after them. Empty for a move that waits for none. */
   readonly waitsFor: readonly { readonly id: number; readonly role: string | null; readonly kind: string; readonly name: string | null }[];
-  /** The bundle the move is a part of (admin_queue, 0164), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0182), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -708,7 +749,7 @@ export interface MoveInForce {
   readonly landedAt: string;
   readonly expiresAt: string | null;
   readonly progress: DemandProgress;
-  /** The bundle the move is a part of (admin_queue, 0164), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0182), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -734,7 +775,7 @@ export interface MoveEnded {
   readonly card?: string | null;
   /** For a rule refused when it came to land (`how: 'refused'`): the server's reason, in its words. */
   readonly reason?: string | null;
-  /** The bundle the move is a part of (admin_queue, 0164), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
+  /** The bundle the move is a part of (admin_queue, 0182), the part's role in it and the bundle's name; all null for a move that is no part of a bundle. */
   readonly bundle: Id | null;
   readonly role: string | null;
   readonly bundleName: string | null;
@@ -774,7 +815,7 @@ export interface HandoverTodo {
   readonly how: string;
   readonly landedAt: string;
   /**
-   * The outgoing Boss's handoff note (0172): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
+   * The outgoing Boss's handoff note (0190): out of character, written at its last meeting, for the next Boss and for admins; players never see it. Null where none stands (the last meeting failed).
    * It is the Boss's own words, shown as its note and never as the glass's.
    */
   readonly note: string | null;
@@ -1063,7 +1104,7 @@ export interface LogSettlement {
 export interface WalletEvent {
   readonly settlement: number | null;
   /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant';
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant' | 'gift_out' | 'gift_in';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
@@ -1579,6 +1620,12 @@ export interface ThreadListener {
   readonly onEffect?: (play: Id, savedAt: string) => void;
   /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
   readonly onText?: (play: Id, version: Id) => void;
+  /**
+   * The channel is joined and events are heard from now on. Called again each time the channel rejoins after a drop. A screen drawn from a
+   * document read before this has missed whatever landed until now, and so has one whose connection dropped: what landed while the
+   * channel was not joined is the listener's to read.
+   */
+  readonly onJoined?: () => void;
 }
 
 export interface BoardListener {
@@ -1622,6 +1669,8 @@ export interface ReachListener {
   readonly onNews?: (news: LiveNews) => void;
   /** A settlement was applied, for every signed-in player alike. May come twice: key by id. */
   readonly onSettled?: (settled: LiveSettled) => void;
+  /** The channel is joined and events are heard from now on; called again each time it rejoins after a drop. What landed while it was not joined is the listener's to read. */
+  readonly onJoined?: () => void;
 }
 
 /* ---------------------------------------------------------------- the api ---- */
@@ -1702,7 +1751,7 @@ export interface BoardRef {
 }
 
 /**
- * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0161): a row that links to the thread
+ * A thread that was moved away from the board whose page lists it, within the instance's `movedStubDays` (board_page, 0179): a row that links to the thread
  * and names the board it is on now. It is a fact of the move, public as the move is.
  */
 export interface BoardStub {
@@ -1714,7 +1763,7 @@ export interface BoardStub {
 }
 
 /**
- * A board that is closed (board_page, 0161): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
+ * A board that is closed (board_page, 0179): merged into another (`mergedInto`), or made by a move that was reversed (`fallback`, where its threads went). Exactly one is set.
  * Its page lists no threads and no stubs.
  */
 export interface BoardClosed {
@@ -1983,7 +2032,7 @@ export interface KayfaApi {
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
   /**
-   * The words that name the threads a `moveThread` moves (move_thread_names, 0162): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0180): each thread's title now and the board it left (`left`), keyed by the move's Act when it has landed, else by
    * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
    */
   moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly left: Id | null }>>>;
@@ -2308,6 +2357,15 @@ export interface KayfaApi {
    * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
    */
   playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
+  /**
+   * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
+   * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
+   */
+  donate(character: Id, drive: Id, amount: number): Promise<Answer<Donated>>;
+  /** Each drive's total, count and latest gifts, in the order asked, in one call (`drive_gifts`, at most 100 drives): an id that is no drive is zeros. */
+  driveGifts(drives: readonly Id[]): Promise<readonly DriveGifts[]>;
+  /** The gifts of one drive after the cursor, newest first (`drive_gifts_page`). */
+  driveGiftsPage(drive: Id, before: GiftCursor): Promise<DriveGiftsPage>;
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.

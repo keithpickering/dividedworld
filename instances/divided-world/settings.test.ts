@@ -52,6 +52,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'whoops.perLength': 25, 'whoops.lengthStep': 500, 'whoops.mostAdded': 200,
     'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200,
     'youWereSaying.baseTokens': 25, 'youWereSaying.stepTokens': 25, 'youWereSaying.stepPrice': 25, 'youWereSaying.mostTokens': 200,
+    'jimmyWails.gift1': 10, 'jimmyWails.gift2': 25, 'jimmyWails.gift3': 50, 'jimmyWails.gift4': 100, 'jimmyWails.overhead': 25,
     'machine.pullMost': 2, 'machine.moveDaysMost': 7, 'machine.repriceLeast': 50, 'machine.repriceMost': 200, 'machine.flashHoursLeast': 24, 'machine.flashHoursMost': 48,
   });
   assert.ok(Object.isFrozen(defaults.economy));

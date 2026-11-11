@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Act, Log, LogSettlement, MyCharacter, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { testInstance } from '../test-world.tsx';
-import { actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
+import { actsFollowed, actsNamed, logRows, rankChanges, scoredAs, turnsTaken, type LogData, type Words } from './lines.ts';
 import { around, mergeLogs } from './useLog.ts';
 import type { KayfaApi } from '../data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS, type PronounSet } from '../../rules/pronouns.ts';
@@ -1025,6 +1025,78 @@ describe('a card\'s boost in a settlement', () => {
     const said = rows.map((r) => `${r.what} ${r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('')}`).join(' | ');
     expect(said).toContain('Publicity Tour added +0.10');
     expect(said).not.toContain('publicity Tour');
+  });
+});
+
+/**
+ * A drive's gifts, in the log (docs/plans/2026-11-03-jimmy-wails-design.md, section 10): the giver's wallet event `gift_out` and the post's author's `gift_in`, each read
+ * with the gift's own Act (amount, overhead and arrives, all public), and a card's own sentence for the play that opened or joined its drive. The engine names no card.
+ */
+describe('a drive\'s gifts', () => {
+  const key = testInstance.cards[0]!.key;
+  const at = '2026-11-12T10:00:00.000Z';
+  const act = (id: string, kind: Act['kind'], character: string | null, over: Partial<Act> = {}): Act =>
+    ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
+  const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const post = act('post3', 'post', 'a', { seq: 3 });
+  const staffPost = act('post3', 'post', null, { seq: 3 });
+  const opening = act('d1', 'card', 'c', { targetActId: 'post3', payload: { card: key, drive: 'd1' } });
+  const gift = (amount: number, overhead: number, arrives: number) => act('g1', 'donation', 'g', { targetActId: 'd1', payload: { amount, overhead, arrives } });
+  const out: WalletEvent = { settlement: null, kind: 'gift_out', change: -50, overflow: 0, floored: 0, balanceAfter: 450, ref: 'g1', at };
+  const into = (overflow: number, change = 38 - overflow): WalletEvent => ({ settlement: null, kind: 'gift_in', change, overflow, floored: 0, balanceAfter: 700, ref: 'g1', at });
+  const names = new Map([['g', 'Spritey'], ['c', 'Gloomba'], ['a', 'Pipewrench']]);
+  const rowsOf = (wallet: WalletEvent[], mine: MyCharacter[], posts: Act[], gifted: Act) =>
+    logRows(data({ log: { ...empty, wallet }, mine, acts: new Map([...posts, opening, gifted].map((a) => [a.id, a])), names }), words, 600, null).filter((r) => r.kind === 'gift');
+
+  test('the giver\'s line says what it gave, what reached the author and what The System kept, and links the post', () => {
+    const [row, ...rest] = rowsOf([out], [char('g', 'Spritey', 'heel')], [post], gift(50, 12, 38));
+    expect(rest).toEqual([]);
+    expect(row).toMatchObject({ key: 'gift:g1:gift_out', kind: 'gift', at, what: 'You gave to a drive', aura: -50, wallet: 450, characters: ['g'] });
+    expect(text(row!)).toBe('You gave 0.50 to the drive on post #3; 0.38 reached its author after an overhead of 0.12.');
+    expect(row!.details.some((d) => typeof d === 'object' && d.text === 'post #3' && d.href.includes('th'))).toBe(true);
+  });
+
+  test('a gift on a staff post says it all went to overhead', () => {
+    const [row] = rowsOf([out], [char('g', 'Spritey', 'heel')], [staffPost], gift(50, 50, 0));
+    expect(text(row!)).toBe('You gave 0.50 to the drive on post #3; it all went to overhead.');
+  });
+
+  test('the author\'s line names the giver, the amount, and what they received, with the wallet after', () => {
+    const [row] = rowsOf([into(0)], [char('a', 'Pipewrench', 'face')], [post], gift(50, 12, 38));
+    expect(row).toMatchObject({ key: 'gift:g1:gift_in', kind: 'gift', what: 'A gift reached you', aura: 38, wallet: 700, characters: ['a'] });
+    expect(text(row!)).toBe('Spritey gave 0.50 to the drive on your post #3; you received 0.38.');
+  });
+
+  test('a full wallet says how much of it was lost', () => {
+    const [row] = rowsOf([into(12)], [char('a', 'Pipewrench', 'face')], [post], gift(50, 12, 38));
+    expect(text(row!)).toBe('Spritey gave 0.50 to the drive on your post #3; you received 0.38, and your wallet was full, so 0.12 of it was lost.');
+    expect(row!.aura).toBe(26);
+  });
+
+  test('a gift whose Acts could not be read is said plainly, with no link and no name', () => {
+    const rows = logRows(data({ log: { ...empty, wallet: [out, into(0)] }, mine: [char('g', 'Spritey', 'heel')] }), words, 600, null).filter((r) => r.kind === 'gift');
+    expect(rows.map(text)).toEqual(['You gave 0.50 to a drive.', 'Someone gave to a drive on one of your posts; you received 0.38.']);
+  });
+
+  test('no line names an owner, an account, or the author\'s wallet in the giver\'s', () => {
+    const [giver] = rowsOf([out], [char('g', 'Spritey', 'heel')], [post], gift(50, 12, 38));
+    expect(text(giver!)).not.toMatch(/wallet|owner|account|Pipewrench/iu);
+    const [author] = rowsOf([into(12)], [char('a', 'Pipewrench', 'face')], [post], gift(50, 12, 38));
+    expect(text(author!)).not.toMatch(/owner|account|\bplayer\b/iu);
+  });
+
+  test('actsNamed names a gift\'s Act, and the Acts it leads to are followed', () => {
+    expect(actsNamed({ ...empty, wallet: [out, into(0)] }, null, [])).toEqual(['g1']);
+    expect(actsFollowed(new Map([[ 'g1', gift(50, 12, 38)]]))).toEqual(['d1']);
+  });
+
+  test('a card says whether a play opened a drive or joined it, from what the play recorded', () => {
+    const w: Words = { ...words, ui: { ...words.ui, cards: [{ key, art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '', logPlay: (_c: Readonly<Record<string, unknown>>, r: { readonly opened?: boolean }) => (r.opened ? 'It opened a drive.' : 'It joined the drive.') }] } };
+    const joined = act('d2', 'card', 'c', { targetActId: 'post3', payload: { card: key, drive: 'd1' } });
+    const play = (p: Act, id: string) => logRows(data({ log: { ...empty, cards: [{ card: key, kind: 'played' as const, act: id, price: 0, at }] }, mine: [char('c', 'Gloomba', 'heel')], acts: new Map([post, p].map((a) => [a.id, a])) }), w, 600, null).find((r) => r.kind === 'played')!;
+    expect(text(play(opening, 'd1'))).toMatch(/ It opened a drive\.$/u);
+    expect(text(play(joined, 'd2'))).toMatch(/ It joined the drive\.$/u);
+    expect(text(play(joined, 'd2'))).not.toContain('opened');
   });
 });
 

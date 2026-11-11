@@ -1,7 +1,7 @@
 /**
  * What the meeting does with a persona's arc (fangame split design, sections 1, 2, 3, 5 and 9; the plan, Task 6). Pure, and the engine's: nothing here names a community.
  *
- * **An arc is a secret, even from the Boss.** The database says which beats are unlocked and unplayed (`arc_for_meeting`, 0168); `shownBeats` joins them to the persona's own file by
+ * **An arc is a secret, even from the Boss.** The database says which beats are unlocked and unplayed (`arc_for_meeting`, 0186); `shownBeats` joins them to the persona's own file by
  * key, so a beat the database does not list never reaches this module with its brief, and `beatsText` is the only place a brief is written into a prompt. A locked beat's brief, key or
  * slot is in no prompt, and a held-back kind is in no list (`meetingSystemPrompt` filters it).
  *
@@ -21,7 +21,7 @@ import { moveKind, moveParamsProblems, ROLE, UUID, type MachineLimits } from './
 import type { PlannedMove } from './meeting.ts';
 import { repair, type Rule, type Trim } from './validate.ts';
 
-/** What `meeting_context().arc` says (0169, over arc_for_meeting, 0168): the beats unlocked and not yet played, in the persona's order, and the kinds held back now. */
+/** What `meeting_context().arc` says (0187, over arc_for_meeting, 0186): the beats unlocked and not yet played, in the persona's order, and the kinds held back now. */
 export interface ArcRead {
   readonly beats: readonly { readonly key: string; readonly mini: boolean; readonly due: boolean }[];
   readonly heldBack: readonly string[];

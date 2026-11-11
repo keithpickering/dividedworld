@@ -40,8 +40,8 @@ export interface BoardRef {
 
 /**
  * A part of a bundle names the board another part of the same bundle makes by that part's role (`{role: 'minus'}`), where a board's uuid would go; or, from an authored bundle, the board a
- * part of an earlier beat's bundle made (`{role: 'minus', beat: 'split'}`, the beat's key). The database resolves it to the board when the part lands (supabase/migrations/0164_bundles.sql,
- * `role_board`; supabase/migrations/0169_meeting_bundles.sql, `beat_role_board`); the engine only holds the shape. A role is lowercase letters, digits, hyphens and underscores, from a
+ * part of an earlier beat's bundle made (`{role: 'minus', beat: 'split'}`, the beat's key). The database resolves it to the board when the part lands (supabase/migrations/0182_bundles.sql,
+ * `role_board`; supabase/migrations/0187_meeting_bundles.sql, `beat_role_board`); the engine only holds the shape. A role is lowercase letters, digits, hyphens and underscores, from a
  * letter; a beat's key is written the same way.
  */
 export interface RoleRef {

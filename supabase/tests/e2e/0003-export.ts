@@ -258,10 +258,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_memory (staff, meeting, body) select 'exp-boss', max(id), '{"opinions": [], "grudges": []}' from meetings;
       insert into staff_profiles (staff, meeting, interests, favorites, mood, signature) select 'exp-boss', max(id), '{pie}', array[a], 'smug', 'It is decided.' from meetings;
       insert into move_bank (staff, balance, as_of) values ('exp-boss', 3.5, now());
-      -- An arc (0167): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
+      -- An arc (0185): a persona's plan (the catalog of conditions is the seed's), and a beat's events (insert-only, guards firing always), carried across with the rows they name.
       insert into persona_arcs (staff, beats, holds_back, phase_days) values ('exp-boss', '[{"key": "split", "mini": false, "repeatable": false, "unlock": [{"kind": "phase", "phase": "reign"}], "due": null}]', '[{"kind": "createBoard", "until": "split"}]', '{"honeymoon": 3}');
       insert into arc_beat_events (season, staff, beat, event) select id, 'exp-boss', 'split', 'unlocked' from seasons where ends_at is null;
-      -- A farewell and a handoff note (0172): insert-only, no client's, carried across like the rest.
+      -- A farewell and a handoff note (0190): insert-only, no client's, carried across like the rest.
       insert into handoffs (season, staff, farewell, note) select id, 'exp-boss', 'So long, and thanks for the posts.', 'Mind the fangame board.' from seasons where ends_at is null;
       perform write_staff_act('exp-boss', 'post', t, null, '{"body": "Carried across, with no account behind it."}');
       -- A note the Boss wrote with that post (0085).
@@ -303,7 +303,7 @@ test('an instance exported and imported into a fresh database is the same instan
       kept := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
         'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
-      -- A thread moved to another board (0155, 0161): the move Act writes its thread_departures row, the thread's stored board follows it, and its origin_board stays where it started,
+      -- A thread moved to another board (0173, 0179): the move Act writes its thread_departures row, the thread's stored board follows it, and its origin_board stays where it started,
       -- so a thread's place, its departure and its origin are real rows to carry across.
       insert into boards (slug, name) values ('exp-elsewhere', 'Exported Elsewhere');
       perform write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'moveThread', 'body', 'Moved.',
@@ -311,7 +311,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform rebuild_thread_places(array[t]);
       if not exists (select 1 from thread_departures where thread = t) or not exists (select 1 from threads where id = t and board <> origin_board) then raise exception 'the fixture did not land a moveThread'; end if;
       -- Its cause (0106): the Act that drew a move, carried across with the row.
-      -- A part of a bundle (0164): its bundle, name and role are columns of the row, carried across with it.
+      -- A part of a bundle (0182): its bundle, name and role are columns of the row, carried across with it.
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act, bundle, bundle_name, role)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',
              now() - interval '1 day', now() + interval '2 days', true, kept, p, gen_random_uuid(), 'The Exported Bundle', 'palace' from meetings m;
@@ -319,7 +319,7 @@ test('an instance exported and imported into a fresh database is the same instan
       perform set_config('session_replication_role', 'replica', true);
       update queued_moves set depends_on = array[queued_moves.id] where landed_act = kept;
       perform set_config('session_replication_role', 'origin', true);
-      -- A move that built on another (0164): written when the dependent lands, insert-only, carried across with the Acts it names.
+      -- A move that built on another (0182): written when the dependent lands, insert-only, carried across with the Acts it names.
       insert into move_dependencies (act, on_act) values (kept, moved);
       -- An apology to the move in force (0129), carried across with the Acts it names.
       insert into apologies (move_act, apology_act, character, state) values (kept, p, b, 'pending');
@@ -383,6 +383,20 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into acts (character, kind, thread, payload) values (null, 'reveal', old_thread, '{"season": 0, "body": "Every mask.", "characters": 0}') returning id into old_head;
         update seasons set reveal_act = old_head where number = (select max(number) - 1 from seasons);
       end;
+      -- A drive and its gifts (0153): a drive card with a draw and a blank-message refusal, Bob's play of it on a post of Ann's (which opens the drive and draws a key), a gift from Bob
+      -- that overflows Ann's full wallet, and a gift from Ann to her own mask, so donation Acts and the gift_out and gift_in events, an overflow among them, are carried across.
+      declare dp uuid; dplay uuid;
+      begin
+        insert into settings (key, value) values ('economy', '{"exp.g1": 10, "exp.g2": 25, "exp.over": 25}') on conflict (key) do update set value = settings.value || excluded.value;
+        insert into card_kinds (key, name, alignment, rarity, play, stack, draws, drive, needs_message)
+        values ('expdrive', 'Exported Drive', 'sweet', 'uncommon', 'cast', 2, '{exp-a,exp-b}', '{"lasts": {"unit": "day", "count": 2}, "gifts": ["exp.g1", "exp.g2"], "overhead": "exp.over"}', 'Say what the drive is for.');
+        insert into card_ledger (account, card, kind, price) values (bob, 'expdrive', 'bought', 0);
+        dp := tests.post(a, t, 'A post that asks for gifts.');
+        dplay := (play_card(bob, 'expdrive', b, dp, '{}', 0, 'Please give.') ->> 'id')::uuid;
+        insert into wallets (account, balance) values (bob, 100), (ann, 595) on conflict (account) do update set balance = excluded.balance;
+        perform donate(bob, b, dplay, 25);
+        perform donate(ann, a, dplay, 10);
+      end;
     end $$;
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
@@ -429,6 +443,14 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
   assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
+  // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
+  const gifts = `select d.id from acts d join acts o on o.id = d.target_act_id and o.payload ->> 'card' = 'expdrive' where d.kind = 'donation'`;
+  assert.match(sql(`select payload ->> 'drawn' from acts where kind = 'card' and payload ->> 'card' = 'expdrive'`), /^exp-[ab]$/, 'the drive\'s play drew a key');
+  assert.equal(sql(`select count(*) from (${gifts}) g`), '2', 'two gifts are two donation Acts');
+  assert.equal(sql(`select count(*) from wallet_events where kind = 'gift_out' and ref in (${gifts})`), '2', 'each gift left a wallet');
+  assert.equal(sql(`select count(*) from wallet_events where kind = 'gift_in' and ref in (${gifts})`), '2', 'each gift arrived in a wallet');
+  assert.equal(sql(`select max(overflow) from wallet_events where kind = 'gift_in' and ref in (${gifts})`), '13', 'a full wallet cut off part of a gift');
+  assert.equal(sql(`select draws::text || '|' || (drive ->> 'overhead') || '|' || needs_message from card_kinds where key = 'expdrive'`), '{exp-a,exp-b}|exp.over|Say what the drive is for.', 'the drive card keeps its columns');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.

@@ -28,7 +28,7 @@ export interface DigestThread {
 }
 
 /**
- * A board's line (supabase/migrations/0160_digest_boards.sql): an open board that is not The System's, with the posts on it over the last `Digest.boardDays` days.
+ * A board's line (supabase/migrations/0178_digest_boards.sql): an open board that is not The System's, with the posts on it over the last `Digest.boardDays` days.
  * Public counts: nothing here says who posted, who owns a mask, a class or a reaction.
  */
 export interface DigestBoard {

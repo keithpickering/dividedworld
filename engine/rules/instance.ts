@@ -374,7 +374,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
-    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings));
+    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings), ...needsMessageProblems(c));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -600,6 +600,70 @@ function reachProblems(c: CardRules, settings: Settings): string[] {
       out.push(`${who} lasts ${spanWords(c.lasts)}, longer than a ${r} effect may (reachLasts.${r}, ${spanWords(bound)})`);
     }
   }
+  return out;
+}
+
+/** A drive's span counts hours, days or weeks, never months: SQL's span_interval takes a month as a calendar month and spanMs as 30 days, so a monthly close could differ between them. */
+const DRIVE_UNITS: readonly Span['unit'][] = ['hour', 'day', 'week'];
+
+/** The most days a drive may last after its latest play: a month's drive would never close in play, and the close is computed from the plays. */
+const DRIVE_LASTS_MOST_DAYS = 30;
+
+/** A card's draw: a real list of distinct keys the server can store on a play, each naming the card (Jimmy Wails plan, Task 1). */
+function drawProblems(c: CardRules): string[] {
+  if (c.draws === undefined) return [];
+  const who = `card "${c.key}"`;
+  if (!Array.isArray(c.draws)) return [`${who} draws ${JSON.stringify(c.draws)}; draws is a list of keys`];
+  if (!c.draws.length) return [`${who} draws nothing; a card with a draw lists at least one key, or leaves draws out`];
+  const out: string[] = [];
+  for (const k of c.draws) if (typeof k !== 'string' || !/^[a-z0-9-]{1,40}$/.test(k)) out.push(`${who} draws ${JSON.stringify(k)}; a draw is lowercase letters, digits and hyphens, 1 to 40`);
+  for (const k of duplicates(c.draws.filter((k) => typeof k === 'string'), (k) => k)) out.push(`${who} draws "${k}" twice`);
+  return out;
+}
+
+/** The longest the words a blank message is refused with may be: the same bound as a caster's own message (MESSAGE_MOST). */
+const NEEDS_MESSAGE_MOST = 200;
+
+/** A card that needs a message: the refusal's words are a sentence, and only a cast or a use carries a message to need. */
+function needsMessageProblems(c: CardRules): string[] {
+  if (c.needsMessage === undefined) return [];
+  const who = `card "${c.key}"`;
+  if (typeof c.needsMessage !== 'string') return [`${who} needsMessage ${JSON.stringify(c.needsMessage)}; it is the sentence a blank message is refused with`];
+  if (c.needsMessage.trim() === '') return [`${who} needs a message, and its refusal is empty`];
+  const out: string[] = [];
+  if (c.needsMessage.length > NEEDS_MESSAGE_MOST) out.push(`${who} needsMessage is longer than ${NEEDS_MESSAGE_MOST} characters`);
+  if ((c.play ?? 'cast') === 'set') out.push(`${who} needs a message, and only a cast or a use carries one`);
+  return out;
+}
+
+/**
+ * A card's drive: a Cast reaching a post alone, with a span of at most 30 days, gift amounts and an overhead that are economy numbers
+ * in range. The amounts are read from the economy as it stands, since the economy may be tuned later (the SQL reads it again at each gift).
+ */
+function driveProblems(c: CardRules, settings: Settings): string[] {
+  const d = c.drive;
+  if (d === undefined) return [];
+  const who = `card "${c.key}" has a drive`;
+  const out: string[] = [];
+  if ((c.play ?? 'cast') !== 'cast') out.push(`${who}, and only a cast card does`);
+  const reaches = c.reaches ?? ['post'];
+  if (!Array.isArray(reaches) || reaches.length !== 1 || reaches[0] !== 'post') out.push(`${who}, and a drive card reaches a post alone`);
+  if (typeof d !== 'object' || d === null) return [...out, `${who} that is not an object of lasts, gifts and overhead`];
+  if (!isSpan(d.lasts, DRIVE_UNITS)) out.push(`${who} that lasts ${JSON.stringify(d.lasts)}; it must be a span: a unit of hour, day or week and a whole count from 1 to 1000`);
+  else if (spanMs(d.lasts) > DRIVE_LASTS_MOST_DAYS * 86_400_000) out.push(`${who} that lasts ${spanWords(d.lasts)}, longer than the ${DRIVE_LASTS_MOST_DAYS} days a drive may`);
+  const economy = settings?.economy;
+  const held = economy !== null && typeof economy === 'object' && !Array.isArray(economy) ? economy : {};
+  const gifts: readonly unknown[] = Array.isArray(d.gifts) ? d.gifts : [];
+  if (!Array.isArray(d.gifts) || !gifts.length) out.push(`${who} with no gift amounts (gifts); a drive lists the economy keys of at least one`);
+  for (const k of duplicates(gifts.filter((k) => typeof k === 'string'), (k) => k)) out.push(`${who} that lists gift "${k}" twice`);
+  for (const k of gifts) {
+    const n = typeof k === 'string' ? held[k] : undefined;
+    if (typeof n !== 'number' || !Number.isFinite(n)) out.push(`${who} gift ${JSON.stringify(k)}, which is not a number the economy holds`);
+    else if (!isWhole(n, 1) || n > settings.walletCap) out.push(`${who} gift ${JSON.stringify(k)} of ${n}; a gift is a positive whole number of hundredths, at most the wallet's cap (${settings.walletCap})`);
+  }
+  const over = typeof d.overhead === 'string' ? held[d.overhead] : undefined;
+  if (typeof over !== 'number' || !Number.isFinite(over)) out.push(`${who} overhead ${JSON.stringify(d.overhead)}, which is not a number the economy holds`);
+  else if (!isWhole(over, 0) || over > 100) out.push(`${who} overhead of ${over}; it is a whole number from 0 to 100`);
   return out;
 }
 

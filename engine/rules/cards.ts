@@ -69,8 +69,13 @@ export interface CardEffect {
   readonly faceDown?: true;
   /** Which reach the effect is on: the target's own, or one above it (effectsOnTarget). A post's unless it says. */
   readonly reach?: Reach;
+  /** The drive a play belongs to (`CardRules.drive`): its opening play's act id, so the drive's own id. Only a play of a drive card has one. */
+  readonly drive?: string;
+  /** When that drive closes, an ISO time: its latest play's time plus the card's `drive.lasts`, computed by card_target and never stored. */
+  readonly closes?: string;
   /** The quadrant a live skim play names (its checked configuration's `quadrant`), carried so a second play of the card on the post can be refused for the same one (quadrantFree). */
   readonly quadrant?: Quadrant;
+
 }
 
 /**
@@ -235,6 +240,23 @@ export interface CardRules<Config = unknown> {
   readonly screenReads?: readonly EconomyRead[];
   /** How many of this card one post may carry, each its own play and layer; 1 unless said. */
   readonly stack?: number;
+  /**
+   * Keys the server draws one of at each play (with `random()`, never the caster's choice), stored on the play's payload as `drawn`.
+   * What a key means is the card's own; the engine only holds that the list is real: not empty, no duplicate, each key `[a-z0-9-]{1,40}`.
+   */
+  readonly draws?: readonly string[];
+  /**
+   * The plays of this card on one post share a drive, which closes `lasts` after its latest play. `gifts` are the economy keys of the
+   * amounts a gift to the drive may be, and `overhead` the economy key of the percentage The System keeps of every gift. Only a Cast
+   * reaching a post alone has one.
+   */
+  readonly drive?: { readonly lasts: Span; readonly gifts: readonly string[]; readonly overhead: string };
+  /**
+   * A card whose every play must carry words: the refusal a blank message (none, or only spaces) meets, in the card's own words, so the
+   * engine names no card. Said after the landing and the configuration, as the caster's message is checked. A cast or a use only: a Set has
+   * no message. The database holds it again (card_kinds.needs_message, place_cast).
+   */
+  readonly needsMessage?: string;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
   /** What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it. */
@@ -320,6 +342,7 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   if (!checked.ok) return checked;
   const said = casterMessage(message);
   if (!said.ok) return said;
+  if (rules.needsMessage !== undefined && said.value === '') return refuse(rules.needsMessage);
   // A cast pays every live price effect on its target, or above it, whose flavors hold its printed alignment; a use or a set pays none.
   const added = surcharge ? effects.reduce((sum, e) => (e.gimmick?.kind === 'price' && isLive(e, now) && e.gimmick.flavors.includes(rules.alignment) ? sum + e.gimmick.add : sum), 0) : 0;
   const price = Math.max(0, rules.playPrice(settings, target, checked.value) + added);
@@ -388,12 +411,23 @@ export interface SetConditions {
 
 const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 
+/**
+ * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
+ * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
+ * back that sprang later on a quote would land with none of it. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
+ * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
+ */
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive'>): boolean =>
+  rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined;
+
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
   if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
+  // So is one that needs a message, draws or runs a drive: faceUpOnly says which, and one sentence covers them.
+  if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.
@@ -460,6 +494,28 @@ export function casterMessage(message: unknown): Verdict<string> {
 
 /** A span in milliseconds, a month as 30 days, as Postgres compares intervals. */
 export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? 86_400_000 : s.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+
+/**
+ * The open drive of card `key` among `effects`: the drive whose `closes` is after `now`, with its plays, or none. A drive's plays are
+ * the effects the caller passes, the post's plays still up as card_target gives them (supabase/migrations/0153_drives.sql, drive_plays;
+ * whether an ended play leaves its drive is the owner's question #447), and this is the one place here that says which plays make a drive.
+ * A post holds at most one open drive of a card, since place_cast (0153) joins a play to the open drive, so the first open play names it.
+ */
+export function openDrive(effects: readonly CardEffect[], key: string, now: Date): { readonly id: string; readonly closes: string; readonly plays: readonly CardEffect[] } | undefined {
+  const plays = effects.filter((e) => e.card === key && e.drive !== undefined && e.closes !== undefined && Date.parse(e.closes) > now.getTime());
+  if (!plays.length) return undefined;
+  const first = plays[0]!;
+  return { id: first.drive!, closes: first.closes!, plays: plays.filter((e) => e.drive === first.drive) };
+}
+
+/**
+ * What a gift of `amount` hundredths is split into: the overhead The System keeps, rounded up so a gift never leaves it short, and what
+ * arrives. Integer arithmetic throughout, so no float decides a cent. The screens' preview and the SQL's split are pinned to this.
+ */
+export function giftSplit(amount: Hundredths, overheadPercent: number): { readonly overhead: Hundredths; readonly arrives: Hundredths } {
+  const overhead = Math.ceil((amount * overheadPercent) / 100);
+  return { overhead, arrives: amount - overhead };
+}
 
 /** The reaches a card lists, a post unless it says. */
 export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
@@ -559,9 +615,12 @@ export function color(value: unknown): string | null {
 
 /**
  * Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. A set card that
- * springs on a visit is never offered: a Mod Bot visits only players' posts, so a persona's Hall Pass could never spring.
+ * springs on a visit is never offered: a Mod Bot visits only players' posts, so a persona's Hall Pass could never spring. Nor is a card that needs a
+ * caster message, since a persona's play carries none.
  */
 export function staffOffers(card: CardRules): boolean {
   if (card.trap?.trigger.on === 'visit') return false;
+  // A persona plays a card with no caster message, so a card that needs one could never land.
+  if (card.needsMessage !== undefined) return false;
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }
