@@ -83,6 +83,14 @@ describe('My characters', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Your characters (3 of 4)' })).toBeInTheDocument();
   });
 
+  test('each row\'s Dress up names the character it dresses', async () => {
+    const w = world();
+    open(w);
+    await ready();
+    expect(within(row('Pipewrench')).getByRole('link', { name: 'Dress up Pipewrench' })).toHaveAttribute('href', '/wardrobe');
+    expect(within(row('Mrs. Hooligan')).getByRole('link', { name: 'Dress up Mrs. Hooligan' })).toBeInTheDocument();
+  });
+
   test('its whole page is in the first render, from the document, and nothing is read for it', async () => {
     const w = world();
     const boot = await w.fake.boot();

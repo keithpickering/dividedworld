@@ -17,7 +17,7 @@
  * Plain, out-of-character words throughout. Where its copies came from is not in the wardrobe's data, so the panel says what the gear is and what
  * it says of itself, and no more.
  */
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
 import type { Piece } from '../../rules/cosmetics.ts';
 import { gemOf, rarityName } from '../cards/faces.ts';
 import { useKayfa } from '../context.tsx';
@@ -39,8 +39,10 @@ import './wardrobe.css';
 const FIRST_WIDTH = 0.4;
 /** The tallness a portrait is drawn at until its own is known (1 to 2 of its width). */
 const FALLBACK_TALLNESS = 1.5;
+/** What is said when a nudge changes nothing: the piece is at an edge of the portrait. */
+const STUCK = "It can't move further that way.";
 
-type Drag = { readonly mode: 'move' | 'size' | 'turn'; readonly index: number; readonly start: Piece; readonly sx: number; readonly sy: number; readonly d0: number; readonly a0: number };
+type Drag = { readonly mode: 'move' | 'size' | 'turn'; readonly index: number; readonly start: Piece; readonly sx: number; readonly sy: number; readonly d0: number; readonly a0: number; readonly dirty: boolean };
 
 export function Wardrobe() {
   const { api } = useKayfa();
@@ -62,8 +64,11 @@ export function Wardrobe() {
   const id: Id | null = [picked, carried, player.hudCharacter?.id].find(own) ?? acting[0]?.id ?? null;
 
   const ids = acting.map((c) => c.id).join(',');
-  const loadWardrobe = useCallback(async () => {
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const loadWardrobe = useCallback(async (live: () => boolean) => {
     const answer = await api.wardrobe();
+    if (!live()) return;
     if (answer.ok) setItems(answer.value);
     else setFailed(true);
   }, [api]);
@@ -71,12 +76,13 @@ export function Wardrobe() {
   const refresh = useCallback(async () => {
     try {
       const [answer, list] = await Promise.all([api.wardrobe(), api.characters(ids.split(','))]);
+      if (!mounted.current) return;
       if (!answer.ok) { setStale(true); return; }
       setItems(answer.value);
       setFaces(new Map(list.map((c) => [c.id, c])));
       setStale(false);
     } catch {
-      setStale(true);
+      if (mounted.current) setStale(true);
     }
   }, [api, ids]);
   useEffect(() => {
@@ -84,7 +90,7 @@ export function Wardrobe() {
     let live = true;
     void (async () => {
       try {
-        const [list] = await Promise.all([api.characters(ids.split(',')), loadWardrobe()]);
+        const [list] = await Promise.all([api.characters(ids.split(',')), loadWardrobe(() => live)]);
         if (live) setFaces(new Map(list.map((c) => [c.id, c])));
       } catch {
         if (live) setFailed(true);
@@ -103,7 +109,7 @@ export function Wardrobe() {
   }
   if (failed) return <div className="kb-wardrobe">{head}<CalmRegion as="p" className="kb-notice" data-kb-tone="refusal">The wardrobe could not be loaded. Reload the page to try again.</CalmRegion></div>;
   const face = faces?.get(id) ?? null;
-  if (faces === null || items === null) return <div className="kb-wardrobe" aria-busy="true">{head}</div>;
+  if (faces === null || items === null) return <div className="kb-wardrobe" aria-busy="true">{head}<CalmRegion as="p" className="kb-notice">Loading the wardrobe.</CalmRegion></div>;
   return (
     <div className="kb-wardrobe">
       {head}
@@ -132,6 +138,10 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
   const [at, setAt] = useState<number | null>(null);
   const [gear, setGear] = useState<string | null>(items[0]?.gear ?? null);
   const [say, setSay] = useState('');
+  const [sayN, setSayN] = useState(0);
+  /* A line for the live region; the counter re-keys it, so the same words said twice are announced twice. */
+  const speak = (words: string) => { setSay(words); setSayN((n) => n + 1); };
+  const help = useId();
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(() => drafts.has(id));
@@ -173,49 +183,57 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     return `No copy of ${nameOf(key)} is free: ${it.held} held${where.length > 0 ? `, ${where.join(', ')}` : ''}${s.here > 0 ? `, ${s.here} here` : ''}. ${s.elsewhereCount > 0 ? 'Take one off the other character to wear it here.' : 'Take one off here to wear it again.'}`;
   };
 
+  /* While a save is out the arrangement is not edited: the save's answer would overwrite what was done meanwhile. */
   const change = (next: Piece[], index: number | null, words?: string) => {
+    if (busy) return;
     setPieces(next);
     setAt(index);
     setDirty(true);
     setRefusal(null);
-    if (words !== undefined) setSay(words);
+    speak(words ?? '');
   };
 
   const put = (key: string, where?: { readonly x: number; readonly y: number }) => {
+    if (busy) return;
     const why = whyNot(key);
-    if (why !== null) { setSay(why); return; }
+    if (why !== null) { speak(why); return; }
     const piece = fit({ gear: key, x: where?.x ?? 0.5, y: where?.y ?? 0.5, w: FIRST_WIDTH, turn: 0, layer: pieces.length });
     change([...pieces, piece], pieces.length, `${nameOf(key)} put on, layer ${pieces.length + 1} of ${pieces.length + 1} worn. The buttons under Selected piece move it.`);
   };
 
   const current = at !== null ? pieces[at] ?? null : null;
-  const edit = (f: (p: Piece) => Piece, words?: (p: Piece) => string) => {
-    if (at === null || !current) return;
+  /** A change to the selected piece; where it changes nothing (a bound), says so in `none`. */
+  const edit = (f: (p: Piece) => Piece, none: string, words?: (p: Piece) => string) => {
+    if (at === null || !current || busy) return;
     const p = f(current);
+    if (JSON.stringify(p) === JSON.stringify(current)) { speak(none); return; }
     change(pieces.map((x, i) => (i === at ? p : x)), at, words?.(p));
   };
   const takeOff = () => {
-    if (at === null || !current) return;
+    if (at === null || !current || busy) return;
     change(renumber(pieces.filter((_, i) => i !== at)), null, `${nameOf(current.gear)} taken off.`);
     stage.current?.focus();
   };
   const reorder = (by: 1 | -1) => {
-    if (at === null || !current) return;
+    if (at === null || !current || busy) return;
     const moved = layered(pieces, at, by);
-    if (moved) change(moved.pieces, moved.index, `${nameOf(current.gear)} is on layer ${moved.index + 1} of ${pieces.length}.`);
+    if (!moved) return;
+    change(moved.pieces, moved.index, `${nameOf(current.gear)} is on layer ${moved.index + 1} of ${pieces.length}.`);
+    /* The button that has just reached its end goes disabled; focus goes to the piece, not nowhere. */
+    if (moved.index === 0 || moved.index === pieces.length - 1) setFocusSel(true);
   };
 
   const sizeWords = (p: Piece) => `${nameOf(p.gear)}: ${Math.round(p.w * 100)}% of the portrait's width.`;
   const turnWords = (p: Piece) => `${nameOf(p.gear)}: turned ${Math.round(p.turn)} degrees.`;
   const moves: Record<string, () => void> = {
-    left: () => edit((p) => nudge(p, -STEP.move, 0)),
-    right: () => edit((p) => nudge(p, STEP.move, 0)),
-    up: () => edit((p) => nudge(p, 0, -STEP.move)),
-    down: () => edit((p) => nudge(p, 0, STEP.move)),
-    bigger: () => edit((p) => resized(p, STEP.size), sizeWords),
-    smaller: () => edit((p) => resized(p, -STEP.size), sizeWords),
-    turnRight: () => edit((p) => turned(p, STEP.turn), turnWords),
-    turnLeft: () => edit((p) => turned(p, -STEP.turn), turnWords),
+    left: () => edit((p) => nudge(p, -STEP.move, 0), STUCK),
+    right: () => edit((p) => nudge(p, STEP.move, 0), STUCK),
+    up: () => edit((p) => nudge(p, 0, -STEP.move), STUCK),
+    down: () => edit((p) => nudge(p, 0, STEP.move), STUCK),
+    bigger: () => edit((p) => resized(p, STEP.size), "It's as big as it gets.", sizeWords),
+    smaller: () => edit((p) => resized(p, -STEP.size), "It's as small as it gets.", sizeWords),
+    turnRight: () => edit((p) => turned(p, STEP.turn), "It can't turn further that way.", turnWords),
+    turnLeft: () => edit((p) => turned(p, -STEP.turn), "It can't turn further that way.", turnWords),
   };
 
   /** The keys of the selected piece, on its box and on the panel's buttons. */
@@ -224,7 +242,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     const big = e.shiftKey ? STEP.moveBig : STEP.move;
     const arrow: Record<string, readonly [number, number]> = { ArrowLeft: [-big, 0], ArrowRight: [big, 0], ArrowUp: [0, -big], ArrowDown: [0, big] };
     const a = arrow[e.key];
-    if (a) edit((p) => nudge(p, a[0], a[1]));
+    if (a) edit((p) => nudge(p, a[0], a[1]), STUCK);
     else if (e.key === '+' || e.key === '=') moves.bigger!();
     else if (e.key === '-' || e.key === '_') moves.smaller!();
     else if (e.key === ']') moves.turnRight!();
@@ -240,7 +258,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     return box && box.width > 0 && box.height > 0 ? { x: e.clientX - box.left, y: e.clientY - box.top, w: box.width, h: box.height } : null;
   };
   const down = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || busy) return;
     const p = point(e);
     if (!p) return;
     const handle = (e.target as HTMLElement).closest('[data-kb-handle]')?.getAttribute('data-kb-handle');
@@ -257,7 +275,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     const cy = start.y * p.h;
     drag.current = {
       mode: handle === 'size' ? 'size' : handle === 'turn' ? 'turn' : 'move', index, start, sx: p.x, sy: p.y,
-      d0: Math.hypot(p.x - cx, p.y - cy), a0: (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI,
+      d0: Math.hypot(p.x - cx, p.y - cy), a0: (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI, dirty: latest.current.dirty,
     };
     e.preventDefault();
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -265,7 +283,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
   const move = (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current;
     const p = point(e);
-    if (!d || !p) return;
+    if (!d || !p || busy) return;
     const cx = d.start.x * p.w;
     const cy = d.start.y * p.h;
     const next = d.mode === 'move' ? dragged(d.start, p.x - d.sx, p.y - d.sy, p.w, p.h)
@@ -275,14 +293,58 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     setDirty(true);
   };
   const up = () => { drag.current = null; };
+  /* A drag the browser took away (a touch turned into a scroll, say) puts the piece back where the drag began. */
+  const cancel = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d) return;
+    setPieces((was) => was.map((x, i) => (i === d.index ? d.start : x)));
+    setDirty(d.dirty);
+  };
 
   const dropped = (e: DragEvent<HTMLDivElement>) => {
     const key = e.dataTransfer.getData('text/plain');
-    if (!items.some((i) => i.gear === key)) return;
+    if (busy || !items.some((i) => i.gear === key)) return;
     e.preventDefault();
     const p = point(e);
     put(key, p ? { x: p.x / p.w, y: p.y / p.h } : undefined);
   };
+
+  const chosen = items.find((i) => i.gear === gear) ?? items[0] ?? null;
+  /* The carousel and the chosen panel read only which gear is worn here (not where), so a drag, which re-renders this page for every move, leaves them alone. */
+  const putRef = useRef(put);
+  putRef.current = put;
+  const putGear = useCallback((key: string) => putRef.current(key), []);
+  const wornKey = pieces.map((p) => p.gear).join(',');
+  const whyChosen = chosen ? whyNot(chosen.gear) : null;
+  const carousel = useMemo(() => (items.length === 0 ? null : (
+    <Carousel
+      role="radiogroup" label="Your gear" items={items.map((i) => ({ key: i.gear, i }))} value={chosen?.gear ?? null} onChange={setGear}
+      renderItem={({ i }, { props, follow }) => {
+        const s = standing(i);
+        const ids = { name: `${group}-${i.gear}-name`, worn: `${group}-${i.gear}-worn` };
+        return (
+          <label
+            key={i.gear} {...props} className="kb-wardrobe-card" data-kb-chosen={chosen?.gear === i.gear || undefined} data-kb-free={s.free > 0 || undefined}
+            draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', i.gear); e.dataTransfer.effectAllowed = 'copy'; }}
+          >
+            <input
+              type="radio" name={group} value={i.gear} className="kb-visually-hidden" checked={chosen?.gear === i.gear}
+              aria-labelledby={ids.name} aria-describedby={ids.worn}
+              onChange={() => { setGear(i.gear); follow(i.gear); }} onFocus={() => follow(i.gear)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); putGear(i.gear); } }}
+            />
+            <span className="kb-wardrobe-art" aria-hidden="true">{ui.gear[i.gear] && <img src={ui.gear[i.gear]!.art} alt="" draggable={false} />}</span>
+            <span className="kb-wardrobe-rarity"><span className="kb-gem" aria-hidden="true" data-kb-rarity={i.rarity} data-kb-gem={gemOf(i.rarity)} /> <span>{rarityName(i.rarity)}</span></span>
+            <b id={ids.name} className="kb-wardrobe-name">{nameOf(i.gear)}</b>
+            <span id={ids.worn} className="kb-wardrobe-worn-line">{s.text}</span>
+          </label>
+        );
+      }}
+    />
+  )),
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- standing() reads the pieces only for which gear is worn, which `wornKey` stands for
+  [items, chosen?.gear, wornKey, id, name, group, ui, instance.gear, characters, putGear]);
 
   useEffect(() => {
     if (focusSel && current) { sel.current?.focus(); setFocusSel(false); }
@@ -292,14 +354,14 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     if (busy) return;
     setBusy(true);
     setRefusal(null);
-    setSay('');
+    speak('');
     try {
       const outfit = renumber(pieces);
       const answer = await api.setOutfit(id, outfit);
       if (!answer.ok) { setRefusal(answer.error); return; }
       setPieces(outfit);
       setDirty(false);
-      setSay('Outfit saved.');
+      speak('Outfit saved.');
       await reload();
     } catch {
       setRefusal('The outfit could not be saved. Check your connection and try again.');
@@ -308,7 +370,6 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
     }
   };
 
-  const chosen = items.find((i) => i.gear === gear) ?? items[0] ?? null;
   const portrait = face?.avatarPortrait ?? null;
   if (face === null || portrait === null) {
     return (
@@ -323,7 +384,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
   const tallness = face.portraitTallness ?? tall ?? FALLBACK_TALLNESS;
   const gearName = (p: Piece) => nameOf(p.gear);
   const ctl = (name: string, label: string, key: string, glyph?: string) => (
-    <button type="button" className="kb-wardrobe-ctl" aria-label={glyph ? name : undefined} onClick={moves[key]} disabled={current === null}>
+    <button type="button" className="kb-wardrobe-ctl" aria-label={glyph ? name : undefined} onClick={moves[key]} disabled={current === null || busy}>
       {glyph ? <span aria-hidden="true">{glyph}</span> : label}
     </button>
   );
@@ -338,7 +399,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
           <div
             ref={stage} className="kb-wardrobe-stage" role="group" tabIndex={-1} aria-label={`${name}'s portrait with its gear`}
             style={slotShape(face.portraitTallness ?? tall ?? null)}
-            onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+            onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={cancel}
             onDragOver={(e) => { if (e.dataTransfer.types.includes('text/plain')) e.preventDefault(); }} onDrop={dropped}
           >
             <img src={portrait} alt="" draggable={false} onLoad={(e) => { const i = e.currentTarget; if (i.naturalWidth > 0) setTall(i.naturalHeight / i.naturalWidth); }} />
@@ -347,9 +408,10 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
             {current && ui.gear[current.gear] && (
               <div
                 ref={sel} className="kb-wardrobe-sel" tabIndex={0} role="group" onKeyDown={keys}
-                aria-label={`${gearName(current)}, selected. Arrow keys move it, plus and minus size it, left and right brackets turn it, Delete takes it off.`}
+                aria-label={`${gearName(current)}, selected`} aria-describedby={help}
                 style={{ left: `${Math.round(current.x * 1e6) / 1e4}%`, top: `${Math.round(current.y * 1e6) / 1e4}%`, width: `${Math.round(current.w * 1e6) / 1e4}%`, aspectRatio: `1 / ${aspectOf(current.gear)}`, transform: `translate(-50%, -50%) rotate(${current.turn}deg)` }}
               >
+                <span id={help} className="kb-visually-hidden">Arrow keys move it, plus and minus size it, left and right brackets turn it, Delete takes it off.</span>
                 {['nw', 'ne', 'sw', 'se'].map((c) => <span key={c} className="kb-wardrobe-handle" data-kb-handle="size" data-kb-corner={c} aria-hidden="true" />)}
                 <span className="kb-wardrobe-handle kb-wardrobe-turn" data-kb-handle="turn" aria-hidden="true" />
               </div>
@@ -359,7 +421,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
       </section>
 
       <div className="kb-wardrobe-panels">
-        <section className="kb-wardrobe-panel" aria-label="Selected piece" onKeyDown={(e: KeyboardEvent<HTMLElement>) => { if ((e.target as HTMLElement).tagName === 'BUTTON') keys(e); }}>
+        <section className="kb-wardrobe-panel" aria-label="Selected piece" onKeyDown={(e: KeyboardEvent<HTMLElement>) => { const t = e.target as HTMLElement; if (t.tagName === 'BUTTON' && !t.closest('.kb-wardrobe-worn')) keys(e); }}>
           <h2 className="kb-wardrobe-label">{current ? `Selected · ${gearName(current)}` : 'Selected piece'}</h2>
           <div role="group" aria-label="Worn now"><ul className="kb-wardrobe-worn">
             {pieces.map((p, i) => (
@@ -376,12 +438,12 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
           <div className="kb-wardrobe-controls">
             {ctl('Move left', '', 'left', '←')}{ctl('Move up', '', 'up', '↑')}{ctl('Move down', '', 'down', '↓')}{ctl('Move right', '', 'right', '→')}
             {ctl('Bigger', 'Bigger', 'bigger')}{ctl('Smaller', 'Smaller', 'smaller')}
-            <button type="button" className="kb-wardrobe-ctl" onClick={moves.turnLeft} disabled={current === null}>Turn left <span aria-hidden="true">↺</span></button>
-            <button type="button" className="kb-wardrobe-ctl" onClick={moves.turnRight} disabled={current === null}>Turn right <span aria-hidden="true">↻</span></button>
-            <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" aria-disabled={current === null || top} onClick={() => { if (!top) reorder(1); }}>Bring forward</button>
-            <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" aria-disabled={current === null || bottom} onClick={() => { if (!bottom) reorder(-1); }}>Send back</button>
+            <button type="button" className="kb-wardrobe-ctl" onClick={moves.turnLeft} disabled={current === null || busy}>Turn left <span aria-hidden="true">↺</span></button>
+            <button type="button" className="kb-wardrobe-ctl" onClick={moves.turnRight} disabled={current === null || busy}>Turn right <span aria-hidden="true">↻</span></button>
+            <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" disabled={current === null || top || busy} onClick={() => reorder(1)}>Bring forward</button>
+            <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" disabled={current === null || bottom || busy} onClick={() => reorder(-1)}>Send back</button>
           </div>
-          <ButtonRow><GlassButton onClick={takeOff} disabled={current === null}>Take it off</GlassButton></ButtonRow>
+          <ButtonRow><GlassButton onClick={takeOff} disabled={current === null || busy}>Take it off</GlassButton></ButtonRow>
         </section>
 
         <section className="kb-wardrobe-panel" aria-label="On the square">
@@ -397,7 +459,7 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
 
         <p className="kb-wardrobe-note">{pieces.length} of {most} pieces worn. A new portrait takes all of them off; recropping the square keeps them.{dirty ? ` You have changes not saved yet. Your changes to ${name} are kept until you save or leave this page.` : ''}</p>
         <ButtonRow><GlassButton kind="primary" busy={busy} onClick={() => void save()}>Save the outfit</GlassButton></ButtonRow>
-        <div role="status" aria-label="Outfit messages" className="kb-wardrobe-say">{say}</div>
+        <div role="status" aria-label="Outfit messages" className="kb-wardrobe-say"><span key={sayN}>{say}</span></div>
         {refusal !== null && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
 
         <Trophies key={id} id={id} face={face} reload={reload} />
@@ -412,31 +474,8 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
           <CalmRegion as="p" className="kb-notice">You hold no gear yet. It turns up in Random Events, and an admin may grant it.</CalmRegion>
         ) : (
           <>
-            <Carousel
-              role="radiogroup" label="Your gear" items={items.map((i) => ({ key: i.gear, i }))} value={chosen?.gear ?? null} onChange={setGear}
-              renderItem={({ i }, { props, follow }) => {
-                const s = standing(i);
-                const ids = { name: `${group}-${i.gear}-name`, worn: `${group}-${i.gear}-worn` };
-                return (
-                  <label
-                    key={i.gear} {...props} className="kb-wardrobe-card" data-kb-chosen={chosen?.gear === i.gear || undefined} data-kb-free={s.free > 0 || undefined}
-                    draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', i.gear); e.dataTransfer.effectAllowed = 'copy'; }}
-                  >
-                    <input
-                      type="radio" name={group} value={i.gear} className="kb-visually-hidden" checked={chosen?.gear === i.gear}
-                      aria-labelledby={ids.name} aria-describedby={ids.worn}
-                      onChange={() => { setGear(i.gear); follow(i.gear); }} onFocus={() => follow(i.gear)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); put(i.gear); } }}
-                    />
-                    <span className="kb-wardrobe-art" aria-hidden="true">{ui.gear[i.gear] && <img src={ui.gear[i.gear]!.art} alt="" draggable={false} />}</span>
-                    <span className="kb-wardrobe-rarity"><span className="kb-gem" aria-hidden="true" data-kb-rarity={i.rarity} data-kb-gem={gemOf(i.rarity)} /> <span>{rarityName(i.rarity)}</span></span>
-                    <b id={ids.name} className="kb-wardrobe-name">{nameOf(i.gear)}</b>
-                    <span id={ids.worn} className="kb-wardrobe-worn-line">{s.text}</span>
-                  </label>
-                );
-              }}
-            />
-            {chosen && <ChosenPanel item={chosen} name={nameOf(chosen.gear)} line={rules(chosen.gear)?.line ?? ''} mask={name} why={whyNot(chosen.gear)} put={() => put(chosen.gear)} />}
+            {carousel}
+            {chosen && <ChosenPanel item={chosen} name={nameOf(chosen.gear)} line={rules(chosen.gear)?.line ?? ''} mask={name} why={whyChosen} gear={chosen.gear} put={putGear} />}
           </>
         )}
       </section>
@@ -444,22 +483,22 @@ function Dressing({ id, name, face, items, reload, drafts }: { readonly id: Id; 
   );
 }
 
-function ChosenPanel({ item, name, line, mask, why, put }: { readonly item: WardrobeItem; readonly name: string; readonly line: string; readonly mask: string; readonly why: string | null; readonly put: () => void }) {
+const ChosenPanel = memo(function ChosenPanel({ item, name, line, mask, why, gear, put }: { readonly item: WardrobeItem; readonly name: string; readonly line: string; readonly mask: string; readonly why: string | null; readonly gear: string; readonly put: (gear: string) => void }) {
   const reason = useId();
   return (
     <section className="kb-wardrobe-panel" aria-label={`${name}, in detail`}>
-      <h3 className="kb-wardrobe-label">{name} · {rarityName(item.rarity).toUpperCase()}</h3>
+      <h3 className="kb-wardrobe-label">{name} · {rarityName(item.rarity)}</h3>
       {line !== '' && <p className="kb-wardrobe-line">{line}</p>}
       {why !== null && <p id={reason} className="kb-wardrobe-note">{why}</p>}
       <ButtonRow>
-        <GlassButton aria-disabled={why !== null} aria-describedby={why !== null ? reason : undefined} onClick={() => { if (why === null) put(); }}>Put it on {mask}</GlassButton>
+        <GlassButton aria-disabled={why !== null} aria-describedby={why !== null ? reason : undefined} onClick={() => { if (why === null) put(gear); }}>Put it on {mask}</GlassButton>
       </ButtonRow>
     </section>
   );
-}
+});
 
 /** The awards a mask can show on its posts: up to the most checked, saved with the awards' own button; a belt held shows without being chosen. */
-function Trophies({ id, face, reload }: { readonly id: Id; readonly face: Character | null; readonly reload: () => Promise<void> }) {
+const Trophies = memo(function Trophies({ id, face, reload }: { readonly id: Id; readonly face: Character | null; readonly reload: () => Promise<void> }) {
   const { api, instance } = useKayfa();
   const most = instance.settings.cosmetics.trophies.shownMost;
   const [page, setPage] = useState<{ readonly awards: readonly TrophyItem[]; readonly more: boolean } | null>(null);
@@ -518,4 +557,4 @@ function Trophies({ id, face, reload }: { readonly id: Id; readonly face: Charac
       {refusal !== null && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
     </section>
   );
-}
+});

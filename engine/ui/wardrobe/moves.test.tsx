@@ -26,7 +26,7 @@ describe('the pointer\'s moves, in the portrait\'s fractions', () => {
 });
 
 describe('the buttons\' and keys\' moves', () => {
-  test('a nudge, a size and a turn round to whole hundredths and never leave pieceProblem\'s bounds', () => {
+  test('a nudge, a size and a turn round to ten-thousandths and never leave pieceProblem\'s bounds', () => {
     let p = piece();
     for (let i = 0; i < 300; i++) p = nudge(p, i % 2 ? 0.05 : -0.01, 0.05);
     for (let i = 0; i < 40; i++) p = resized(p, i < 20 ? 0.05 : -0.05);

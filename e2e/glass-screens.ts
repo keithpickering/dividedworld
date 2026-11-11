@@ -54,6 +54,7 @@ export const PAGES: readonly Screen[] = [
   { name: 'Reach a person', board: '2026-11-05-backfill/16-contact', path: '/contact', signedOut: true },
   { name: 'Welcome', board: '2026-11-05-backfill/19-welcome', path: '/welcome' },
   { name: 'My log, before anything has settled', board: '2026-11-05-backfill/30-log-empty', path: '/log' },
+  { name: 'The wardrobe', board: '2026-11-04-cosmetics/02-dressup', path: '/wardrobe' },
   { name: 'The Vending Machine', board: '07-vending', path: '/vending' },
   { name: 'The hand, open', board: '05-cards', path: '/b/general', then: async (page) => { await page.getByRole('button', { name: /^Hand, \d+ postcards?$/ }).click(); } },
   /* The armed card, with its floating tag where the layout keeps the hand open to show it. */

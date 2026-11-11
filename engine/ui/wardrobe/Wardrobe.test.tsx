@@ -47,7 +47,8 @@ const item = async (name: string) => {
 };
 const press = (el: HTMLElement, key: string, init: KeyboardEventInit = {}) => fireEvent.keyDown(el, { key, ...init });
 const worn = () => within(screen.getByRole('group', { name: 'Worn now' })).queryAllByRole('button');
-const selected = () => screen.getByRole('group', { name: /selected\. /u });
+const selected = () => screen.getByRole('group', { name: /, selected$/u });
+const said = () => screen.getByRole('status', { name: 'Outfit messages' });
 
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); vi.restoreAllMocks(); });
@@ -61,7 +62,7 @@ describe('placing', () => {
     expect(selected().style.top).toBe('50%');
     press(await item('Tall Hat'), 'Enter');
     expect(worn().map((b) => b.textContent)).toEqual([expect.stringMatching(/Layer 1.*Headband/u), expect.stringMatching(/Layer 2.*Tall Hat/u)]);
-    expect(selected().getAttribute('aria-label')).toMatch(/^Tall Hat, selected\./u);
+    expect(selected().getAttribute('aria-label')).toBe('Tall Hat, selected');
   });
 
   test('the piece is drawn over the portrait by the outfit layer, and the square shows it through its frame', async () => {
@@ -176,7 +177,7 @@ describe('the selected piece', () => {
     press(await item('Headband'), 'Enter');
     press(await item('Tall Hat'), 'Enter');
     const panel = screen.getByRole('region', { name: 'Selected piece' });
-    expect(within(panel).getByRole('button', { name: 'Bring forward' })).toHaveAttribute('aria-disabled', 'true');
+    expect(within(panel).getByRole('button', { name: 'Bring forward' })).toBeDisabled();
     fireEvent.click(within(panel).getByRole('button', { name: 'Send back' }));
     expect(worn().map((b) => b.textContent)).toEqual([expect.stringMatching(/Layer 1.*Tall Hat/u), expect.stringMatching(/Layer 2.*Headband/u)]);
     fireEvent.click(within(panel).getByRole('button', { name: 'Bring forward' }));
@@ -326,5 +327,167 @@ describe('the page', () => {
     press(await item('Tall Hat'), 'Enter');
     const found = await axeViolations(container);
     expect(found, describeViolations(found)).toEqual([]);
+  });
+});
+
+
+/* jsdom has no PointerEvent or DragEvent, and a generic Event drops the coordinates a handler reads. */
+class PointerStub extends MouseEvent { pointerId = 1; }
+class DragStub extends MouseEvent {}
+const STAGE = { left: 0, top: 0, width: 200, height: 300, right: 200, bottom: 300, x: 0, y: 0, toJSON: () => ({}) };
+
+describe('review: the pointer, the drop and the words', () => {
+  beforeEach(() => {
+    vi.stubGlobal('PointerEvent', PointerStub);
+    vi.stubGlobal('DragEvent', DragStub);
+  });
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  /** The page with a headband worn and selected, the stage measured at 200 by 300. */
+  async function staged() {
+    const shown = open(seeded().fake);
+    press(await item('Headband'), 'Enter');
+    const stage = screen.getByRole('group', { name: /Pipewrench's portrait/u });
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue(STAGE as DOMRect);
+    return { shown, stage };
+  }
+  const ptr = (el: Element, type: 'pointerDown' | 'pointerMove' | 'pointerUp' | 'pointerCancel', x: number, y: number) => fireEvent[type](el, { clientX: x, clientY: y, button: 0, pointerId: 1 });
+
+  test('a drag on the piece moves it by the pointer\'s distance, in the portrait\'s fractions', async () => {
+    const { stage } = await staged();
+    ptr(stage, 'pointerDown', 100, 150);
+    ptr(stage, 'pointerMove', 120, 180);
+    ptr(stage, 'pointerUp', 120, 180);
+    expect(selected().style.left).toBe('60%');
+    expect(selected().style.top).toBe('60%');
+    ptr(stage, 'pointerMove', 0, 0);
+    expect(selected().style.left).toBe('60%');
+  });
+
+  test('a corner sizes the piece about its center, and the round handle turns it', async () => {
+    const { stage } = await staged();
+    const corner = selected().querySelector('[data-kb-handle="size"]')!;
+    ptr(corner, 'pointerDown', 120, 150);
+    ptr(stage, 'pointerMove', 140, 150);
+    ptr(stage, 'pointerUp', 140, 150);
+    expect(selected().style.width).toBe('80%');
+    expect(selected().style.left).toBe('50%');
+    expect(selected().style.top).toBe('50%');
+    const turn = selected().querySelector('[data-kb-handle="turn"]')!;
+    ptr(turn, 'pointerDown', 100, 50);
+    ptr(stage, 'pointerMove', 200, 150);
+    ptr(stage, 'pointerUp', 200, 150);
+    expect(selected().style.transform).toContain('rotate(90deg)');
+  });
+
+  test('a cancelled drag puts the piece back where the drag began and is over', async () => {
+    const { stage } = await staged();
+    press(selected(), 'ArrowRight');
+    ptr(stage, 'pointerDown', 102, 150);
+    ptr(stage, 'pointerMove', 160, 200);
+    expect(selected().style.left).not.toBe('51%');
+    ptr(stage, 'pointerCancel', 160, 200);
+    expect(selected().style.left).toBe('51%');
+    expect(selected().style.top).toBe('50%');
+    ptr(stage, 'pointerMove', 10, 10);
+    expect(selected().style.left).toBe('51%');
+  });
+
+  test('a cancelled drag on a clean page leaves it clean', async () => {
+    const { stage } = await staged();
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await screen.findByText('Outfit saved.');
+    ptr(stage, 'pointerDown', 100, 150);
+    ptr(stage, 'pointerMove', 120, 180);
+    ptr(stage, 'pointerCancel', 120, 180);
+    expect(screen.queryByText(/You have changes not saved yet/u)).toBeNull();
+  });
+
+  test('dropping a gear from the wardrobe puts it where it was dropped', async () => {
+    const { stage } = await staged();
+    fireEvent.drop(stage, { clientX: 50, clientY: 75, dataTransfer: { getData: (t: string) => (t === 'text/plain' ? 'tall' : ''), types: ['text/plain'] } });
+    expect(worn()).toHaveLength(2);
+    expect(selected().style.left).toBe('25%');
+    expect(selected().style.top).toBe('25%');
+    fireEvent.drop(stage, { clientX: 50, clientY: 75, dataTransfer: { getData: () => 'nonsense', types: ['text/plain'] } });
+    expect(worn()).toHaveLength(2);
+  });
+
+  test('an edit takes the saved words away, so a dirty page does not say "Outfit saved."', async () => {
+    await staged();
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await screen.findByText('Outfit saved.');
+    press(selected(), '+');
+    expect(screen.queryByText('Outfit saved.')).toBeNull();
+  });
+
+  test('while a save is out the arrangement cannot be edited, so no edit is lost to the save\'s answer', async () => {
+    const { fake } = seeded();
+    let finish: (v: { ok: true; value: { worn: number } }) => void = () => undefined;
+    vi.spyOn(fake, 'setOutfit').mockReturnValue(new Promise((r) => { finish = r; }));
+    open(fake);
+    press(await item('Headband'), 'Enter');
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    press(selected(), 'ArrowRight');
+    press(await item('Tall Hat'), 'Enter');
+    expect(selected().style.left).toBe('50%');
+    expect(worn()).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Move right' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Take it off' })).toBeDisabled();
+    finish({ ok: true, value: { worn: 1 } });
+    await screen.findByText('Outfit saved.');
+    expect(screen.getByRole('button', { name: 'Move right' })).toBeEnabled();
+  });
+
+  test('a move that changes nothing says so, and the same words are announced again', async () => {
+    await staged();
+    for (let i = 0; i < 20; i++) press(selected(), '+');
+    expect(selected().style.width).toBe('140%');
+    for (let i = 0; i < 2; i++) press(selected(), '+');
+    expect(selected().style.width).toBe('150%');
+    press(selected(), '+');
+    expect(said()).toHaveTextContent("It's as big as it gets.");
+    const first = said().firstElementChild;
+    press(selected(), '+');
+    expect(said()).toHaveTextContent("It's as big as it gets.");
+    expect(said().firstElementChild).not.toBe(first);
+    for (let i = 0; i < 70; i++) press(selected(), 'ArrowLeft');
+    press(selected(), 'ArrowLeft');
+    expect(said()).toHaveTextContent("It can't move further that way.");
+  });
+
+  test('the arrow keys in Worn now choose and do not move the piece', async () => {
+    await staged();
+    press(worn()[0]!, 'ArrowDown');
+    press(worn()[0]!, 'ArrowRight');
+    expect(selected().style.top).toBe('50%');
+    expect(selected().style.left).toBe('50%');
+    fireEvent.click(screen.getByRole('button', { name: 'Move right' }));
+    expect(selected().style.left).toBe('51%');
+  });
+
+  test('the selected box is named briefly, and its keys are its description', async () => {
+    await staged();
+    expect(selected()).toHaveAccessibleName('Headband, selected');
+    expect(selected()).toHaveAccessibleDescription(/Arrow keys move it.*Delete takes it off/u);
+  });
+
+  test('Bring forward and Send back are disabled at the ends, and focus goes to the piece when one becomes so', async () => {
+    open(seeded().fake);
+    press(await item('Headband'), 'Enter');
+    press(await item('Tall Hat'), 'Enter');
+    const back = screen.getByRole('button', { name: 'Send back' });
+    back.focus();
+    fireEvent.click(back);
+    await waitFor(() => expect(back).toBeDisabled());
+    expect(back).not.toHaveFocus();
+    expect(selected()).toHaveFocus();
+  });
+
+  test('says it is loading the wardrobe while the reads are out', async () => {
+    const { fake } = seeded();
+    vi.spyOn(fake, 'wardrobe').mockReturnValue(new Promise(() => undefined));
+    open(fake);
+    expect(await screen.findByText('Loading the wardrobe.')).toBeInTheDocument();
   });
 });

@@ -343,7 +343,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
         <div className="kb-roster-actions">
           {turnCell(c)}
           {live && <GlassButton to="/characters/edit" state={{ character: c.id }} aria-label="Edit profile">Edit profile</GlassButton>}
-          {live && <GlassButton to="/wardrobe" state={{ character: c.id }}>Dress up</GlassButton>}
+          {live && <GlassButton to="/wardrobe" state={{ character: c.id }} aria-label={`Dress up ${c.name}`}>Dress up</GlassButton>}
           {/* Its own tab of My log, chosen by the navigation's state and never the address (engine/ui/log/Log.tsx), as the Roster board draws the link. */}
           <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
           {live && c.classShownAt === null && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
