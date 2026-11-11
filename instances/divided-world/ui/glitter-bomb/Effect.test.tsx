@@ -277,6 +277,8 @@ describe('Glitter Bomb', () => {
     expect(host).toBe(face);
     expect(options.sticky).toBe(true);
     expect(options.flakes).toBe(lastFlakes());
+    /* The surface takes no pointer, so the pointer is over it as the element it covers: here the host (issue #399). */
+    expect((options as { hit?: unknown }).hit).toBe(el);
     fireEvent.pointerMove(el, { clientX: 10, clientY: 10, pointerType: 'mouse' });
     expect(spies.clingOver).toHaveBeenCalledTimes(1);
     flakesModule.loose(face).push({ ...lastFlakes().settled[0]! });
@@ -290,6 +292,27 @@ describe('Glitter Bomb', () => {
     const drawsBefore = probe.draws(el);
     frames(5, 500);
     expect(probe.draws(el)).toBe(drawsBefore);
+  });
+
+  /* Issue #399: the surface takes no pointer and holds nothing a pointer hits, so cling is told the body it covers, where the pointer is. */
+  test('in a thread the pointer is over the surface as the post\'s body, and a takeover that moves the host to another body tells cling', () => {
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 300 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-act-main') ? 120 : 0; });
+    render(<div><div className="kb-act-main" data-n="1"><GlitterBombEffect {...props()} /></div><div className="kb-act-main" data-n="2" /></div>);
+    see(1);
+    frames(2);
+    const face = box().querySelector<HTMLElement>('.dw-glitter-surface')!;
+    const [host, options] = spies.clingRegister.mock.calls.at(-1)! as [HTMLElement, { hit?: unknown }];
+    expect(host).toBe(face);
+    expect(options.hit).toBe(document.querySelector('.kb-act-main[data-n="1"]'));
+    const second = document.querySelector<HTMLElement>('.kb-act-main[data-n="2"]')!;
+    second.append(box());
+    act(() => { for (const r of resizes) r.cb(); });
+    expect(spies.clingUnregister).toHaveBeenCalledWith(face);
+    const [again, moved] = spies.clingRegister.mock.calls.at(-1)! as [HTMLElement, { hit?: unknown; flakes?: unknown }];
+    expect(again).toBe(face);
+    expect(moved.hit).toBe(second);
+    expect(moved.flakes).toBe(lastFlakes());
   });
 
   test('out of view the flakes are released and dropped, and a return builds them again from the seed, landed, with no second burst', () => {

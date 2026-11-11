@@ -61,6 +61,7 @@ import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { spunCount, spunLoader, type Spun } from '../spin/spun.ts';
 import { createTallies } from './tallies.ts';
+import { useShowOpenThread } from './open.tsx';
 import './thread.css';
 
 /** How long a reader's position settles before it is sent. */
@@ -556,6 +557,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const quoteSelected = useCallback((a: Act, words: string) => composer.current?.quote(a.id, words, true), []);
   const changed = useCallback((a: Act) => dispatch({ type: 'live', act: a }), []);
   const canReply = systemBoard === false;
+  /* The HUD's Reveal starts on this thread, except on The System's board (and until the board is known), where a meta act is not made. It is cleared when the screen goes. */
+  useShowOpenThread(systemBoard === false && feed.summary ? { id: thread, title: feed.summary.title, board: feed.summary.board } : null);
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
     () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, visits, nameOf, faceOf, pronounsOf, know: ensurePeople, observer, quote: canReply ? quote : null, changed } : null),

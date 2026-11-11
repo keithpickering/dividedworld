@@ -16,8 +16,8 @@
  * `rootMargin`), and once it has stayed there `ARM_MS` by the loop's clock the rest fly out of it and land. A scroll that only
  * passes the spot fires nothing. The burst fires once per mount: leaving and coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
- * registration. The host is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
- * and never saved or sent), and unmounting unregisters it and drops the loose glitter. A play's moment (`still`) draws every flake
+ * registration. The surface is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
+ * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter. A play's moment (`still`) draws every flake
  * landed, at rest, once: no burst, no cling, nothing registered that moves.
  *
  * The seed is `${play.id}:${post.id}`, both public, then a draw made for this mount (`loadSeed`), so each load's burst goes off
@@ -142,8 +142,14 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
       spot.style.left = `${flakes.origin.x}px`;
       spot.style.top = `${flakes.origin.y}px`;
       if (fired) landAll(flakes);
-      if (!still) unclung = cling.register(face, { sticky: true, flakes, landed: redraw });
+      clingTo();
       return flakes;
+    };
+    /* Cling knows the surface, so a flake lands in its px; the surface takes no pointer and holds nothing a pointer hits, so the
+       pointer is over it as the element it covers, the body, else the host (`hit`, issue #399). Registered again when that changes. */
+    const clingTo = (): void => {
+      unclingNow();
+      if (flakes && !still) unclung = cling.register(face, { sticky: true, flakes, landed: redraw, hit: body ?? el });
     };
     /* The over canvas has a backing store only while a burst is in the air. */
     const sizeOver = (): void => {
@@ -219,6 +225,7 @@ export function GlitterBombEffect({ post, plays, place, still, children }: Effec
         if (now) resize?.observe(now);
         hear(now ?? el);
         body = now;
+        clingTo();
         el.toggleAttribute('data-kb-bleed', body !== null);
       }
       return bodyBox(el, body);

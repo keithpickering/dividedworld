@@ -10,6 +10,10 @@
  * - **wrap**: each piece of the run that lies in one text node is drawn by `render` in place, inside its own formatting, and given
  *   that piece's text. Nothing is skipped.
  *
+ * A wrap run may also carry a **trail**: something drawn once, right after the last piece of the run that is drawn, inside that piece's
+ * formatting, so it sits in the line as the run's words do (an instance's card uses it to leave room after a stretch of words). It is
+ * drawn only where the run's own end is drawn; a run whose end lies under a higher run has none.
+ *
  * Where runs overlap, a replace run wins over a wrap run, and of two of a kind the one with the higher `z` wins; the lower one is
  * drawn only where it is not covered, each uncovered stretch of it once. A run never reaches into a quote, code, a link or an
  * image, since none of their words are in the visible text. Layers nest: a `TextLayer` inside another adds its runs to those
@@ -28,6 +32,8 @@ export interface TextRun {
   readonly mode: 'replace' | 'wrap';
   /** What stands for the run (replace), or for one piece of it (wrap), given the words it covers. */
   readonly render: (covered: { readonly text: string; readonly key: string }) => ReactNode;
+  /** A wrap run's trail: drawn once after the run's last drawn piece, given React's key for it. Never drawn for a replace run. */
+  readonly trail?: (key: string) => ReactNode;
 }
 
 const Layers = createContext<readonly TextRun[]>([]);

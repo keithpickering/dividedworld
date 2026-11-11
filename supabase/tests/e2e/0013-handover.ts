@@ -9,10 +9,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
-import { instance } from '../../functions/_shared/instance.ts';
+import { instance as realInstance } from '../../functions/_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
+
+/** This file needs a second Boss, which the real roster no longer has: its world is the placeholder fixtures'. */
+const instance = placeholderWorld(realInstance);
 
 const quiet: Instance = { ...instance, system: { ...instance.system, feeds: [] } };
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };

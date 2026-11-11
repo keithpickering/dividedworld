@@ -22,6 +22,12 @@ const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const draftKey = (w: ReturnType<typeof threadWorld>) => `kb-draft:${w.me}:${w.thread}`;
 
 describe('the quick reply', () => {
+  test('has no Reveal… button: a class is revealed from the HUD or My characters, never from the reply box', async () => {
+    openThread(threadWorld());
+    const form = (await replyBox()).closest('form')!;
+    expect(within(form).queryByRole('button', { name: /^Reveal/u })).toBeNull();
+  });
+
   test('sits at the foot of the thread and names the HUD\'s character in bold', async () => {
     const w = threadWorld();
     openThread(w);

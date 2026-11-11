@@ -76,7 +76,11 @@ function layeredText(n: Extract<BbNode, { type: 'text' | 'noparse' | 'autolink' 
     const st = layered.stretches[i]!;
     const [from, to] = [Math.max(st.start, at), Math.min(st.end, end)];
     if (!st.run) out.push(n.text.slice(from - at, to - at));
-    else if (st.run.mode === 'wrap') out.push(st.run.render({ text: n.text.slice(from - at, to - at), key: `${st.run.key}@${from}` }));
+    else if (st.run.mode === 'wrap') {
+      out.push(st.run.render({ text: n.text.slice(from - at, to - at), key: `${st.run.key}@${from}` }));
+      // The trail follows the piece that ends the run's drawn words: the stretch ends here, and at the run's own end (not under a higher run).
+      if (st.run.trail && st.end === to && st.end === Math.min(st.run.end, layered.text.length)) out.push(st.run.trail(`${st.run.key}~trail`));
+    }
     else if (!layered.drawn.has(st)) {
       layered.drawn.add(st);
       out.push(st.run.render({ text: layered.text.slice(st.start, st.end), key: `${st.run.key}@${st.start}` }));
