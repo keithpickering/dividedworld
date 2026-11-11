@@ -363,7 +363,7 @@ export function instanceProblems(instance: Instance): string[] {
   for (const k of duplicates(instance.cards, (c) => c.key)) out.push(`card key "${k}" is used twice`);
   for (const c of instance.cards) {
     if (c.stack !== undefined && !isWhole(c.stack, 1)) out.push(`card "${c.key}" stacks ${JSON.stringify(c.stack)}; a stack is a whole number, at least 1`);
-    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings));
+    out.push(...playProblems(c, new Set(instance.reactions.map((r) => r.key))), ...reachProblems(c, instance.settings), ...drawProblems(c), ...driveProblems(c, instance.settings), ...needsMessageProblems(c));
   }
   if (!instance.boards.length) out.push('the instance has no board');
   for (const s of duplicates(instance.boards, (b) => b.slug)) out.push(`board slug "${s}" is used twice`);
@@ -560,6 +560,21 @@ function drawProblems(c: CardRules): string[] {
   const out: string[] = [];
   for (const k of c.draws) if (typeof k !== 'string' || !/^[a-z0-9-]{1,40}$/.test(k)) out.push(`${who} draws ${JSON.stringify(k)}; a draw is lowercase letters, digits and hyphens, 1 to 40`);
   for (const k of duplicates(c.draws.filter((k) => typeof k === 'string'), (k) => k)) out.push(`${who} draws "${k}" twice`);
+  return out;
+}
+
+/** The longest the words a blank message is refused with may be: the same bound as a caster's own message (MESSAGE_MOST). */
+const NEEDS_MESSAGE_MOST = 200;
+
+/** A card that needs a message: the refusal's words are a sentence, and only a cast or a use carries a message to need. */
+function needsMessageProblems(c: CardRules): string[] {
+  if (c.needsMessage === undefined) return [];
+  const who = `card "${c.key}"`;
+  if (typeof c.needsMessage !== 'string') return [`${who} needsMessage ${JSON.stringify(c.needsMessage)}; it is the sentence a blank message is refused with`];
+  if (c.needsMessage.trim() === '') return [`${who} needs a message, and its refusal is empty`];
+  const out: string[] = [];
+  if (c.needsMessage.length > NEEDS_MESSAGE_MOST) out.push(`${who} needsMessage is longer than ${NEEDS_MESSAGE_MOST} characters`);
+  if ((c.play ?? 'cast') === 'set') out.push(`${who} needs a message, and only a cast or a use carries one`);
   return out;
 }
 

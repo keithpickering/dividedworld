@@ -850,3 +850,55 @@ begin
   est := estimate_input(au, w_to);
   if exists (select 1 from jsonb_array_elements(coalesce(est -> 'acts', '[]')) x where x ->> 'kind' = 'donation') then raise exception 'the author''s estimate holds a gift: %', est -> 'acts'; end if;
 end $$;
+
+-- ---- a card that needs words (card_kinds.needs_message): a blank message is refused in the card's own words, and a message lands; seed_instance writes it, and a re-seed clears it ----
+-- place_cast holds it, so play_card and staff_play_card both get it. A refusal writes nothing and costs nothing.
+do $$
+declare
+  ann uuid := tests.account('dn-ann');
+  a uuid := tests.character(ann, 'Dn Ann');
+  t uuid := tests.thread('Dn words');
+  p uuid := tests.post(a, t, 'Please give.');
+  why text;
+  played jsonb;
+  drv constant jsonb := '{"lasts": {"unit": "hour", "count": 1}, "gifts": ["dv.g1"], "overhead": "dv.over"}';
+begin
+  perform pg_temp.eco();
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', jsonb_build_array(
+    jsonb_build_object('key', 'dn-sob', 'name', 'Dn Sob', 'alignment', 'sweet', 'rarity', 'uncommon', 'stack', 3, 'drive', drv, 'needsMessage', 'an appeal needs a sob story'),
+    jsonb_build_object('key', 'dn-free', 'name', 'Dn Free', 'alignment', 'sweet', 'rarity', 'common'))));
+  if (select needs_message from card_kinds where key = 'dn-sob') is distinct from 'an appeal needs a sob story' then raise exception 'the seed wrote needs_message: %', (select needs_message from card_kinds where key = 'dn-sob'); end if;
+  if (select needs_message from card_kinds where key = 'dn-free') is not null then raise exception 'a card that needs no message has none'; end if;
+  insert into card_ledger (account, card, kind, price) select ann, 'dn-sob', 'bought', 0 from generate_series(1, 4);
+  insert into card_ledger (account, card, kind, price) select ann, 'dn-free', 'bought', 0;
+  perform tests.become_service();
+  -- Blank, spaces only and none at all are each refused in the card's words, with the refusal hint, writing and spending nothing.
+  why := pg_temp.refusal(format($s$select play_card(%L, 'dn-sob', %L, %L, '{}', 0, '')$s$, ann, a, p));
+  if why is distinct from '22023 an appeal needs a sob story' then raise exception 'a blank message was refused as %', why; end if;
+  why := pg_temp.refusal(format($s$select play_card(%L, 'dn-sob', %L, %L, '{}', 0, E'  \n ')$s$, ann, a, p));
+  if why is distinct from '22023 an appeal needs a sob story' then raise exception 'a message of spaces was refused as %', why; end if;
+  why := pg_temp.refusal(format($s$select play_card(%L, 'dn-sob', %L, %L, '{}', 0, null)$s$, ann, a, p));
+  if why is distinct from '22023 an appeal needs a sob story' then raise exception 'no message was refused as %', why; end if;
+  begin
+    perform play_card(ann, 'dn-sob', a, p, '{}', 0, '');
+    raise exception 'a blank message landed';
+  exception when others then
+    if sqlstate <> '22023' then raise; end if;
+    get stacked diagnostics why = pg_exception_hint;
+    if why is distinct from 'kayfabb.refusal' then raise exception 'the refusal carries the hint %', why; end if;
+  end;
+  if exists (select 1 from acts where kind = 'card' and target_act_id = p) then raise exception 'a refused play wrote an Act'; end if;
+  if card_held(ann, 'dn-sob') <> 4 then raise exception 'a refused play spent the card: %', card_held(ann, 'dn-sob'); end if;
+  -- A message lands; a card that needs none still plays with none.
+  played := play_card(ann, 'dn-sob', a, p, '{}', 0, 'Please, I have a cat.');
+  if played #>> '{payload,message}' is distinct from 'Please, I have a cat.' then raise exception 'the message landed: %', played; end if;
+  played := play_card(ann, 'dn-free', a, p, '{}', 0, '');
+  perform tests.unbecome();
+  -- A re-seed that drops it clears it.
+  perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', jsonb_build_array(
+    jsonb_build_object('key', 'dn-sob', 'name', 'Dn Sob', 'alignment', 'sweet', 'rarity', 'uncommon', 'stack', 3, 'drive', drv))));
+  if (select needs_message from card_kinds where key = 'dn-sob') is not null then raise exception 'a re-seed kept a refusal the card no longer has'; end if;
+  -- The catalog check holds the words: an empty sentence is no refusal.
+  why := pg_temp.refusal($s$select seed_instance('{"settings": {}, "classes": [], "boards": [], "cards": [{"key": "dn-bad", "name": "Dn Bad", "alignment": "sweet", "rarity": "common", "needsMessage": "  "}]}')$s$);
+  if why is null or why not like '22023 %' then raise exception 'a blank refusal was not refused: %', why; end if;
+end $$;

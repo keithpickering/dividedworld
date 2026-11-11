@@ -48,6 +48,8 @@ export function instanceSeed(instance: Instance) {
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
       // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.
       writes: c.writes !== undefined,
+      // What the server draws one of at each play and the drive its plays share (0150), and the words a blank message is refused with (0150): data the SQL holds, never which card.
+      draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.

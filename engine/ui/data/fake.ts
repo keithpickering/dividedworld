@@ -1420,7 +1420,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
     const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
-    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     const account = me()!;
@@ -1615,7 +1615,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
     const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
     const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf });
-    if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
+    if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (play === 'use' && reach === 'character' && target !== character) return refuse(`${rules.name} is used on your own character`);

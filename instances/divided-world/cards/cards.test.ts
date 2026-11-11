@@ -8,7 +8,7 @@ import { STROKES, whoops } from './whoops.ts';
 import { NAMED_COLORS } from '../../../engine/bbcode/parse.ts';
 import { cards } from './index.ts';
 import { instance } from '../index.ts';
-import { atOrBelow, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
+import { atOrBelow, giftSplit, openDrive, staffConfigOf, decidePlay, decideSet, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { PEELS, autocorrect } from './autocorrect.ts';
 import { decide } from '../../../engine/rules/actions.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
@@ -21,7 +21,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['card-collector', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['publicity-tour', 'sweet', 150], ['heat-magnet', 'salty', 150], ['class-clown', 'pepperoni', 150], ['good-vibes', 'sweet', 150], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100], ['jimmy-wails', 'sweet', 200]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -479,16 +479,71 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('card-collector').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the fourteen cards', async () => {
+test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the fifteen cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // The Gimmicks (the card types plan) joined the Booster by their rarity, as a new card does: eight uncommons share the 75 (You Were Saying? is a common, and the hit pull takes none).
-  assert.equal(cards.length, 14);
+  // The Gimmicks (the card types plan) joined the Booster by their rarity, as a new card does: nine uncommons share the 75 (You Were Saying? is a common, and the hit pull takes none): Jimmy Wails is an uncommon, and joined the Booster by its rarity with nothing listed in packs.ts.
+  assert.equal(cards.length, 15);
   assert.ok(Math.abs(chance.get('main-event')! - 0.25) < 1e-9, `Main Event at ${chance.get('main-event')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 8);
-  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.75 / 8) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
+  assert.equal(uncommons.length, 9);
+  for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.75 / 9) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + 1);
+});
+
+// Jimmy Wails (docs/plans/2026-11-03-jimmy-wails-plan.md, Task 6): a Sweet uncommon Cast on a post whose plays share a drive, each drawing a plate and needing a sob story.
+const jimmy = () => cards.find((c) => c.key === 'jimmy-wails')!;
+const hour = 3_600_000;
+const play = (act: string, drive: string, closes: number): import('../../../engine/rules/cards.ts').CardEffect => ({ card: 'jimmy-wails', act, drive, closes: new Date(closes).toISOString() });
+
+test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a drive of a week and four gifts', () => {
+  const j = jimmy();
+  assert.equal(j.name, 'Jimmy Wails');
+  assert.equal(j.alignment, 'sweet');
+  assert.equal(j.rarity, 'uncommon');
+  assert.equal(j.stack, 3);
+  assert.equal(j.play ?? 'cast', 'cast');
+  assert.deepEqual(j.reaches ?? ['post'], ['post']);
+  assert.equal(priceOf('jimmy-wails'), 200, 'the machine slot, onSale');
+  assert.equal(instance.machine.find((m) => 'card' in m.item && m.item.card === 'jimmy-wails')!.availability, 'onSale');
+  assert.deepEqual(j.draws, ['blue-shirt', 'close-up', 'dark-logo']);
+  assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
+  assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
+  assert.equal(giftSplit(10, settings.economy['jimmyWails.overhead']!).overhead, 3, 'a 0.10 gift keeps 0.03 of overhead');
+  assert.equal(j.playPrice(settings, post(100), {}), 0, 'a play costs nothing beyond the machine\'s price');
+  assert.equal(j.needsMessage, 'an appeal needs a sob story');
+  assert.deepEqual(instanceProblems(instance), []);
+  assert.deepEqual((j.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)), ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead']);
+});
+
+test('Jimmy Wails accepts an empty configuration and nothing else', () => {
+  const j = jimmy();
+  assert.deepEqual(j.validateConfig({}), { ok: true, value: {} });
+  assert.equal(j.validateConfig({ ink: 'red' }).ok, false);
+  assert.equal(j.validateConfig(undefined).ok, false);
+  assert.equal(j.validateConfig('x').ok, false);
+  assert.equal(j.validateConfig(null).ok, false);
+  assert.equal(staffConfigOf(j, () => 0) !== null, true, 'a Mod Bot plays it as {}');
+});
+
+test('Jimmy Wails: a fourth play on an open drive is refused, and one after the close lands as the opening of another', () => {
+  const j = jimmy();
+  const now = new Date();
+  const open = (n: number) => Array.from({ length: n }, (_, i) => play(`a${i}`, 'a0', now.getTime() + 7 * 24 * hour));
+  assert.equal(decidePlay(j, settings, post(10), open(2), {}, 'Please.', { now }).ok, true, 'a third joins');
+  assert.deepEqual(decidePlay(j, settings, post(10), open(3), {}, 'Please.', { now }), { ok: false, why: 'this post\'s drive already carries 3 appeals' }, 'a fourth is refused, in the database\'s words');
+  const closed = Array.from({ length: 3 }, (_, i) => play(`c${i}`, 'c0', now.getTime() - hour));
+  assert.equal(decidePlay(j, settings, post(10), closed, {}, 'Please.', { now }).ok, true, 'a play after the close opens another drive');
+  assert.equal(decidePlay(j, settings, post(10), [...closed, ...open(2)], {}, 'Please.', { now }).ok, true, 'earlier closed drives do not count against the open one');
+  assert.equal(openDrive([...closed, ...open(3)], 'jimmy-wails', now)?.plays.length, 3);
+  // The landing's other refusals are the usual ones: a post only, a post's own kind.
+  assert.match((decidePlay(j, settings, { reach: 'thread', act: 't', title: 'x' } as never, [], {}, 'Please.', { now }) as { why: string }).why, /lands on a post/);
+});
+
+test('Jimmy Wails: a blank message is refused, in the card\'s words', () => {
+  const j = jimmy();
+  for (const blank of ['', '   ', undefined, null]) assert.deepEqual(decidePlay(j, settings, post(10), [], {}, blank), { ok: false, why: 'an appeal needs a sob story' }, String(blank));
+  assert.equal(decidePlay(j, settings, post(10), [], {}, 'My cat needs a sweater.').ok, true);
 });

@@ -232,6 +232,12 @@ export interface CardRules<Config = unknown> {
    * reaching a post alone has one.
    */
   readonly drive?: { readonly lasts: Span; readonly gifts: readonly string[]; readonly overhead: string };
+  /**
+   * A card whose every play must carry words: the refusal a blank message (none, or only spaces) meets, in the card's own words, so the
+   * engine names no card. Said after the landing and the configuration, as the caster's message is checked. A cast or a use only: a Set has
+   * no message. The database holds it again (card_kinds.needs_message, place_cast).
+   */
+  readonly needsMessage?: string;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
   /** What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it. */
@@ -306,6 +312,7 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   if (!checked.ok) return checked;
   const said = casterMessage(message);
   if (!said.ok) return said;
+  if (rules.needsMessage !== undefined && said.value === '') return refuse(rules.needsMessage);
   // A cast pays every live price effect on its target, or above it, whose flavors hold its printed alignment; a use or a set pays none.
   const added = surcharge ? effects.reduce((sum, e) => (e.gimmick?.kind === 'price' && isLive(e, now) && e.gimmick.flavors.includes(rules.alignment) ? sum + e.gimmick.add : sum), 0) : 0;
   const price = Math.max(0, rules.playPrice(settings, target, checked.value) + added);

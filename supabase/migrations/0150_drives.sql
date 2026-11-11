@@ -1,12 +1,12 @@
 -- The draw and the drive, and gifts to a drive (docs/plans/2026-11-03-jimmy-wails-design.md, sections 1 to 4; plan docs/plans/2026-11-03-jimmy-wails-plan.md, Tasks 2 and 3).
 --
---   1. the catalog         card_kinds gains `draws text[]` (the keys the server draws one of at each play) and `drive jsonb` ({lasts, gifts, overhead}).
---   2. card_kinds_problem  refuses a bad draws or drive in the words of instanceProblems (engine/rules/instance.ts, drawProblems and driveProblems); the economy's numbers are read
+--   1. the catalog         card_kinds gains `draws text[]` (the keys the server draws one of at each play) and `drive jsonb` ({lasts, gifts, overhead}), and `needs_message text` (the words a blank message is refused with; null for a card that plays with none).
+--   2. card_kinds_problem  refuses a bad draws, drive or needs_message in the words of instanceProblems (engine/rules/instance.ts, drawProblems, driveProblems and needsMessageProblems); the economy's numbers are read
 --                          from the settings as they stand, as instanceProblems reads them from the instance's.
 --   3. drive_plays         the one place that says which plays make a drive: a card's plays on a post that are still up.
---   4. place_cast          the draw (`drawn`, never the caster's) and the drive: the first play opens one, later plays join it up to the card's stack, a full one refuses, a play after the close opens another.
+--   4. place_cast          the draw (`drawn`, never the caster's) and the drive: the first play opens one, later plays join it up to the card's stack, a full one refuses, a play after the close opens another; a card with `needs_message` refuses a blank message in those words (play_card and staff_play_card both land here).
 --   5. card_target         each drive play carries its `drive` and its `closes`.
---   6. seed_instance       writes `draws` and `drive`.
+--   6. seed_instance       writes `draws`, `drive` and `needs_message`.
 --   7. the gift's kind     acts_kind_check, acts_seq_check, acts_well_formed and acts_take_seq admit `donation` (an Act on a drive's opening play, payload {amount, overhead, arrives}, no seq); acts_donation_payload
 --                          holds its money; wallet_events_kind_check admits gift_out and gift_in; acts_donations indexes a drive's gifts.
 --   8. donate              the one write: the post's lock, the refusals, the split from the economy now, both wallets locked in account order, the Act, then the two moves. Service role only.
@@ -20,10 +20,11 @@
 
 -- ------------------------------------------------------------------------------------------------------- 1. the catalog ----
 
-alter table card_kinds add column draws text[], add column drive jsonb;
+alter table card_kinds add column draws text[], add column drive jsonb, add column needs_message text;
 alter table card_kinds
   add constraint card_kinds_draws_list check (draws is null or cardinality(draws) >= 1),
-  add constraint card_kinds_drive_object check (drive is null or jsonb_typeof(drive) = 'object');
+  add constraint card_kinds_drive_object check (drive is null or jsonb_typeof(drive) = 'object'),
+  add constraint card_kinds_needs_message check (needs_message is null or (btrim(needs_message) <> '' and char_length(needs_message) <= 200));
 
 -- ------------------------------------------------------------------------------------------------- 2. card_kinds_problem ----
 
@@ -129,6 +130,19 @@ language sql stable set search_path = public, pg_temp as $$
     select o.key, 500, format('%s overhead of %s; it is a whole number from 0 to 100', o.who, eco.v ->> (o.d ->> 'overhead')) from dobj o, eco
     where jsonb_typeof(o.d -> 'overhead') = 'string' and jsonb_typeof(eco.v -> (o.d ->> 'overhead')) = 'number'
       and ((eco.v ->> (o.d ->> 'overhead'))::numeric <> trunc((eco.v ->> (o.d ->> 'overhead'))::numeric) or (eco.v ->> (o.d ->> 'overhead'))::numeric < 0 or (eco.v ->> (o.d ->> 'overhead'))::numeric > 100)
+    -- engine/rules/instance.ts, needsMessageProblems: the words a blank message is refused with are a sentence, and only a cast or a use carries a message to need.
+    union all
+    select c.key, 600, format('card "%s" needsMessage %s; it is the sentence a blank message is refused with', c.key, compact_json(c.e -> 'needsMessage')) from c
+    where c.e ? 'needsMessage' and jsonb_typeof(c.e -> 'needsMessage') <> 'string'
+    union all
+    select c.key, 601, format('card "%s" needs a message, and its refusal is empty', c.key) from c
+    where jsonb_typeof(c.e -> 'needsMessage') = 'string' and btrim(c.e ->> 'needsMessage') = ''
+    union all
+    select c.key, 602, format('card "%s" needsMessage is longer than 200 characters', c.key) from c
+    where jsonb_typeof(c.e -> 'needsMessage') = 'string' and char_length(c.e ->> 'needsMessage') > 200
+    union all
+    select c.key, 603, format('card "%s" needs a message, and only a cast or a use carries one', c.key) from c
+    where jsonb_typeof(c.e -> 'needsMessage') = 'string' and c.play = 'set'
   ) p where why is not null
 $$;
 
@@ -298,6 +312,10 @@ begin
     ends := now() + least(coalesce(kind_of.lasts, span_interval(setting('reachLasts') -> reach)), span_interval(setting('reachLasts') -> reach));
   end if;
 
+  -- A card that needs words refuses a blank message in its own words, after the landing's refusals as the engine says them (decided, engine/rules/cards.ts); the message is trimmed as casterMessage trims it.
+  if kind_of.needs_message is not null and btrim(said, E' \t\r\n\f\v') = '' then
+    raise exception '%', kind_of.needs_message using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
   begin
     insert into acts (id, character, kind, thread, target_act_id, payload)
     values (written, caster, 'card', in_thread, on_post, jsonb_build_object('card', card, 'message', said,
@@ -364,7 +382,7 @@ $$;
 
 -- -------------------------------------------------------------------------------------------------------- 6. seed_instance ----
 
--- seed_instance (0149), writing a card's `draws` and `drive` with the rest of its kind (both the code's, so a re-seed that drops one clears it). Everything else as 0149 wrote it; create or replace keeps its grants.
+-- seed_instance (0149), writing a card's `draws`, `drive` and `needs_message` with the rest of its kind (both the code's, so a re-seed that drops one clears it). Everything else as 0149 wrote it; create or replace keeps its grants.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -425,18 +443,18 @@ begin
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
-  -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins, whether it writes, what it draws and its drive.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, draws, drive)
+  -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins, whether it writes, what it draws, its drive and the words it refuses a blank message with.
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes, draws, drive, needs_message)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), span_interval(e -> 'lasts'),
     case when e ? 'reaches' then array(select jsonb_array_elements_text(e -> 'reaches')) else '{post}' end, coalesce((e ->> 'pins')::boolean, false), coalesce((e ->> 'writes')::boolean, false),
-    case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null')
+    case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', '')
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, lasts = excluded.lasts,
-    reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, draws = excluded.draws, drive = excluded.drive;
+    reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
   -- admin's (0139). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
