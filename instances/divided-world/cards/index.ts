@@ -5,9 +5,11 @@
  * Autocorrect, the Minus World signature and the Jabroni's starter (docs/plans/2026-11-03-autocorrect-design.md).
  * The three Gimmicks, cards set face down that spring on something: Trap Card (a named card cast there), Hall Pass (a Mod Bot's visit)
  * and Bluff (nothing; the face-down Moves design, section 4).
+ * Below the Fold, Salty's bar over a post (docs/plans/2026-11-11-card-notes-design.md, section 2).
  */
 import { castOnPost, type CardRules } from '../../../engine/rules/cards.ts';
 import { autocorrect } from './autocorrect.ts';
+import { belowTheFold } from './below-the-fold.ts';
 import { bluff } from './bluff.ts';
 import { feelinFab } from './feelin-fab.ts';
 import { forceField } from './force-field.ts';
@@ -18,7 +20,7 @@ import { stickAround } from './stick-around.ts';
 import { trapCard as trapCardBase } from './trap-card.ts';
 import { whoops } from './whoops.ts';
 
-const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, trapCardBase as CardRules, hallPass as CardRules, forceField as CardRules, bluff as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules];
+const listed: readonly CardRules[] = [stickAround as CardRules, whoops as CardRules, trapCardBase as CardRules, hallPass as CardRules, forceField as CardRules, bluff as CardRules, glitterBomb as CardRules, mainEvent as CardRules, feelinFab as CardRules, autocorrect as CardRules, belowTheFold as CardRules];
 
 /** Trap Card, with the card a persona may name as an enum of the instance's cards cast on a post (the only ones `decideSet` lets it name): built here so trap-card.ts imports no other card. */
 const trapCard = {
