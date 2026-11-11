@@ -489,19 +489,100 @@ describe('reads and their rows', () => {
     expect(h.rest()).toEqual([]);
   });
 
-  it('joins characters_public with character_profiles in two reads and defaults an absent profile', async () => {
+  it('joins characters_public, character_profiles and gear_worn in three parallel reads, and defaults an absent profile', async () => {
+    const worn = { character: B, layer: 0, gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10 };
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }, { id: A, name: 'Al', joined: '2026-09-01' }]);
-      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, pip_style: 'fancy', pronouns: PRONOUN_PRESETS.she }]);
+      if (r.url.pathname.endsWith('/gear_worn')) return rows([{ ...worn, layer: 1, gear: 'mustache' }, worn]);
+      return rows([{ character: B, title: 'Champ', signature: '[b]hi[/b]', avatar_square: 'sq.webp', avatar_portrait: 'po.webp', square_frame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portrait_frame: null, portrait_tallness: 1.5, pip_style: 'fancy', pronouns: PRONOUN_PRESETS.she }]);
     });
     const list = await h.api.characters([B, A]);
     expect(h.to('characters_public')[0]?.url.searchParams.get('id')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
-    expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toContain('pronouns');
+    expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toEqual(expect.arrayContaining(['pronouns', 'portrait_tallness']));
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('select')).toBe('character,layer,gear,x,y,w,turn');
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
-      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, portraitTallness: 1.5, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 0 }, { gear: 'mustache', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 1 }], trophies: [], pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
+      { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
     ]);
+  });
+
+  it('maps a profile projection\'s outfit and trophies (the shelf, with art URLs for an admin\'s kind)', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({
+      character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she, portrait_tallness: 2,
+      outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 }],
+      trophies: [
+        { award: A, trophy: 'belt', name: 'The Belt', line: 'x', art: null, belt: true, at: '2026-10-01T00:00:00+00:00', by: 'the Boss', season: null, held: true },
+        { award: T, trophy: 'made-1', name: 'Mine', line: null, art: 'k.webp', belt: false, at: '2026-10-01T00:00:00+00:00', by: 'an admin', season: null, held: null },
+      ],
+    }) : json({ id: B, name: 'Bea', joined: '2026-10-01' })));
+    const set = await h.api.setProfile(B, 'T', 's', 'default');
+    expect(set).toMatchObject({ ok: true, value: {
+      portraitTallness: 2, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 }],
+      trophies: [{ award: A, trophy: 'belt', name: 'The Belt', art: null, belt: true, held: true }, { award: T, trophy: 'made-1', name: 'Mine', art: `${URL_}/storage/v1/object/public/trophies/k.webp`, belt: false, held: false }],
+    } });
+  });
+
+  it('reads the wardrobe, a page of trophies and a belt\'s lineage through their functions, and keeps the words of a refusal', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_wardrobe')) return json([{ gear: 'hat', rarity: 'rare', held: 2, worn_by: [B] }]);
+      if (r.url.pathname.endsWith('/rpc/trophies_of')) return json({ awards: [{ award: A, trophy: 'p1', name: 'First', line: null, art: null, belt: false, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3, held: null }], more: true });
+      if (r.url.pathname.endsWith('/rpc/belt_lineage')) return r.body && (r.body as { trophy_key: string }).trophy_key === 'pet' ? json({ code: '22023', message: '"pet" is not a belt', details: null, hint: 'kayfabb.refusal' }, 400) : json([{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null }]);
+      return undefined;
+    });
+    expect(await h.api.wardrobe()).toEqual({ ok: true, value: [{ gear: 'hat', rarity: 'rare', held: 2, wornBy: [B] }] });
+    expect(await h.api.trophies(B, { before: '2026-10-02T00:00:00+00:00', beforeId: T })).toEqual({
+      awards: [{ award: A, trophy: 'p1', name: 'First', art: null, belt: false, held: false, line: null, at: '2026-10-01T00:00:00+00:00', by: 'the season', season: 3 }], more: true,
+    });
+    expect(h.to('rpc/trophies_of')[0]?.body).toEqual({ of_character: B, before: '2026-10-02T00:00:00+00:00', before_id: T, most: 50 });
+    expect(await h.api.beltLineage('belt')).toEqual({ ok: true, value: [{ award: A, character: B, name: 'Bea', began: '2026-10-01T00:00:00+00:00', ended: null }] });
+    expect(await h.api.beltLineage('pet')).toEqual({ ok: false, error: '"pet" is not a belt' });
+  });
+
+  it('saves an outfit, the shown trophies and rolls an event through the wardrobe function, as the player\'s own session; null is a roll that found nothing', async () => {
+    const piece = { gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 };
+    const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'found', character: B };
+    const h = harness((r) => {
+      const body = r.body as { action?: string } | null;
+      if (r.url.pathname !== '/functions/v1/wardrobe') return undefined;
+      if (body?.action === 'setOutfit') return json({ worn: 1 });
+      if (body?.action === 'showTrophies') return json({ error: '3 trophies are shown; at most 2' }, 400);
+      return json({ event: found });
+    });
+    expect(await h.api.setOutfit(B, [piece])).toEqual({ ok: true, value: { worn: 1 } });
+    expect(await h.api.showTrophies(B, [A, T, C])).toEqual({ ok: false, error: '3 trophies are shown; at most 2' });
+    expect(await h.api.randomEvent(B)).toEqual({ ok: true, value: { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'found', character: B } });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/wardrobe').map((r) => r.body)).toEqual([
+      { action: 'setOutfit', character: B, pieces: [piece] }, { action: 'showTrophies', character: B, awards: [A, T, C] }, { action: 'randomEvent', character: B },
+    ]);
+    const none = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? json({ event: null }) : undefined));
+    expect(await none.api.randomEvent(B)).toEqual({ ok: true, value: null });
+    const lost = harness((r) => (r.url.pathname === '/functions/v1/wardrobe' ? new TypeError('network') : undefined));
+    expect(await lost.api.randomEvent(B)).toMatchObject({ ok: false, uncertain: true });
+  });
+
+  it('an admin gives gear and trophies through their functions, and makes a trophy by storing its art first', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname === '/functions/v1/trophy-art') return json({ key: 'art.webp' });
+      if (r.url.pathname.endsWith('/rpc/grant_gear')) return json({ granted: 2 });
+      if (r.url.pathname.endsWith('/rpc/award_trophy')) return json({ award: A });
+      if (r.url.pathname.endsWith('/rpc/reverse_award')) return json({ reversed: A });
+      if (r.url.pathname.endsWith('/rpc/make_trophy')) return json({ trophy: 'made-1' });
+      if (r.url.pathname.endsWith('/rpc/trophy_award_failures')) return json([{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', characters: [{ id: B, name: 'Bea' }] }]);
+      return undefined;
+    });
+    expect(await h.api.grantGear(B, 'hat', 2)).toEqual({ ok: true, value: { granted: 2 } });
+    expect(await h.api.awardTrophy('pet', B, 'good')).toEqual({ ok: true, value: { award: A } });
+    expect(await h.api.reverseAward(A)).toEqual({ ok: true, value: { reversed: A } });
+    expect(await h.api.makeTrophy('Mine', 'words', new Blob(['x'], { type: 'image/webp' }), true)).toEqual({ ok: true, value: { trophy: 'made-1' } });
+    expect(await h.api.makeTrophy('Plain', null, null, false)).toEqual({ ok: true, value: { trophy: 'made-1' } });
+    expect(h.to('rpc/grant_gear')[0]?.body).toEqual({ of_character: B, gear_key: 'hat', copies: 2 });
+    expect(h.to('rpc/award_trophy')[0]?.body).toEqual({ trophy_key: 'pet', of_character: B, said: 'good' });
+    expect(h.to('rpc/reverse_award')[0]?.body).toEqual({ of_award: A });
+    expect(h.to('rpc/make_trophy').map((r) => r.body)).toEqual([{ trophy_name: 'Mine', said: 'words', art_key: 'art.webp', is_belt: true }, { trophy_name: 'Plain', said: null, art_key: null, is_belt: false }]);
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/trophy-art')).toHaveLength(1);
+    expect(await h.api.trophyAwardFailures()).toEqual({ ok: true, value: [{ id: A, move: T, season: null, at: '2026-10-01T00:00:00+00:00', error: 'x', trophy: 'met', characters: [{ id: B, name: 'Bea' }] }] });
   });
 
   it('builds the board index from boards_now (the names as Acts say them now) and thread_list', async () => {
@@ -2013,7 +2094,7 @@ describe('Updates', () => {
 describe('a screen in one call', () => {
   const PROFILE = { title: 'Champ', signature: 'sig', avatar_square: 'sq', avatar_portrait: null, square_frame: { x: 1, y: 2, w: 3, h: 4 }, portrait_frame: null, pip_style: 'star', pronouns: PRONOUN_PRESETS.she };
   const CHAR = { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null };
-  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, pipStyle: 'star', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' };
+  const BEA = { id: B, name: 'Bea', title: 'Champ', signature: 'sig', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq`, avatarPortrait: null, squareFrame: { x: 1, y: 2, w: 3, h: 4 }, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'star', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' };
   const PRESENCE = { names: [{ id: B, name: 'Bea', staff: false }], others: 1 };
   const PLAY_ROW = { ...ACT_ROW, id: SET, kind: 'card', target_act_id: A, payload: { card: 'splat' }, current_payload: { card: 'splat' } };
   const ABOVE_ROW = { play: SPRING, reach: 'thread', target: T, ends_at: '2026-10-02T10:00:00+00:00', act: { ...ACT_ROW, id: SPRING, kind: 'card', payload: { card: 'whoops' } } };

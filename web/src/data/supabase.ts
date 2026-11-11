@@ -33,14 +33,15 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
+import type { Piece } from '../../../engine/rules/cosmetics.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
+  Act, ActKind, Answer, AvatarUpload, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -651,6 +652,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       global: { fetch: clientFetch },
     });
   const avatarUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/avatars/${key}` : null);
+  /** An admin's trophy art, in the public `trophies` bucket (an instance's own kinds have none: their art is the instance UI's, by the kind's key). */
+  const trophyArtUrl = (key: string | null): string | null => (key ? `${url}/storage/v1/object/public/trophies/${key}` : null);
 
   /* ------------------------------------------------------------- the request layer ---- */
 
@@ -799,6 +802,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /** The office characters_public shows a staff character; anything else it might say is no office. */
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' ? o : undefined);
 
+  /** A piece worn as gear_worn or a profile's `outfit` has it, in layer order. */
+  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
+  /** An award as `trophy_item` has it; `held` is a belt's alone, null otherwise. */
+  const toShownTrophy = (t: Row): ShownTrophy => ({ award: t['award'], trophy: t['trophy'], name: t['name'], art: trophyArtUrl(str(t['art'])), belt: t['belt'] === true, held: t['held'] === true });
+  const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null });
+
   const toCharacter = (c: Row, p: Row | undefined): Character => ({
     id: c['id'],
     name: c['name'],
@@ -808,6 +817,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     avatarPortrait: avatarUrl(p?.['avatar_portrait'] ?? null),
     squareFrame: toFrame(p?.['square_frame']),
     portraitFrame: toFrame(p?.['portrait_frame']),
+    portraitTallness: typeof p?.['portrait_tallness'] === 'number' ? p['portrait_tallness'] : null,
+    outfit: toPieces(p?.['outfit']),
+    trophies: rowsOf(p?.['trophies']).map(toShownTrophy),
     pipStyle: p?.['pip_style'] ?? 'default',
     /* The set is read from the profile row; the engine's it/its stands only for a character with no profile row at all. */
     pronouns: p ? pronounsOrDefault(p['pronouns']) : ENGINE_DEFAULT_PRONOUNS,
@@ -823,11 +835,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   async function characters(ids: readonly Id[]): Promise<readonly Character[]> {
     if (ids.length === 0) return [];
-    const [cs, ps] = await Promise.all([
+    /* Three reads in parallel, each a lookup by character: its name, its profile and the pieces it wears (gear_worn, public by character). The shelf of trophies has no
+       table to read (trophy_shelf is the server's): a face read here carries none, and a screen document carries it nested with the profile. */
+    const [cs, ps, worn] = await Promise.all([
       byChunks(ids, (part) => list(() => client.from('characters_public').select('id,name,joined,staff,office,group').in('id', part))),
-      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,pip_style,pronouns').in('character', part))),
+      byChunks(ids, (part) => list(() => client.from('character_profiles').select('character,title,signature,avatar_square,avatar_portrait,square_frame,portrait_frame,portrait_tallness,pip_style,pronouns').in('character', part))),
+      byChunks(ids, (part) => list(() => client.from('gear_worn').select('character,layer,gear,x,y,w,turn').in('character', part))),
     ]);
-    const profile = new Map(ps.map((p) => [p['character'] as string, p]));
+    const outfits = new Map<string, Row[]>();
+    for (const w of worn) outfits.set(w['character'] as string, [...(outfits.get(w['character'] as string) ?? []), w]);
+    const profile = new Map(ps.map((p) => [p['character'] as string, { ...p, outfit: outfits.get(p['character'] as string) ?? [] }]));
     const byId = new Map(cs.map((c) => [c['id'] as string, c]));
     return ids.flatMap((id) => {
       const c = byId.get(id);
@@ -1911,6 +1928,66 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (upload.portrait) form.append('portrait', upload.portrait, 'portrait.webp');
       const a = await edge('avatar', form, LOST);
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
+    },
+
+    async wardrobe() {
+      const a = await rpcWrite(() => client.rpc('my_wardrobe'));
+      return a.ok ? { ok: true, value: rowsOf(a.value).map((w): WardrobeItem => ({ gear: w['gear'], rarity: w['rarity'], held: num(w['held']), wornBy: Array.isArray(w['worn_by']) ? (w['worn_by'] as Id[]) : [] })) } : a;
+    },
+    async setOutfit(character, pieces) {
+      const a = await edge('wardrobe', { action: 'setOutfit', character, pieces }, LOST);
+      return a.ok ? { ok: true, value: { worn: num(a.value['worn']) } } : a;
+    },
+    async trophies(character, cursor) {
+      /* A read of public facts about a character: the page is the same for everyone, and 50 awards to a page. */
+      const d = (await read(() => client.rpc('trophies_of', { of_character: character, before: cursor?.before ?? null, before_id: cursor?.beforeId ?? null, most: TROPHIES_PAGE }))).data as Row | null;
+      return { awards: rowsOf(d?.['awards']).map(toTrophyItem), more: d?.['more'] === true };
+    },
+    async beltLineage(trophy) {
+      const a = await rpcWrite(() => client.rpc('belt_lineage', { trophy_key: trophy }));
+      return a.ok ? { ok: true, value: rowsOf(a.value).map((r): BeltReign => ({ award: r['award'], character: r['character'], name: r['name'], began: r['began'], ended: str(r['ended']) })) } : a;
+    },
+    async showTrophies(character, awards) {
+      const a = await edge('wardrobe', { action: 'showTrophies', character, awards }, LOST);
+      return a.ok ? { ok: true, value: { shown: num(a.value['shown']) } } : a;
+    },
+    async randomEvent(character) {
+      const a = await edge('wardrobe', { action: 'randomEvent', character }, LOST);
+      if (!a.ok) return a;
+      const e = isObject(a.value['event']) ? (a.value['event'] as Row) : null;
+      return { ok: true, value: e === null ? null : { event: e['event'], outcome: e['outcome'], item: str(e['item']), rarity: str(e['rarity']) as RandomEvent['rarity'], line: str(e['line']), character: e['character'] } };
+    },
+    async grantGear(character, gear, copies) {
+      const a = await rpcWrite(() => client.rpc('grant_gear', { of_character: character, gear_key: gear, copies }));
+      return a.ok ? { ok: true, value: { granted: num(a.value['granted']) } } : a;
+    },
+    async awardTrophy(trophy, character, line) {
+      const a = await rpcWrite(() => client.rpc('award_trophy', { trophy_key: trophy, of_character: character, said: line ?? null }));
+      return a.ok ? { ok: true, value: { award: a.value['award'] } } : a;
+    },
+    async reverseAward(award) {
+      const a = await rpcWrite(() => client.rpc('reverse_award', { of_award: award }));
+      return a.ok ? { ok: true, value: { reversed: a.value['reversed'] } } : a;
+    },
+    async makeTrophy(name, line, art, belt) {
+      /* The picture is stored first, by the trophy-art function (an admin's alone), and make_trophy is given the key it answers; a kind that fails after leaves a file nobody names. */
+      let key: string | null = null;
+      if (art !== null) {
+        const form = new FormData();
+        form.append('file', art, 'art.webp');
+        const stored = await edge('trophy-art', form, LOST);
+        if (!stored.ok) return stored;
+        key = str(stored.value['key']);
+      }
+      const a = await rpcWrite(() => client.rpc('make_trophy', { trophy_name: name, said: line, art_key: key, is_belt: belt }));
+      return a.ok ? { ok: true, value: { trophy: a.value['trophy'] } } : a;
+    },
+    async trophyAwardFailures() {
+      const a = await rpcWrite(() => client.rpc('trophy_award_failures'));
+      return a.ok ? { ok: true, value: rowsOf(a.value).map((f): TrophyAwardFailure => ({
+        id: f['id'], move: str(f['move']), season: typeof f['season'] === 'number' ? f['season'] : null, at: f['at'], error: f['error'], trophy: str(f['trophy']),
+        characters: Array.isArray(f['characters']) ? rowsOf(f['characters']).map((c) => ({ id: c['id'], name: c['name'], ...(typeof c['place'] === 'number' ? { place: c['place'] } : {}) })) : null,
+      })) } : a;
     },
 
     subscribeThread(thread, l) {

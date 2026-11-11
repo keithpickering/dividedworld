@@ -23,7 +23,7 @@
  *   allowed rpc), which holds the rules.
  * - `from`, `rpc` and `schema` taken off a client without being called at once (destructured,
  *   `.bind`-ed, assigned) fire; `.schema()` is read at once with `.from()`.
- * - `.storage.from('x')` names a bucket; only ALLOWED_BUCKETS (the public avatar bucket) is clean.
+ * - `.storage.from('x')` names a bucket; only ALLOWED_BUCKETS (the public avatar and trophy buckets) is clean.
  * - A string holding `/rest/v1/x` or `/rest/v1/rpc/x` is held to the same lists; one that ends at
  *   `/rest/v1`, `/rest/v1/` or `/rest/v1/rpc/` (a path built in pieces) fires, unreadable.
  * - A `.select()` that asks for a count (`{ count: 'exact' }`, and 'planned' and 'estimated' as well) fires
@@ -58,7 +58,7 @@ const DATA_LAYER = /^web\/src\/data\//;
  */
 export const ALLOWED_READS = Object.freeze([
   // Public: what anyone could have watched.
-  'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'class_kinds', 'reaction_kinds', 'card_kinds', 'machine_now',
+  'boards', 'boards_now', 'moves_log', 'staff_profile_now', 'threads', 'thread_list', 'thread_open', 'acts_public', 'characters_public', 'character_profiles', 'gear_worn', 'class_kinds', 'reaction_kinds', 'card_kinds', 'machine_now',
   'reaction_tallies', 'effect_state', 'pip_styles', 'thread_view_counts', 'settlements',
   'class_reveals', 'turns_announced', 'post_search', 'screen_settings', 'character_post_counts', 'season_size', 'board_counts',
   // Public: a finished season's frozen results; who plays whom is in none of it (supabase/migrations/0099_season_results.sql). The web reads them only
@@ -95,7 +95,9 @@ export const ALLOWED_COUNTS = Object.freeze(/** @type {readonly { table: string,
 // visit_quiz (0108): a thread_page helper that returns one visit's drawn question and its choices, never the answer.
 // search_posts, search_threads and search_suggest (0117) are the search screens' reads, held to the screen-function rules by supabase/tests/e2e/0016-screen-reads.ts. The functions they call (the matches, the
 // cursor check, the suggested threads and characters, the stemming language, the folded text, the plain words of a post) are not listed: the web never calls them, and a call to one is a fault.
-export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'replace_queued_description', 'describe_board', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'intercept', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'post_tails', 'play_moment', 'updates', 'season_news', 'finished_seasons', 'results_page', 'result_place', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact', 'visit_quiz', 'beat_mod_name', 'my_apologies', 'apologize', 'my_characters_page', 'season_page', 'alerts_page', 'updates_page', 'queue_page', 'log_page', 'search_posts', 'search_threads', 'search_suggest', 'admin_machine', 'set_slot', 'move_slot', 'save_machine']);
+// my_wardrobe, trophies_of, belt_lineage (0150, 0151): a player's own copies of gear and where their own masks wear them, a character's standing awards and a belt's holders, each as the SQL computes it for the caller.
+// grant_gear, award_trophy, reverse_award, make_trophy, trophy_award_failures: an admin's alone (only_admins; a player is refused with 42501). set_outfit, show_trophies and random_event are the service's alone and go through the wardrobe function.
+export const ALLOWED_RPCS = Object.freeze(['whoami', 'is_admin', 'next_settlement_at', 'mark_read', 'set_preferences', 'meet_card', 'see_welcome', 'see_tip', 'skip_tips', 'restore_tips', 'resume_tips', 'replay_tour', 'my_account_opened', 'see_alerts', 'see_settlement', 'follow_thread', 'following_thread', 'my_alerts', 'my_alerts_unread', 'my_settlement_moved', 'set_profile', 'release_effect', 'card_target', 'standing_place', 'standings_page', 'admin_queue', 'hold_move', 'reverse_move', 'replace_successor', 'replace_queued_description', 'describe_board', 'move_progress', 'here', 'presence_box', 'screen_refusal', 'boot', 'index_page', 'board_page', 'thread_page', 'intercept', 'profile_page', 'record_page', 'set_presence_hidden', 'effects_above', 'pinned_threads', 'post_tails', 'play_moment', 'updates', 'season_news', 'finished_seasons', 'results_page', 'result_place', 'post_update', 'staff_career', 'boss_roster_names', 'dismiss_handover_todo', 'admin_contact', 'set_admin_contact', 'visit_quiz', 'beat_mod_name', 'my_apologies', 'apologize', 'my_characters_page', 'season_page', 'alerts_page', 'updates_page', 'queue_page', 'log_page', 'search_posts', 'search_threads', 'search_suggest', 'admin_machine', 'set_slot', 'move_slot', 'save_machine', 'my_wardrobe', 'trophies_of', 'belt_lineage', 'grant_gear', 'award_trophy', 'reverse_award', 'make_trophy', 'trophy_award_failures']);
 /**
  * The functions a screen function may depend on without the web calling them (supabase/tests/e2e/0016-screen-reads.ts reads each screen function's recorded dependencies against
  * ALLOWED_RPCS and this list): the search reads' helpers (0117), stable, security invoker but the two definers, each a public fact about its arguments. A call to one from a screen is a fault.
@@ -104,8 +106,8 @@ export const SCREEN_HELPERS = Object.freeze(['search_matches', 'search_walk', 's
 
 const WRITES = new Set(['insert', 'upsert', 'update', 'delete']);
 const NOT_A_CLIENT = new Set(['Array', 'Buffer', 'Object', 'Uint8Array', 'Set', 'Map']);
-/** The storage buckets a screen may touch: the avatar bucket is public, so a read of it proves nothing private. */
-export const ALLOWED_BUCKETS = Object.freeze(['avatars']);
+/** The storage buckets a screen may touch: the avatar and trophy buckets are public by URL and listed by nobody, so a read of either proves nothing private. */
+export const ALLOWED_BUCKETS = Object.freeze(['avatars', 'trophies']);
 const GLOBALS = new Set(['globalThis', 'window', 'self']);
 /** The members of a client the guard reads; each must be called at once, with a literal. */
 const CLIENT_MEMBERS = new Set(['from', 'rpc', 'schema']);
@@ -222,7 +224,7 @@ function fileFaults(file, text, allowedCounts = ALLOWED_COUNTS) {
       if (!called) fault(node, member, `a .${member} read without a call: the guard cannot tell what it will name`);
       else if (storage) {
         if (name === null) fault(call, null, 'a storage bucket the guard cannot read, which could be any bucket');
-        else if (!ALLOWED_BUCKETS.includes(name)) fault(call, name, 'not the public avatar bucket');
+        else if (!ALLOWED_BUCKETS.includes(name)) fault(call, name, 'not a public bucket (avatars, trophies)');
       } else if (member === 'schema') {
         const next = up(call).parent;
         if (!(next && memberName(next) === 'from')) fault(call, null, 'a .schema() is read at once with .from()');

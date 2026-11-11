@@ -3189,3 +3189,136 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
     await expect(Promise.resolve().then(() => fake.tails(Array.from({ length: 201 }, (_, i) => `p${i}`)))).rejects.toThrow('at most 200');
   });
 });
+
+/* ---- gear, trophies and Random Events (cosmetics Task 6): the fake holds what set_outfit, show_trophies, trophies_of and random_event hold, in their words ---- */
+describe('gear, trophies and Random Events', () => {
+  const dressed: Instance = {
+    ...instance,
+    gear: [
+      { key: 'hat', name: 'Hat', line: 'A hat.', rarity: 'common' }, { key: 'mustache', name: 'Mustache', line: 'A mustache.', rarity: 'rare' },
+      { key: 'monocle', name: 'Monocle', line: 'A monocle.', rarity: 'common' },
+    ],
+    trophies: { kinds: [{ key: 'p1', name: 'First' }, { key: 'belt', name: 'The Belt', belt: true }, { key: 'pet', name: 'Pet' }, { key: 'p2', name: 'P2' }, { key: 'p3', name: 'P3' }, { key: 'met', name: 'Met' }], seasonPlaces: ['p1', 'p2', 'p3'], boss: ['belt', 'pet'], demandMet: 'met' },
+    events: { lines: [{ key: 'nothing', outcome: 'line', text: 'Nothing happens.' }, { key: 'found', outcome: 'gear', text: 'You find {item}.' }] },
+    settings: { ...settings, cosmetics: { ...settings.cosmetics, gear: { wornMost: 2, reach: 0.4 }, trophies: { shownMost: 2 }, events: { ...settings.cosmetics.events, windowMinutes: 15, dayMost: 2 } } },
+  };
+  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.5, w: 0.4, turn: 0, layer });
+  function dressing() {
+    const fake = createFake({ instance: dressed });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const a1 = fake.seed.character(ana, 'Ana One', 'face');
+    const a2 = fake.seed.character(ana, 'Ana Two', 'heel');
+    const b1 = fake.seed.character(bo, 'Bo One', 'face');
+    fake.seed.gear(ana, { hat: 1, mustache: 2, monocle: 1 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, a1, a2, b1 };
+  }
+
+  test('an outfit worn shows on the public character, in layer order, and the wardrobe says where each copy is', async () => {
+    const { fake, a1, a2 } = dressing();
+    expect(must(await fake.setOutfit(a1, [piece('mustache', 1), piece('hat', 0)]))).toEqual({ worn: 2 });
+    expect((await fake.characters([a1]))[0]!.outfit.map((p) => p.gear)).toEqual(['hat', 'mustache']);
+    expect(must(await fake.wardrobe())).toEqual([
+      { gear: 'hat', rarity: 'common', held: 1, wornBy: [a1] }, { gear: 'monocle', rarity: 'common', held: 1, wornBy: [] }, { gear: 'mustache', rarity: 'rare', held: 2, wornBy: [a1] },
+    ]);
+    // The whole outfit replaces the one before; the other mask, with none of the hat free, is refused in the engine's words.
+    expect((await fake.setOutfit(a2, [piece('hat', 0)]))).toEqual(refused('"hat" is worn 1 time here, and 0 copies are free'));
+    expect(must(await fake.setOutfit(a1, [piece('monocle', 0)]))).toEqual({ worn: 1 });
+    expect(must(await fake.setOutfit(a2, [piece('hat', 0)]))).toEqual({ worn: 1 });
+  });
+
+  test('a piece over the worn limit, a shared layer, a bad bound and an unknown gear are refused in the server\'s words', async () => {
+    const { fake, a1 } = dressing();
+    expect(await fake.setOutfit(a1, [piece('hat', 0), piece('mustache', 1), piece('monocle', 2)])).toEqual(refused('3 pieces are worn; at most 2'));
+    expect(await fake.setOutfit(a1, [piece('hat', 0), piece('mustache', 0)])).toEqual(refused('"mustache" shares layer 0 with "hat"'));
+    expect(await fake.setOutfit(a1, [{ ...piece('hat', 0), w: 2 }])).toEqual(refused('a piece\'s width is from 0.05 to 1.5 of the portrait\'s width'));
+    expect(await fake.setOutfit(a1, [piece('hat', 2)])).toEqual(refused('a piece\'s layer is a whole number below 2'));
+    expect(await fake.setOutfit(a1, [piece('fez', 0)])).toEqual(refused('there is no gear "fez"'));
+    expect(await fake.setOutfit(a1, [piece('mustache', 0), piece('mustache', 1)])).toEqual({ ok: true, value: { worn: 2 } });
+    expect((await fake.characters([a1]))[0]!.outfit).toHaveLength(2);
+  });
+
+  test('a character the player does not play is refused, and a new portrait takes the outfit off', async () => {
+    const { fake, a1, b1 } = dressing();
+    expect(await fake.setOutfit(b1, [])).toEqual(refused('you do not play that character'));
+    expect(await fake.showTrophies(b1, [])).toEqual(refused('you do not play that character'));
+    expect(await fake.randomEvent(b1)).toEqual(refused('you do not play that character'));
+    fake.signInAs(null);
+    expect(await fake.wardrobe()).toEqual(refused('sign in to dress a character'));
+    fake.signInAs(fake.seed.account('cy'));
+    expect(must(await fake.wardrobe())).toEqual([]);
+  });
+
+  test('trophies show in the order the player chose, then the belts held; a reversal takes one off at once; a belt passes to the latest award', async () => {
+    const { fake, ana, a1, b1 } = dressing();
+    const t0 = Date.parse('2026-10-01T00:00:00Z');
+    const first = fake.seed.award(a1, 'p1', { at: t0 });
+    const pet = fake.seed.award(a1, 'pet', { at: t0 + 1000, by: 'boss' });
+    fake.seed.award(a1, 'belt', { at: t0 + 2000, by: 'boss' });
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => [t.name, t.held])).toEqual([['The Belt', true]]);
+    expect(must(await fake.showTrophies(a1, [pet, first]))).toEqual({ shown: 2 });
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['Pet', 'First', 'The Belt']);
+    expect(await fake.showTrophies(a1, [pet, first, pet])).toEqual(refused('3 trophies are shown; at most 2'));
+    expect(await fake.showTrophies(a1, [pet, pet])).toEqual(refused('a trophy is shown once'));
+    expect(await fake.showTrophies(a1, [fake.seed.award(b1, 'p2')])).toEqual(refused('that trophy is not this character\'s'));
+    // The belt goes to Bo One with a later award; it leaves Ana One's shelf, and the lineage names both reigns.
+    fake.seed.award(b1, 'belt', { at: t0 + 3000 });
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['Pet', 'First']);
+    expect(must(await fake.beltLineage('belt')).map((r) => [r.name, r.ended !== null])).toEqual([['Ana One', true], ['Bo One', false]]);
+    expect(await fake.beltLineage('pet')).toEqual(refused('"pet" is not a belt'));
+    expect(await fake.beltLineage('nope')).toEqual(refused('there is no trophy "nope"'));
+    // A page is newest first; an admin's reversal takes an award off the page and out of the shown set.
+    fake.seed.admin(ana);
+    expect((await fake.trophies(a1)).awards.map((t) => t.name)).toEqual(['The Belt', 'Pet', 'First']);
+    expect(must(await fake.reverseAward(pet))).toEqual({ reversed: pet });
+    expect(await fake.reverseAward(pet)).toEqual(refused('that trophy was already taken back'));
+    expect((await fake.characters([a1]))[0]!.trophies.map((t) => t.name)).toEqual(['First']);
+    expect(await fake.showTrophies(a1, [pet])).toEqual(refused('that trophy has been taken back'));
+    expect((await fake.trophies(a1)).awards.map((t) => t.name)).toEqual(['The Belt', 'First']);
+  });
+
+  test('an admin\'s hand is an admin\'s alone; a player is refused in only_admins\'s words', async () => {
+    const { fake, ana, a1 } = dressing();
+    expect(await fake.grantGear(a1, 'hat', 1)).toEqual(refused('only an admin grants gear'));
+    expect(await fake.awardTrophy('pet', a1)).toEqual(refused('only an admin gives a trophy'));
+    expect(await fake.reverseAward('x')).toEqual(refused('only an admin takes a trophy back'));
+    expect(await fake.makeTrophy('Mine', null, null, false)).toEqual(refused('only an admin makes a trophy'));
+    fake.seed.admin(ana);
+    expect(must(await fake.grantGear(a1, 'hat', 2))).toEqual({ granted: 2 });
+    expect(await fake.grantGear(a1, 'hat', 0)).toEqual(refused('a grant is 1 to 100 copies'));
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'hat')?.held).toBe(3);
+    const made = must(await fake.makeTrophy('  Mine ', 'Made by hand.', null, true)).trophy;
+    expect(made).toMatch(/^made-/);
+    const award = must(await fake.awardTrophy(made, a1, '  Well done '));
+    expect((await fake.trophies(a1)).awards).toMatchObject([{ award: award.award, name: 'Mine', belt: true, held: true, line: 'Well done', by: 'an admin' }]);
+    expect(await fake.awardTrophy('pet', a1, 'x'.repeat(201))).toEqual(refused('a trophy\'s words are at most 200 characters'));
+  });
+
+  test('a Random Event comes once a window and at most dayMost a day, from the scripted outcome, and a found gear is held at once', async () => {
+    const { fake, a1 } = dressing();
+    fake.seed.nextEvent({ outcome: 'gear', item: 'mustache', line: 'found' });
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'gear', item: 'mustache', rarity: 'rare', line: 'found', character: a1 });
+    expect(must(await fake.wardrobe()).find((w) => w.gear === 'mustache')?.held).toBe(3);
+    // Inside the window: nothing, and nothing is used up.
+    fake.seed.nextEvent({ outcome: 'line', line: 'nothing' });
+    expect(must(await fake.randomEvent(a1))).toBeNull();
+    fake.clock.advance(16 * MINUTE);
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line', line: 'nothing', item: null });
+    // The day's most is 2.
+    fake.clock.advance(16 * MINUTE);
+    fake.seed.nextEvent({ outcome: 'line', line: 'nothing' });
+    expect(must(await fake.randomEvent(a1))).toBeNull();
+    fake.clock.advance(DAY);
+    expect(must(await fake.randomEvent(a1))).toMatchObject({ outcome: 'line' });
+  });
+
+  test('a scripted roll that finds nothing answers null, and an unscripted one draws from the settings\' own odds', async () => {
+    const { fake, a1 } = dressing();
+    fake.seed.nextEvent(null);
+    expect(must(await fake.randomEvent(a1))).toBeNull();
+    fake.clock.advance(16 * MINUTE);
+    const drawn = must(await fake.randomEvent(a1));
+    expect(drawn === null || ['line', 'gear', 'card'].includes(drawn.outcome)).toBe(true);
+  });
+});

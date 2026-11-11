@@ -78,6 +78,8 @@ check('supabase-js imported in web/src/data/ is clean', fires(`import { createCl
 for (const t of ALLOWED_READS) check(`.from('${t}').select() is clean`, fires(`client.from('${t}').select('*').eq('x', 1);`).length === 0);
 for (const f of ALLOWED_RPCS) check(`.rpc('${f}') is clean`, fires(`client.rpc('${f}', {});`).length === 0);
 // The search screens' three reads are allowed; the functions behind them are not (the web never calls them, so a call to one is a fault).
+for (const t of ['gear_worn']) check(`${t} is a public read the cosmetics' client makes`, ALLOWED_READS.includes(t));
+for (const f of ['my_wardrobe', 'trophies_of', 'belt_lineage', 'grant_gear', 'award_trophy', 'reverse_award', 'make_trophy', 'trophy_award_failures']) check(`.rpc('${f}') is allowed (the cosmetics' client)`, ALLOWED_RPCS.includes(f));
 for (const f of ['search_posts', 'search_threads', 'search_suggest']) check(`.rpc('${f}') is allowed (a search read)`, ALLOWED_RPCS.includes(f));
 for (const f of ['search_matches', 'search_matches_sql', 'search_walk', 'search_walk_sql', 'search_match_conds', 'search_suggest_threads', 'suggest_characters', 'search_cursor_ok', 'search_cursor_cast', 'search_updates_thread', 'search_lang', 'fold_text', 'bbcode_plain', 'search_thread_matches', 'search_post_cards'])
   check(`.rpc('${f}') fires (a helper of the search reads, never called by the web)`, fires(`client.rpc('${f}', {});`).length === 1);
@@ -112,6 +114,8 @@ check('a dynamic import of supabase-js in the data layer is clean', fires(`const
 check('an export from supabase-js outside the data layer fires', fires(`export { createClient } from '@supabase/supabase-js';`, 'web/src/App.tsx').length === 1);
 check('an export from supabase-js in the data layer is clean', fires(`export { createClient } from '@supabase/supabase-js';`).length === 0);
 check('the public avatars bucket is clean', fires(`client.storage.from('avatars').getPublicUrl(p);`).length === 0);
+check('the public trophies bucket is clean (trophy art, public by URL like avatars)', fires(`client.storage.from('trophies').getPublicUrl(p);`).length === 0);
+check('a look-alike of a public bucket fires', fires(`client.storage.from('trophies-private').download(p);`).length === 1);
 check('any other bucket fires', fires(`client.storage.from('private').download(p);`).length === 1);
 check('a bucket the guard cannot read fires', fires(`client.storage.from(b).download(p);`).length === 1);
 check('globalThis.Array.from is clean', fires(`globalThis.Array.from(x);`).length === 0);
