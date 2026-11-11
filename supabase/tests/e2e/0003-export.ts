@@ -117,7 +117,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into trophy_awards (id, trophy, character, by, act) values ('00000000-0000-4000-8000-0000000000a3', 'expbelt', a, 'boss', p);
       insert into trophy_reversals (award, by) values ('00000000-0000-4000-8000-0000000000a1', ann);
       insert into trophies_shown (character, award, position) values (a, '00000000-0000-4000-8000-0000000000a3', 0);
-      insert into trophy_award_failures (move_act, error) values (p, 'a failure kept for an admin (23514)');
+      insert into trophy_award_failures (id, move_act, error) values ('00000000-0000-4000-8000-0000000000f1', p, 'a failure kept for an admin (23514)');
+      insert into trophy_failure_resolutions (failure, character, award, by) values ('00000000-0000-4000-8000-0000000000f1', a, '00000000-0000-4000-8000-0000000000a3', ann);
       insert into invites (code_hash, inviter) values (invite_hash('exported'), ann);
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "splat", "config": {"color": "red"}}') returning id into play;
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
@@ -634,11 +635,12 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match(gearRows(from), /"turn": -30/, 'the worn piece is in the export');
     assert.equal(gearRows(fresh.toString()), gearRows(from), 'gear_kinds, gear_ledger and gear_worn survive the round trip');
 
-    // The trophies' five tables are carried as they were: the kinds (an instance's with its place, a belt, an admin's with its art), the three awards, the taking back, the shown award and a met demand's failure.
-    for (const t of ['trophy_kinds', 'trophy_awards', 'trophy_reversals', 'trophies_shown', 'trophy_award_failures']) assert.notEqual(psqlOn(from, `select count(*) from public.${t}`), '0', `the exported instance holds ${t} rows`);
+    // The trophies' six tables are carried as they were: the kinds (an instance's with its place, a belt, an admin's with its art), the three awards, the taking back, the shown award, a met demand's failure and its giving by hand.
+    for (const t of ['trophy_kinds', 'trophy_awards', 'trophy_reversals', 'trophies_shown', 'trophy_award_failures', 'trophy_failure_resolutions']) assert.notEqual(psqlOn(from, `select count(*) from public.${t}`), '0', `the exported instance holds ${t} rows`);
     const trophyRows = (url: string) => psqlOn(url, `select coalesce(string_agg(x, ' | ' order by x), '') from (
       select to_jsonb(k)::text x from trophy_kinds k union all select to_jsonb(w)::text from trophy_awards w union all select to_jsonb(r)::text from trophy_reversals r
-      union all select to_jsonb(sh)::text from trophies_shown sh union all select to_jsonb(f)::text from trophy_award_failures f) q`);
+      union all select to_jsonb(sh)::text from trophies_shown sh union all select to_jsonb(f)::text from trophy_award_failures f
+      union all select to_jsonb(fr)::text from trophy_failure_resolutions fr) q`);
     assert.match(trophyRows(from), /"art": "exp-trophy\.webp"/, 'the admin\'s kind names its picture');
     assert.match(trophyRows(from), /"by": "boss"/, 'the Boss\'s award is in the export');
     assert.equal(trophyRows(fresh.toString()), trophyRows(from), 'the trophies survive the round trip');

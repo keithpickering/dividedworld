@@ -11,7 +11,8 @@
  *                    awards are fetched a page at a time.
  *   Awards that could not be given
  *                    what the season's end or a met demand could not write, kept with the error (`trophyAwardFailures`); each character it was for has a button that
- *                    gives the award by hand, which is the way out for an award the machine could not give.
+ *                    gives the award by hand (`giveFailedAward`, which records it), which is the way out for an award the machine could not give. A character given its award
+ *                    shows "Given" and no button; the failures still owed come first, and older ones are fetched a page at a time.
  *
  * An admin's alone: a player who opens it is told so and nothing is asked for; every write is refused again by the database in its own words. A character is found by
  * its name (`adminCharacterNamed`), and only its name and id come back, never who plays it ("a response never proves a private fact").
@@ -77,6 +78,7 @@ export function TrophiesScreen({ makeArt = browserArt }: { readonly makeArt?: (f
   const [kinds, setKinds] = useState<readonly AdminKind[]>([]);
   const [more, setMore] = useState(false);
   const [failures, setFailures] = useState<readonly TrophyAwardFailure[] | null>(null);
+  const [moreFailures, setMoreFailures] = useState(false);
   const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
@@ -86,7 +88,8 @@ export function TrophiesScreen({ makeArt = browserArt }: { readonly makeArt?: (f
       setAwards(page.value.awards);
       setKinds(page.value.kinds);
       setMore(page.value.more);
-      setFailures(broken.value);
+      setFailures(broken.value.failures);
+      setMoreFailures(broken.value.more);
       setFailed(false);
     } catch {
       setFailed(true);
@@ -117,6 +120,13 @@ export function TrophiesScreen({ makeArt = browserArt }: { readonly makeArt?: (f
     if (page.ok) { setAwards([...(awards ?? []), ...page.value.awards]); setKinds(page.value.kinds); setMore(page.value.more); }
     return page;
   };
+  const olderFailures = async (): Promise<Answer<unknown>> => {
+    const last = failures?.at(-1);
+    if (!last) return { ok: true, value: null };
+    const page = await api.trophyAwardFailures({ before: last.at, beforeId: last.id, beforeOpen: last.open });
+    if (page.ok) { setFailures([...(failures ?? []), ...page.value.failures]); setMoreFailures(page.value.more); }
+    return page;
+  };
   const artOf = (key: string, art: string | null): string | null => art ?? ui.trophies[key]?.art ?? null;
 
   return (
@@ -133,7 +143,7 @@ export function TrophiesScreen({ makeArt = browserArt }: { readonly makeArt?: (f
           <GrantForm reload={load} gear={instance.gear.map((g) => ({ key: g.key, name: g.name }))} />
           <MakeForm makeArt={makeArt} reload={load} />
           <Recent awards={awards} more={more} artOf={artOf} reload={load} older={older} />
-          <Failures failures={failures} kinds={kinds} places={instance.trophies.seasonPlaces} />
+          <Failures failures={failures} more={moreFailures} kinds={kinds} places={instance.trophies.seasonPlaces} reload={load} older={olderFailures} />
         </div>
       )}
     </div>
@@ -313,7 +323,7 @@ function Recent({ awards, more, artOf, reload, older }: {
     if (!answer.ok) return { problem: answer.error };
     await reload();
     setBack(a.award);
-    return { said: `Took back ${a.name} from ${a.to}.${a.belt ? ' A belt it took returns to the holder before.' : ''}` };
+    return { said: `Took back ${a.name} from ${a.to}.${a.belt ? ' If the belt was theirs, it goes back to whoever held it before, if anyone did.' : ''}` };
   });
   return (
     <CalmRegion as="section" aria-labelledby={`${id}-h`} className="kb-trophies-panel kb-trophies-wide">
@@ -347,7 +357,14 @@ function Recent({ awards, more, artOf, reload, older }: {
   );
 }
 
-function Failures({ failures, kinds, places }: { readonly failures: readonly TrophyAwardFailure[]; readonly kinds: readonly AdminKind[]; readonly places: readonly string[] }) {
+function Failures({ failures, more, kinds, places, reload, older }: {
+  readonly failures: readonly TrophyAwardFailure[];
+  readonly more: boolean;
+  readonly kinds: readonly AdminKind[];
+  readonly places: readonly string[];
+  readonly reload: () => Promise<void>;
+  readonly older: () => Promise<Answer<unknown>>;
+}) {
   const { api } = useKayfa();
   const id = useId();
   const write = useWrite();
@@ -357,7 +374,7 @@ function Failures({ failures, kinds, places }: { readonly failures: readonly Tro
       <h2 id={`${id}-h`} className="kb-trophies-head">Awards that could not be given</h2>
       {failures.length === 0 ? <p className="kb-trophies-note">No award has failed.</p> : (
         <>
-          <p className="kb-trophies-note">The season or a met demand ended all the same; its award could not be written. Give it by hand to each character it was for. A given award is listed above; this list keeps the record.</p>
+          <p className="kb-trophies-note">The season or a met demand ended all the same; its award could not be written. Give it by hand to each character it was for; a character that has had it shows Given, and the failures still owed come first.</p>
           <ul className="kb-trophies-failures">
             {failures.map((f) => (
               <li key={f.id}>
@@ -371,10 +388,13 @@ function Failures({ failures, kinds, places }: { readonly failures: readonly Tro
                         const key = f.trophy ?? (c.place !== undefined ? places[c.place - 1] : undefined);
                         if (key === undefined) return null;
                         const trophy = nameOf(key);
+                        if (c.given) return <span key={c.id} className="kb-trophies-taken">Given: {trophy} to {c.name}</span>;
                         return (
                           <GlassButton key={c.id} size="s" disabled={write.busy} onClick={() => void write.run(async () => {
-                            const answer = await api.awardTrophy(key, c.id);
-                            return answer.ok ? { said: `Gave ${trophy} to ${c.name}.` } : { problem: answer.error };
+                            const answer = await api.giveFailedAward(f.id, c.id);
+                            if (!answer.ok) return { problem: answer.error };
+                            await reload();
+                            return { said: `Gave ${trophy} to ${c.name}.` };
                           })}>Give {trophy} to {c.name}</GlassButton>
                         );
                       })}
@@ -383,6 +403,7 @@ function Failures({ failures, kinds, places }: { readonly failures: readonly Tro
               </li>
             ))}
           </ul>
+          {more && <ButtonRow><GlassButton size="s" disabled={write.busy} onClick={() => void write.run(async () => { const a = await older(); return a.ok ? { said: 'Showing older failed awards.' } : { problem: a.error }; })}>Older failed awards</GlassButton></ButtonRow>}
         </>
       )}
       <Said write={write} id={id} />

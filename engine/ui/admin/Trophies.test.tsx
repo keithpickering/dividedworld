@@ -194,6 +194,21 @@ describe('the trophies admin page', () => {
     await waitFor(() => expect(made).toHaveBeenCalledWith('Plain', null, null, false));
   });
 
+  test('reversing a belt says what happens to the belt, truthfully: it goes back to whoever held it before, if anyone did', async () => {
+    const w = world();
+    w.fake.seed.award(w.pipe, 'belt', { by: 'admin', at: Date.parse('2026-10-01T00:00:00Z') });
+    w.fake.seed.award(w.bones, 'p1', { by: 'admin', at: Date.parse('2026-10-02T00:00:00Z') });
+    open(w);
+    const beltRow = (await rows()).find((r) => r.textContent?.includes('The Belt'))!;
+    await userEvent.click(within(beltRow).getByRole('button', { name: /^Reverse/u }));
+    const said = await within(await section('Recent awards')).findByText(/^Took back The Belt from Pipewrench/u);
+    expect(said).toHaveTextContent('If the belt was theirs, it goes back to whoever held it before, if anyone did.');
+    expect(said.textContent).not.toMatch(/returns to the holder/u);
+    const plain = (await rows()).find((r) => r.textContent?.includes('P1'))!;
+    await userEvent.click(within(plain).getByRole('button', { name: /^Reverse/u }));
+    expect(await within(await section('Recent awards')).findByText('Took back P1 from Dr. Bones.')).toBeInTheDocument();
+  });
+
   test('Reverse takes an award back and the list keeps its other rows, the reversed one marked and with no button', async () => {
     const w = world();
     const first = w.fake.seed.award(w.bones, 'p1', { by: 'season', at: Date.parse('2026-10-01T00:00:00Z') });
@@ -235,6 +250,64 @@ describe('the trophies admin page', () => {
     /* A season's failure names no trophy: the place's own (P2 for second) is given. */
     await userEvent.click(within(list).getByRole('button', { name: 'Give P2 to Dr. Bones' }));
     await waitFor(() => expect(within(list).getByRole('status')).toHaveTextContent('Gave P2 to Dr. Bones.'));
+  });
+
+  test('a character given by hand shows "Given" with no button, so it cannot be given twice, and Recent awards show it at once', async () => {
+    const w = world();
+    w.fake.seed.awardFailure({ move: 'act-1', season: null, at: '2026-10-14T00:00:00.000Z', error: 'a database error (23505)', trophy: 'met', characters: [{ id: w.pipe, name: 'Pipewrench' }, { id: w.bones, name: 'Dr. Bones' }] });
+    const give = vi.spyOn(w.fake, 'giveFailedAward');
+    open(w);
+    const list = await section('Awards that could not be given');
+    expect(await within(await section('Recent awards')).findByText('No trophy has been given yet.')).toBeInTheDocument();
+    await userEvent.click(within(list).getByRole('button', { name: 'Give Met to Pipewrench' }));
+    await waitFor(() => expect(within(list).getByText('Given: Met to Pipewrench')).toBeInTheDocument());
+    expect(within(list).queryByRole('button', { name: 'Give Met to Pipewrench' })).toBeNull();
+    expect(within(list).getByRole('button', { name: 'Give Met to Dr. Bones' })).toBeInTheDocument();
+    expect(give).toHaveBeenCalledTimes(1);
+    expect(give).toHaveBeenCalledWith(expect.any(String), w.pipe);
+    const r = await rows();
+    expect(r).toHaveLength(1);
+    expect(r[0]).toHaveTextContent('Pipewrench');
+    /* It stays given when the page is read again. */
+    cleanup();
+    open(w);
+    const again = await section('Awards that could not be given');
+    expect(await within(again).findByText('Given: Met to Pipewrench')).toBeInTheDocument();
+    expect(within(again).queryByRole('button', { name: 'Give Met to Pipewrench' })).toBeNull();
+    expect((await w.fake.trophies(w.pipe)).awards).toHaveLength(1);
+  });
+
+  test('a failure with everything given goes behind the unresolved ones, which come first', async () => {
+    const w = world();
+    w.fake.seed.awardFailure({ move: 'old', season: null, at: '2026-10-01T00:00:00.000Z', error: 'oldest, still owed', trophy: 'met', characters: [{ id: w.pipe, name: 'Pipewrench' }] });
+    w.fake.seed.awardFailure({ move: 'new', season: null, at: '2026-10-20T00:00:00.000Z', error: 'newest, done', trophy: 'met', characters: [{ id: w.bones, name: 'Dr. Bones' }] });
+    open(w);
+    const list = await section('Awards that could not be given');
+    const order = () => within(list).getAllByRole('listitem').map((li) => (li.textContent ?? '').includes('done') ? 'done' : 'owed');
+    expect(order()).toEqual(['done', 'owed']);
+    await userEvent.click(within(list).getByRole('button', { name: 'Give Met to Dr. Bones' }));
+    await waitFor(() => expect(order()).toEqual(['owed', 'done']));
+  });
+
+  test('the failures are fetched a page at a time', async () => {
+    const w = world();
+    for (let i = 0; i < 52; i += 1) w.fake.seed.awardFailure({ move: `m${i}`, season: null, at: new Date(Date.parse('2026-09-01T00:00:00Z') + i * 60_000).toISOString(), error: `err ${i}`, trophy: 'met', characters: [{ id: w.pipe, name: 'Pipewrench' }] });
+    open(w);
+    const list = await section('Awards that could not be given');
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(50));
+    await userEvent.click(within(list).getByRole('button', { name: 'Older failed awards' }));
+    await waitFor(() => expect(within(list).getAllByRole('listitem')).toHaveLength(52));
+    expect(within(list).queryByRole('button', { name: 'Older failed awards' })).toBeNull();
+  });
+
+  test('a refused give says why and keeps its button', async () => {
+    const w = world();
+    w.fake.seed.awardFailure({ move: 'act-1', season: null, at: '2026-10-14T00:00:00.000Z', error: 'e', trophy: 'met', characters: [{ id: w.pipe, name: 'Pipewrench' }] });
+    vi.spyOn(w.fake, 'giveFailedAward').mockResolvedValue({ ok: false, error: 'that award was already given to that character' });
+    open(w);
+    const list = await section('Awards that could not be given');
+    await userEvent.click(within(list).getByRole('button', { name: 'Give Met to Pipewrench' }));
+    expect(await within(list).findByRole('alert')).toHaveTextContent('that award was already given to that character');
   });
 
   test('with no failures it says so', async () => {

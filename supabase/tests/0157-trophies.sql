@@ -339,7 +339,7 @@ begin
   if (select count(*) from trophy_award_failures where season = s3 and move_act is null) is distinct from 1::bigint then raise exception 'the failed season is recorded'; end if;
   insert into admins (account) values (adm);
   perform tests.become(adm);
-  seen := trophy_award_failures();
+  seen := trophy_award_failures() -> 'failures';
   if jsonb_array_length(seen) is distinct from 1 or (seen -> 0 ->> 'season')::bigint is distinct from (select number from seasons where id = s3) or seen -> 0 ->> 'move' is not null or seen -> 0 ->> 'error' not like '%tt_poison%' then raise exception 'an admin reads the failed season: %', seen; end if;
   perform tests.become(p1);
   if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the award failures'; end if;
@@ -462,11 +462,11 @@ begin
   update trophy_award_failures set at = now() where error = 'tt_unreadable';
   insert into admins (account) values (tests.account('td-adm'));
   perform tests.become((select id from auth.users where email = 'td-adm@test.invalid'));
-  if (select count(*) from jsonb_array_elements(trophy_award_failures()) f where f ->> 'move' = mv::text and f ->> 'trophy' = 'tt-met' and f ->> 'error' like '%tt_poison%'
+  if (select count(*) from jsonb_array_elements(trophy_award_failures() -> 'failures') f where f ->> 'move' = mv::text and f ->> 'trophy' = 'tt-met' and f ->> 'error' like '%tt_poison%'
         and jsonb_array_length(f -> 'characters') > 0) is distinct from 1::bigint then raise exception 'an admin reads the failed demand: %', trophy_award_failures(); end if;
   -- Newest first, over rows whose times differ (a transaction's now() is one instant, so they are set): the season's failure, the move's, and a third whose move
   -- cannot be read (a post's Act is no move, so demand_contributors raises). That one must not make the admin's read fail: it is listed, its characters null.
-  seen := trophy_award_failures();
+  seen := trophy_award_failures() -> 'failures';
   if jsonb_array_length(seen) is distinct from 3 then raise exception 'one failure row made the admin read lose the others: %', seen; end if;
   if (select string_agg(f ->> 'error', ',' order by n) from jsonb_array_elements(seen) with ordinality t(f, n)) not like 'tt_unreadable,%tt_poison%,%tt_poison%' then raise exception 'newest first: %', seen; end if;
   if seen -> 0 -> 'characters' is distinct from 'null'::jsonb or seen -> 0 ->> 'error' <> 'tt_unreadable' then raise exception 'an unreadable demand''s characters are null: %', seen -> 0; end if;
