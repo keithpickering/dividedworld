@@ -138,9 +138,12 @@ export async function startCluster(opts: { at: number; preload?: boolean; extraS
     run(join(bin, "initdb"), ["-D", data, "-A", "trust", "-U", "postgres", "-E", "UTF8"]);
     const fake: Record<string, string> =
       opts.preload === false ? {} : { LD_PRELOAD: lib, FAKETIME_TIMESTAMP_FILE: clockFile, FAKETIME_NO_CACHE: "1" };
+    // No autovacuum: on CI's Postgres 18 an autovacuum worker started under libfaketime left the postmaster, both backends and every
+    // launcher waiting on one futex, and the server answered nobody again (seen in the stall report of a run whose tables first grew
+    // enough to be vacuumed). A cluster that lives for minutes, on a clock that runs a day in seconds, has nothing to vacuum for.
     run(
       join(bin, "pg_ctl"),
-      ["-D", data, "-w", "-l", join(dir, "server.log"), "-o", `-k ${dir} -p ${PORT} -c listen_addresses='' -c fsync=off ${opts.extraServerOptions ?? ""}`, "start"],
+      ["-D", data, "-w", "-l", join(dir, "server.log"), "-o", `-k ${dir} -p ${PORT} -c listen_addresses='' -c fsync=off -c autovacuum=off ${opts.extraServerOptions ?? ""}`, "start"],
       fake,
     );
   } catch (e) {

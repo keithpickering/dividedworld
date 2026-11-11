@@ -40,6 +40,15 @@ test("a cluster started at T answers now() within a second after T", async () =>
   }
 });
 
+test("the cluster runs no autovacuum: its worker, started under the fake clock, stops every process of the server", async () => {
+  const c = await startCluster({ at: T });
+  try {
+    assert.equal(psql(c, "show autovacuum;"), "off");
+  } finally {
+    await c.stop({ keep: false });
+  }
+});
+
 test("setClock moves a held connection's now() and a column default", async () => {
   const c = await startCluster({ at: T });
   try {
