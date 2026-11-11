@@ -12,11 +12,12 @@ import type { Instance } from '../../rules/types.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import type { Act, Id, KayfaApi, Tail } from '../data/api.ts';
 import { createFake } from '../data/fake.ts';
+import { ThreadCtx, type ThreadContext } from '../thread/context.ts';
 import { useHistory } from '../thread/lines.tsx';
 import { renderIn, testInstance } from '../test-world.tsx';
 import { MomentEffects, PostEffects } from './Effects.tsx';
 import { createPlays } from './plays.ts';
-import { tailStore, TAILS_PER_READ } from './tails.ts';
+import { HELD_POSTS, POLL_FIRST, POLL_LAST, tailStore, TAILS_PER_READ } from './tails.ts';
 import type { CardUi, EffectProps, Written } from './types.ts';
 
 const base = { alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c) };
@@ -255,5 +256,214 @@ describe('a post nobody asked about is not read', () => {
     tailStore(api).watch({ id: 'p', thread: 't' }, [], null);
     await nextTick();
     expect(tails).not.toHaveBeenCalled();
+  });
+});
+
+/* The store alone, over an api whose answers the test sets, with the clock held: what a reader does when an event was missed. */
+function rig() {
+  let held: Tail[] = [];
+  let failing = 0;
+  const tails = vi.fn(async (posts: readonly Id[]): Promise<readonly Tail[]> => {
+    if (failing > 0) { failing -= 1; throw new Error('offline'); }
+    return held.filter((r) => posts.includes(r.post));
+  });
+  const api = { tails, subscribeThread: () => () => {} } as unknown as KayfaApi;
+  const row = (post: Id, play: Id, text: string | null): Tail => ({ post, play, version: `${post}-v`, text, failed: false, waiting: text === null, createdAt: text === null ? null : 'then' });
+  return { api, tails, store: tailStore(api), row, set: (rows: Tail[]) => { held = rows; }, fail: (n: number) => { failing = n; } };
+}
+const hidden = (is: boolean) => {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (is ? 'hidden' : 'visible') });
+  document.dispatchEvent(new Event('visibilitychange'));
+};
+const pass = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+const textOf = (rows: readonly Tail[]) => rows.map((r) => r.text);
+
+describe('a waiting cursor is not left behind by a missed event', () => {
+  afterEach(() => { vi.useRealTimers(); hidden(false); });
+
+  test('a post watched again after its text came while nobody listened is read again, and draws the text', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.set([r.row('p', 'a', null)]);
+    const off = r.store.watch({ id: 'p', thread: 't' }, ['a'], 'e1');
+    await pass(0);
+    expect(r.store.rows('p').map((x) => x.waiting)).toEqual([true]);
+    off();
+    await pass(0);
+    r.set([r.row('p', 'a', 'came')]);
+    r.store.watch({ id: 'p', thread: 't' }, ['a'], 'e1');
+    await pass(0);
+    expect(r.tails).toHaveBeenCalledTimes(2);
+    expect(textOf(r.store.rows('p'))).toEqual(['came']);
+  });
+
+  test('a waiting row is read again on a timer that backs off, and stops when its text arrives', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.set([r.row('p', 'a', null)]);
+    r.store.watch({ id: 'p', thread: 't' }, ['a'], null);
+    await pass(0);
+    expect(r.tails).toHaveBeenCalledTimes(1);
+    await pass(POLL_FIRST - 1);
+    expect(r.tails).toHaveBeenCalledTimes(1);
+    await pass(1);
+    expect(r.tails).toHaveBeenCalledTimes(2);
+    await pass(POLL_FIRST * 2);
+    expect(r.tails).toHaveBeenCalledTimes(3);
+    await pass(POLL_FIRST * 4);
+    expect(r.tails).toHaveBeenCalledTimes(4);
+    /* The delay stops growing at its last value. */
+    await pass(POLL_LAST);
+    expect(r.tails).toHaveBeenCalledTimes(5);
+    await pass(POLL_LAST);
+    expect(r.tails).toHaveBeenCalledTimes(6);
+    r.set([r.row('p', 'a', 'here')]);
+    await pass(POLL_LAST);
+    expect(textOf(r.store.rows('p'))).toEqual(['here']);
+    const calls = r.tails.mock.calls.length;
+    await pass(10 * POLL_LAST);
+    expect(r.tails).toHaveBeenCalledTimes(calls);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  test('two waiting posts are one call a tick, and a post that is not waiting is not in it', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.set([r.row('p1', 'a', null), r.row('p2', 'b', null), r.row('p3', 'c', 'done')]);
+    for (const [p, play] of [['p1', 'a'], ['p2', 'b'], ['p3', 'c']] as const) r.store.watch({ id: p, thread: 't' }, [play], null);
+    await pass(0);
+    expect(r.tails).toHaveBeenCalledTimes(1);
+    await pass(POLL_FIRST);
+    expect(r.tails).toHaveBeenCalledTimes(2);
+    expect(new Set(r.tails.mock.calls[1]![0])).toEqual(new Set(['p1', 'p2']));
+  });
+
+  test('no timer runs with nothing waiting, after the last watcher goes, or while the document is hidden', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.set([r.row('p', 'a', 'text')]);
+    const off = r.store.watch({ id: 'p', thread: 't' }, ['a'], null);
+    await pass(0);
+    expect(vi.getTimerCount()).toBe(0);
+    off();
+    r.set([r.row('q', 'b', null)]);
+    const offQ = r.store.watch({ id: 'q', thread: 't' }, ['b'], null);
+    await pass(0);
+    expect(vi.getTimerCount()).toBe(1);
+    offQ();
+    await pass(0);
+    expect(vi.getTimerCount()).toBe(0);
+    const before = r.tails.mock.calls.length;
+    await pass(POLL_LAST * 3);
+    expect(r.tails).toHaveBeenCalledTimes(before);
+    /* Hidden: it waits, with no timer, and goes on when the document is shown. */
+    hidden(true);
+    r.store.watch({ id: 'q', thread: 't' }, ['b'], null);
+    await pass(0);
+    expect(vi.getTimerCount()).toBe(0);
+    await pass(POLL_LAST * 3);
+    expect(r.tails).toHaveBeenCalledTimes(before + 1);
+    hidden(false);
+    await pass(POLL_FIRST);
+    expect(r.tails).toHaveBeenCalledTimes(before + 2);
+  });
+
+  test('a read that failed is asked again on the same backoff while the post is watched', async () => {
+    vi.useFakeTimers();
+    const r = rig();
+    r.set([r.row('p', 'a', 'late')]);
+    r.fail(1);
+    const off = r.store.watch({ id: 'p', thread: 't' }, ['a'], null);
+    await pass(0);
+    expect(r.tails).toHaveBeenCalledTimes(1);
+    expect(r.store.rows('p')).toHaveLength(0);
+    await pass(POLL_FIRST);
+    expect(r.tails).toHaveBeenCalledTimes(2);
+    expect(textOf(r.store.rows('p'))).toEqual(['late']);
+    expect(vi.getTimerCount()).toBe(0);
+    off();
+  });
+});
+
+describe('what the store keeps', () => {
+  test('a post nobody watches is dropped once more posts than the store holds have been read', async () => {
+    const r = rig();
+    r.set([r.row('p0', 'a', 'kept for a while')]);
+    r.store.watch({ id: 'p0', thread: 't' }, ['a'], null)();
+    await nextTick();
+    expect(textOf(r.store.rows('p0'))).toEqual(['kept for a while']);
+    for (let i = 1; i <= HELD_POSTS; i += 1) r.store.watch({ id: `q${i}`, thread: 't' }, [`a${i}`], null);
+    await nextTick();
+    expect(r.store.rows('p0')).toHaveLength(0);
+    r.store.watch({ id: 'p0', thread: 't' }, ['a'], null);
+    const asked = r.tails.mock.calls.length;
+    await nextTick();
+    expect(r.tails.mock.calls.length).toBeGreaterThan(asked);
+    expect(textOf(r.store.rows('p0'))).toEqual(['kept for a while']);
+  });
+
+  test('a moment beside the live post, which names an older edit, makes no read of its own', async () => {
+    const r = rig();
+    r.set([r.row('p', 'a', 'text')]);
+    r.store.watch({ id: 'p', thread: 't' }, ['a'], '2026-11-07T12:00:00.000Z');
+    await nextTick();
+    expect(r.tails).toHaveBeenCalledTimes(1);
+    r.store.watch({ id: 'p', thread: 't' }, ['a'], '2026-11-07T11:00:00.000Z');
+    await nextTick();
+    /* And the live post's own stamp is still the one held: the same stamp again is no read. */
+    r.store.watch({ id: 'p', thread: 't' }, ['a'], '2026-11-07T12:00:00.000Z');
+    await nextTick();
+    expect(r.tails).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('History reads only where the post has a writing play', () => {
+  const context = (plays: ReturnType<typeof createPlays>) => ({ plays, nameOf: () => '' }) as unknown as ThreadContext;
+  function History({ post }: { readonly post: Id }) { const h = useHistory(post); return <>{h.button}{h.panel}</>; }
+  async function open(w: Awaited<ReturnType<typeof edited>>, plays?: ReturnType<typeof createPlays>) {
+    const view = renderIn(w.fake, plays ? <ThreadCtx.Provider value={context(plays)}><History post={w.p1} /></ThreadCtx.Provider> : <History post={w.p1} />, { cards: [tailing, quiet], instance });
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+    await screen.findByRole('list', { name: 'Versions of this post, oldest first' });
+    await nextTick();
+    return view;
+  }
+
+  test('a post with no writing play asks for no tails, and, in a thread, for no plays either', async () => {
+    const w = seeded();
+    w.fake.seed.card(w.mask, w.p1, 'plain');
+    w.fake.clock.advance(60_000);
+    expect((await w.fake.edit(w.p1, w.mask, 'second version')).ok).toBe(true);
+    const plays = createPlays();
+    plays.add(await w.fake.cardsOnMany([w.p1], 8));
+    const tails = vi.spyOn(w.fake, 'tails');
+    const on = vi.spyOn(w.fake, 'cardsOn');
+    await open({ ...w, play: '', e1: '', e2: '' }, plays);
+    expect(tails).not.toHaveBeenCalled();
+    expect(on).not.toHaveBeenCalled();
+  });
+
+  test('where the thread is not known, the plays are read, and no tails where none of them writes', async () => {
+    const w = seeded();
+    w.fake.seed.card(w.mask, w.p1, 'plain');
+    w.fake.clock.advance(60_000);
+    expect((await w.fake.edit(w.p1, w.mask, 'second version')).ok).toBe(true);
+    const tails = vi.spyOn(w.fake, 'tails');
+    const on = vi.spyOn(w.fake, 'cardsOn');
+    await open({ ...w, play: '', e1: '', e2: '' });
+    expect(on).toHaveBeenCalledTimes(1);
+    expect(tails).not.toHaveBeenCalled();
+  });
+
+  test('a post with a writing play reads its tails once, from the plays the thread holds', async () => {
+    const w = await edited();
+    w.fake.seed.text(w.play, w.p1, { text: 'first tail' }, { quiet: true });
+    const plays = createPlays();
+    plays.add(await w.fake.cardsOnMany([w.p1], 8));
+    const tails = vi.spyOn(w.fake, 'tails');
+    const on = vi.spyOn(w.fake, 'cardsOn');
+    await open(w, plays);
+    expect(await screen.findByText('first tail')).toHaveAttribute('data-still', 'true');
+    expect(tails).toHaveBeenCalledTimes(1);
+    expect(on).not.toHaveBeenCalled();
   });
 });

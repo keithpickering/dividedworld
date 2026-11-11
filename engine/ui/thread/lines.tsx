@@ -8,7 +8,7 @@ import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, Tail } from '../data/api.ts';
 import { VersionEffects } from '../cards/Effects.tsx';
-import { PLAYS_PER_POST, createPlays, livePlays } from '../cards/plays.ts';
+import { PLAYS_PER_POST, createPlays, livePlays, type Plays } from '../cards/plays.ts';
 import type { CardPlay } from '../cards/types.ts';
 import { resolveWritten } from '../cards/written.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
@@ -60,24 +60,32 @@ export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 
 /**
  * What History needs of a post's writing plays: the live plays of cards that write on it and every row of their tails, read once when History
- * is open, and only where the instance has such a card. Null while they load or where they could not be read, and then the versions show
- * their words alone.
+ * is open. In a thread the plays are the ones the page already holds (`known`), so a post with no writing play costs no request at all; where
+ * the page is not known the plays are read, and the tails only if one of them writes. Null while they load, where there is none and where they
+ * could not be read, and then the versions show their words alone.
  */
-function useTailsOf(post: Id, wanted: boolean): { readonly plays: readonly CardPlay[]; readonly rows: readonly Tail[] } | null {
+function useTailsOf(post: Id, wanted: boolean, known: Plays | null): { readonly plays: readonly CardPlay[]; readonly rows: readonly Tail[] } | null {
   const { api, instance } = useKayfa();
   const [read, setRead] = useState<{ readonly plays: readonly CardPlay[]; readonly rows: readonly Tail[] } | null>(null);
   useEffect(() => {
     if (!wanted) return;
     let live = true;
     const writing = new Set(instance.cards.filter((c) => c.writes !== undefined).map((c) => c.key));
-    Promise.all([api.cardsOn(post, PLAYS_PER_POST), api.tails([post])]).then(([acts, rows]) => {
+    const writers = (all: readonly CardPlay[]) => livePlays(all).filter((p) => writing.has(p.card) && !p.caught && !p.reach && !p.faceDown);
+    const fail = () => { /* the versions are shown without their tails */ };
+    const tailed = (plays: readonly CardPlay[]) => {
+      if (plays.length === 0) return;
+      api.tails([post]).then((rows) => { if (live) setRead({ plays, rows }); }, fail);
+    };
+    if (known) { tailed(writers(known.get(post).plays)); return () => { live = false; }; }
+    api.cardsOn(post, PLAYS_PER_POST).then((acts) => {
       if (!live) return;
       const store = createPlays();
       store.add(acts);
-      setRead({ plays: livePlays(store.get(post).plays).filter((p) => writing.has(p.card) && !p.caught && !p.reach && !p.faceDown), rows });
-    }, () => { /* the versions are shown without their tails */ });
+      tailed(writers(store.get(post).plays));
+    }, fail);
     return () => { live = false; };
-  }, [api, instance.cards, post, wanted]);
+  }, [api, instance.cards, post, wanted, known]);
   return read;
 }
 
@@ -92,7 +100,7 @@ function Versions({ post }: { readonly post: Id }) {
     return () => { live = false; };
   }, [api, post]);
   const draws = useMemo(() => instance.cards.some((c) => c.writes !== undefined && ui.cards.some((u) => u.key === c.key && u.Effect)), [instance.cards, ui.cards]);
-  const tails = useTailsOf(post, draws);
+  const tails = useTailsOf(post, draws, useContext(ThreadCtx)?.plays ?? null);
   const ids = useMemo(() => (Array.isArray(versions) ? versions.map((v) => v.id) : []), [versions]);
   if (versions === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The history could not be loaded. Close it and try again.</p>;
   if (versions === null) return <p className="kb-muted kb-small" aria-busy="true">Loading the history…</p>;
