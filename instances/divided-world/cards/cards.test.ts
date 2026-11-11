@@ -546,6 +546,16 @@ test('Mooch lands with a quadrant, is refused on a quadrant already live and lan
   assert.equal(decidePlay(mooch, settings, post(10), live, { quadrant: 'excitedPositive' }, '').ok, false, 'that quadrant is taken');
   assert.equal(decidePlay(mooch, settings, post(10), live, { quadrant: 'calmPositive' }, '').ok, true, 'another lands');
   assert.equal(decidePlay(mooch, settings, post(10), live, {}, '').ok, false, 'a configuration with none is refused');
+  assert.deepEqual(mooch.validateConfig({}), { ok: false, why: 'choose the reactions to mooch' });
+  assert.deepEqual(mooch.validateConfig({ quadrant: 'loud' }), { ok: false, why: 'choose the reactions to mooch' });
+  assert.deepEqual(mooch.lasts, { unit: 'week', count: 1 });
+});
+
+test('Mooch stacks four deep, one per quadrant, and a fifth is refused', () => {
+  const mooch = by('mooch');
+  const up = (n: number) => QUADRANTS.slice(0, n).map((quadrant, i) => ({ card: 'mooch', act: `k${i}`, reach: 'post' as const, quadrant, ends: new Date(Date.now() + 86_400_000).toISOString() }));
+  assert.equal(decidePlay(mooch, settings, post(10), up(3), { quadrant: QUADRANTS[3] }, '').ok, true, 'the fourth lands');
+  assert.deepEqual(decidePlay(mooch, settings, post(10), up(4), { quadrant: QUADRANTS[0] }, ''), { ok: false, why: 'this post already carries 4 of that card, the most it takes' });
 });
 
 test('Toll lands on a post through decideUse, is refused by decidePlay, and a second live one is refused', () => {
@@ -554,6 +564,7 @@ test('Toll lands on a post through decideUse, is refused by decidePlay, and a se
   assert.equal(decidePlay(toll, settings, post(10), [], {}, '').ok, false, 'a Gimmick is not cast');
   const live = [{ card: 'toll', act: 'k1', ends: new Date(Date.now() + 86_400_000).toISOString() }];
   assert.equal(decideUse(toll, settings, post(10), live, {}, '').ok, false);
+  assert.deepEqual(toll.lasts, { unit: 'week', count: 1 });
 });
 
 test('4D Chess names only Moves cast on a post up to uncommon, and a quadrant', () => {
@@ -561,15 +572,26 @@ test('4D Chess names only Moves cast on a post up to uncommon, and a quadrant', 
   assert.deepEqual(chess.validateConfig({ card: 'whoops', quadrant: 'excitedNegative' }), { ok: true, value: { card: 'whoops', quadrant: 'excitedNegative' } });
   assert.equal(chess.validateConfig({ card: 'whoops' }).ok, false, 'a missing quadrant');
   assert.equal(chess.validateConfig({ card: '', quadrant: 'calmPositive' }).ok, false);
+  const keyWords = 'the card is the key of the Move to wait for';
+  assert.deepEqual(chess.validateConfig({ card: '', quadrant: 'calmPositive' }), { ok: false, why: keyWords });
+  assert.deepEqual(chess.validateConfig({ card: 7, quadrant: 'calmPositive' }), { ok: false, why: keyWords });
+  assert.deepEqual(chess.validateConfig({ card: 'x'.repeat(65), quadrant: 'calmPositive' }), { ok: false, why: keyWords }, '65 is too long');
+  assert.deepEqual(chess.validateConfig({ card: 'x'.repeat(64), quadrant: 'calmPositive' }), { ok: true, value: { card: 'x'.repeat(64), quadrant: 'calmPositive' } }, '64 passes');
+  assert.deepEqual(chess.validateConfig({ card: 'whoops' }), { ok: false, why: 'choose the reactions it pays on' });
+  assert.deepEqual(chess.validateConfig({ card: 'whoops', quadrant: 'loud' }), { ok: false, why: 'choose the reactions it pays on' });
   assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'whoops', quadrant: 'calmPositive' }, cards).ok, true);
   assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'mooch', quadrant: 'calmPositive' }, cards).ok, true, 'an uncommon Move');
   const rare = decideSet(chess, settings, on('a post'), [], { card: 'main-event', quadrant: 'calmPositive' }, cards);
-  assert.equal(rare.ok, false);
-  assert.match(String((rare as { why: string }).why), /4D Chess names cards up to uncommon|names a card that is cast on a post/);
+  assert.deepEqual(rare, { ok: false, why: '4D Chess names a card that is cast on a post' }, 'Main Event is a rare cast on a thread, so it is refused as not cast on a post');
+  // The instance has no rare Move cast on a post (Main Event, its only rare, is cast on a thread), so the rarity words are reached with a rare one added to the list decideSet is given.
+  const rareOnPost = { ...by('whoops'), key: 'rare-on-post', rarity: 'rare' as const };
+  assert.deepEqual(decideSet(chess, settings, on('a post'), [], { card: 'rare-on-post', quadrant: 'calmPositive' }, [...cards, rareOnPost]), { ok: false, why: '4D Chess names cards up to uncommon' });
   assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'off-day', quadrant: 'calmPositive' }, cards).ok, false, 'a card on a character is not cast on a post');
   assert.equal(decideSet(chess, settings, on('a post'), [], { card: 'whoops' }, cards).ok, false);
   const options = chess.staffOptions as unknown as { schema: { properties: { card: { enum: string[] }; quadrant: { enum: string[] } } } };
   for (const card of options.schema.properties.card.enum) assert.equal(decideSet(chess, settings, on('a post'), [], { card, quadrant: 'calmPositive' }, cards).ok, true, card);
+  assert.deepEqual(options.schema.properties.card.enum, cards.filter((c) => castOnPost(c) && atOrBelow(c.rarity, 'uncommon')).map((c) => c.key));
+  for (const key of options.schema.properties.card.enum) assert.ok(atOrBelow(by(key).rarity, 'uncommon'), `${key} is no more than uncommon`);
   assert.ok(options.schema.properties.card.enum.includes('mooch'));
   assert.ok(!options.schema.properties.card.enum.includes('main-event'));
   assert.deepEqual(options.schema.properties.quadrant.enum, [...QUADRANTS]);
@@ -582,4 +604,11 @@ test('Off Day refuses a class the instance lacks and lands on a character', () =
   for (const bad of ['ghost', '', 7, undefined]) assert.equal(off.validateConfig({ class: bad }).ok, false, String(bad));
   assert.equal(off.canApply(character, []).ok, true);
   assert.equal(off.canApply(post(10), []).ok, false, 'not on a post');
+  assert.deepEqual(off.validateConfig({ class: 'ghost' }), { ok: false, why: 'choose the class to name' });
+  assert.deepEqual(off.validateConfig(null), { ok: false, why: 'choose the class to name' });
+  assert.deepEqual(off.lasts, { unit: 'day', count: 2 });
+  const chara = { reach: 'character' as const, character: 'c1' };
+  const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'off-day', act: `o${i}`, reach: 'character' as const, ends: new Date(Date.now() + 86_400_000).toISOString() }));
+  assert.equal(off.canApply(chara, up(1)).ok, true, 'the next window\'s lands while this one is live');
+  assert.deepEqual(off.canApply(chara, up(2)), { ok: false, why: 'this character already carries 2 of that card, the most it takes' });
 });
