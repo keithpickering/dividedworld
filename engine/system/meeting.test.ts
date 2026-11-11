@@ -909,8 +909,37 @@ test('a number in a text field that is not an any field is not read as text: the
   assert.ok(r.ok, JSON.stringify(r));
   assert.equal(r.moves.length, 0);
   assert.ok(!r.trims.some((t) => t.predicate === 'asText'), JSON.stringify(r.trims));
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.name' && t.predicate === 'isString'), JSON.stringify(r.trims));
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.name' && t.predicate !== 'isString'), JSON.stringify(r.trims));
+  assert.equal(r.trims.filter((t) => t.path === 'moves[0].params.name' && t.predicate === 'isString').length, 1, JSON.stringify(r.trims));
+});
+
+// One rule: a value in a move's own field whose type is not that field's drops that move, naming the path and the predicate; the answer stays, and the move never changes meaning.
+const okMove = { ...askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } }) };
+const askedRule = (params: Record<string, unknown>) => ({ ...askedMove('setRule', params, { kind: '', params: BLANK_DEMAND.params }) });
+
+test('a non-text value in an own optional text field drops that move, naming the path; the other moves stay', () => {
+  const rule = askedRule({ board: 5, predicate: 'minLength', param: '20', band: 'minor' });
+  const r = plain(movesOnly(rule, okMove));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.equal(r.moves[0]!.kind, 'renameBoard');
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isString'), JSON.stringify(r.trims));
+  const group = plain(movesOnly(askedMove('conferGroup', { character: ANN, group: 'trialMembers', checkAt: 5 }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 4 } }), okMove));
+  assert.equal(group.moves.length, 1, JSON.stringify(group.trims));
+  assert.ok(group.trims.some((t) => t.path === 'moves[0].params.checkAt' && t.predicate === 'isString'), JSON.stringify(group.trims));
+});
+
+test('a number in an own enum field drops that move; the answer is kept', () => {
+  const r = plain(movesOnly(askedRule({ board: BOARD, predicate: 'minLength', param: '20', band: 9 }), okMove));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].params.band' && /^oneOf\(/.test(t.predicate)), JSON.stringify(r.trims));
+  const demand = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'quadrantOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, quadrant: 3, count: 4 } }), okMove));
+  assert.equal(demand.moves.length, 1, JSON.stringify(demand.trims));
+  assert.ok(demand.trims.some((t) => t.path === 'moves[0].demand.params.quadrant' && /^oneOf\(/.test(t.predicate)), JSON.stringify(demand.trims));
+});
+
+test('a text value in an own number field drops that move, naming isNumber', () => {
+  const r = plain(movesOnly(askedMove('renameBoard', { board: BOARD, name: 'Pirate Puns Palace', premise: 'Everything about puns.' }, { kind: 'postsOnBoard', params: { ...BLANK_DEMAND.params, board: BOARD, count: 'four' } }), okMove));
+  assert.equal(r.moves.length, 1, JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].demand.params.count' && t.predicate === 'isNumber'), JSON.stringify(r.trims));
 });
 
 test('a setRule\'s param sent as a JSON number keeps the move, read as its text and then as the count, both recorded', () => {

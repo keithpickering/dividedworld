@@ -640,26 +640,35 @@ export function namedCharacters(raw: unknown): string[] {
  * What the shape pass needs of the moves before it runs. A move's params and demand are the loose objects of every kind's fields, so a field of another
  * kind is dropped here, whatever it holds (the schema asked for it, so there is nothing to record, and a number or a blank in it must never cost the
  * answer); and a number in one of the kind's own `any` fields, which the schema sends as text (a rule's `param: 20`), is read as its text, recorded at its path
- * (`asText`), for `readParam` to read as the count; a non-text value in any other text field is left out and recorded (`isString`), so its move is refused by name later and the answer is not lost. Local to the meeting: the shape pass keeps its strictness for every other job.
+ * (`asText`), for `readParam` to read as the count; a value of the wrong type in any other own field (text, a choice, a number) is left out and its move refused by name in the move repair (`isString`, `oneOf`, `isNumber`), so the move never changes meaning and the answer is not lost. Local to the meeting: the shape pass keeps its strictness for every other job.
  */
-function readLooseFields(raw: unknown): { readonly value: unknown; readonly trims: readonly Trim[] } {
+function readLooseFields(raw: unknown): { readonly value: unknown; readonly trims: readonly Trim[]; readonly refused: ReadonlyMap<number, { path: string; predicate: string }> } {
   const a = record(raw);
-  if (!Array.isArray(a['moves'])) return { value: raw, trims: [] };
+  if (!Array.isArray(a['moves'])) return { value: raw, trims: [], refused: new Map() };
   const trims: Trim[] = [];
+  const refused = new Map<number, { path: string; predicate: string }>();
+  let refusals: { path: string; predicate: string }[] = [];
   const ownOnly = (given: unknown, own: Rule | undefined, path: string): unknown => {
     if (typeof given !== 'object' || given === null || Array.isArray(given)) return given;
     const fields = own?.type === 'object' ? own.fields : {};
     const out: Record<string, unknown> = {};
     for (const [name, v] of Object.entries(given)) {
       if (!(name in fields)) continue;
-      if (typeof v === 'number' && Number.isFinite(v) && fields[name]?.type === 'any') {
+      const rule = fields[name];
+      if (typeof v === 'number' && Number.isFinite(v) && rule?.type === 'any') {
         out[name] = String(v);
         trims.push({ path: `${path}.${name}`, predicate: 'asText', before: v, after: String(v).length });
-      } else if (fields[name]?.type === 'string' && typeof v !== 'string' && v !== undefined && v !== null) {
-        // A non-text value in a text field is not read as text: the field is left out (recorded), so the move meets `moveParamsProblems` and is refused by name
-        // there, rather than the shape pass's isString rejecting the whole answer over one move.
-        trims.push({ path: `${path}.${name}`, predicate: 'isString', before: 1, after: 0 });
-      } else out[name] = v;
+        continue;
+      }
+      // A value that is not the field's own type is never read as another one: the field is left out so the shape pass keeps the answer, and the move is refused
+      // by name in the move repair (`refused`), so it never changes meaning (a board rule that lost its board would become a house rule). Absent and null are absent.
+      const bad = v === undefined || v === null ? null
+        : rule?.type === 'string' || rule?.type === 'any' ? (typeof v === 'string' ? null : 'isString')
+        : rule?.type === 'enum' ? (typeof v === 'string' ? null : `oneOf(${rule.values.join(', ')})`)
+        : rule?.type === 'number' ? (typeof v === 'number' && Number.isFinite(v) ? null : 'isNumber')
+        : null;
+      if (bad) refusals.push({ path: `${path}.${name}`, predicate: bad });
+      else out[name] = v;
     }
     return out;
   };
@@ -667,14 +676,16 @@ function readLooseFields(raw: unknown): { readonly value: unknown; readonly trim
     if (typeof m !== 'object' || m === null || Array.isArray(m)) return m;
     const one = m as Record<string, unknown>;
     const kind = typeof one['kind'] === 'string' ? moveKind(one['kind']) : undefined;
+    refusals = [];
     const out: Record<string, unknown> = { ...one, params: ownOnly(one['params'], kind?.params, `moves[${i}].params`) };
     const demand = record(one['demand']);
     if (typeof demand['kind'] === 'string' && 'params' in demand) {
       out['demand'] = { ...demand, params: ownOnly(demand['params'], demandKind(demand['kind'])?.params, `moves[${i}].demand.params`) };
     }
+    if (refusals[0]) refused.set(i, refusals[0]);
     return out;
   });
-  return { value: { ...a, moves }, trims };
+  return { value: { ...a, moves }, trims, refused };
 }
 
 export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
@@ -734,6 +745,9 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     const path = `moves[${i}]`;
     const kind = moveKind(String(m['kind']));
     if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
+    // A value in one of the kind's own fields of the wrong type (found before the shape pass): the move is refused by name, the answer stands.
+    const wrong = read.refused.get(i);
+    if (wrong) return drop(wrong.path, wrong.predicate);
     // A favor carries no demand: one given is set aside (recorded), the move is whole without it. Every other move needs one it can meet.
     const wantsDemand = kind.demand(record(m['params'])) === 'required';
     // A favor says it has no demand by an empty kind; that is no demand, not a stray one.
