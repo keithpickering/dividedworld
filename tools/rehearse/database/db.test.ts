@@ -150,6 +150,13 @@ test('calls on one connection do not interleave', async () => {
   assert.deepEqual(b, { role: 'service_role', uid: null });
 });
 
+test('plain SQL waits for a call in flight, so it never runs inside that call', async () => {
+  // The plain SQL is sent 50 ms into the call's 200 ms sleep, when the call's transaction is open as the player.
+  const later = new Promise((resolve) => setTimeout(resolve, 50)).then(() => conn.sql('select current_user as u'));
+  const [, during] = await Promise.all([player().rpc('slow2', {}), later]);
+  assert.deepEqual(during, [{ u: 'postgres' }]);
+});
+
 test('the role is reset after a call', async () => {
   await player().rpc('who', {});
   assert.deepEqual(await conn.sql('select current_user as u'), [{ u: 'postgres' }]);

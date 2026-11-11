@@ -106,8 +106,9 @@ function wrap(client: pg.Client): Connection {
   }
 
   return {
-    sql: async (text, params) => (await client.query(text, params)).rows,
-    end: () => client.end(),
+    // Plain SQL and the close take the same turn as a call, so neither lands inside a call's open transaction.
+    sql: (text, params) => exclusive(async () => (await client.query(text, params)).rows),
+    end: () => exclusive(() => client.end()),
     db(as) {
       const claims = as === 'service' ? { role: 'service_role' } : { sub: as.player, role: 'authenticated' };
       const role = as === 'service' ? 'service_role' : 'authenticated';
