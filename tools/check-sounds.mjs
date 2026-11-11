@@ -14,7 +14,10 @@
  * 4. no file has two entries;
  * 5. no file is over 300 KB;
  * 6. every file is an MP3: it starts with `ID3`, or with an MPEG frame sync (`0xFF`, then a byte whose
- *    top three bits are set). Only the first bytes are read; nothing is decoded.
+ *    top three bits are set, the version bits not the reserved `01` and the layer bits not `00`, which
+ *    is what AAC's ADTS header, `0xFF 0xF1`, has). Only the first bytes are read; nothing is decoded;
+ * 7. the folder holds nothing but `.mp3` regular files and `sounds.json`: a `.wav`, a `.mp3.bak` or
+ *    a directory is a fault of its own, named.
  *
  * An empty manifest in an empty folder passes, and so does a repository with no sounds folder.
  *
@@ -43,13 +46,19 @@ function soundFolders(root) {
 
 function isMp3(head) {
   if (head.length >= 3 && head.subarray(0, 3).toString('latin1') === 'ID3') return true;
-  return head.length >= 2 && head[0] === 0xff && (head[1] & 0xe0) === 0xe0;
+  return head.length >= 2 && head[0] === 0xff && (head[1] & 0xe0) === 0xe0 && (head[1] & 0x18) !== 0x08 && (head[1] & 0x06) !== 0;
 }
 
 function folderFaults(dir) {
   const faults = [];
   const at = (name, text) => faults.push(`${path.join(dir, name)}: ${text}`);
-  const files = fs.readdirSync(dir).filter((n) => n.toLowerCase().endsWith('.mp3')).sort();
+  const files = [];
+  for (const n of fs.readdirSync(dir).sort()) {
+    if (n === 'sounds.json') continue;
+    if (!fs.statSync(path.join(dir, n)).isFile()) at(n, 'is not a regular file');
+    else if (!n.toLowerCase().endsWith('.mp3')) at(n, 'is not an MP3 file name (only .mp3 files and sounds.json belong here)');
+    else files.push(n);
+  }
 
   let manifest = [];
   const manifestFile = path.join(dir, 'sounds.json');
@@ -102,6 +111,10 @@ export function soundsFaults(root) {
 
 function main() {
   const i = process.argv.indexOf('--root');
+  if (i !== -1 && !process.argv[i + 1]) {
+    console.error('  usage: node tools/check-sounds.mjs [--root <directory>]');
+    process.exit(1);
+  }
   const root = path.resolve(i === -1 ? repoRoot : process.argv[i + 1]);
   const faults = soundsFaults(root);
   const rel = (s) => s.split(root + path.sep).join('');

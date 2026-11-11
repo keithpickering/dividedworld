@@ -41,14 +41,22 @@ function scratch(files, manifest) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sounds-'));
   const dir = path.join(root, 'instances', 'x', 'ui', 'sounds');
   fs.mkdirSync(dir, { recursive: true });
-  for (const [name, data] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), data);
+  for (const [name, data] of Object.entries(files)) {
+    if (data === null) fs.mkdirSync(path.join(dir, name));
+    else fs.writeFileSync(path.join(dir, name), data);
+  }
   if (manifest !== undefined) fs.writeFileSync(path.join(dir, 'sounds.json'), typeof manifest === 'string' ? manifest : JSON.stringify(manifest));
   return root;
 }
 
 function red(name, root, predicate) {
   try {
-    const faults = soundsFaults(root);
+    let faults;
+    try {
+      faults = soundsFaults(root);
+    } catch (e) {
+      faults = ['threw ' + e.code];
+    }
     check(name + ': refused with its predicate', faults.some((f) => predicate.test(f)), faults.length ? faults.join(' | ') : 'no fault');
     const run = spawnSync(process.execPath, [script, '--root', root], { encoding: 'utf8' });
     check(name + ': the command exits 1', run.status === 1, 'exit ' + run.status);
@@ -83,6 +91,21 @@ red('a file that is not an MP3', scratch({ 'a.mp3': Buffer.from('RIFF....WAVEfmt
 red('a frame sync with the wrong top bits', scratch({ 'a.mp3': Buffer.from([0xff, 0x1b, 0, 0]) }, [entry('a.mp3')]), /a\.mp3.*is not an MP3/);
 red('an empty file', scratch({ 'a.mp3': Buffer.alloc(0) }, [entry('a.mp3')]), /a\.mp3.*is not an MP3/);
 
+red('a wav file', scratch({ 'a.wav': Buffer.from('RIFF') }, []), /a\.wav.*is not an MP3 file name/);
+red('an ogg file', scratch({ 'a.ogg': Buffer.from('OggS') }, []), /a\.ogg.*is not an MP3 file name/);
+red('a backup of an mp3', scratch({ 'a.mp3.bak': ID3 }, []), /a\.mp3\.bak.*is not an MP3 file name/);
+red('a directory named like an mp3', scratch({ 'd.mp3': null }, []), /d\.mp3.*is not a regular file/);
+red('an AAC ADTS header', scratch({ 'a.mp3': Buffer.from([0xff, 0xf1, 0x50, 0x80]) }, [entry('a.mp3')]), /a\.mp3.*is not an MP3/);
+red('a reserved MPEG version', scratch({ 'a.mp3': Buffer.from([0xff, 0xeb, 0x90, 0x00]) }, [entry('a.mp3')]), /a\.mp3.*is not an MP3/);
+red('invalid JSON in the manifest', scratch({}, '{nope'), /sounds\.json.*is not valid JSON/);
+red('a manifest that is not a list', scratch({}, { file: 'a.mp3' }), /sounds\.json.*is not a list/);
+red('an entry with no file name', scratch({}, [{ source: 's', license: 'l', maker: 'm' }]), /sounds\.json.*an entry has no file name/);
+{
+  const run = spawnSync(process.execPath, [script, '--root'], { encoding: 'utf8' });
+  check('--root with no value: exits 1 with a usage line', run.status === 1 && /usage/i.test(run.stderr) && !/\n\s+at /.test(run.stderr), 'exit ' + run.status + ' ' + run.stderr.split('\n')[0]);
+}
+
+green('a file of exactly 300 KB', scratch({ 'a.mp3': Buffer.concat([ID3, Buffer.alloc(300 * 1024 - ID3.length)]) }, [entry('a.mp3')]));
 green('an empty manifest in an empty folder', scratch({}, []));
 green('a folder with one valid ID3 file', scratch({ 'a.mp3': ID3 }, [entry('a.mp3')]));
 green('a folder with one valid frame-sync file', scratch({ 'a.mp3': SYNC }, [entry('a.mp3')]));
