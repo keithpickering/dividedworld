@@ -12,6 +12,7 @@
  * A caption names its way out (captions.ts): a say ends by itself, a hold at its release.
  */
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { motionReduced } from '../appearance.ts';
 import { captions, type Caption, type Captions as Store } from './captions.ts';
 import './captions.css';
 
@@ -20,8 +21,6 @@ export const FADE_MS = 150;
 export const SAID_MS = 2500;
 /** The bar's gap above the HUD's seam (captions.css), counted in what it measures. */
 const GAP = 10;
-
-const reduced = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export function Captions({ store = captions }: { readonly store?: Store }) {
   const now = useSyncExternalStore(store.subscribe, store.current, store.current);
@@ -34,7 +33,7 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
   useEffect(() => {
     if (now) { setShown(now); setLeaving(false); return; }
     if (!shown) return;
-    if (reduced()) { setShown(null); setLeaving(false); return; }
+    if (motionReduced()) { setShown(null); setLeaving(false); return; }
     setLeaving(true);
     const t = setTimeout(() => { setShown(null); setLeaving(false); }, FADE_MS);
     return () => clearTimeout(t);
@@ -42,12 +41,19 @@ export function Captions({ store = captions }: { readonly store?: Store }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [now]);
 
+  /* The clear timers live outside the effect, so a say that ends sooner than SAID_MS does not cancel its own clearing; they stop at unmount. */
+  const clears = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(() => {
     if (!now || now.held) return;
-    setSaid({ seq: now.seq, text: now.text });
-    const t = setTimeout(() => setSaid((s) => (s?.seq === now.seq ? null : s)), SAID_MS);
-    return () => clearTimeout(t);
+    const seq = now.seq;
+    setSaid({ seq, text: now.text });
+    const timer = setTimeout(() => {
+      clears.current.delete(timer);
+      setSaid((s) => (s?.seq === seq ? null : s));
+    }, SAID_MS);
+    clears.current.add(timer);
   }, [now]);
+  useEffect(() => () => { for (const t of clears.current) clearTimeout(t); }, []);
 
   useLayoutEffect(() => {
     const el = bar.current;

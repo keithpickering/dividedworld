@@ -73,8 +73,13 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kb-captions-bar,
-  .kb-captions-bar[data-leaving='true'] {
+  :root:not([data-kb-motion='full']) .kb-captions-bar,
+  :root:not([data-kb-motion='full']) .kb-captions-bar[data-leaving='true'] {
     animation: none;
   }
+}
+
+:root[data-kb-motion='reduce'] .kb-captions-bar,
+:root[data-kb-motion='reduce'] .kb-captions-bar[data-leaving='true'] {
+  animation: none;
 }

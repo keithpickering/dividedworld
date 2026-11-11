@@ -22,6 +22,8 @@ export interface Captions {
   say(words: CaptionWords & { readonly ms: number }): void;
   hold(id: string, words: CaptionWords): void;
   release(id: string): void;
+  /** Clears every say, hold and pending timer, for a test or an instance that tears the page down; subscribers stay and are told. */
+  reset(): void;
   subscribe(listener: () => void): () => void;
   current(): Caption | null;
 }
@@ -64,6 +66,13 @@ export function createCaptions(): Captions {
     release(id) {
       if (holds.delete(id)) refresh();
     },
+    reset() {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      said = null;
+      holds.clear();
+      refresh();
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
@@ -77,5 +86,6 @@ export const captions: Captions = createCaptions();
 export const say = captions.say;
 export const hold = captions.hold;
 export const release = captions.release;
+export const reset = captions.reset;
 export const subscribe = captions.subscribe;
 export const current = captions.current;

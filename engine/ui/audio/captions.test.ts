@@ -83,4 +83,21 @@ describe('the caption store', () => {
     c.release('nope');
     assert.equal(heard, 0);
   });
+
+  test('reset clears a say, its pending timer, and every hold, and tells subscribers', () => {
+    const c = createCaptions();
+    let heard = 0;
+    c.hold('a', { text: 'Building' });
+    c.say({ text: 'Boom', ms: 500 });
+    c.subscribe(() => { heard += 1; });
+    c.reset();
+    assert.equal(c.current(), null);
+    assert.equal(heard, 1);
+    c.say({ text: 'Next', ms: 1000 });
+    mock.timers.tick(500);
+    assert.equal(c.current()?.text, 'Next');
+    mock.timers.tick(500);
+    c.release('a');
+    assert.equal(c.current(), null);
+  });
 });

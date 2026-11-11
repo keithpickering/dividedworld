@@ -1,11 +1,12 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { Captions } from './Captions.tsx';
+import { Captions, FADE_MS, SAID_MS } from './Captions.tsx';
 import { createCaptions, type Captions as Store } from './captions.ts';
 
 let store: Store;
 beforeEach(() => { store = createCaptions(); });
 afterEach(() => {
+  document.documentElement.removeAttribute('data-kb-motion');
   document.documentElement.style.removeProperty('--kb-captions-measured');
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -68,17 +69,81 @@ describe('the caption bar', () => {
     await waitFor(() => expect(root.style.getPropertyValue('--kb-captions-measured')).toBe(''), { timeout: 2000 });
   });
 
-  test('under reduced motion it goes at once, with no fade to wait for', () => {
-    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('prefers-reduced-motion'), media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+  const osReduces = () => vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('prefers-reduced-motion'), media: q, addEventListener: () => {}, removeEventListener: () => {} }));
+  const goesAtOnce = () => {
     vi.useFakeTimers();
     try {
       render(<Captions store={store} />);
       act(() => store.say({ text: 'Boo', ms: 100 }));
       expect(bar()).not.toBeNull();
       act(() => { vi.advanceTimersByTime(100); });
-      expect(bar()).toBeNull();
+      return bar() === null;
     } finally {
       vi.useRealTimers();
     }
+  };
+
+  test('under the player\'s reduced motion it goes at once, with no fade to wait for', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    expect(goesAtOnce()).toBe(true);
+  });
+
+  test('under the device\'s reduced motion, with no choice made, it goes at once', () => {
+    osReduces();
+    expect(goesAtOnce()).toBe(true);
+  });
+
+  test('the player\'s full motion beats the device\'s reduced motion: the fade is waited for', () => {
+    osReduces();
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    expect(goesAtOnce()).toBe(false);
+  });
+
+  test('a short say leaves the live region after SAID_MS even though the say ended sooner', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'Boo', ms: 500 }));
+      act(() => { vi.advanceTimersByTime(600); });
+      expect(status().textContent).toBe('Boo');
+      act(() => { vi.advanceTimersByTime(SAID_MS); });
+      expect(status().textContent).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('saying the same words twice replaces the live region\'s node, so it is announced again', () => {
+    render(<Captions store={store} />);
+    act(() => store.say({ text: 'Boo', ms: 5000 }));
+    const first = status().querySelector('p');
+    act(() => store.say({ text: 'Boo', ms: 5000 }));
+    const second = status().querySelector('p');
+    expect(second?.textContent).toBe('Boo');
+    expect(second).not.toBe(first);
+  });
+
+  test('a say during the fade-out keeps the bar', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Captions store={store} />);
+      act(() => store.say({ text: 'One', ms: 100 }));
+      act(() => { vi.advanceTimersByTime(100); });
+      expect(bar()?.getAttribute('data-leaving')).toBe('true');
+      act(() => store.say({ text: 'Two', ms: 5000 }));
+      act(() => { vi.advanceTimersByTime(FADE_MS * 2); });
+      expect(bar()?.textContent).toBe('Two');
+      expect(bar()?.getAttribute('data-leaving')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('unmounting removes --kb-captions-measured', () => {
+    const view = render(<Captions store={store} />);
+    act(() => store.say({ text: 'Cheers', ms: 5000 }));
+    expect(document.documentElement.style.getPropertyValue('--kb-captions-measured')).not.toBe('');
+    view.unmount();
+    expect(document.documentElement.style.getPropertyValue('--kb-captions-measured')).toBe('');
   });
 });
