@@ -1100,8 +1100,9 @@ test('a settlement with no staff target and no spring is as it was', () => {
   assert.deepEqual(settle({ ...b, unscoredTargets: [] }, instance), settle(b, instance));
 });
 
-/* Spring scoring and Earn (docs/plans/2026-11-11-card-types-plan.md, Task 2). A spring with `by` is scored against the Act that
-   sprang it: "snatcher" earns 20 for a Salty play that outdraws what it landed on, "lifter" a vote per excited-positive vote a Sweet
+/* Spring scoring and Earn (docs/plans/2026-11-11-card-types-plan.md, Task 2). A Reversal's spring (a set card's, with `by`) is scored
+   against the Act that sprang it; a face-down Move's spring stays on its own post, because the card it lands on the quoting post is
+   the play there (#420): "snatcher" earns 20 for a Salty play that outdraws what it landed on, "lifter" a vote per excited-positive vote a Sweet
    play's target draws after it; "kinded" pays every reaction its own vote and names the reaction's kind. */
 const snatcher: ClassRules = {
   key: 'snatcher',
@@ -1127,7 +1128,8 @@ const cardsWorld: Instance = {
   classes: [...instance.classes, snatcher, lifter, kinded],
   cards: [
     ...instance.cards,
-    { ...splat, key: 'cheer', alignment: 'sweet' },
+    { ...splat, key: 'catch', play: 'set', trap: { trigger: { on: 'cast' } } },
+    { ...splat, key: 'cheer', alignment: 'sweet', play: 'set', trap: { trigger: { on: 'visit' } } },
     { ...splat, key: 'calmBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
     { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
     { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
@@ -1145,7 +1147,7 @@ function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: Se
     acts: [
       post('ap', 'ann-snatcher', FROM + 1 * H),
       { id: 'cast', character: castBy, kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'ap', card: 'splat' },
-      { id: 'sp', character: 'ann-snatcher', kind: 'spring', at: FROM + 3 * H, thread: 't1', target: 'ap', card: 'splat', by: 'cast' },
+      { id: 'sp', character: 'ann-snatcher', kind: 'spring', at: FROM + 3 * H, thread: 't1', target: 'ap', card: 'catch', by: 'cast' },
       ...extra,
     ],
     unscoredTargets,
@@ -1171,6 +1173,42 @@ test('a Sweet spring on a staff visit that draws hype lifts it, and a spring wit
   assert.equal(amountOf(settle(sweet({ by: 'visit1' }), cardsWorld), 'ann-lift', 'lifter.lifted'), 20, 'two players cheered the visit after the spring');
   assert.equal(amountOf(settle(sweet({ by: 'unseen-visit' }), cardsWorld), 'ann-lift', 'lifter.lifted'), 0, 'a staff Act nobody reacted to');
   assert.equal(amountOf(settle(sweet({}), cardsWorld), 'ann-lift', 'lifter.lifted'), 0, 'without `by`, the trapped post is its own and its reactions are not the visit\'s');
+});
+test('a face-down Move that lands by a quote is one play on the quoter: its spring stays on the setter\'s own post', () => {
+  /* "sold" loses 20 for each Salty card landed on it; "snatcher" earns 20 for a Salty play on another's Act that outdraws it. Ann set
+     Splat (a Move) face down on her post; Bob's post quoted it, so the spring names Bob's post in `by` and the card lands there. */
+  const landings: ClassInput['cardsLanded'][number][] = [];
+  const plays: ClassInput['cardsPlayed'][number][] = [];
+  const sold: ClassRules = {
+    key: 'sold', name: 'Sold',
+    earn: (input) => { landings.push(...input.cardsLanded); return input.cardsLanded.filter((c) => c.readsAs === 'salty').map((c): Earning => ({ reason: 'sold.theL', amount: -20, act: c.act })); },
+  };
+  const world: Instance = { ...cardsWorld, classes: [...cardsWorld.classes.filter((c) => c.key !== 'snatcher'), sold, { ...snatcher, earn: (i, s) => { plays.push(...i.cardsPlayed); return snatcher.earn(i, s); } }] };
+  const b: SettlementInput = {
+    window: { id: 'w1', from: FROM, to: TO },
+    characters: [
+      { id: 'ann-snatcher', player: 'ann', classes: [{ class: 'snatcher', from: 0 }] },
+      { id: 'bob-sold', player: 'bob', classes: [{ class: 'sold', from: 0 }] },
+      ...['cat', 'dee'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+    acts: [
+      post('ap', 'ann-snatcher', FROM + 1 * H),
+      post('bq', 'bob-sold', FROM + 2 * H),
+      { id: 'sp', character: 'ann-snatcher', kind: 'spring', at: FROM + 2 * H, thread: 't1', target: 'ap', card: 'splat', by: 'bq' },
+      { id: 'laid', character: 'ann-snatcher', kind: 'card', at: FROM + 2 * H, thread: 't1', target: 'bq', card: 'splat' },
+    ],
+    // The room reacts to the spring's Act, so a spring scored on Bob's post would outdraw it.
+    reactions: [react('sp', 'cat', 'cat-1', 'fire', FROM + 4 * H), react('sp', 'dee', 'dee-1', 'fire', FROM + 5 * H)],
+  };
+  const r = settle(b, world);
+  assert.deepEqual(landings.map((c) => c.act), ['laid'], 'one landing on Bob: the card, not the spring too');
+  assert.equal(amountOf(r, 'bob-sold', 'sold.theL'), -20, 'Bob sells one L');
+  assert.deepEqual(plays.map((c) => [c.act, c.target, c.onOthers]).sort(), [['laid', 'bq', true], ['sp', 'ap', false]], 'the spring is a play on Ann\'s own post');
+  assert.equal(amountOf(r, 'ann-snatcher', 'snatcher.stole'), 0, 'the spring\'s reactions outdraw nothing of Bob\'s');
+  // The estimate is the same function, so it counts one landing too.
+  landings.length = 0;
+  estimateForOwner(b, world, 'bob');
+  assert.deepEqual(landings.map((c) => c.act), ['laid']);
 });
 
 function earnBoard(gimmicks: InputAct[], reactions: InputReaction[]): SettlementInput {

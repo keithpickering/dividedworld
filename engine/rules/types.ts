@@ -361,7 +361,7 @@ export interface InputAct {
    * carries no `target`; its own reactions pay its caster as any Act's do, and it is in no class's cards played or landed.
    */
   readonly reach?: BeyondPost;
-  /** The Act that sprang a `spring`: the cast it caught or the visit that tripped it. A spring is scored against it, not its trapped post; absent on older rows, which keep the trapped post. */
+  /** The Act that sprang a `spring`: the cast it caught, the visit that tripped it, or the post whose quote landed a face-down Move. A Reversal's spring (a set card's) is scored against it, not its trapped post; a face-down Move's spring keeps its own post, as older rows with no `by` do. */
   readonly by?: string;
   /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing. An admin-ended play is not in the input. */
   readonly ends?: number;
