@@ -85,7 +85,7 @@ export const DialogSent: Story = {
   play: async ({ canvasElement }) => { const d = await openDialog(canvasElement); await choose(d); await send(d); await within(d).findByText(/^Sent\./u); },
 };
 
-/** The open-report limit, shown in place of the form with the account's own count. */
+/** The open-report limit, shown in place of the form with the account's own count: the dialog reads the count as it opens and says the limit at once, so there is no form to fill. (A limit that arrives at send time is held by Report.test.tsx.) */
 export const DialogLimit: Story = {
   args: { title: TITLE },
   parameters: {
@@ -95,7 +95,7 @@ export const DialogLimit: Story = {
     }) satisfies World,
     path: '/t/x',
   },
-  play: async ({ canvasElement }) => { const d = await openDialog(canvasElement); await choose(d); await send(d); await within(d).findByText(/^You have 3 reports/u); },
+  play: async ({ canvasElement }) => { const d = await openDialog(canvasElement); await within(d).findByText(/^You have 3 reports/u); },
 };
 
 /** An error, said plainly above the form, which keeps what was typed: the answer to the send was lost. */
