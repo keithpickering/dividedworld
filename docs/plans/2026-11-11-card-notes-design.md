@@ -6,8 +6,8 @@ this date), and asked for each to be appraised ("to see if they will hold up in 
 that hold up, "or work in spirit with reworks to the effect", to be planned, built and given 1990s-style rendered art.
 "The ultimate goal is a fun tribute to 2000s forums."
 
-This is that appraisal. It was written by the session alone, with the owner away: **every rework below is this
-session's recommendation and none is the owner's decision yet.** The notes' own words are quoted in each entry. The
+This is that appraisal. It was written by the session alone, with the owner away: **every rework below was this
+session's recommendation when written; the owner's answers are section 5.** The notes' own words are quoted in each entry. The
 first plan is `docs/plans/2026-11-11-below-the-fold-plan.md`. The renders are
 `docs/research/2026-11-11-card-renders/card-notes.md`.
 
@@ -345,12 +345,19 @@ holds Whodunnit and Overreaction. Each new scene is a script and its image, list
 (`tools/check-card-art.mjs` refuses an `<image>`), so Below the Fold ships with vector placeholder art like every
 card, and the render waits on the same design the first exploration named.
 
-## 5. Open, for the owner
+## 5. The owner's answers
 
-1. Each rework above: Feelin' Glam as one thread play; Hype-Up as an Earn; Mooch, Toll and 4D Chess paying on the
-   room's reactions and taking nothing; Off Day as a named class for a window.
-2. Whether Ultra Happy Heart is the Unban.
-3. Below the Fold's rarity (decided: common).
-4. The three-day ends on Whodunnit? and Blind Study.
-5. Raising a thread play's longest time to a week for Feelin' Glam.
-6. Whether cutting Delayed Reaction stands.
+Asked the six questions this section first held, the owner answered the same day:
+
+1. **The reworks hold**: Feelin' Glam as one thread play; Hype-Up as an Earn; Mooch, Toll and 4D Chess paying on the
+   room's reactions and taking nothing; Off Day as a named class for a window. "Yes, reworks hold."
+2. **Ultra Happy Heart is the Unban.** "Yes."
+3. **Below the Fold is common.** "Yes."
+4. **Three days** on Whodunnit? and Blind Study. "Yes."
+5. **A thread play may last a week**, for Feelin' Glam: "Week is fine, we have glitter bomb which affects a character
+   for a week, thread-level is no stronger."
+6. **Delayed Reaction is cut.** "Works for me."
+
+So every rework in section 2 is decided, and "this session's recommendation" above reads as the owner's decision from
+here. The owner then asked for the plans to be written and carried through to builds. Graffiti and Laugh Track still
+each need a design session of their own for their screens (section 2).
