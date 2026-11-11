@@ -1031,3 +1031,41 @@ test('no sentence in the prompt names a move kind the Boss holds back: each kind
   for (const k of ASKABLE_MOVE_KINDS) assert.ok(!none.includes(k.key), `${k.key} is named when every kind is held back`);
   assert.ok(!/Board names\.|vending machine|Group moves/.test(none), 'a section about kinds that are all held back is not written');
 });
+
+/* ---------------------------------------------------------- a malformed bundle or beat never costs the answer ---- */
+test('a malformed bundle or beat is dropped or repaired and recorded; the answer, and its other moves, still stand', async () => {
+  const { meetingSchema } = await import('./meeting.ts');
+  const keep = { kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'p', description: 'd' }, expires_in_hours: 0, why: 'w', go_live_at: new Date(NOW).toISOString() };
+  const at = (r: { trims: readonly { path: string; predicate: string }[] }, path: string) => r.trims.find((t) => t.path === path)?.predicate;
+  // The whole bundle is no object, the beats are no list.
+  const a = withAnswer({ moves: [keep], bundle: 'nope', beats: 'nope' }, { beats: shownSplit });
+  assert.equal(a.moves.length, 1);
+  assert.equal(at(a, 'bundle'), 'isObject');
+  assert.equal(at(a, 'beats'), 'isList');
+  // Parts: a part that is no object, one with no kind, one with no params are dropped, naming the predicate; a missing why and a missing name are made whole.
+  const b = withAnswer({
+    moves: [keep],
+    bundle: { parts: [{ kind: 'createBoard', role: 'a', params: { name: 'Koopa Kart Klub', premise: 'p', description: 'd' } }, 5, { params: {} }, { kind: 'createBoard' }, { kind: 7, params: {} }] },
+  });
+  assert.equal(b.moves.length, 1);
+  const bundle = b.bundles[0]!;
+  assert.equal(bundle.name, 'a bundle');
+  assert.equal(bundle.parts.length, 1);
+  assert.ok(bundle.parts[0]!.why.length > 0 && bundle.parts[0]!.why.length <= 200, 'a missing why is made whole');
+  assert.equal(at(b, 'bundle.name'), 'default');
+  assert.equal(at(b, 'bundle.parts[1]'), 'isObject');
+  assert.equal(at(b, 'bundle.parts[2].kind'), 'isString');
+  assert.equal(at(b, 'bundle.parts[3].params'), 'isObject');
+  assert.equal(at(b, 'bundle.parts[4].kind'), 'isString');
+  // Parts that are not a list drop the bundle.
+  assert.equal(at(withAnswer({ bundle: { name: 'x', parts: 'no' } }), 'bundle.parts'), 'isList');
+  // Beats: an entry that is no object or names no beat is dropped; a why of the wrong type is the default.
+  const c = withAnswer({ beats: [3, { why: 'x' }, { beat: 'split', why: 7 }] }, { beats: shownSplit, bank: 0 });
+  assert.equal(at(c, 'beats[0]'), 'isObject');
+  assert.equal(at(c, 'beats[1].beat'), 'isString');
+  assert.deepEqual(c.bundles.map((x) => x.beat), ['split']);
+  // The model is still given the strict shape.
+  const schema = meetingSchema() as { properties: Record<string, any> };
+  assert.deepEqual(schema.properties['bundle'].required, ['name', 'parts']);
+  assert.ok(schema.properties['bundle'].properties.parts.items.required.includes('kind') && schema.properties['beats'].items.required.includes('beat'));
+});

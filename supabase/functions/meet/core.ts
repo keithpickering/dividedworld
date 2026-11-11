@@ -43,7 +43,7 @@ import {
   namedCharacters,
   referenceText,
   repairAnswer,
-  ruleSchema,
+  meetingSchema,
   type InheritedMove,
   type MachineSlotFacts,
   type ModFacts,
@@ -73,6 +73,8 @@ export type MeetingOutcome =
     readonly boss: string;
     readonly phase: string;
     readonly queued: number;
+    /** The beats the database played (a bundle it skipped is not among them). */
+    readonly beatsPlayed: readonly string[];
     /** Every bound the meeting cut or move it dropped, beside the model-level trims the call's ledger row holds. */
     readonly trims: readonly Trim[];
     /** Things the run did that a reader of the result should know (a stock description stood in). */
@@ -290,7 +292,7 @@ export async function runMeeting(
         meeting,
         system,
         messages: [{ role: 'user', content: message }],
-        schema: ruleSchema(MEETING_RULE),
+        schema: meetingSchema(),
         rules: MEETING_RULE,
         maxTokens: 8_000,
       });
@@ -354,7 +356,7 @@ export async function runMeeting(
       // The due beats the answer left out, played with their defaults.
       beatsDefaulted: repaired.defaulted,
     };
-    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
+    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; beats_played?: string[]; bank_before?: number; bank_after?: number }>('apply_meeting', {
       meeting,
       payload: {
         boss: bossKey,
@@ -400,7 +402,9 @@ export async function runMeeting(
       meeting,
       boss: bossKey,
       phase: phase.phase,
-      queued: moves.length + repaired.bundles.reduce((n, b) => n + b.parts.length, 0),
+      // What the database queued and played, not what the answer meant to: it skips a bundle its guard refuses, and the record it wrote says so.
+      queued: applied.queued ?? moves.length + repaired.bundles.reduce((n, b) => n + b.parts.length, 0),
+      beatsPlayed: applied.beats_played ?? repaired.bundles.flatMap((b) => (b.beat === null ? [] : [b.beat])),
       trims,
       notes,
       feedsSkipped: skipped,

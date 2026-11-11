@@ -116,7 +116,8 @@ function fakeDb(w: World = {}) {
           if (state.closed) return { status: 'already applied' } as T;
           state.applied.push(args);
           state.closed = true;
-          return { status: 'applied', queued: ((args.payload as any).moves as unknown[]).length } as T;
+          const pl = args.payload as any;
+          return { status: 'applied', queued: (pl.moves as unknown[]).length + ((pl.bundles ?? []) as any[]).reduce((n, b) => n + b.parts.length, 0), beats_played: ((pl.bundles ?? []) as any[]).filter((b) => b.beat).map((b) => b.beat) } as T;
         default: throw new Error(`the fake database has no ${fn}`);
       }
     },
@@ -867,4 +868,30 @@ test('a kind held back is dropped from the answer and the drop is on the record;
   await run(older.db, fakeModels(answer([create])).models, arcInstance, SLOT, clock, noFeeds);
   assert.equal(older.state.applied[0]!.payload.moves.length, 1);
   assert.deepEqual(older.state.applied[0]!.payload.bundles, []);
+});
+
+test('a failed or rejected meeting plays no due beat with defaults, and the beat is still due at the next meeting', async () => {
+  const due = { beats: [{ key: 'split', mini: false, due: true }], heldBack: [] };
+  for (const reply of [new Error('the model is down'), new AnswerRejected('the answer failed isObject', 'isObject'), { not: 'an answer' }]) {
+    const d = fakeDb({ arc: due });
+    const out = await run(d.db, fakeModels(reply).models, arcInstance, SLOT, clock, noFeeds);
+    assert.match(out.status, /failed|rejected/, JSON.stringify(out));
+    assert.equal(d.count('apply_meeting'), 0, 'nothing is queued, so no beat is played');
+    assert.ok(d.state.failed.every((f) => !JSON.stringify(f.record).includes('beatsDefaulted')), 'the closed row says nothing was played');
+    // The database still lists it as due: the next meeting is told so.
+    const next = fakeDb({ arc: due });
+    const m = fakeModels(answer());
+    await run(next.db, m.models, arcInstance, SLOT, clock, noFeeds);
+    assert.ok(m.chats[0]!.system.includes('split (must be played at this meeting)'));
+  }
+});
+
+test('the outcome names the beats the database says it played, not the ones the answer meant to', async () => {
+  const d = fakeDb({ arc: { beats: [{ key: 'split', mini: false, due: true }], heldBack: [] } });
+  const orig = d.db.rpc.bind(d.db);
+  const db: Db = { rpc: async <T,>(fn: string, args: Record<string, unknown>) => (fn === 'apply_meeting' ? ({ status: 'applied', queued: 0, beats_played: [] } as T) : orig<T>(fn, args)) };
+  const out = await run(db, fakeModels(answer()).models, arcInstance, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok');
+  assert.deepEqual(out.beatsPlayed, [], 'the bundle was skipped by the database');
+  assert.equal(out.queued, 0, 'and nothing is claimed queued');
 });

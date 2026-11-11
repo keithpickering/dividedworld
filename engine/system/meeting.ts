@@ -53,6 +53,8 @@ export const INHERITED_MOST = 20;
 export const WHY_MOST = 200;
 /** Characters of a bundle's name: queued_moves.bundle_name. */
 export const BUNDLE_NAME_MOST = 120;
+/** A reason the Boss left out of a bundle's part: queued_moves.why is never empty. */
+export const NO_REASON = 'No reason given.';
 /** Characters of a Mod's order, one line in the Boss's voice: queued by `apply_meeting` into staff_orders.order_line. */
 export const ORDER_MOST = 200;
 
@@ -90,6 +92,35 @@ const demandRule = (): Rule => ({
   fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(MEETING_DEMAND_KINDS.map((d) => d.params)) } },
 });
 
+/** What the model is told a beat answer and a bundle look like (the rule itself accepts any shape and repairs, so a malformed one costs a part, not the answer). */
+const BEATS_SHAPE: Rule = {
+  type: 'list',
+  optional: true,
+  of: { type: 'object', fields: { beat: { type: 'string', maxLength: 40 }, slots: { type: 'any', optional: true }, why: { type: 'string', maxLength: WHY_MOST, optional: true } } },
+};
+const BUNDLE_SHAPE: Rule = {
+  type: 'object',
+  optional: true,
+  fields: {
+    name: { type: 'string', maxLength: BUNDLE_NAME_MOST },
+    parts: {
+      type: 'list',
+      of: {
+        type: 'object',
+        fields: {
+          role: { type: 'string', maxLength: 40, optional: true },
+          kind: { type: 'string', maxLength: 60 },
+          params: paramsRule(),
+          demand: { ...demandRule(), optional: true },
+          go_live_at: { type: 'string', maxLength: 64, optional: true },
+          expires_in_hours: { type: 'number', optional: true },
+          why: { type: 'string', maxLength: WHY_MOST, optional: true },
+        },
+      },
+    },
+  },
+};
+
 /**
  * The rule the answer is repaired against, by the model adapter and again by the meeting. A list has no `max` here on purpose:
  * a list the model overshoots is cut by the meeting, and recorded, where it knows the bound (the bank, a setting), and a
@@ -123,35 +154,10 @@ export const MEETING_RULE: Rule = {
         },
       },
     },
-    // The beats the Boss plays (the arc's, from the instance): {beat, slots, why}. `slots` is any shape, so a slot the template lacks is dropped and recorded, never a lost answer.
-    beats: {
-      type: 'list',
-      optional: true,
-      of: { type: 'object', fields: { beat: { type: 'string', maxLength: 40 }, slots: { type: 'any', optional: true }, why: { type: 'string', maxLength: WHY_MOST, optional: true } } },
-    },
-    // One bundle of the Boss's own: moves that tell one story, at the cost of their parts. A part is a move with an optional role; the demand, go-live and expiry are a move's, optional here.
-    bundle: {
-      type: 'object',
-      optional: true,
-      fields: {
-        name: { type: 'string', maxLength: BUNDLE_NAME_MOST, minLength: 1 },
-        parts: {
-          type: 'list',
-          of: {
-            type: 'object',
-            fields: {
-              role: { type: 'string', maxLength: 40, optional: true },
-              kind: { type: 'string', maxLength: 60 },
-              params: paramsRule(),
-              demand: { ...demandRule(), optional: true },
-              go_live_at: { type: 'string', maxLength: 64, optional: true },
-              expires_in_hours: { type: 'number', optional: true },
-              why: { type: 'string', maxLength: WHY_MOST, minLength: 1 },
-            },
-          },
-        },
-      },
-    },
+    // The beats the Boss plays (the arc's, from the instance) and one bundle of its own: any shape here, so one malformed entry never costs a paid answer; `repairAnswer` repairs or drops each
+    // part and records it (BEATS_SHAPE and BUNDLE_SHAPE are what the model is told, `meetingSchema`).
+    beats: { type: 'any', optional: true },
+    bundle: { type: 'any', optional: true },
     inherited: {
       type: 'list',
       optional: true,
@@ -197,6 +203,12 @@ export function ruleSchema(rule: Rule): Record<string, unknown> {
         additionalProperties: false,
       };
   }
+}
+
+/** The schema the model is given for a meeting: the rule's, with the shapes of a beat answer and a bundle spelled out (the rule accepts any shape there). */
+export function meetingSchema(): Record<string, unknown> {
+  const schema = ruleSchema(MEETING_RULE) as { properties: Record<string, unknown> };
+  return { ...schema, properties: { ...schema.properties, beats: ruleSchema(BEATS_SHAPE), bundle: ruleSchema(BUNDLE_SHAPE) } };
 }
 
 /* ------------------------------------------------------------------------------- the prompt ---- */
@@ -911,14 +923,23 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     bundles.push({ name: beat.bundle.name, beat: beat.key, parts: roleOrder.order.map((i) => filled.parts[i]!), cost: 0 });
     return true;
   };
-  ((a['beats'] ?? []) as Record<string, unknown>[]).forEach((e, i) => {
+  const beatAnswers = a['beats'];
+  if (beatAnswers !== undefined && !Array.isArray(beatAnswers)) drop('beats', 'isList');
+  (Array.isArray(beatAnswers) ? beatAnswers : []).forEach((e: unknown, i: number) => {
     const path = `beats[${i}]`;
-    const key = String(e['beat']);
+    if (typeof e !== 'object' || e === null || Array.isArray(e)) return void drop(path, 'isObject');
+    if (typeof (e as Record<string, unknown>)['beat'] !== 'string') return void drop(`${path}.beat`, 'isString');
+    const key = String((e as Record<string, unknown>)['beat']);
     const one = shown.get(key);
     if (!one) return void drop(`${path}.beat`, 'unlockedBeat');
     if (played.has(key)) return void drop(`${path}.beat`, 'uniqueBeat');
-    const why = typeof e['why'] === 'string' && e['why'].trim() !== '' ? (e['why'] as string) : BEAT_WHY;
-    if (playBeat(one.beat, e['slots'], why, path)) played.add(key);
+    const given = e as Record<string, unknown>;
+    let why = typeof given['why'] === 'string' && given['why'].trim() !== '' ? given['why'] : BEAT_WHY;
+    if (why.length > WHY_MOST) {
+      trims.push({ path: `${path}.why`, predicate: `maxLength(${WHY_MOST})`, before: why.length, after: WHY_MOST });
+      why = why.slice(0, WHY_MOST);
+    }
+    if (playBeat(one.beat, given['slots'], why, path)) played.add(key);
   });
   for (const one of c.beats ?? []) {
     if (!one.due || played.has(one.beat.key)) continue;
@@ -931,10 +952,59 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   // The Boss's own bundle (section 9): at most bundleMostParts parts, cut from the end; each part a move of a kind the Boss has (not held back), repaired as a move is; parts in dependency order, so
   // a role names an earlier part; a part naming a role no kept part makes is dropped; then what the bank can pay after the Boss's own moves, from the end. It costs the sum of its parts.
   let composedCost = 0;
-  const own = a['bundle'] as { name: string; parts: Record<string, unknown>[] } | undefined;
+  // The shape is repaired here, not rejected: a bundle that is no object or has no list of parts is dropped; a missing name is "a bundle"; a part that is no object, has no kind or no params is
+  // dropped; a missing reason is a plain one; a string over its bound is trimmed. Each is recorded, naming the predicate.
+  const ownRaw = a['bundle'];
+  let own: { name: string; parts: Record<string, unknown>[] } | undefined;
+  if (ownRaw !== undefined) {
+    if (typeof ownRaw !== 'object' || ownRaw === null || Array.isArray(ownRaw)) drop('bundle', 'isObject');
+    else if (!Array.isArray((ownRaw as Record<string, unknown>)['parts'])) drop('bundle.parts', 'isList');
+    else {
+      const raw = ownRaw as Record<string, unknown>;
+      let name = typeof raw['name'] === 'string' && raw['name'].trim() !== '' ? (raw['name'] as string).trim() : undefined;
+      if (name === undefined) {
+        name = 'a bundle';
+        trims.push({ path: 'bundle.name', predicate: 'default', before: 0, after: name.length });
+      } else if (name.length > BUNDLE_NAME_MOST) {
+        trims.push({ path: 'bundle.name', predicate: `maxLength(${BUNDLE_NAME_MOST})`, before: name.length, after: BUNDLE_NAME_MOST });
+        name = name.slice(0, BUNDLE_NAME_MOST);
+      }
+      const parts: Record<string, unknown>[] = [];
+      (raw['parts'] as unknown[]).forEach((p, i) => {
+        const path = `bundle.parts[${i}]`;
+        if (typeof p !== 'object' || p === null || Array.isArray(p)) return void drop(path, 'isObject');
+        const part = p as Record<string, unknown>;
+        if (typeof part['kind'] !== 'string') return void drop(`${path}.kind`, 'isString');
+        const shaped = repair(part['params'], paramsRule());
+        if (!shaped.ok) return void drop(`${path}.params`, part['params'] === undefined || part['params'] === null ? 'isObject' : shaped.predicate);
+        trims.push(...shaped.trims.map((t) => ({ ...t, path: `${path}.params.${t.path}` })));
+        const out: Record<string, unknown> = { kind: part['kind'], params: shaped.value };
+        if (typeof part['role'] === 'string') out['role'] = part['role'];
+        if (typeof part['go_live_at'] === 'string') out['go_live_at'] = part['go_live_at'];
+        if (typeof part['expires_in_hours'] === 'number' && Number.isFinite(part['expires_in_hours'])) out['expires_in_hours'] = part['expires_in_hours'];
+        if (part['demand'] !== undefined && part['demand'] !== null) {
+          const d = repair(part['demand'], demandRule());
+          if (d.ok) out['demand'] = d.value;
+          else drop(`${path}.demand`, d.predicate);
+        }
+        let why = typeof part['why'] === 'string' && part['why'].trim() !== '' ? part['why'] : undefined;
+        if (why === undefined) {
+          why = NO_REASON;
+          trims.push({ path: `${path}.why`, predicate: 'default', before: 0, after: why.length });
+        } else if (why.length > WHY_MOST) {
+          trims.push({ path: `${path}.why`, predicate: `maxLength(${WHY_MOST})`, before: why.length, after: WHY_MOST });
+          why = why.slice(0, WHY_MOST);
+        }
+        out['why'] = why;
+        out['_index'] = i;
+        parts.push(out);
+      });
+      own = { name, parts };
+    }
+  }
   if (own) {
     const most = s.bundleMostParts;
-    const given = own.parts.map((raw, index) => ({ raw, index }));
+    const given = own.parts.map((raw) => ({ raw, index: raw['_index'] as number }));
     if (given.length > most) trims.push({ path: 'bundle.parts', predicate: `atMost(${most})`, before: given.length, after: most });
     const considered = given.slice(0, most);
     const shape = considered.map(({ raw }) => ({ role: typeof raw['role'] === 'string' ? (raw['role'] as string) : null, makes: raw['kind'] === 'createBoard', needs: ownRoles(record(raw['params'])) }));

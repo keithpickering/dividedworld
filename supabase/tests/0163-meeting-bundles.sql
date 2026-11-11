@@ -28,6 +28,7 @@ declare
     jsonb_build_object('key', 'picking', 'mini', false, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'split'))),
     jsonb_build_object('key', 'everything', 'mini', false, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'split')),
       'due', jsonb_build_object('daysBeforeEnd', 2)),
+    jsonb_build_object('key', 'epilogue', 'mini', false, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'everything'))),
     jsonb_build_object('key', 'later', 'mini', false, 'repeatable', false, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'later'))));
 begin
   seed := jsonb_build_object(
@@ -77,7 +78,7 @@ create function pg_temp.p(role text, kind text, params jsonb, why text default '
 $$;
 -- A meeting applied with the bank at `bank`, its answer holding `moves` and `bundles`; returns the apply's result and leaves the meeting's id in pg_temp.last.
 create table pg_temp.last (meeting bigint, result jsonb);
-create function pg_temp.apply(bundles jsonb, bank numeric default 0, moves jsonb default '[]') returns jsonb language plpgsql as $$
+create function pg_temp.apply(bundles jsonb, bank numeric default 0, moves jsonb default '[]', rec jsonb default '{}', mtg bigint default null) returns jsonb language plpgsql as $$
 declare
   m bigint;
   r jsonb;
@@ -88,8 +89,8 @@ begin
     'memory', jsonb_build_object('hobby', jsonb_build_object('name', 'pie', 'since', 'today', 'from', 'a friend'), 'opinions', '[]'::jsonb, 'grudges', '[]'::jsonb,
       'wheelhouse', '[]'::jsonb, 'realWorld', '[]'::jsonb, 'marks', '[]'::jsonb),
     'profile', jsonb_build_object('interests', jsonb_build_array('pie'), 'favorites', '[]'::jsonb, 'mood', 'smug', 'signature', 'Done.'),
-    'moves', moves, 'bundles', bundles, 'record', '{}'::jsonb);
-  m := (begin_meeting(clock_timestamp()) ->> 'meeting')::bigint;
+    'moves', moves, 'bundles', bundles, 'record', rec);
+  m := coalesce(mtg, (begin_meeting(clock_timestamp()) ->> 'meeting')::bigint);
   r := apply_meeting(m, pl);
   insert into pg_temp.last values (m, r);
   return r;
@@ -247,7 +248,60 @@ begin
   perform tests.unbecome();
   perform pg_temp.expect(exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = landed and e.payload ->> 'why' = 'reversed'), 'reversing the board''s creation did not reverse the merge that builds on it');
   -- The beat with no bundle is played with no parts, and its event carries none.
-  perform pg_temp.apply(jsonb_build_array(jsonb_build_object('name', '', 'beat', 'picking', 'parts', '[]'::jsonb)), 0);
+  perform pg_temp.apply(jsonb_build_array(jsonb_build_object('name', '', 'beat', 'picking', 'parts', '[]'::jsonb)), 0,
+    '[]', jsonb_build_object('beatsDefaulted', jsonb_build_array('picking'), 'trims', jsonb_build_array(jsonb_build_object('path', 'beats.picking', 'predicate', 'playedWithDefaults', 'before', 0, 'after', 1))));
+  perform pg_temp.expect(pg_temp.record('beatsDefaulted') = '["picking"]'::jsonb and pg_temp.record('beatsPlayed') = '["picking"]'::jsonb and pg_temp.record('trims') @> '[{"predicate": "playedWithDefaults"}]'::jsonb,
+    'the record lost a beat that was played with its defaults: ' || pg_temp.record('beatsDefaulted')::text || pg_temp.record('trims')::text);
+  perform pg_temp.expect((select (result ->> 'queued')::integer = 0 and result -> 'beats_played' = '["picking"]'::jsonb from pg_temp.last order by meeting desc limit 1), 'the result does not say which beats were played');
   perform pg_temp.expect(pg_temp.state('picking') = 'played' and (select bundle from arc_beat_events where beat = 'picking' and event = 'played') is null, 'a beat with no bundle was not played with no bundle');
   perform pg_temp.expect(pg_temp.record('bundlesSkipped') = '[]'::jsonb, 'a bundle-less beat was skipped: ' || pg_temp.record('bundlesSkipped')::text);
+end $$;
+
+-- ---- 6. The record says what was played: a bundle the database skipped is not "played with its defaults" ----
+do $$
+declare
+  r jsonb;
+begin
+  r := pg_temp.apply(jsonb_build_array(jsonb_build_object('name', 'Later', 'beat', 'later', 'parts', '[]'::jsonb)), 5, '[]',
+    jsonb_build_object('beatsDefaulted', jsonb_build_array('later'), 'trims', jsonb_build_array(jsonb_build_object('path', 'beats.later', 'predicate', 'playedWithDefaults', 'before', 0, 'after', 1),
+      jsonb_build_object('path', 'moves[0].why', 'predicate', 'maxLength(200)', 'before', 201, 'after', 200))));
+  perform pg_temp.expect(r -> 'beats_played' = '[]'::jsonb, 'a locked beat was played: ' || r::text);
+  perform pg_temp.expect(pg_temp.record('beatsDefaulted') = '[]'::jsonb and pg_temp.record('beatsPlayed') = '[]'::jsonb, 'the record says a skipped beat was played with its defaults: ' || pg_temp.record('beatsDefaulted')::text);
+  perform pg_temp.expect(not (pg_temp.record('trims') @> '[{"predicate": "playedWithDefaults"}]'::jsonb) and pg_temp.record('trims') @> '[{"predicate": "maxLength(200)"}]'::jsonb,
+    'the record kept a played-with-defaults trim for a beat that was not played, or lost another trim: ' || pg_temp.record('trims')::text);
+end $$;
+
+-- ---- 7. The meeting's season, everywhere: a meeting held in one season and applied or landed after the next has opened ----
+do $$
+declare
+  m bigint;
+  old_season bigint := pg_temp.season();
+  q bigint;
+  r jsonb;
+  landed uuid;
+  minus uuid := beat_role_board(pg_temp.season(), 'mb-boss', 'split', 'minus');
+begin
+  perform arc_pass();
+  perform pg_temp.expect(pg_temp.state('epilogue') = 'unlocked', 'setup: the beat that waits on the landed one has not unlocked: ' || coalesce(pg_temp.state('epilogue'), 'none'));
+  -- The meeting is held a minute ago, in the season that then ran; the season closes and the next opens before it is applied.
+  m := (begin_meeting(now() - interval '1 minute') ->> 'meeting')::bigint;
+  update seasons set ends_at = now() - interval '30 seconds' where id = old_season;
+  insert into seasons (number, starts_at, boss) values (2, now() - interval '30 seconds', 'mb-boss');
+  perform pg_temp.expect(meeting_season(m) = old_season and pg_temp.season() <> old_season, 'setup: the meeting is not in the season that closed');
+  -- The guard reads the role in the meeting's season, as the tick does.
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, bundle, bundle_name, role)
+  values (m, 'mb-boss', 'mergeBoard', jsonb_build_object('board', jsonb_build_object('role', 'minus', 'beat', 'split'), 'into', pg_temp.board('elsewhere')), null, 'because', now() - interval '1 minute', null, true, gen_random_uuid(), 'Late', null)
+  returning id into q;
+  perform pg_temp.expect((select cardinality(depends_on) = 1 from queued_moves where id = q), 'the part does not depend on the move that made the board');
+  -- The beat's played event is the meeting's season's too.
+  r := pg_temp.apply(jsonb_build_array(jsonb_build_object('name', '', 'beat', 'epilogue', 'parts', '[]'::jsonb)), 0, '[]', '{}', m);
+  perform pg_temp.expect(r -> 'beats_played' = '["epilogue"]'::jsonb, 'the beat was not played in the season the meeting was held in: ' || r::text || pg_temp.record('bundlesSkipped')::text);
+  perform pg_temp.expect((select e.season = old_season from arc_beat_events e where e.beat = 'epilogue' and e.event = 'played'), 'the played event is not in the meeting''s season');
+  -- Landing reads the same season (the tick's pass then lapses what the closed season left unlocked, which is why the beat is played first).
+  alter table queued_moves disable trigger queued_moves_guard;
+  update queued_moves set go_live_at = now() - interval '1 minute' where id = q;
+  alter table queued_moves enable trigger queued_moves_guard;
+  perform system_tick();
+  select landed_act into landed from queued_moves where id = q;
+  perform pg_temp.expect(landed is not null and (select a.payload #>> '{params,board}' from acts a where a.id = landed) = minus::text, 'the part did not land on the board the earlier beat made: ' || (select coalesce(failure, 'waiting') from queued_moves where id = q));
 end $$;
