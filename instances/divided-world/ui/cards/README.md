@@ -103,8 +103,10 @@ The small tile of a face-down card on a post is not this picture: it keeps the s
 Then **open a pull request** with the three files in the card's folder. Each card in the game already has a folder, so
 new art for it replaces its picture. The owner approves art in review.
 
-The repository has no license yet. The art here is the project's own, and the owner will give its license when the
-repository has one.
+The cards' own pictures, their marks, the card back and the scenes they came from are under CC0 1.0 Universal
+(https://creativecommons.org/publicdomain/zero/1.0/): anyone may use them for any purpose, with or without credit. Each
+`art.json` says so. That is the art's license alone; the repository's code has none yet. Art you offer may name other
+terms in its own `art.json`.
 
 ## What the guard refuses
 

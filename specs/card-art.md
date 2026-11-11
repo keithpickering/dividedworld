@@ -28,7 +28,7 @@ is a tool's leavings, not a card.
 - The card's color, ink and tagline live in the instance's `CardUi`, not in the folder.
 
 ```json
-{ "credit": "Divided World", "license": "The project's own art. The owner gives its license when the repository has one." }
+{ "credit": "Divided World", "license": "CC0 1.0 Universal: https://creativecommons.org/publicdomain/zero/1.0/" }
 ```
 
 ## The template's numbers
