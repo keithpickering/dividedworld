@@ -607,11 +607,13 @@ declare
   why text;
   gifts_before bigint;
   events_before bigint;
+  bar_before jsonb;
 begin
   perform pg_temp.eco();
   insert into card_ledger (account, card, kind, price) select cs, 'dv-gift', 'bought', 0 from generate_series(1, 4);
   perform pg_temp.wallet(gv, 100);
   d := pg_temp.open_drive(cs, cch, p);
+  select value into bar_before from settings where key = 'warnBar';
   insert into settings (key, value) values ('warnBar', '{"size": 1, "bands": {"minor": 1, "moderate": 1, "severe": 1}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}')
     on conflict (key) do update set value = excluded.value;
   perform infract(gch, 'minor', gp, 'dv-mod');
@@ -624,6 +626,8 @@ begin
   if why is null or why not like '55000 | kayfabb.refusal | this character is banned until % UTC; the ban ends by itself then, and it holds only this character, not your other characters' then raise exception 'a banned character gave: %', why; end if;
   if (select count(*) from acts where kind = 'donation') is distinct from gifts_before then raise exception 'a refused gift of a banned character wrote an Act'; end if;
   if (select count(*) from wallet_events) is distinct from events_before or (select balance from wallets where account = gv) is distinct from 100 then raise exception 'a refused gift of a banned character moved Aura'; end if;
+  -- The warn bar is put back, so no later block of this file bans on one infraction.
+  if bar_before is null then delete from settings where key = 'warnBar'; else update settings set value = bar_before where key = 'warnBar'; end if;
 end $$;
 
 -- ---- a donation takes no seq, and leaves its thread's last_at, replies and next_seq alone ----
