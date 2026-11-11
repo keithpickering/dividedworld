@@ -3,7 +3,7 @@
 -- Acts with a place number read as `post`; an update as `update`; a card, a face-down set and a trap's spring as `play`, with the
 -- card's key (null for a set, so the column never names a trap) and where it landed: a post, an update, a character, a thread or a
 -- board. A legacy numbered card (0035's leftover) is a play, never `#N`. The two old columns, origin_title and origin_seq, are gone.
--- A board is named as it is called now (supabase/migrations/0150_origin_place_board_now.sql; docs/plans/2026-11-11-origin-place-rename-plan.md):
+-- A board is named as it is called now (supabase/migrations/0152_origin_place_board_now.sql; docs/plans/2026-11-11-origin-place-rename-plan.md):
 -- boards_now's name, so a rename in force shows and one that ends gives the earlier name back.
 
 -- The migration exists at all (so a missing one fails here, on an assertion, and not on a fixture below).

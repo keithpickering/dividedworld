@@ -618,7 +618,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     : a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq }
     : null;
 
-  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0150), as boards_now names it. */
+  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
   function originPlace(origin: ActRec): OriginPlace | null {
     if (origin.kind === 'update') return placeOf(origin);
     if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {

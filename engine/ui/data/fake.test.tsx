@@ -975,7 +975,7 @@ describe('what a list row shows', () => {
     expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post });
   });
 
-  test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0150)', async () => {
+  test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0152)', async () => {
     const { fake, anaFace, boFace } = world();
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
     const spun = must(await fake.spin(fake.seed.reach(boFace, 'board', general.id, 'glint'), anaFace, 'Spun', 'b')).thread.id;
