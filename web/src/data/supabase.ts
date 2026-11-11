@@ -30,7 +30,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -146,6 +146,7 @@ function toAct(r: Row): Act {
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
     ...(r['untaken'] === true ? { untaken: true as const } : {}),
+    ...(typeof r['ends_at'] === 'string' ? { endsAt: r['ends_at'] } : {}),
   };
 }
 
@@ -218,7 +219,7 @@ function toThreadHit(r: Row): ThreadHit {
   return { ...toPostHit(r), matches: typeof m === 'number' ? m : parseInt(String(m), 10) || 0, matchesMore: r['matches_more'] === true || (typeof m === 'string' && m.endsWith('+')) };
 }
 function toSearchPage<T>(d: unknown, hit: (r: Row) => T): SearchPage<T> {
-  if (!isObject(d)) throw new Error(NOT_READ);
+  if (!isObject(d)) throw new ReadFailure('server');
   return { count: num(d['count']), more: d['more'] === true, pooled: d['pooled'] === true, results: rowsOf(d['results']).map(hit), next: toSearchCursor(d['next']) };
 }
 /* A cursor's rank is a number or absent (search_cursor_ok refuses a JSON null), so a page sorted by time sends none. */
@@ -381,7 +382,7 @@ const rowsOf = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
 
 const BANDS: readonly VisitBand[] = ['minor', 'moderate', 'severe'];
 const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'tail', 'backfire'];
-const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed'];
+const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed', 'dropped'];
 const VERDICTS: readonly ReportVerdict[] = ['visit', 'dismissed', 'backfire'];
 const RULINGS: readonly AppealVerdict[] = ['overturned', 'upheld', 'reduced', 'increased'];
 const OFFICES: readonly Office[] = ['boss', 'mod', 'member', 'benched', 'waiting', 'developer'];
@@ -395,10 +396,15 @@ function toCharge(c: Row): VisitCharge {
   };
 }
 
-/** A visit's end, from thread_page's `end` or a `visit_end` Act's payload: null where the outcome is not one of the four. */
+/**
+ * A visit's end, from thread_page's `end` or a `visit_end` Act's payload: null where the outcome is not one of the five. The tick wrote a visit it gave up on as `reversed` with no
+ * `by_act` before `dropped` existed, and no Act is edited, so that shape reads as dropped here.
+ */
 function toVisitEnd(e: Row, at: unknown, act: unknown): VisitEnd | null {
-  const outcome = OUTCOMES.find((o) => o === e['outcome']);
-  return outcome && typeof act === 'string' ? { act, at: str(at) ?? '', outcome, byAct: str(e['by_act']), line: str(e['line']) ?? '' } : null;
+  const found = OUTCOMES.find((o) => o === e['outcome']);
+  const byAct = str(e['by_act']);
+  const outcome = found === 'reversed' && byAct === null ? 'dropped' : found;
+  return outcome && typeof act === 'string' ? { act, at: str(at) ?? '', outcome, byAct, line: str(e['line']) ?? '' } : null;
 }
 
 /** The challenge a visit carries: never an answer. A quiz whose question the page could not read is a distraction, which asks nothing it cannot say. */
@@ -586,7 +592,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     setEnds: src['setEnds'].map((r): FaceDownEnd => ({ play: r['play'], card: r['card'], post: r['post'], spring: r['spring'] ?? null, endedAt: r['ended_at'], endedBy: r['ended_by'] === 'taken back' || r['ended_by'] === 'sprung' || r['ended_by'] === 'time' ? r['ended_by'] : r['spring'] ? 'sprung' : 'time' })),
     caught: src['caught'].map((r): CaughtPlay => ({
       play: r['play'], card: r['card'], post: r['post'], trap: r['trap'], spring: r['spring'], price: num(r['price']),
-      boughtPrice: r['bought_price'] === null || r['bought_price'] === undefined ? null : num(r['bought_price']), at: r['at'],
+      at: r['at'],
     })),
     ended: src['ended'].map((r): CardEnded => ({
       cardEnd: r['card_end'], play: r['play'], card: r['card'], at: r['at'], side: r['side'], reach: r['reach'],
@@ -597,13 +603,13 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       ruleNumber: typeof r['rule_number'] === 'number' ? r['rule_number'] : null, rule: str(r['rule']), mod: str(r['mod_name']), post: r['post'],
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], expiresAt: r['expires_at'], relief: num(r['relief']), emptiedAt: str(r['emptied_at']),
     })),
-    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'] })),
+    bans: src['bans'].map((r): LogBan => ({ ban: r['ban'], character: r['character'], at: r['at'], days: num(r['days']), until: r['until'], infraction: r['infraction'], rule: str(r['rule']), thread: r['thread'], ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ownUntil: r['own_until'] ?? r['until'] })),
     groupMoves: src['groupMoves'].map((r): LogGroupMove => ({
       move: r['move'], character: r['character'], at: r['at'], thread: r['thread'], seq: typeof r['seq'] === 'number' ? r['seq'] : null, group: String(r['group'] ?? ''),
       board: str(r['board']), boardName: str(r['board_name']), expiresAt: str(r['expires_at']), landedUntil: str(r['landed_until']), checkAt: str(r['check_at']), demand: str(r['demand']),
       office: OFFICES.find((o) => o === r['office']) ?? null,
       endedWhy: MOVE_END_WHYS.find((w) => w === r['ended_why']) ?? null, endedBy: str(r['ended_by']), endedAt: str(r['ended_at']),
-      ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']),
+      ruling: RULINGS.find((v) => v === r['ruling']) ?? null, ruledAt: str(r['ruled_at']), ruledUntil: str(r['ruled_until']), ruledOffice: OFFICES.find((o) => o === r['ruled_office']) ?? null,
     })),
     reports: src['reports'].map((r): LogReport => ({
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
@@ -661,7 +667,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /**
    * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
-   * server's own words, so a screen can tell a refused search from one that never reached the server (NOT_READ); anything else is `read`'s.
+   * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
    */
   async function refusableRead(run: () => PromiseLike<unknown>): Promise<Res> {
     let refused = null as string | null;
@@ -677,6 +683,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   }
   /** A read, retried once on the request itself when it failed in transport; a second failure throws plain words. */
   async function read(run: () => PromiseLike<unknown>, pastEnd = false): Promise<Res> {
+    /* The browser says it has no network: nothing is sent. */
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new ReadFailure('offline');
     const once = async (): Promise<Res> => {
       try {
         return (await run()) as Res;
@@ -687,7 +695,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     let r = await once();
     if (transport(r)) r = await once();
     /* A range that starts past the end is PostgREST's 416: for a page, that is an empty page. */
-    if (r.error && !(pastEnd && r.status === 416)) throw new Error(NOT_READ);
+    if (r.error && !(pastEnd && r.status === 416)) throw new ReadFailure(r.status === 0 ? 'silent' : 'server');
     return r;
   }
   const list = async (run: () => PromiseLike<unknown>): Promise<Row[]> => {
@@ -717,9 +725,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const refusal = (error: string, field?: string): Refusal => (field ? { ok: false, error, field } : { ok: false, error });
   /** No answer came back from a write: it may have gone through, and the caller looks before it tries again. */
   const uncertain = (): Refusal => ({ ok: false, error: LOST, uncertain: true });
+  /** Nothing left the device, or the server never ran the write: sending again cannot duplicate. */
+  const notSent = (error: string = NOT_SENT): Refusal => ({ ok: false, error, notSent: true });
+  const offline = (): boolean => typeof navigator !== 'undefined' && navigator.onLine === false;
 
   /** One POST to an edge function. `resend` is true only for a read (the estimate), never for a write. */
   async function edge(fn: string, body: unknown, lost: string, resend = false): Promise<Answer<Row>> {
+    if (!resend && offline()) return notSent();
     const token = await bearer();
     const send = async (): Promise<{ status: number; text: string } | null> => {
       try {
@@ -747,6 +759,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     if (got.status >= 200 && got.status < 300 && parsed) return { ok: true, value: parsed };
     const words = parsed ? str(parsed['error']) : null;
     /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
+    if (got.status >= 500 && !resend && lost === LOST && parsed?.['sent'] === false) return notSent(words ?? NOT_SENT);
     if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
     if (words) return refusal(words, str(parsed?.['field']) ?? undefined);
     return refusal(got.status >= 500 ? lost : NOT_DONE);
@@ -754,6 +767,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /** A direct rpc that writes: its refusals are the server's words, a lost answer is never resent. */
   async function rpcWrite(run: () => PromiseLike<unknown>): Promise<Answer<Row>> {
+    if (offline()) return notSent();
     let r: Res;
     try {
       r = (await run()) as Res;
@@ -995,14 +1009,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
       rows(() => client.from('my_face_down').select('play,card,post,spring,ended_at,ended_by').not('ended_at', 'is', null), 'ended_at', (q) => q, ['play']),
-      rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,bought_price,at'), 'at', (q) => q, ['play']),
+      rows(() => client.from('my_caught').select('play,card,post,trap,spring,price,at'), 'at', (q) => q, ['play']),
       /* The card plays an admin ended that the player cast or that landed on theirs (0092); a third party's reversal is in no one's view but its own. */
       rows(() => client.from('my_cards_ended').select('card_end,play,card,at,side,reach,target_name,post_author_name,caster_name,character'), 'at', (q) => q, ['card_end']),
       /* The Mod Bots' lines (0111): the warn points, bans, reports and appeals of the player's own characters; each view answers from the caller's own rows alone. */
       rows(() => client.from('my_infractions').select('infraction,character,at,band,points,rule_number,rule,mod_name,post,post_seq,thread,expires_at,relief,emptied_at'), 'at', (q) => q, ['infraction']),
-      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread'), 'at', (q) => q, ['ban']),
+      rows(() => client.from('my_bans').select('ban,character,at,days,until,infraction,rule,thread,ruling,own_until'), 'at', (q) => q, ['ban']),
       /* The staff moves of the player's characters into groups (0134): each with how it ended and the appeal's ruling on it. */
-      rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until'), 'at', (q) => q, ['move']),
+      rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
       rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
       rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
     ]);
@@ -1503,6 +1517,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return a.ok ? { ok: true, value: { slot: a.value['slot'], moved: a.value['moved'] === true } } : a;
     },
     async saveMachine(changes) {
+      if (offline()) return notSent();
       let r: { readonly data: unknown; readonly error: { readonly message?: string; readonly details?: string; readonly hint?: string } | null; readonly status?: number };
       try {
         r = (await client.rpc('save_machine', { changes })) as typeof r;
@@ -1537,7 +1552,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
        field is what the method named in its type answers for the same data. A load writes nothing (the design's section 4). */
     async boot(): Promise<Boot> {
       const d = (await read(() => client.rpc('boot'))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const settings = mergeSettings(isObject(d['settings']) ? d['settings'] : {});
       const w: Row = isObject(d['wallet']) ? d['wallet'] : {};
       return {
@@ -1558,7 +1573,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async indexPage(): Promise<IndexPage> {
       const d = (await read(() => client.rpc('index_page'))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       return { boards: rowsOf(d['boards']).map(toBoardSummary), characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']) };
     },
     async searchPosts(q, after): Promise<SearchPage<PostHit>> {
@@ -1571,7 +1586,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const d = (await refusableRead(() => client.rpc('search_suggest', {
         prefix, kinds: options?.kinds ? [...options.kinds] : null, board: options?.board ?? null, exclude_system: options?.excludeSystem ?? false, most: options?.most ?? null,
       }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       return {
         threads: rowsOf(d['threads']).map((t) => ({ id: t['id'], title: str(t['title']) ?? '', board: t['board'], boardName: str(t['board_name']) ?? '' })),
         characters: rowsOf(d['characters']).map((c) => ({ id: c['id'], name: str(c['name']) ?? '' })),
@@ -1726,7 +1741,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async myCharactersPage(): Promise<MyCharactersPage> {
       const d = (await read(() => client.rpc('my_characters_page'))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const mine = rowsOf(d['characters']);
       const debuted = mine.filter((c) => isObject(c['face']));
       return {
@@ -1752,7 +1767,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async alertsPage(before): Promise<AlertsPage> {
       const d = (await read(() => client.rpc('alerts_page', { in_before: before }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
       return {
@@ -1762,7 +1777,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async updatesPage(update, before, handoverSeason): Promise<UpdatesPage> {
       const d = (await read(() => client.rpc('updates_page', { in_update: update !== null && idOk(update) ? update : null, in_before: before, in_handover_season: handoverSeason }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const updates = rowsOf(d['updates']).map(toUpdate);
       /* The open Update is the one asked for when it is on the page, else the newest of the page (as Updates.tsx shows it): the tallies were read for it alone. */
       const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act;
@@ -1883,7 +1898,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* The log page in one read (`log_page`, 0123): the first range of the views comes from the document, and a page that would not move reads its one instant by the views as `log` does. */
     async logPage(before): Promise<LogPage> {
       const d = (await read(() => client.rpc('log_page', { in_before: before ?? null }))).data as Row | null;
-      if (!isObject(d)) throw new Error(NOT_READ);
+      if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), saves: rowsOf(sources['saves']),

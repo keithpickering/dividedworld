@@ -134,6 +134,12 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
     },
   });
 
+  /* What the guide says of The System follows the instance's switch: off, it says what is built and not on; on, it no longer does. */
+  const NOT_ON = 'Built, and not switched on here yet:';
+  const says = markdown.includes(NOT_ON);
+  if (settings.systemEnabled === false && !says) fault(file, 1, `The System is switched off here (systemEnabled is false), so the guide holds the line "${NOT_ON}" before what is built and not on`);
+  if (settings.systemEnabled === true && says) fault(file, lineOf(markdown, NOT_ON), `The System is switched on here (systemEnabled is true), so the guide no longer says "${NOT_ON}"`);
+
   /* A link to a fragment names a section, by the anchor the page gives it (`sectionsOf`, the page's own reading). */
   const anchors = new Set(sectionsOf(blocks, (p) => settingText(p, settings) ?? '—').map((x) => x.id));
   walk(blocks, {

@@ -20,6 +20,7 @@ import { parse } from '../../bbcode/parse.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
+import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { Link } from '../router.tsx';
 import { text as textOf } from '../thread/lines.tsx';
 import { BannedNote } from './BannedNote.tsx';
@@ -64,7 +65,7 @@ export function Composer(props: ComposerProps) {
 
 function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: ComposerProps & { readonly account: Id }) {
   const { api, settings } = useKayfa();
-  const { hudCharacter, characters, refresh } = usePlayer();
+  const { hudCharacter, characters, refresh, charactersFailed } = usePlayer();
   const key = draftKey(account, thread);
   /* The kept draft, read before the first frame so the box is drawn with the page, with the character it was being written as. */
   const [kept] = useState(() => readDraft(key));
@@ -112,6 +113,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   const over = [...text].length > max;
   useEffect(() => { if (!over) setQuoted(false); }, [over]);
 
+  if (!hudCharacter && charactersFailed) return <CharactersFailed className="kb-composer-note kb-notice" />;
   if (!hudCharacter) {
     return (
       <p className="kb-composer-note kb-notice">

@@ -78,6 +78,26 @@ describe.each([['board', BoardCombobox], ['glass', GlassCombobox]] as const)('th
   });
 });
 
+describe.each([['board', BoardCombobox], ['glass', GlassCombobox]] as const)('the %s skin with a source that rejects', (_n, Skin) => {
+  test('draws the failure in an open list, holds no listbox, and a later good reply clears it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ delay: null, advanceTimers: vi.advanceTimersByTime });
+    let n = 0;
+    const flaky = async () => { if (n++ === 0) throw new Error('down'); return GROUPS; };
+    render(<div className="kb-glass"><Skin label="Thread" source={flaky} onChoose={() => {}} /></div>);
+    const box = screen.getByRole('combobox');
+    await user.type(box, 'wari');
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    expect(screen.getByText("Suggestions couldn't be loaded.", { selector: 'div:not([role=status])' })).toBeInTheDocument();
+    expect(box).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('listbox')).toBeNull();
+    await user.type(box, 'o');
+    await act(async () => { await vi.advanceTimersByTimeAsync(150); });
+    expect(screen.queryByText("Suggestions couldn't be loaded.", { selector: 'div:not([role=status])' })).toBeNull();
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+});
+
 describe('the board skin', () => {
   test('shows the trailing row last and Enter chooses it', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });

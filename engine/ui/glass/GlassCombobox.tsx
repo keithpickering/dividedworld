@@ -4,7 +4,7 @@
  * `kb-glass-field` with a `kb-glass-input`, and a list in the glass tokens.
  */
 import type { ReactNode } from 'react';
-import { useSearchCombobox, type ComboOption, type ComboRow, type UseSearchComboboxOptions } from '../search/useSearchCombobox.ts';
+import { SUGGESTIONS_FAILED, useSearchCombobox, type ComboOption, type ComboRow, type UseSearchComboboxOptions } from '../search/useSearchCombobox.ts';
 import './glass-search.css';
 
 export interface GlassComboboxProps<O extends ComboOption = ComboOption> extends UseSearchComboboxOptions<O> {
@@ -36,6 +36,7 @@ export function GlassCombobox<O extends ComboOption = ComboOption>({ label, plac
               {g.rows.map((r) => <Row key={r.id} row={r} render={render} />)}
             </div>
           ))}
+          {view.failed && <div className="kb-glass-combo-empty">{SUGGESTIONS_FAILED}</div>}
           {view.trailing && <Row row={view.trailing} render={render} />}
         </div>
       )}

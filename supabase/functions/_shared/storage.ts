@@ -41,7 +41,7 @@ export function supabaseStorage(o: {
         seen.push(`no answer (${(e as Error)?.name === 'TimeoutError' ? `none in ${timeoutMs} ms` : (e as Error)?.message ?? e})`);
       }
     }
-    throw new TransportError(`storage: ${what}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`);
+    throw new TransportError(`storage: ${what}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`, 'maybe');
   };
   return {
     // A name taken (409, or 400 with Storage's own word for it) is the file an attempt whose

@@ -195,6 +195,18 @@ describe('the quick reply', () => {
     expect(send()).toBeDisabled();
   });
 
+  test('when the player\'s characters could not be read, it says so and offers Try again instead of making one', async () => {
+    const w = threadWorld();
+    vi.spyOn(w.fake, 'myCharacters').mockRejectedValue(new Error('down'));
+    openThread(w);
+    await screen.findByRole('article', { name: /^Post 1 /u });
+    expect(await screen.findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Make a character' })).toBeNull();
+    vi.mocked(w.fake.myCharacters).mockRestore();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('textbox', { name: 'Your reply' })).toBeInTheDocument();
+  });
+
   test('with no character able to post, it says so and offers to make one', async () => {
     const w = threadWorld();
     const lone = w.fake.seed.account('lone');

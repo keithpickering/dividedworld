@@ -49,6 +49,7 @@ export function markText(state: VisitState, endsAt: string, now: number): string
     case 'intercepted': return 'Talked down';
     case 'trapped': return 'Trapped';
     case 'reversed': return 'Ended';
+    case 'dropped': return 'Dropped';
   }
 }
 
@@ -60,6 +61,7 @@ export function tabName(state: VisitState): string {
     case 'intercepted': return 'Talked down';
     case 'trapped': return 'Trapped';
     case 'reversed': return 'Ended';
+    case 'dropped': return 'Dropped';
   }
 }
 
@@ -71,6 +73,7 @@ export function markLabel(mod: string, pronouns: PronounSet, state: VisitState, 
     intercepted: `${mod}'s visit to this post was talked down`,
     trapped: `${mod}'s visit to this post was trapped, ended by a trap`,
     reversed: `${mod}'s visit to this post was ended by an admin`,
+    dropped: `${mod}'s visit to this post could not be filed and was dropped`,
   }[state];
   return `${how}. Opens the visit.`;
 }
@@ -118,7 +121,7 @@ export function appealTerms(mod: string, pronouns: PronounSet | null, infraction
 
 /** The terms of a try at talking a visit down, for the mask making it. */
 export function tryTerms(mod: string, mask: string, tailHours: number, tailPoints: number): string {
-  return `One try for ${mask}. A wrong answer, and ${mod} visits ${mask}'s next post within ${tailHours} hours, charging Obstruction (minor, ${pointsWords(tailPoints)}). There is no timer.`;
+  return `One try for ${mask}. An answer other than ${mod}'s, and ${mod} visits ${mask}'s next post within ${tailHours} hours, charging Obstruction (minor, ${pointsWords(tailPoints)}). There is no timer.`;
 }
 
 export const pointsPlain = (n: number): string => `${n} point${n === 1 ? '' : 's'}`;
@@ -137,7 +140,7 @@ export function noticeWords(charges: readonly VisitCharge[], ruling?: string): s
   if (top === null) return null;
   if (top.cause === 'backfire') return 'This post was found to be a waste of the staff\'s time.';
   const words = top.rule ?? (top.cause === 'tail' ? 'Obstruction' : top.ruleNumber === null ? 'the board\'s premise' : `Rule ${top.ruleNumber}`);
-  const named = top.ruleNumber !== null && !/^Rule \d/iu.test(words) ? `Rule ${top.ruleNumber}: ${words}` : words;
+  const named = top.ruleNumber !== null && !/^(House )?Rule \d/iu.test(words) ? `Rule ${top.ruleNumber}: ${words}` : words;
   const found = `This post was found in violation of ${named}.`;
   /* An appeal that overturned the finding says so beside it; the post's words stay, and an upheld, reduced or increased finding is the notice as it was. */
   return ruling === 'overturned' ? `${found} On appeal, that finding was overturned.` : found;

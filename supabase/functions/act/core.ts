@@ -147,9 +147,12 @@ const refused = (field: string, why: string): ActionAnswer => ({ status: 400, bo
 export async function runAction(dbs: { player: Db; service: Db }, instance: Instance, request: unknown): Promise<ActionAnswer> {
   const decision = decide(request, instance);
   if (!decision.ok) return { ...refused(decision.field, decision.why), nobodyNamed: true };
+  // Set immediately before a write's own call: a transport failure with it still false came from a read that ran first, so no write was sent.
+  let writing = false;
   try {
     if (!decision.asService) {
       // The player's own call: the database verifies the session on the call itself.
+      writing = true;
       const body = await dbs.player.rpc<unknown>(decision.rpc, decision.args).catch((e) => { if (sessionRefused(e)) return SIGN_IN; throw e; });
       if (body === SIGN_IN) return SIGN_IN;
       return { status: 200, body, broadcasts: live(decision.rpc, body) };
@@ -206,6 +209,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       if (!state.ok) return refused('state', state.why);
       args = { ...args, state: state.value };
     }
+    writing = true;
     const body = await dbs.service.rpc<unknown>(decision.rpc, args);
     return { status: 200, body, broadcasts: live(decision.rpc, body) };
   } catch (e) {
@@ -216,6 +220,9 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     }
     // The answer was lost, and the write may have committed: said so, never "it failed".
     if (e instanceof TransportError) {
+      // Certainly not made: a read before the write failed, or every attempt at the write was a 503. Sending again cannot duplicate.
+      // The words are typed here (an edge function does not import engine/ui); core.test.ts holds them equal to NOT_RUN.
+      if (!writing || e.ran === 'never') return { status: 503, body: { error: 'it did not go through; try again', sent: false } };
       return { status: 503, body: { error: 'no answer came back, so this may have gone through: look before you try again' } };
     }
     console.error('act failed', decision.rpc, e);

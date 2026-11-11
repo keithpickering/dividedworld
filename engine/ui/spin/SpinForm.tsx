@@ -13,6 +13,7 @@ import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
 import type { Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
+import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { Link, useNavigate } from '../router.tsx';
 import { expectOrigin, spunLoader } from './spun.ts';
 import './spin.css';
@@ -47,7 +48,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
   readonly draft?: SpinDraft; readonly onDraft?: (draft: SpinDraft | null) => void;
 }) {
   const { api, settings } = useKayfa();
-  const { hudCharacter, characters, refresh } = usePlayer();
+  const { hudCharacter, characters, refresh, charactersFailed } = usePlayer();
   const navigate = useNavigate();
   const [title, setTitleNow] = useState(draft?.title ?? '');
   const [body, setBodyNow] = useState(draft?.body ?? '');
@@ -64,6 +65,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
 
   const label = apology ? 'Write an apology' : named === null ? 'Spin a thread' : `Spin a thread from ${named}`;
   const verb = apology ? 'Send apology' : 'Spin thread';
+  if (!hudCharacter && charactersFailed) return <div className="kb-spin-form kb-box" role="group" aria-label={label}><CharactersFailed /></div>;
   if (!hudCharacter) {
     return (
       <div className="kb-spin-form kb-box" role="group" aria-label={label}>

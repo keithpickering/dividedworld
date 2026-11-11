@@ -106,6 +106,8 @@ export const STEPS = [
   'node tools/check-bbcode-plain.mjs',
   'node tools/test-phrase-sql.mjs',
   'node tools/check-phrase-sql.mjs',
+  'node tools/test-visit-outcome-words.mjs',
+  'node tools/check-visit-outcome-words.mjs',
   'npm run test:engine',
   'npm run test:ui',
   'npm run build:web',

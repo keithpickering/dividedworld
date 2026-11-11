@@ -61,7 +61,11 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
 
   /* The tilt choice is saved the way Settings saves it (a refusal puts it back), merged onto the choices the page holds now, so a setting changed
      in Settings after the page loaded is never put back to boot's; and the account's choice is read for the tilt state with it. */
-  const { prefs, change } = usePreferenceSaves(session.account, account);
+  const { prefs, change, refusal } = usePreferenceSaves(session.account, account);
+  /* Whether the tip's own tilt save was made: only its refusal is said here, never a settings read that failed. */
+  const [tiltAsked, setTiltAsked] = useState(false);
+  /* The refusal line ends with its Dismiss, which clears the flag; this provider's hook makes no other save (the tip is seen as it is tapped), so a refusal read later is never taken for the tilt's. If the refusal clears another way, the flag goes with it. */
+  useEffect(() => { if (refusal === null) setTiltAsked(false); }, [refusal]);
   const changeRef = useRef(change);
   changeRef.current = change;
   const read = prefs !== null;
@@ -94,6 +98,7 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
           run: () => {
             /* Synchronously, in the tap: iOS asks for the orientation only here. Then the same choice, saved the way Settings saves it. */
             void allowTilt();
+            setTiltAsked(true);
             changeRef.current({ tilt: 'on' });
           },
         },
@@ -122,6 +127,13 @@ export function TipsProvider({ children }: { readonly children: ReactNode }) {
           onGotIt={store.see}
           onSkip={store.skip}
         />
+      )}
+      {/* The action sees the tip as it is tapped, so a refused save is said where the tip was, in the same persona's line. */}
+      {tiltAsked && refusal !== null && (
+        <div className="kb-tips-refusal" role="alert">
+          <p>{refusal}</p>
+          <button type="button" className="kb-tips-button" onClick={() => setTiltAsked(false)}><b>Dismiss</b></button>
+        </div>
       )}
     </TipsCtx.Provider>
   );

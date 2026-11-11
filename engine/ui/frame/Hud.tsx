@@ -401,7 +401,11 @@ export function Hud() {
                         <p className="kb-hud-door-line">{ui.frontDoor.prompt.line}</p>
                       </div>
                     </CalmRegion>
-                  ) : !player.loaded ? null : !hud ? (
+                  ) : !player.loaded ? null : !hud && player.charactersFailed ? (
+                    <CalmRegion as="p" className="kb-hud-failed" role="status">
+                      Your characters couldn't be loaded. <GlassButton onClick={() => void player.refresh()}>Try again</GlassButton>
+                    </CalmRegion>
+                  ) : !hud ? (
                     <Link to="/characters/new" className="kb-hud-make kb-glass-cut-button">Make a character</Link>
                   ) : (
                     <>

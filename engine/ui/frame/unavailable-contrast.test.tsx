@@ -7,7 +7,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
+import { screen } from '@testing-library/react';
 import { ratio } from '../contrast.ts';
+import { buildWorld, renderIn } from '../test-world.tsx';
+import { CannotDisplay } from './Unavailable.tsx';
 
 const css = readFileSync(join(process.cwd(), 'engine/ui/tokens.css'), 'utf8');
 
@@ -63,6 +66,18 @@ describe('the cannot-display sheet\'s own colors', () => {
     const planted = css.replace('--kb-sheet-link: #000;', '--kb-sheet-link: #999;');
     const f = sheetFailures(planted);
     expect(f.some((x) => x.startsWith('light: --kb-sheet-link'))).toBe(true);
+  });
+
+  test('every link on the sheet, the contact link included, takes the sheet\'s link color', () => {
+    const takesLinkColor = (rules: string) => /\.kb-unavailable-sheet a \{\s*color: var\(--kb-sheet-link\);/u.test(rules);
+    const rules = readFileSync(join(process.cwd(), 'engine/ui/frame/unavailable.css'), 'utf8');
+    expect(takesLinkColor(rules)).toBe(true);
+    expect(takesLinkColor(rules.replace('.kb-unavailable-sheet a {', '.kb-unavailable-sheet p {'))).toBe(false);
+    for (const kind of ['server', 'broken'] as const) {
+      const { unmount } = renderIn(buildWorld(), <main><CannotDisplay kind={kind} address="/b/x" onRetry={() => {}} /></main>, { path: '/' });
+      expect(screen.getByRole('link', { name: 'tell an admin' }).closest('.kb-unavailable-sheet')).not.toBeNull();
+      unmount();
+    }
   });
 
   test('a pair left undeclared fails', () => {

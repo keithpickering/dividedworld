@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from './context.tsx';
 import { addressOf, Link, RouterProvider, searchOf, useLocation, useNavigate, useNavigation, usePendingFrom, usePrefetch, useRouterAccount, useRouterInternals, type Location } from './router.tsx';
 import { Routes, type Route } from './routes.tsx';
+import { ReadFailure } from './data/api.ts';
 
 function Where() {
   const l = useLocation();
@@ -414,6 +415,25 @@ describe('the router loads before it moves', () => {
     expect(calls[0]!.signal.aborted).toBe(false);
     dialog.remove();
   });
+  test.each([
+    ['offline', true, 'You are not connected'],
+    ['silent', true, 'did not answer in time'],
+    ['server', false, 'answered, but with an error'],
+  ] as const)('a load that rejects with a ReadFailure of kind %s lands that failure', async (kind, checksConnection, sentence) => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await act(async () => { calls[0]!.reject(new ReadFailure(kind)); });
+    expect(screen.getByText(new RegExp(sentence, 'u'))).toBeInTheDocument();
+    expect(screen.queryByText('Check that your connection is working.') !== null).toBe(checksConnection);
+  });
+  test('a load that throws a plain Error lands broken', async () => {
+    const { load, calls } = manualLoader();
+    mount(load);
+    act(() => nav('/t/a'));
+    await act(async () => { calls[0]!.reject(new Error('down')); });
+    expect(screen.getByText(/Something went wrong while loading it\./u)).toBeInTheDocument();
+  });
   test('a load that throws shows the page cannot be displayed, and Try again loads again', async () => {
     const { load, calls } = manualLoader();
     mount(load);
@@ -621,6 +641,7 @@ describe('the router loads before it moves', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1_500); });
     expect(calls[0]!.signal.aborted).toBe(true);
     expect(screen.getByRole('heading', { name: 'The page cannot be displayed' })).toBeInTheDocument();
+    expect(screen.getByText(/did not answer in time/u)).toBeInTheDocument();
   });
   test('a page\'s own state still reads through Location.state when the entry carries the router\'s key', async () => {
     const { load, calls } = manualLoader();

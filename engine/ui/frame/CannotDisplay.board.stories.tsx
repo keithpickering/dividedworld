@@ -6,8 +6,8 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Frame } from './Frame.tsx';
 import { CannotDisplay } from './Unavailable.tsx';
 
-function CannotDisplayStory() {
-  return <Frame><CannotDisplay address="dw.gripe/t/3f2a9c1e" onRetry={() => {}} /></Frame>;
+function CannotDisplayStory({ kind = 'silent' }: { readonly kind?: 'offline' | 'silent' | 'server' | 'broken' }) {
+  return <Frame><CannotDisplay kind={kind} address="dw.gripe/t/3f2a9c1e" onRetry={() => {}} /></Frame>;
 }
 
 const meta: Meta<typeof CannotDisplayStory> = {
@@ -21,3 +21,12 @@ type Story = StoryObj<typeof CannotDisplayStory>;
 
 /** A page that did not answer. */
 export const CannotDisplayPage: Story = {};
+
+/** The device is offline. */
+export const CannotDisplayOffline: Story = { args: { kind: 'offline' } };
+
+/** The server answered with an error. */
+export const CannotDisplayServer: Story = { args: { kind: 'server' } };
+
+/** The page's own code failed. */
+export const CannotDisplayBroken: Story = { args: { kind: 'broken' } };

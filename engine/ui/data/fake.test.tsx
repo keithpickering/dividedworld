@@ -9,6 +9,7 @@ import type { Instance, Settings } from '../../rules/types.ts';
 import { landsOn, quadrantFree, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
+import { failureKind, NOT_SENT, ReadFailure } from './api.ts';
 import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE } from './fake.ts';
@@ -1275,6 +1276,43 @@ describe('what a list row shows', () => {
     expect(bodies).toContain('plain');
   });
 
+  test('failNextRead: the next read rejects with that kind, once', async () => {
+    const { fake, thread } = world();
+    fake.seed.failNextRead('server');
+    const failed = await fake.acts(thread, 1, 99).catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(ReadFailure);
+    expect(failureKind(failed)).toBe('server');
+    expect((failed as Error).message).toBe('that could not be read right now; try again');
+    expect(await fake.acts(thread, 1, 99)).toBeInstanceOf(Array);
+  });
+
+  test('failNextRead does not fail a write that comes first: the write goes through and the next read fails', async () => {
+    const { fake } = world();
+    fake.seed.failNextRead('server');
+    const wrote = await fake.setPreferences({ motion: 'reduce' });
+    expect(wrote.ok).toBe(true);
+    const failed = await fake.acts('none', 1, 9).catch((e: unknown) => e);
+    expect(failureKind(failed)).toBe('server');
+  });
+
+  test('offline: a write answers the not-sent refusal and changes nothing; a read rejects as offline', async () => {
+    const { fake, thread } = world();
+    fake.seed.offline(true);
+    expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+    const failed = await fake.acts(thread, 1, 99).catch((e: unknown) => e);
+    expect(failureKind(failed)).toBe('offline');
+    expect(await fake.markRead(thread, 1, null)).toBe(false);
+    fake.seed.offline(false);
+    const prefs = await fake.preferences();
+    expect(prefs.motion).toBe('system');
+    expect(await fake.acts(thread, 1, 99)).toBeInstanceOf(Array);
+    /* Signing out needs no server, so it goes through offline. */
+    fake.seed.offline(true);
+    await fake.signOut();
+    fake.seed.offline(false);
+    expect((await fake.session()).signedIn).toBe(false);
+  });
+
   test('a player\'s seeded Act takes the time it is given, as The System\'s does', async () => {
     const { fake, anaFace, thread } = world();
     const old = fake.clock.now() - 20 * DAY;
@@ -1331,7 +1369,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
 
   test('a wallet that holds less than the price is refused in the server\'s words, and nothing is spent or given', async () => {
     const { fake } = shopWorld(99);
-    expect(await fake.buyCard(await slotOf(fake, 'splat'))).toEqual(refused('that costs 100, and your wallet holds 99'));
+    expect(await fake.buyCard(await slotOf(fake, 'splat'))).toEqual(refused('that costs 1.00, and your wallet holds 0.99'));
     expect((await fake.wallet()).balance).toBe(99);
     expect(await fake.myCards()).toEqual([]);
   });
@@ -1433,7 +1471,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect(await fake.myCards()).toEqual([]);
     expect((await fake.wallet()).balance).toBe(500);
     const poor = shopWorld(299).fake;
-    expect(await poor.buyPack((await poor.machine()).find((m) => 'pack' in m.item)!)).toEqual(refused('that costs 300, and your wallet holds 299'));
+    expect(await poor.buyPack((await poor.machine()).find((m) => 'pack' in m.item)!)).toEqual(refused('that costs 3.00, and your wallet holds 2.99'));
     expect(await poor.myCards()).toEqual([]);
   });
 
@@ -1461,7 +1499,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     const { fake, ana, anaFace, boFace, thread } = shopWorld(0, 3);
     const long = fake.seed.post(thread, boFace, 'x'.repeat(30));
     fake.seed.wallet(ana, 49);
-    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('that costs 50, and your wallet holds 49'));
+    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('that costs 0.50, and your wallet holds 0.49'));
     fake.seed.wallet(ana, 100);
     expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 1 });
     expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 2 });
