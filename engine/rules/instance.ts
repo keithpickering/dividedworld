@@ -5,8 +5,10 @@
 import { ALIGNMENTS, QUADRANTS } from './types.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
-import type { DeveloperPersona, EconomyRead, Instance, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
+import type { DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
+import { BEAT_KEY, conditionProblem, dueProblem } from '../system/conditions.ts';
+import { MOVE_KINDS } from '../system/moves.ts';
 import { DUTIES } from '../system/duties.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
@@ -249,6 +251,9 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   digestBoardDays: whole(1, 'days', DIGEST_MOST.boardDays),
   /** A year at most: a stub is a pointer for a while, not a second index of where threads went. SQL's settings_held holds the same. */
   movedStubDays: whole(1, 'days', 365),
+  /** A bundle holds one to sixteen parts, as SQL's settings_held holds: a composed bundle is bounded by a setting, never by what a model proposes. */
+  bundleMostParts: whole(1, 'parts', 16),
+  bundleAuthoredMostParts: whole(1, 'parts', 16),
   digestExcerpts: whole(1, 'posts', DIGEST_MOST.excerpts),
   digestExcerptChars: whole(1, 'characters', DIGEST_MOST.excerptChars),
   memoryOpinions: whole(1, 'opinions'),
@@ -554,6 +559,107 @@ export const STAFF_TITLE_MAX = 40;
 export const STAFF_SIGNATURE_MAX = 500;
 
 /** Checks of `instance.system`, the content The System reads, each a sentence naming what is wrong. */
+/** The most beats one persona's arc and mini-arcs hold together: each is read by the tick, so the pass is bounded by the persona's file and never by the instance's history. */
+export const ARC_BEATS_MOST = 24;
+
+const isObj = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Problems with a persona's arc, mini-arcs and held-back kinds (fangame split design, sections 1 to 3), each naming the predicate that failed in parentheses. The beats are in one
+ * order, the arc's and then the mini-arcs': a `beatLanded` names a beat before it (so no two wait on each other), and a role from another beat names a beat before it whose bundle makes it.
+ * `authoredMostParts` is `bundleAuthoredMostParts`, null where the settings are not whole enough to say.
+ */
+function arcProblems(who: string, p: Persona, authoredMostParts: number | null): string[] {
+  const out: string[] = [];
+  const lists: [string, unknown][] = [['arc', p.arc], ['miniArcs', p.miniArcs], ['holdsBack', p.holdsBack]];
+  for (const [name, list] of lists) if (list !== undefined && !Array.isArray(list)) out.push(`${who} has ${name} that is no list (isArray)`);
+  const arc = Array.isArray(p.arc) ? p.arc : [];
+  const minis = Array.isArray(p.miniArcs) ? p.miniArcs : [];
+  const beats = [...arc.map((b) => ({ b, mini: false })), ...minis.map((b) => ({ b, mini: true }))];
+  if (beats.length > ARC_BEATS_MOST) out.push(`${who} has ${beats.length} beats between its arc and mini-arcs, more than the ${ARC_BEATS_MOST} the tick reads for one persona (atMost(${ARC_BEATS_MOST}))`);
+  const at = new Map<string, number>();
+  beats.forEach(({ b }, i) => { if (isObj(b) && typeof b.key === 'string' && !at.has(b.key)) at.set(b.key, i); });
+  for (const k of duplicates(beats.filter(({ b }) => isObj(b)), ({ b }) => String(b.key))) out.push(`${who}: beat "${k}" is used twice (isUnique)`);
+  const bundleOf = (key: string) => beats[at.get(key) ?? -1]?.b.bundle;
+  /** A role of a template's part, from another beat: `{role, beat}`; the beat is the persona's, its bundle makes the role, and (for a part) it comes before the beat that names it. */
+  const ref = (pre: string, r: Record<string, unknown>, from: number, mustPrecede: boolean): string | null => {
+    const beat = String(r['beat']);
+    const role = String(r['role']);
+    const i = at.get(beat);
+    if (i === undefined) return `${pre} names role "${role}" of beat "${beat}", which is no beat of the persona (beatOfPersona)`;
+    const parts = beats[i]!.b.bundle?.parts;
+    if (!Array.isArray(parts) || !parts.some((x) => x.role === role && x.kind === 'createBoard')) return `${pre} names role "${role}" of beat "${beat}", which that beat's bundle never makes (roleMade)`;
+    if (mustPrecede && i >= from) return `${pre} names role "${role}" of beat "${beat}", which is not before it (earlierBeat)`;
+    return null;
+  };
+  const kinds = MOVE_KINDS.map((k) => k.key);
+  beats.forEach(({ b, mini }, from) => {
+    if (!isObj(b)) { out.push(`${who} has a beat that is no object (isObject)`); return; }
+    const pre = `${who} beat "${String(b.key)}"`;
+    if (typeof b.key !== 'string' || !BEAT_KEY.test(b.key)) out.push(`${pre} is not a key: lowercase letters, digits, hyphens and underscores, from a letter, at most 40 (isKey)`);
+    if (typeof b.brief !== 'string' || b.brief.trim() === '') out.push(`${pre} has no brief: it is the Boss's private intent, shown once the beat unlocks (required)`);
+    if (!Array.isArray(b.unlock) || b.unlock.length < 1) out.push(`${pre} has no unlock condition: it needs at least one (atLeast(1))`);
+    else b.unlock.forEach((c: unknown, i: number) => {
+      const bad = conditionProblem(c);
+      if (bad) { out.push(`${pre} unlock ${i + 1}: ${bad.said} (${bad.predicate})`); return; }
+      const cond = c as Record<string, unknown>;
+      if (cond['kind'] === 'beatLanded') {
+        const to = at.get(String(cond['beat']));
+        if (to === undefined) out.push(`${pre} unlock ${i + 1} waits on "${String(cond['beat'])}", which is no beat of the persona (beatOfPersona)`);
+        else if (to >= from) out.push(`${pre} unlock ${i + 1} waits on "${String(cond['beat'])}", which is not before it (earlierBeat)`);
+      } else if (cond['kind'] === 'boardActivity') {
+        for (const side of ['board', 'above', 'below']) {
+          const r = cond[side];
+          if (isObj(r)) { const why = ref(`${pre} unlock ${i + 1}`, r, from, false); if (why) out.push(why); }
+        }
+      }
+    });
+    if (b.due !== undefined) {
+      if (mini) out.push(`${pre} is a mini-arc and has a due point, which a mini-arc never has (noDueOnMiniArc)`);
+      else { const bad = dueProblem(b.due); if (bad) out.push(`${pre} due: ${bad.said} (${bad.predicate})`); }
+    }
+    if (b.repeatable !== undefined && b.repeatable !== false && !mini) out.push(`${pre} is repeatable, which only a mini-arc may be (miniArcOnly)`);
+    const t = b.bundle;
+    if (t === undefined) return;
+    if (!isObj(t) || !Array.isArray(t.parts)) { out.push(`${pre} has a bundle that is no template with parts (isObject)`); return; }
+    if (typeof t.name !== 'string' || t.name.trim() === '' || t.name.length > 120) out.push(`${pre} has a bundle with no name, or one over 120 characters (atMost(120))`);
+    if (t.parts.length < 1) out.push(`${pre} has a bundle with no part (atLeast(1))`);
+    if (authoredMostParts !== null && t.parts.length > authoredMostParts) out.push(`${pre} has a bundle of ${t.parts.length} parts, more than bundleAuthoredMostParts allows (atMost(${authoredMostParts}))`);
+    const made = new Set<string>();
+    for (const r of duplicates(t.parts, (x) => String(x?.role))) out.push(`${pre}: role "${r}" is used twice in its bundle (isUnique)`);
+    for (const part of t.parts) {
+      if (!isObj(part)) { out.push(`${pre} has a part that is no object (isObject)`); continue; }
+      const at2 = `${pre} part "${String(part.role)}"`;
+      if (typeof part.role !== 'string' || !BEAT_KEY.test(part.role)) out.push(`${at2} has a role that is not a key (isKey)`);
+      if (!kinds.includes(String(part.kind))) out.push(`${at2} is "${String(part.kind)}", which is not a move kind (oneOf(${kinds.join(', ')}))`);
+      const fixed = isObj(part.params) ? part.params : {};
+      const slots = isObj(part.slots) ? part.slots : {};
+      for (const [name, slot] of Object.entries(slots)) {
+        if (name in fixed) out.push(`${at2} has slot "${name}", which is also a fixed param (notFixed)`);
+        if (!isObj(slot) || slot.default === undefined || typeof slot.hint !== 'string' || slot.hint.trim() === '') out.push(`${at2} has slot "${name}" with no default or no hint (required)`);
+      }
+      for (const v of [...Object.values(fixed), ...Object.values(slots).map((x) => (isObj(x) ? x.default : undefined))]) {
+        if (!isObj(v) || typeof v['role'] !== 'string') continue;
+        if (Object.keys(v).length === 1) {
+          if (!made.has(v['role'])) out.push(`${at2} names role "${v['role']}", which no earlier part of its bundle makes (roleMade)`);
+        } else if (Object.keys(v).length === 2 && typeof v['beat'] === 'string') {
+          const why = ref(at2, v, from, true);
+          if (why) out.push(why);
+        }
+      }
+      if (part.kind === 'createBoard' && typeof part.role === 'string') made.add(part.role);
+    }
+  });
+  const hb = Array.isArray(p.holdsBack) ? p.holdsBack : [];
+  for (const h of hb) {
+    if (!isObj(h)) { out.push(`${who} holdsBack has an entry that is no object (isObject)`); continue; }
+    if (!kinds.includes(String(h.kind))) out.push(`${who} holdsBack "${String(h.kind)}" is not a move kind (oneOf(${kinds.join(', ')}))`);
+    if (typeof h.until !== 'string' || !at.has(h.until)) out.push(`${who} holdsBack "${String(h.kind)}" until "${String(h.until)}", which is no beat of the persona (beatOfPersona)`);
+  }
+  for (const k of duplicates(hb.filter(isObj), (h) => String(h.kind))) out.push(`${who} holdsBack "${k}" is named twice (isUnique)`);
+  return out;
+}
+
 function systemProblems(instance: Instance): string[] {
   const sys: SystemContent | undefined = instance.system;
   if (typeof sys !== 'object' || sys === null) return ['the instance has no system content (system)'];
@@ -585,6 +691,8 @@ function systemProblems(instance: Instance): string[] {
       }
     }
     if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
+    const authoredMost = instance.settings?.bundleAuthoredMostParts;
+    out.push(...arcProblems(who, p, typeof authoredMost === 'number' && Number.isInteger(authoredMost) ? authoredMost : null));
     if (p.strictness === undefined || p.strictness === null) out.push(`${who} has no strictness`);
     if (p.inheritsMemoryOf !== undefined && (p.inheritsMemoryOf === p.key || !rosterKeys.has(p.inheritsMemoryOf))) out.push(`${who} inherits the memory of "${p.inheritsMemoryOf}", who is not another persona in the roster`);
     for (const ph of PHASES) {

@@ -60,7 +60,7 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
     const p = roster.find((r) => r.key === s.key)!;
-    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['beats', 'challenge', 'key', 'name', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['beats', 'challenge', 'key', 'name', 'pronouns', 'signature', 'title', 'visitHours']));
+    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['arc', 'beats', 'challenge', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['arc', 'beats', 'challenge', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'signature', 'title', 'visitHours']));
     assert.deepEqual((s as { pronouns?: unknown }).pronouns, p.pronouns, 'a persona\'s pronouns travel on its roster entry');
     assert.deepEqual(s.beats, [...p.beats], 'the beat preferences travel, for beat_of (0103)');
     // A quiz persona's questions travel as a list of their own, beside the challenge (never in it), for seed_instance to keep where no client can read them (0108).
@@ -144,4 +144,27 @@ test('the seed carries the developer persona: the instance\'s, or the engine\'s 
   assert.deepEqual(instanceSeed({ ...instance, developer: { name: 'Dev', tagline: 'Hi.' } }).developer, { name: 'Dev', title: 'Hi.' });
   assert.ok(!instanceSeed(instance).system.staff.some((s) => s.key === 'developer'), 'the developer is not in the roster a model is handed');
   assert.ok(!('developer' in instanceSeed(instance).system), 'nothing under `system`, which is all the Director reads, names the developer');
+});
+
+test('the seed carries the conditions and each persona\'s arc as SQL checks it: keys, conditions, due points, held-back kinds and phase days, never a brief or a template (0170)', () => {
+  const first = instance.system.roster[0]!;
+  const arced: Persona = {
+    ...first,
+    phases: { honeymoon: { days: 5 } },
+    arc: [{ key: 'one', unlock: [{ kind: 'phase', phase: 'reign' }], due: { phase: 'reign', daysIntoPhase: 7 }, brief: 'A secret.', bundle: { name: 'B', parts: [{ role: 'r', kind: 'createBoard', params: {} }] } }],
+    miniArcs: [{ key: 'two', unlock: [{ kind: 'moveReversed' }], brief: 'Another.', repeatable: true }],
+    holdsBack: [{ kind: 'createBoard', until: 'one' }],
+  };
+  const seed = instanceSeed({ ...instance, system: { ...instance.system, roster: [arced, ...instance.system.roster.slice(1)] } });
+  assert.deepEqual(seed.system.conditions.map((c) => c.key), ['phase', 'beatLanded', 'boardActivity', 'moveReversed', 'demandResolved']);
+  const p = seed.system.staff[0]!;
+  assert.deepEqual(p.arc, [
+    { key: 'one', mini: false, repeatable: false, unlock: [{ kind: 'phase', phase: 'reign' }], due: { phase: 'reign', daysIntoPhase: 7 } },
+    { key: 'two', mini: true, repeatable: true, unlock: [{ kind: 'moveReversed' }], due: null },
+  ]);
+  assert.deepEqual(p.holdsBack, [{ kind: 'createBoard', until: 'one' }]);
+  assert.deepEqual(p.phaseDays, { honeymoon: 5 });
+  assert.ok(!JSON.stringify(p).includes('A secret') && !JSON.stringify(p).includes('Another'), 'a brief travelled in the seed');
+  assert.deepEqual(seed.system.staff[1]!.arc, [], 'a persona with no arc has none');
+  assert.equal(seed.system.staff[0]!.beats.length, first.beats.length, 'the patrol beats are as they were');
 });

@@ -22,7 +22,7 @@ export const testWarnBar: Settings['warnBar'] = { size: 10, bands: { minor: 2, m
 /** The apology's numbers as a test world holds them. */
 export const testApologySettings: Settings['apology'] = { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'systemEnabled' | 'oldVoice' | 'cardWriteSettleSeconds' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers'> = {
   systemEnabled: false,
   oldVoice: true,
   cardWriteSettleSeconds: 30,
@@ -33,7 +33,7 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
     reign: { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 },
     meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
   },
-  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestBoards: 30, digestBoardDays: 21, movedStubDays: 7, digestExcerpts: 8,
+  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestBoards: 30, digestBoardDays: 21, movedStubDays: 7, bundleMostParts: 4, bundleAuthoredMostParts: 8, digestExcerpts: 8,
   digestExcerptChars: 280, memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30, pool: testPool, modBots: testModBots, warnBar: testWarnBar, apology: testApologySettings, boardNameMaxLength: 60, moveExpiryMostDays: 42, moveExpiryLeastHours: 24, demandCheckMinutes: 5, demandChecksPerTick: 40,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
 };

@@ -153,6 +153,14 @@ begin
     bad := bad || E'\n  a guard of move_dependencies is missing';
   end if;
   if bad <> '' then raise exception 'move_dependencies can be changed:%', bad; end if;
+
+  -- A beat's events (0170) are insert-only too, and no client's: four guards (insert, update, delete, truncate), each firing always.
+  for r in select t.tgname from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid = 'public.arc_beat_events'::regclass and t.tgname in ('arc_beat_events_insert', 'arc_beat_events_no_update', 'arc_beat_events_no_delete', 'arc_beat_events_no_truncate')) is distinct from 4 then
+    bad := bad || E'\n  a guard of arc_beat_events is missing';
+  end if;
+  if bad <> '' then raise exception 'arc_beat_events can be changed:%', bad; end if;
 end $$;
 
 -- Replica mode, as a restore with triggers disabled runs, still cannot change an Act.
