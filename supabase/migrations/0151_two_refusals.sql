@@ -8,6 +8,9 @@
 -- reveal is one the settlement will read and that already rules the Turn out; refusing another reveal with "reveal once it has run"
 -- would be wrong, and the rule that a class already public is not revealed twice answers it in its own words. (The plan said "window_end
 -- minus the window"; the settlement reads the act's date against window_end itself, so this does too.) The clock arm is unchanged.
+-- In every state a player can reach today the skip is defensive: a reveal at or after window_end writes the class's reveal, and the
+-- Turn pending leaves the class as it is, so 0147's rule that a class already public is not revealed twice answers a second reveal
+-- before this arm is read. The skip keeps the refusal true should that ordering ever change.
 -- Everything else as 0147 wrote it.
 --
 -- wallet_spend() (0006), naming both amounts as orbs through orbs() (0139), hundredths as "3.00". It runs as its owner, which executes

@@ -74,8 +74,9 @@ begin
 end $$;
 
 -- The claim arm reads the reveal as the settlement does (masks_change passes a Turn over for an unmask Act at or after the window's
--- end): one dated at the end rules the Turn out, one dated before it does not. the class is given a start after both reveals, so the
--- class-already-public rule, which answers first, does not hide which refusal the claim arm gives.
+-- end): one dated at the end rules the Turn out, one dated before it does not. The class is given a start after both reveals, so the
+-- class-already-public rule, which answers first, does not hide which refusal the claim arm gives. That state is built by hand: no
+-- player reaches it today (0151's header says why), and this holds the arm's own condition.
 do $$
 declare
   w_end timestamptz := now() - interval '1 hour';
