@@ -27,6 +27,7 @@
  * model names are checked against `characters_public`.
  */
 import type { Instance } from '../../../engine/rules/types.ts';
+import { shownBeats, type ArcRead } from '../../../engine/system/beats.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, withPronouns, type RawDigest } from '../../../engine/system/digest.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
@@ -102,6 +103,8 @@ interface Context {
    * move in force on each. Nothing about a purchase or a buyer. Absent from an older database, where the Boss has no machine to move.
    */
   readonly machine?: readonly MachineSlotFacts[];
+  /** The Boss's arc as the database reads it (0166, over arc_for_meeting): the beats unlocked and not yet played, with whether each is due, and the kinds held back. Absent from an older database, which holds nothing back. */
+  readonly arc?: ArcRead;
   /**
    * The groups (0131): the conferred catalog, and the characters no move may name now (capped at the punishment cap, or held by a group move in force or queued), each with the
    * group it is in now. Absent from an older database, which confers none.
@@ -234,6 +237,9 @@ export async function runMeeting(
 
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
+    // Only the beats the database calls unlocked and unplayed reach the prompt, found in the Boss's own file; the kinds it holds back are listed nowhere.
+    const beats = shownBeats(boss, context.arc);
+    const heldBack = context.arc?.heldBack ?? [];
     const due = context.inheritanceDue ?? [];
     const successorAllowed = phase.phase === 'meltdown' && now >= context.season.endsAt - SUCCESSOR_WINDOW_MS;
     const system = meetingSystemPrompt({
@@ -248,6 +254,8 @@ export async function runMeeting(
       characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
       groups: { conferred: context.groups?.conferred ?? [] },
+      beats,
+      heldBack,
       career,
       notes: bossNotes,
       roster: tuned.system.roster.filter((b) => successors.has(b.key)).map((b) => ({ key: b.key, name: b.name, pronouns: personaSet(b.pronouns) })),
@@ -321,6 +329,8 @@ export async function runMeeting(
       inheritable: context.inheritanceDue ? new Set(due.map((m) => m.act.toLowerCase())) : undefined,
       // Only the slots the model was shown (the reference list is bounded) can be named, as with the threads.
       machine: context.machine?.slice(0, REFERENCE_MOST.machine),
+      beats,
+      heldBack: new Set(heldBack),
     });
     if (!repaired.ok) {
       const error = `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`;
@@ -341,6 +351,8 @@ export async function runMeeting(
       successor: repaired.successor,
       // The patrols the Boss scheduled for the Mods: kept on the record for the patrol run (Task 11).
       patrols: repaired.patrols,
+      // The due beats the answer left out, played with their defaults.
+      beatsDefaulted: repaired.defaulted,
     };
     const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; bank_before?: number; bank_after?: number }>('apply_meeting', {
       meeting,
@@ -356,6 +368,20 @@ export async function runMeeting(
           go_live_at: new Date(m.goLiveAt).toISOString(),
           expires_in_hours: m.expiresInHours,
           why: m.why,
+        })),
+        // The bundles: a beat's (authored: named by its beat, at no cost, played with the bundle) and the Boss's own (at one move a part). Parts are in dependency order; a role names an earlier part.
+        bundles: repaired.bundles.map((b) => ({
+          name: b.name,
+          beat: b.beat,
+          parts: b.parts.map((p) => ({
+            role: p.role,
+            kind: p.kind,
+            params: p.params,
+            ...(p.demand ? { demand: p.demand } : {}),
+            go_live_at: new Date(p.goLiveAt).toISOString(),
+            expires_in_hours: p.expiresInHours,
+            why: p.why,
+          })),
         })),
         // The handover's two answers (the database acts on them: a nomination is queued, each inherited move kept or ended, none at the bank's cost).
         successor: repaired.successor,
@@ -374,7 +400,7 @@ export async function runMeeting(
       meeting,
       boss: bossKey,
       phase: phase.phase,
-      queued: moves.length,
+      queued: moves.length + repaired.bundles.reduce((n, b) => n + b.parts.length, 0),
       trims,
       notes,
       feedsSkipped: skipped,

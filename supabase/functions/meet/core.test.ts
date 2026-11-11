@@ -82,6 +82,8 @@ interface World {
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
   /** What the apply says it returned from the Mods (default: nothing is said). */
   applyThrows?: boolean;
+  /** What meeting_context() says of the Boss's arc (0166): the beats unlocked and not played, and the kinds held back; absent: an older database. */
+  arc?: { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[] };
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -99,7 +101,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}) } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
@@ -775,4 +777,94 @@ test('the Boss is shown each reference character\'s group now, read for the ids 
   const label = def.object === def.subject ? `${def.subject}/${def.determiner}` : `${def.subject}/${def.object}`;
   assert.ok(m.chats[0]!.messages[0]!.content.includes(`- Ann the Great (${label}) (Trial Members): ${ANN}`), m.chats[0]!.messages[0]!.content);
   assert.deepEqual(d.calls.find((c) => c.fn === 'character_groups')!.args, { ids: [ANN] });
+});
+
+// ---- beats, bundles and held-back kinds (the fangame split plan, Task 6) ----
+// An instance whose Boss has an arc of its own: the engine's shapes, with words that name no community.
+const SPLIT_BRIEF = 'SPLIT-BRIEF the idea of a career.';
+const LOCKED_BRIEF = 'LOCKED-BRIEF whole boards go away.';
+const arcBoss = {
+  ...quiet.system.roster.find((b) => b.key === BOSS)!,
+  arc: [
+    {
+      key: 'split', unlock: [{ kind: 'phase', phase: 'reign' }], due: { phase: 'reign', daysIntoPhase: 7 }, brief: SPLIT_BRIEF,
+      bundle: {
+        name: 'The Split',
+        parts: [
+          { role: 'minus', kind: 'createBoard', params: { name: 'World -1', premise: 'Everything else.', description: 'Not fangames.' } },
+          { role: 'fangames', kind: 'createBoard', params: {}, slots: { name: { default: 'Platformer Physics Palace', hint: 'its name' }, premise: { default: 'Fangames.', hint: 'its purpose' }, description: { default: 'Fangames only.', hint: 'its subtitle' } } },
+        ],
+      },
+    },
+    { key: 'locked', unlock: [{ kind: 'beatLanded', beat: 'split' }], brief: LOCKED_BRIEF },
+  ],
+  holdsBack: [{ kind: 'createBoard', until: 'split' }, { kind: 'moveThread', until: 'locked' }],
+};
+const arcInstance: Instance = { ...quiet, system: { ...quiet.system, roster: quiet.system.roster.map((b) => (b.key === BOSS ? (arcBoss as typeof b) : b)) } };
+const SPLIT_UNLOCKED = { beats: [{ key: 'split', mini: false, due: false }], heldBack: ['moveThread'] };
+
+test('the prompt shows the unlocked beat\'s brief and slots, never a locked one, and does not list a kind still held back', async () => {
+  const d = fakeDb({ arc: SPLIT_UNLOCKED });
+  const m = fakeModels(answer());
+  await run(d.db, m.models, arcInstance, SLOT, clock, noFeeds);
+  const system = m.chats[0]!.system;
+  assert.ok(system.includes(SPLIT_BRIEF) && system.includes('fangames.name'), 'the unlocked beat, with its slot');
+  assert.ok(!system.includes(LOCKED_BRIEF) && !system.includes('locked'), 'the beat ahead is not in the prompt');
+  assert.ok(!system.includes('moveThread'), 'a kind held back is not listed');
+  assert.ok(system.includes('- createBoard:'), 'a kind its beat has unlocked is');
+  assert.ok(!m.chats[0]!.messages[0]!.content.includes(LOCKED_BRIEF));
+});
+
+test('a meeting answering with an unlocked beat queues its parts as one bundle at no cost to the bank, and names the beat so it is played', async () => {
+  const d = fakeDb({ arc: SPLIT_UNLOCKED, bank: 5.9 });
+  const m = fakeModels(answer([rename(0)], { beats: [{ beat: 'split', slots: { fangames: { name: 'Pirate Puns Palace' } }, why: 'My idea.' }] }));
+  const out = await run(d.db, m.models, arcInstance, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const payload = d.state.applied[0]!.payload;
+  assert.equal(payload.moves.length, 1);
+  assert.equal(payload.bundles.length, 1);
+  const b = payload.bundles[0];
+  assert.deepEqual([b.name, b.beat], ['The Split', 'split']);
+  assert.deepEqual(b.parts.map((p: any) => [p.role, p.kind, p.params.name]), [['minus', 'createBoard', 'World -1'], ['fangames', 'createBoard', 'Pirate Puns Palace']]);
+  assert.ok(b.parts.every((p: any) => p.why === 'My idea.' && p.expires_in_hours === 0 && typeof p.go_live_at === 'string' && !('demand' in p)), JSON.stringify(b.parts));
+  assert.equal(out.queued, 3, 'the move and the two parts');
+  assert.deepEqual(payload.record.beatsDefaulted, []);
+});
+
+test('a composed bundle is sent with its parts, in order, to be queued at their cost', async () => {
+  const d = fakeDb({ arc: { beats: [], heldBack: [] } });
+  const create = { role: 'a', kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'Puns.', description: 'Arr.' }, why: 'One.' };
+  const move = { kind: 'moveThread', params: { thread: HOT, board: { role: 'a' } }, why: 'Two.' };
+  const m = fakeModels(answer([], { bundle: { name: 'A story', parts: [move, create] } }));
+  const out = await run(d.db, m.models, arcInstance, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const b = d.state.applied[0]!.payload.bundles[0];
+  assert.deepEqual([b.name, b.beat], ['A story', null]);
+  assert.deepEqual(b.parts.map((p: any) => p.kind), ['createBoard', 'moveThread'], 'the board is made before the thread is moved');
+  assert.deepEqual(b.parts[1].params.board, { role: 'a' });
+  assert.equal(out.queued, 2);
+});
+
+test('a due beat the answer leaves out is played with its defaults, and the meeting\'s record says so', async () => {
+  const d = fakeDb({ arc: { beats: [{ key: 'split', mini: false, due: true }], heldBack: [] } });
+  const m = fakeModels(answer());
+  assert.match((await run(d.db, m.models, arcInstance, SLOT, clock, noFeeds)).status, /ok/);
+  assert.ok(m.chats[0]!.system.includes('split (must be played at this meeting)'));
+  const payload = d.state.applied[0]!.payload;
+  assert.deepEqual(payload.bundles.map((b: any) => b.beat), ['split']);
+  assert.equal(payload.bundles[0].parts[1].params.name, 'Platformer Physics Palace');
+  assert.deepEqual(payload.record.beatsDefaulted, ['split']);
+  assert.ok(payload.record.trims.some((t: any) => t.predicate === 'playedWithDefaults'));
+});
+
+test('a kind held back is dropped from the answer and the drop is on the record; an older database that says nothing of arcs holds nothing back', async () => {
+  const create = { ...rename(0), kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'p', description: 'd' }, demand: undefined, expires_in_hours: 0 };
+  const held = fakeDb({ arc: { beats: [], heldBack: ['createBoard'] } });
+  const out = await run(held.db, fakeModels(answer([create])).models, arcInstance, SLOT, clock, noFeeds);
+  assert.equal(held.state.applied[0]!.payload.moves.length, 0);
+  assert.ok(out.trims.some((t: any) => t.path === 'moves[0].kind' && t.predicate === 'heldBack'), JSON.stringify(out.trims));
+  const older = fakeDb();
+  await run(older.db, fakeModels(answer([create])).models, arcInstance, SLOT, clock, noFeeds);
+  assert.equal(older.state.applied[0]!.payload.moves.length, 1);
+  assert.deepEqual(older.state.applied[0]!.payload.bundles, []);
 });

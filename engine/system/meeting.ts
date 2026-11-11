@@ -32,7 +32,8 @@ import { careerText, type Career } from './career.ts';
 import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
-import { ASKABLE_MOVE_KINDS, UUID, machineLimits, moveKind, moveParamsProblems, type MachineLimits } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, ROLE, UUID, isRoleRef, machineLimits, moveKind, moveParamsProblems, type MachineLimits } from './moves.ts';
+import { BEAT_WHY, BUNDLE_WORDS, DUE_WHY, beatsText, dependencyOrder, fillBundle, ownRoles, type PlannedBundle, type PlannedPart, type ShownBeat } from './beats.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 
@@ -50,6 +51,8 @@ export const PROFILE_MOST = { interests: 8, interest: 40, favorites: 6, mood: 80
 export const INHERITED_MOST = 20;
 /** Characters of a move's reason kept: queued_moves.why. */
 export const WHY_MOST = 200;
+/** Characters of a bundle's name: queued_moves.bundle_name. */
+export const BUNDLE_NAME_MOST = 120;
 /** Characters of a Mod's order, one line in the Boss's voice: queued by `apply_meeting` into staff_orders.order_line. */
 export const ORDER_MOST = 200;
 
@@ -73,7 +76,15 @@ function looseFields(rules: readonly Rule[]): Record<string, Rule> {
   return out;
 }
 
-const paramsRule = (): Rule => ({ type: 'object', fields: looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params)) });
+/**
+ * A move's params, and a bundle part's: any move kind's fields, each optional. `board`, `into` and `fallback` are left to the kind's own check (a board's uuid, or a bundle part's `{role}`), so a
+ * role where none is allowed drops the move with a reason and never costs the answer.
+ */
+const paramsRule = (): Rule => {
+  const fields = looseFields(ASKABLE_MOVE_KINDS.map((k) => k.params));
+  for (const name of ['board', 'into', 'fallback']) fields[name] = { type: 'any', optional: true };
+  return { type: 'object', fields };
+};
 const demandRule = (): Rule => ({
   type: 'object',
   fields: { kind: { type: 'string', maxLength: 60 }, params: { type: 'object', fields: looseFields(MEETING_DEMAND_KINDS.map((d) => d.params)) } },
@@ -109,6 +120,35 @@ export const MEETING_RULE: Rule = {
           go_live_at: { type: 'string', maxLength: 64 },
           expires_in_hours: { type: 'number' },
           why: { type: 'string', maxLength: WHY_MOST, minLength: 1 },
+        },
+      },
+    },
+    // The beats the Boss plays (the arc's, from the instance): {beat, slots, why}. `slots` is any shape, so a slot the template lacks is dropped and recorded, never a lost answer.
+    beats: {
+      type: 'list',
+      optional: true,
+      of: { type: 'object', fields: { beat: { type: 'string', maxLength: 40 }, slots: { type: 'any', optional: true }, why: { type: 'string', maxLength: WHY_MOST, optional: true } } },
+    },
+    // One bundle of the Boss's own: moves that tell one story, at the cost of their parts. A part is a move with an optional role; the demand, go-live and expiry are a move's, optional here.
+    bundle: {
+      type: 'object',
+      optional: true,
+      fields: {
+        name: { type: 'string', maxLength: BUNDLE_NAME_MOST, minLength: 1 },
+        parts: {
+          type: 'list',
+          of: {
+            type: 'object',
+            fields: {
+              role: { type: 'string', maxLength: 40, optional: true },
+              kind: { type: 'string', maxLength: 60 },
+              params: paramsRule(),
+              demand: { ...demandRule(), optional: true },
+              go_live_at: { type: 'string', maxLength: 64, optional: true },
+              expires_in_hours: { type: 'number', optional: true },
+              why: { type: 'string', maxLength: WHY_MOST, minLength: 1 },
+            },
+          },
         },
       },
     },
@@ -194,7 +234,7 @@ export interface PromptFacts {
   /** The Boss's own pronouns: the persona file's, else `Settings.pronouns`, else the engine's it-set. Told to the Boss after its persona. */
   readonly bossPronouns: PronounSet;
   readonly system: Pick<SystemContent, 'nameStyleBrief' | 'realWorld' | 'offices'>;
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots'> & { readonly economy?: Readonly<Record<string, number>> };
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots' | 'bundleMostParts'> & { readonly economy?: Readonly<Record<string, number>> };
   /** The Mod Bots on staff, in the order the roster lists them. */
   readonly mods: readonly ModFacts[];
   /** A character's name by id, for the memories shown, with its pronouns beside it (`Gloomba (she/her)`); 'someone' for an id it does not know. */
@@ -210,6 +250,10 @@ export interface PromptFacts {
   readonly notes: readonly string[];
   /** The groups a move may confer (`meeting_context().groups.conferred`); absent or empty, the prompt has no section for them. */
   readonly groups?: { readonly conferred: readonly ConferredGroup[] };
+  /** The beats unlocked and not yet played (`shownBeats` over `meeting_context().arc`), and only those: a locked beat's brief is in no prompt. Absent or empty, the prompt says nothing of beats. */
+  readonly beats?: readonly ShownBeat[];
+  /** The kinds the Boss does not use yet (`meeting_context().arc.heldBack`): not listed. */
+  readonly heldBack?: readonly string[];
 }
 
 /**
@@ -237,7 +281,8 @@ export interface ConferredGroup {
 export function meetingSystemPrompt(f: PromptFacts): string {
   const whole = Math.floor(f.bank);
   const { settings: s, phase } = f;
-  const kinds = ASKABLE_MOVE_KINDS.map(
+  const held = new Set(f.heldBack ?? []);
+  const kinds = ASKABLE_MOVE_KINDS.filter((k) => !held.has(k.key)).map(
     (k) => `- ${k.key}: ${k.label.toLowerCase()}. Made by ${k.offices.map((o) => (o === 'boss' ? 'the Boss' : 'a Mod Bot')).join(' or ')}. params: ${fieldsOf(k.params)}.${k.key === 'setRule' ? ` A rule never refuses a post; breaking one draws a visit. board is a board's id, or left out for every board. param is ${PREDICATES.map((p) => `${p.key} (${p.param === 'none' ? 'none' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? 'one word' : 'a BBCode tag'}): ${p.plain('N')}`).join('; ')}.` : ''}${k.structural ? ` It waits at least ${s.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.` : ''}`,
   );
   const demands = MEETING_DEMAND_KINDS.map((d) => `- ${d.key}: params: ${fieldsOf(d.params)}.`);
@@ -259,7 +304,9 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       'The moves you may make (anything else is dropped):',
       ...kinds,
       `A move's go_live_at is a time (ISO 8601) from now to a day from now; a structural move is held at least ${s.structuralHoldHours} hours whatever you ask. Its expires_in_hours is from ${s.moveExpiryLeastHours} hours to ${Math.min(phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24} hours. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it.`,
+      `${BUNDLE_WORDS} Answer one in "bundle" as {name, parts: [{role, kind, params, why}]}: at most ${s.bundleMostParts} parts, each a move of a kind above with its own reason (a part takes a demand, a go_live_at and expires_in_hours as any move does, where its kind needs them). A bundle costs one move for each of its parts. A part that makes a board may have a role, a short key of your own; a later part's board, into or fallback may be {"role": that key} to mean the board the earlier part makes.`,
     ].join('\n'),
+    ...beatsText(f.beats ?? []),
     [
       `The vending machine. Three of your moves act on its slots, which you name by the ids under "The machine" below. A move on the machine lasts at most ${m.moveDaysMost} days, and a slot has one move at a time.`,
       `- pullSlot: params {slot}. Sells a slot out until the move ends. The slot is on sale, holds a single card, and that card can still come out of a pack on sale (packs are the floor: you never pull a pack). You may have at most ${m.pullMost} slots pulled at once.`,
@@ -473,7 +520,7 @@ export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'char
 
 export interface RepairContext {
   /** Only the settings the repair reads, so a caller (or a test) need not hold an instance's whole set. */
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'modBots'> & { readonly economy?: Readonly<Record<string, number>> };
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'modBots' | 'bundleMostParts'> & { readonly economy?: Readonly<Record<string, number>> };
   readonly system: Pick<SystemContent, 'nameStyle'>;
   /** The season's Boss. */
   readonly boss: string;
@@ -512,6 +559,10 @@ export interface RepairContext {
   readonly inheritable?: ReadonlySet<string>;
   /** The machine's slots (`meeting_context().machine`). Omitted, no slot can be named, so a machine move is dropped. */
   readonly machine?: readonly MachineSlotFacts[];
+  /** The beats the meeting was shown (`shownBeats`): an answer naming any other is dropped, and a due one the answer leaves out is played with its defaults. Omitted: the Boss has no beats. */
+  readonly beats?: readonly ShownBeat[];
+  /** The kinds held back now (`meeting_context().arc.heldBack`): a move or a part naming one is dropped and recorded. Omitted: none. */
+  readonly heldBack?: ReadonlySet<string>;
 }
 
 /** An order to one Mod, repaired: boards that are boards and its own, an allowance within what it may hold and the bank pays. */
@@ -538,6 +589,10 @@ export interface RepairedAnswer {
   readonly patrols: readonly PlannedPatrol[];
   readonly inherited: readonly { readonly move_act: string; readonly decision: 'keep' | 'end' }[];
   readonly successor: { readonly boss: string; readonly why: string } | null;
+  /** The bundles to queue: beats' (authored, no cost, parts in dependency order; a beat with no bundle has none) and the Boss's own (cost: its parts). */
+  readonly bundles: readonly PlannedBundle[];
+  /** The due beats the answer left out, played with their defaults. */
+  readonly defaulted: readonly string[];
   readonly trims: readonly Trim[];
 }
 
@@ -575,6 +630,16 @@ export function namedCharacters(raw: unknown): string[] {
       if (record(m)['kind'] === 'conferGroup' && typeof named === 'string') ids.add(named);
     }
   }
+  // The same for the parts of the Boss's own bundle.
+  const parts = record(a['bundle'])['parts'];
+  if (Array.isArray(parts)) {
+    for (const m of parts) {
+      const params = record(record(record(m)['demand'])['params']);
+      for (const [name, role] of Object.entries(DEMAND_ID_ROLES)) if (role === 'character' && typeof params[name] === 'string') ids.add(params[name] as string);
+      const named = record(record(m)['params'])['character'];
+      if (record(m)['kind'] === 'conferGroup' && typeof named === 'string') ids.add(named);
+    }
+  }
   return [...ids].filter((id) => UUID.test(id)).map((id) => id.toLowerCase());
 }
 
@@ -583,7 +648,10 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   if (!shaped.ok) return shaped;
   const trims: Trim[] = [...shaped.trims];
   const a = shaped.value as Record<string, unknown>;
-  const drop = (path: string, predicate: string): void => void trims.push({ path, predicate, before: 1, after: 0 });
+  const drop = (path: string, predicate: string): undefined => {
+    trims.push({ path, predicate, before: 1, after: 0 });
+    return undefined;
+  };
   const s = c.settings;
 
   const memory = repairMemory(a['memory'], c.isPublic, s);
@@ -622,10 +690,13 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
   let flashing = (c.machine ?? []).some((x) => x.move?.kind === 'flashSale');
   const kept: PlannedMove[] = [];
   const grouped = new Set<string>();
-  (a['moves'] as Record<string, unknown>[]).forEach((m, i) => {
-    const path = `moves[${i}]`;
+  // One move, or one part of the Boss's bundle (`inBundle`: a board a part makes may be named by its role, which is kept as written). Returns the move, or undefined once what is wrong with it
+  // is recorded. What it counts (a slot moved, a pull, a character in a group move) it counts for the whole answer.
+  const planMove = (m: Record<string, unknown>, path: string, inBundle: boolean): PlannedMove | undefined => {
     const kind = moveKind(String(m['kind']));
     if (!kind || !kind.askable) return drop(`${path}.kind`, `oneOf(${ASKABLE_MOVE_KINDS.map((k) => k.key).join(', ')})`);
+    // A kind the Boss does not use yet is not one it may name: the same bound the phases put on a permaban, per persona.
+    if (c.heldBack?.has(kind.key)) return drop(`${path}.kind`, 'heldBack');
     // A favor carries no demand: one given is set aside (recorded), the move is whole without it. Every other move needs one it can meet.
     const wantsDemand = kind.demand(record(m['params'])) === 'required';
     const given0 = m['demand'];
@@ -646,7 +717,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     };
     if (kind.key === 'repriceSlot') bounded('percent', limits.repriceLeast, limits.repriceMost);
     if (kind.key === 'flashSale') bounded('hours', limits.flashHoursLeast, limits.flashHoursMost);
-    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits);
+    const params = moveParamsProblems(kind.key, blank ? { ...offered, description: '-' } : offered, limits, inBundle);
     const given = params.ok ? { ...(params.value as Record<string, unknown>) } : {};
     if (blank) delete given['description'];
     // A slot id in capitals is the same slot (moveParamsProblems lowercases it, as Postgres writes uuids): the lookup uses the lowercase, and the change is recorded.
@@ -709,11 +780,11 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (name.length > s.boardNameMaxLength) return drop(`${path}.params.name`, `atMost(${s.boardNameMaxLength})`);
       if (kind.key === 'renameBoard' && !c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
       // A created board's fallback, where threads started in it go if it is reversed, is a board that exists.
-      if (kind.key === 'createBoard' && given['fallback'] !== null && !c.boards.has(String(given['fallback']))) return drop(`${path}.params.fallback`, 'isBoard');
+      if (kind.key === 'createBoard' && given['fallback'] !== null && !isRoleRef(given['fallback']) && !c.boards.has(String(given['fallback']))) return drop(`${path}.params.fallback`, 'isBoard');
     }
     // A moved thread and a merged board are ones the meeting was given; the queue refuses the rest, and a refusal there would fail the whole meeting.
     if (kind.key === 'moveThread' && !c.threads.has(String(given['thread']))) return drop(`${path}.params.thread`, 'isThread');
-    for (const name of kind.key === 'moveThread' ? ['board'] : kind.key === 'mergeBoard' ? ['board', 'into'] : []) if (!c.boards.has(String(given[name]))) return drop(`${path}.params.${name}`, 'isBoard');
+    for (const name of kind.key === 'moveThread' ? ['board'] : kind.key === 'mergeBoard' ? ['board', 'into'] : []) if (!isRoleRef(given[name]) && !c.boards.has(String(given[name]))) return drop(`${path}.params.${name}`, 'isBoard');
     // A rule names a board the meeting was given, or none: every board, the Boss's alone.
     if (kind.key === 'setRule' && given['board'] !== null && !c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
     // A rule that would leave no compliant post against the rules in force is dropped and recorded, spending nothing; the queue would refuse it, and
@@ -774,7 +845,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (kind.key === 'flashSale') flashing = true;
     }
     if (strayDemand) trims.push({ path: `${path}.demand`, predicate: 'noDemand', before: 1, after: 0 });
-    kept.push({
+    trims.push(...extraTrims.map((t) => ({ ...t, path: `${path}.${t.path}` })), ...[...clamps, ...params.trims].map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
+    return {
       kind: kind.key,
       params: given,
       demand: wantsDemand ? (demand.value as PlannedMove['demand']) : null,
@@ -782,11 +854,111 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       expiresInHours: expires,
       why: m['why'] as string,
       structural: kind.structural,
-    });
-    trims.push(...extraTrims.map((t) => ({ ...t, path: `${path}.${t.path}` })), ...[...clamps, ...params.trims].map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
+    };
+  };
+  (a['moves'] as Record<string, unknown>[]).forEach((m, i) => {
+    const planned = planMove(m, `moves[${i}]`, false);
+    if (planned) kept.push(planned);
   });
   const affordable = Math.max(0, Math.floor(c.bank));
   const moves = cut('moves', kept, affordable);
+
+  // Beats (fangame split design, section 2). A beat the answer names must be one the meeting was shown; its slots are repaired against its template and its bundle is authored, at no cost to
+  // the bank. A beat with no bundle is played by being named. A due beat the answer left out is played with its defaults, and the record says so. A beat that fails (an unusable template) is
+  // dropped and recorded, and stays unplayed.
+  const bundles: PlannedBundle[] = [];
+  const defaulted: string[] = [];
+  const shown = new Map((c.beats ?? []).map((b) => [b.beat.key, b]));
+  const played = new Set<string>();
+  const fill = {
+    now: c.now,
+    structuralHoldHours: s.structuralHoldHours,
+    nameMax: s.boardNameMaxLength,
+    nameStyle: c.system.nameStyle,
+    limits,
+    boards: c.boards,
+    threads: c.threads,
+  };
+  const playBeat = (beat: ShownBeat['beat'], slots: unknown, why: string, path: string): boolean => {
+    if (!beat.bundle) {
+      bundles.push({ name: '', beat: beat.key, parts: [], cost: 0 });
+      return true;
+    }
+    const filled = fillBundle(beat.bundle, slots, why, fill, path);
+    trims.push(...filled.trims);
+    if (!filled.ok) {
+      drop(filled.path, filled.predicate);
+      return false;
+    }
+    const roleOrder = dependencyOrder(filled.parts.map((p) => ({ role: p.role, makes: p.kind === 'createBoard', needs: ownRoles(p.params) })));
+    if (roleOrder.moved) trims.push({ path: `${path}.parts`, predicate: 'dependencyOrder', before: 1, after: 1 });
+    bundles.push({ name: beat.bundle.name, beat: beat.key, parts: roleOrder.order.map((i) => filled.parts[i]!), cost: 0 });
+    return true;
+  };
+  ((a['beats'] ?? []) as Record<string, unknown>[]).forEach((e, i) => {
+    const path = `beats[${i}]`;
+    const key = String(e['beat']);
+    const one = shown.get(key);
+    if (!one) return void drop(`${path}.beat`, 'unlockedBeat');
+    if (played.has(key)) return void drop(`${path}.beat`, 'uniqueBeat');
+    const why = typeof e['why'] === 'string' && e['why'].trim() !== '' ? (e['why'] as string) : BEAT_WHY;
+    if (playBeat(one.beat, e['slots'], why, path)) played.add(key);
+  });
+  for (const one of c.beats ?? []) {
+    if (!one.due || played.has(one.beat.key)) continue;
+    if (!playBeat(one.beat, undefined, DUE_WHY, `beats.${one.beat.key}`)) continue;
+    played.add(one.beat.key);
+    defaulted.push(one.beat.key);
+    trims.push({ path: `beats.${one.beat.key}`, predicate: 'playedWithDefaults', before: 0, after: 1 });
+  }
+
+  // The Boss's own bundle (section 9): at most bundleMostParts parts, cut from the end; each part a move of a kind the Boss has (not held back), repaired as a move is; parts in dependency order, so
+  // a role names an earlier part; a part naming a role no kept part makes is dropped; then what the bank can pay after the Boss's own moves, from the end. It costs the sum of its parts.
+  let composedCost = 0;
+  const own = a['bundle'] as { name: string; parts: Record<string, unknown>[] } | undefined;
+  if (own) {
+    const most = s.bundleMostParts;
+    const given = own.parts.map((raw, index) => ({ raw, index }));
+    if (given.length > most) trims.push({ path: 'bundle.parts', predicate: `atMost(${most})`, before: given.length, after: most });
+    const considered = given.slice(0, most);
+    const shape = considered.map(({ raw }) => ({ role: typeof raw['role'] === 'string' ? (raw['role'] as string) : null, makes: raw['kind'] === 'createBoard', needs: ownRoles(record(raw['params'])) }));
+    const sorted = dependencyOrder(shape);
+    if (sorted.moved) trims.push({ path: 'bundle.parts', predicate: 'dependencyOrder', before: 1, after: 1 });
+    const made = new Set<string>();
+    const used = new Set<string>();
+    const parts: PlannedPart[] = [];
+    for (const at of sorted.order) {
+      const { raw, index } = considered[at]!;
+      const path = `bundle.parts[${index}]`;
+      const role = typeof raw['role'] === 'string' ? (raw['role'] as string) : null;
+      if (role !== null && !ROLE.test(role)) { drop(`${path}.role`, 'isRole'); continue; }
+      if (role !== null && used.has(role)) { drop(`${path}.role`, 'uniqueRole'); continue; }
+      const params = record(raw['params']);
+      // A role this part names must be a plain {role} that an earlier kept part of this bundle makes: another beat's board is not the Boss's to name.
+      const unusable = ['board', 'into', 'fallback'].some((name) => {
+        const v = params[name];
+        if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
+        const why = !isRoleRef(v) ? 'isRole' : v.beat !== undefined ? 'beatRoleNotComposed' : !made.has(v.role) ? 'roleDefined' : null;
+        if (why) drop(`${path}.params.${name}`, why);
+        return why !== null;
+      });
+      if (unusable) continue;
+      const planned = planMove({ ...raw, go_live_at: raw['go_live_at'] ?? new Date(c.now).toISOString(), expires_in_hours: raw['expires_in_hours'] ?? 0 }, path, true);
+      if (!planned) continue;
+      if (role !== null) {
+        used.add(role);
+        if (planned.kind === 'createBoard') made.add(role);
+      }
+      parts.push({ ...planned, role });
+    }
+    const room = Math.max(0, affordable - moves.length);
+    const paid = parts.slice(0, room);
+    if (paid.length < parts.length) trims.push({ path: 'bundle.parts', predicate: 'withinBank', before: parts.length, after: paid.length });
+    if (paid.length > 0) {
+      bundles.push({ name: own.name, beat: null, parts: paid, cost: paid.length });
+      composedCost = paid.length;
+    }
+  }
 
   // Orders (Mod Bots design, sections 2 and 3). An order for a key not on staff, a board that is not a board, a board already in an earlier order, and a
   // memory naming no one public are each dropped and recorded; an allowance is made whole, clamped to what a Mod may hold, and then the total is cut from
@@ -821,7 +993,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     }
     orders.push({ index: i, order: { mod, boards, order: (o['order'] ?? '') as string, allowance, memory: kept } });
   });
-  let owed = orders.reduce((n, x) => n + x.order.allowance, 0) - Math.max(0, affordable - moves.length);
+  let owed = orders.reduce((n, x) => n + x.order.allowance, 0) - Math.max(0, affordable - moves.length - composedCost);
   for (let k = orders.length - 1; k >= 0 && owed > 0; k--) {
     const x = orders[k]!;
     const cutBy = Math.min(x.order.allowance, owed);
@@ -863,5 +1035,5 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     else successor = given;
   }
 
-  return { ok: true, memory: memory.memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), inherited: cut('inherited', inherited, INHERITED_MOST), successor, trims };
+  return { ok: true, memory: memory.memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, trims };
 }

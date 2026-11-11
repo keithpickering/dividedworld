@@ -39,21 +39,27 @@ export interface BoardRef {
 }
 
 /**
- * A part of a bundle names the board another part of the same bundle makes by that part's role (`{role: 'minus'}`), where a board's uuid would go. The database resolves it to the board
- * when the part lands (supabase/migrations/0161_bundles.sql, `role_board`); the engine only holds the shape. A role is lowercase letters, digits, hyphens and underscores, from a letter.
+ * A part of a bundle names the board another part of the same bundle makes by that part's role (`{role: 'minus'}`), where a board's uuid would go; or, from an authored bundle, the board a
+ * part of an earlier beat's bundle made (`{role: 'minus', beat: 'split'}`, the beat's key). The database resolves it to the board when the part lands (supabase/migrations/0161_bundles.sql,
+ * `role_board`; supabase/migrations/0166_meeting_bundles.sql, `beat_role_board`); the engine only holds the shape. A role is lowercase letters, digits, hyphens and underscores, from a
+ * letter; a beat's key is written the same way.
  */
 export interface RoleRef {
   readonly role: string;
+  readonly beat?: string;
 }
 
-/** What a role may be called; SQL holds the same. */
+/** What a role (and a beat's key) may be called; SQL holds the same. */
 export const ROLE = /^[a-z][a-z0-9_-]{0,39}$/;
 
-/** Whether a value is a role and nothing more. */
+/** Whether a value is a role, with or without the beat it comes from, and nothing more. */
 export function isRoleRef(v: unknown): v is RoleRef {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return false;
-  const keys = Object.keys(v);
-  return keys.length === 1 && keys[0] === 'role' && typeof (v as { role: unknown }).role === 'string' && ROLE.test((v as { role: string }).role);
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (typeof o['role'] !== 'string' || !ROLE.test(o['role'])) return false;
+  if (keys.length === 1) return true;
+  return keys.length === 2 && typeof o['beat'] === 'string' && ROLE.test(o['beat']);
 }
 
 /** The params of the moves that build the board where a role may stand for a board's uuid. A thread is never a role: nothing makes one. */
@@ -455,9 +461,11 @@ export function moveParamsProblems(key: string, params: unknown, limits: Machine
       if (!kind.uuids.includes(name) || v === null || typeof v !== 'object' || Array.isArray(v)) continue;
       if (!inBundle) return { ok: false, path: name, predicate: 'roleInsideBundle', trims: [] };
       if (!isRoleRef(v)) return { ok: false, path: name, predicate: 'isRole', trims: [] };
-      let at = standIns.indexOf(v.role);
-      if (at < 0) at = standIns.push(v.role) - 1;
-      roles.set(name, { role: v.role });
+      // A role of this bundle and the same role of another beat are two boards.
+      const stand = `${v.beat ?? ''}/${v.role}`;
+      let at = standIns.indexOf(stand);
+      if (at < 0) at = standIns.push(stand) - 1;
+      roles.set(name, v.beat === undefined ? { role: v.role } : { role: v.role, beat: v.beat });
       copy[name] = `00000000-0000-4000-8000-${String(at + 1).padStart(12, '0')}`;
     }
     offered = copy;

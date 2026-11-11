@@ -318,10 +318,12 @@ test('inside a bundle a board param may be {role}, the board the part of that ro
 test('a role is a name and nothing more, and never stands for a thread or a board of a move that does not build the board', () => {
   const asThread = moveParamsProblems('moveThread', { thread: { role: 'minus' }, board }, machineLimits(), true);
   assert.ok(!asThread.ok && asThread.path === 'thread', JSON.stringify(asThread));
-  for (const bad of [{ role: '' }, { role: 'Minus' }, { role: 'a'.repeat(41) }, { role: 7 }, { role: 'minus', beat: 'split' }, {}, { name: 'minus' }]) {
+  for (const bad of [{ role: '' }, { role: 'Minus' }, { role: 'a'.repeat(41) }, { role: 7 }, { role: 'minus', beat: 'Split' }, { role: 'minus', beat: 7 }, { role: 'minus', beat: 'split', extra: 1 }, { beat: 'split' }, {}, { name: 'minus' }]) {
     const r = moveParamsProblems('moveThread', { thread, board: bad }, machineLimits(), true);
     assert.ok(!r.ok && r.path === 'board', `${JSON.stringify(bad)} is no role: ${JSON.stringify(r)}`);
   }
+  // A role of an earlier beat's bundle (Task 6) is a role: {role, beat}, the beat written as a key is.
+  assert.ok(moveParamsProblems('moveThread', { thread, board: { role: 'minus', beat: 'split' } }, machineLimits(), true).ok);
   const rename = moveParamsProblems('renameBoard', { board: { role: 'minus' }, name: 'x', premise: 'y', description: 'z' }, machineLimits(), true);
   assert.ok(!rename.ok && rename.path === 'board', JSON.stringify(rename));
 });

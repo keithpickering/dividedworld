@@ -8,6 +8,8 @@ import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
 import { personaPrompt } from './prompt.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
+import { BEAT_WORDS, BUNDLE_WORDS, shownBeats, type ArcRead } from './beats.ts';
+import type { Beat, Persona } from '../rules/types.ts';
 
 const H = 3_600_000;
 const NOW = Date.parse('2026-11-01T12:00:00Z');
@@ -771,4 +773,245 @@ test('a moveThread names a thread and a board the meeting was given; a mergeBoar
   assert.ok(noInto.moves.length === 0 && noInto.trims.some((t) => t.path === 'moves[0].params.into' && t.predicate === 'isBoard'), JSON.stringify(noInto.trims));
   const same = repairedLasting(lastingMove('mergeBoard', { board: BOARD, into: BOARD }));
   assert.ok(same.moves.length === 0 && same.trims.some((t) => t.path === 'moves[0].params.into' && t.predicate === 'differsFromBoard'), JSON.stringify(same.trims));
+});
+
+/* ------------------------------------------------------------------ beats, bundles and held-back kinds ---- */
+// The fangame split's arc in miniature (the engine's own fixture, never an instance's content): one beat with a bundle and slots, one with none, a locked one, and one that names a role of another beat.
+const SPLIT: Beat = {
+  key: 'split',
+  unlock: [{ kind: 'phase', phase: 'reign' }],
+  due: { phase: 'reign', daysIntoPhase: 7 },
+  brief: 'SPLIT-BRIEF you have had the idea of your career.',
+  bundle: {
+    name: 'The Split',
+    parts: [
+      { role: 'minus', kind: 'createBoard', params: { name: 'World -1', premise: 'Everything else.', description: 'Not fangames.' } },
+      {
+        role: 'fangames',
+        kind: 'createBoard',
+        params: {},
+        slots: {
+          name: { default: 'Platformer Physics Palace', hint: 'your new fangame board, named in the board-name style' },
+          premise: { default: 'Mario fangames, someday finished.', hint: 'what the board is for' },
+          description: { default: 'Fangames only. Please.', hint: 'its subtitle' },
+        },
+      },
+    ],
+  },
+};
+const APART: Beat = { key: 'picking-apart', unlock: [{ kind: 'beatLanded', beat: 'split' }], brief: 'APART-BRIEF tidy the clutter into World -1.' };
+const CONSOLIDATION: Beat = { key: 'consolidation', unlock: [{ kind: 'phase', phase: 'meltdown' }], brief: 'LOCKED-BRIEF whole boards go into World -1.' };
+const EVERYTHING: Beat = {
+  key: 'everything',
+  unlock: [{ kind: 'beatLanded', beat: 'split' }],
+  due: { daysBeforeEnd: 2 },
+  brief: 'EVERYTHING-BRIEF merge the fangame board into World -1.',
+  bundle: { name: 'Everything is World -1', parts: [{ role: 'final', kind: 'mergeBoard', params: { board: { role: 'fangames', beat: 'split' }, into: { role: 'minus', beat: 'split' } } }] },
+};
+const LAP: Beat = { key: 'victory-lap', unlock: [{ kind: 'phase', phase: 'reign' }], brief: 'LAP-BRIEF tidy with a light heart.' };
+const arcPersona: Pick<Persona, 'arc' | 'miniArcs'> = { arc: [SPLIT, APART, CONSOLIDATION, EVERYTHING], miniArcs: [LAP] };
+const read = (keys: string[], due: string[] = [], heldBack: string[] = []): ArcRead => ({ beats: keys.map((key) => ({ key, mini: key === 'victory-lap', due: due.includes(key) })), heldBack });
+const promptFacts = (extra: Record<string, unknown> = {}) => ({
+  boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
+  career: { led: [], offices: [] }, ...extra,
+});
+/** What the secret must never reach: a locked beat's brief, or its key. */
+const leaksLocked = (prompt: string): boolean => prompt.includes('LOCKED-BRIEF') || prompt.includes('consolidation');
+
+test('the prompt shows each unlocked, unplayed beat\'s brief and its bundle\'s slots with their hints, in the persona\'s order', () => {
+  const beats = shownBeats(arcPersona, read(['split', 'picking-apart', 'victory-lap']));
+  assert.deepEqual(beats.map((b) => b.beat.key), ['split', 'picking-apart', 'victory-lap']);
+  const prompt = meetingSystemPrompt(promptFacts({ beats, heldBack: [] }));
+  for (const word of ['SPLIT-BRIEF', 'APART-BRIEF', 'LAP-BRIEF']) assert.ok(prompt.includes(word), `${word} is shown`);
+  assert.ok(prompt.includes('fangames.name') && prompt.includes('your new fangame board, named in the board-name style'), 'a slot by its role and name, with its hint');
+  assert.ok(prompt.includes('fangames.description') && prompt.includes('its subtitle'));
+  assert.ok(!prompt.includes('minus.'), 'a part with no slots has none to show');
+  assert.ok(prompt.indexOf('SPLIT-BRIEF') < prompt.indexOf('APART-BRIEF') && prompt.indexOf('APART-BRIEF') < prompt.indexOf('LAP-BRIEF'));
+});
+
+test('the prompt\'s words about beats and bundles are exactly the owner\'s, and nothing is said about beats when none is unlocked', () => {
+  assert.equal(`${BEAT_WORDS} ${BUNDLE_WORDS}`, 'A beat is yours: an idea you have had. Play it when the board is ready, in your own words. A bundle is for moves that tell one story.');
+  const shown = meetingSystemPrompt(promptFacts({ beats: shownBeats(arcPersona, read(['split'])), heldBack: [] }));
+  assert.ok(shown.includes(`${BEAT_WORDS} ${BUNDLE_WORDS}`), 'the three sentences, together');
+  const none = meetingSystemPrompt(promptFacts({ beats: [], heldBack: [] }));
+  assert.ok(!none.includes('A beat is yours') && !/\bbeat\b/i.test(none), 'a Boss with no beat to play is told nothing of beats');
+  assert.ok(none.includes(BUNDLE_WORDS), 'every Boss may compose a bundle');
+});
+
+test('a locked beat\'s brief and key reach no prompt; the check is red on a poisoned prompt that lists one', () => {
+  const clean = meetingSystemPrompt(promptFacts({ beats: shownBeats(arcPersona, read(['split'])), heldBack: [] }));
+  assert.ok(!leaksLocked(clean), 'only what the database calls unlocked is shown');
+  // A read that does not list the locked beat shows none of it, whatever the persona holds.
+  assert.ok(!shownBeats(arcPersona, read(['split'])).some((b) => b.beat.key === 'consolidation'));
+  // The poison: the plausible bug is to show every beat the persona holds. The check must see it.
+  const everything = [...(arcPersona.arc ?? []), ...(arcPersona.miniArcs ?? [])].map((beat) => ({ beat, mini: false, due: false }));
+  assert.ok(leaksLocked(meetingSystemPrompt(promptFacts({ beats: everything, heldBack: [] }))), 'a prompt built with a locked beat\'s brief is caught');
+  // A key the persona has not (an instance edited since) is not shown.
+  assert.deepEqual(shownBeats(arcPersona, read(['gone'])), []);
+  assert.deepEqual(shownBeats(arcPersona, undefined), []);
+});
+
+test('a due beat is marked "must be played at this meeting", and one not due is not', () => {
+  const prompt = meetingSystemPrompt(promptFacts({ beats: shownBeats(arcPersona, read(['split', 'picking-apart'], ['split'])), heldBack: [] }));
+  assert.match(prompt, /split \(must be played at this meeting\)/);
+  assert.ok(!/picking-apart \(must be played/.test(prompt));
+});
+
+test('a kind held back is not listed, and the rest still are', () => {
+  const all = meetingSystemPrompt(promptFacts({ beats: [], heldBack: [] }));
+  assert.ok(all.includes('- createBoard:') && all.includes('- moveThread:'));
+  const held = meetingSystemPrompt(promptFacts({ beats: [], heldBack: ['createBoard'] }));
+  assert.ok(!held.includes('createBoard'), 'the kind is not named at all');
+  assert.ok(held.includes('- moveThread:') && held.includes('- mergeBoard:'));
+});
+
+const withAnswer = (extra: Record<string, unknown>, c: Partial<RepairContext> = {}) => {
+  const r = repairAnswer({ ...answer(null), moves: [], ...extra }, { ...ctx(), ...c });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+const shownSplit = shownBeats(arcPersona, read(['split', 'picking-apart', 'everything'], []));
+const dueSplit = shownBeats(arcPersona, read(['split', 'everything'], ['split', 'everything']));
+
+test('a held-back kind named in an answer is dropped and recorded, as a move and as a part', () => {
+  const create = { kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'Puns.', description: 'Arr.' }, expires_in_hours: 0, why: 'Because.', go_live_at: new Date(NOW).toISOString() };
+  const r = withAnswer({ moves: [create], bundle: { name: 'Story', parts: [{ ...create, role: 'a' }] } }, { heldBack: new Set(['createBoard']) });
+  assert.equal(r.moves.length, 0);
+  assert.equal(r.bundles.length, 0);
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'heldBack'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'bundle.parts[0].kind' && t.predicate === 'heldBack'), JSON.stringify(r.trims));
+  const free = withAnswer({ moves: [create] });
+  assert.equal(free.moves.length, 1, 'a persona that holds nothing back has the whole catalog');
+});
+
+test('a beat answer is repaired against its template: slots fill the parts, the rest are the writer\'s, and the bundle is authored at no cost', () => {
+  const r = withAnswer({ beats: [{ beat: 'split', slots: { fangames: { name: 'Platformer Palace Pals', premise: 'Games by fans.' } }, why: 'My greatest initiative.' }] }, { beats: shownSplit });
+  assert.equal(r.bundles.length, 1);
+  const b = r.bundles[0]!;
+  assert.deepEqual([b.name, b.beat, b.cost], ['The Split', 'split', 0]);
+  assert.deepEqual(b.parts.map((p) => [p.role, p.kind]), [['minus', 'createBoard'], ['fangames', 'createBoard']]);
+  assert.equal(b.parts[0]!.params['name'], 'World -1', 'the writer\'s fixed name is the writer\'s');
+  assert.equal(b.parts[1]!.params['name'], 'Platformer Palace Pals');
+  assert.equal(b.parts[1]!.params['premise'], 'Games by fans.');
+  assert.equal(b.parts[1]!.params['description'], 'Fangames only. Please.', 'a slot left out is its default');
+  assert.ok(b.parts.every((p) => p.why === 'My greatest initiative.' && p.expiresInHours === 0 && p.demand === null));
+  assert.ok(b.parts.every((p) => p.goLiveAt === NOW + 24 * H), 'a board made is a structural move: it waits the hold');
+  assert.equal(r.moves.length, 0);
+  assert.deepEqual(r.defaulted, []);
+});
+
+test('a role of an earlier beat is kept in a part\'s params, for the database to resolve', () => {
+  const r = withAnswer({ beats: [{ beat: 'everything', why: 'It has come to me.' }] }, { beats: shownSplit, bank: 0 });
+  const b = r.bundles[0]!;
+  assert.deepEqual(b.parts[0]!.params, { board: { role: 'fangames', beat: 'split' }, into: { role: 'minus', beat: 'split' } });
+});
+
+test('a slot over its bound is trimmed and recorded, a slot name is held to the name style and the name length, a slot the template lacks is dropped', () => {
+  const styled = { system: { ...testSystem, nameStyle: (n: string) => (n.endsWith('Palace') ? [] : ['not in the style']) } };
+  const long = `${'x'.repeat(60)} Palace`;
+  const r = withAnswer({ beats: [{ beat: 'split', slots: { fangames: { name: 'Bad name', premise: 'p'.repeat(501), description: 'ok', hair: 'blue' }, nobody: { name: 'x' } }, why: 'w' }] }, { beats: shownSplit, ...styled });
+  const b = r.bundles[0]!;
+  assert.equal(b.parts[1]!.params['name'], 'Platformer Physics Palace', 'a name outside the style is the default, never corrected');
+  assert.equal((b.parts[1]!.params['premise'] as string).length, 500);
+  const at = (path: string) => r.trims.find((t) => t.path === path);
+  assert.equal(at('beats[0].slots.fangames.name')?.predicate, 'nameStyle');
+  assert.deepEqual(at('beats[0].slots.fangames.premise'), { path: 'beats[0].slots.fangames.premise', predicate: 'maxLength(500)', before: 501, after: 500 });
+  assert.equal(at('beats[0].slots.fangames.hair')?.predicate, 'isSlot');
+  assert.equal(at('beats[0].slots.nobody')?.predicate, 'isSlot');
+  const tooLong = withAnswer({ beats: [{ beat: 'split', slots: { fangames: { name: long } }, why: 'w' }] }, { beats: shownSplit });
+  const bl = tooLong.bundles[0]!;
+  assert.equal((bl.parts[1]!.params['name'] as string).length, 60, 'the board-name length, from the settings');
+  assert.deepEqual(tooLong.trims.find((t) => t.path === 'beats[0].slots.fangames.name'), { path: 'beats[0].slots.fangames.name', predicate: 'atMost(60)', before: long.length, after: 60 });
+});
+
+test('a beat that is not shown (locked, unknown or named twice) is dropped and recorded, and a beat with no bundle is played at no cost', () => {
+  const r = withAnswer({ beats: [{ beat: 'consolidation', why: 'w' }, { beat: 'picking-apart', why: 'Done tidying.' }, { beat: 'picking-apart', why: 'again' }] }, { beats: shownSplit, bank: 0 });
+  assert.deepEqual(r.bundles.map((b) => b.beat), ['picking-apart']);
+  const apart = r.bundles[0]!;
+  assert.deepEqual([apart.parts.length, apart.cost, apart.name], [0, 0, '']);
+  assert.ok(r.trims.some((t) => t.path === 'beats[0].beat' && t.predicate === 'unlockedBeat'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'beats[2].beat' && t.predicate === 'uniqueBeat'));
+});
+
+test('a due beat left out of the answer is played with its defaults, and the record says so', () => {
+  const r = withAnswer({}, { beats: dueSplit });
+  assert.deepEqual(r.defaulted, ['split', 'everything']);
+  const split = r.bundles[0]!;
+  assert.equal(split.beat, 'split');
+  assert.equal(split.parts[1]!.params['name'], 'Platformer Physics Palace');
+  assert.ok(r.trims.some((t) => t.path === 'beats.split' && t.predicate === 'playedWithDefaults'), JSON.stringify(r.trims));
+  const answered = withAnswer({ beats: [{ beat: 'split', why: 'w' }] }, { beats: dueSplit });
+  assert.deepEqual(answered.defaulted, ['everything'], 'a due beat the answer names is not defaulted');
+  assert.equal(withAnswer({}, { beats: shownSplit }).bundles.length, 0, 'a beat that is not due waits for the Boss');
+});
+
+const part = (extra: Record<string, unknown>) => ({ kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'Puns.', description: 'Arr.' }, why: 'Because.', ...extra });
+
+test('a composed bundle costs the sum of its parts and keeps a part\'s role where a board goes', () => {
+  const r = withAnswer({ bundle: { name: 'One story', parts: [part({ role: 'a' }), { kind: 'moveThread', params: { thread: THREAD, board: { role: 'a' } }, why: 'Move it.' }] } });
+  assert.equal(r.bundles.length, 1);
+  const b = r.bundles[0]!;
+  assert.deepEqual([b.name, b.beat, b.cost, b.parts.length], ['One story', null, 2, 2]);
+  assert.deepEqual(b.parts.map((p) => [p.role, p.kind]), [['a', 'createBoard'], [null, 'moveThread']]);
+  assert.deepEqual(b.parts[1]!.params['board'], { role: 'a' });
+});
+
+test('a composed bundle over bundleMostParts is cut from the end and recorded, and a bundle the bank cannot pay is cut to what it can', () => {
+  const six = [1, 2, 3, 4, 5, 6].map((i) => part({ role: `r${i}`, params: { name: `Pirate Puns Palace ${i}`, premise: 'p', description: 'd' } }));
+  const r = withAnswer({ bundle: { name: 'Too many', parts: six } }, { bank: 10 });
+  const b = r.bundles[0]!;
+  assert.deepEqual(b.parts.map((p) => p.role), ['r1', 'r2', 'r3', 'r4']);
+  assert.equal(b.cost, 4);
+  assert.deepEqual(r.trims.find((t) => t.path === 'bundle.parts' && t.predicate === 'atMost(4)'), { path: 'bundle.parts', predicate: 'atMost(4)', before: 6, after: 4 });
+  const poor = withAnswer({ bundle: { name: 'Too many', parts: six.slice(0, 4) } }, { bank: 2.5 });
+  assert.equal((poor.bundles[0]!).cost, 2);
+  assert.ok(poor.trims.some((t) => t.path === 'bundle.parts' && t.predicate === 'withinBank' && t.before === 4 && t.after === 2), JSON.stringify(poor.trims));
+  const none = withAnswer({ bundle: { name: 'Too many', parts: six.slice(0, 2) } }, { bank: 0 });
+  assert.equal(none.bundles.length, 0, 'a bundle with nothing left to pay is no bundle');
+});
+
+test('the bank pays the Boss\'s own moves before a composed bundle, and an authored bundle is never charged', () => {
+  const move1 = { kind: 'createBoard', params: { name: 'Pirate Puns Palace', premise: 'p', description: 'd' }, expires_in_hours: 0, why: 'w', go_live_at: new Date(NOW).toISOString() };
+  const r = withAnswer({ moves: [move1, move1, { ...move1, params: { ...move1.params, name: 'Koopa Kart Klub' } }], bundle: { name: 'Story', parts: [part({ role: 'a' }), part({ role: 'b' })] }, beats: [{ beat: 'split', why: 'w' }] }, { bank: 4, beats: shownSplit });
+  assert.equal(r.moves.length, 3);
+  assert.deepEqual(r.bundles.map((b) => b.cost), [0, 1], 'the beat is free; the composed bundle gets the one move left');
+});
+
+test('a composed bundle\'s parts are queued in dependency order, and a part naming a role nothing earlier makes is dropped, with what builds on it', () => {
+  const thread = { kind: 'moveThread', params: { thread: THREAD, board: { role: 'a' } }, why: 'Move it.' };
+  const reordered = withAnswer({ bundle: { name: 'Story', parts: [thread, part({ role: 'a' })] } });
+  const b = reordered.bundles[0]!;
+  assert.deepEqual(b.parts.map((p) => p.kind), ['createBoard', 'moveThread'], 'the board is made before a thread is moved to it');
+  assert.ok(reordered.trims.some((t) => t.path === 'bundle.parts' && t.predicate === 'dependencyOrder'));
+  const never = withAnswer({ bundle: { name: 'Story', parts: [part({ role: 'a' }), { ...thread, params: { thread: THREAD, board: { role: 'zzz' } } }] } });
+  assert.equal((never.bundles[0]!).parts.length, 1);
+  assert.ok(never.trims.some((t) => t.path === 'bundle.parts[1].params.board' && t.predicate === 'roleDefined'), JSON.stringify(never.trims));
+  const styled = withAnswer({ bundle: { name: 'Story', parts: [part({ role: 'a' }), thread] } }, { system: { ...testSystem, nameStyle: () => ['no'] } });
+  assert.equal(styled.bundles.length, 0, 'the part that makes the board is dropped for its name, so the move to it has no board and is dropped too');
+  const beatRole = withAnswer({ bundle: { name: 'Story', parts: [{ ...thread, params: { thread: THREAD, board: { role: 'fangames', beat: 'split' } } }] } });
+  assert.ok(beatRole.trims.some((t) => t.path === 'bundle.parts[0].params.board' && t.predicate === 'beatRoleNotComposed'), JSON.stringify(beatRole.trims));
+  const loose = withAnswer({ moves: [{ ...thread, params: { thread: THREAD, board: { role: 'a' } }, expires_in_hours: 0, go_live_at: new Date(NOW).toISOString() }] });
+  assert.ok(loose.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'roleInsideBundle'), 'a role is for a bundle');
+});
+
+test('the answer\'s rule carries beats and a bundle, both optional, and the schema says so', () => {
+  const fields = (MEETING_RULE as { fields: Record<string, { optional?: boolean }> }).fields;
+  assert.ok(fields['beats']?.optional && fields['bundle']?.optional);
+  const schema = ruleSchema(MEETING_RULE) as { properties: Record<string, unknown>; required: string[] };
+  assert.ok('beats' in schema.properties && 'bundle' in schema.properties);
+  assert.ok(!schema.required.includes('beats') && !schema.required.includes('bundle'));
+});
+
+test('a role of another beat is a role: {role, beat} is a role reference, and nothing else is', async () => {
+  const { isRoleRef, moveParamsProblems } = await import('./moves.ts');
+  assert.ok(isRoleRef({ role: 'a' }) && isRoleRef({ role: 'a', beat: 'split' }));
+  assert.ok(!isRoleRef({ role: 'a', beat: 'Split!' }) && !isRoleRef({ role: 'a', beat: 4 }) && !isRoleRef({ role: 'a', other: 1 }) && !isRoleRef({ beat: 'split' }));
+  const merge = { board: { role: 'f', beat: 'split' }, into: { role: 'm', beat: 'split' } };
+  assert.ok(moveParamsProblems('mergeBoard', merge, undefined, true).ok);
+  const outside = moveParamsProblems('mergeBoard', merge);
+  assert.ok(!outside.ok && outside.predicate === 'roleInsideBundle');
+  const same = moveParamsProblems('mergeBoard', { board: { role: 'f', beat: 'split' }, into: { role: 'f', beat: 'split' } }, undefined, true);
+  assert.ok(!same.ok && same.predicate === 'differsFromBoard', 'the same role of the same beat is one board, and no board merges into itself');
+  const differ = moveParamsProblems('mergeBoard', { board: { role: 'f', beat: 'split' }, into: { role: 'f' } }, undefined, true);
+  assert.ok(differ.ok, 'a role of this bundle and the same role of another beat are two boards');
 });
