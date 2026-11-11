@@ -74,6 +74,16 @@ describe('the Random Event dialog', () => {
     expect(within(dialog).getByText(/Nothing was given/u)).toBeInTheDocument();
   });
 
+  test('an item key this instance does not know is still named, never called nothing', async () => {
+    const { fake } = world();
+    fake.seed.nextEvent({ outcome: 'gear', item: 'mystery-hat', line: 'bench' });
+    open(fake);
+    const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
+    expect(within(dialog).getByText('You found mystery-hat under a park bench.')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Nothing was given/u)).toBeNull();
+    expect(within(dialog).queryByRole('link', { name: 'Wear it' })).toBeNull();
+  });
+
   test('Esc closes it, and focus returns to where it was', async () => {
     const { fake } = world();
     fake.seed.nextEvent({ outcome: 'line', line: 'statue' });

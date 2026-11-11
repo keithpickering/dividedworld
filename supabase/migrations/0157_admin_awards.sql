@@ -12,7 +12,7 @@
 -- The awards that could not be given (0151's trophy_award_failures) get a way to be finished. An award given by hand through give_failed_award is a row of
 -- trophy_failure_resolutions (append-only, one per failure and character, naming the award and the admin's account, which no client reads), so the failure's list says
 -- which characters have had theirs: a second give is refused. trophy_award_failures is replaced by a paged read, {failures, more}, each failure's characters with `given`
--- and `open` (a character is still owed an award, or the characters cannot be read now), the open ones first and each group newest first. Its cursor is the last row's
+-- and `open` (a character is still owed an award, or the characters cannot be read now). A resolution counts only while its award is not taken back: a reversed hand-given award is owed again and can be given again, the open ones first and each group newest first. Its cursor is the last row's
 -- at, id and open. An open failure costs nothing to place (no resolution row means open); only a failure an admin has begun to resolve reads its roster to be placed.
 
 create function admin_awards(before timestamptz default null, most integer default 20, before_id uuid default null) returns jsonb
@@ -76,8 +76,17 @@ create table trophy_failure_resolutions (
   award uuid not null references trophy_awards (id),
   at timestamptz not null default now(),
   by uuid not null references accounts (id),
-  primary key (failure, character)
+  primary key (award)
 );
+create index trophy_failure_resolutions_by_failure on trophy_failure_resolutions (failure, character);
+
+-- Whether a failure's character has its award now: a resolution counts only while its award has not been taken back, so a reversed hand-given award is owed again.
+create function trophy_failure_given(of_failure uuid, of_character uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from trophy_failure_resolutions r where r.failure = of_failure and r.character = of_character
+                 and not exists (select 1 from trophy_reversals v where v.award = r.award));
+$$;
+revoke execute on function trophy_failure_given(uuid, uuid) from public, anon, authenticated;
 create trigger trophy_failure_resolutions_no_update before update or delete on trophy_failure_resolutions for each row execute function ledger_append_only();
 create trigger trophy_failure_resolutions_no_truncate before truncate on trophy_failure_resolutions for each statement execute function ledger_append_only();
 alter table trophy_failure_resolutions enable always trigger trophy_failure_resolutions_no_update;
@@ -95,7 +104,7 @@ begin
   perform only_admins('gives an award that could not be written');
   perform 1 from trophy_award_failures f where f.id = failure for update;
   if not found then raise exception 'there is no such failed award' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
-  if exists (select 1 from trophy_failure_resolutions r where r.failure = give_failed_award.failure and r.character = of_character) then
+  if trophy_failure_given(failure, of_character) then
     raise exception 'that award was already given to that character' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   roster := trophy_failure_roster(failure);
@@ -115,10 +124,10 @@ language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   roster jsonb;
 begin
-  if not exists (select 1 from trophy_failure_resolutions r where r.failure = of_failure) then return true; end if;
+  if not exists (select 1 from trophy_failure_resolutions r where r.failure = of_failure and not exists (select 1 from trophy_reversals v where v.award = r.award)) then return true; end if;
   roster := trophy_failure_roster(of_failure);
   if roster is null then return true; end if;
-  return exists (select 1 from jsonb_array_elements(roster) i where not exists (select 1 from trophy_failure_resolutions r where r.failure = of_failure and r.character::text = i ->> 'id'));
+  return exists (select 1 from jsonb_array_elements(roster) i where not trophy_failure_given(of_failure, (i ->> 'id')::uuid));
 end $$;
 revoke execute on function trophy_failure_open(uuid) from public, anon, authenticated;
 
@@ -143,7 +152,7 @@ begin
     select jsonb_build_object(
       'failures', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'move', f.move_act, 'season', (select s.number from seasons s where s.id = f.season), 'at', f.at, 'error', f.error,
         'trophy', case when f.move_act is not null then (select k.key from trophy_kinds k where k.demand_met) end, 'open', p.open,
-        'characters', (select jsonb_agg((c - 'trophy') || jsonb_build_object('given', exists (select 1 from trophy_failure_resolutions x where x.failure = f.id and x.character::text = c ->> 'id')) order by o.n)
+        'characters', (select jsonb_agg((c - 'trophy') || jsonb_build_object('given', trophy_failure_given(f.id, (c ->> 'id')::uuid)) order by o.n)
                        from trophy_failure_roster(f.id) r, jsonb_array_elements(r) with ordinality o(c, n))) order by p.n)
         from page p join trophy_award_failures f on f.id = p.id where p.n <= size), '[]'::jsonb),
       'more', exists (select 1 from page p where p.n > size)));

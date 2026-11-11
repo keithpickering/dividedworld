@@ -34,6 +34,9 @@ async function browserArt(file: File): Promise<Blob> {
   return trophyArt(browserIo, file);
 }
 
+/** The largest file chosen for a picture: bigger is refused before the browser decodes it. */
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
 const capital = (words: string): string => words.charAt(0).toUpperCase() + words.slice(1);
 const kindWords = (k: AdminKind): string => `${k.name}${k.belt || k.made ? ` (${[k.belt ? 'belt' : null, k.made ? 'made here' : null].filter(Boolean).join(', ')})` : ''}`;
 
@@ -234,7 +237,7 @@ function GrantForm({ gear, reload }: { readonly gear: readonly { readonly key: s
           {gear.map((g) => <option key={g.key} value={g.key}>{g.name}</option>)}
         </select>
         <label className="kb-trophies-label" htmlFor={`${id}-who`}>To the character</label>
-        <input id={`${id}-who`} className="kb-trophies-field" autoComplete="off" value={who} onChange={(e) => setWho(e.target.value)} />
+        <input id={`${id}-who`} className="kb-trophies-field" autoComplete="off" value={who} onChange={(e) => setWho(e.target.value)} aria-describedby={write.problem ? `${id}-problem` : undefined} />
         <label className="kb-trophies-label" htmlFor={`${id}-copies`}>Copies</label>
         <input id={`${id}-copies`} className="kb-trophies-field kb-trophies-short" type="number" inputMode="numeric" min={1} max={100} value={copies} onChange={(e) => setCopies(e.target.value)} />
         <p className="kb-trophies-note">The copies go to the wardrobe of whoever plays that character. This page never says who that is.</p>
@@ -261,6 +264,7 @@ function MakeForm({ makeArt, reload }: { readonly makeArt: (file: File) => Promi
       if (n === '') return { problem: 'A trophy needs a name.' };
       let art: Blob | null = null;
       if (file) {
+        if (file.size > MAX_FILE_BYTES) return { problem: 'That file is larger than 10 MB. Choose a smaller picture, so nothing was made.' };
         try {
           art = await makeArt(file);
         } catch (error) {
@@ -283,7 +287,7 @@ function MakeForm({ makeArt, reload }: { readonly makeArt: (file: File) => Promi
       <h2 id={`${id}-h`} className="kb-trophies-head">Make a trophy</h2>
       <form onSubmit={(e) => void submit(e)} noValidate>
         <label className="kb-trophies-label" htmlFor={`${id}-name`}>Name</label>
-        <input id={`${id}-name`} className="kb-trophies-field" autoComplete="off" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} />
+        <input id={`${id}-name`} className="kb-trophies-field" autoComplete="off" maxLength={60} value={name} onChange={(e) => setName(e.target.value)} aria-describedby={write.problem ? `${id}-problem` : undefined} />
         <label className="kb-trophies-label" htmlFor={`${id}-line`}>Its line (optional)</label>
         <input id={`${id}-line`} className="kb-trophies-field" autoComplete="off" maxLength={200} value={line} onChange={(e) => setLine(e.target.value)} />
         <label className="kb-trophies-label" htmlFor={`${id}-file`}>Picture (any picture; it is drawn down to 48 pixels and kept under 16 KB)</label>
@@ -329,7 +333,7 @@ function Recent({ awards, more, artOf, reload, older }: {
     <CalmRegion as="section" aria-labelledby={`${id}-h`} className="kb-trophies-panel kb-trophies-wide">
       <h2 id={`${id}-h`} className="kb-trophies-head">Recent awards</h2>
       {awards.length === 0 ? <p className="kb-trophies-note">No trophy has been given yet.</p> : (
-        <table ref={table} className="kb-trophies-table">
+        <table ref={table} className="kb-trophies-table" aria-describedby={write.problem ? `${id}-problem` : undefined}>
           <thead><tr><th scope="col"><span className="kb-trophies-hide">Picture</span></th><th scope="col">Trophy</th><th scope="col">To</th><th scope="col">By</th><th scope="col"><span className="kb-trophies-hide">Reverse</span></th></tr></thead>
           <tbody>
             {awards.map((a) => {

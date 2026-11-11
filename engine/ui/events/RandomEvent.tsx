@@ -51,7 +51,8 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
   const { characters } = usePlayer();
   const gear = event.outcome === 'gear' ? instance.gear.find((g) => g.key === event.item) : undefined;
   const rules = event.outcome === 'card' ? instance.cards.find((c) => c.key === event.item) : undefined;
-  const item = gear?.name ?? rules?.name ?? null;
+  /* The server gave something whenever it named an item; a key this instance does not know is still named by its key. */
+  const item = gear?.name ?? rules?.name ?? event.item;
   /* The line is the instance's text with {item} still in it; a line the instance does not have is still said, plainly. */
   const line = (event.line ?? (item === null ? 'Something happened.' : `You found {item}.`)).replaceAll('{item}', item ?? '');
   const mask = characters.find((c) => c.id === event.character)?.name ?? 'your character';

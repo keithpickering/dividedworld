@@ -107,18 +107,40 @@ begin
     if (select string_agg(x ->> 'error', ',' order by t.n) from jsonb_array_elements(q2 -> 'failures') with ordinality t(x, n)) is distinct from 'f-two,f-one' or q2 ->> 'more' is distinct from 'false' then raise exception 'the next page: %', q2; end if;
     if q1::text like '%' || adm::text || '%' then raise exception 'an account id came back'; end if;
 
-    -- A resolution is never changed.
+    -- A resolution is never changed, removed or truncated.
     perform tests.unbecome();
+    declare
+      stmt text;
     begin
-      update trophy_failure_resolutions set at = now();
-      raise exception 'a resolution was updated';
-    exception when others then
-      if sqlerrm = 'a resolution was updated' then raise; end if;
+      foreach stmt in array array['update trophy_failure_resolutions set at = now()', 'delete from trophy_failure_resolutions', 'truncate trophy_failure_resolutions'] loop
+        begin
+          execute stmt;
+          raise exception 'a resolution was changed by: %', stmt;
+        exception when others then
+          if sqlerrm like 'a resolution was changed by:%' then raise; end if;
+        end;
+      end loop;
+      if (select count(*) from trophy_failure_resolutions) < 2 then raise exception 'a resolution went missing'; end if;
     end;
+
+    -- A hand-given award that is later taken back is owed again: the list says so, the failure is open, and it can be given again (once).
+    made := (select jsonb_build_object('award', (select r.award from trophy_failure_resolutions r where r.failure = f1 and r.character = a)));
+    insert into trophy_reversals (award, by) values ((made ->> 'award')::uuid, adm);
+    perform tests.become(adm);
+    fl := trophy_award_failures();
+    if (select c ->> 'given' from jsonb_array_elements(fl -> 'failures') x, jsonb_array_elements(x -> 'characters') c where x ->> 'id' = f1::text and c ->> 'id' = a::text) is distinct from 'false'
+       or (select x ->> 'open' from jsonb_array_elements(fl -> 'failures') x where x ->> 'id' = f1::text) is distinct from 'true' then raise exception 'a reversed hand-given award is owed again: %', fl; end if;
+    made := give_failed_award(f1, a);
+    if (made ->> 'award') is null then raise exception 'given again after a reversal: %', made; end if;
+    fl := trophy_award_failures();
+    if (select c ->> 'given' from jsonb_array_elements(fl -> 'failures') x, jsonb_array_elements(x -> 'characters') c where x ->> 'id' = f1::text and c ->> 'id' = a::text) is distinct from 'true'
+       or (select x ->> 'open' from jsonb_array_elements(fl -> 'failures') x where x ->> 'id' = f1::text) is distinct from 'false' then raise exception 'given again closes it: %', fl; end if;
+    if pg_temp.refusal(format('select give_failed_award(%L, %L)', f1, a)) is distinct from 'that award was already given to that character' then raise exception 'the second give after a reversal is a double give'; end if;
 
     perform tests.become(ann);
     if pg_temp.refusal(format('select give_failed_award(%L, %L)', f2, a)) is null then raise exception 'a player gave a failed award'; end if;
     if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the failures'; end if;
+    if pg_temp.refusal('select count(*) from trophy_failure_resolutions') is null then raise exception 'a player read the resolutions'; end if;
     perform tests.become(adm);
   end;
 

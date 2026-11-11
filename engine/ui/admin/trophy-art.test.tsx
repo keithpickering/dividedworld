@@ -53,7 +53,7 @@ describe('a trophy\'s picture, from a file', () => {
   });
 
   test('a picture that never fits says so in words and sends nothing', async () => {
-    await expect(trophyArt(io({ width: 48, height: 48 }, { pad: () => TROPHY_ART.bytes }), new File(['x'], 'a.png'))).rejects.toThrow(/too many bytes|too large|16/u);
+    await expect(trophyArt(io({ width: 48, height: 48 }, { pad: () => TROPHY_ART.bytes }), new File(['x'], 'a.png'))).rejects.toThrow('The picture is too large even at the lowest quality (16 KB at most), so nothing was sent. Choose a simpler picture.');
   });
 
   test('a file that is no picture says so in the browser\'s words, and nothing is released twice', async () => {

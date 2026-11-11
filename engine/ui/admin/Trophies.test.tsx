@@ -184,6 +184,41 @@ describe('the trophies admin page', () => {
     expect(made).not.toHaveBeenCalled();
   });
 
+  test('a chosen file over 10 MB is refused in plain words before it is decoded, and nothing is made', async () => {
+    const w = world();
+    const made = vi.spyOn(w.fake, 'makeTrophy');
+    const makeArt = vi.fn(async () => new Blob(['webp'], { type: 'image/webp' }));
+    open(w, makeArt);
+    const form = await section('Make a trophy');
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Name' }), 'Huge');
+    const big = new File(['x'], 'huge.png', { type: 'image/png' });
+    Object.defineProperty(big, 'size', { value: 10 * 1024 * 1024 + 1 });
+    await userEvent.upload(within(form).getByLabelText(/^Picture/u), big);
+    await userEvent.click(within(form).getByRole('button', { name: 'Make it' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('That file is larger than 10 MB. Choose a smaller picture, so nothing was made.');
+    expect(makeArt).not.toHaveBeenCalled();
+    expect(made).not.toHaveBeenCalled();
+  });
+
+  test('Grant, Make and Recent forms point at their problem alerts, as Award does', async () => {
+    const w = world();
+    w.fake.seed.award(w.bones, 'p1', { by: 'admin', at: Date.parse('2026-10-02T00:00:00Z') });
+    vi.spyOn(w.fake, 'reverseAward').mockResolvedValue({ ok: false, error: 'No.' });
+    open(w);
+    const grant = await section('Grant gear');
+    await userEvent.click(within(grant).getByRole('button', { name: 'Grant' }));
+    const make = await section('Make a trophy');
+    await userEvent.click(within(make).getByRole('button', { name: 'Make it' }));
+    for (const [panel, field] of [[grant, 'To the character'], [make, 'Name']] as const) {
+      const alert = await within(panel).findByRole('alert');
+      expect(within(panel).getByRole('textbox', { name: field })).toHaveAttribute('aria-describedby', alert.id);
+    }
+    const recent = await section('Recent awards');
+    await userEvent.click(within(recent).getAllByRole('button', { name: /^Reverse / })[0]!);
+    const alert = await within(recent).findByRole('alert');
+    expect(recent.querySelector('table')).toHaveAttribute('aria-describedby', alert.id);
+  });
+
   test('a trophy may be made with no picture', async () => {
     const w = world();
     const made = vi.spyOn(w.fake, 'makeTrophy');
