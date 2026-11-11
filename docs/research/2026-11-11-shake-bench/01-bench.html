@@ -1,0 +1,479 @@
+<!--
+  Record, written 2026-11-11. The Shake bench: the design session's interactive mockup for a new Glitter Bomb shake, after
+  issue #399 (cling restored, PR #411). A standalone page: open it in a browser. It shows how glitter shaken off by a fast
+  scroll, or dropped from the cursor, could move and land; it is a reference for the feel, not code to copy. Flakes are
+  drawn in their plain inks here, with no readable-band check (engine/ui/shine/band.ts holds that in the build).
+-->
+<title>Shake Bench</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: the 2003 board's posts in one column at the board's reference width, the bench's controls in a bar above, a live readout pinned to the corner. */
+:root {
+  --paper: #ffffff;
+  --ink: #000000;
+  --rule: #000000;
+  --muted: #555555;
+  --shade: #f1f1ef;
+  --flag: #c8102e;
+  --font: Verdana, Geneva, sans-serif;
+  --mono: "Courier New", Courier, monospace;
+  --size-body: 15px;
+  --size-small: 13.75px;
+  --size-fine: 12.5px;
+  --size-title: 22.5px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --paper: #0b0b0b; --ink: #f2f2f2; --rule: #f2f2f2; --muted: #a8a8a8; --shade: #1d1d1d; --flag: #ff5a6e; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --paper: #0b0b0b; --ink: #f2f2f2; --rule: #f2f2f2; --muted: #a8a8a8; --shade: #1d1d1d; --flag: #ff5a6e; color-scheme: dark; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: var(--size-body)/1.45 var(--font);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 56px;
+}
+h1 { font-size: var(--size-title); margin: 0; text-wrap: balance; }
+p { margin: 0 0 .8em; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.head { max-width: 988px; display: grid; gap: .4em; margin-bottom: 18px; }
+.head p { color: var(--muted); margin: 0; max-width: 72ch; font-size: var(--size-small); }
+
+.bench {
+  max-width: 988px; border: 1px solid var(--rule);
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); margin-bottom: 22px;
+}
+.bench fieldset {
+  border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+  margin: 0 -1px -1px 0; padding: 10px 12px 12px; min-width: 0;
+  display: grid; gap: 6px; align-content: start; font-size: var(--size-fine);
+}
+.bench legend {
+  float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold;
+  font-size: var(--size-fine); letter-spacing: .06em; text-transform: uppercase;
+}
+.bench label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.bench .hint { color: var(--muted); }
+.open-q { border-left: 3px solid var(--flag); padding-left: 8px; display: grid; gap: 4px; }
+.slider { display: grid; grid-template-columns: 7.5em 1fr 3.4em; align-items: center; gap: 6px; }
+.slider output { font-variant-numeric: tabular-nums; text-align: right; }
+.slider input { width: 100%; min-width: 0; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button.b {
+  font: inherit; font-size: var(--size-fine); padding: 3px 10px; background: var(--paper);
+  color: var(--ink); border: 1px solid var(--rule); cursor: pointer;
+}
+button.b:hover { background: var(--shade); }
+
+.readout {
+  position: fixed; z-index: 20; right: max(10px, env(safe-area-inset-right, 0px)); bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  background: var(--paper); color: var(--ink); border: 1px solid var(--rule); padding: 6px 9px;
+  font: var(--size-fine)/1.4 var(--mono); font-variant-numeric: tabular-nums; display: grid; gap: 1px; min-width: 13.5em;
+}
+.readout b { font-family: var(--font); letter-spacing: .06em; text-transform: uppercase; font-size: 11px; }
+.readout .hot { color: var(--flag); font-weight: bold; }
+.reduced { max-width: 988px; border-left: 3px solid var(--flag); padding: 4px 10px; margin-bottom: 14px; font-size: var(--size-small); }
+
+/* The board: its two looks, by the engine's tokens (engine/ui/tokens.css). */
+.boardwrap {
+  --kb-fg: #000; --kb-bg: #fff; --kb-muted: #555; --kb-link: #000; --kb-rule: #000;
+  max-width: 988px; background: var(--kb-bg); color: var(--kb-fg); display: grid; gap: 14px; padding: 14px 0;
+}
+.boardwrap[data-board="dark"] {
+  --kb-fg: #fff; --kb-bg: #000; --kb-muted: #aaa; --kb-link: #fff; --kb-rule: #fff;
+  padding: 14px; outline: 14px solid #000; outline-offset: -1px;
+}
+.act {
+  position: relative; isolation: isolate;
+  display: grid; grid-template-columns: minmax(8em, min(18%, 14em)) minmax(0, 1fr);
+  grid-template-areas: "bit meta" "bit main" "bit foot"; grid-template-rows: auto 1fr auto;
+  border: 1px solid var(--kb-rule); background: var(--kb-bg); color: var(--kb-fg);
+  container: post / inline-size;
+}
+.act > canvas.landed { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.bit, .meta, .main, .foot { position: relative; z-index: 1; }
+.bit {
+  grid-area: bit; padding: .5em 6%; border-right: 1px solid var(--kb-rule);
+  display: flex; flex-direction: column; gap: .3em; font-size: var(--size-fine); min-width: 0;
+}
+.bit .name { font-weight: bold; font-size: var(--size-body); }
+.bit .avatar {
+  aspect-ratio: 1 / 1; width: 100%; max-width: 100px; border: 1px solid var(--kb-rule);
+  display: grid; place-items: center; font-family: var(--mono); font-weight: bold; font-size: 18px;
+}
+.bit .counts { color: var(--kb-muted); }
+.meta, .foot { display: flex; justify-content: space-between; gap: 1em; padding: .25em 1%; font-size: var(--size-fine); color: var(--kb-muted); }
+.meta { grid-area: meta; border-bottom: 1px solid var(--kb-rule); flex-wrap: wrap; }
+.meta .card { color: var(--kb-fg); font-weight: bold; }
+.foot { grid-area: foot; border-top: 1px solid var(--kb-rule); font-size: var(--size-small); }
+.foot nav { display: flex; gap: .9em; flex-wrap: wrap; }
+.foot a, .words a { color: var(--kb-link); }
+.main { grid-area: main; isolation: isolate; padding: .5em 1%; min-width: 0; }
+.main canvas.settled { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.words { position: relative; z-index: 1; }
+.shiny .words { text-shadow: 0 0 2px var(--kb-bg), 0 0 6px var(--kb-bg); }
+@container post (max-width: 560px) {
+  .act { grid-template-columns: minmax(0, 1fr); grid-template-areas: "bit" "meta" "main" "foot"; grid-template-rows: none; }
+  .bit { border-right: 0; border-bottom: 1px solid var(--kb-rule); flex-direction: row; flex-wrap: wrap; align-items: center; column-gap: .9em; padding: .4em 3%; }
+  .bit .avatar { width: 40px; font-size: 12px; }
+  .main { padding: .5em 3%; }
+  .meta, .foot { padding: .25em 3%; }
+}
+#air { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 10; }
+</style>
+
+<header class="head">
+  <h1>Shake Bench</h1>
+  <p>Flick-scroll the thread fast (a phone swipe, a trackpad fling, or the Flick buttons) and glitter shakes off the Glitter Bomb posts in view. It flies the way the page was moving, tumbles and glints as air drag catches it, and settles. Wherever it comes down on a post, any post, it stays there and scrolls with that post. Over the margins it keeps falling until it reaches a post or drops off the bottom of the screen. With a mouse, pass over a bombed post to pick glitter up, then move away to drop it.</p>
+  <p>Switch <b>Shake</b> to "Today's" to compare with what the build does now.</p>
+</header>
+
+<div class="reduced" id="reducedNote" hidden>Your device asks for reduced motion, and the game turns shake and cling off then. <label><input type="checkbox" id="override"> Preview them anyway</label></div>
+
+<form class="bench" id="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Shake</legend>
+    <label><input type="radio" name="mode" value="new" checked> New: flies, settles, stays</label>
+    <label><input type="radio" name="mode" value="old"> Today's: floats, then fades</label>
+    <div class="buttons"><button class="b" type="button" id="flickDown">Flick down</button><button class="b" type="button" id="flickUp">Flick up</button></div>
+    <span class="hint">The buttons scroll the page at about 6,000 px a second and let it coast, as a phone fling does.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Flick</legend>
+    <div class="slider"><label for="thresh">Starts at</label><input type="range" id="thresh" min="800" max="4000" step="100" value="2200"><output for="thresh" id="threshOut"></output></div>
+    <div class="slider"><label for="amount">Per post</label><input type="range" id="amount" min="5" max="80" step="1" value="40"><output for="amount" id="amountOut"></output></div>
+    <span class="hint">Starts at: scroll speed in px a second. Per post: flakes a full flick shakes off each bombed post in view.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Air</legend>
+    <div class="slider"><label for="carry">Thrown with</label><input type="range" id="carry" min="0" max="100" step="5" value="55"><output for="carry" id="carryOut"></output></div>
+    <div class="slider"><label for="drag">Air drag</label><input type="range" id="drag" min="1" max="10" step="0.5" value="4"><output for="drag" id="dragOut"></output></div>
+    <div class="slider"><label for="flutter">Flutter</label><input type="range" id="flutter" min="0" max="100" step="5" value="50"><output for="flutter" id="flutterOut"></output></div>
+    <div class="slider"><label for="hang">Hang time</label><input type="range" id="hang" min="0.3" max="3" step="0.1" value="1.1"><output for="hang" id="hangOut"></output></div>
+    <span class="hint">Thrown with: the share of the page's own speed a flake leaves with. Hang time: seconds before it can settle.</span>
+  </fieldset>
+  <fieldset>
+    <legend>Landed glitter</legend>
+    <div class="open-q">
+      <span><b>Open:</b> should glitter that landed on a post without a Glitter Bomb glint?</span>
+      <label><input type="radio" name="glint" value="on" checked> It glints, as on a bombed post</label>
+      <label><input type="radio" name="glint" value="off"> It lies still (cheaper: drawn once)</label>
+    </div>
+    <label><input type="radio" name="board" value="light" checked> Light board</label>
+    <label><input type="radio" name="board" value="dark"> Dark board</label>
+    <div class="buttons"><button class="b" type="button" id="sweep">Sweep the glitter</button></div>
+  </fieldset>
+</form>
+
+<div class="boardwrap" id="boardwrap" data-board="light"></div>
+
+<div class="readout" aria-live="off">
+  <b>Live</b>
+  <span>scroll <span id="rSpeed">0</span> px/s</span>
+  <span>in the air <span id="rAir">0</span></span>
+  <span>on the cursor <span id="rCarried">0</span></span>
+  <span>landed <span id="rLanded">0</span> / 300</span>
+</div>
+
+<canvas id="air" aria-hidden="true"></canvas>
+
+<template id="post">
+  <article class="act">
+    <div class="bit"><span class="avatar"></span><span class="name"></span><span class="rank"></span><span class="counts"></span></div>
+    <div class="meta"><span class="when"></span><span class="card"></span></div>
+    <div class="main"><div class="words"></div></div>
+    <div class="foot"><nav><a href="#">Quote</a><a href="#">React</a><a href="#">Play a card</a></nav><span>#<span class="n"></span></span></div>
+  </article>
+</template>
+
+<script>
+(() => {
+  'use strict';
+  /* Divided World's glitter inks (instances/divided-world/ui/glitter-bomb/Effect.tsx): seven rainbow inks, then the holographic silver. */
+  const INKS = ['#ff3b4a', '#ff9a2e', '#ffd23f', '#3ddc6b', '#2fd6ff', '#4a6bff', '#b65cff', '#dfe4ec', '#dfe4ec', '#dfe4ec'];
+  const HOLO = 7;
+  const MAX_LOOSE = 300, MAX_AIR = 400, MAX_CARRIED = 26;
+
+  const POSTS = [
+    ['Gloomba', 'Pit Enjoyer', 'GL', 'Glitter Bomb · 6 days left', true, `<p>Okay, who did this. I log on to post my contest entry and every single one of my posts looks like a craft store exploded on it.</p><p>The entry is called "Big Pit." It is a pit, and it is slightly too big. That's the theme. Play it before you judge it.</p>`],
+    ['Mod Bot Tess', 'Hall Monitor', 'MT', 'no card', false, `<p>Reminder: please keep contest discussion in the contest thread. This post has no card on it. If glitter shows up here, someone tracked it in from Gloomba's post.</p>`],
+    ['Pipewrench', "Plumber's Mate", 'PW', 'no card', false, `<p>Played Big Pit. Fell in the pit. It was, as advertised, slightly too big. Four stars, would fall again.</p><p>Also whoever bombed Gloomba, the glitter is getting on my posts now and I want you to know I have a mop.</p>`],
+    ['Koopa Kid Kevin', 'Shell Collector', 'KK', 'no card', false, `<p>Contest deadline is Sunday at midnight, board time. One level, any engine, and it has to fit the theme "everything is slightly too big." Late entries get played on stream, but they don't place.</p>`],
+    ['Gloomba', 'Pit Enjoyer', 'GL', 'Glitter Bomb · 6 days left', true, `<p>Patch notes for Big Pit 1.1: the pit is now 3% bigger. Several of you said it wasn't too big enough.</p><p>Also I am not reacting to the glitter. Whoever did it wants a reaction. I am a rock.</p>`],
+    ['Spritey', 'Pixel Pusher', 'SP', 'no card', false, `<p>Finally got the walk cycle on my blob guy to stop moonwalking. Turns out the frames were in the right order the whole time. I'd just flipped the sprite and not the hitbox, so he was walking forward with his feet going backward.</p>`],
+    ['Lakitu Larry', 'Cloud Rider', 'LL', 'no card', false, `<p>Not to start anything but the glitter in this thread is the best thing that has happened to the contest. Somebody get it on the rules post.</p>`],
+    ['Gloomba', 'Pit Enjoyer', 'GL', 'Glitter Bomb · 6 days left', true, `<p>I have been informed the glitter "comes off when you scroll fast." I have been scrolling very slowly for two days. My thumb is tired. Please end this.</p>`],
+    ['Mod Bot Tess', 'Hall Monitor', 'MT', 'no card', false, `<p>The thread is fine. Glitter is not against the rules. Scrolling slowly is also not against the rules.</p>`],
+    ['Pipewrench', "Plumber's Mate", 'PW', 'no card', false, `<p>Bumping so the next post down can catch some.</p>`],
+    ['Koopa Kid Kevin', 'Shell Collector', 'KK', 'no card', false, `<p>Entries so far: Big Pit, Big Pipe, Slightly Large Goomba, and one that is just a very wide title screen. Keep them coming.</p>`],
+  ];
+
+  /* ---------------------------------------------------------------- helpers ---- */
+  const $ = (id) => document.getElementById(id);
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const dprOf = () => Math.min(2, devicePixelRatio || 1);
+  const mqReduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const mqFine = matchMedia('(hover: hover) and (pointer: fine)');
+  const motionOff = () => mqReduce.matches && !$('override').checked;
+  const opt = {
+    get mode() { return document.querySelector('input[name=mode]:checked').value; },
+    get glint() { return document.querySelector('input[name=glint]:checked').value === 'on'; },
+    get thresh() { return +$('thresh').value; },
+    get amount() { return +$('amount').value; },
+    get carry() { return +$('carry').value / 100; },
+    get drag() { return +$('drag').value; },
+    get flutter() { return +$('flutter').value / 100; },
+    get hang() { return +$('hang').value; },
+  };
+  const outs = { thresh: (v) => v, amount: (v) => v, carry: (v) => v + '%', drag: (v) => v, flutter: (v) => v + '%', hang: (v) => v + 's' };
+  for (const k of Object.keys(outs)) { const f = () => { $(k + 'Out').textContent = outs[k]($(k).value); }; $(k).addEventListener('input', f); f(); }
+
+  function makeFlake(x, y) {
+    const ink = (rnd() * INKS.length) | 0;
+    return { x, y, s: 2.2 + rnd() * 2.6, rot: rnd() * Math.PI, ink, tw: rnd() * 6.28, sp: 0.6 + rnd() * 1.4 };
+  }
+  /* One flake: a little rotated card, its flash from its turn (`ph`), white at the peak; a holographic one throws a rainbow ink. */
+  function drawFlake(c, f, x, y, ph, alpha) {
+    const flash = Math.abs(Math.sin(ph)) ** 10;
+    const w = f.s * (0.35 + 0.65 * Math.abs(Math.cos(ph * 0.7)));
+    let ink = INKS[f.ink];
+    if (f.ink >= HOLO && flash > 0.2) ink = INKS[((((ph * 3) | 0) % HOLO) + HOLO) % HOLO];
+    const cos = Math.cos(f.rot + ph * 0.3), sin = Math.sin(f.rot + ph * 0.3);
+    c.setTransform(cos * d, sin * d, -sin * d, cos * d, x * d, y * d);
+    c.globalAlpha = alpha;
+    c.fillStyle = ink;
+    c.fillRect(-w / 2, -f.s * 0.42, w, f.s * 0.84);
+    if (flash > 0.55) { c.globalAlpha = alpha * (flash - 0.55) / 0.45; c.fillStyle = '#ffffff'; c.fillRect(-w / 2, -f.s * 0.42, w, f.s * 0.84); }
+    c.globalAlpha = 1;
+  }
+  let d = 1;
+
+  /* ---------------------------------------------------------------- the thread ---- */
+  const wrap = $('boardwrap'), tpl = $('post');
+  const posts = POSTS.map(([who, rank, av, card, bombed, words], i) => {
+    const el = tpl.content.firstElementChild.cloneNode(true);
+    el.querySelector('.avatar').textContent = av;
+    el.querySelector('.name').textContent = who;
+    el.querySelector('.rank').textContent = rank;
+    el.querySelector('.counts').innerHTML = 'Posts: ' + (300 + i * 97) + '<br>Aura: ' + (bombed ? '−3.0' : (10 + i).toFixed(1));
+    el.querySelector('.when').textContent = 'Fri Nov 6, 2026 ' + (12 + (i >> 2)) + ':' + String((i * 7) % 60).padStart(2, '0') + ' am';
+    el.querySelector('.card').textContent = card;
+    el.querySelector('.words').innerHTML = words;
+    el.querySelector('.n').textContent = 41 + i;
+    for (const a of el.querySelectorAll('.foot a')) a.addEventListener('click', (e) => e.preventDefault());
+    const main = el.querySelector('.main');
+    const p = { el, main, bombed, settled: [], settledCv: null, landed: [], landedCv: null, visible: false, dirty: true, drawnAt: -1e9 };
+    if (bombed) {
+      el.classList.add('shiny');
+      p.settledCv = document.createElement('canvas'); p.settledCv.className = 'settled'; p.settledCv.setAttribute('aria-hidden', 'true');
+      main.prepend(p.settledCv);
+    }
+    wrap.append(el);
+    return p;
+  });
+  const postOf = new Map(posts.map((p) => [p.el, p]));
+
+  /* The settled glitter of a bombed post, one flake per 70 px squared of its body, thicker toward a burst point. */
+  function settle(p) {
+    if (!p.bombed) return;
+    const W = p.main.clientWidth, H = p.main.clientHeight, n = Math.round((W * H) / 70);
+    const bx = W * (0.25 + rnd() * 0.5), by = H * (0.3 + rnd() * 0.4);
+    p.settled = [];
+    for (let i = 0; i < n; i++) {
+      const near = rnd() < 0.35;
+      const x = near ? bx + (rnd() - 0.5) * W * 0.5 : rnd() * W, y = near ? by + (rnd() - 0.5) * H * 0.6 : rnd() * H;
+      if (x >= 0 && y >= 0 && x <= W && y <= H) p.settled.push(makeFlake(x, y));
+    }
+  }
+  function sizeCanvas(cv, w, h) { const W = Math.round(w * d), H = Math.round(h * d); if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; } }
+  /* Landed glitter's canvas: made when the first flake lands on the post, covering the whole post, under its words. */
+  function landedCanvas(p) {
+    if (!p.landedCv) { p.landedCv = document.createElement('canvas'); p.landedCv.className = 'landed'; p.landedCv.setAttribute('aria-hidden', 'true'); p.el.prepend(p.landedCv); }
+    return p.landedCv;
+  }
+  function drawPost(p, t, force) {
+    const live = opt.glint || p.bombed;
+    /* A glinting post is redrawn about twenty times a second, as the build's loop draws at a share of the frame rate. */
+    if (!force && !p.dirty && (!live || t - p.drawnAt < 50)) return;
+    p.dirty = false; p.drawnAt = t;
+    if (p.bombed && p.settledCv) {
+      sizeCanvas(p.settledCv, p.main.clientWidth, p.main.clientHeight);
+      const c = p.settledCv.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, p.settledCv.width, p.settledCv.height);
+      for (const f of p.settled) drawFlake(c, f, f.x, f.y, f.tw + t * 0.0011 * f.sp, 0.92);
+    }
+    if (p.landedCv || p.landed.length) {
+      const cv = landedCanvas(p), r = p.el.getBoundingClientRect();
+      sizeCanvas(cv, r.width, r.height);
+      const c = cv.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
+      for (const f of p.landed) drawFlake(c, f, f.x, f.y, live ? f.tw + t * 0.0011 * f.sp : f.tw, 1);
+    }
+  }
+  const io = new IntersectionObserver((es) => { for (const e of es) { const p = postOf.get(e.target); p.visible = e.isIntersecting; if (p.visible) p.dirty = true; } });
+  for (const p of posts) io.observe(p.el);
+  const ro = new ResizeObserver(() => { d = dprOf(); for (const p of posts) { settle(p); p.dirty = true; } });
+  ro.observe(wrap);
+
+  /* ---------------------------------------------------------------- the air ---- */
+  const air = $('air'), ac = air.getContext('2d');
+  function sizeAir() { d = dprOf(); air.width = Math.ceil(innerWidth * d); air.height = Math.ceil(innerHeight * d); }
+  addEventListener('resize', sizeAir); sizeAir();
+  let flying = [];      /* { f, x, y, vx, vy, ph, spin, age, hang, ...today's: fallen, land, over } */
+  let carried = [];     /* { f, ox, oy, ph } */
+  let mouse = null;
+  const loose = [];     /* every landed flake on the page, oldest first: { p, f } */
+
+  /* The post under a viewport point: the air canvas takes no pointer, so the browser hit-tests the page under it. */
+  function postAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    const a = el && el.closest('.act');
+    return a ? postOf.get(a) : null;
+  }
+  function land(p, f, x, y) {
+    const r = p.el.getBoundingClientRect();
+    const g = { ...f, x: x - r.left, y: y - r.top };
+    p.landed.push(g); loose.push({ p, f: g }); p.dirty = true;
+    while (loose.length > MAX_LOOSE) { const old = loose.shift(); const i = old.p.landed.indexOf(old.f); if (i >= 0) old.p.landed.splice(i, 1); old.p.dirty = true; }
+  }
+  $('sweep').addEventListener('click', () => { for (const p of posts) { p.landed = []; p.dirty = true; } loose.length = 0; flying = []; carried = []; });
+
+  /* A shake: copies of settled flakes on screen leave each bombed post in view. `v` is the page's scroll speed, down positive. */
+  function shake(v, dt) {
+    const old = opt.mode === 'old';
+    const strength = Math.min(1, (Math.abs(v) - opt.thresh) / opt.thresh);
+    for (const p of posts) {
+      if (!p.bombed || !p.visible || !p.settled.length) continue;
+      const r = p.main.getBoundingClientRect();
+      /* Today's: 2 to 8 a post a frame, up to 160 falling. New: `amount` over a flick's first ~0.4 s, scaled by how hard it was. */
+      let n = old ? Math.round(2 + Math.max(0, strength) * 6) : (opt.amount * (0.4 + 0.6 * Math.max(0, strength))) * dt / 0.4;
+      n = Math.floor(n) + (rnd() < n % 1 ? 1 : 0);
+      for (let k = 0; k < n && flying.length < (old ? 160 : MAX_AIR); k++) {
+        const s = p.settled[(rnd() * p.settled.length) | 0];
+        const x = r.left + s.x, y = r.top + s.y;
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) continue;
+        if (old) {
+          flying.push({ f: { ...s }, x, y, vx: (rnd() - 0.5) * 80, vy: -v * (0.04 + rnd() * 0.06), ph: rnd() * 6, fallen: 0, land: 30 + rnd() * 140, over: undefined, old: true });
+        } else {
+          /* Thrown with the page: the post is moving up the screen at `v` when the page scrolls down, so the flake leaves at a share of that, sprayed sideways. */
+          const k2 = opt.carry * (0.6 + rnd() * 0.8);
+          flying.push({ f: { ...s }, x, y, vx: (rnd() - 0.5) * Math.abs(v) * 0.22, vy: -v * k2, ph: rnd() * 6, spin: 6 + rnd() * 14, age: 0, hang: opt.hang * (0.6 + rnd() * 0.8), fl: rnd() * 6.28, old: false });
+        }
+      }
+    }
+  }
+
+  /* ---------------------------------------------------------------- the pointer ---- */
+  let lastMove = null;
+  addEventListener('pointermove', (e) => {
+    if (e.pointerType !== 'mouse' || !mqFine.matches || motionOff()) return;
+    const moved = lastMove && e.timeStamp - lastMove.t < 100 ? Math.hypot(e.clientX - lastMove.x, e.clientY - lastMove.y) : 0;
+    lastMove = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    mouse = { x: e.clientX, y: e.clientY, speed: moved };
+    const a = e.target instanceof Element ? e.target.closest('.act') : null;
+    const p = a ? postOf.get(a) : null;
+    if (p && p.bombed) {
+      if (carried.length < MAX_CARRIED && rnd() < Math.min(0.6, moved / 40)) {
+        const ang = rnd() * 6.28, dist = 4 + rnd() * 14;
+        carried.push({ f: makeFlake(0, 0), ox: Math.cos(ang) * dist + 6, oy: Math.sin(ang) * dist + 10, ph: rnd() * 6 });
+      }
+    } else {
+      const old = opt.mode === 'old';
+      for (let i = carried.length - 1; i >= 0; i--) {
+        if (rnd() < moved * 0.006) {
+          const c = carried.splice(i, 1)[0];
+          const x = e.clientX + c.ox, y = e.clientY + c.oy;
+          if (old) flying.push({ f: c.f, x, y, vx: (rnd() - 0.5) * 30, vy: 20 + rnd() * 40, ph: c.ph, fallen: 0, land: 10 + rnd() * 26, over: undefined, old: true });
+          else flying.push({ f: c.f, x, y, vx: (rnd() - 0.5) * 40, vy: 30 + rnd() * 50, ph: c.ph, spin: 6 + rnd() * 10, age: 0, hang: 0.15 + rnd() * 0.35, fl: rnd() * 6.28, old: false });
+        }
+      }
+    }
+  }, { passive: true });
+
+  /* ---------------------------------------------------------------- the scroll ---- */
+  let seen = null, speed = 0, shownSpeed = 0;
+  addEventListener('scroll', (e) => {
+    const t = e.timeStamp, y = scrollY;
+    if (seen && t > seen.t && t - seen.t < 100) speed = (y - seen.y) / ((t - seen.t) / 1000);
+    seen = { y, t };
+  }, { passive: true });
+  /* A fling, for a mouse wheel that cannot reach a flick's speed: 6,000 px a second that coasts down, as a phone's does. */
+  function fling(dir) {
+    let v = 6000 * dir, last = null;
+    const go = (t) => { if (last !== null) { const dt = (t - last) / 1000; scrollBy(0, v * dt); v *= Math.exp(-dt * 2.6); } last = t; if (Math.abs(v) > 60) requestAnimationFrame(go); };
+    requestAnimationFrame(go);
+  }
+  $('flickDown').addEventListener('click', () => fling(1));
+  $('flickUp').addEventListener('click', () => fling(-1));
+
+  /* ---------------------------------------------------------------- the frame ---- */
+  let prev = null, lastScrollT = 0;
+  function frame(t) {
+    requestAnimationFrame(frame);
+    const dt = prev === null ? 0 : Math.min(0.05, (t - prev) / 1000);
+    prev = t;
+    d = dprOf();
+    /* The scroll's speed decays when no scroll event came this frame. */
+    if (seen && t - seen.t > 80) speed = 0;
+    shownSpeed = Math.round(Math.abs(speed));
+    if (!motionOff() && Math.abs(speed) >= opt.thresh) shake(speed, dt);
+    if (motionOff()) { flying = []; carried = []; }
+
+    ac.setTransform(1, 0, 0, 1, 0, 0);
+    ac.clearRect(0, 0, air.width, air.height);
+    if (mouse) {
+      for (const c of carried) { c.ph += dt * (2 + mouse.speed * 0.4); drawFlake(ac, c.f, mouse.x + c.ox, mouse.y + c.oy, c.ph, 1); }
+      mouse.speed *= Math.exp(-dt * 8);
+    }
+    for (let i = flying.length - 1; i >= 0; i--) {
+      const b = flying[i];
+      if (b.old) {
+        /* Today's (engine/ui/shine/flakes.ts `tick`): a gentle fall at most 90 px a second, landing only on a bombed post, else fading. */
+        b.vy = Math.min(90, b.vy + 300 * dt); b.x += b.vx * dt; b.y += b.vy * dt; b.fallen += Math.max(0, b.vy * dt); b.ph += dt * 12;
+        if (b.fallen >= b.land) {
+          flying.splice(i, 1);
+          const p = postAt(b.x, b.y);
+          if (p && p.bombed) land(p, b.f, b.x, b.y);
+          continue;
+        }
+        if (b.over === undefined && b.fallen > b.land * 0.67) { const p = postAt(b.x, b.y); b.over = !!(p && p.bombed); }
+        const fade = b.over === false ? Math.max(0, 1 - (b.fallen - b.land * 0.67) / (b.land * 0.33)) : 1;
+        drawFlake(ac, b.f, b.x, b.y, b.ph, fade);
+        continue;
+      }
+      /* New: air drag pulls the throw down to a slow, fluttering fall; the turn flashes it as it tumbles. */
+      const k = Math.exp(-opt.drag * dt);
+      b.vx *= k; b.vy *= k;
+      /* Gravity against the drag: a flake settles to about 480 / drag px a second, 120 at the default. */
+      b.vy += 480 * dt;
+      b.age += dt;
+      const flutter = opt.flutter * Math.sin(b.fl + b.age * 5.5) * 70;
+      b.x += (b.vx + flutter) * dt; b.y += b.vy * dt;
+      b.ph += dt * b.spin * (0.35 + 0.65 * Math.min(1, Math.hypot(b.vx, b.vy) / 400 + 0.3));
+      if (b.y > innerHeight + 10 || b.x < -20 || b.x > innerWidth + 20) { flying.splice(i, 1); continue; }
+      if (b.age >= b.hang) {
+        const p = b.y >= 0 ? postAt(b.x, b.y) : null;
+        if (p) { flying.splice(i, 1); land(p, b.f, b.x, b.y); continue; }
+      }
+      drawFlake(ac, b.f, b.x, b.y, b.ph, 1);
+    }
+    ac.setTransform(1, 0, 0, 1, 0, 0);
+
+    for (const p of posts) if (p.visible) drawPost(p, t, false);
+
+    $('rSpeed').textContent = shownSpeed.toLocaleString('en-US');
+    $('rSpeed').className = shownSpeed >= opt.thresh ? 'hot' : '';
+    $('rAir').textContent = flying.length;
+    $('rCarried').textContent = carried.length;
+    $('rLanded').textContent = loose.length;
+  }
+
+  for (const r of document.querySelectorAll('input[name=board]')) r.addEventListener('change', () => { wrap.dataset.board = r.value; for (const p of posts) p.dirty = true; });
+  for (const r of document.querySelectorAll('input[name=glint]')) r.addEventListener('change', () => { for (const p of posts) p.dirty = true; });
+  const showReduced = () => { $('reducedNote').hidden = !mqReduce.matches; };
+  mqReduce.addEventListener?.('change', showReduced); showReduced();
+  for (const p of posts) settle(p);
+  requestAnimationFrame(frame);
+})();
+</script>
