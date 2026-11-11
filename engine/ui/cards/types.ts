@@ -47,6 +47,8 @@ export interface CardPlay {
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
   readonly reversed?: true;
+  /** The play's first generation failed, so it was refunded and is over (`Act.untaken`): not in force, never counted, though the play stays an Act the room can react to. */
+  readonly untaken?: true;
   /** When a Use's effect ends, as the server wrote it when it landed; a play beyond a post's end, which it is drawn until. */
   readonly ends?: string;
   /**

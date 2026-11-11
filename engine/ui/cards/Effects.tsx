@@ -63,7 +63,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
    */
   const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
-  const tailRows = useTails(post, here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed).map((p) => p.id));
+  const tailRows = useTails(post, here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken).map((p) => p.id));
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
   const lens = useLensStore();
@@ -101,7 +101,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.faceDown && !p.reach), of: here },
+    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping

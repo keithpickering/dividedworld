@@ -143,6 +143,7 @@ function toAct(r: Row): Act {
     currentPayload: r['current_payload'] ?? r['payload'] ?? {},
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
+    ...(r['untaken'] === true ? { untaken: true as const } : {}),
   };
 }
 

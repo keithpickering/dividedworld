@@ -626,6 +626,38 @@ describe('from the Task 3 quality review', () => {
     });
   });
 
+  describe('a play that did not take (0146)', () => {
+    /* A card that writes: its play whose first generation failed was refunded and is over, so it is no layer on the post. */
+    const writing = { ...whoopsRules, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const server: Instance = { ...instance, cards: [writing, stickRules] };
+    const three = (w: ReturnType<typeof world>) => [1, 2, 3].map((layer) => w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' } }));
+
+    test('the form takes a cast on a post with two live plays and one that did not take, as the server does, and refuses once a third is live', async () => {
+      const user = userEvent.setup();
+      const w = world(server);
+      const [, , lost] = three(w);
+      w.fake.seed.text(lost!, w.ids[1]!, { failed: true }, { quiet: true });
+      await open(w);
+      const form = await playHere(user, 2);
+      expect(within(form).queryByText(/already carries/u)).toBeNull();
+      expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
+      await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Whoops!' })).toBeNull());
+      /* Three plays are live now, the one that did not take among four: a fourth is refused, in the form as at the server. */
+      expect((await w.fake.cardsOn(w.ids[1]!, 10)).filter((a) => a.kind === 'card')).toHaveLength(4);
+      await waitFor(() => expect(here(2)).toBeNull());
+    });
+
+    test('three live plays and none that failed leave no room', async () => {
+      const user = userEvent.setup();
+      const w = world(server);
+      three(w);
+      await open(w);
+      await arm(user);
+      expect(here(2)).toBeNull();
+    });
+  });
+
   describe('a post that cannot take the play any more', () => {
     test('a refusal because a fourth landed first re-reads the post: Play waits, says why, and the post stops offering it', async () => {
       const user = userEvent.setup();

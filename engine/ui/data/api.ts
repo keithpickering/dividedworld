@@ -297,6 +297,11 @@ export interface Act {
   readonly editedAt: string | null;
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
+  /**
+   * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0146): public, the
+   * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
+   */
+  readonly untaken?: true;
 }
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */

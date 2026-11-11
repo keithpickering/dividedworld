@@ -657,3 +657,192 @@ begin
   end if;
   perform tests.unbecome();
 end $$;
+
+-- ---------------------------------------------------------------------------------- a play that did not take, said plainly ----
+-- The client learns a play is over from a flag it reads, never from an inference: acts_public says `untaken` of a play whose first generation
+-- failed and was refunded, the same to every reader, and nothing of the refund table (its amount) rides with it.
+do $$
+declare
+  ann uuid := tests.account('cwu-ann'); bob uuid := tests.account('cwu-bob'); cat uuid := tests.account('cwu-cat'); boss uuid := tests.account('cwu-admin');
+  a uuid := tests.character(ann, 'Cwu Caster'); b uuid := tests.character(bob, 'Cwu Author'); c uuid := tests.character(cat, 'Cwu Reader');
+  t uuid := tests.thread('Untaken thread');
+  base timestamptz := '2030-06-01T00:00:00Z';
+  p uuid; p2 uuid; pl_bad uuid; pl_good uuid; pl_bot uuid; pl_ended uuid; who uuid; page jsonb;
+begin
+  update settings set value = '0' where key = 'cardWriteSettleSeconds';
+  insert into admins (account) values (boss);
+  insert into wallets (account, balance) values (ann, 600);
+  insert into card_ledger (account, card, kind, price) select ann, 'cw-scribe', 'bought', 0 from generate_series(1, 4);
+  p := tests.post(b, t, 'A post with plays that took and did not.', base);
+  p2 := tests.post(b, t, 'A post a Mod Bot played on.', base + interval '1 minute');
+  perform tests.become_service();
+  pl_bad := (play_card(ann, 'cw-scribe', a, p, '{}', 50, '') ->> 'id')::uuid;
+  pl_good := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
+  pl_ended := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
+  pl_bot := (staff_play_card('cw-mod', 'cw-scribe', p2, '{}', '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform pg_temp.finish(pl_good, p, 'A tail.', null);
+  perform pg_temp.finish(pl_bad, p, null, 'unreachable');
+  perform pg_temp.finish(pl_bot, p2, null, 'scrub:word');
+  perform tests.become(boss);
+  perform reverse_card(pl_ended);
+  perform tests.unbecome();
+
+  -- The flag, the same to the caster, the author, a reader and the admin; and it carries nothing but the fact.
+  foreach who in array array[ann, bob, cat, boss] loop
+    perform tests.become(who);
+    if (select array_agg(x.id order by x.id) from acts_public x where x.kind = 'card' and x.target_act_id in (p, p2) and x.untaken) is distinct from (select array_agg(i order by i) from unnest(array[pl_bad, pl_bot]) i) then
+      raise exception 'untaken is not the refunded plays alone, or differs by reader: %', (select jsonb_agg(jsonb_build_object('id', x.id, 'untaken', x.untaken)) from acts_public x where x.kind = 'card' and x.target_act_id in (p, p2));
+    end if;
+    if exists (select 1 from acts_public x where x.id in (pl_good, pl_ended, p) and x.untaken) then raise exception 'a play that took, or one an admin ended, or a post, reads as untaken'; end if;
+    perform tests.unbecome();
+  end loop;
+  -- The thread page's plays carry it.
+  perform tests.become(cat);
+  page := thread_page(t, 1, null, 20, '{}');
+  if (select count(*) from jsonb_array_elements(page -> 'plays') r where r ->> 'kind' = 'card' and (r ->> 'untaken')::boolean) is distinct from 2
+     or exists (select 1 from jsonb_array_elements(page -> 'plays') r where r ->> 'id' in (pl_good::text, pl_ended::text) and (r ->> 'untaken')::boolean) then
+    raise exception 'the thread page does not carry the flag: %', page -> 'plays';
+  end if;
+  perform tests.unbecome();
+end $$;
+
+-- A refusal about a play that did not take says so, and an admin's name is said only of an end an admin made.
+do $$
+declare
+  ann uuid := tests.account('cwr-ann'); bob uuid := tests.account('cwr-bob'); cat uuid := tests.account('cwr-cat'); boss uuid := tests.account('cwr-admin');
+  a uuid := tests.character(ann, 'Cwr Caster'); b uuid := tests.character(bob, 'Cwr Author');
+  t uuid := tests.thread('Refusal thread');
+  base timestamptz := '2030-06-02T00:00:00Z';
+  p uuid; pl_bad uuid; pl_ended uuid; plain text := 'That card didn''t take, so there is nothing of it on this post.'; who uuid;
+begin
+  update settings set value = '0' where key = 'cardWriteSettleSeconds';
+  insert into admins (account) values (boss);
+  insert into wallets (account, balance) values (ann, 600);
+  insert into card_ledger (account, card, kind, price) select ann, 'cw-scribe', 'bought', 0 from generate_series(1, 3);
+  p := tests.post(b, t, 'A post.', base);
+  perform tests.become_service();
+  pl_bad := (play_card(ann, 'cw-scribe', a, p, '{}', 10, '') ->> 'id')::uuid;
+  pl_ended := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  perform pg_temp.finish(pl_bad, p, null, 'unreachable');
+  perform tests.become(boss);
+  perform reverse_card(pl_ended);
+  -- An admin cannot end what is over already, and is told the truth.
+  if pg_temp.refusal(format('select reverse_card(%L)', pl_bad)) is distinct from plain then
+    raise exception 'ending a play that did not take says: %', pg_temp.refusal(format('select reverse_card(%L)', pl_bad));
+  end if;
+  if pg_temp.refusal(format('select reverse_card(%L)', pl_ended)) is distinct from 'an admin has already ended that card' then
+    raise exception 'ending a play an admin ended says: %', pg_temp.refusal(format('select reverse_card(%L)', pl_ended));
+  end if;
+  perform tests.unbecome();
+  -- release_effect, to any signed-in reader alike.
+  foreach who in array array[ann, bob, cat] loop
+    perform tests.become(who);
+    if pg_temp.refusal(format('select release_effect(%L)', pl_bad)) is distinct from plain then
+      raise exception 'releasing from a play that did not take says: %', pg_temp.refusal(format('select release_effect(%L)', pl_bad));
+    end if;
+    if pg_temp.refusal(format('select release_effect(%L)', pl_ended)) is distinct from 'an admin ended that card' then
+      raise exception 'releasing from a play an admin ended says: %', pg_temp.refusal(format('select release_effect(%L)', pl_ended));
+    end if;
+    perform tests.unbecome();
+  end loop;
+  -- save_effect_state, said to the post's author alone (the author's checks come first, as before).
+  perform tests.become_service();
+  if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, b, pl_bad, '{}')) is distinct from plain then
+    raise exception 'saving onto a play that did not take says: %', pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, b, pl_bad, '{}'));
+  end if;
+  if pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, b, pl_ended, '{}')) is distinct from 'an admin ended that card' then
+    raise exception 'saving onto a play an admin ended says: %', pg_temp.refusal(format('select save_effect_state(%L, %L, %L, %L)', bob, b, pl_ended, '{}'));
+  end if;
+  perform tests.unbecome();
+end $$;
+
+-- An admin ends a play while the worker holds its claim: the worker's failure refunds nothing, and the play is not returned to the hand.
+do $$
+declare
+  ann uuid := tests.account('cwe-ann'); bob uuid := tests.account('cwe-bob'); boss uuid := tests.account('cwe-admin');
+  a uuid := tests.character(ann, 'Cwe Caster'); b uuid := tests.character(bob, 'Cwe Author');
+  t uuid := tests.thread('Ended mid-claim thread');
+  base timestamptz := '2030-06-03T00:00:00Z';
+  p uuid; pl uuid; got jsonb; said jsonb; before_sum bigint; held_before integer;
+begin
+  update settings set value = '0' where key = 'cardWriteSettleSeconds';
+  insert into admins (account) values (boss);
+  insert into wallets (account, balance) values (ann, 600);
+  insert into card_ledger (account, card, kind, price) select ann, 'cw-scribe', 'bought', 0 from generate_series(1, 2);
+  p := tests.post(b, t, 'A post.', base);
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 40, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 1 then raise exception 'the play was not claimed'; end if;
+  perform tests.become(boss);
+  perform reverse_card(pl);
+  perform tests.unbecome();
+  select coalesce(sum(w.balance), 0) into before_sum from wallets w;
+  held_before := card_held(ann, 'cw-scribe');
+  said := pg_temp.finish(pl, p, null, 'unreachable');
+  if (said ->> 'over')::boolean is distinct from true or (said ->> 'written')::boolean is distinct from false then raise exception 'a finish of an ended play does not say it is over: %', said; end if;
+  if exists (select 1 from card_write_refunds r where r.play = pl) or exists (select 1 from wallet_events w where w.kind = 'refund' and w.ref = pl) or exists (select 1 from card_ledger l where l.kind = 'returned' and l.act = pl)
+     or (select coalesce(sum(w.balance), 0) from wallets w) is distinct from before_sum or card_held(ann, 'cw-scribe') is distinct from held_before or exists (select 1 from card_texts x where x.play = pl) then
+    raise exception 'a failed finish of a play an admin ended moved something';
+  end if;
+  perform tests.become_service();
+  said := refund_card_write(pl);
+  perform tests.unbecome();
+  if (said ->> 'over')::boolean is distinct from true or (said ->> 'refunded')::boolean is distinct from false
+     or exists (select 1 from card_write_refunds r where r.play = pl) or (select coalesce(sum(w.balance), 0) from wallets w) is distinct from before_sum or card_held(ann, 'cw-scribe') is distinct from held_before then
+    raise exception 'refund_card_write of a play an admin ended moved something or does not say it is over: %', said;
+  end if;
+end $$;
+
+-- A run of edits waits only so long: the wait is pushed out by each edit, to five times the settle wait from where the settling began.
+do $$
+declare
+  ann uuid := tests.account('cwc-ann'); bob uuid := tests.account('cwc-bob');
+  a uuid := tests.character(ann, 'Cwc Caster'); b uuid := tests.character(bob, 'Cwc Author');
+  t uuid := tests.thread('Cap thread');
+  base timestamptz := '2030-06-04T00:00:00Z';
+  p uuid; pl uuid; e1 uuid; e2 uuid; e3 uuid; e4 uuid; e5 uuid; got jsonb; since timestamptz; nb timestamptz;
+begin
+  update settings set value = '30' where key = 'cardWriteSettleSeconds';
+  p := tests.post(b, t, 'Words an author keeps mending.', base);
+  pl := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '1 minute');
+  perform pg_temp.claim(10, p);
+  perform pg_temp.finish(pl, p, 'First tail.', null);
+  -- The first edit begins the settling: the wait is the settle wait from it.
+  e1 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 1'), p, base + interval '2 minutes');
+  select w.settling_since, w.not_before into since, nb from card_writes w where w.play = pl;
+  if since is null or since < clock_timestamp() - interval '5 seconds' or nb < clock_timestamp() + interval '25 seconds' or nb > clock_timestamp() + interval '35 seconds' then
+    raise exception 'the first edit begins the settling and waits the settle wait: % %', since, nb - clock_timestamp();
+  end if;
+  -- Later edits push the wait out, but the settling began long ago: 140 seconds in, the wait is cut at 150 from the start (10 seconds on).
+  update card_writes set settling_since = clock_timestamp() - interval '140 seconds' where play = pl;
+  e2 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 2'), p, base + interval '3 minutes');
+  select w.settling_since, w.not_before into since, nb from card_writes w where w.play = pl;
+  if nb < clock_timestamp() + interval '5 seconds' or nb > clock_timestamp() + interval '15 seconds' or since > clock_timestamp() - interval '135 seconds' then
+    raise exception 'an edit pushes the wait out only to five times the settle wait from the first edit: % since %', nb - clock_timestamp(), clock_timestamp() - since;
+  end if;
+  -- Early in the settling an edit pushes the full settle wait out, as before.
+  update card_writes set settling_since = clock_timestamp() - interval '10 seconds' where play = pl;
+  e3 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 3'), p, base + interval '4 minutes');
+  select w.not_before into nb from card_writes w where w.play = pl;
+  if nb < clock_timestamp() + interval '25 seconds' or nb > clock_timestamp() + interval '35 seconds' then raise exception 'an early edit pushes the full wait: %', nb - clock_timestamp(); end if;
+  -- Past the cap an edit leaves the job claimable, and the claim takes the newest version.
+  update card_writes set settling_since = clock_timestamp() - interval '200 seconds' where play = pl;
+  e4 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 4'), p, base + interval '5 minutes');
+  if (select w.not_before from card_writes w where w.play = pl) > clock_timestamp() then raise exception 'an edit past the cap kept the job unclaimable'; end if;
+  got := pg_temp.claim(10, p);
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'version' is distinct from e4::text then raise exception 'a claim past the cap does not take the newest version: %', got; end if;
+  perform pg_temp.finish(pl, e4, 'Second tail.', null);
+  -- Once claimed and finished, the next edit begins a new settling.
+  e5 := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 5'), p, base + interval '6 minutes');
+  select w.settling_since, w.not_before into since, nb from card_writes w where w.play = pl;
+  if since < clock_timestamp() - interval '5 seconds' or nb < clock_timestamp() + interval '25 seconds' then raise exception 'the edit after a finish does not begin a new settling: % %', since, nb - clock_timestamp(); end if;
+  -- An edit that arrives while a job is claimed (not yet finished) begins a new settling too, rather than inheriting the old one.
+  update card_writes set settling_since = clock_timestamp() - interval '400 seconds', not_before = clock_timestamp() - interval '1 second' where play = pl;
+  perform pg_temp.claim(10, p);
+  perform tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 6'), p, base + interval '7 minutes');
+  select w.settling_since, w.not_before into since, nb from card_writes w where w.play = pl;
+  if since < clock_timestamp() - interval '5 seconds' or nb < clock_timestamp() + interval '25 seconds' then raise exception 'an edit after a claim does not begin a new settling: % %', since, nb - clock_timestamp(); end if;
+end $$;

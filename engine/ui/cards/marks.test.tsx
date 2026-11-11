@@ -461,3 +461,46 @@ describe('a visit\'s mark', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
+
+/* A play whose first generation failed was refunded and is over (0146): the mark counts the plays that took, and says plainly when none did. */
+describe('a play that did not take', () => {
+  const writing = { ...testInstance.cards[0]!, key: 'kw', name: 'Card W', stack: 3, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const own = { ...testInstance, cards: [writing] };
+  function writingWorld() {
+    const fake = buildWorld(undefined, own);
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    const play = () => { fake.clock.advance(60_000); return fake.seed.card(spritey, second, 'kw', { message: '' }); };
+    return { fake, thread, second, play };
+  }
+  const draw = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: own, cards: [cardUi('kw')] });
+
+  test('three casts, one of them refunded, are "×2": the mark counts the plays that took', async () => {
+    const w = writingWorld();
+    const [, , lost] = [w.play(), w.play(), w.play()];
+    w.fake.seed.text(lost!, w.second, { failed: true }, { quiet: true });
+    draw(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(1));
+    expect(marks(post)[0]).toHaveTextContent('×2');
+    expect(marks(post)[0]).toHaveAccessibleName(/^Card W, 2 plays/u);
+    expect(marks(post)[0]).not.toHaveAttribute('data-kb-caught');
+  });
+
+  test('a post whose only play did not take keeps its mark, dimmed, naming the one play and what became of it', async () => {
+    const w = writingWorld();
+    const lost = w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    draw(w);
+    const post = await article(2);
+    await waitFor(() => expect(marks(post)).toHaveLength(1));
+    expect(marks(post)[0]).not.toHaveTextContent('×');
+    expect(marks(post)[0]).toHaveAttribute('data-kb-caught', 'true');
+    expect(marks(post)[0]).toHaveAccessibleName("Card W, 1 play, Didn't take. Opens the cards on this post.");
+  });
+});

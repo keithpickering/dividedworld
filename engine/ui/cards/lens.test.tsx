@@ -1833,3 +1833,68 @@ describe('the buttons', () => {
     expect(ruleOf('.kb-lens-row-foot .kb-reaction-list')).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
   });
 });
+
+/* A play whose first generation failed was refunded and is over (0146): the Lens says so in plain words and offers an admin no End this card, since there is nothing to end. */
+describe('a play that did not take', () => {
+  const writing = { ...instance.cards[1]!, key: 'kw', name: 'Card W', stack: 3, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const own = { ...instance, cards: [...instance.cards, writing] };
+  const ui = [...cards, cardUi('kw')];
+  function writingWorld() {
+    const fake = buildWorld(undefined, own);
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    const play = () => { fake.clock.advance(60_000); return fake.seed.card(spritey, second, 'kw', { message: '' }); };
+    return { fake, me, thread, second, play };
+  }
+  const drawn = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: own, cards: ui });
+  const openW = async () => { await userEvent.click(await within(await article(2)).findByRole('button', { name: /^Card W, \d plays?/u })); await userEvent.click(whoButton()); };
+  const row = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+
+  test('reads "Didn\'t take" as the state and in its row, says its text never arrived, and offers an admin no End this card, while a live play beside it does', async () => {
+    width(false);
+    const w = writingWorld();
+    w.fake.seed.admin(w.me);
+    const live = w.play();
+    const lost = w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    drawn(w);
+    await openW();
+    expect(within(row(lost)).getByText("Didn't take. Its text never arrived, so it is not in effect on this post.")).toBeInTheDocument();
+    expect(within(row(lost)).queryByRole('button', { name: 'End this card' })).toBeNull();
+    expect(within(row(live)).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
+    expect(within(row(live)).queryByText(/Didn't take/u)).toBeNull();
+    /* It stays an Act the room can react to. */
+    expect(within(row(lost)).getByRole('button', { name: /react/iu })).toBeInTheDocument();
+    /* Nothing says an admin did anything. */
+    expect(within(lens()).queryByText(/admin/iu)).toBeNull();
+  });
+
+  test('its effect is not drawn: the card\'s effect is given the plays that took alone', async () => {
+    width(false);
+    const w = writingWorld();
+    const lost = w.play();
+    w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    const Count = ({ plays, children }: EffectProps) => <><span data-testid="effect-plays">{plays.length}</span>{children}</>;
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: own, cards: [...cards, cardUi('kw', { Effect: Count })] });
+    expect((await screen.findByTestId('effect-plays')).textContent).toBe('1');
+  });
+
+  test('a kind whose plays all did not take reads "Didn\'t take" as its state', async () => {
+    width(false);
+    const w = writingWorld();
+    w.fake.seed.admin(w.me);
+    const lost = w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    drawn(w);
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^Card W, 1 play/u }));
+    expect(within(lens()).getByText("Didn't take", { selector: '.kb-lens-line' })).toBeInTheDocument();
+    await userEvent.click(whoButton());
+    expect(within(lens()).queryByRole('button', { name: 'End this card' })).toBeNull();
+  });
+});

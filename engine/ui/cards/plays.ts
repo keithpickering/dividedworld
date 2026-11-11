@@ -70,6 +70,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.caught === 'string' ? { caught: act.payload.caught } : {}),
     ...(typeof act.payload.spring === 'string' ? { spring: act.payload.spring } : {}),
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
+    ...(act.untaken === true ? { untaken: true as const } : {}),
   };
 }
 
@@ -81,18 +82,19 @@ export function playOf(act: Act): CardPlay | null {
 export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? play.post;
 
 /**
- * The plays in force: all but a play an admin ended (`reversed`: its layer is off) and a play beyond a post whose end has passed (it
- * ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
+ * The plays in force: all but a play an admin ended (`reversed`: its layer is off), a play that did not take (`untaken`: its text never
+ * arrived, and it was refunded) and a play beyond a post whose end has passed (it ends on its timer, its way out). A Use's end on a post is the Lens's to say ("has ended"), so it is kept. What counts layers, offers
  * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
 export function livePlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
-  const live = plays.filter((p) => !p.reversed && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  const live = plays.filter((p) => !p.reversed && !p.untaken && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
 }
 
 /**
- * The plays the marks and the Lens draw: `livePlays`, but a play on a post that an admin ended is kept, as a caught play is, so its
- * mark and its Lens row can say "Ended by an admin". Its layer is off all the same (`livePlays`, `effectsOf`, the post's effects).
+ * The plays the marks and the Lens draw: `livePlays`, but a play on a post that an admin ended, or that did not take, is kept, as a caught
+ * play is, so its mark and its Lens row can say "Ended by an admin" or "Didn't take". Its layer is off all the same (`livePlays`,
+ * `effectsOf`, the post's effects); the marks do not count it.
  */
 export function markedPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
   const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now))));

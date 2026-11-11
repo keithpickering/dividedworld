@@ -2977,7 +2977,38 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
     expect((await fake.edit(post, face, 'Edited post')).ok).toBe(true);
     const [, edit] = (await fake.history(post)).map((v) => v.id);
     const rows = await fake.tails([post]);
-    expect(rows.map((r) => [r.play, r.version, r.failed, r.waiting])).toEqual([[first, post, false, false], [second, post, true, false], [first, edit, false, true], [second, edit, false, true]]);
+    /* The second play's first generation failed, so it was refunded and is over: the edit queues nothing for it. */
+    expect(rows.map((r) => [r.play, r.version, r.failed, r.waiting])).toEqual([[first, post, false, false], [second, post, true, false], [first, edit, false, true]]);
+  });
+
+  test('a first generation that fails refunds the play: its Act reads untaken, nothing waits for it, and an edit queues nothing; a failed regeneration of a play that made a text does not', async () => {
+    const { fake, face, post } = world();
+    const kept = fake.seed.card(face, post, 'typewriter');
+    const lost = fake.seed.card(face, post, 'typewriter');
+    fake.seed.text(kept, post, { text: 'a' }, { quiet: true });
+    fake.seed.text(lost, post, { failed: true }, { quiet: true });
+    const acts = await fake.cardsOnMany([post], 10);
+    expect(acts.filter((a) => a.kind === 'card').map((a) => [a.id, a.untaken])).toEqual([[kept, undefined], [lost, true]]);
+    fake.clock.advance(60_000);
+    expect((await fake.edit(post, face, 'Edited post')).ok).toBe(true);
+    const edit = (await fake.history(post)).map((v) => v.id)[1]!;
+    expect((await fake.tails([post])).map((r) => [r.play, r.version, r.failed, r.waiting])).toEqual([[kept, post, false, false], [lost, post, true, false], [kept, edit, false, true]]);
+    /* A regeneration that fails, for a play that made a text, is not a refund. */
+    fake.seed.text(kept, edit, { failed: true }, { quiet: true });
+    expect((await fake.cardsOn(post, 10)).find((a) => a.id === kept)?.untaken).toBeUndefined();
+    /* A late text for a play that is over writes nothing. */
+    fake.seed.text(lost, post, { text: 'too late' }, { quiet: true });
+    expect((await fake.tails([post])).some((r) => r.play === lost && r.text !== null)).toBe(false);
+  });
+
+  test('a play that did not take is refused in plain words, not as an admin\'s end', async () => {
+    const { fake, face, post } = world();
+    const lost = fake.seed.card(face, post, 'typewriter');
+    fake.seed.text(lost, post, { failed: true }, { quiet: true });
+    fake.seed.admin(fake.seed.account('boss'));
+    const plain = 'That card didn\'t take, so there is nothing of it on this post.';
+    expect(await fake.releaseEffect(lost)).toEqual({ ok: false, error: plain });
+    expect(await fake.saveEffect(lost, face, {})).toEqual({ ok: false, error: plain });
   });
 
   test('card_text carries the play and the version and nothing else, to the thread that holds the play', async () => {

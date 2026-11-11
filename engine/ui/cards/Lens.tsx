@@ -48,7 +48,7 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, playsPhrase, sumOf, wardWords } from './marks.ts';
+import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords, wardWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -194,12 +194,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
     return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };
@@ -216,16 +216,21 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     }
     const rules = instance.cards.find((c) => c.key === kind);
     /* A play beyond a post ends on its timer: the view's way out says when, the latest of the kind's (each is drawn until its own). */
-    const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
-    const base = defaultView({ name: rules?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy, latestEnd, ofKind.filter((p) => !p.caught && !p.reversed));
+    const latestEnd = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken && p.ends !== undefined).map((p) => p.ends!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+    const base = defaultView({ name: rules?.name ?? kind }, ui.cards.find((c) => c.key === kind), economy, latestEnd, ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken));
     const caught = Object.fromEntries(ofKind.filter((p) => p.caught).map((p) => {
       const trap = here.traps[p.id];
       return [p.id, caughtWords(trap ? cardName(trap) : null)];
     }));
     /* A play an admin ended says so, in plain words; its layer is off for everyone. */
     for (const p of ofKind) if (p.reversed) caught[p.id] = endedWords();
-    const live = ofKind.filter((p) => !p.caught && !p.reversed);
-    if (live.length === 0 && ofKind.length > 0 && ofKind.every((p) => p.reversed)) return { ...base, progress: null, controls: [], state: endedWords(), notes: caught };
+    /* A play that did not take says so in plain words: its text never arrived, so it is not in effect (`untakenWords`). */
+    for (const p of ofKind) if (p.untaken && !p.reversed) caught[p.id] = untakenWords();
+    const live = ofKind.filter((p) => !p.caught && !p.reversed && !p.untaken);
+    if (live.length === 0 && ofKind.length > 0 && ofKind.every((p) => p.reversed || p.untaken)) {
+      const state = ofKind.every((p) => p.untaken) ? UNTAKEN_STATE : ofKind.every((p) => p.reversed) ? endedWords() : OVER_STATE;
+      return { ...base, progress: null, controls: [], state, notes: caught };
+    }
     if (live.length === 0 && ofKind.length > 0) {
       return { ...base, state: CAUGHT_STATE, notes: caught };
     }
@@ -236,8 +241,8 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
-  /* Every play of the kind ended by an admin: its effect draws nothing, so whatever view it last gave is stale. */
-  const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed);
+  /* Every play of the kind over (ended by an admin, or it did not take): its effect draws nothing, so whatever view it last gave is stale. */
+  const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed || p.untaken);
   if (!given || allEnded) return fallback;
   /* An effect's own view, with the catches the engine knows of beside its notes. */
   return Object.keys(fallback.notes).length > 0 && !isBack(kind) ? { ...given, notes: { ...fallback.notes, ...given.notes } } : given;
@@ -417,9 +422,9 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
   );
 }
 
-/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not worn off. */
+/** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not over because it did not take, not worn off. */
 const endable = (play: CardPlay, now: number): boolean =>
-  !play.faceDown && play.caught === undefined && !play.reversed && !(play.ends !== undefined && Date.parse(play.ends) <= now);
+  !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && !(play.ends !== undefined && Date.parse(play.ends) <= now);
 
 function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now }: RowProps) {
   const { characters } = usePlayer();
