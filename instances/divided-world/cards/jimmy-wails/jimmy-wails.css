@@ -1,0 +1,211 @@
+/*
+ * Jimmy Wails (Effect.tsx): a donation drive under a post. The banners are pieces of the game laid on the board, so a plate keeps its own picture, ink
+ * and panel on either board (they come from plates.ts, as inline style); the carousel's controls, the buttons and the donor wall take the board's tokens,
+ * in the plain look of the Wikipedia appeal they parody, so both modes follow the theme.
+ *
+ * A banner is laid out in its plate's own pixels (`.dw-jw-stage`, as wide as the plate and its panel) and scaled to the post's width by one factor
+ * (Banner.tsx), so the words stay where the plate set them. The carousel stacks its slides in one grid cell and crossfades them; reduced motion
+ * swaps them with no fade.
+ */
+.dw-jw {
+  margin-block: 0.75em 0;
+  font-family: var(--kb-font-body);
+  font-size: var(--kb-size-body);
+  color: var(--kb-board-fg);
+}
+
+.dw-jw-banner {
+  position: relative;
+  margin: 0;
+  width: 100%;
+  overflow: hidden;
+}
+.dw-jw-stage {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform-origin: 0 0;
+  font-family: Arial, Helvetica, sans-serif;
+  line-height: 1.2;
+}
+.dw-jw-plate,
+.dw-jw-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  user-select: none;
+}
+.dw-jw-plate {
+  display: block;
+  max-width: none;
+}
+.dw-jw-words {
+  position: absolute;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+.dw-jw-words p {
+  margin: 0;
+}
+.dw-jw-lead {
+  font-size: max(11px, calc(var(--dw-jw-size) * 0.5));
+  font-weight: bold;
+  margin-block-end: 0.4em;
+}
+.dw-jw-message {
+  font-size: var(--dw-jw-size);
+  font-weight: bold;
+}
+.dw-jw-by {
+  font-size: max(11px, calc(var(--dw-jw-size) * 0.5));
+  margin-block-start: 0.6em;
+}
+
+.dw-jw-carousel {
+  display: block;
+}
+.dw-jw-slides {
+  display: grid;
+}
+.dw-jw-slide {
+  grid-area: 1 / 1;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.6s ease, visibility 0s linear 0.6s;
+}
+.dw-jw-slide[data-active='true'] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.6s ease, visibility 0s;
+}
+.dw-jw-carousel[data-reduced] .dw-jw-slide,
+.dw-jw-carousel[data-reduced] .dw-jw-slide[data-active='true'] {
+  transition: none;
+}
+.dw-jw-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5em;
+  margin-block: 0.4em;
+  font-size: var(--kb-size-small);
+}
+.dw-jw-step,
+.dw-jw-pause,
+.dw-jw-button,
+.dw-jw-more {
+  min-width: 2.75em;
+  min-height: 2.75em;
+  padding: 0.25em 0.75em;
+  font: inherit;
+  color: var(--kb-fg);
+  background: var(--kb-bg);
+  border: 1px solid var(--kb-rule);
+  border-radius: 0;
+  cursor: pointer;
+}
+.dw-jw-step:disabled,
+.dw-jw-button:disabled,
+.dw-jw-more:disabled {
+  color: var(--kb-muted);
+  border-color: var(--kb-muted);
+  cursor: not-allowed;
+}
+.dw-jw-dots {
+  display: inline-flex;
+  gap: 0.25em;
+}
+/* The dot is small to the eye and a full target to a finger, as a pip is. */
+.dw-jw-dot {
+  position: relative;
+  box-sizing: content-box;
+  width: 0.75em;
+  height: 0.75em;
+  margin: 0.5em;
+  padding: 0;
+  background: var(--kb-bg);
+  border: 1px solid var(--kb-fg);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.dw-jw-dot::before {
+  content: '';
+  position: absolute;
+  inset: -0.75em;
+}
+.dw-jw-dot[aria-current='true'] {
+  background: var(--kb-fg);
+}
+.dw-jw-step:focus-visible,
+.dw-jw-pause:focus-visible,
+.dw-jw-dot:focus-visible,
+.dw-jw-button:focus-visible,
+.dw-jw-more:focus-visible,
+.dw-jw-earlier summary:focus-visible {
+  outline: 2px solid var(--kb-focus);
+  outline-offset: 2px;
+}
+.dw-jw-count {
+  color: var(--kb-board-muted);
+}
+
+.dw-jw-drive {
+  margin-block: 0.5em;
+  padding: 0.5em 0.75em;
+  background: var(--kb-bg);
+  border: 1px solid var(--kb-rule);
+}
+.dw-jw-total {
+  margin: 0 0 0.5em;
+  font-weight: bold;
+}
+.dw-jw-give {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+.dw-jw-amount {
+  display: inline-block;
+}
+.dw-jw-split {
+  margin: 0.5em 0 0;
+  font-size: var(--kb-size-small);
+  color: var(--kb-muted);
+}
+.dw-jw-result {
+  min-height: 1.45em;
+  margin-block-start: 0.4em;
+  font-size: var(--kb-size-small);
+}
+.dw-jw-result[data-refused='true'] {
+  font-weight: bold;
+}
+.dw-jw-wall {
+  margin: 0.4em 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--kb-size-small);
+}
+.dw-jw-sum {
+  color: var(--kb-muted);
+}
+.dw-jw-more {
+  margin-block-start: 0.4em;
+}
+.dw-jw-earlier {
+  margin-block-start: 0.5em;
+  font-size: var(--kb-size-small);
+}
+.dw-jw-earlier summary {
+  cursor: pointer;
+  color: var(--kb-link);
+  text-decoration: underline;
+}
+.dw-jw-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
