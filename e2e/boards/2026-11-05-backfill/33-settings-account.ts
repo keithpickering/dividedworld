@@ -127,7 +127,7 @@ export const phone: BoardManifest = {
        * title; the face, the price and the rules follow it). The eyebrow says the kind where the board draws the alignment (board 34's departure), and the board's
        * price says "more on a long post" where the build says "more to play on a long post" (the plan's copy). The board's face is a 170px stand-in where the build draws
        * the Postcard at the sheet's 276px: the face is held by its center and its y, and what follows it stands its 168px of extra height lower; the sheet's corner is 8px
-       * in from the window's edge, so the board's centered face stands 8px left of center in the build, ; the frame's kicker stands 30px above the board's eyebrow.
+       * in from the window's edge, so the board's centered face stands 8px left of center in the build; the frame's kicker stands 30px above the board's eyebrow.
        */
       name: 'The card info, as a sheet',
       build: { moment: '07-vending' },
