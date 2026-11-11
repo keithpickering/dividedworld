@@ -275,3 +275,22 @@ test('a card reversed after its window settled keeps that window\'s Aura, and mo
   assert.equal((await runSettlement(db, instance, t.at(48))).status, 'applied');
   assert.equal(t.aura('Gone'), settled, 'the first window\'s Aura stays and the next moves none');
 });
+
+test('a window in which an Earn Gimmick boosts a card\'s Heel is applied, and the next window settles (#452)', async () => {
+  const db = psqlDb();
+  const t = await reversedPlays(db);
+  const gone = t.play('Gone');
+  // A Heat Magnet on the Heel, in force across the window: its boost is a card.boost entry that names the card.
+  const magnet = sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at)
+    select '${t.characters.Gone}', 'card', thread, id, jsonb_build_object('card', 'heat-magnet', 'message', '', 'config', '{}'::jsonb, 'reach', 'character', 'character', '${t.characters.Gone}', 'targetName', 'Gone', 'ends', '${t.at(60)}'::timestamptz), '${t.at(1.5)}'
+    from acts where id = '${gone.post}' returning id`);
+  assert.ok(magnet, 'the Gimmick is played');
+  const first = await runSettlement(db, instance, t.at(24));
+  assert.equal(first.status, 'applied', JSON.stringify(first));
+  console.log(sql(`select string_agg(character::text || reason || ':' || amount || coalesce(params::text,''), ' ; ') from ledger `), sql(`select count(*) from acts where kind='card'`));
+  assert.equal(sql(`select count(*) from ledger where character = '${t.characters.Gone}' and reason = 'card.boost' and params ->> 'card' = 'heat-magnet'`), '1', 'the boost is its own entry, naming its card');
+  assert.ok(Number(sql(`select count(*) from ledger_shares s join ledger l on l.id = s.ledger where l.reason = 'card.boost' and l.character = '${t.characters.Gone}'`)) > 0, 'and has its shares');
+  sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
+    ('${gone.card}', '${t.characters.Author}', '${t.who('author')}', 'tomato', 1, '${t.at(26)}')`);
+  assert.equal((await runSettlement(db, instance, t.at(48))).status, 'applied', 'the next window settles');
+});

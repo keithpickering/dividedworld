@@ -98,6 +98,19 @@ test('each entry whose reason states a number is applied with the numbers it was
   assert.equal(entries.filter((e) => e.reason !== 'lurker.postedTooMuch').some((e) => 'params' in e), false, 'an entry whose reason states no number carries none');
 });
 
+test('the shares sent for a boost entry carry its card, and the entry names it in its params (#452)', async () => {
+  const boosted: SettlementInput = { ...day, acts: [...day.acts, { id: 'g1', character: 'he', kind: 'card' as const, at: FROM + 30 * 60_000, thread: 't', card: 'heat-magnet', reach: 'character' as const, on: 'he', ends: TO + H }] };
+  const { db, calls } = fakeDb(boosted);
+  await runSettlement(db, instance, new Date(TO).toISOString());
+  const apply = calls.find((c) => c.fn === 'apply_settlement')!.args;
+  const boost = (apply.entries as { character: string; reason: string; params?: { card?: string } }[]).find((e) => e.reason === 'card.boost');
+  assert.deepEqual(boost?.params, { card: 'heat-magnet' }, 'the entry names its card');
+  const shares = (apply.shares as { reason: string; card?: string }[]).filter((s) => s.reason === 'card.boost');
+  assert.ok(shares.length > 0, 'the boost is shared');
+  assert.ok(shares.every((s) => s.card === 'heat-magnet'), `each boost share carries its card: ${JSON.stringify(shares)}`);
+  assert.equal((apply.shares as { reason: string; card?: string }[]).some((s) => s.reason !== 'card.boost' && 'card' in s), false, 'no other share names a card');
+});
+
 test('a run settles the next window: reads its input, runs the instance\'s classes, applies their entries', async () => {
   const { db, calls } = fakeDb();
   const out = await runSettlement(db, instance, new Date(TO).toISOString());
