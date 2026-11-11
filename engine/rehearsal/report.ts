@@ -77,6 +77,8 @@ export interface RehearsalLog {
   readonly scenario: string;
   readonly seed: number;
   readonly mode: string;
+  /** The model each tier asked for in this run. */
+  readonly tiers: { readonly strong: string; readonly light: string };
   readonly daysRun: number;
   readonly day1: string;
   readonly systemOnAt: string | null;
@@ -156,6 +158,7 @@ summary{cursor:pointer}`;
 export function reportHtml(log: RehearsalLog): string {
   const head = `<h1>Rehearsal: ${esc(log.scenario)}</h1>
 <p>Seed ${esc(log.seed)}, mode ${esc(log.mode)}, ${esc(log.daysRun)} days from ${esc(log.day1)}. The System switched on ${esc(log.systemOnAt ?? 'never')}.</p>
+<p>Models: strong ${esc(log.tiers.strong)}, light ${esc(log.tiers.light)}.</p>
 <p>Cost: ${esc(dollars(log.cost.liveMicrodollars))} live of a $${esc(log.cost.capDollars)} cap, ${esc(dollars(log.cost.replayedMicrodollars))} replayed from the cassette, ${esc(dollars(log.cost.unmatchedMicrodollars))} on ledger rows no kept call matched.</p>
 ${log.notes.length ? `<ul>${log.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}`;
   return `<!doctype html>

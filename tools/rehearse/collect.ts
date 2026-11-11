@@ -228,8 +228,11 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   let replayed = 0;
   let unmatched = 0;
   for (const r of ledger) if (unmatchedRows.has(r)) unmatched += r.cost; else if (replayedRows.has(r)) replayed += r.cost; else live += r.cost;
+  // The models the run's jobs read: the setting as the rehearsal's own database holds it, after any `--strong` or `--light`.
+  const held = (await conn.sql("select value from settings where key = 'modelTiers'"))[0]?.value as { strong?: unknown; light?: unknown } | undefined;
+  const tiers = { strong: String(held?.strong ?? ''), light: String(held?.light ?? '') };
   return {
-    scenario: scenario.key, seed: scenario.seed, mode: ctx.mode, daysRun: scenario.days, day1: iso(day1), systemOnAt: isoOrNull(ctx.systemOnAt),
+    scenario: scenario.key, seed: scenario.seed, mode: ctx.mode, tiers, daysRun: scenario.days, day1: iso(day1), systemOnAt: isoOrNull(ctx.systemOnAt),
     cost: { liveMicrodollars: live, replayedMicrodollars: replayed, unmatchedMicrodollars: unmatched, capDollars: scenario.costCapDollars }, notes,
     days: Object.values(days) as LogDay[],
   };

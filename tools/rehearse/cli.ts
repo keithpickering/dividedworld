@@ -12,15 +12,20 @@
 // Any scenario field is a flag too: `--players 6`, and a {least,most} field as `--postsPerDay 1-3` (one number means both ends).
 import { fileURLToPath } from "node:url";
 import type { Scenario } from "../../engine/rehearsal/types.ts";
+import { PRICES } from "../../supabase/functions/_shared/models/prices.ts";
 import type { Mode } from "./models.ts";
 
 export const USAGE = `Usage: npm run rehearse -- <scenario> [--stub | --offline | --fresh] [--days N] [--seed N] [--cap DOLLARS]
-                           [--profile playtest] [--keep] [--<scenario field> <value>]
+                           [--profile playtest] [--keep] [--strong <model>] [--light <model>]
+                           [--<scenario field> <value>]
   A {least,most} field takes --postsPerDay 1-3 (one number means both ends). The default mode is record.`;
 
 export type Parsed =
-  | { readonly ok: true; readonly scenario: Scenario; readonly mode: Mode; readonly profile: string | undefined; readonly keep: boolean }
+  | { readonly ok: true; readonly scenario: Scenario; readonly mode: Mode; readonly profile: string | undefined; readonly keep: boolean; readonly tiers: TierChoice }
   | { readonly ok: false; readonly error: string };
+
+/** The tiers a run names; a tier left out keeps the instance's model. */
+export type TierChoice = { readonly strong?: string; readonly light?: string };
 
 const MODES: Record<string, Mode> = { "--stub": "stub", "--offline": "offline", "--fresh": "fresh" };
 const refuse = (what: string): Parsed => ({ ok: false, error: `${what}\n${USAGE}` });
@@ -40,6 +45,7 @@ export function parseArgs(argv: readonly string[], known: readonly Scenario[]): 
   let mode: Mode | undefined;
   let keep = false;
   let profile: string | undefined;
+  const tiers: { strong?: string; light?: string } = {};
   const over: Record<string, unknown> = {};
   const rest = argv.slice(1);
   for (let i = 0; i < rest.length; i++) {
@@ -62,6 +68,10 @@ export function parseArgs(argv: readonly string[], known: readonly Scenario[]): 
       if (value !== "playtest") return refuse(`--profile is "playtest" or left out, not "${value}".`);
       profile = value;
       over.profile = value;
+    } else if (name === "strong" || name === "light") {
+      const listed = Object.keys(PRICES.anthropic.models);
+      if (!listed.includes(value)) return refuse(`--${name} needs a model the price table lists, not "${value}". Listed: ${listed.join(", ")}.`);
+      tiers[name] = value;
     } else if (name === "key") {
       return refuse("--key is not a field a run can change.");
     } else if (name in base) {
@@ -84,7 +94,7 @@ export function parseArgs(argv: readonly string[], known: readonly Scenario[]): 
       return refuse(`Unknown flag ${arg}.`);
     }
   }
-  return { ok: true, scenario: { ...base, ...over }, mode: mode ?? "record", profile, keep };
+  return { ok: true, scenario: { ...base, ...over }, mode: mode ?? "record", profile, keep, tiers };
 }
 
 async function main(): Promise<number> {
@@ -95,10 +105,10 @@ async function main(): Promise<number> {
     console.error(parsed.error);
     return 2;
   }
-  const { scenario, mode, profile, keep } = parsed;
+  const { scenario, mode, profile, keep, tiers } = parsed;
   console.log(`Rehearsing ${scenario.key}: ${scenario.days} days, ${mode} mode, seed ${scenario.seed}.`);
   const startedAt = Date.now();
-  const run = await rehearse({ scenario, mode, ...(profile ? { profile } : {}), keep, onDay: (line) => console.log(line) });
+  const run = await rehearse({ scenario, mode, ...(profile ? { profile } : {}), tiers, keep, onDay: (line) => console.log(line) });
   const seconds = Math.round((Date.now() - startedAt) / 1000);
   console.log(`Done in ${seconds}s. Live model spend: $${(run.liveMicrodollars / 1e6).toFixed(4)}.`);
   for (const note of run.notes) console.log(`Note: ${note}`);

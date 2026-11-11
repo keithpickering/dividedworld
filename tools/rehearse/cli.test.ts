@@ -66,3 +66,26 @@ test("an unknown flag, a missing value and a bad number are refused with the usa
     assert.match(r.error, /Usage: npm run rehearse/);
   }
 });
+
+test("--strong and --light name a model each, and a tier left out stays out", () => {
+  const both = parseArgs(["tiny", "--strong", "claude-opus-5-5", "--light", "claude-haiku-5-5"], known);
+  assert.ok(both.ok);
+  assert.deepEqual(both.tiers, { strong: "claude-opus-5-5", light: "claude-haiku-5-5" });
+  const one = parseArgs(["tiny", "--light", "claude-sonnet-5-5"], known);
+  assert.ok(one.ok);
+  assert.deepEqual(one.tiers, { light: "claude-sonnet-5-5" });
+  const none = parseArgs(["tiny"], known);
+  assert.ok(none.ok);
+  assert.deepEqual(none.tiers, {});
+});
+
+test("a model the price table does not list is refused with the list", () => {
+  for (const argv of [["tiny", "--strong", "gpt-9"], ["tiny", "--light", "claude-opus-4"], ["tiny", "--strong"]]) {
+    const r = parseArgs(argv, known);
+    assert.ok(!r.ok, argv.join(" "));
+    assert.match(r.error, /--(strong|light)/);
+  }
+  const r = parseArgs(["tiny", "--strong", "gpt-9"], known);
+  assert.ok(!r.ok);
+  for (const m of ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]) assert.match(r.error, new RegExp(m));
+});

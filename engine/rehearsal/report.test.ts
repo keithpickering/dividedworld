@@ -12,7 +12,7 @@ const meeting = {
 };
 const move = { id: 5, staff: 'boss', kind: 'rename', why: 'because', demand: { kind: 'postsOnBoard' }, goLiveAt: '2026-12-02T00:00:00.000Z', expiresAt: null, held: false, landedAt: '2026-12-02T00:00:00.000Z', endedHow: 'met', failure: null };
 const clean = (): RehearsalLog => ({
-  scenario: 'tiny', seed: 7, mode: 'stub', daysRun: 1, day1: '2026-12-01T00:00:00.000Z', systemOnAt: '2026-12-01T00:00:00.000Z',
+  scenario: 'tiny', seed: 7, mode: 'stub', tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, daysRun: 1, day1: '2026-12-01T00:00:00.000Z', systemOnAt: '2026-12-01T00:00:00.000Z',
   cost: { liveMicrodollars: 1500000, replayedMicrodollars: 250000, unmatchedMicrodollars: 0, capDollars: 5 }, notes: [],
   days: [{ ...emptyDay(1), meetings: [meeting], moves: [move], costByJob: [{ job: 'meeting', calls: 1, liveMicrodollars: 1500000, replayedMicrodollars: 0, unmatchedMicrodollars: 0 }] }],
 });
@@ -127,4 +127,8 @@ test('a marker planted in every string field of the log never becomes a tag', ()
   const html = reportHtml(marked(full) as RehearsalLog);
   assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;&amp;&quot;&#39;'));
   assert.ok(!/<b>/i.test(html), 'a planted <b> tag is in the page');
+});
+
+test('the header names both tiers\' models', () => {
+  assert.match(reportHtml(clean()), /Models: strong claude-opus-5-5, light claude-haiku-5-5\./);
 });
