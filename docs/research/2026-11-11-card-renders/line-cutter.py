@@ -27,10 +27,9 @@ def pawn(loc, mat, s=1.0, rot=(0, 0, 0), mood=None):
     parts = [rig.lathe('body', BODY, mat, seg=48), rig.ball((0, 0, HEAD_Z), HEAD_R, mat, 'head', 40)]
     if mood == 'smug':
         for sx in (-1, 1):
-            parts.append(rig.ball(fp(sx * 0.23, 0.1, -0.02), 0.14, white, 'eye', 20, scale=(1, 0.5, 1)))
+            parts.append(rig.ball(fp(sx * 0.23, 0.1, -0.02), 0.14, white, 'eye', 20, scale=(1, 0.5, 0.72)))
             parts.append(rig.ball(fp(sx * 0.23 + 0.06, 0.08, 0.05), 0.065, ink, 'pupil', 16))
-            parts.append(rig.tube('lid', [fp(sx * 0.23 - 0.17, 0.17, 0.06), fp(sx * 0.23, 0.2, 0.08), fp(sx * 0.23 + 0.17, 0.17, 0.06)], 0.04, mat, res=4))
-        parts.append(rig.tube('brow', [fp(-0.4, 0.3, 0.02), fp(-0.1, 0.36, 0.02)], 0.035, ink, res=4))
+        parts.append(rig.tube('brow', [fp(-0.4, 0.26, 0.02), fp(-0.1, 0.3, 0.02)], 0.035, ink, res=4))
         parts.append(rig.tube('brow', [fp(0.1, 0.4, 0.02), fp(0.4, 0.46, 0.02)], 0.035, ink, res=4))
         parts.append(rig.tube('smirk', [fp(-0.22 + 0.5 * t, -0.27 + 0.2 * t * t, 0.01) for t in (j / 12 for j in range(13))], 0.04, ink, res=5))
     if mood == 'cross':
