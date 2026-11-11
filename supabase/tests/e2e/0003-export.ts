@@ -171,6 +171,9 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into conduct_acceptances (account, version) values (bob, 1);
       insert into conduct_reports (reporter, version_act, section, note) values (bob, p, 'mask', 'Carried across, too.');
       insert into conduct_decisions (report, version_act, admin, outcome, note) select r.id, p, ann, 'none', 'Read, and nothing to do.' from conduct_reports r;
+      -- Moderation mail (0147): one outbox row and its attempt, so both tables have a row to carry across.
+      insert into mail_outbox (account, template, facts, decision) select bob, 'reportRead', '{}', d.id from conduct_decisions d limit 1;
+      insert into mail_attempts (outbox, ok, provider_id, error) select o.id, true, 'export-prov-1', null from mail_outbox o limit 1;
       -- An admin ends that card with reverse_card, as ann, the admin (0092); the play's id is the one planted above.
       perform tests.become(ann);
       perform reverse_card('${endedPlay}');
@@ -582,7 +585,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-mail,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);

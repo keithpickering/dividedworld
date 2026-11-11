@@ -20,7 +20,7 @@ import { LOST_ANSWER } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { ReachAPerson } from '../contact/Contact.tsx';
-import { useLocation, useNavigate } from '../router.tsx';
+import { Link, useLocation, useNavigate } from '../router.tsx';
 import { safeNext } from './next.ts';
 import { OpenAccount } from './OpenAccount.tsx';
 import { setWhy, useSession } from './session.ts';
@@ -28,7 +28,7 @@ import './account.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 
 type Sent = { readonly message: string; readonly invite?: string };
-type Field = 'email' | 'invite' | 'ack' | 'code';
+type Field = 'email' | 'invite' | 'ack' | 'conduct' | 'code';
 type Refusal = { readonly text: string; readonly field: Field | null };
 
 const NO_ANSWER = 'No answer came back; ask again in a moment.';
@@ -49,6 +49,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
   const [email, setEmail] = useState('');
   const [invite, setInvite] = useState(query.get('invite') ?? '');
   const [ack, setAck] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState<'sending' | 'checking' | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -67,6 +68,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     e?.preventDefault();
     if (busy) return;
     if (registering && !ack) { setRefusal({ text: 'Check the box to say you are 18 or older; then ask for a code.', field: 'ack' }); return; }
+    if (registering && !agreed) { setRefusal({ text: 'Check the box to agree to the code of conduct; then ask for a code.', field: 'conduct' }); return; }
     setBusy('sending');
     setRefusal(null);
     try {
@@ -159,6 +161,10 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
                   <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} {...tie('ack', 'kb-ack-note')} /> I am 18 or older.
                 </label>
                 <p id="kb-ack-note" className="kb-acct-row-sentence kb-door-ack-note">An acknowledgement, nothing legally binding.</p>
+                <label className="kb-acct-ack">
+                  {/* The checkbox is the acceptance: open_account records it with the account (0147). */}
+                  <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} {...tie('conduct')} /> I&apos;ve read and agree to the <Link to="/conduct" target="_blank" rel="noopener">code of conduct</Link>.
+                </label>
               </>
             )}
             {alert}

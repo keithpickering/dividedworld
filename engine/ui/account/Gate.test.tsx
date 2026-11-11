@@ -95,6 +95,7 @@ describe('A player signed in with no account', () => {
     const fake = buildWorld({ registrationMode: 'invite' });
     renderIn(fake, <AccountGate><SignInScreen mode="register" /></AccountGate>, { path: '/?invite=wrong' });
     await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
     await userEvent.type(screen.getByLabelText('Email address'), 'new@example.test');
     await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);

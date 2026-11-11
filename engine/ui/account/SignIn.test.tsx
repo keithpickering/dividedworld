@@ -16,6 +16,12 @@ function world(mode: 'open' | 'invite' | 'closed' = 'invite') {
 const open = (w: ReturnType<typeof world>, mode: 'sign-in' | 'register', path = mode === 'register' ? '/register' : '/sign-in', registrationMode?: 'open' | 'invite' | 'closed') =>
   renderIn(w.fake, <SignInScreen mode={mode} />, { path, settings: registrationMode ? { registrationMode } : undefined });
 
+/** Checks both boxes Register asks for: that the player is 18 or older, and that they agree to the code of conduct. */
+const agree = async () => {
+  await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+  await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
+};
+
 const ask = async (email: string) => {
   await userEvent.type(await screen.findByLabelText('Email address'), email);
   await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
@@ -252,7 +258,7 @@ describe('Sign in', () => {
     const w = world();
     w.fake.requestCode = async () => ({ ok: false, error: 'is too long', field: 'invite' });
     open(w, 'register', '/register?invite=x');
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     const alert = await screen.findByRole('alert');
     const invite = screen.getByLabelText('Invite');
@@ -318,7 +324,7 @@ describe('Register, the same for every address', () => {
     const run = async (email: string) => {
       const w = world();
       const r = open(w, 'register', '/register?invite=wrong');
-      await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+      await agree();
       await ask(email);
       await userEvent.type(await screen.findByLabelText('Code from the email'), '000000{Enter}');
       await screen.findByRole('alert');
@@ -343,7 +349,41 @@ describe('Register', () => {
     expect(screen.queryByLabelText('Code from the email')).toBeNull();
     await userEvent.click(box);
     await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Check the box to agree to the code of conduct; then ask for a code.');
+    expect(screen.queryByLabelText('Code from the email')).toBeNull();
+    await userEvent.click(screen.getByRole('checkbox', { name: /agree to the code of conduct/u }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
     expect(await screen.findByLabelText('Code from the email')).toBeInTheDocument();
+  });
+
+  test('the code of conduct is a box of its own, linked to /conduct, and its refusal is tied to it', async () => {
+    const w = world();
+    const requested = vi.spyOn(w.fake, 'requestCode');
+    open(w, 'register', '/register?invite=abc123');
+    const box = await screen.findByRole('checkbox', { name: "I've read and agree to the code of conduct." });
+    expect(box).not.toBeChecked();
+    const link = screen.getByRole('link', { name: 'code of conduct' });
+    expect(link).toHaveAttribute('href', '/conduct');
+    expect(box.closest('label')).toContainElement(link);
+    /* With the 18+ box checked and this one not, the account cannot be asked for. */
+    await userEvent.click(screen.getByRole('checkbox', { name: /18 or older/u }));
+    await ask('new@example.test');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Check the box to agree to the code of conduct; then ask for a code.');
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box.getAttribute('aria-describedby')).toBe(alert.id);
+    expect(requested).not.toHaveBeenCalled();
+    /* With it checked, it can. */
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole('button', { name: 'Send a code' }));
+    expect(await screen.findByLabelText('Code from the email')).toBeInTheDocument();
+    expect(requested).toHaveBeenCalledTimes(1);
+  });
+
+  test('Sign in asks for no agreement: the code of conduct box is Register\'s alone', async () => {
+    open(world(), 'sign-in', '/sign-in');
+    await screen.findByLabelText('Email address');
+    expect(screen.queryByRole('checkbox', { name: /code of conduct/u })).toBeNull();
   });
 
   test('has no invite field while registration is open', async () => {
@@ -357,7 +397,7 @@ describe('Register', () => {
     const code = (await (async () => { w.fake.signInAs(w.known); const r = await w.fake.createInvite(); w.fake.signInAs(null); return r; })());
     if (!code.ok) throw new Error('seed');
     open(w, 'register', `/register?invite=${code.value.code}`);
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
     await waitFor(async () => expect((await w.fake.session()).account).not.toBeNull());
@@ -367,7 +407,7 @@ describe('Register', () => {
   test('an invite that opens nothing is said plainly, and the way on is another invite after the code', async () => {
     const w = world();
     open(w, 'register', '/register?invite=wrong');
-    await userEvent.click(await screen.findByRole('checkbox', { name: /18 or older/u }));
+    await agree();
     await ask('new@example.test');
     expect(await screen.findByText("that invite opens nothing, so no new login is made with it")).toBeInTheDocument();
     await userEvent.type(await screen.findByLabelText('Code from the email'), `${TEST_CODE}{Enter}`);
