@@ -106,7 +106,7 @@ test('a patrol\'s schema gives an answer repairPatrol accepts or rejects by name
 });
 
 test('an apology\'s schema gives an answer repairApology accepts or rejects by name', () => {
-  const { schema } = apologyPrompt({ persona: 'You are Mod One.' } as never, 'You put a bar on Ann.', 'Sorry.', 20);
+  const { schema } = apologyPrompt(testSystem, { selfPrompt: 'You are Mod One.' }, 'mod', 'You put a bar on Ann.', 'Sorry.', 20);
   const answer = leastAnswer(schema);
   settled(repair(answer, APOLOGY_RULE));
   const out = repairApology(answer, 20);
