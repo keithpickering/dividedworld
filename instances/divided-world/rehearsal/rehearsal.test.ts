@@ -5,7 +5,7 @@ import { defaults } from '../settings.ts';
 import { sameName } from '../../../engine/rules/names.ts';
 import { repairMemory } from '../../../engine/system/memory.ts';
 import { rehearsal } from './index.ts';
-import { interestWords } from '../../../engine/rehearsal/generate.ts';
+import { castFor, interestWords } from '../../../engine/rehearsal/generate.ts';
 import { wheelhouse } from '../system/wheelhouse.ts';
 
 const { corpus, scenarios } = rehearsal;
@@ -93,9 +93,12 @@ test('every scenario\'s starting memory passes repairMemory with no trim', () =>
   assert.ok(scenarios.some((s) => (s.bossMemory?.grudges.length ?? 0) > 0 && s.bossMemory?.hobby.name));
 });
 
-test('a starting memory names only characters of the corpus', () => {
-  const names = new Set(corpus.sketches.map((s) => s.name));
-  for (const s of scenarios) for (const g of [...(s.bossMemory?.grudges ?? []), ...(s.bossMemory?.opinions ?? [])]) assert.ok(names.has(g.character), `${s.key}: ${g.character}`);
+test('a starting memory names only characters its own scenario casts', () => {
+  for (const s of scenarios) {
+    // The cast is drawn from the sketches in order; a name outside it would be dropped at setup and the memory weakened.
+    const names = new Set(castFor(s, corpus).flatMap((p) => p.characters.map((c) => c.name)));
+    for (const g of [...(s.bossMemory?.grudges ?? []), ...(s.bossMemory?.opinions ?? [])]) assert.ok(names.has(g.character), `${s.key}: ${g.character}`);
+  }
 });
 
 test('each sketch\'s interests weigh at least one opener title, by the generator\'s word match', () => {

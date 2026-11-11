@@ -18,7 +18,7 @@ const SEASON_DAYS = 90;
 const meltdownMemory: Memory = {
   hobby: { name: 'collecting unfinished fan projects', since: 'day 61', from: 'Sleepyfig, who keeps posting about games nobody finished' },
   opinions: [
-    { character: 'Toadstool Annie', score: 4, note: 'Runs the contest and keeps the board civil. Suspiciously helpful.' },
+    { character: 'Mothwire', score: 4, note: 'Ends every post with a pep talk and keeps the board civil. Suspiciously helpful.' },
     { character: 'Sodapop Rex', score: -3, note: 'Contradicts everyone on principle. Entertaining, and a problem.' },
     { character: 'Zephyrgoat', score: 2, note: 'Posts glitch guides I actually use.' },
   ],
