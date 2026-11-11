@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { FULL, look, press, release, run, typeIn, type EraseSettings } from './erase.ts';
+import { FULL, GAP_MS, lapse, look, press, release, run, typeIn, type EraseSettings } from './erase.ts';
 
 const S: EraseSettings = { eraseCps: 6, retypeMs: 2000, typeCps: 40, reduced: false };
 const R: EraseSettings = { ...S, reduced: true };
@@ -57,17 +57,32 @@ describe('the hold', () => {
     assert.equal(run(S, TOTAL, FULL, [...again, [8000, 'release']], 10_000 + 25).phase, 'typing');
   });
 
-  test('a press while it types in erases from the characters shown so far', () => {
+  test('a press while it types in erases from the full length, so the cost is the whole tail held', () => {
     const typing = typeIn(S, 0, 0);
     assert.equal(look(S, TOTAL, typing, 500).shown, 20);
     const held = press(S, TOTAL, typing, 500);
-    assert.equal(look(S, TOTAL, held, 500 + 1000).shown, 14);
+    assert.deepEqual(look(S, TOTAL, held, 500), { shown: 60, cleared: false, phase: 'erasing' });
+    assert.equal(look(S, TOTAL, held, 500 + 1000).shown, 54);
+    assert.equal(look(S, TOTAL, held, 500 + 9999).cleared, false);
+    assert.equal(look(S, TOTAL, held, 500 + 10_000).cleared, true);
   });
 
-  test('a press with nothing shown erases nothing and clears nothing', () => {
-    const typing = typeIn(S, 0, 0);
-    assert.equal(press(S, TOTAL, typing, 0), typing);
+  test('a press half a second into a 200-character tail takes 200/6 seconds of hold to clear it', () => {
+    const held = press(S, 200, typeIn(S, 0, 0), 500);
+    assert.equal(look(S, 200, held, 500 + 33_332).cleared, false);
+    assert.equal(look(S, 200, held, 500 + 33_334).cleared, true);
+  });
+
+  test('a press while it types back in after a release also erases from the full length', () => {
+    const typing = [[0, 'hold'], [5000, 'release']] as const;
+    const e = press(S, TOTAL, release(S, TOTAL, press(S, TOTAL, FULL, 0), 5000), 7000 + 100);
+    assert.equal(look(S, TOTAL, e, 7100).shown, 60);
+    assert.equal(run(S, TOTAL, FULL, [...typing, [7100, 'hold']], 7100 + 10_000).cleared, true);
+  });
+
+  test('a press with nothing in it erases nothing and clears nothing', () => {
     assert.equal(look(S, 0, press(S, 0, FULL, 0), 5000).cleared, false);
+    assert.equal(look(S, 0, press(S, 0, typeIn(S, 0, 0), 0), 5000).cleared, false);
   });
 
   test('typing in under reduced motion shows everything at once', () => {
@@ -83,5 +98,24 @@ describe('the hold', () => {
   test('a total that shrinks never shows more than there is', () => {
     assert.equal(look(S, 10, FULL, 0).shown, 10);
     assert.equal(look(S, 10, typeIn(S, 40, 0), 0).shown, 10);
+  });
+
+  test('a gap in the ticks longer than the limit credits no hold time: the hold ends where it was last read', () => {
+    const held = press(S, TOTAL, FULL, 0);
+    const e = lapse(S, TOTAL, held, 1000, 1000 + GAP_MS + 1);
+    assert.equal(e.phase, 'waiting');
+    assert.equal(look(S, TOTAL, e, 1000 + GAP_MS + 1).shown, 54);
+    assert.equal(look(S, TOTAL, e, 600_000).phase, 'full');
+  });
+
+  test('a gap within the limit is left alone, and so is any phase that is not an erase', () => {
+    const held = press(S, TOTAL, FULL, 0);
+    assert.equal(lapse(S, TOTAL, held, 1000, 1000 + GAP_MS), held);
+    assert.equal(lapse(S, TOTAL, FULL, 0, 99_999), FULL);
+  });
+
+  test('a gap that would have cleared it after the last read still counts only to the last read', () => {
+    const held = press(S, TOTAL, FULL, 0);
+    assert.equal(look(S, TOTAL, lapse(S, TOTAL, held, 9000, 60_000), 60_000).cleared, false);
   });
 });

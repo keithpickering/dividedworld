@@ -30,12 +30,12 @@
  * snapshot says this version was cleared, with no typing, no input, no focus and a cursor that does not blink; its `show` words (the frame
  * puts the card's name before them) say how many characters it added, or that it was erased.
  */
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
 import type { CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
-import { FULL, look, press, release, typeIn, type Erase, type EraseSettings } from './erase.ts';
+import { FULL, lapse, look, press, release, typeIn, type Erase, type EraseSettings } from './erase.ts';
 import './tail.css';
 
 /** The settings' own numbers, used where the screen settings do not hold one (the instance's `cardSettings`). */
@@ -45,10 +45,16 @@ const TYPE_CPS = 40;
 /** How often the clock is read while it moves, in milliseconds: 40 times a second is smooth at 40 characters a second. */
 const TICK_MS = 25;
 const STARTED = 'Erasing. Keep holding to erase all of it.';
+const ERASING = 'Erasing.';
+const STOPPED = 'Stopped. It\'s coming back.';
 const ERASED = 'Erased.';
+const ERASED_READER = 'Erased on your screen. It comes back when the page reloads.';
+const UNSAVED = 'It\'s erased on your screen, but it didn\'t save. Hold to try again.';
+const STILL_WRITING = 'You Were Saying? is still writing.';
 const NAME = 'You Were Saying?';
 
-type Holder = 'pointer' | 'key';
+/** `toggle` is the erase an activation starts and a second one stops: it runs by itself, at the same rate, for those who cannot hold. */
+type Holder = 'pointer' | 'key' | 'toggle';
 
 /** Whether a play's saved state says this version of the post was cleared. */
 const clearedFor = (state: unknown, version: string | undefined): boolean =>
@@ -81,38 +87,65 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
   const clock = useRef<Erase | null>(null);
   clock.current ??= reduced || still ? FULL : typeIn(cfg, 0, Date.now());
   const holds = useRef(new Set<Holder>());
+  const lastRead = useRef(Date.now());
   const [, redraw] = useReducer((n: number) => n + 1, 0);
   const inView = useRef(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const [said, say] = useState('');
   const [cleared, setCleared] = useState(false);
-  const l = look(cfg, total, clock.current, Date.now());
+  /* What shows is read as `lapse` would leave it, so a page that was away never draws time it did not hold. */
+  const l = look(cfg, total, lapse(cfg, total, clock.current, lastRead.current, Date.now()), Date.now());
   const gone = !still && (cleared || l.cleared);
   const showing = drawn && !gone;
   const box = useRef<HTMLSpanElement>(null);
+  const unsaved = said.trim() === UNSAVED;
+  /* The tail going while it has focus, by any means (a clear saved elsewhere, a new version): focus goes to the status and not to the page. */
+  const lostFocus = useRef(false);
+  if (!showing && box.current?.isConnected && box.current.contains(document.activeElement)) lostFocus.current = true;
   const note = useRef<HTMLSpanElement>(null);
 
+  const control = !still && total > 0;
   const stop = useCallback(() => { if (timer.current !== null) { clearInterval(timer.current); timer.current = null; } }, []);
   const announce = useCallback((words: string) => say((was) => (was === words ? `${words} ` : words)), []);
-  /* The author's clear, saved once on each play still live on the post, for the version drawn; any other reader's clear is only the screen's. */
+  /*
+   * A clear. A reader's is the screen's own. The author's is saved once on each play still live on the post, for the version drawn, and only
+   * when every save has landed is it announced as done; a save that fails (or a version not known) is said plainly and the tail comes back,
+   * so the author can hold again: the way out of an erase that did not keep.
+   */
   const clear = useCallback(() => {
     setCleared(true);
-    announce(ERASED);
     if (box.current && box.current.contains(document.activeElement)) note.current?.focus();
     const { reader: who, version: v, live: playsNow, written: textNow, save: send } = latest.current;
-    if (!who.author || v === undefined) return;
-    for (const p of playsNow) {
-      const w = textNow.get(p.id);
-      if (w && !('failed' in w)) void Promise.resolve(send(p.id, { cleared: v })).catch(() => { /* the tail is back with the next read, and the author may erase it again */ });
-    }
+    if (!who.author) { announce(ERASED_READER); return; }
+    const back = () => { clock.current = FULL; setCleared(false); announce(UNSAVED); redraw(); };
+    if (v === undefined) { back(); return; }
+    const saves = playsNow.filter((p) => { const w = textNow.get(p.id); return w && !('failed' in w); })
+      .map(async (p) => (await send(p.id, { cleared: v })) as { ok?: boolean });
+    void Promise.allSettled(saves).then((results) => {
+      if (latest.current.version !== v) return;
+      if (results.every((r) => r.status === 'fulfilled' && r.value.ok !== false)) announce(ERASED); else back();
+    });
+  }, [announce]);
+  /* A hold across a gap in the ticks is credited only up to the last reading and then ends (a hidden or throttled page's timer): the clock's `lapse`. */
+  const lapsed = useCallback(() => {
+    const { cfg: c, total: n } = latest.current;
+    const was = clock.current!;
+    const next = lapse(c, n, was, lastRead.current, Date.now());
+    if (next === was) return;
+    clock.current = next;
+    const ran = holds.current.has('toggle');
+    holds.current.clear();
+    if (ran) announce(STOPPED);
   }, [announce]);
   const step = useCallback(() => {
+    lapsed();
+    lastRead.current = Date.now();
     const { cfg: c, total: n } = latest.current;
     const l = look(c, n, clock.current!, Date.now());
     if (l.cleared) { stop(); clear(); }
     else if (l.phase === 'full') stop();
     redraw();
-  }, [stop, clear]);
+  }, [stop, clear, lapsed]);
   /* The timer runs while the clock moves and the post is in view. */
   const kick = useCallback(() => {
     const { cfg: c, total: n } = latest.current;
@@ -121,22 +154,46 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
     redraw();
   }, [step]);
 
-  const control = !still && total > 0;
   const grab = useCallback((who: Holder) => {
-    const { cfg: c, total: n } = latest.current;
     if (holds.current.has(who)) return;
-    const was = look(c, n, clock.current!, Date.now());
+    lapsed();
+    const { cfg: c, total: n } = latest.current;
+    const now = Date.now();
+    const was = look(c, n, clock.current!, now);
     holds.current.add(who);
-    clock.current = press(c, n, clock.current!, Date.now());
-    if (look(c, n, clock.current, Date.now()).phase === 'erasing' && was.phase !== 'erasing') announce(STARTED);
+    lastRead.current = now;
+    clock.current = press(c, n, clock.current!, now);
+    if (look(c, n, clock.current, now).phase === 'erasing') {
+      if (who === 'toggle') { if (was.phase !== 'erasing' && was.phase !== 'waiting') announce(ERASING); }
+      else if (was.phase !== 'erasing') announce(STARTED);
+    }
     kick();
-  }, [announce, kick]);
-  const drop = useCallback((who: Holder) => {
-    if (!holds.current.delete(who) || holds.current.size > 0) return;
+  }, [announce, kick, lapsed]);
+  const letGo = useCallback((who: readonly Holder[]) => {
+    lapsed();
+    const had = holds.current.has('toggle');
+    let any = false;
+    for (const h of who) any = holds.current.delete(h) || any;
+    if (!any || holds.current.size > 0) return;
     const { cfg: c, total: n } = latest.current;
     clock.current = release(c, n, clock.current!, Date.now());
+    if (had && !holds.current.has('toggle') && who.includes('toggle') && look(c, n, clock.current, Date.now()).phase === 'waiting') announce(STOPPED);
     kick();
-  }, [kick]);
+  }, [announce, kick, lapsed]);
+  const drop = useCallback((who: Holder) => letGo([who]), [letGo]);
+  /* Every way of holding ends together: the pointer, the key and a running erase. */
+  const dropAll = useCallback(() => letGo(['pointer', 'key', 'toggle']), [letGo]);
+  /* A running erase is started by one activation and stopped by the next. */
+  const activate = useCallback(() => { if (holds.current.has('toggle')) drop('toggle'); else grab('toggle'); }, [grab, drop]);
+
+  /* A hold can outlive its pointer (Alt-Tab, another tab, a window losing focus send no pointerup): all of them end with the page's attention. */
+  useEffect(() => {
+    if (!control) return;
+    const hidden = () => { if (document.visibilityState === 'hidden') dropAll(); };
+    document.addEventListener('visibilitychange', hidden);
+    window.addEventListener('blur', dropAll);
+    return () => { document.removeEventListener('visibilitychange', hidden); window.removeEventListener('blur', dropAll); };
+  }, [control, dropAll]);
 
   /* Seen: types in from the start, each time it comes into view. Not seen: at rest, whole, with no timer and no hold. */
   useEffect(() => {
@@ -172,7 +229,12 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
     // The settings are read as of this render: only a change of the words or the version moves the clock.
   }, [total, version]);
 
+  useLayoutEffect(() => { if (lostFocus.current) { lostFocus.current = false; note.current?.focus(); } });
   useEffect(() => () => { stop(); }, [stop]);
+
+  /* A tail still being written is not hidden from a screen reader: it is said once, and the line goes when the words come. */
+  const writing = !still && texts.length === 0 && waiting && !gone;
+  useEffect(() => { say((was) => (writing ? STILL_WRITING : was === STILL_WRITING ? '' : was)); }, [writing]);
 
   /* In a moment or a version: what it added, for the frame's words. */
   const hadText = plays.some((p) => { const w = written.get(p.id); return w !== undefined && 'text' in w && w.text !== ''; });
@@ -197,22 +259,30 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
     if (e.button > 0) return;
     /* No text selection, and no compatibility mouse events, from a press that is a hold. */
     e.preventDefault();
+    /* The pointer is captured, so its release is heard wherever it happens, and a capture lost is a release. */
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* a pointer that is already gone */ }
     grab('pointer');
   };
+  const onPointerUp = (e: PointerEvent<HTMLSpanElement>) => {
+    try { e.currentTarget.releasePointerCapture?.(e.pointerId); } catch { /* not captured */ }
+    drop('pointer');
+  };
+  /* A click that is not the end of a pointer hold (detail 0: a screen reader's activate, a switch) starts or stops the running erase. */
+  const onClick = (e: MouseEvent<HTMLSpanElement>) => { if (e.detail === 0) activate(); };
   const onKeyDown = (e: KeyboardEvent<HTMLSpanElement>) => {
-    if (e.key !== 'Backspace') return;
-    e.preventDefault();
-    if (!e.repeat) grab('key');
+    if (e.key === 'Backspace') { e.preventDefault(); if (!e.repeat) grab('key'); return; }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!e.repeat) activate(); return; }
+    if (e.key === 'Escape' && holds.current.has('toggle')) { e.preventDefault(); drop('toggle'); }
   };
   /*
    * One tree whatever the state, so the status keeps its place (and a focus moved to it when the tail goes) as the block comes and goes: the
    * words, the block (a control, a decoration while only the cursor types, or a still group), and the status.
    */
   const handlers = control ? {
-    role: 'button', tabIndex: 0, 'aria-label': `Continued by ${NAME}: ${spoken}. Hold to erase. It comes back if you stop.`,
-    onPointerDown, onPointerUp: () => drop('pointer'), onPointerCancel: () => drop('pointer'), onPointerLeave: () => drop('pointer'),
+    role: 'button', tabIndex: 0, 'aria-label': `Continued by ${NAME}: ${spoken}. Hold to erase, or press Enter to start erasing and Enter again to stop. It comes back if you stop.`,
+    onPointerDown, onPointerUp, onPointerCancel: dropAll, onLostPointerCapture: dropAll, onPointerLeave: () => drop('pointer'), onClick,
     onContextMenu: (e: { preventDefault: () => void }) => { if (holds.current.size > 0) e.preventDefault(); },
-    onKeyDown, onKeyUp: (e: KeyboardEvent<HTMLSpanElement>) => { if (e.key === 'Backspace') drop('key'); }, onBlur: () => drop('key'),
+    onKeyDown, onKeyUp: (e: KeyboardEvent<HTMLSpanElement>) => { if (e.key === 'Backspace') drop('key'); }, onBlur: dropAll,
   } : still ? { role: 'group', 'aria-label': 'Continued by You Were Saying?' } : { 'aria-hidden': true };
   return (
     <>
@@ -222,7 +292,7 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
           {spans}{cursor}
         </span>
       )}
-      {!still && (showing || gone) && <span ref={note} className="kb-visually-hidden" role="status" aria-live="polite" tabIndex={-1} data-kb-report>{said}</span>}
+      {!still && <span ref={note} className={unsaved ? 'dw-ywst-note' : 'kb-visually-hidden'} role="status" aria-live="polite" tabIndex={-1} data-kb-report>{said}</span>}
     </>
   );
 }

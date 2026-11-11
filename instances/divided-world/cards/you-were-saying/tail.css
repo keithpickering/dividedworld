@@ -15,6 +15,9 @@
   color: var(--dw-ywst-ink);
   background: var(--dw-ywst-ground);
   position: relative;
+  /* The model's text can hold paragraph breaks and a word longer than the column: both are kept and broken here (the block is no part of .kb-bb). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
@@ -94,4 +97,11 @@
 :root[data-kb-motion='reduce'] .dw-ywst[data-kb-typing],
 :root[data-kb-motion='reduce'] .dw-ywst-cursor {
   animation: none;
+}
+
+/* The glass's plain word that an erase did not save: small, visible, and outside the tail. */
+.dw-ywst-note {
+  display: block;
+  margin-top: 0.25em;
+  font-size: 0.85em;
 }

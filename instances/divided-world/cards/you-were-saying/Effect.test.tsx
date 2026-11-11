@@ -72,6 +72,7 @@ const blocks = () => [...document.querySelectorAll<HTMLElement>('[data-kb-tail]'
 const spans = () => [...document.querySelectorAll<HTMLElement>('[data-kb-tail] [data-play]')];
 const shownText = () => spans().map((s) => s.textContent).join('');
 const cursor = () => document.querySelector<HTMLElement>('[data-kb-cursor]');
+const UNSAVED = 'It\'s erased on your screen, but it didn\'t save. Hold to try again.';
 const status = () => document.querySelector<HTMLElement>('[role="status"][data-kb-report]')?.textContent?.replace(/ /gu, '') ?? '';
 /** The pointer held on the block, and the same through Backspace on it. */
 const pointer = { down: (el: HTMLElement) => fireEvent.pointerDown(el, { button: 0, pointerType: 'mouse' }), up: (el: HTMLElement) => fireEvent.pointerUp(el, { button: 0, pointerType: 'mouse' }) };
@@ -212,7 +213,7 @@ describe('the tail', () => {
   test('its name says what it continued and how it is erased, from the whole text and not what has typed so far', async () => {
     mount({ plays: [playOf(1), playOf(2)], written: { y1: text(' First. '), y2: text('Second.') } });
     await see(true);
-    const name = 'Continued by You Were Saying?: First. Second. Hold to erase. It comes back if you stop.';
+    const name = 'Continued by You Were Saying?: First. Second. Hold to erase, or press Enter to start erasing and Enter again to stop. It comes back if you stop.';
     expect(block()!.getAttribute('aria-label')).toBe(name);
     await tick(3000);
     expect(block()!.getAttribute('aria-label')).toBe(name);
@@ -339,8 +340,8 @@ describe('the hold', () => {
     await tick(3000);
     expect(status()).toBe('Erasing. Keep holding to erase all of it.');
     await tick(7000);
-    expect(status()).toBe('Erased.');
-    expect(new Set(heard.filter(Boolean))).toEqual(new Set(['Erasing. Keep holding to erase all of it.', 'Erased.']));
+    expect(status()).toBe('Erased on your screen. It comes back when the page reloads.');
+    expect(new Set(heard.filter(Boolean))).toEqual(new Set(['Erasing. Keep holding to erase all of it.', 'Erased on your screen. It comes back when the page reloads.']));
     expect(document.querySelector('[role="status"][data-kb-report]')!.getAttribute('aria-live')).toBe('polite');
     watch.disconnect();
   });
@@ -376,19 +377,21 @@ describe('a clear', () => {
     await tick(11_000);
     expect(save).not.toHaveBeenCalled();
     expect(block()).toBeNull();
+    expect(status()).toBe('Erased on your screen. It comes back when the page reloads.');
     await see(false);
     await see(true);
     await tick(3000);
     expect(block()).toBeNull();
   });
 
-  test('where the version is not known the clear is the screen\'s own and nothing is saved', async () => {
+  test('where the version is not known nothing is saved, and the author is told so and the tail comes back', async () => {
     const { save } = mount({ author: true, version: null });
     await seenAndTyped();
     pointer.down(block()!);
     await tick(11_000);
     expect(save).not.toHaveBeenCalled();
-    expect(block()).toBeNull();
+    expect(status()).toBe(UNSAVED);
+    expect(block()).not.toBeNull();
   });
 
   test('a clear saved for the version drawn means no tail for anyone; one for an older version draws it', async () => {
@@ -522,5 +525,319 @@ describe('its colors', () => {
   });
   test('the light ink is the mock\'s #0a6b2a', () => {
     expect(pairs[0]![1]!.toLowerCase()).toBe('#0a6b2a');
+  });
+});
+
+const ENTER = (el: HTMLElement) => fireEvent.keyDown(el, { key: 'Enter' });
+const gap = (ms: number) => act(() => { vi.setSystemTime(Date.now() + ms); });
+const noteEl = () => document.querySelector<HTMLElement>('[role="status"][data-kb-report]')!;
+
+describe('pressing while it types in', () => {
+  test('erases from the full length: the display jumps to full and the cost is all of it held', async () => {
+    mount();
+    await see(true);
+    await tick(500);
+    expect(shownText()).toBe(SIXTY.slice(0, 20));
+    pointer.down(block()!);
+    expect(shownText()).toBe(SIXTY);
+    await tick(9000);
+    expect(block()).not.toBeNull();
+    await tick(1100);
+    expect(block()).toBeNull();
+  });
+
+  test('a 200-character tail pressed half a second in takes 200/6 seconds of hold', async () => {
+    mount({ written: { y1: text('x'.repeat(200)) } });
+    await see(true);
+    await tick(500);
+    pointer.down(block()!);
+    await tick(33_000);
+    expect(block()).not.toBeNull();
+    await tick(500);
+    expect(block()).toBeNull();
+  });
+
+  test('the same after it types back in following a release', async () => {
+    mount();
+    await seenAndTyped();
+    pointer.down(block()!);
+    await tick(5000);
+    pointer.up(block()!);
+    await tick(2100);
+    expect(shownText().length).toBeLessThan(60);
+    pointer.down(block()!);
+    expect(shownText()).toBe(SIXTY);
+  });
+});
+
+describe('a save that does not land', () => {
+  const finish = async () => { await seenAndTyped(); pointer.down(block()!); await tick(11_000); };
+  test('a rejected save says so plainly, near the post and visibly, and the tail comes back to hold again', async () => {
+    mount({ author: true, save: (async () => { throw new Error('offline'); }) as unknown as EffectProps['save'] });
+    await finish();
+    expect(status()).toBe(UNSAVED);
+    expect(block()).not.toBeNull();
+    expect(block()!.contains(noteEl())).toBe(false);
+    expect(noteEl().classList.contains('kb-visually-hidden')).toBe(false);
+    expect(noteEl().getAttribute('aria-live')).toBe('polite');
+    pointer.up(block()!);
+    pointer.down(block()!);
+    await tick(11_000);
+    expect(block()).not.toBeNull();
+  });
+
+  test('an answer that is not ok is a failure too', async () => {
+    mount({ author: true, save: (async () => ({ ok: false, error: 'no' })) as unknown as EffectProps['save'] });
+    await finish();
+    expect(status()).toBe(UNSAVED);
+    expect(block()).not.toBeNull();
+  });
+
+  test('the author hears Erased only after every save resolves', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => { release = r; });
+    mount({ author: true, save: (async (play: string) => { await gate; return { ok: true, value: { play, savedAt: '' } }; }) as unknown as EffectProps['save'] });
+    await finish();
+    expect(status()).not.toBe('Erased.');
+    expect(status()).not.toBe(UNSAVED);
+    await act(async () => { release(); await gate; });
+    expect(status()).toBe('Erased.');
+    expect(block()).toBeNull();
+  });
+
+  test('one of two saves failing is a failure', async () => {
+    let n = 0;
+    mount({ author: true, plays: [playOf(1), playOf(2)], written: { y1: text('a'.repeat(30)), y2: text('b'.repeat(30)) }, save: (async (play: string) => (++n === 1 ? { ok: true, value: { play, savedAt: '' } } : { ok: false })) as unknown as EffectProps['save'] });
+    await finish();
+    expect(status()).toBe(UNSAVED);
+  });
+});
+
+describe('a hold that outlives the pointer', () => {
+  test('pointer capture is taken on press and released on release', async () => {
+    mount();
+    await seenAndTyped();
+    const el = block()!;
+    const set = vi.fn(); const rel = vi.fn();
+    Object.assign(el, { setPointerCapture: set, releasePointerCapture: rel });
+    fireEvent.pointerDown(el, { button: 0, pointerType: 'mouse', pointerId: 7 });
+    expect(set).toHaveBeenCalledWith(7);
+    fireEvent.pointerUp(el, { button: 0, pointerType: 'mouse', pointerId: 7 });
+    expect(rel).toHaveBeenCalledWith(7);
+  });
+
+  const letGo: Record<string, () => void> = {
+    'the page being hidden': () => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' }); document.dispatchEvent(new Event('visibilitychange')); },
+    'the window losing focus': () => { fireEvent.blur(window); },
+    'a pointer cancel': () => { fireEvent.pointerCancel(block()!); },
+    'a lost pointer capture': () => { fireEvent.lostPointerCapture(block()!); },
+    'the element blurring': () => { fireEvent.blur(block()!); },
+  };
+  afterEach(() => { Reflect.deleteProperty(document, 'visibilityState'); });
+  test.each(Object.keys(letGo))('%s lets go of a mouse hold', async (what) => {
+    mount();
+    await seenAndTyped();
+    pointer.down(block()!);
+    await tick(1000);
+    await act(async () => { letGo[what]!(); });
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY.slice(0, 54));
+  });
+
+  test('a key hold is let go of by the page being hidden', async () => {
+    mount();
+    await seenAndTyped();
+    block()!.focus();
+    key.down(block()!);
+    await tick(1000);
+    await act(async () => { letGo['the page being hidden']!(); });
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY.slice(0, 54));
+  });
+
+  test('a gap in the ticks credits no hold time: a throttled timer cannot bank erase time', async () => {
+    mount();
+    await seenAndTyped();
+    pointer.down(block()!);
+    await tick(1000);
+    await gap(8000);
+    await tick(25);
+    expect(shownText().length).toBeGreaterThanOrEqual(53);
+    expect(block()).not.toBeNull();
+    await tick(1000);
+    expect(shownText().length).toBeGreaterThanOrEqual(53);
+  });
+});
+
+describe('a way to erase without holding', () => {
+  const NAMED = 'Continued by You Were Saying?: ' + SIXTY + '. Hold to erase, or press Enter to start erasing and Enter again to stop. It comes back if you stop.';
+  test('the accessible name says both ways', async () => {
+    mount();
+    await see(true);
+    expect(block()!.getAttribute('aria-label')).toBe(NAMED);
+  });
+
+  test('Enter starts an erase that goes on by itself and takes exactly as long as a hold, then saves', async () => {
+    const { save } = mount({ author: true });
+    await seenAndTyped();
+    block()!.focus();
+    ENTER(block()!);
+    expect(status()).toBe('Erasing.');
+    await tick(5000);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+    await tick(4900);
+    expect(block()).not.toBeNull();
+    await tick(200);
+    expect(block()).toBeNull();
+    expect(save.mock.calls).toEqual([['y1', { cleared: 'v1' }]]);
+    expect(status()).toBe('Erased.');
+  });
+
+  test('Space starts it too, and a held key repeating is not a second activation', async () => {
+    mount();
+    await seenAndTyped();
+    fireEvent.keyDown(block()!, { key: ' ' });
+    fireEvent.keyDown(block()!, { key: ' ', repeat: true });
+    await tick(5000);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+  });
+
+  test('Enter twice stops it, which is a release: it waits and then types back in', async () => {
+    mount();
+    await seenAndTyped();
+    ENTER(block()!);
+    await tick(5000);
+    ENTER(block()!);
+    expect(status()).toBe('Stopped. It\'s coming back.');
+    await tick(1900);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+    await tick(200);
+    expect(shownText().length).toBeGreaterThan(30);
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY);
+  });
+
+  test('"Erasing." is not said again on a press from the waiting phase', async () => {
+    mount();
+    await seenAndTyped();
+    ENTER(block()!);
+    await tick(2000);
+    ENTER(block()!);
+    await tick(500);
+    ENTER(block()!);
+    expect(status()).toBe('Stopped. It\'s coming back.');
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY.slice(0, 42));
+  });
+
+  test('Escape stops it', async () => {
+    mount();
+    await seenAndTyped();
+    ENTER(block()!);
+    await tick(2000);
+    fireEvent.keyDown(block()!, { key: 'Escape' });
+    await tick(1900);
+    expect(shownText()).toBe(SIXTY.slice(0, 48));
+    await tick(200);
+    expect(shownText().length).toBeGreaterThan(48);
+  });
+
+  test('blur stops it, and so does the page being hidden', async () => {
+    mount();
+    await seenAndTyped();
+    ENTER(block()!);
+    await tick(2000);
+    fireEvent.blur(block()!);
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY.slice(0, 48));
+    await tick(1100);
+    await tick(2000);
+    expect(shownText()).toBe(SIXTY);
+    ENTER(block()!);
+    await tick(2000);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+    Reflect.deleteProperty(document, 'visibilityState');
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY.slice(0, 48));
+  });
+
+  test('a click that is not a pointer hold (detail 0: a screen reader\'s activate, a switch) starts it; a pointer\'s click does not', async () => {
+    mount();
+    await seenAndTyped();
+    fireEvent.click(block()!, { detail: 1 });
+    await tick(1000);
+    expect(shownText()).toBe(SIXTY);
+    fireEvent.click(block()!);
+    await tick(5000);
+    expect(shownText()).toBe(SIXTY.slice(0, 30));
+    fireEvent.click(block()!);
+    expect(status()).toBe('Stopped. It\'s coming back.');
+  });
+
+  test('pressed while it types in it erases from the full length, and a gap in the ticks stops it', async () => {
+    mount();
+    await see(true);
+    await tick(500);
+    ENTER(block()!);
+    expect(shownText()).toBe(SIXTY);
+    await tick(1000);
+    await gap(8000);
+    await tick(25);
+    expect(block()).not.toBeNull();
+    expect(shownText().length).toBeGreaterThanOrEqual(53);
+  });
+
+  test('a reader\'s erase this way is the screen\'s own and saves nothing', async () => {
+    const { save } = mount();
+    await seenAndTyped();
+    ENTER(block()!);
+    await tick(10_500);
+    expect(block()).toBeNull();
+    expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('newlines and long words', () => {
+  test('the tail keeps its line breaks and breaks a long word', () => {
+    const css = read('./tail.css');
+    const rule = css.match(/\.dw-ywst\s*\{[^}]*\}/u)![0];
+    expect(rule).toMatch(/white-space:\s*pre-wrap/u);
+    expect(rule).toMatch(/overflow-wrap:\s*anywhere/u);
+  });
+
+  test('a paragraph break in the text is kept in the DOM, and nothing is added before the first word', async () => {
+    mount({ written: { y1: text(' One.\n\nTwo.') } });
+    await seenAndTyped();
+    expect(block()!.textContent).toBe(' One.\n\nTwo.');
+    expect(block()!.firstChild).toBe(spans()[0]);
+    expect(document.querySelector('[data-words]')!.nextSibling).toBe(block());
+  });
+});
+
+describe('focus and the waiting state', () => {
+  test('a tail removed while it has focus (a clear saved elsewhere) leaves focus on the status, not the page', async () => {
+    const m = mount({ author: true });
+    await seenAndTyped();
+    block()!.focus();
+    expect(document.activeElement).toBe(block());
+    await m.change({ states: { y1: { state: { cleared: 'v1' }, savedAt: 'x' } } });
+    expect(block()).toBeNull();
+    expect(document.activeElement).toBe(noteEl());
+  });
+
+  test('a tail still being written says so once, politely, and not on a loop', async () => {
+    const m = mount({ written: { y1: { waiting: true } } });
+    await see(true);
+    expect(status()).toBe('You Were Saying? is still writing.');
+    const heard: string[] = [];
+    const watch = new MutationObserver(() => heard.push(status()));
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    await tick(5000);
+    expect(heard).toEqual([]);
+    watch.disconnect();
+    m.redraw({ y1: text(SIXTY) });
+    await tick(3000);
+    expect(status()).toBe('');
   });
 });

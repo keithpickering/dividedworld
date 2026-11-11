@@ -69,11 +69,15 @@ export function look(s: EraseSettings, total: number, e: Erase, t: number): Look
   }
 }
 
-/** A hold begins at `t`: it erases from the characters shown now. With nothing shown there is nothing to hold, and nothing is cleared by it. */
+/**
+ * A hold begins at `t`. A tail that is typing in (on first view, a replay, or coming back after a release) is taken as whole when the
+ * hold starts and erased from its full length, so pressing early never shortens the cost: it is always the whole tail's characters over
+ * `eraseCps` of continuous hold. A tail waiting to come back goes on from where it was left. With nothing in it there is nothing to hold.
+ */
 export function press(s: EraseSettings, total: number, e: Erase, t: number): Erase {
   const now = settle(s, total, e, t);
   if (now.phase === 'erasing' || now.phase === 'cleared') return now;
-  const shown = look(s, total, now, t).shown;
+  const shown = now.phase === 'typing' ? total : look(s, total, now, t).shown;
   return shown <= 0 ? now : { phase: 'erasing', at: t, from: shown };
 }
 
@@ -89,4 +93,18 @@ export function run(s: EraseSettings, total: number, start: Erase, gestures: rea
   let e = start;
   for (const [at, kind] of gestures) e = (kind === 'hold' ? press : release)(s, total, e, at);
   return look(s, total, e, t);
+}
+
+/** The longest gap between two readings of a running hold that is credited; a throttled or hidden page's timer cannot bank erase time past it. */
+export const GAP_MS = 250;
+
+/**
+ * The clock is read at `t` after it was last read at `lastRead`. A hold across a gap longer than `GAP_MS` is credited only up to
+ * `lastRead` and then ends there, as a release (the wait to come back starts at `t`, when it was found out).
+ */
+export function lapse(s: EraseSettings, total: number, e: Erase, lastRead: number, t: number): Erase {
+  if (e.phase !== 'erasing' || t - lastRead <= GAP_MS) return e;
+  const then = settle(s, total, e, lastRead);
+  if (then.phase !== 'erasing') return then;
+  return { phase: 'waiting', at: t, from: look(s, total, then, lastRead).shown };
 }
