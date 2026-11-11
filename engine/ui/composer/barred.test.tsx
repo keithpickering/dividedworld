@@ -213,6 +213,22 @@ describe('the three states of an apology', () => {
     expect(spin).not.toHaveBeenCalled();
   });
 
+  test('an apology with no body is refused on the form, which stays open with what was typed, and a body then typed sends it', async () => {
+    const w = barred();
+    const apologize = vi.spyOn(w.fake, 'apologize');
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await userEvent.click(await screen.findByRole('button', { name: 'Write an apology' }));
+    const form = await screen.findByRole('form', { name: /apology/iu });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'I am sorry');
+    await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('is empty');
+    expect(screen.getByRole('form', { name: /apology/iu })).toBeInTheDocument();
+    expect(within(form).getByLabelText('Thread title')).toHaveValue('I am sorry');
+    await userEvent.type(within(form).getByLabelText(/Your opening post/u), 'I was wrong.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
+    await waitFor(() => expect(apologize).toHaveBeenLastCalledWith(w.move, w.pipe, 'I am sorry', 'I was wrong.'));
+  });
+
   test('waiting: says it is with the Boss, and offers no second one', async () => {
     const w = barred();
     w.fake.seed.apology(w.pipe, w.move, 'pending');

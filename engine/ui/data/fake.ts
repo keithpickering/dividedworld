@@ -2178,6 +2178,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
     },
     apologize(move, character, title, body, framing) {
+      const bad = request({ action: 'apologize', move, character, title, body, ...(framing ? { framing } : {}) });
+      if (bad) return bad;
       const c = acting(character);
       if (isRefusal(c)) return c;
       const banned = bannedUntilOf(character);
