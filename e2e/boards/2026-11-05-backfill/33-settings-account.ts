@@ -21,8 +21,8 @@
  *    height and its type.
  *
  * Phone: this module also exports `phone`, board 36 (docs/research/2026-11-05-backfill/36-account-phone.html), the account at 390 by 844 beside two more
- * screens. The card info sheet (its second screen) waits for the card template plan (docs/plans/2026-11-05-card-template-plan.md), whose Postcard face it
- * draws, and is not compared here: board 34 is in PENDING for the same reason. The third screen is the HUD past its cap, a further side.
+ * screens. The second is the card info as a sheet (board 34's dialog at the phone's width, with the card's Postcard face above its rules), a further side
+ * measured from its own corner; the third is the HUD past its cap, another.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
 
@@ -81,7 +81,7 @@ export default manifest;
 
 /*
  * Board 36's first screen, Account on a phone (docs/research/2026-11-05-backfill/36-account-phone.html): three phone screens at 390 by 844 side by side on one
- * page, at x = 20, 430 and 840: Account, the card info as a sheet (not built yet; see the header) and the HUD past its cap. As board 18 is held, each screen
+ * page, at x = 20, 430 and 840: Account, the card info as a sheet (the first further side) and the HUD past its cap. As board 18 is held, each screen
  * is found as that screen's own and measured from its own corner (`origin`), so a screen's place on the page is never compared.
  *
  * The board draws only the Invites row under the heading; the build holds the page's other rows too (the sign-in address first), so what follows the heading
@@ -120,6 +120,26 @@ export const phone: BoardManifest = {
     { id: 'make', role: 'button', name: 'MAKE AN INVITE', origin: 'invites-count', originEdge: 'bottom', box: 'position', type: false, buildShift: { y: 15 } },
   ],
   also: [
+    {
+      /*
+       * The card info as a sheet (the Vending Machine's About Whoops!, at 390 by 844): the dialog frame is the sheet, so the board's screen is found as the dialog, and
+       * its parts are measured from its own corner. The board's face sits between the title and the price and so does the build's (the frame's bar holds the eyebrow and the
+       * title; the face, the price and the rules follow it). The eyebrow says the kind where the board draws the alignment (board 34's departure), and the board's
+       * price says "more on a long post" where the build says "more to play on a long post" (the plan's copy). The board's face is a 170px stand-in where the build draws
+       * the Postcard at the sheet's 276px: the face is held by its center and its y, and what follows it stands its 159px of extra height lower; the sheet's corner is 8px
+       * in from the window's edge, so the board's centered face stands 8px left of center in the build, and 9px higher; the frame's kicker stands 30px above the board's eyebrow.
+       */
+      name: 'The card info, as a sheet',
+      build: { moment: '07-vending' },
+      press: [{ role: 'button', name: 'About Whoops!' }],
+      landmarks: [
+        { id: 'sheet', role: 'figure', name: 'Card info, as a sheet', buildRole: 'dialog', buildName: 'Whoops!', type: false, box: 'none' },
+        at('eyebrow', 'text', 'SLOT A2 · SALTY', { y: -30 }, { within: 'sheet', origin: 'sheet', buildName: 'Slot A2 · Move' }),
+        at('title', 'heading', 'WHOOPS!', { y: 14 }, { within: 'sheet', origin: 'sheet' }),
+        at('face', 'figure', 'Whoops!, Salty, Cast, Common', { x: -8, y: -9 }, { within: 'sheet', origin: 'sheet', buildRole: 'article', buildName: 'Whoops!, Salty, Move, common postcard', box: 'center' }),
+        at('price', 'text', '1.00 to buy · more on a long post', { y: 150 }, { within: 'sheet', origin: 'sheet', buildName: '1.00 to buy · more to play on a long post' }),
+      ],
+    },
     {
       name: 'The HUD past its cap',
       build: { story: 'boards-00-hud-past-the-cap--past-the-cap-phone' },

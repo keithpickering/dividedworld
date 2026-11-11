@@ -172,9 +172,37 @@ describe('the info button on each card\'s slot', () => {
     open(seeded(562));
     fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
     const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
-    expect(within(dialog).getByText('A Salty card. Splats a post in your ink.')).toBeInTheDocument();
+    /* The face's plate holds the summary, which a card with no summary of its own draws as its rules: the rules' own line is the one read. */
+    expect(dialog.querySelector('.kb-vending-about-says')).toHaveTextContent('A Salty card. Splats a post in your ink.');
     expect(within(dialog).queryByText('A Sweet card. Holds each reader on a post.')).toBeNull();
     expect(within(dialog).getByRole('button', { name: 'Close' })).toBeInTheDocument();
+  });
+
+  test('it is the card\'s info: its face at the sheet\'s size, the slot and kind over the title, and the price in words', async () => {
+    open(seeded(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Whoops!' }));
+    const dialog = screen.getByRole('dialog', { name: 'Whoops!' });
+    /* The face is the Postcard at the sheet's size, an article, beside the rules and never an image of its own. */
+    const face = dialog.querySelector('.kb-postcard[data-kb-card="whoops"]');
+    expect(face).not.toBeNull();
+    expect(face).toHaveAttribute('data-size', 'sheet');
+    expect(face!.tagName).toBe('ARTICLE');
+    /* The title is the dialog's heading; the slot's code and the card's kind (the instance's word for how it is played) are over it. */
+    expect(within(dialog).getByRole('heading', { name: 'Whoops!' })).toBeInTheDocument();
+    expect(within(dialog).getByText('Slot A2 · Cast')).toBeInTheDocument();
+    /* Its price in words, and a long post's extra said, never a bare "1.00+". */
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^1\.00 to buy · more to play on a long post$/u);
+    expect(dialog.textContent).not.toContain('1.00+');
+  });
+
+  test('a card whose play costs nothing more says its price alone', async () => {
+    open(seeded(562));
+    fireEvent.click(await screen.findByRole('button', { name: 'About Stick Around' }));
+    const dialog = screen.getByRole('dialog', { name: 'Stick Around' });
+    expect(dialog.querySelector('.kb-vending-about-price')).toHaveTextContent(/^1\.00 to buy$/u);
+    expect(dialog.textContent).not.toContain('long post');
+    expect(within(dialog).getByText('Slot A1 · Cast')).toBeInTheDocument();
+    expect(dialog.querySelector('.kb-postcard[data-kb-card="stick"]')).toHaveAttribute('data-size', 'sheet');
   });
 
   test('Close puts focus back on the info button', async () => {

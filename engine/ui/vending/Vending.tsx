@@ -45,8 +45,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { animate, motion } from 'motion/react';
 import type { PackRules } from '../../rules/packs.ts';
 import { motionReduced } from '../appearance.ts';
-import { Postcard, PostcardBack } from '../cards/Postcard.tsx';
-import { facesOf, orbs, plainRefusal, priceOf, withCardEconomy, type CardFace } from '../cards/faces.ts';
+import { Postcard, PostcardBack, cardLabel } from '../cards/Postcard.tsx';
+import { facesOf, orbs, plainRefusal, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { useMachine } from '../cards/machine.ts';
 import type { CardArt } from '../cards/types.ts';
 import { signInHref } from '../account/next.ts';
@@ -603,11 +603,22 @@ export function Vending() {
 
       <Layers>
       {aboutItem && (
-        <Overlay title={aboutItem.name} surface="vending" className="kb-vending-about-dialog" onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}>
+        <Overlay
+          title={aboutItem.name} surface="vending" className={`kb-vending-about-dialog${aboutItem.face ? ' kb-vending-about-dialog--card' : ''}`}
+          kicker={aboutItem.face ? `Slot ${aboutItem.code} · ${aboutItem.face.kind}` : undefined}
+          onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}
+        >
           {aboutItem.face ? (
-            <div className="kb-vending-about-body" data-kb-alignment={aboutItem.face.alignment}>
-              <p className="kb-vending-about-price kb-num">{priceOf(aboutItem.price, aboutItem.face.extra)}</p>
-              <p className="kb-vending-about-says">{aboutItem.face.describe}</p>
+            /* The card's info: its face at the sheet's size beside its rules (the face above them on the phone), the price in words. */
+            <div className="kb-vending-about-body kb-vending-about-card" data-kb-alignment={aboutItem.face.alignment}>
+              <Postcard as="article" face={aboutItem.face} size="sheet" aria-label={cardLabel(aboutItem.face, 'sheet')} className="kb-vending-about-face" />
+              <div className="kb-vending-about-text">
+                <p className="kb-vending-about-price kb-num">
+                  {orbs(aboutItem.price)} to buy
+                  {aboutItem.face.extra > 0 && <span className="kb-vending-about-extra"> · more to play on a long post</span>}
+                </p>
+                <p className="kb-vending-about-says">{aboutItem.face.describe}</p>
+              </div>
             </div>
           ) : aboutItem.pack ? (
             <div className="kb-vending-about-body">
