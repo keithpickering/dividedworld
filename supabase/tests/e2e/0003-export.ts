@@ -366,7 +366,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -577,7 +577,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'play_reach', 'ledger']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');

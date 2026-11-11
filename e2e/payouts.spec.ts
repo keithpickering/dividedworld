@@ -39,14 +39,21 @@ async function open(page: Page, name: string, screen: 'lens' | 'form') {
   await settled(page, { loops: true });
 }
 
-for (const [name, what] of [['skim', 'a skim play'], ['ride', 'a ride Gimmick play'], ['ride-back', 'a ride Reversal face down'], ['scored-as', 'a scored-as play']] as const) {
+/** Each story's words: the card's status (a skim names its quadrant's label, a ride Gimmick says whom it pays, a card back says only that it is face down, a scored-as names its class) and its end. */
+const ENDS = /^Ends \w+ \d+, \d+:\d\d\s[AP]M$/u;
+for (const [name, what, status, end] of [
+  ['skim', 'a skim play', /^Mooching Hype off this post$/u, ENDS],
+  ['ride', 'a ride Gimmick play', /^Pays its author for votes here$/u, ENDS],
+  ['ride-back', 'a ride Reversal face down', /^Face down on this post$/u, /^Ends \w+ \d+, \d+:\d\d\s[AP]M, unless it springs first\.$/u],
+  ['scored-as', 'a scored-as play', /^Scores as a Heel next window$/u, ENDS],
+] as const) {
   test(`the Lens of ${what} shows its status and its end, and axe finds nothing`, async ({ page }) => {
     await open(page, name, 'lens');
     const body = lens(page).getByRole('tabpanel');
     await expect(body).toBeVisible();
     /* The status: the card's words for where the play stands, in the line under the tab; and the end: the time it ends by itself, in the view's way out. */
-    await expect(body.locator('.kb-lens-state, .kb-lens-line, .kb-lens-note').first()).toHaveText(/\S/u);
-    await expect(body.locator('.kb-lens-ends')).toHaveText(/\S/u);
+    await expect(body.locator('.kb-lens-state .kb-lens-line').first()).toHaveText(status);
+    await expect(body.locator('.kb-lens-ends')).toHaveText(end);
     expect(await violations(page)).toEqual([]);
   });
 }
