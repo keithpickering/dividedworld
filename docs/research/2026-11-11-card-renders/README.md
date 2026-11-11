@@ -6,10 +6,11 @@ still show the vector art in `instances/divided-world/ui/cards/`.
 
 ## What is here
 
-Fourteen scenes, each a Python script that builds a Blender scene from nothing and renders it, and the image it gave.
+Fifteen scenes, each a Python script that builds a Blender scene from nothing and renders it, and the image it gave.
 Ten are the roster on this date; four are the cards the card types design adds
-(`docs/plans/2026-11-11-card-types-design.md`, on the branch `ccr-6e9dbc56-yk0hx6` and not yet on main when this was
-written):
+(`docs/plans/2026-11-11-card-types-design.md`, on the branch `ccr-6e9dbc56-yk0hx6`); one is You Were Saying?
+(`docs/plans/2026-11-07-you-were-saying-design.md`, on the branch `ccr-2060b266-6z9hps`). Neither branch was on main
+when this was written:
 
 | Card | Scene | Render | After |
 | --- | --- | --- | --- |
@@ -27,6 +28,7 @@ written):
 | Heat Magnet | `heat.py` | `heat-magnet.png` | the owner's idea: a big magnet on fire, in the dark |
 | Class Clown | `clown.py` | `class-clown.png` | the owner's idea: a wig, a nose and a horn, floating on many colors |
 | Good Vibes | `vibes.py` | `good-vibes.png` | this session's: a lava lamp, and a salt shaker with its surcharge on a tag |
+| You Were Saying? | `saying.py` | `you-were-saying.png` | this session's: an old beige computer going on with a post in green |
 
 `rig.py` is what they all share: the scene reset, the Standard view transform (saturated, with no filmic roll-off,
 which is most of the period look), materials, lights, the card's camera, the render call, and the small shapes the scenes are built from (tubes, slabs,
@@ -67,6 +69,7 @@ Environment variables, all optional:
 | `HEAT_SEED` | `6` | How the flames sway, and the embers. |
 | `CLOWN_SEED` | `9` | The wig's curls and the confetti. |
 | `VIBES_SEED` | `4` | The soft lights in the room and the spilled salt. |
+| `SAYING_SEED` | `3` | The lengths of the words on the screen and past it. |
 
 Every scene but Whoops! puts the card on the xz plane, 5.4 wide by 8.4 tall and centered on the origin, with the
 camera looking along +y, so one unit is 100 px of the canvas and a position can be read off the card template
@@ -97,6 +100,10 @@ flat tongues drawn three deep, the cartoon fire of the period, in the pink of it
 from the owner: the card makes Salty Moves cost 0.25 orbs more in a thread, so the scene is a calm thing sending rings
 out across a floor and a salt shaker at their edge with "+0.25" on a tag. The figure on the tag is the design's on
 this date and is part of the picture: if the price changes, the tag is wrong.
+
+**You Were Saying?** The old voice is drawn as an old beige computer. On its screen a post starts in amber, the
+author's, and goes on in green with a block cursor, the colors the card's design gives the tail in play (Courier with
+a green tint); the green then runs off the glass and out into the room, the design's "terminal bleed".
 
 ## What using these on cards would need
 
