@@ -48,7 +48,7 @@ interface Loaded {
   readonly characters: ReadonlyMap<Id, Character>;
   /** Page 1's pinned threads (Main Event's kind): drawn above its rows, taking none of its slots. Empty on every other page. */
   readonly pins: readonly PinnedThread[];
-  /** The threads moved away within the instance's `movedStubDays`, drawn under the board's own rows. */
+  /** The threads moved away within the instance's `movedStubDays`, drawn under the board's own rows on page one (the later pages have none). */
   readonly stubs: readonly BoardStub[];
 }
 
@@ -70,16 +70,20 @@ export function BoardScreen({ slug, doc }: { readonly slug: string; readonly doc
  * A closed board (merged into another, or made by a move that was reversed): its name, and one plain line that links to the board that took its threads. No list, no New Thread
  * and no description: there is nothing to do here but go on, and the line says where. It is the glass's own plain words, never in character ("The fiction may lie; the log never does").
  */
-function ClosedBoard({ board, closed }: { readonly board: Board; readonly closed: BoardClosed }) {
-  const to = closed.mergedInto ?? closed.fallback;
-  const link = to ? <Link to={`/b/${encodeURIComponent(to.slug)}`}>{to.name}</Link> : <Link to="/">the index</Link>;
+export function ClosedBoard({ board, closed }: { readonly board: Board; readonly closed: BoardClosed }) {
+  const go = (to: { readonly slug: string; readonly name: string }) => <Link to={`/b/${encodeURIComponent(to.slug)}`}>{to.name}</Link>;
+  /* The words say what happened (merged into X) and, when X was closed too, where its threads are now (the first open board). */
+  const open = closed.goesTo;
+  const first = closed.mergedInto ?? closed.fallback;
+  let line: React.ReactNode;
+  if (closed.mergedInto) line = <>This board was merged into {go(closed.mergedInto)}.{open && open.id !== closed.mergedInto.id && <> That board was closed too; its threads are in {go(open)}.</>}</>;
+  else if (open ?? first) line = <>This board was closed. Its threads are in {go((open ?? first)!)}.</>;
+  else line = <>This board was closed. Its threads were moved to other boards; look for them on the <Link to="/">index</Link>.</>;
   return (
     <div className="kb-board kb-board-closed" data-kb-board={board.slug}>
       <p className="kb-crumb"><Link to="/">Index</Link> › {board.name}</p>
       <h1 className="kb-heading kb-board-title">{board.name}</h1>
-      <p className="kb-board-closed-line">
-        {closed.mergedInto ? <>This board was merged into {link}.</> : <>This board was closed. Its threads are in {link}.</>}
-      </p>
+      <p className="kb-board-closed-line">{line}</p>
     </div>
   );
 }

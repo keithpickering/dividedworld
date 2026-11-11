@@ -1560,7 +1560,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         return to ? [{ thread: s['id'], title: str(s['title']) ?? '', movedTo: to, movedAt: str(s['moved_at']) ?? '' }] : [];
       });
       return {
-        board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']) } : null, stubs,
+        board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']), goesTo: ref(d['goesTo']) } : null, stubs,
         total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
         states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
         tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,

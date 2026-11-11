@@ -5,11 +5,13 @@
  */
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { useState } from 'react';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { LoadedProfile, LoadedQueue } from '../loaded.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { MoveNotice } from './MoveNotice.tsx';
+import { MoveSentence } from './MoveSentence.tsx';
 import { seedMoves, type MoveWorld } from './move-world.ts';
 
 beforeEach(() => localStorage.clear());
@@ -86,5 +88,42 @@ describe('the overlay on a move\'s notice', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^WAY OUT:/u }));
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(dialog).toHaveTextContent('The Boss moved Best bread, ranked from Pointless Toast Palace to Minus World.'));
+  });
+});
+
+describe('the names of moved threads are read once for a page', () => {
+  test('the queue and the log read a page of thread moves with one call, not one for each row', async () => {
+    const { fake, w, thread } = world();
+    const other = fake.seed.thread(w.general, w.spritey, 'Another thread', 'x').thread;
+    for (const t of [thread, other]) {
+      fake.seed.moveThread(t, 'minus-world');
+      fake.seed.move('director', { board: '', name: '', lasting: { kind: 'moveThread', params: { thread: t, board: 'minus-world' } } });
+      fake.seed.queueMove('director', { board: '', name: '', goLiveAt: fake.clock.now() + 3_600_000, lasting: { kind: 'moveThread', params: { thread: t, board: 'minus-world' } } });
+    }
+    const spy = vi.spyOn(fake, 'moveThreadNames');
+    renderIn(fake, <LoadedQueue now={fake.clock.now()} />, { path: '/admin/queue' });
+    await screen.findByText(/^Moved Best bread, ranked from$/u);
+    await screen.findByText(/^Moved Another thread from$/u);
+    await screen.findByText(/^Move Best bread, ranked from$/u);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]![0]).toHaveLength(4);
+  });
+
+  test('a sentence whose move changes reads the new move\'s thread, not the one before', async () => {
+    const { fake, w, thread } = world();
+    const other = fake.seed.thread(w.general, w.spritey, 'Another thread', 'x').thread;
+    fake.seed.moveThread(thread, 'minus-world');
+    fake.seed.moveThread(other, 'minus-world');
+    const boards = await fake.boardNames();
+    const to = boards.find((b) => b.slug === 'minus-world')!.id;
+    function Swap() {
+      const [t, setT] = useState(thread);
+      return <><button type="button" onClick={() => setT(other)}>swap</button><MoveSentence kind="moveThread" params={{ thread: t, board: to }} boards={boards} tense="plan" /></>;
+    }
+    renderIn(fake, <Swap />, { path: '/' });
+    await screen.findByText(/^Move Best bread, ranked from$/u);
+    await userEvent.click(screen.getByRole('button', { name: 'swap' }));
+    await screen.findByText(/^Move Another thread from$/u);
+    expect(screen.queryByText(/Best bread/u)).toBeNull();
   });
 });

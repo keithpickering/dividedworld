@@ -1675,6 +1675,8 @@ export interface BoardStub {
 export interface BoardClosed {
   readonly mergedInto: BoardRef | null;
   readonly fallback: BoardRef | null;
+  /** The first open board its threads are in, following merges and fallbacks on (the board above may itself be closed since); null when none can be named. */
+  readonly goesTo: BoardRef | null;
 }
 
 /** A board's page (board_page, 0095). `page` is the page shown, clamped to the board's last. */

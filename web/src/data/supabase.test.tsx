@@ -2095,11 +2095,11 @@ describe('a screen in one call', () => {
     const open = await once('board_page', { ...rest, closed: false, mergedInto: null, fallback: null, stubs: [{ id: T, title: 'Best bread', moved_to: C, moved_to_slug: 'off-topic', moved_to_name: 'Off Topic', moved_at: '2026-10-01T10:00:00+00:00' }] }).api.boardPage('general', 1, []);
     expect(open?.closed).toBeNull();
     expect(open?.stubs).toEqual([{ thread: T, title: 'Best bread', movedTo: { id: C, slug: 'off-topic', name: 'Off Topic' }, movedAt: '2026-10-01T10:00:00+00:00' }]);
-    const merged = await once('board_page', { ...rest, closed: true, mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null, stubs: [], presence: null }).api.boardPage('minus', 1, []);
-    expect(merged?.closed).toEqual({ mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null });
+    const merged = await once('board_page', { ...rest, closed: true, mergedInto: { id: C, slug: 'general', name: 'General' }, goesTo: { id: B, slug: 'open', name: 'Open' }, fallback: null, stubs: [], presence: null }).api.boardPage('minus', 1, []);
+    expect(merged?.closed).toEqual({ mergedInto: { id: C, slug: 'general', name: 'General' }, fallback: null, goesTo: { id: B, slug: 'open', name: 'Open' } });
     expect(merged?.threads).toEqual([]);
     const made = await once('board_page', { ...rest, closed: true, mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, stubs: [], presence: null }).api.boardPage('short', 1, []);
-    expect(made?.closed).toEqual({ mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' } });
+    expect(made?.closed).toEqual({ mergedInto: null, fallback: { id: C, slug: 'general', name: 'General' }, goesTo: null });
     /* A page from before the stubs (no keys) is an open board with none. */
     const older = await once('board_page', rest).api.boardPage('general', 1, []);
     expect(older?.closed).toBeNull();

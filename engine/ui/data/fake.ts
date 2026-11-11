@@ -468,6 +468,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** A closed board: merged into another, or closed with where its threads went (boards_now.closed and merged_into, 0152). */
   const closedBoards = new Map<Id, { mergedInto: Id | null; fallback: Id | null }>();
   const isClosed = (b: Board): boolean => closedBoards.has(b.id);
+  /** The first open board a closed board's threads are in, following merges and fallbacks on. */
+  const openEnd = (id: Id): Id | null => {
+    let here: Id | null = id;
+    for (let hops = 0; hops < 50 && here !== null; hops++) {
+      const gone = closedBoards.get(here);
+      if (!gone) return here === id ? null : here;
+      here = gone.mergedInto ?? gone.fallback;
+    }
+    return null;
+  };
   /** The staff key of the Boss that keeps each move after a handover, by the move's Act. */
   const moveKeeps = new Map<Id, string>();
   const playersBoard = boards.find((b) => !b.isSystem);
@@ -1092,8 +1102,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (closed) {
       const went = boards.find((b) => b.id === (closed.mergedInto ?? closed.fallback));
       return refuse(closed.mergedInto !== null
-        ? `this board was merged into ${went ? boardNow(went).name : 'another board'}; its threads are there, so start your thread there`
-        : `this board was closed; its threads are in ${went ? boardNow(went).name : 'another board'}, so start your thread there`);
+        ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
+        : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
     }
     const t = openThread(board.id, title, null);
     const written = write({ character, kind: 'post', thread: t.id, payload: { body } });
@@ -2972,7 +2982,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (gone) {
         const ref = (id: Id | null): BoardRef | null => { const b = boards.find((x) => x.id === id); return b ? { id: b.id, slug: b.slug, name: boardNow(b).name } : null; };
         return {
-          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback) }, stubs: [], total: 0, page: 1, threads: [], pins: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
+          board, closed: { mergedInto: ref(gone.mergedInto), fallback: ref(gone.fallback), goesTo: ref(openEnd(board.id)) }, stubs: [], total: 0, page: 1, threads: [], pins: [], banner: [], states: {}, releases: [], tallies: {}, mine: [],
           reading: {}, views: {}, characters: [], presence: presenceAt({ kind: 'board', board: board.id }), unread: core.alertsUnread(),
         };
       }
@@ -2990,7 +3000,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const people = [...new Set([...threads.flatMap((t) => [t.firstCharacter, t.lastCharacter]), ...marked.map((a) => a.character)].filter((c): c is Id => c !== null))];
       /* The threads moved away within movedStubDays, newest move first, each once (the latest move of it away from here) and only if it is not back: the stub says where it is now. */
       const since = now() - settings.movedStubDays * 86_400_000;
-      const stubs = [...departures].filter((d) => d.from === board.id && d.at >= since).sort((x, y) => y.at - x.at)
+      const stubs = shown !== 1 ? [] : [...departures].filter((d) => d.from === board.id && d.at >= since).sort((x, y) => y.at - x.at)
         .filter((d, i, all) => all.findIndex((e) => e.thread === d.thread) === i && core.thread(d.thread)!.board !== board.id)
         .map((d): BoardStub => {
           const moved = core.thread(d.thread)!;

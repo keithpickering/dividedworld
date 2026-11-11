@@ -264,6 +264,13 @@ test('an instance exported and imported into a fresh database is the same instan
       kept := (write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.', 'expires_at', now() + interval '2 days',
         'params', jsonb_build_object('board', gen, 'name', 'Exported Palace', 'premise', 'p', 'description', 'd'),
         'demand', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)))) ->> 'id')::uuid;
+      -- A thread moved to another board (0152, 0158): the move Act writes its thread_departures row, the thread's stored board follows it, and its origin_board stays where it started,
+      -- so a thread's place, its departure and its origin are real rows to carry across.
+      insert into boards (slug, name) values ('exp-elsewhere', 'Exported Elsewhere');
+      perform write_staff_act('exp-boss', 'move', t, null, jsonb_build_object('kind', 'moveThread', 'body', 'Moved.',
+        'params', jsonb_build_object('thread', t, 'board', (select id from boards where slug = 'exp-elsewhere'))));
+      perform rebuild_thread_places(array[t]);
+      if not exists (select 1 from thread_departures where thread = t) or not exists (select 1 from threads where id = t and board <> origin_board) then raise exception 'the fixture did not land a moveThread'; end if;
       -- Its cause (0106): the Act that drew a move, carried across with the row.
       insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, landed_act, cause_act)
       select max(m.id), 'exp-boss', 'renameBoard', '{"board": "x", "name": "Exported Palace"}', jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', gen, 'count', 2)), 'Because the toast was cold.',

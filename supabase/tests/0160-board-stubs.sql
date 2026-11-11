@@ -232,3 +232,54 @@ begin
   perform pg_temp.expect(got -> 0 ->> 'key' = mv::text and got -> 0 ->> 'from' = pg_temp.board('bs-one')::text, 'a landed move does not name the board the thread left: ' || got::text);
   perform pg_temp.expect(move_thread_names('"nonsense"') = '[]'::jsonb and move_thread_names(jsonb_build_array(jsonb_build_object('thread', 'not-a-uuid'))) = '[]'::jsonb, 'a bad item is not skipped');
 end $$;
+
+-- ---- 7. Stubs are on page one, below its threads, taking none of its slots; they are not repeated on the later pages ----
+do $$
+declare
+  c uuid := (select id from characters where name = 'Stub Reader');
+  i integer;
+  t uuid;
+  j jsonb;
+begin
+  insert into boards (slug, name) values ('bs-busy', 'Busy Board');
+  for i in 1..25 loop
+    t := pg_temp.mk('Busy ' || i, 'bs-busy', c);
+  end loop;
+  t := pg_temp.mk('Leaves the busy board', 'bs-busy', c);
+  perform pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('bs-two'))));
+  j := pg_temp.page('bs-busy');
+  perform pg_temp.expect((j ->> 'total')::integer = 25 and jsonb_array_length(j -> 'threads') = 20, 'the stub took a slot or a count on the first page: ' || (j ->> 'total'));
+  perform pg_temp.expect(jsonb_array_length(j -> 'stubs') = 1, 'page one of a busy board lists no stub');
+  perform tests.become(pg_temp.reader());
+  j := board_page('bs-busy', 2, array[]::text[]);
+  perform tests.unbecome();
+  perform pg_temp.expect(jsonb_array_length(j -> 'stubs') = 0 and jsonb_array_length(j -> 'threads') = 5, 'a later page repeats the stubs');
+end $$;
+
+-- ---- 8. A closed board names the first open board its threads are in, even when the board it was merged into was closed since ----
+do $$
+declare
+  c uuid := (select id from characters where name = 'Stub Reader');
+  j jsonb;
+  msg text;
+begin
+  insert into boards (slug, name) values ('ch-a', 'Chain A'), ('ch-b', 'Chain B'), ('ch-c', 'Chain C');
+  perform pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', pg_temp.board('ch-a'), 'into', pg_temp.board('ch-b'))));
+  j := pg_temp.page('ch-a');
+  perform pg_temp.expect(j -> 'goesTo' ->> 'slug' = 'ch-b' and j -> 'mergedInto' ->> 'slug' = 'ch-b', 'one merge: the first open board is the board merged into: ' || j::text);
+  perform pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', pg_temp.board('ch-b'), 'into', pg_temp.board('ch-c'))));
+  j := pg_temp.page('ch-a');
+  perform pg_temp.expect(j -> 'mergedInto' ->> 'name' = 'Chain B', 'the page does not keep the direct target in its words: ' || j::text);
+  perform pg_temp.expect(j -> 'goesTo' ->> 'slug' = 'ch-c' and j -> 'goesTo' ->> 'name' = 'Chain C', 'a board merged into one that was merged again does not follow to the first open board: ' || j::text);
+  perform pg_temp.expect(pg_temp.page('ch-b') -> 'goesTo' ->> 'slug' = 'ch-c', 'the middle board does not name the open one');
+  perform tests.become(pg_temp.reader());
+  msg := pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'ch-a', c, 'Late', 'Hello.'));
+  perform tests.unbecome();
+  perform pg_temp.expect(msg like '%Chain B%' and msg like '%Chain C%', 'the refusal does not name the first open board: ' || coalesce(msg, 'allowed'));
+  -- Starting on the open board it names works.
+  perform tests.become(pg_temp.reader());
+  perform start_thread('ch-c', c, 'Here', 'Hello.');
+  perform tests.unbecome();
+  -- A made board whose fallback was closed since follows on too.
+  perform pg_temp.expect(pg_temp.page('short-lived') -> 'goesTo' ->> 'slug' is not null, 'a closed made board names no board its threads are in');
+end $$;

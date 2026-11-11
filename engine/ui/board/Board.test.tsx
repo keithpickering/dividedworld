@@ -6,7 +6,7 @@ import type { ThreadSummary } from '../data/api.ts';
 import { buildWorld, holdReads, renderIn, renderInWorld } from '../test-world.tsx';
 import { SIGNED_OUT_DOC } from '../screen-docs.ts';
 import { useLocation } from '../router.tsx';
-import { BoardScreen } from './Board.tsx';
+import { BoardScreen, ClosedBoard } from './Board.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { seedMoves } from './move-world.ts';
 import { testInstance } from '../test-world.tsx';
@@ -878,5 +878,33 @@ describe('a thread that moved away leaves a stub, and a closed board says where 
     const refused = await fake.startThread('off-topic', seeded.mine!, 'Late', 'Hello.');
     expect(refused.ok).toBe(false);
     expect(JSON.stringify(refused)).toMatch(/merged into General/u);
+  });
+
+  test('a board merged into one that was merged again names both: where it was merged, and the first open board its threads are in', async () => {
+    renderInWorld(<LoadedBoard slug="off-topic" />, {
+      seed: (f) => { const w = world(f, { threads: 1 }); f.seed.board('third', 'Third'); f.seed.closeBoard('off-topic', { mergedInto: 'third' }); f.seed.closeBoard('third', { mergedInto: 'general' }); return w; },
+    });
+    const line = await screen.findByText(/^This board was merged into /u);
+    expect(line).toHaveTextContent('This board was merged into Third. That board was closed too; its threads are in General.');
+    expect(within(line).getByRole('link', { name: 'Third' })).toHaveAttribute('href', '/b/third');
+    expect(within(line).getByRole('link', { name: 'General' })).toHaveAttribute('href', '/b/general');
+  });
+
+  test('a closed board with no board to name says where to look, linked to the index, in plain words', async () => {
+    const fake = buildWorld();
+    const board = { id: 'b1', slug: 'gone', name: 'Gone', description: '', isSystem: false, moveAct: null };
+    const { container } = renderIn(fake, <ClosedBoard board={board} closed={{ mergedInto: null, fallback: null, goesTo: null }} />);
+    expect(container).toHaveTextContent('This board was closed. Its threads were moved to other boards; look for them on the index.');
+    expect(within(container).getByRole('link', { name: 'index' })).toHaveAttribute('href', '/');
+  });
+
+  test('a stub is on the first page of a busy board, below its twenty threads, and not on the second', async () => {
+    const { fake } = renderInWorld(<LoadedBoard slug="general" />, {
+      seed: (f) => { const w = world(f, { threads: 26 }); f.seed.moveThread(w.ids[0]!, 'off-topic', { at: f.clock.now() - DAY }); return w; },
+    });
+    await screen.findByRole('link', { name: 'Moved: Thread 001' });
+    expect((await fake.boardPage('general', 1, []))!.stubs).toHaveLength(1);
+    expect((await fake.boardPage('general', 1, []))!.threads).toHaveLength(20);
+    expect((await fake.boardPage('general', 2, []))!.stubs).toHaveLength(0);
   });
 });
