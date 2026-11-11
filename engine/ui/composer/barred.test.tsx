@@ -246,6 +246,20 @@ describe('the three states of an apology', () => {
     await waitFor(() => expect(apologize).toHaveBeenLastCalledWith(w.move, w.pipe, 'I am sorry', '\u200bI was wrong.'));
   });
 
+  test('an apology whose title the server refuses is worded with the title\'s label, and the form stays open', async () => {
+    const w = barred();
+    vi.spyOn(w.fake, 'apologize').mockResolvedValueOnce({ ok: false, error: 'is longer than 40 characters', field: 'title' });
+    openThread(w, undefined, { settings: { groups: GROUPS } });
+    await userEvent.click(await screen.findByRole('button', { name: 'Write an apology' }));
+    const form = await screen.findByRole('form', { name: /apology/iu });
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'I am sorry');
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('The thread title is longer than 40 characters');
+    expect(screen.getByRole('form', { name: /apology/iu })).toBeInTheDocument();
+    expect(within(form).getByLabelText('Thread title')).toHaveValue('I am sorry');
+  });
+
   test('waiting: says it is with the Boss, and offers no second one', async () => {
     const w = barred();
     w.fake.seed.apology(w.pipe, w.move, 'pending');

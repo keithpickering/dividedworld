@@ -163,6 +163,14 @@ describe('the spin form words a refusal that names a field', () => {
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
     await waitFor(() => expect(within(form).getByRole('alert').textContent).toBe('is not an id'));
   });
+
+  test('a field named like something every object has reads as the server said it too', async () => {
+    const w = threadWorld(3);
+    vi.spyOn(w.fake, 'spin').mockResolvedValueOnce({ ok: false, error: 'is not a field', field: 'constructor' });
+    const form = await open(w);
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(within(form).getByRole('alert').textContent).toBe('is not a field'));
+  });
 });
 
 async function spinFrom(w: ReturnType<typeof threadWorld>, origin: string, title = 'Spun off', body = 'Taking this elsewhere.') {

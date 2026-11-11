@@ -91,7 +91,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
     setRefusal(`${words ?? 'No answer came back.'} ${looked ? 'The thread is not there yet.' : 'The threads spun from this Act could not be checked.'} Press “${apology ? 'Send again anyway' : 'Spin again anyway'}” to ${apology ? 'send it' : 'spin it'} again.`);
   };
   /* A refusal that names a field is worded with that field's label, as the form shows it; any other reads as the server said it. */
-  const fieldWords: Record<string, string> = { title: 'The thread title ', body: apology ? 'Your apology ' : 'Your opening post ' };
+  const fieldWords = (field: string | undefined) => (field === 'title' ? 'The thread title ' : field === 'body' ? (apology ? 'Your apology ' : 'Your opening post ') : '');
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (busy || title.trim() === '') return;
@@ -104,7 +104,7 @@ export function SpinForm({ origin, label: named, onClose, draft, onDraft, apolog
       try { answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, ...framingArgs(body))); } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
-      else setRefusal(`${fieldWords[answer.field ?? ''] ?? ''}${answer.error}`);
+      else setRefusal(`${fieldWords(answer.field)}${answer.error}`);
     } finally {
       setBusy(false);
     }
