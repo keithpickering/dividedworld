@@ -748,7 +748,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     // A lasting kind has no expiry: the hours given are dropped and the drop recorded (a move that stays is not the meeting's to time).
     const expires = kind.lasting ? 0 : kind.key === 'flashSale' ? Number(given['hours']) : Math.min(Math.max(hours, phaseLeast), most);
     if (kind.lasting) {
-      trims.push({ path: `${path}.expires_in_hours`, predicate: 'noExpiry', before: hours, after: 0 });
+      // Hours already 0 are no drop to record.
+      if (hours !== 0) trims.push({ path: `${path}.expires_in_hours`, predicate: 'noExpiry', before: hours, after: 0 });
     } else if (expires !== hours) {
       trims.push({ path: `${path}.expires_in_hours`, predicate: kind.key === 'flashSale' ? 'equalsHours' : `between(${phaseLeast}, ${most})`, before: hours, after: expires });
     }

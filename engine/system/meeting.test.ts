@@ -726,3 +726,16 @@ test('an expires_in_hours given for a lasting kind is dropped and recorded; for 
     (MOVE_KINDS as unknown as unknown[]).pop();
   }
 });
+
+test('a lasting kind given no expiry (0 hours) records no drop', async () => {
+  const { MOVE_KINDS, RENAME_BOARD } = await import('./moves.ts');
+  (MOVE_KINDS as unknown as unknown[]).push({ ...RENAME_BOARD, key: 'testLasting', lasting: true, demand: () => 'none' as const });
+  try {
+    const r = repairAnswer({ ...answer(null), moves: [{ ...move(null), kind: 'testLasting', expires_in_hours: 0 }] }, { ...ctx(), bank: 50 });
+    assert.ok(r.ok, JSON.stringify(r));
+    assert.equal(r.moves[0]!.expiresInHours, 0);
+    assert.deepEqual(r.trims.filter((t) => t.path.endsWith('expires_in_hours')), []);
+  } finally {
+    (MOVE_KINDS as unknown as unknown[]).pop();
+  }
+});

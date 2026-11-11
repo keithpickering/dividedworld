@@ -27,19 +27,26 @@ begin
   end if;
 end $$;
 
--- ---- refused updates: origin_board never changes, whoever asks, in any replication role ----
+-- ---- refused updates: origin_board never changes, whoever asks, in any replication role, and each refusal is the trigger's own ----
 do $$
 declare
   t uuid := (select id from threads where title = 'One');
   refused integer := 0;
+  state text;
+  msg text;
 begin
-  begin update threads set origin_board = pg_temp.board('elsewhere') where id = t; exception when others then refused := refused + 1; end;
-  begin update threads set origin_board = null where id = t; exception when others then refused := refused + 1; end;
+  begin update threads set origin_board = pg_temp.board('elsewhere') where id = t;
+  exception when others then get stacked diagnostics state = returned_sqlstate, msg = message_text;
+    if state = 'P0001' and msg like '%origin_board never changes%' then refused := refused + 1; else raise exception 'refused by something else: % %', state, msg; end if; end;
+  begin update threads set origin_board = null where id = t;
+  exception when others then get stacked diagnostics state = returned_sqlstate, msg = message_text;
+    if state = 'P0001' and msg like '%origin_board never changes%' then refused := refused + 1; else raise exception 'refused by something else: % %', state, msg; end if; end;
   set local session_replication_role = replica;
-  begin update threads set origin_board = pg_temp.board('elsewhere') where id = t; exception when others then refused := refused + 1; end;
+  begin update threads set origin_board = pg_temp.board('elsewhere') where id = t;
+  exception when others then get stacked diagnostics state = returned_sqlstate, msg = message_text;
+    if state = 'P0001' and msg like '%origin_board never changes%' then refused := refused + 1; else raise exception 'refused by something else: % %', state, msg; end if; end;
   set local session_replication_role = origin;
   if refused <> 3 then raise exception 'an update of origin_board was allowed % time(s) of 3', 3 - refused; end if;
-  -- An update that leaves it as it is, and one of the board beside it, are not refused (the trigger is about the origin).
   update threads set origin_board = origin_board where id = t;
   if (select origin_board from threads where id = t) is distinct from pg_temp.board('general') then raise exception 'origin_board moved'; end if;
 end $$;
@@ -49,7 +56,7 @@ do $$
 declare
   fn text;
 begin
-  foreach fn in array array['thread_place(uuid)', 'rebuild_thread_places(uuid[])', 'thread_places_drift()'] loop
+  foreach fn in array array['thread_place(uuid)', 'rebuild_thread_places(uuid[])', 'thread_places_drift()', 'thread_places_computed()', 'board_merge_into(uuid)', 'safe_uuid(text)'] loop
     if has_function_privilege('anon', fn, 'execute') or has_function_privilege('authenticated', fn, 'execute') or has_function_privilege('public', fn, 'execute') then
       raise exception '% is callable by a client', fn;
     end if;
@@ -138,4 +145,79 @@ begin
   perform pg_temp.end_it(merge, 'reversed');
   if thread_place(one) is distinct from pg_temp.board('general') then raise exception 'reversing the merge did not return the thread'; end if;
   if thread_place(gen_random_uuid()) is not null then raise exception 'a thread that does not exist has a place'; end if;
+end $$;
+
+-- ---- a lasting move is in force until it has any move_end; createBoard, moveThread and mergeBoard answer the same way ----
+-- Every state below also holds the single-thread function to the set-based one: after a rebuild, thread_place(t) is the stored board for every thread.
+create function pg_temp.agree(label text) returns void language plpgsql as $$
+begin
+  perform rebuild_thread_places();
+  if exists (select 1 from threads t where t.board is distinct from thread_place(t.id)) then
+    raise exception '% : thread_place disagrees with the rebuild for %', label, (select array_agg(t.title) from threads t where t.board is distinct from thread_place(t.id));
+  end if;
+  if exists (select 1 from thread_places_drift()) then raise exception '%: drift after a rebuild', label; end if;
+end $$;
+create function pg_temp.made(slug text, fallback uuid) returns uuid language plpgsql as $$
+declare
+  mv uuid := pg_temp.land('createBoard', jsonb_build_object('name', slug, 'premise', 'p', 'description', 'd') || case when fallback is null then '{}'::jsonb else jsonb_build_object('fallback', fallback) end);
+begin
+  insert into boards (slug, name, created_by_act) values (slug, slug, mv);
+  return mv;
+end $$;
+
+do $$
+declare
+  a uuid; b uuid; c uuid;
+  t_in uuid; t_moved uuid; m uuid;
+begin
+  perform pg_temp.agree('start');
+  -- A reversed createBoard with a fallback: its threads go to the fallback.
+  a := pg_temp.made('ma', pg_temp.board('fourth'));
+  t_in := pg_temp.mk('In A', 'ma');
+  if thread_place(t_in) is distinct from pg_temp.board('ma') then raise exception 'a thread on a live created board is not on it'; end if;
+  perform pg_temp.end_it(a, 'reversed');
+  if thread_place(t_in) is distinct from pg_temp.board('fourth') then raise exception 'a reversed createBoard did not send its thread to the fallback'; end if;
+  perform pg_temp.agree('reversed with fallback');
+  -- With none: the instance's first open non-system board (General, the oldest).
+  b := pg_temp.made('mb', null);
+  t_in := pg_temp.mk('In B', 'mb');
+  perform pg_temp.end_it(b, 'reversed');
+  if thread_place(t_in) is distinct from pg_temp.board('general') then raise exception 'a reversed createBoard with no fallback did not send its thread to the first open board'; end if;
+  perform pg_temp.agree('reversed without fallback');
+  -- Ended any other way, it closes the board all the same.
+  c := pg_temp.made('mc', pg_temp.board('third'));
+  t_in := pg_temp.mk('In C', 'mc');
+  perform pg_temp.end_it(c, 'overturned');
+  if thread_place(t_in) is distinct from pg_temp.board('third') then raise exception 'a createBoard ended overturned did not close its board'; end if;
+  perform pg_temp.agree('overturned');
+  c := pg_temp.made('md', pg_temp.board('third'));
+  t_in := pg_temp.mk('In D', 'md');
+  perform pg_temp.end_it(c, 'superseded');
+  if thread_place(t_in) is distinct from pg_temp.board('third') then raise exception 'a createBoard ended superseded did not close its board'; end if;
+  -- A moveThread onto a board that has since closed follows its merge, or its fallback.
+  t_moved := pg_temp.mk('Moved', 'general');
+  m := pg_temp.land('moveThread', jsonb_build_object('thread', t_moved, 'board', pg_temp.board('third')), now() - interval '3 minutes');
+  perform pg_temp.land('mergeBoard', jsonb_build_object('board', pg_temp.board('third'), 'into', pg_temp.board('fourth')), now() - interval '2 minutes');
+  if thread_place(t_moved) is distinct from pg_temp.board('fourth') then raise exception 'a moveThread onto a board since merged did not follow the merge'; end if;
+  perform pg_temp.agree('moved onto a merged board');
+  a := pg_temp.made('me', pg_temp.board('elsewhere'));
+  t_moved := pg_temp.mk('Moved again', 'general');
+  perform pg_temp.land('moveThread', jsonb_build_object('thread', t_moved, 'board', pg_temp.board('me')), now() - interval '1 minute');
+  if thread_place(t_moved) is distinct from pg_temp.board('me') then raise exception 'a moveThread onto a live created board'; end if;
+  perform pg_temp.end_it(a, 'reversed');
+  if thread_place(t_moved) is distinct from pg_temp.board('elsewhere') then raise exception 'a moveThread onto a board since reversed did not follow its fallback'; end if;
+  perform pg_temp.agree('moved onto a reversed board');
+end $$;
+
+-- ---- a malformed param is no such move, never an error ----
+do $$
+declare
+  t uuid := (select id from threads where title = 'Two');
+begin
+  perform pg_temp.land('moveThread', jsonb_build_object('thread', t, 'board', 'not-a-uuid'));
+  perform pg_temp.land('moveThread', jsonb_build_object('thread', 'nonsense', 'board', pg_temp.board('third')));
+  perform pg_temp.land('mergeBoard', jsonb_build_object('board', pg_temp.board('elsewhere'), 'into', 'nonsense'));
+  perform pg_temp.land('mergeBoard', jsonb_build_object('board', 'nonsense', 'into', pg_temp.board('third')));
+  perform pg_temp.agree('malformed');
+  if thread_place(t) is distinct from (select origin_board from threads where id = t) then raise exception 'a malformed move placed a thread'; end if;
 end $$;
