@@ -361,3 +361,71 @@ Asked the six questions this section first held, the owner answered the same day
 So every rework in section 2 is decided, and "this session's recommendation" above reads as the owner's decision from
 here. The owner then asked for the plans to be written and carried through to builds. Graffiti and Laugh Track still
 each need a design session of their own for their screens (section 2).
+
+## 6. The plans
+
+Written the same day, after the owner's answers, each against the code on main once card types and rendered card art
+had merged. Section 4's last sentence is out of date from that merge: a render can be a card's art now (`art.webp`),
+Below the Fold wears its own, and every plan gives each card its render.
+
+| Part | Plan | Cards |
+|---|---|---|
+| 1 | `docs/plans/2026-11-11-below-the-fold-plan.md` (built) | Below the Fold |
+| 2 | `docs/plans/2026-11-11-card-notes-part-2-plan.md` | Line Cutter, Feelin' Glam |
+| 3 | `docs/plans/2026-11-11-card-notes-part-3-plan.md` | Whodunnit?, Blind Study, Overreaction |
+| 4 | `docs/plans/2026-11-11-card-notes-part-4-plan.md` | Sugar Coat, Hype-Up, Last Word |
+| 5 | `docs/plans/2026-11-11-card-notes-part-5-plan.md` | the three Happy Hearts, Take the Fall, Tattle-Tale |
+| 6 | `docs/plans/2026-11-11-card-notes-part-6-plan.md` | Mooch, Toll, 4D Chess, Off Day |
+
+**They are built one at a time, in this order: 6, 4, 3, 2, 5.** Each was planned alone against the same main, and
+they meet in the same places (`place_cast`, `card_kinds_problem`, `seed_instance`, `thread_page`, the instance's card
+list, the machine and the Booster), so each build copies those from their latest definition on its day and takes the
+next free migration numbers then.
+
+- **Part 6 goes first** because its Task 1 fixes issue #452: a settlement that holds an Earn Gimmick's boost is refused
+  by `apply_settlement` on main today. Part 4's Hype-Up is an Earn and needs that fix under it.
+- **A timed Move on a post.** Parts 3 and 6 each let a cast on a post carry a `lasts` (Whodunnit?, Blind Study, Mooch).
+  The second to build finds it done.
+- **The Booster's hit pull.** Parts 5 and 6 each add the first legendary and each change the weights. The one set of
+  weights is `{ uncommon: 74, rare: 24, legendary: 2 }`, and the second to build leaves them.
+- **Section 2 where the code said otherwise.** Each plan lists these under its own "Decided in planning". The ones
+  that change what a player meets are open for the owner below.
+
+### Open, for the owner
+
+Each plan's choice stands unless the owner says otherwise; the build goes on meanwhile and takes the answer when it
+comes.
+
+1. **Whodunnit? and the Mod Bots** (Part 3). A filing names its author in public Acts and on the warn bar. The plan
+   has a Mod Bot leave a veiled post alone, and reports wait, until the name is back, and refuses the card on a post
+   a Mod Bot has already visited. That makes the card a three-day shield from moderation. The other way is that a
+   visit unmasks the post.
+2. **The Unban** (Part 5). The System's design has it bound to the banned character and found only in a gold Minus
+   Ball; this design makes it Ultra Happy Heart, a legendary held in any hand and played by any character. The plan
+   builds the card for timed bans. Which form takes the permaban, and whether a lifted permaban returns on parole, are
+   asked when the permaban is built.
+3. **Patrols** (Part 5). A patrol reads the newest five posts today, with no draw, so Tattle-Tale has no weight to
+   double. The plan makes the sample a weighted draw of five from the newest twenty, for every patrol.
+4. **A legendary in the Booster** (Parts 5 and 6). Two in a hundred hit pulls, so Ultra Happy Heart and Off Day can
+   be found while The System is off.
+5. **Mooch in a quiet window** (Part 6). A Mooch's settled sum is other players' votes on one post. Where few react,
+   it can show that a reactor is the author's own mask. A Face's lift already reads the same way under the
+   settlement exception; the plan accepts it and names it for the review.
+6. **Line Cutter, caught** (Part 2). A Card Collector that catches a Line Cutter posts no reply; the words stay in
+   the caster's editor.
+
+### The owner's answers
+
+Answered the same day:
+
+1. **Whodunnit? and the Mod Bots:** "Plan is fine." A Mod Bot leaves a veiled post alone until the name is back.
+2. **The Unban:** "Ultra Happy Heart should work for any unban, I'd say. More flexible than hunting for a gold
+   ball." So the card is the permaban's way out too, when the permaban is built, in place of The System's design's
+   bound Unban from a gold Minus Ball. Whether a lifted permaban returns on parole is still asked then.
+3. **Patrols** as a weighted draw: "Makes sense."
+4. **A legendary in the Booster:** "Makes sense."
+5. **Mooch in a quiet window:** "Players can't react to their own masks, I don't think?" They cannot: `react` refuses
+   a reaction to one's own character (`supabase/migrations/0065_hints.sql` says so of `react`), so no reaction on a
+   post is ever its author's own player's, and a Mooch's sum cannot show one. What is left is only that a Mooch's
+   caster is paid nothing for their own reactions, which tells the caster a fact they already hold.
+6. **Line Cutter, caught:** "OK."
