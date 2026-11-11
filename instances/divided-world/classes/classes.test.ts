@@ -601,6 +601,38 @@ test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a
   assert.equal(paid(settle(cast('fa', 'facepalm', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
 });
 
+/* A spring settles on what sprang it (`by`): the cast it caught, or a staff visit. */
+test('settled whole: a Salty spring catching another player\'s cast that it outdraws pays a Heel; catching its own other mask\'s cast pays nothing', () => {
+  const b = board();
+  const spring = (castBy: string): SettlementInput => ({
+    ...b,
+    characters: [...b.characters, { id: 'he2', player: 'ph', classes: [{ class: 'face', from: -1 }] }],
+    acts: [...b.acts,
+      { id: 'hp', character: 'he', kind: 'post', at: 5 * H, thread: 't' },
+      { id: 'cast', character: castBy, kind: 'card', at: 6 * H, thread: 't', target: 'hp', card: 'whoops' },
+      { id: 'sp', character: 'he', kind: 'spring', at: 7 * H, thread: 't', target: 'hp', card: 'whoops', by: 'cast' }],
+    reactions: [...b.reactions, { act: 'sp', player: 'pl', character: 'lu', kind: 'tomato', at: 8 * H }, { act: 'sp', player: 'pj', character: 'ja', kind: 'tomato', at: 8 * H }],
+  });
+  const stole = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'he' && e.reason === 'heel.stoleThunder').length;
+  assert.equal(stole(settle(spring('fa'), world)), 1, 'another player\'s cast, outdrawn by the spring');
+  assert.equal(stole(settle(spring('he2'), world)), 0, 'the setter\'s own other mask\'s cast');
+});
+test('settled whole: a Sweet spring on a staff visit that draws hype pays a Face, and its estimate values the visit\'s reactions', () => {
+  const b = board();
+  const sweet = { key: 'sweetie', name: 'Sweetie', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
+  const sweetWorld = { ...world, cards: [...world.cards, sweet] };
+  const input: SettlementInput = {
+    ...b,
+    acts: [...b.acts, { id: 'fp', character: 'fa', kind: 'post', at: 5 * H, thread: 't' }, { id: 'sp', character: 'fa', kind: 'spring', at: 6 * H, thread: 't', target: 'fp', card: 'sweetie', by: 'visit1' }],
+    unscoredTargets: [{ id: 'visit1', kind: 'post', at: 4 * H, thread: 't', staff: true }],
+    reactions: [...b.reactions, { act: 'visit1', player: 'pl', character: 'lu', kind: 'fire', at: 7 * H }, { act: 'visit1', player: 'pj', character: 'ja', kind: 'fire', at: 8 * H }],
+  };
+  const r = settle(input, sweetWorld);
+  assert.equal(r.entries.filter((e) => e.character === 'fa' && e.reason === 'face.liftedAPost').reduce((t, e) => t + e.amount, 0), 2 * settings.vote);
+  const lines = estimateForOwner(input, sweetWorld, 'pf').lines.filter((l) => l.reason === 'face.liftedAPost');
+  assert.deepEqual(lines.map((l) => l.at), [7 * H, 8 * H], 'one line per cheer on the visit, so the lift is valued on the Act its reactions are on');
+});
+
 /* ---- Tweener ---- */
 const lean = (q: 'excitedPositive' | 'excitedNegative', n: number, share = 1): Standing[] =>
   Array.from({ length: n }, () => ({ ...none, [q]: share }));

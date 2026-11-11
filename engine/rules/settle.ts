@@ -511,7 +511,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     }
     return [...out.entries()].sort((a, b) => cmp(a[0], b[0]));
   };
-  const entries: LedgerEntry[] = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}`)
+  /* An entry is one player's, character's and reason, and for a boost one card's too, so two Earn cards' boosts are two entries each naming
+     its card. No other reason names a card, so no other class's entries change. */
+  const entryKey = (c: { player: string; character: string; reason: string; params?: Readonly<Record<string, number | string>> }) =>
+    `${c.player}\u0000${c.character}\u0000${c.reason}${typeof c.params?.card === 'string' ? `\u0000${c.params.card}` : ''}`;
+  const entries: LedgerEntry[] = sum(entryKey)
     /* An entry's numbers are its first earning's: one window settles under one set of settings, so its earnings of one reason agree. */
     .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount), ...(first.params ? { params: first.params } : {}) }))
     .filter((e) => e.amount !== 0);
@@ -519,16 +523,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      which Act moved how much, and its lines never disagree with the ledger ("The fiction may
      lie; the log never does"). The rounding is shared by largest remainder, ties by key. A line
      is one Act, quadrant and reaction time, so two reactions' lines never merge (Earning.at). */
-  const lines = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}\u0000${c.at ?? ''}`);
+  const lines = sum((c) => `${entryKey(c)}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}\u0000${c.at ?? ''}`);
   const linesOf = new Map<string, { key: string; first: Contribution; amount: number }[]>();
   for (const [key, { first, amount }] of lines) {
-    const k = `${first.player}\u0000${first.character}\u0000${first.reason}`;
+    const k = entryKey(first);
     const list = linesOf.get(k) ?? [];
     list.push({ key, first, amount: tidy(amount) });
     linesOf.set(k, list);
   }
   const details: Detail[] = [];
-  const entryAmount = new Map(entries.map((e) => [`${e.player}\u0000${e.character}\u0000${e.reason}`, e.amount]));
+  const entryAmount = new Map(entries.map((e) => [entryKey(e), e.amount]));
   for (const [k, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
     const whole = apportion(entryAmount.get(k) ?? 0, list);
     list.forEach((l, i) => {

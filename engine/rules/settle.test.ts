@@ -1218,6 +1218,8 @@ test('a Gimmick on a post raises that post\'s earnings alone, and two Gimmicks e
     react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp1', 'cat', 'cat-1', 'fire', FROM + 5 * H),
   ]), cardsWorld);
   assert.equal(amountOf(both, 'tom-1', 'card.boost'), 1 + 5, 'the calm vote by 10%, the fire vote by 50%');
+  assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 1], [{ card: 'fireBoost' }, 5]], 'one entry per card, each naming its own');
+  assert.equal(both.details.filter((d) => d.reason === 'card.boost').reduce((s, d) => s + d.amount, 0), 6, 'the log\'s lines add up to the entries');
 });
 test('an Earn Gimmick an admin ended is not in the input, so it boosts nothing', () => {
   const r = settle(earnBoard([], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
