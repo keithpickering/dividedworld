@@ -558,6 +558,35 @@ html[data-kb-float='sheet'] .kb-frame {
   stroke-width: 1.3;
 }
 
+/* As a button (the Reveal's opener) it is the same line: the button's own box is reset, so nothing changes at rest. */
+button.kb-hud-secret {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--kb-glass-text-2);
+  cursor: pointer;
+}
+
+button.kb-hud-secret:hover {
+  color: var(--kb-glass-text);
+}
+
+button.kb-hud-secret:focus-visible {
+  outline: 3px solid var(--kb-glass-text-hi);
+  outline-offset: 3px;
+}
+
+/* The Reveal's done line, in the plate under the class line; empty, it takes no room. */
+.kb-hud-flash {
+  font-size: var(--kb-glass-size-label);
+  color: var(--kb-glass-text-2);
+}
+
+.kb-hud-flash:empty {
+  display: none;
+}
+
 :where(:root:not([data-kb-layout='phone'])) .kb-hud-swap {
   margin: 0.75rem 0 0 2px;
   flex-wrap: wrap;

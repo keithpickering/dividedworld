@@ -28,6 +28,7 @@ import { PlayProvider } from '../cards/play.tsx';
 import { BannerSearch } from '../search/BannerSearch.tsx';
 import { TipsProvider } from '../tips/Tips.tsx';
 import { Hud } from './Hud.tsx';
+import { OpenThreadProvider } from '../thread/open.tsx';
 import { Loading } from './Loading.tsx';
 import './frame.css';
 
@@ -92,6 +93,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   return (
     <TipsProvider>
       <PlayProvider>
+        <OpenThreadProvider>
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <Wobble />
           <header className="kb-banner">
@@ -135,6 +137,7 @@ export function Frame({ children }: { readonly children: ReactNode }) {
           <div className="kb-vignette" aria-hidden="true" />
           <Hud />
         </div>
+        </OpenThreadProvider>
       </PlayProvider>
     </TipsProvider>
   );

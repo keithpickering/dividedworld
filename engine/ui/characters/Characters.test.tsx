@@ -1480,3 +1480,46 @@ describe('the panel\'s online status', () => {
     expect(select).toHaveValue('hidden');
   });
 });
+
+describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () => {
+  const generalThread = async (w: World) => {
+    const t = w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
+    const board = (await w.fake.boards()).find((b) => b.slug === 'general')!.id;
+    return { id: t.thread, title: 'The tea thread', board };
+  };
+
+  test('arrived with a carried thread, nothing opens by itself, and "Reveal…" opens on it', async () => {
+    const w = world();
+    const thread = await generalThread(w);
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', state: { thread }, settings: { charactersPerPlayer: w.per } });
+    await ready();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(within(dialog).getByText('My characters › Reveal')).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Board (optional)')).toHaveValue(thread.board);
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('The tea thread');
+    expect(within(dialog).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeEnabled();
+  });
+
+  test('a carried state that is not a thread of strings starts the overlay empty', async () => {
+    const w = world();
+    renderIn(w.fake, <LoadedCharacters />, { path: '/characters', state: { thread: { id: 't', title: 3, board: 'b' } }, settings: { charactersPerPlayer: w.per } });
+    await ready();
+    await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Reveal Pipewrench\'s class' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Reveal Pipewrench\'s class' });
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('');
+  });
+
+  test('a revealed character shows "Revealed" in place of "Reveal…", and one not yet revealed keeps the button', async () => {
+    const w = world();
+    const thread = await generalThread(w);
+    expect((await w.fake.unmask(w.pipe, thread.id, '')).ok).toBe(true);
+    open(w);
+    await ready();
+    const panel = row('Pipewrench');
+    expect(within(panel).queryByRole('button', { name: /^Reveal/u })).toBeNull();
+    expect(within(panel).getByText('Revealed')).toHaveClass('kb-roster-line');
+    expect(within(row('Mrs. Hooligan')).getByRole('button', { name: 'Reveal Mrs. Hooligan\'s class' })).toBeInTheDocument();
+  });
+});
