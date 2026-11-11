@@ -182,3 +182,14 @@ test('filled titles and bodies are trimmed to the limits', () => {
     if (r.body !== undefined) assert.ok(Array.from(r.body).length <= 8);
   }
 });
+
+test('an interest that is a phrase weighs a thread whose title shares a significant word of it', () => {
+  const phrase: RehearsalCorpus = { ...corpus, sketches: corpus.sketches.map((s) => s.key === 's3' ? { ...s, interests: ['speedrunning and the tricks behind it'] } : s) };
+  const liking = characters.find((c) => c.sketch === 's3')!;
+  const w2: World = { ...world, threads: [{ id: 'plain', board: 'general', title: 'nothing here', open: true }, { id: 'liked', board: 'general', title: 'Speedrunning routes, anyone?', open: true }], posts: [] };
+  const l = requests(w2, phrase, scenario, 60).filter((r) => r.action === 'post' && r.character === liking.id);
+  assert.ok(l.length > 10 && l.filter((r) => r.thread === 'liked').length > l.length / 2);
+  const stop: World = { ...w2, threads: [{ id: 'plain', board: 'general', title: 'nothing here', open: true }, { id: 'stopwords', board: 'general', title: 'And the behind of that', open: true }] };
+  const s = requests(stop, phrase, scenario, 60).filter((r) => r.action === 'post' && r.character === liking.id);
+  assert.ok(s.filter((r) => r.thread === 'stopwords').length < s.length * 0.75, 'stopwords alone do not weigh a thread');
+});

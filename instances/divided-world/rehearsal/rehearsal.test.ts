@@ -5,6 +5,8 @@ import { defaults } from '../settings.ts';
 import { sameName } from '../../../engine/rules/names.ts';
 import { repairMemory } from '../../../engine/system/memory.ts';
 import { rehearsal } from './index.ts';
+import { interestWords } from '../../../engine/rehearsal/generate.ts';
+import { wheelhouse } from '../system/wheelhouse.ts';
 
 const { corpus, scenarios } = rehearsal;
 const classKeys = new Set(instance.classes.map((c) => c.key));
@@ -20,6 +22,7 @@ test('every sketch has a class of the instance, three to five interests from the
     assert.ok(classKeys.has(s.classKey), `${s.key}: class ${s.classKey}`);
     assert.ok(s.interests.length >= 3 && s.interests.length <= 5, `${s.key}: interests`);
     assert.ok(s.voice.trim() !== '', `${s.key}: voice`);
+    for (const i of s.interests) assert.ok(wheelhouse.includes(i), `${s.key}: "${i}" is not in the wheelhouse`);
     assert.ok(s.postsPerDay.least >= 0 && s.postsPerDay.most >= s.postsPerDay.least && s.postsPerDay.most <= 6, `${s.key}: postsPerDay`);
   }
 });
@@ -93,4 +96,22 @@ test('every scenario\'s starting memory passes repairMemory with no trim', () =>
 test('a starting memory names only characters of the corpus', () => {
   const names = new Set(corpus.sketches.map((s) => s.name));
   for (const s of scenarios) for (const g of [...(s.bossMemory?.grudges ?? []), ...(s.bossMemory?.opinions ?? [])]) assert.ok(names.has(g.character), `${s.key}: ${g.character}`);
+});
+
+test('each sketch\'s interests weigh at least one opener title, by the generator\'s word match', () => {
+  const titles = Object.values(corpus.openers).flat().map((o) => o.title.toLowerCase());
+  for (const s of corpus.sketches) assert.ok(s.interests.some((i) => interestWords(i).some((w) => titles.some((t) => t.includes(w)))), `${s.key} matches no opener`);
+});
+
+test('every {interest} line reads as a sentence with each wheelhouse phrase: the phrase is never the subject', () => {
+  const lines = [...corpus.replies, ...corpus.agreeing, ...corpus.disagreeing].filter((l) => l.includes('{interest}'));
+  assert.ok(lines.length >= 8);
+  for (const l of lines) assert.ok(/(about|of|to|for|with|in) \{interest\}/.test(l), l);
+});
+
+test('each scenario\'s cast fits the sketches and the instance\'s characters per player', () => {
+  for (const s of scenarios) {
+    assert.ok(s.players * s.charactersPerPlayer.most <= corpus.sketches.length, `${s.key}: ${s.players * s.charactersPerPlayer.most} characters, ${corpus.sketches.length} sketches`);
+    assert.ok(s.charactersPerPlayer.most <= defaults.charactersPerPlayer, s.key);
+  }
 });

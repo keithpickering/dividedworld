@@ -75,6 +75,15 @@ const momentIn = (r: Rng, dayStart: number): number => {
   return dayStart + hour * 60 * MINUTE + Math.floor(r() * 60) * MINUTE;
 };
 
+/** Words too common to say a thread is about an interest. */
+const STOPWORDS = new Set(['that', 'this', 'with', 'from', 'about', 'behind', 'their', 'where', 'should', 'people', 'never', 'were', 'what', 'have', 'into', 'your', 'more', 'them', 'they', 'when', 'then', 'than', 'some', 'only', 'will', 'would', 'could', 'strange', 'corners']);
+
+/** The significant words of an interest phrase: four letters or more, lower case, without the stopwords. A phrase shorter than that is kept whole. */
+export const interestWords = (interest: string): string[] => {
+  const words = interest.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !STOPWORDS.has(w));
+  return words.length ? words : interest.trim() === '' ? [] : [interest.toLowerCase()];
+};
+
 const fill = (line: string, slots: Record<string, string>): string => line.replace(/\{(name|interest|board)\}/g, (_, k: string) => slots[k] ?? '');
 
 const isNegative = (k: ReactionKind): boolean => k.quadrant === 'excitedNegative' || k.quadrant === 'boredNegative';
@@ -118,7 +127,7 @@ export function dayActions(world: World, corpus: RehearsalCorpus, scenario: Scen
       w = openThreads.map((t) => {
         const feud = [...(postersIn.get(t.id) ?? [])].some((id) => { const x = charOf.get(id); return !!x && feuding(sk.key, x.sketch); });
         const title = t.title.toLowerCase();
-        return 1 + (feud ? 3 : 0) + (sk.interests.some((i) => title.includes(i.toLowerCase())) ? 3 : 0);
+        return 1 + (feud ? 3 : 0) + (sk.interests.some((i) => interestWords(i).some((w) => title.includes(w))) ? 3 : 0);
       });
       weights.set(sk.key, w);
     }

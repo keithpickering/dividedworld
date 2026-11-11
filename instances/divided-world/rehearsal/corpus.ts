@@ -9,7 +9,22 @@
 import type { RehearsalCorpus, Sketch } from '../../../engine/rehearsal/types.ts';
 import { wheelhouse } from '../system/wheelhouse.ts';
 
-const [FANGAMES, GAMEMAKING, RETRO, NINTENDO, MINUS, SPEEDRUN, MUSIC, FORUMS, UNFINISHED] = wheelhouse as readonly [string, string, string, string, string, string, string, string, string];
+/** A wheelhouse entry by a word it holds; throws if none or several do, so a reordered or reworded wheelhouse cannot silently rename a topic. */
+const topic = (word: string): string => {
+  const found = wheelhouse.filter((w) => w.includes(word));
+  if (found.length !== 1) throw new Error(`the wheelhouse has ${found.length} entries holding "${word}"`);
+  return found[0]!;
+};
+
+const FANGAMES = topic('Mario fangames');
+const GAMEMAKING = topic('game making');
+const RETRO = topic('retro games');
+const NINTENDO = topic('Nintendo');
+const MINUS = topic('Minus World');
+const SPEEDRUN = topic('speedrunning');
+const MUSIC = topic('chiptunes');
+const FORUMS = topic('forums');
+const UNFINISHED = topic('never finished');
 
 const sk = (key: string, name: string, classKey: string, voice: string, interests: readonly string[], feuds: readonly string[], least: number, most: number): Sketch =>
   ({ key, name, classKey, voice, interests, feuds, postsPerDay: { least, most } });
@@ -50,7 +65,7 @@ const sketches: readonly Sketch[] = [
 const openers: RehearsalCorpus['openers'] = {
   general: [
     { title: 'What was the first fangame you finished?', body: 'Mine took me two years and the last level is just a long hallway. I am still proud of it. What about you?' },
-    { title: 'Unpopular opinion: the water levels were fine', body: 'There, I said it. The physics were floaty on purpose and you all know it. Fight me.' },
+    { title: 'Unpopular opinion: the Nintendo water levels were fine', body: 'There, I said it. The physics were floaty on purpose and you all know it. Fight me.' },
     { title: 'Anyone else still keep a signature?', body: 'I tweaked mine again last night. It is 400 pixels wide and I regret nothing.' },
     { title: 'Minus World: place or myth?', body: 'Walk me through why it exists, and please do not tell me it is just a glitch. It feels like a place.' },
     { title: 'Help me pick a name for my hack', body: 'It is a level pack with too many pipes. So far I have "Pipe Dreams" and "Pipe Dreams 2: More Pipes". Be honest.' },
@@ -78,14 +93,14 @@ const replies: readonly string[] = [
   'this thread is going places.',
   'I read this twice and I am still not sure what you mean, {name}.',
   'screenshot or it did not happen.',
-  'real talk, {interest} is underrated here.',
+  'real talk, nobody here talks enough about {interest}.',
   'my cousin said the same thing at lunch.',
   'I will think about it and report back.',
   '{name} has opinions today, huh.',
   'you lost me at the second paragraph.',
   'that is a lot of words for a Tuesday.',
   'hmm. fair, I suppose.',
-  'I came here for {interest} and stayed for this.',
+  'I came here to talk about {interest}, and I stayed for this.',
   'who else is awake right now?',
   'it is always {name} in these threads.',
   'okay, new idea: we all post our favorites and compare.',
@@ -96,13 +111,13 @@ const replies: readonly string[] = [
   'I will be thinking about this in the shower.',
   'you could say that.',
   'not touching this one, {name}.',
-  'moving on to {interest}, who is with me?',
+  'moving on to talk about {interest}, who is with me?',
   'a lot of effort went into this post and it shows.',
   'I have notes but I will keep them to myself.',
   'somebody tell {name} the thread is on fire.',
   'a bold claim, let us see where it goes.',
   'this is why I keep checking the board.',
-  'I was told there would be {interest}.',
+  'I was told there would be talk of {interest}.',
   'we are at page two and nobody has solved it yet.',
   'my main question is why.',
   'honestly the title got me.',
@@ -135,7 +150,7 @@ const agreeing: readonly string[] = [
   'ten out of ten, no notes.',
   'I was thinking the same thing about {interest}.',
   'you are right and you should feel right.',
-  'agreed, and I will add that {interest} makes it better.',
+  'agreed, and I will add that this is why I keep reading about {interest}.',
   'preach, {name}.',
   'big same.',
   'this is the correct take.',
@@ -165,7 +180,7 @@ const disagreeing: readonly string[] = [
   'we are not doing this again, {name}.',
   'not even close, honestly.',
   'I see your point and I reject it.',
-  'sorry, but {interest} says otherwise.',
+  'sorry, but everything I know about {interest} says otherwise.',
   'wrong board, wrong take.',
   'I will die on this hill, and it is the other hill.',
   'that is the worst thing I have read today.',

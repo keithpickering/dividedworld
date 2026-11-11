@@ -10,6 +10,7 @@
  * Starting memories name characters by their sketch's name; setup resolves them to the cast's character ids.
  */
 import type { Memory } from '../../../engine/system/memory.ts';
+import { wheelhouse } from '../system/wheelhouse.ts';
 import type { Scenario } from '../../../engine/rehearsal/types.ts';
 
 const SEASON_DAYS = 90;
@@ -26,7 +27,7 @@ const meltdownMemory: Memory = {
     { character: 'Cobaltpretzel', note: 'Said my favorite game was overrated and has not taken it back.' },
     { character: 'Waffleknight', note: 'Promised a release date three weeks running and never delivered.' },
   ],
-  wheelhouse: ['Mario fangames and the people who make them', 'the Minus World and glitches that let you go where you should not', 'speedrunning and the tricks behind it'],
+  wheelhouse: [wheelhouse[0]!, wheelhouse[4]!, wheelhouse[5]!],
   realWorld: ['real-world politics', 'anyone\'s real name or workplace'],
   marks: [],
 };
