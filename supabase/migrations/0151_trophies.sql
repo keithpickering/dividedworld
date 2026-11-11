@@ -69,11 +69,15 @@ create table trophies_shown (
   unique (character, position)
 );
 
--- A met demand whose awards could not be written: the tick ends the move all the same, and the failure is kept here for an admin, who can give the trophy by hand.
+-- Awards that could not be written, kept for an admin (trophy_award_failures()), who can give the trophy by hand: a met demand's (`move_act`; the tick ends the move all the
+-- same) or a season's places (`season`; the season ends all the same). Exactly one is set.
 create table trophy_award_failures (
-  move_act uuid primary key references acts (id),
+  id uuid primary key default gen_random_uuid(),
+  move_act uuid unique references acts (id),
+  season bigint unique references seasons (id),
   error text not null,
-  at timestamptz not null default now()
+  at timestamptz not null default now(),
+  check (num_nonnulls(move_act, season) = 1)
 );
 
 create trigger trophy_awards_no_update before update or delete on trophy_awards for each row execute function ledger_append_only();
@@ -124,14 +128,22 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function trophy_item(trophy_awards) from public, anon, authenticated;
 
--- A character's trophies, newest first: its standing awards only.
-create function trophies_of(of_character uuid) returns jsonb
+-- A page of a character's trophies, newest first: its standing awards only, as {awards: [...], more: boolean}. `before` continues after the last award of the page before
+-- (its `at`); `most` is the page's size, at least 1 and at most 100. Read through trophy_awards_by_character.
+create function trophies_of(of_character uuid, before timestamptz default null, most integer default 50) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
-  select coalesce(jsonb_agg(trophy_item(a) order by a.at desc, a.id desc), '[]'::jsonb)
-  from trophy_awards a where a.character = of_character and not exists (select 1 from trophy_reversals r where r.award = a.id)
+  with page as (
+    select a.id, row_number() over (order by a.at desc, a.id desc) as n from trophy_awards a
+    where a.character = of_character and (before is null or a.at < before) and not exists (select 1 from trophy_reversals r where r.award = a.id)
+    order by a.at desc, a.id desc
+    limit least(greatest(coalesce(most, 50), 1), 100) + 1
+  )
+  select jsonb_build_object(
+    'awards', coalesce((select jsonb_agg(trophy_item(a) order by p.n) from page p join trophy_awards a on a.id = p.id where p.n <= least(greatest(coalesce(most, 50), 1), 100)), '[]'::jsonb),
+    'more', exists (select 1 from page p where p.n > least(greatest(coalesce(most, 50), 1), 100)))
 $$;
-revoke execute on function trophies_of(uuid) from public, anon;
-grant execute on function trophies_of(uuid) to authenticated;
+revoke execute on function trophies_of(uuid, timestamptz, integer) from public, anon;
+grant execute on function trophies_of(uuid, timestamptz, integer) to authenticated;
 
 -- A belt's line of holders: each standing award of it in order, when the reign began and when it ended (the next standing award's time, null for the holder now).
 create function belt_lineage(trophy_key text) returns jsonb
@@ -197,6 +209,7 @@ begin
   if n > most then raise exception '% trophies are shown; at most %', n, most using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   if n <> (select count(distinct x) from unnest(awards) x) then raise exception 'a trophy is shown once' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   perform 1 from characters where id = through for no key update;
+  perform 1 from trophy_awards where id = any (awards) for share;
   foreach one in array awards loop
     if not exists (select 1 from trophy_awards a where a.id = one and a.character = through) then
       raise exception 'that trophy is not this character''s' using hint = 'kayfabb.refusal', errcode = '22023';
@@ -250,6 +263,23 @@ begin
 end $$;
 revoke execute on function reverse_award(uuid) from public, anon;
 grant execute on function reverse_award(uuid) to authenticated;
+
+-- The awards that could not be written, newest first, for an admin to give by hand: the move's Act (a met demand's) or the season's number, the kind, the characters
+-- it was for, and the error.
+create function trophy_award_failures() returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform only_admins('reads the trophies that could not be given');
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', f.id, 'move', f.move_act, 'season', (select s.number from seasons s where s.id = f.season), 'at', f.at, 'error', f.error,
+      'trophy', case when f.move_act is not null then (select k.key from trophy_kinds k where k.demand_met) end,
+      'characters', case when f.move_act is not null
+        then coalesce((select jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name) order by c.name) from characters c where c.id = any (demand_contributors(f.move_act))), '[]'::jsonb)
+        else coalesce((select jsonb_agg(jsonb_build_object('id', r.character, 'name', r.name, 'place', r.place) order by r.place, r.name) from season_results r where r.season = f.season and r.place <= 3), '[]'::jsonb) end)
+      order by f.at desc, f.id desc) from trophy_award_failures f), '[]'::jsonb);
+end $$;
+revoke execute on function trophy_award_failures() from public, anon;
+grant execute on function trophy_award_failures() to authenticated;
 
 -- An admin makes a trophy of their own: a name, words, and a file the trophy-art function stored (its key; none for a kind with no picture) and whether it is a belt.
 -- The key is generated, so it never meets an instance's.
@@ -444,10 +474,20 @@ begin
   get diagnostics written = row_count;
   update seasons set results_at = now(), results_count = written where id = s.id;
   -- The season's places (0151): each character at place 1 to 3 gets the trophy the instance gives for that place. Places are season_results' own, by rank(), so a tie shares
-  -- one and the next place is skipped, as the table shows it. Staff are not in season_results, and the table refuses them besides. The same transaction as the results.
-  insert into trophy_awards (trophy, character, by, season)
-  select k.key, r.character, 'season', s.id from season_results r join trophy_kinds k on k.season_place = r.place
-  where r.season = s.id and r.place <= 3;
+  -- one and the next place is skipped, as the table shows it. Staff are not in season_results, and the table refuses them besides. In the results' transaction, but a failure here does not end it.
+  -- In a block of its own: the season ends whatever happens here. A failure is a warning and a row (trophy_award_failures) for an admin, who can give the places by hand.
+  begin
+    insert into trophy_awards (trophy, character, by, season)
+    select k.key, r.character, 'season', s.id from season_results r join trophy_kinds k on k.season_place = r.place
+    where r.season = s.id and r.place <= 3;
+  exception when others then
+    raise warning 'reveal_season: the places of season % were not given trophies: % (%)', s.number, sqlerrm, sqlstate;
+    begin
+      insert into trophy_award_failures (season, error) values (s.id, left(sqlerrm || ' (' || sqlstate || ')', 500))
+      on conflict (season) do update set error = excluded.error, at = now();
+    exception when others then null;
+    end;
+  end;
   perform broadcast_later('reach', 'news', jsonb_build_object('kind', 'seasonNews', 'sub', 'results', 'season', s.number, 'act', null, 'at', now()));
   return jsonb_build_object('season', s.number, 'results', written);
 end $$;

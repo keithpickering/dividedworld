@@ -24,10 +24,13 @@ Deno.serve(async (request) => {
   if (!session) return answer(401, { error: 'sign in to make trophy art' });
   const declared = Number(request.headers.get('Content-Length') ?? 'NaN');
   if (!(declared <= MOST_BYTES)) return answer(413, { error: 'that request is too long, or does not say how long it is' });
-  let form: FormData;
-  try { form = await request.formData(); } catch { return answer(400, { error: 'trophy art is sent as a form' }); }
-  const sent = form.get('file');
-  const file = sent instanceof File ? new Uint8Array(await sent.arrayBuffer()) : (null as unknown as Uint8Array);
+  // The form is read only once core.ts has found the caller to be an admin, so a caller who is not is answered the same whatever they sent.
+  const file = async (): Promise<unknown> => {
+    let form: FormData;
+    try { form = await request.formData(); } catch { return null; }
+    const sent = form.get('file');
+    return sent instanceof File ? new Uint8Array(await sent.arrayBuffer()) : null;
+  };
   const out = await runTrophyArt(
     { player: postgrest({ url: env.url, key: env.publishable, bearer: session }) },
     supabaseStorage({ url: env.url, key: env.secret, bucket: 'trophies' }),

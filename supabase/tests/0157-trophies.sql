@@ -34,10 +34,10 @@ $$;
 
 -- The trophy a character holds, by kind, in trophies_of's answer.
 create function pg_temp.has(of_character uuid, kind text) returns boolean language sql as $$
-  select exists (select 1 from jsonb_array_elements(trophies_of(of_character)) t where t ->> 'trophy' = kind)
+  select exists (select 1 from jsonb_array_elements(trophies_of(of_character) -> 'awards') t where t ->> 'trophy' = kind)
 $$;
 create function pg_temp.held(of_character uuid, kind text) returns boolean language sql as $$
-  select (select (t ->> 'held')::boolean from jsonb_array_elements(trophies_of(of_character)) t where t ->> 'trophy' = kind limit 1)
+  select (select (t ->> 'held')::boolean from jsonb_array_elements(trophies_of(of_character) -> 'awards') t where t ->> 'trophy' = kind limit 1)
 $$;
 
 select tests.unbecome();
@@ -130,9 +130,9 @@ begin
     raise exception 'belt_lineage lists A then B, A''s reign ending as B''s began: %', lineage;
   end if;
   -- The words: the line of the award wins over the kind's; who gave it is "an admin", never which.
-  if (select t ->> 'line' from jsonb_array_elements(trophies_of(a)) t where t ->> 'trophy' = 'tt-belt') is distinct from 'First holder.' then raise exception 'an award''s own line is shown: %', trophies_of(a); end if;
-  if (select t ->> 'line' from jsonb_array_elements(trophies_of(b)) t where t ->> 'trophy' = 'tt-belt') is distinct from 'One at a time.' then raise exception 'the kind''s line is shown otherwise: %', trophies_of(b); end if;
-  if (select t ->> 'by' from jsonb_array_elements(trophies_of(b)) t where t ->> 'trophy' = 'tt-belt') is distinct from 'an admin' then raise exception 'an admin''s award says "an admin"'; end if;
+  if (select t ->> 'line' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'First holder.' then raise exception 'an award''s own line is shown: %', trophies_of(a); end if;
+  if (select t ->> 'line' from jsonb_array_elements(trophies_of(b) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'One at a time.' then raise exception 'the kind''s line is shown otherwise: %', trophies_of(b); end if;
+  if (select t ->> 'by' from jsonb_array_elements(trophies_of(b) -> 'awards') t where t ->> 'trophy' = 'tt-belt') is distinct from 'an admin' then raise exception 'an admin''s award says "an admin"'; end if;
   if trophies_of(b)::text like '%' || boss::text || '%' then raise exception 'which admin gave it is in the answer'; end if;
   -- Taking B's back returns the belt to A, and B shows nothing.
   perform reverse_award(award_b);
@@ -155,7 +155,7 @@ begin
   if pg_temp.error('select count(*) from trophies_shown') not like 'permission denied%' then raise exception 'a player read trophies_shown'; end if;
   if pg_temp.error('select made_by from trophy_kinds') not like 'permission denied%' then raise exception 'a player read who made a kind'; end if;
   if (select count(*) from trophy_kinds where key like 'tt-%') is distinct from 7::bigint then raise exception 'the kinds are public: %', (select count(*) from trophy_kinds); end if;
-  if jsonb_array_length(trophies_of(a)) is distinct from 1 then raise exception 'any player reads a character''s trophies'; end if;
+  if jsonb_array_length(trophies_of(a) -> 'awards') is distinct from 1 then raise exception 'any player reads a character''s trophies'; end if;
   perform tests.become_anon();
   if pg_temp.refusal(format('select trophies_of(%L)', a)) is null then raise exception 'a visitor read trophies'; end if;
   perform tests.unbecome();
@@ -231,7 +231,7 @@ select tests.unbecome();
 do $$
 declare
   eve uuid := tests.account('tt-eve'); e uuid := tests.character(eve, 'Tt Eve');
-  plan text;
+  plan text; page jsonb; nxt jsonb;
 begin
   insert into trophy_awards (trophy, character, by) select 'tt-pet', e, 'admin' from generate_series(1, 300);
   analyze trophy_awards;
@@ -242,6 +242,19 @@ begin
   plan := (select string_agg(l, ' ') from pg_temp.explain_lines('select a.id from trophy_awards a where a.trophy = ''tt-belt'' order by a.at desc, a.id desc limit 1') l);
   if plan not like '%trophy_awards_by_trophy%' then raise exception 'a belt''s holder is a probe of the kind''s awards in time order: %', plan; end if;
   perform set_config('enable_seqscan', 'on', true);
+  -- A page: newest first, at most `most` (capped at 100), and whether there are more; `before` continues from the last one's time.
+  page := trophies_of(e);
+  if jsonb_array_length(page -> 'awards') is distinct from 50 or (page ->> 'more')::boolean is distinct from true then raise exception 'a page is 50 by default, with more to come: %', page; end if;
+  if jsonb_array_length(trophies_of(e, null, 100000) -> 'awards') is distinct from 100 then raise exception 'a page is capped at 100'; end if;
+  if jsonb_array_length(trophies_of(e, null, 0) -> 'awards') is distinct from 1 then raise exception 'a page holds at least one'; end if;
+  page := trophies_of(e, null, 3);
+  if jsonb_array_length(page -> 'awards') is distinct from 3 or (page ->> 'more')::boolean is distinct from true then raise exception 'most is how many: %', page; end if;
+  nxt := trophies_of(e, ((page -> 'awards' -> 2) ->> 'at')::timestamptz, 3);
+  if (nxt -> 'awards' -> 0 ->> 'award') is not distinct from (page -> 'awards' -> 2 ->> 'award') or (nxt -> 'awards' -> 0 ->> 'at')::timestamptz >= ((page -> 'awards' -> 2) ->> 'at')::timestamptz then raise exception 'before continues after the last of the page: %', nxt; end if;
+  if (select count(distinct x ->> 'award') from jsonb_array_elements((page -> 'awards') || (nxt -> 'awards')) x) is distinct from 6::bigint then raise exception 'pages do not overlap'; end if;
+  if (trophies_of(e, null, 500) ->> 'more')::boolean is distinct from true then raise exception 'there are 200 past a page of 100'; end if;
+  if (trophies_of(e, (select min(at) from trophy_awards where character = e) + interval '1 microsecond', 10) ->> 'more')::boolean is distinct from false
+     or jsonb_array_length(trophies_of(e, (select min(at) from trophy_awards where character = e) + interval '1 microsecond', 10) -> 'awards') is distinct from 1 then raise exception 'the last page says there is no more'; end if;
 end $$;
 
 -- ---- The season's places: ties share a place, and a place past third gets nothing ----
@@ -254,7 +267,7 @@ declare
   p1 uuid := tests.account('ts-1'); p2 uuid := tests.account('ts-2'); p3 uuid := tests.account('ts-3');
   c1 uuid; c2 uuid; c3 uuid; c4 uuid; c5 uuid;
   ended timestamptz := t0 + interval '1 day';
-  s2 bigint;
+  s2 bigint; s3 bigint; seen jsonb; adm uuid := tests.account('ts-adm');
 begin
   c1 := tests.character(p1, 'Ts One', 'alpha', t0 + interval '1 hour'); c2 := tests.character(p2, 'Ts Two', 'alpha', t0 + interval '1 hour');
   c3 := tests.character(p3, 'Ts Three', 'alpha', t0 + interval '1 hour'); c4 := tests.character(p1, 'Ts Four', 'alpha', t0 + interval '1 hour');
@@ -269,8 +282,8 @@ begin
     raise exception 'a tie at second writes two Runner-Up and, the places being 1, 2, 2, 4, no Third: %', (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s1);
   end if;
   if exists (select 1 from trophy_awards a where a.season = s1 and a.by is distinct from 'season') or exists (select 1 from trophy_awards a join characters c on c.id = a.character where c.staff is not null) then raise exception 'season awards are the season''s, and none is a staff character''s'; end if;
-  if (select t ->> 'by' from jsonb_array_elements(trophies_of(c1)) t where t ->> 'trophy' = 'tt-champion') is distinct from 'the season' then raise exception 'a season award says "the season"'; end if;
-  if (select (t ->> 'season')::integer from jsonb_array_elements(trophies_of(c1)) t where t ->> 'trophy' = 'tt-champion') is distinct from 1 then raise exception 'a season award names its season'; end if;
+  if (select t ->> 'by' from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 'the season' then raise exception 'a season award says "the season"'; end if;
+  if (select (t ->> 'season')::integer from jsonb_array_elements(trophies_of(c1) -> 'awards') t where t ->> 'trophy' = 'tt-champion') is distinct from 1 then raise exception 'a season award names its season'; end if;
   -- The next season: a tie at first. Places 1, 1, 3, 4, 5: two Champion, one Third.
   s2 := (select id from seasons where ends_at is null);
   insert into standings (character, season, amount) values (c1, s2, 500), (c2, s2, 500), (c3, s2, 300), (c4, s2, 200), (c5, s2, 100)
@@ -281,12 +294,22 @@ begin
     raise exception 'a tie at first writes two Champion and one Third: %', (select string_agg(a.trophy || '=' || c.name, ',' order by a.trophy, c.name) from trophy_awards a join characters c on c.id = a.character where a.season = s2);
   end if;
   if (select count(*) from trophy_awards where character = c1 and trophy = 'tt-champion') is distinct from 2::bigint then raise exception 'a character can win a place in two seasons'; end if;
-  -- The awards and the results are one transaction's: a season the awards cannot be written for is not ended.
+  -- The awards cannot be written: the season still ends, with its results, and the failure is kept for an admin, who can read it and give the places by hand.
   insert into standings (character, season, amount) select c1, id, 1 from seasons where ends_at is null on conflict do nothing;
+  s3 := (select id from seasons where ends_at is null);
   alter table trophy_awards add constraint tt_poison check (false) not valid;
-  if pg_temp.error(format('select reveal_season(%L)', ended + interval '2 days')) is null then raise exception 'a season ended with its awards unwritten'; end if;
+  if pg_temp.error(format('select reveal_season(%L)', ended + interval '2 days')) is not null then raise exception 'a season whose awards could not be written did not end: %', pg_temp.error(format('select reveal_season(%L)', ended + interval '2 days')); end if;
   alter table trophy_awards drop constraint tt_poison;
-  if (select count(*) from seasons where ends_at is null) is distinct from 1::bigint or exists (select 1 from seasons where ends_at is null and number > 3) then raise exception 'a refused reveal left a season behind'; end if;
+  if (select ends_at from seasons where id = s3) is null or (select count(*) from seasons where ends_at is null) is distinct from 1::bigint then raise exception 'a season with its awards unwritten did not end'; end if;
+  if not exists (select 1 from season_results where season = s3) or exists (select 1 from trophy_awards where season = s3) then raise exception 'the results stand and no award was half-written'; end if;
+  if (select count(*) from trophy_award_failures where season = s3 and move_act is null) is distinct from 1::bigint then raise exception 'the failed season is recorded'; end if;
+  insert into admins (account) values (adm);
+  perform tests.become(adm);
+  seen := trophy_award_failures();
+  if jsonb_array_length(seen) is distinct from 1 or (seen -> 0 ->> 'season')::bigint is distinct from s3 or seen -> 0 ->> 'move' is not null or seen -> 0 ->> 'error' not like '%tt_poison%' then raise exception 'an admin reads the failed season: %', seen; end if;
+  perform tests.become(p1);
+  if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the award failures'; end if;
+  perform tests.unbecome();
 end $$;
 
 -- ---- A met demand credits the characters whose Acts made it; reading who reacted gets a reactor nothing ----
@@ -374,7 +397,7 @@ begin
   end if;
   if exists (select 1 from trophy_awards a where a.character in (reactor, boss, c)) then raise exception 'the reactor, the Boss or Cat was given a trophy'; end if;
   if (ran ->> 'awardsFailed')::integer is distinct from 0 then raise exception 'the tick counted failed awards: %', ran; end if;
-  if (select t ->> 'by' from jsonb_array_elements(trophies_of(a)) t where t ->> 'trophy' = 'tt-met' limit 1) is distinct from 'a met demand' then raise exception 'a met demand''s award says so'; end if;
+  if (select t ->> 'by' from jsonb_array_elements(trophies_of(a) -> 'awards') t where t ->> 'trophy' = 'tt-met' limit 1) is distinct from 'a met demand' then raise exception 'a met demand''s award says so'; end if;
   perform system_tick();
   if (select count(*) from trophy_awards where act = mv_quad) is distinct from 2::bigint then raise exception 'a later tick gave the trophies again'; end if;
 
@@ -389,6 +412,15 @@ begin
   if (select count(*) from trophy_award_failures where move_act = mv) is distinct from 1::bigint then raise exception 'the failed move is recorded'; end if;
   if exists (select 1 from trophy_awards where act = mv) then raise exception 'a failed award left a row'; end if;
   alter table trophy_awards drop constraint tt_poison;
+  -- An admin reads it, with the move, the trophy, the characters and the error; a player does not.
+  insert into admins (account) values (tests.account('td-adm'));
+  perform tests.become((select id from auth.users where email = 'td-adm@test.invalid'));
+  if (select count(*) from jsonb_array_elements(trophy_award_failures()) f where f ->> 'move' = mv::text and f ->> 'trophy' = 'tt-met' and f ->> 'error' like '%tt_poison%'
+        and jsonb_array_length(f -> 'characters') > 0) is distinct from 1::bigint then raise exception 'an admin reads the failed demand: %', trophy_award_failures(); end if;
+  if (trophy_award_failures() -> 0 ->> 'at')::timestamptz < (trophy_award_failures() -> 1 ->> 'at')::timestamptz then raise exception 'newest first'; end if;
+  perform tests.become(ann);
+  if pg_temp.refusal('select trophy_award_failures()') is null then raise exception 'a player read the award failures'; end if;
+  perform tests.unbecome();
 end $$;
 
 -- ---- A kind with no met-demand trophy gives none, and the move still ends ----
@@ -478,7 +510,7 @@ begin
   if made ->> 'trophy' not like 'made-%' then raise exception 'an admin''s kind has a generated key: %', made; end if;
   if (select art || '/' || belt::text || '/' || coalesce(line, '') from trophy_kinds where key = made ->> 'trophy') is distinct from 'tt-art-1.webp/true/By hand.' then raise exception 'the kind''s columns'; end if;
   perform award_trophy(made ->> 'trophy', f);
-  if (select (t ->> 'art') from jsonb_array_elements(trophies_of(f)) t where t ->> 'trophy' = made ->> 'trophy') is distinct from art_key then raise exception 'an admin-made kind shows its art'; end if;
+  if (select (t ->> 'art') from jsonb_array_elements(trophies_of(f) -> 'awards') t where t ->> 'trophy' = made ->> 'trophy') is distinct from art_key then raise exception 'an admin-made kind shows its art'; end if;
   perform tests.unbecome();
   if (select made_by from trophy_kinds where key = made ->> 'trophy') is distinct from boss then raise exception 'the kind names the admin who made it'; end if;
   if pg_temp.error('insert into trophy_kinds (key, name) values (''made-x'', ''Sneaky'')') is null then raise exception 'a made- key with no maker'; end if;
