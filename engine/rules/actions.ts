@@ -294,7 +294,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   // A face-down card taken back to the hand (supabase/migrations/0148_card_types.sql): the service's call for the account, as set_card is; the database holds whose back it is.
   takeBack: (r) => ({ rpc: 'take_back', args: { through: id(r, 'character'), set_act: id(r, 'set') }, asService: true }),
-  // A drawing on a surface, and its wash (supabase/migrations/0154_surfaces.sql): the service's call for the account. The card that holds the wall reads the drawing (`input`, its own shape),
+  // A drawing on a surface, and its wash (supabase/migrations/0195_surfaces.sql): the service's call for the account. The card that holds the wall reads the drawing (`input`, its own shape),
   // counts its cells and, for a draw, reads the limit from the settings rows; the database holds the rest (who plays the character, a ban, a bar, an ended play, the lock).
   draw: (r) => ({ rpc: 'draw_on_surface', args: { through: id(r, 'character'), play: id(r, 'play'), input: drawing(r) }, asService: true, needsSurface: true }),
   wash: (r) => ({ rpc: 'wash_surface', args: { through: id(r, 'character'), play: id(r, 'play'), input: drawing(r) }, asService: true, needsSurface: true }),

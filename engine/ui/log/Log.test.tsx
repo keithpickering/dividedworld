@@ -294,6 +294,8 @@ describe('My log', () => {
     await open(due.fake, due.me, due.pipe);
     await screen.findByRole('table');
     expect(cells(bodyRows()[0]!)[2]).toBe('Nothing has settled for Pipewrench yet. A line comes here when a settlement scores her.');
+    /* No time is named, so none is shown in the When cell either: a dash, never the due time. */
+    expect(cells(bodyRows()[0]!)[0]).toBe('—');
     cleanup();
     const { fake, me, pipe } = world();
     await open(fake, me, pipe);
@@ -431,6 +433,30 @@ describe('My log', () => {
     await screen.findByRole('table');
     fireEvent.click(tab('Spritey'));
     expect(screen.getByText('Nothing on these pages is Spritey\'s yet.')).toBeInTheDocument();
+  });
+
+  test('with the player\'s characters unread, an empty log says so with Try again, not that nothing is here yet', async () => {
+    const fake = buildWorld();
+    fake.signInAs(fake.seed.account('me'));
+    vi.spyOn(fake, 'myCharacters').mockRejectedValue(new Error('down'));
+    renderIn(fake, <LoadedLog />, { path: '/log' });
+    expect(await screen.findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing here yet|Nothing on these pages/u)).toBeNull();
+  });
+
+  test('with the characters unread and settlements read that show no line, it says so with Try again, not that nothing is here', async () => {
+    const fake = buildWorld();
+    const me = fake.seed.account('me');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel', { at: at(2) });
+    fake.seed.settle({ at: at(28, 8, 17), debut: false, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }] });
+    fake.signInAs(me);
+    const page = await fake.logPage(null);
+    vi.spyOn(fake, 'logPage').mockResolvedValue({ ...page, log: { ...page.log, settlements: page.log.settlements.map((x) => ({ ...x, lines: [] })), wallet: [], saves: [] }, turns: [] });
+    vi.spyOn(fake, 'myCharacters').mockRejectedValue(new Error('down'));
+    renderIn(fake, <LoadedLog />, { path: '/log' });
+    expect(await screen.findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing on these pages/u)).toBeNull();
   });
 
   test('signed out, asks the player to sign in and reads nothing', async () => {

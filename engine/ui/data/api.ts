@@ -25,6 +25,30 @@ import type { RecordKind } from '../profile/record.ts';
 
 export type Id = string;
 
+/* ------------------------------------------------------------------ failed reads ---- */
+
+/**
+ * Which kind a failed read was: `offline` (the browser said it had no network, so nothing was sent), `silent` (a request that never
+ * got an answer, twice), `server` (the server answered, and not with what the screen can use). A 4xx that is not a refusal is `server`,
+ * the same for a row that does not exist and a row the caller may not see ("A response never proves a private fact").
+ */
+export type FailureKind = 'offline' | 'silent' | 'server';
+
+/** A read that failed; its message is the one plain sentence a screen shows, and its kind says which failure it was. */
+export class ReadFailure extends Error {
+  readonly kind: FailureKind;
+  constructor(kind: FailureKind) {
+    super('that could not be read right now; try again');
+    this.name = 'ReadFailure';
+    this.kind = kind;
+  }
+}
+
+/** The kind of a thrown failure: a `ReadFailure`'s own, and `broken` for anything else (the page's own code). */
+export function failureKind(e: unknown): FailureKind | 'broken' {
+  return e instanceof ReadFailure ? e.kind : 'broken';
+}
+
 /* ------------------------------------------------------------------ answers ---- */
 
 /** A refusal, in the server's own words, with the request field it names when it names one. */
@@ -37,7 +61,14 @@ export interface Refusal {
    * before it tries again (Acts are append-only, so a blind resend is a duplicate).
    */
   readonly uncertain?: true;
+  /** Set when nothing left the device, or the server never ran the write: sending again cannot duplicate. */
+  readonly notSent?: true;
 }
+
+/** The words of a write that never left the device. */
+export const NOT_SENT = "You're offline, so this was not sent.";
+/** The words of a write the server certainly did not run (mirrored in `supabase/functions/act/core.ts`). */
+export const NOT_RUN = 'it did not go through; try again';
 
 /** The words of a lost answer; the adapter and the in-memory backend both say them. */
 export const LOST_ANSWER = 'no answer came back, so this may have gone through: look before you try again';
@@ -174,6 +205,8 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
+  readonly setLasts: Span;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
   /** How long after its last poll a mask stays listed: what "Who is online" says it counts. */
@@ -279,11 +312,11 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling'
   /* A gift to a drive (0153): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
   | 'donation'
-  /* A surface's layer (0154): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
+  /* A surface's layer (0195): a draw adds strokes to a play, a wash by the post's character takes ink off. Acts of the play's thread on the play, no place in the thread (`seq` null), and no post to draw. */
   | 'draw' | 'wash';
 
 /**
- * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0154): the Act, whose payload holds its `strokes` and its `cells`
+ * A draw or a wash on a surface, as every reader sees it (`surface_acts`, 0195): the Act, whose payload holds its `strokes` and its `cells`
  * (a 10,000-character bit string). A draw read from the surface carries `share`, the cells of the layer it owns now (what a wash has not
  * taken and no later draw has painted over); a wash, and an Act just written, carry none.
  */
@@ -363,6 +396,12 @@ export interface Act {
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */
   readonly untaken?: true;
+  /**
+   * Set only on a set (a card face down): when the server ends it if nothing springs it or takes it back first (`acts_public.ends_at`, 0156, the
+   * `face_down` row's, stored when the card was set). Public and the same span for every back, so it names no card. A screen reads a back's end from
+   * here and never adds the setting to when it was set: an admin's change to the setting moves no back already set.
+   */
+  readonly endsAt?: string;
 }
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
@@ -390,7 +429,7 @@ export type VisitChallenge =
   | { readonly kind: 'distraction' };
 
 /** How a visit ended: filed (the points landed), intercepted (talked down), trapped (a card's trap sprang) or reversed (an admin). */
-export type VisitOutcome = 'filed' | 'intercepted' | 'trapped' | 'reversed';
+export type VisitOutcome = 'filed' | 'intercepted' | 'trapped' | 'reversed' | 'dropped';
 
 export interface VisitEnd {
   readonly act: Id;
@@ -1402,8 +1441,6 @@ export interface CaughtPlay {
   readonly trap: string;
   readonly spring: Id;
   readonly price: number;
-  /** What the player paid for the card at the machine, the latest purchase of it before the play; null where none is on record. */
-  readonly boughtPrice: number | null;
   readonly at: string;
 }
 
@@ -1459,6 +1496,10 @@ export interface LogBan {
   readonly infraction: Id;
   readonly rule: string | null;
   readonly thread: Id;
+  /** The verdict of the ruling on its appeal (`my_bans`, 0157); null with no ruling. */
+  readonly ruling: AppealVerdict | null;
+  /** When the ban ends by its own Act, before any ruling. */
+  readonly ownUntil: string;
 }
 
 /** A ban running on one of the player's characters: its Act (what an appeal names), when it ends, how long it was and the rule that filled the bar. */
@@ -1504,6 +1545,8 @@ export interface LogGroupMove {
   readonly ruledAt: string | null;
   /** The end an appeal's ruling set. */
   readonly ruledUntil: string | null;
+  /** The office that heard the latest ruling (its stamp, 0157); null for a ruling written before the stamp, and for a move with none. No default stands in for it. */
+  readonly ruledOffice: Office | null;
 }
 
 /** A report one of the player's characters made. */
@@ -1785,7 +1828,7 @@ export interface ThreadPage {
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`cardsOnMany`). */
   readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
-  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0154). */
+  /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0195). */
   readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
   readonly faces: Awaited<ReturnType<KayfaApi['myFaceDown']>>;

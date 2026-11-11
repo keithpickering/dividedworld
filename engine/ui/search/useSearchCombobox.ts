@@ -47,6 +47,8 @@ export interface ComboView<O extends ComboOption = ComboOption> {
   readonly open: boolean;
   /** The polite line: "5 suggestions", "1 suggestion", "No suggestions", or empty before an answer. */
   readonly liveText: string;
+  /** True from a source's rejection until the next reply lands: a skin draws `SUGGESTIONS_FAILED` in its list where it would draw an empty one. */
+  readonly failed: boolean;
   readonly inputProps: {
     readonly role: 'combobox';
     readonly value: string;
@@ -65,6 +67,9 @@ export interface ComboView<O extends ComboOption = ComboOption> {
   readonly trailing: ComboRow<O> | null;
 }
 
+/** What a source's rejection says, in the live line and in the list, so a failed read is never told as "No suggestions". */
+export const SUGGESTIONS_FAILED = "Suggestions couldn't be loaded.";
+
 export function suggestionCount(n: number): string {
   return n === 0 ? 'No suggestions' : n === 1 ? '1 suggestion' : `${n} suggestions`;
 }
@@ -79,6 +84,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
   const [stale, setStale] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [liveText, setLiveText] = useState('');
+  const [failed, setFailed] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flight = useRef<{ seq: number; abort: AbortController | null }>({ seq: 0, abort: null });
   // The caller's source and trailing change identity on every render; the latest is read at the moment it is used.
@@ -108,6 +114,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
         if (flight.current.seq !== mine) return;
         const kept = reply.filter((g) => g.options.length > 0 || g.empty);
         setGroups(kept);
+        setFailed(false);
         setStale(false);
         setActive(-1);
         setLiveText(suggestionCount(kept.reduce((n, g) => n + g.options.length, 0)));
@@ -115,16 +122,17 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
       () => {
         if (flight.current.seq !== mine) return;
         setGroups([]);
+        setFailed(true);
         setStale(false);
         setActive(-1);
-        setLiveText(suggestionCount(0));
+        setLiveText(SUGGESTIONS_FAILED);
       },
     );
   }, []);
 
   const schedule = useCallback((q: string, wait: number) => {
     cancel();
-    if (!eligible(q)) { setGroups(null); setStale(false); setActive(-1); setLiveText(''); return; }
+    if (!eligible(q)) { setGroups(null); setFailed(false); setStale(false); setActive(-1); setLiveText(''); return; }
     if (wait <= 0) { ask(q); return; }
     timer.current = setTimeout(() => { timer.current = null; ask(q); }, wait);
   }, [cancel, eligible, ask]);
@@ -144,7 +152,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
     return rows;
   }, [shown, trailingOption, groups, stale]);
 
-  const open = !dismissed && groups !== null && (flat.length > 0 || shown.length > 0);
+  const open = !dismissed && groups !== null && (flat.length > 0 || shown.length > 0 || failed);
   const listId = `${base}-list`;
   const rowId = (n: number) => `${base}-opt-${n}`;
 
@@ -152,7 +160,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
     const row = flat[n];
     if (!row) return;
     cancel();
-    if (row.groupKey !== null) { setQuery(row.option.label); setGroups(null); setStale(false); setLiveText(''); }
+    if (row.groupKey !== null) { setQuery(row.option.label); setGroups(null); setFailed(false); setStale(false); setLiveText(''); }
     setDismissed(true);
     setActive(-1);
     latest.current.onChoose(row.option, row.groupKey, query.trim());
@@ -242,6 +250,7 @@ export function useSearchCombobox<O extends ComboOption = ComboOption>(options: 
     query,
     open,
     liveText,
+    failed,
     inputProps: {
       role: 'combobox',
       value: query,

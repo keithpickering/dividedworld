@@ -368,13 +368,26 @@ describe('a back that sprang, and a new back set on the same post', () => {
     expect(plays.get('p1').billed.find((p) => p.id === 's2')!.card).toBe(CARD_BACK);
   });
   test('a back whose time has passed with nothing springing it is no longer shown', () => {
-    const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString() }];
-    expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
+    const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z', endsAt: '2020-01-08T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString(), endsAt: '2999-01-01T00:00:00.000Z' }];
+    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s2']);
+  });
+  test('a back is over at the end the server stored, whatever the setting says', () => {
+    const day = 86_400_000;
+    const backs = [
+      { ...playOf(base('s1', 'set', {}))!, playedAt: new Date(Date.now() - 10 * day).toISOString(), endsAt: new Date(Date.now() + 20 * day).toISOString() },
+      { ...playOf(base('s2', 'set', {}))!, playedAt: new Date(Date.now() - 1 * day).toISOString(), endsAt: new Date(Date.now() - day / 2).toISOString() },
+    ];
+    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s1']);
+  });
+  test('a set Act carries its end onto its play, and a card Act has none', () => {
+    expect(playOf({ ...base('s1', 'set', {}), endsAt: '2026-11-20T00:00:00.000Z' })!.endsAt).toBe('2026-11-20T00:00:00.000Z');
+    expect(playOf(base('s1', 'set', {}))!.endsAt).toBeNull();
+    expect(playOf(base('c1', 'card', { card: 'blot' }))!.endsAt).toBeUndefined();
   });
   test('a back its setter took back leaves the post: it is not shown', () => {
     const now = new Date().toISOString();
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: now, takenBack: { at: now } }, { ...playOf(base('s2', 'set', {}))!, playedAt: now }];
-    expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
+    expect(shownPlays(backs).map((p) => p.id)).toEqual(['s2']);
   });
 });
 
@@ -482,7 +495,7 @@ describe('a play that did not take', () => {
   });
 });
 
-/* A surface (0154): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
+/* A surface (0195): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
 describe('a surface, in the store', () => {
   const wall = 'k-wall';
   const drawn = (id: string): Act => ({ id, kind: 'draw', character: 'c1', thread: 't', targetActId: wall, seq: null, createdAt: '2026-10-30T10:00:00.000Z', payload: { strokes: [], cells: '0'.repeat(10000) }, currentPayload: {}, editedAt: null, shownEditedAt: null });

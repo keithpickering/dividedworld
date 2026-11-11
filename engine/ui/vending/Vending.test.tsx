@@ -292,7 +292,7 @@ describe('buying', () => {
     open(fake);
     fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     /* The wallet is spent elsewhere between the preview and the press, so the server refuses what the preview allowed. */
-    vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'that costs 100, and your wallet holds 62' });
+    vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'that costs 1.00, and your wallet holds 0.62' });
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('That costs 1.00, and your wallet holds 0.62.');
   });
@@ -770,13 +770,21 @@ describe('a pack in the machine', () => {
     for (const g of document.querySelectorAll('.kb-vending-odds .kb-gem')) expect(g).toHaveAttribute('aria-hidden', 'true');
   });
 
-  test('selected, the pack shows five small backs, the last gold, and what opening does; the odds and what is not sold on its own stand beside the machine', async () => {
+  test('where the instance gives the back its picture, the five small backs draw it, each the same', async () => {
+    renderIn(stockedWorld(562), <Vending />, { instance: stocked, cards: stockedFaces, packs: packsUi, path: '/vending', cardBack: { mark: '/coin.svg', canvas: '/back.webp' } });
+    fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
+    const inPack = screen.getByRole('region', { name: 'In this pack' });
+    expect([...inPack.querySelectorAll('.kb-postcard-back img')].map((i) => i.getAttribute('src'))).toEqual(['/back.webp', '/back.webp', '/back.webp', '/back.webp', '/back.webp']);
+  });
+
+  test('selected, the pack shows five small backs, every one the same, and what opening does; the odds and what is not sold on its own stand beside the machine', async () => {
     openStocked(stockedWorld(562));
     fireEvent.click(await screen.findByRole('button', { name: BOOSTER }));
     expect(screen.getByRole('button', { name: `${BOOSTER}, selected` })).toHaveAttribute('aria-pressed', 'true');
     const inPack = screen.getByRole('region', { name: 'In this pack' });
     const backs = [...inPack.querySelectorAll('.kb-postcard-back')];
-    expect(backs.map((b) => b.hasAttribute('data-hit'))).toEqual([false, false, false, false, true]);
+    expect(backs).toHaveLength(5);
+    expect(backs.some((b) => b.hasAttribute('data-hit'))).toBe(false);
     expect(inPack).toHaveTextContent('Five cards, the last one at least uncommon. It opens as soon as you buy it.');
     const aside = screen.getByRole('complementary', { name: 'About the Booster' });
     expect(within(aside).getByRole('table', { name: 'Booster odds' })).toBeInTheDocument();

@@ -216,7 +216,7 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now }: {
     );
   }
   const moment = read.moment;
-  const parts = momentParts(moment, instance.cards, ui.cards, nameOf, instance.settings.setLasts);
+  const parts = momentParts(moment, instance.cards, ui.cards, nameOf);
   const name = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
   const words = Object.keys(said).sort().map((k) => `${name(k)}: ${said[k]}`);
   return (

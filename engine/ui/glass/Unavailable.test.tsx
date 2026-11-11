@@ -6,8 +6,8 @@ import { GlassCannotDisplay, GlassCannotFind } from './Unavailable.tsx';
 
 const ADDRESS = '/t/3f2a9c1e';
 
-function displayed(onRetry: () => void = () => {}) {
-  return renderIn(buildWorld(), <main><GlassCannotDisplay onRetry={onRetry} /></main>, { path: ADDRESS });
+function displayed(onRetry: () => void = () => {}, kind: 'offline' | 'silent' | 'server' | 'broken' = 'silent') {
+  return renderIn(buildWorld(), <main><GlassCannotDisplay kind={kind} onRetry={onRetry} /></main>, { path: ADDRESS });
 }
 
 function notFound() {
@@ -15,12 +15,27 @@ function notFound() {
 }
 
 describe('GlassCannotDisplay', () => {
-  test('its title, line and buttons read exactly', () => {
-    displayed();
-    expect(screen.getByRole('heading', { level: 1, name: "This screen didn't load" })).toBeInTheDocument();
-    expect(screen.getByText("The server didn't answer, or it took longer than 20 seconds. Loading a screen changes nothing, so nothing was lost.")).toBeInTheDocument();
+  test.each([
+    ['offline', "You're offline", 'Your device reports no connection, so nothing was sent. Reconnect, then try again.'],
+    ['silent', "This screen didn't load", "The server didn't answer within 20 seconds, or the connection dropped on the way. Loading a screen changes nothing, so nothing was lost."],
+  ] as const)('%s: its title, line and buttons read exactly', (kind, title, lead) => {
+    displayed(() => {}, kind);
+    expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
+    expect(screen.getByText(lead)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toHaveAttribute('data-kb-kind', 'primary');
     expect(screen.getByRole('button', { name: 'Back to the board' })).toHaveAttribute('data-kb-kind', 'secondary');
+    expect(screen.queryByRole('link', { name: 'tell an admin' })).toBeNull();
+  });
+
+  test.each([
+    ['server', 'The server answered with an error. Your connection is fine, and nothing was lost. Try again in a moment. If it keeps happening, '],
+    ['broken', 'Something went wrong while loading it. Nothing was lost. Try again, and if it keeps happening, '],
+  ] as const)('%s: its words, with "tell an admin" a link to the contact page', (kind, lead) => {
+    const { container } = displayed(() => {}, kind);
+    expect(screen.getByRole('heading', { level: 1, name: "This screen didn't load" })).toBeInTheDocument();
+    expect(container.textContent).toContain(`${lead}tell an admin.`);
+    expect(screen.getByRole('link', { name: 'tell an admin' })).toHaveAttribute('href', '/contact');
+    expect(screen.getByRole('button', { name: 'Back to the board' })).toBeInTheDocument();
   });
 
   test('Try again calls onRetry', async () => {

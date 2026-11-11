@@ -48,8 +48,8 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, spanMs, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
-import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
+import { backOver, defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
@@ -194,12 +194,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
     return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null, string | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts, endsAt]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };
@@ -209,7 +209,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     const cardName = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
     const ofKind = here.plays.filter((p) => p.card === kind);
     if (isBack(kind) && ofKind.length > 0) {
-      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', instance.settings.setLasts, cardName);
+      const say = (p: CardPlay) => backWords(p, nameOf?.(p.caster) ?? 'someone', cardName);
       const yours = (p: CardPlay) => (here.faces[p.id] ? `Yours: ${cardName(here.faces[p.id]!)}, which nobody else can see.` : '');
       const first = say(ofKind[0]!);
       return { progress: null, state: first.state, ends: first.ends, yours: false, controls: [], notes: Object.fromEntries(ofKind.map((p) => [p.id, [say(p).note, yours(p)].filter((w) => w !== '').join(' ')])) };
@@ -240,7 +240,7 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
       return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
-  }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
+  }, [instance.cards, ui.cards, kind, economy, here, nameOf]);
   /* Every play of the kind over (ended by an admin, or it did not take): its effect draws nothing, so whatever view it last gave is stale. */
   const allEnded = here.plays.length > 0 && here.plays.every((p) => p.reversed || p.untaken);
   if (!given || allEnded) return fallback;
@@ -485,7 +485,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* The setter's own back, still face down: not sprung, not taken back, not past its time (the same end every Set has). */
-  const backTakeable = yours && play.faceDown === true && !play.revealed && !play.takenBack && !play.caught && !play.reversed && Date.parse(play.playedAt) + spanMs(instance.settings.setLasts) > now;
+  const backTakeable = yours && play.faceDown === true && !play.revealed && !play.takenBack && !play.caught && !play.reversed && !backOver(play, now);
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
   const hosted = useLensHost() !== document.body;
   /* A staged page's play is made up: no thread is spun from it, and none can be (staged.ts). */
@@ -627,7 +627,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(here.billed, instance.settings.setLasts), now);
+  const billed = markedPlays(shownPlays(here.billed), now);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */

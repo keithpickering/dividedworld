@@ -4,6 +4,7 @@
  */
 import { AnimatePresence, useIsPresent } from 'motion/react';
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { failureKind } from '../../engine/ui/data/api.ts';
 import type { AlertsPage, BoardPage, Boot, ContactLink, Estimate, IndexPage, KayfaApi, MyCharactersPage, MyInvite, ProfilePage, QueuePage, RecordPage, ScreenSettings, SeasonPage, Session, ThreadPage, UpdatesPage } from '../../engine/ui/data/api.ts';
 import { fallbackSettings } from './data/settings.ts';
 import { BootProvider } from '../../engine/ui/boot.tsx';
@@ -31,7 +32,7 @@ import { match, RouterProvider, useLocation, useNavigate, useRouterAccount, useR
 import { effectCards } from '../../engine/ui/cards/plays.ts';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from '../../engine/ui/screen-docs.ts';
 import { SearchScreen } from '../../engine/ui/search/SearchScreen.tsx';
-import { Routes, type Failures, type Route } from '../../engine/ui/routes.tsx';
+import { Routes, type DisplayFailure, type Failures, type Route } from '../../engine/ui/routes.tsx';
 import { ESTIMATE_WAIT_MS, lazyScreen } from '../../engine/ui/glass-docs.ts';
 import { glassRoutes, type GlassScreens } from '../../engine/ui/glass-routes.tsx';
 import { GlassCannotDisplay, GlassCannotFind } from '../../engine/ui/glass/Unavailable.tsx';
@@ -95,7 +96,7 @@ function routesFor(env: LoadEnv): readonly Route[] {
 
 /** What a glass page shows for a load that failed or an address that is not there: the glass's own plain screens, not the board's. */
 const GLASS_FAILURES: Failures = {
-  display: ({ onRetry }) => <GlassCannotDisplay onRetry={onRetry} />,
+  display: ({ kind, onRetry }) => <GlassCannotDisplay kind={kind} onRetry={onRetry} />,
   find: () => <GlassCannotFind />,
 };
 
@@ -369,7 +370,7 @@ const EFFECTS: readonly string[] = [...effectCards(instanceUi)];
 export function App({ api }: { readonly api: KayfaApi }) {
   useGlass();
   const [first, setFirst] = useState<FirstLoad | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<DisplayFailure | null>(null);
   const [attempt, setAttempt] = useState(0);
   const known = useRef<Known>({ session: null, live: null, settings: null });
   const routes = useMemo(() => routesFor({
@@ -380,8 +381,8 @@ export function App({ api }: { readonly api: KayfaApi }) {
   }), [api]);
   useEffect(() => {
     let live = true;
-    setFailed(false);
-    void firstLoad(api, known.current).then((f) => { if (live) { known.current.settings = f.settings; setFirst(f); } }, () => { if (live) setFailed(true); });
+    setFailed(null);
+    void firstLoad(api, known.current).then((f) => { if (live) { known.current.settings = f.settings; setFirst(f); } }, (error: unknown) => { if (live) setFailed(failureKind(error)); });
     return () => { live = false; };
   }, [api, attempt]);
   const retry = useCallback(() => { known.current.session = null; setFirst(null); setAttempt((n) => n + 1); }, []);
@@ -392,7 +393,7 @@ export function App({ api }: { readonly api: KayfaApi }) {
         /* No boot: the bare page, with the instance's own words and the way to try again. */
         ? (
           <KayfaProvider value={{ api, instance, ui: instanceUi, settings: fallbackSettings, ...FIXED_CHANCE }}>
-            <main className="kb-page"><CannotDisplay address={window.location.pathname + window.location.search} onRetry={retry} /></main>
+            <main className="kb-page"><CannotDisplay kind={failed} address={window.location.pathname + window.location.search} onRetry={retry} /></main>
           </KayfaProvider>
         )
         : (

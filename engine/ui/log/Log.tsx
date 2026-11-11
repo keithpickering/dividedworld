@@ -31,6 +31,7 @@ import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { usePlayer } from '../player.tsx';
+import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { useLocation } from '../router.tsx';
 import { GlassLink } from '../glass/Link.tsx';
 import { actLink, inOrder, logRows, NO_SHARES, plain, reasonName, SHARES_ARE, signed, utcWhen, type LogData, type LogRow, type Segment, type Words } from './lines.ts';
@@ -168,7 +169,7 @@ export function nothingSettled(name: string | null, next: string | null, pronoun
 function NothingYet({ name, next, pronouns }: { readonly name: string | null; readonly next: string | null; readonly pronouns: PronounSet | null }) {
   return (
     <tr data-kb-kind="nothing">
-      <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null ? utcWhen(next) : '—'}</td>
+      <td className="kb-log-when" data-kb-label="When (UTC)">{next !== null && untilWords(next) !== null ? utcWhen(next) : '—'}</td>
       <td className="kb-log-what" data-kb-label="What">Nothing yet</td>
       <td className="kb-log-details" data-kb-label="Details">{nothingSettled(name, next, pronouns)}</td>
       <td className="kb-log-num" data-kb-label="Aura" />
@@ -193,6 +194,8 @@ export interface LogProps {
 
 export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' }: LogProps) {
   const { instance, ui, settings } = useKayfa();
+  /* Some rows are made from the player's characters (rank changes, Turns), so with them unread an empty log is not known to be empty. */
+  const { charactersFailed } = usePlayer();
   const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy) };
   const tabs = tabsOf(data);
   const current = tabs.find((c) => c.id === tab) ?? null;
@@ -247,12 +250,14 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
             </tr>
           </thead>
           <tbody>
-            {!settled && rows.length === 0 && <NothingYet name={current?.name ?? null} pronouns={current?.pronouns ?? null} next={data.nextSettlement} />}
+            {!settled && rows.length === 0 && charactersFailed && <tr><td colSpan={5}><CharactersFailed className="kb-log-empty" /></td></tr>}
+            {!settled && rows.length === 0 && !charactersFailed && <NothingYet name={current?.name ?? null} pronouns={current?.pronouns ?? null} next={data.nextSettlement} />}
             {rows.map((r) => <Row key={r.key} entering={added.entering(r.key)} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
           </tbody>
         </table>
         {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement, current?.pronouns ?? null)}</p>}
-        {settled && rows.length === 0 && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
+        {settled && rows.length === 0 && charactersFailed && <CharactersFailed className="kb-log-empty" />}
+        {settled && rows.length === 0 && !charactersFailed && <p className="kb-log-empty">Nothing on these pages is {current?.name ?? 'yours'}'s yet.</p>}
         {onOlder && data.log.before !== null && (
           <p className="kb-log-older">
             <GlassButton size="s" busy={older === 'loading'} onClick={() => { reading.current = true; added.arm(rows.map((r) => r.key)); onOlder(); }}>Show older lines</GlassButton>

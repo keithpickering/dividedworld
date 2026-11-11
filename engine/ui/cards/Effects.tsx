@@ -385,7 +385,7 @@ export interface MomentParts {
  * what it was on, and never drawn, since its moment isn't one post's. A card that cannot change after it lands, or that draws no
  * effect, is named.
  */
-export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui: readonly CardUi[], nameOf: (character: Id | null) => string, setLasts?: Span): MomentParts {
+export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui: readonly CardUi[], nameOf: (character: Id | null) => string): MomentParts {
   const at = Date.parse(moment.layers[0]!.act.createdAt);
   const cardName = (key: string) => rules.find((c) => c.key === key)?.name ?? key;
   const springs = moment.layers.map((l) => l.act).filter((a) => a.kind === 'spring');
@@ -411,7 +411,7 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
     }
     if (play.faceDown) {
       /* A back whose time had passed by then, with nothing springing it, was gone from the post then (card_target), as now. */
-      if (setLasts && shownPlays([play], setLasts, at).length === 0 && !springs.some((x) => x.payload.set === play.id)) continue;
+      if (shownPlays([play], at).length === 0 && !springs.some((x) => x.payload.set === play.id)) continue;
       named.push({ words: 'a card set face down', play });
       continue;
     }
@@ -478,7 +478,7 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
 }) {
   const { instance, ui } = useKayfa();
   /* What is drawn does not depend on names, so a caller's new `nameOf` never builds the store again. */
-  const parts = useMemo(() => momentParts(moment, instance.cards, ui.cards, () => '', instance.settings.setLasts), [moment, instance.cards, ui.cards, instance.settings.setLasts]);
+  const parts = useMemo(() => momentParts(moment, instance.cards, ui.cards, () => ''), [moment, instance.cards, ui.cards]);
   const store = useMemo(() => {
     const own = createPlays();
     own.add(moment.layers.map((l) => l.act).filter((a) => parts.drawn.some((p) => p.id === a.id)));

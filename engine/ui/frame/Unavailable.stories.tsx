@@ -10,12 +10,15 @@ const displayMeta: Meta<typeof CannotDisplay> = {
   /* A path, so the preview gives the story its router and the instance (the pages and the meter read both). */
   parameters: { path: '/' },
   component: CannotDisplay,
-  args: { address: 'dw.gripe/t/3f2a9c1e', onRetry: () => {} },
+  args: { kind: 'silent', address: 'dw.gripe/t/3f2a9c1e', onRetry: () => {} },
   decorators: [inMain],
 };
 export default displayMeta;
 
 export const Display: StoryObj<typeof CannotDisplay> = {};
+export const DisplayOffline: StoryObj<typeof CannotDisplay> = { args: { kind: 'offline' } };
+export const DisplayServer: StoryObj<typeof CannotDisplay> = { args: { kind: 'server' } };
+export const DisplayBroken: StoryObj<typeof CannotDisplay> = { args: { kind: 'broken' } };
 
 export const Find: StoryObj<typeof CannotFind> = {
   render: () => inMain(() => <CannotFind address="dw.gripe/t/nothing-here" />),

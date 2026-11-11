@@ -45,7 +45,7 @@ import belowTheFoldArt from './cards/below-the-fold/art.json';
 import graffitiCanvas from './cards/graffiti/art.webp?url';
 import graffitiMark from './cards/graffiti/mark.svg?url';
 import graffitiArt from './cards/graffiti/art.json';
-import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
+import youWereSayingCanvas from './cards/you-were-saying/art.webp?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
 import { ConfigForm as YouWereSayingConfigForm } from '../cards/you-were-saying/ConfigForm.tsx';

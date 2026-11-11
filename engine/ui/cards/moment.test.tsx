@@ -63,7 +63,7 @@ const chain = () => {
   for (let el: HTMLElement | null = document.querySelector('[data-kb-words]'); el; el = el.parentElement) if (el.dataset.kbWrap) out.push(el.dataset.kbWrap);
   return out;
 };
-const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c === 'c-spritey' ? 'Spritey' : 'someone'), instance.settings.setLasts).named;
+const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c === 'c-spritey' ? 'Spritey' : 'someone')).named;
 
 afterEach(() => { seen.length = 0; vi.restoreAllMocks(); });
 
@@ -166,14 +166,14 @@ describe('a moment names what it does not draw', () => {
   test('the play whose moment it is is never named as also on the post: its mark, its Lens row and the ORIGIN head name it', () => {
     const m = moment([{ act: card('k2', 'holdy', 5), state: null }, { act: card('k1', 'tagger', 1), state: null }]);
     expect(named(m)).toEqual(['Tagger']);
-    expect(momentParts(m, instance.cards, cards, () => '', instance.settings.setLasts).own).toBeNull();
+    expect(momentParts(m, instance.cards, cards, () => '').own).toBeNull();
   });
 
   test('a caught play\'s own moment says what caught it, apart from what else was on the post', () => {
     const back = act('s1', 'set', {}, 1);
     const spring = act('sp1', 'spring', { card: 'trappy', trigger: 'cast', outcome: { do: 'nullify' }, set: 's1', by: 'k2', caught: 'k2' }, 5);
     const m = moment([{ act: card('k2', 'smear', 5, { caught: 's1', layer: undefined }), state: null }, { act: back, state: null }, { act: spring, state: null }]);
-    const parts = momentParts(m, instance.cards, cards, () => '', instance.settings.setLasts);
+    const parts = momentParts(m, instance.cards, cards, () => '');
     expect(parts.own).toBe('Caught by Trappy');
     expect(parts.named).toEqual(['a card set face down']);
     expect(parts.drawn).toEqual([]);
@@ -189,7 +189,7 @@ describe('a moment names what it does not draw', () => {
   });
 
   test('a back whose time had passed by the play\'s time, unsprung, was gone then and is not named', () => {
-    const old = act('s0', 'set', {}, 0, { createdAt: new Date(Date.UTC(2026, 9, 1)).toISOString() });
+    const old = act('s0', 'set', {}, 0, { createdAt: new Date(Date.UTC(2026, 9, 1)).toISOString(), endsAt: new Date(Date.UTC(2026, 9, 8)).toISOString() });
     const m = moment([{ act: card('k2', 'smear', 5), state: null }, { act: old, state: null }]);
     expect(named(m)).toEqual([]);
   });

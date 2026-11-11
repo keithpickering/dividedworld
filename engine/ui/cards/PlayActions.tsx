@@ -54,7 +54,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const how = playOf(rules);
   const own = actingCharacters.some((c) => c.id === act.character);
   if ((how === 'set' || how === 'use') && !own) return null;
-  const context = { cards: instance.cards, setLasts: instance.settings.setLasts };
+  const context = { cards: instance.cards };
   /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. */
   const casts = landing(rules, act, here.plays, context).ok;
   const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
@@ -152,7 +152,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     ...(at.board ? { board: livePlays(onBoard.plays).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, setLasts: instance.settings.setLasts, above }).ok) return null;
+  if (!landingOn(rules, goal, livePlays(here.plays), { cards: instance.cards, above }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (

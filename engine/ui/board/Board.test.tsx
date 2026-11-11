@@ -558,6 +558,16 @@ describe('the new-thread form', () => {
     expect((await fake.threads(board.id, { offset: 0, limit: 10 })).threads).toHaveLength(1);
   });
 
+  test('when the player\'s characters could not be read, it says so and offers Try again, then shows the form when they come', async () => {
+    const { seeded } = renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => { world(f); return vi.spyOn(f, 'myCharacters').mockRejectedValue(new Error('down')); } });
+    const form = await openForm();
+    expect(await within(form).findByText('Your characters couldn\'t be loaded.')).toBeInTheDocument();
+    expect(within(form).queryByRole('link', { name: 'Make a character' })).toBeNull();
+    seeded.mockRestore();
+    await userEvent.click(within(form).getByRole('button', { name: 'Try again' }));
+    expect(await within(form).findByRole('button', { name: 'Start thread' })).toBeInTheDocument();
+  });
+
   test('with no character that can act, it says so and links to making one', async () => {
     renderInWorld(<LoadedBoard slug="general" />, { seed: (f) => world(f, { characters: false }) });
     const form = await openForm();

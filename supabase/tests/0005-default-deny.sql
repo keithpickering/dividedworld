@@ -12,7 +12,7 @@ declare
                            'characters_public', 'acts_public', 'accounts', 'characters', 'class_history', 'reaction_tallies',
                            'seasons', 'season_results', 'seasons_finished', 'settlements', 'standings', 'ledger', 'wallets', 'wallet_events',
                            'card_ledger', 'my_cards', 'effect_state',
-                           -- A surface's derived row (0154): the covered cells, the owners and the live list, all of them public facts of public Acts.
+                           -- A surface's derived row (0195): the covered cells, the owners and the live list, all of them public facts of public Acts.
                            'surfaces',
                            -- The machine (0139): its slots as players see them, a pack's pulls, and a buyer's own packs. The slots table itself is nobody's to read.
                            'machine_now', 'pack_kinds', 'packs', 'my_packs', 'my_invites', 'pending_turns', 'effect_releases',
@@ -59,7 +59,7 @@ declare
                            -- The refusal a SQL-standard screen function raises through (0094).
                            'screen_refusal(text)',
                            -- Cards beyond a post (0055): a target's effects for the act function, and a page's plays above its posts and its board's pins.
-                           -- A surface's live Acts and each draw's share, for the Lens (0154): a security invoker read of public Acts and the row's counts.
+                           -- A surface's live Acts and each draw's share, for the Lens (0195): a security invoker read of public Acts and the row's counts.
                            'surface_acts(uuid)',
                            'card_target_reach(text,uuid,uuid)', 'effects_above(uuid[],uuid,uuid)', 'pinned_threads(uuid)',
                            -- Updates (0062): an admin's post_update, and the page's read.
