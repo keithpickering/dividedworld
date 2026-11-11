@@ -11,6 +11,7 @@ import type { CardPlay, CardUi } from '../cards/types.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
+import { CONDUCT_TEMPLATES, TEMPLATES } from '../../mail/conduct.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
 export const MARQUEE_MAX = 20;
@@ -88,11 +89,35 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   return out;
 }
 
+/** The conduct mail override: known templates only, each with words that fill only that template's slots. */
+function conductMailProblems(mail: unknown): string[] {
+  if (typeof mail !== 'object' || mail === null || Array.isArray(mail)) return ['the conduct mail is not an object of templates'];
+  const out: string[] = [];
+  for (const [key, words] of Object.entries(mail)) {
+    if (!(CONDUCT_TEMPLATES as readonly string[]).includes(key)) { out.push(`the conduct mail has a template "${key}", which is not one of the engine's (${CONDUCT_TEMPLATES.join(', ')})`); continue; }
+    if (typeof words !== 'object' || words === null) { out.push(`the conduct mail "${key}" is not an object of words`); continue; }
+    const w = words as Record<string, unknown>;
+    for (const field of Object.keys(w)) if (!['subject', 'preheader', 'heading', 'paragraphs', 'note'].includes(field)) out.push(`the conduct mail "${key}" has a field "${field}", which is not subject, preheader, heading, paragraphs or note`);
+    const texts: string[] = [];
+    for (const field of ['subject', 'preheader', 'heading', 'note']) {
+      if (w[field] === undefined) continue;
+      if (typeof w[field] !== 'string') out.push(`the conduct mail "${key}" ${field} is not text`); else texts.push(w[field] as string);
+    }
+    if (w.paragraphs !== undefined) {
+      if (!Array.isArray(w.paragraphs) || w.paragraphs.some((p) => typeof p !== 'string')) out.push(`the conduct mail "${key}" paragraphs are not a list of text`); else texts.push(...(w.paragraphs as string[]));
+    }
+    const slots = TEMPLATES[key as keyof typeof TEMPLATES].slots;
+    for (const text of texts) for (const m of text.matchAll(/\{(\w+)\}/g)) if (!slots.includes(m[1] ?? '')) out.push(`the conduct mail "${key}" uses the slot {${m[1]}}, which that template does not have`);
+  }
+  return out;
+}
+
 /** The code of conduct: a positive whole version, sections with unique keys, and a title and words in each. */
 function conductProblems(conduct: unknown): string[] {
   if (typeof conduct !== 'object' || conduct === null) return ['the instance UI has no conduct'];
-  const { version, sections } = conduct as { version?: unknown; sections?: unknown };
+  const { version, sections, mail } = conduct as { version?: unknown; sections?: unknown; mail?: unknown };
   const out: string[] = [];
+  if (mail !== undefined) out.push(...conductMailProblems(mail));
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) out.push('the conduct version is not a positive whole number');
   if (!Array.isArray(sections) || sections.length === 0) return [...out, 'the conduct has no sections'];
   const seen = new Set<string>();

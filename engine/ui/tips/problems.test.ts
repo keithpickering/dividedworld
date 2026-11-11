@@ -41,6 +41,14 @@ describe('instanceUiProblems', () => {
     const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
     for (const text of ['', ' \n ']) assert.deepEqual(withConduct({ version: 1, sections: [{ key: 'a', title: 'A.', text }] }), ['the conduct section "a" has no text']);
   });
+  test('reports a conduct mail override with an unknown template, field or slot', () => {
+    const withMail = (mail: unknown) => instanceUiProblems({ ...ui(good), conduct: { ...goodConduct(), mail: mail as never } }, rules);
+    assert.deepEqual(withMail({ nudge: { subject: 'Hi about {thread}' } }), []);
+    assert.deepEqual(withMail({ nope: { subject: 'x' } }), ['the conduct mail has a template "nope", which is not one of the engine\'s (reportRead, nudge, hidden, hiddenUntilEdited, suspended, banned, lifted)']);
+    assert.deepEqual(withMail({ nudge: { subject: 'Until {until}' } }), ['the conduct mail "nudge" uses the slot {until}, which that template does not have']);
+    assert.deepEqual(withMail({ reportRead: { heading: 'Outcome {outcome}' } }), ['the conduct mail "reportRead" uses the slot {outcome}, which that template does not have']);
+    assert.deepEqual(withMail({ nudge: { colour: 'x' } }), ['the conduct mail "nudge" has a field "colour", which is not subject, preheader, heading, paragraphs or note']);
+  });
   test('holds a conduct key to the shape of an id, reports a missing key and an entry that is not a section', () => {
     const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
     const one = (key: unknown) => withConduct({ version: 1, sections: [{ key, title: 'A.', text: 'x' }] });

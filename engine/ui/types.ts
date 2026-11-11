@@ -7,6 +7,7 @@
  * Everything here a player reads out of character is plain and true ("The fiction may lie; the
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
+import type { ConductMailOverride } from '../mail/conduct.ts';
 import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardArt, CardUi } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
@@ -385,6 +386,8 @@ export interface GlassTheme {
 export interface ConductUi {
   readonly version: number;
   readonly sections: readonly { readonly key: string; readonly title: string; readonly text: string }[];
+  /** Words for the moderation emails in place of the engine's (engine/mail/conduct.ts); a template left out keeps the engine's. */
+  readonly mail?: ConductMailOverride;
 }
 
 export interface InstanceUi {
