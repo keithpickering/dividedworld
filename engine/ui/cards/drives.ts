@@ -13,10 +13,12 @@
  * Nothing here depends on who is reading: a total, a count and the gifts' characters are the same for every reader (drive_gifts), so no
  * request, event or timing proves a private fact.
  */
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { spanMs, type CardRules } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, DriveGift, Id, KayfaApi } from '../data/api.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
+import type { CardPlay } from './types.ts';
 
 /** The most drives one read asks about: what `drive_gifts` holds a call to. */
 export const DRIVES_PER_READ = 100;
@@ -66,12 +68,45 @@ export function giftOf(act: Act): { readonly drive: Id; readonly gift: DriveGift
   return { drive: act.targetActId, gift: { id: act.id, character: act.character, amount, at: act.createdAt } };
 }
 
+/** A card's drive rules, by the card's key. */
+export type DriveRules = ReadonlyMap<string, NonNullable<CardRules['drive']>>;
+
+/** One drive of a card on a post, as the plays make it: the plays still up, in play order, and when it closes (epoch ms). */
+export interface PlayedDrive {
+  readonly id: Id;
+  readonly card: string;
+  readonly plays: readonly CardPlay[];
+  readonly closes: number;
+  readonly open: boolean;
+}
+
+/**
+ * Which plays make a drive, and what a drive is of them. This is the ONE place on the client that says so, as `drive_plays` and `place_cast`
+ * are the one place on the server (supabase/migrations/0150_drives.sql); the owner's question #447 (does an ended play still hold its drive?)
+ * changes this function and drive_plays and nothing else. A drive's plays are its card's plays on the post that are not caught and not ended
+ * (an admin's end, `reversed`; a refund, `untaken`; a passed `ends`), and a play at the post, not beyond it (`reach`); a card back is no play
+ * (`faceDown`). A play's drive is the one its payload names, or its own id when it names none. A drive closes `lasts` after its latest play
+ * still up, and is open while that is ahead of `now`. Drives come in the order each was first played.
+ */
+export function drivesOfPlays(plays: readonly CardPlay[], rules: DriveRules, now: number): readonly PlayedDrive[] {
+  const grouped = new Map<Id, CardPlay[]>();
+  for (const p of plays) {
+    if (!rules.has(p.card) || p.caught !== undefined || p.reversed || p.untaken || p.faceDown || p.reach) continue;
+    if (p.ends !== undefined && Date.parse(p.ends) <= now) continue;
+    const id = p.drive ?? p.id;
+    grouped.set(id, [...(grouped.get(id) ?? []), p]);
+  }
+  return [...grouped].map(([id, own]) => {
+    const closes = Math.max(...own.map((p) => Date.parse(p.playedAt))) + spanMs(rules.get(own[0]!.card)!.lasts);
+    return { id, card: own[0]!.card, plays: own, closes, open: closes > now };
+  });
+}
+
 export function driveStore(api: KayfaApi): DriveStore {
   const had = stores.get(api);
   if (had) return had;
   const held = new Map<Id, Held>();
   const threads = new Map<Id, { count: number; off: () => void }>();
-  const watched = new Map<Id, Id>();
   const listeners = new Map<Id, Set<() => void>>();
   const queue = new Set<Id>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -161,7 +196,6 @@ export function driveStore(api: KayfaApi): DriveStore {
     watch(drive, thread) {
       const own = held.get(drive) ?? { state: UNREAD, seen: new Set<Id>(), heard: [], watching: 0, tries: 0, paging: false };
       held.set(drive, own);
-      watched.set(drive, thread);
       const release = hear(thread);
       own.watching += 1;
       if (!own.state.loaded) refresh(drive);
@@ -174,7 +208,6 @@ export function driveStore(api: KayfaApi): DriveStore {
         if (own.watching === 0) {
           /* Unwatched, the numbers stop being kept live, so the next watch reads them again. */
           held.delete(drive);
-          watched.delete(drive);
         }
       };
     },
@@ -220,10 +253,15 @@ export function useDriveGifts(thread: Id, drives: readonly Id[]): ReadonlyMap<Id
   const key = drives.join(',');
   // eslint-disable-next-line react-hooks/exhaustive-deps -- the ids are what `key` says; a new array of the same ids is no change
   const ids = useMemo(() => drives, [key]);
+  /* Only the ids that came or went are watched or let go: a drive that stays keeps its numbers and its loaded pages. */
+  const offs = useRef(new Map<Id, () => void>());
   useEffect(() => {
-    const offs = ids.map((d) => store.watch(d, thread));
-    return () => { for (const off of offs) off(); };
+    const held = offs.current;
+    for (const [d, off] of held) if (!ids.includes(d)) { off(); held.delete(d); }
+    for (const d of ids) if (!held.has(d)) held.set(d, store.watch(d, thread));
   }, [store, thread, ids]);
+  /* Everything is let go when the page leaves, or moves to another thread, whose watches are not these. */
+  useEffect(() => () => { for (const off of offs.current.values()) off(); offs.current.clear(); }, [store, thread]);
   const subscribe = useMemo(() => (l: () => void) => { const offs = ids.map((d) => store.subscribe(d, l)); return () => { for (const off of offs) off(); }; }, [store, ids]);
   /* A snapshot must be stable between changes: one string of the numbers drives it, and the map is built from the store's own rows. */
   const snapshot = useSyncExternalStore(subscribe, () => ids.map((d) => store.get(d)).map((g) => `${g.loaded}:${g.total}:${g.count}:${g.gifts.length}:${g.gifts[0]?.id ?? ''}`).join('|'));

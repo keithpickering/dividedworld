@@ -25,10 +25,10 @@ import { useLensStore } from './Lens.tsx';
 import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
-import { driveStore, giftOf, useDriveGifts, type Gifts } from './drives.ts';
+import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
 import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
-import { drawnInMoment, spanMs, type CardRules, type Reach } from '../../rules/cards.ts';
+import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
@@ -96,11 +96,11 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * one card that name it (their payload's `drive`), and it closes `lasts` after its latest play.
    */
   const driving = useMemo(() => new Map(instance.cards.flatMap((c): [string, NonNullable<CardRules['drive']>][] => (c.drive ? [[c.key, c.drive]] : []))), [instance.cards]);
-  const driven = here.plays.filter((p) => p.drive !== undefined && driving.has(p.card) && !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach);
-  const driveIds = [...new Set(driven.map((p) => p.drive!))];
-  const gifts = useDriveGifts(post.thread, driveIds);
-  const closing = driveIds.map((id) => closeOf(driven.filter((p) => p.drive === id), driving));
-  const at = useAt(closing);
+  /* The page's own clock is the drives' own closes (useAt), so a play's end is judged first at the time of this render, then at the redrawn time. */
+  const soon = drivesOfPlays(here.plays, driving, Date.now());
+  const gifts = useDriveGifts(post.thread, soon.map((d) => d.id));
+  const at = useAt(soon.map((d) => d.closes));
+  const played = drivesOfPlays(here.plays, driving, at);
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
   const lens = useLensStore();
@@ -184,7 +184,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
         save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
         give={give} moreGifts={moreGifts} wallet={wallet}
-        {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(mine, driving.get(key)!, gifts, at) } : {})}
+        {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
@@ -198,18 +198,11 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
 const writingKeys = (cards: readonly CardRules[]): ReadonlySet<string> => new Set(cards.filter((c) => c.writes !== undefined).map((c) => c.key));
 /** Whether a play is of a card that writes, on its post's own reach (a card that writes reaches a post alone). */
 const writes = (play: CardPlay, keys: ReadonlySet<string>): boolean => keys.has(play.card) && !play.reach && !play.faceDown;
-/** When a drive closes: its latest play's time plus the card's span (the server's `closes` is the same, card_target), in epoch ms. */
-const closeOf = (plays: readonly CardPlay[], driving: ReadonlyMap<string, NonNullable<CardRules['drive']>>): number =>
-  Math.max(...plays.map((p) => Date.parse(p.playedAt))) + spanMs(driving.get(plays[0]!.card)!.lasts);
-
-/** Each drive among a card's plays, in the order each was first played, with what the page knows of its gifts. */
-function drivesOf(mine: readonly CardPlay[], drive: NonNullable<CardRules['drive']>, gifts: ReadonlyMap<Id, Gifts>, now: number): readonly Drive[] {
-  const ids = [...new Set(mine.filter((p) => p.drive !== undefined).map((p) => p.drive!))];
-  return ids.map((id): Drive => {
-    const own = mine.filter((p) => p.drive === id);
-    const closes = Math.max(...own.map((p) => Date.parse(p.playedAt))) + spanMs(drive.lasts);
-    const g = gifts.get(id);
-    return { id, plays: own, closes: new Date(closes).toISOString(), open: closes > now, total: g?.total ?? 0, count: g?.count ?? 0, gifts: g?.gifts ?? [], more: (g?.gifts.length ?? 0) < (g?.count ?? 0) };
+/** Each drive of a card (drivesOfPlays says which plays make one), in the order each was first played, with what the page knows of its gifts. */
+function drivesOf(played: readonly PlayedDrive[], card: string, gifts: ReadonlyMap<Id, Gifts>, now: number): readonly Drive[] {
+  return played.filter((d) => d.card === card).map((d): Drive => {
+    const g = gifts.get(d.id);
+    return { id: d.id, plays: d.plays, closes: new Date(d.closes).toISOString(), open: d.closes > now, total: g?.total ?? 0, count: g?.count ?? 0, gifts: g?.gifts ?? [], more: (g?.gifts.length ?? 0) < (g?.count ?? 0) };
   });
 }
 

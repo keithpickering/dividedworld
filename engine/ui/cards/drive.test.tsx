@@ -3,16 +3,18 @@
  * (its plays, close, total, count and latest gifts), read for the whole page in one `driveGifts` call and kept live from the thread's channel;
  * `give` answers in the database's words; a card with no `drive` is given none. The cards are the engine's own test cards, never an instance's.
  */
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { Answer, Id } from '../data/api.ts';
 import { createFake } from '../data/fake.ts';
 import { renderIn, testInstance } from '../test-world.tsx';
+import { driveStore, drivesOfPlays, useDriveGifts } from './drives.ts';
 import { PostEffects } from './Effects.tsx';
 import { createPlays } from './plays.ts';
-import type { CardUi, Drive, EffectProps } from './types.ts';
+import type { CardPlay, CardUi, Drive, EffectProps } from './types.ts';
 
 const base = { alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const rule = (key: string, extra: Partial<CardRules> = {}): CardRules => ({ ...base, key, name: key, stack: 3, canApply: (t, e, _config, now) => landsOn({ key }, t, e, now), ...extra });
@@ -167,5 +169,103 @@ describe('what an effect is given of a drive', () => {
     expect(await act(async () => props().give(drive, 12))).toEqual(refused('a gift here is one of 0.10, 0.25'));
     const answer = await act(async () => props().give(drive, 25));
     expect(answer).toMatchObject({ ok: true, value: { balance: 75, act: { kind: 'donation', targetActId: drive } } });
+  });
+});
+
+/*
+ * Which plays make a drive (#447): the one client helper that mirrors the server's drive_plays and place_cast (0150_drives.sql). Plays here are plain,
+ * so each test says which fact of a play it is about.
+ */
+describe('drivesOfPlays: which plays make a drive', () => {
+  const DAY = 86_400_000;
+  const T0 = Date.parse('2026-11-01T00:00:00Z');
+  const rules = new Map([['appeal', appeal.drive!]]);
+  const play = (id: string, at: number, extra: Partial<CardPlay> = {}): CardPlay => ({ id, card: 'appeal', layer: 1, caster: null, message: '', config: {}, playedAt: new Date(at).toISOString(), post: 'post', ...extra });
+  const ids = (plays: readonly CardPlay[], now = T0) => drivesOfPlays(plays, rules, now).map((d) => [d.id, d.plays.map((p) => p.id), d.open] as const);
+
+  test('two drives on one post: the one that closed and the one that is open', () => {
+    const plays = [play('a', T0, { drive: 'a' }), play('b', T0 + 9 * DAY, { drive: 'b' })];
+    expect(ids(plays, T0 + 10 * DAY)).toEqual([['a', ['a'], false], ['b', ['b'], true]]);
+  });
+
+  test('a play joining an open drive is one of its plays, and the drive stays one', () => {
+    const plays = [play('a', T0, { drive: 'a' }), play('b', T0 + DAY, { drive: 'a' })];
+    expect(ids(plays, T0 + 2 * DAY)).toEqual([['a', ['a', 'b'], true]]);
+  });
+
+  test('a drive closes `lasts` after its latest play, not its first', () => {
+    const plays = [play('a', T0, { drive: 'a' }), play('b', T0 + 6 * DAY, { drive: 'a' })];
+    const [drive] = drivesOfPlays(plays, rules, T0 + 8 * DAY);
+    expect(drive!.closes).toBe(T0 + 13 * DAY);
+    expect(drive!.open).toBe(true);
+    expect(drivesOfPlays(plays, rules, T0 + 13 * DAY)[0]!.open).toBe(false);
+  });
+
+  test('a caught play is left out', () => {
+    const plays = [play('a', T0, { drive: 'a' }), play('c', T0 + DAY, { drive: 'a', caught: 'set' })];
+    expect(ids(plays)).toEqual([['a', ['a'], true]]);
+    expect(drivesOfPlays([plays[1]!], rules, T0)).toEqual([]);
+  });
+
+  test('an ended play is left out: an admin\'s end, a refund, a passed end; one still ahead is kept', () => {
+    const ended: Partial<CardPlay>[] = [{ reversed: true }, { untaken: true }, { ends: new Date(T0 + DAY).toISOString() }];
+    for (const e of ended) expect(ids([play('a', T0, { drive: 'a' }), play('x', T0 + DAY, { drive: 'a', ...e })], T0 + 2 * DAY)).toEqual([['a', ['a'], true]]);
+    expect(ids([play('a', T0, { drive: 'a' }), play('x', T0 + DAY, { drive: 'a', ends: new Date(T0 + 3 * DAY).toISOString() })], T0 + 2 * DAY)).toEqual([['a', ['a', 'x'], true]]);
+  });
+
+  test('an ended play does not hold its drive open: the close is the latest play still up', () => {
+    const plays = [play('a', T0, { drive: 'a' }), play('x', T0 + 6 * DAY, { drive: 'a', reversed: true })];
+    expect(drivesOfPlays(plays, rules, T0 + 8 * DAY)[0]!.closes).toBe(T0 + 7 * DAY);
+  });
+
+  test('a play that names no drive is its own drive, and a card with no drive makes none', () => {
+    const plays = [play('a', T0), play('b', T0 + DAY, { drive: 'a' }), play('p', T0, { card: 'plain' })];
+    expect(ids(plays, T0 + DAY)).toEqual([['a', ['a', 'b'], true]]);
+    expect(ids([play('a', T0), play('b', T0 + DAY)])).toEqual([['a', ['a'], true], ['b', ['b'], true]]);
+  });
+});
+
+describe('a drive past an ended play', () => {
+  test('a play whose end has passed is not part of the drive an effect is given', async () => {
+    const w = seeded(1);
+    const first = w.fake.seed.card(w.boFace, w.ids[0]!, 'appeal');
+    w.fake.clock.advance(1000);
+    w.fake.seed.card(w.boFace, w.ids[0]!, 'appeal', { ends: new Date(w.fake.clock.now() - 1).toISOString() });
+    await page(w);
+    await waitFor(() => expect(given.get(`appeal:${w.ids[0]}`)?.drives).toHaveLength(1));
+    expect(given.get(`appeal:${w.ids[0]}`)!.drives![0]!.plays.map((p) => p.id)).toEqual([first]);
+  });
+});
+
+describe('the drives a page watches', () => {
+  test('a new drive id appearing keeps an existing drive\'s total and its `more` page, and reads only the new one', async () => {
+    const w = seeded(2);
+    const one = w.fake.seed.card(w.boFace, w.ids[0]!, 'appeal');
+    const two = w.fake.seed.card(w.boFace, w.ids[1]!, 'appeal');
+    w.fake.seed.wallet(w.ana, 1000);
+    for (let i = 0; i < 25; i++) { w.fake.clock.advance(1000); await w.fake.donate(w.anaFace, one, 10); }
+    function Probe() {
+      const [ids, setIds] = useState<readonly Id[]>([one]);
+      const gifts = useDriveGifts(w.thread, ids);
+      return (
+        <>
+          <button onClick={() => setIds([one, two])}>add</button>
+          <button onClick={() => void driveStore(w.fake).more(one)}>more</button>
+          {ids.map((id) => { const g = gifts.get(id)!; return <span key={id} data-testid={id === one ? 'one' : 'two'}>{`${g.loaded ? 'loaded' : 'unread'} ${g.total} ${g.gifts.length}`}</span>; })}
+        </>
+      );
+    }
+    renderIn(w.fake, <Probe />, { cards: [drawing, quiet], instance });
+    await waitFor(() => expect(screen.getByTestId('one')).toHaveTextContent('loaded 250 20'));
+    fireEvent.click(screen.getByText('more'));
+    await waitFor(() => expect(screen.getByTestId('one')).toHaveTextContent('loaded 250 25'));
+    const read = vi.spyOn(w.fake, 'driveGifts');
+    fireEvent.click(screen.getByText('add'));
+    /* The drive already watched is never shown unread, nor read again. */
+    expect(screen.getByTestId('one')).toHaveTextContent('loaded 250 25');
+    await waitFor(() => expect(screen.getByTestId('two')).toHaveTextContent('loaded 0 0'));
+    expect(screen.getByTestId('one')).toHaveTextContent('loaded 250 25');
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls[0]![0]).toEqual([two]);
   });
 });
