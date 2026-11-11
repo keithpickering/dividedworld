@@ -168,3 +168,28 @@ test('feeds are recorded and replayed by URL and simulated day; offline misses; 
   assert.equal(await (await stub('https://news.example/other')).text(), '');
   assert.equal(hits, 2);
 });
+
+test('record mode: two different live chats on one simulated day each reach the provider; the feed cassette never carries a model call', async () => {
+  const d = dir();
+  let reached = 0;
+  const provider = (async (_u: unknown, init?: RequestInit) => {
+    reached++;
+    const sys = JSON.parse(String(init?.body)).system;
+    return new Response(JSON.stringify({ id: 'm', type: 'message', role: 'assistant', model: 'claude-haiku-5-5', stop_reason: 'end_turn',
+      content: [{ type: 'text', text: JSON.stringify({ line: sys }) }],
+      usage: { input_tokens: 1000, output_tokens: 500, service_tier: 'standard' } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+  // What run.ts hands the handlers: deps.fetch is the feeds' cassette, and each handler passes it to deps.models as options.fetch.
+  // The models' live calls must go through their own transport, never through the feed cassette, which keys on URL and day only.
+  const feeds = rehearsalFetch('record', d, { day: () => '2027-01-31', live: (async () => { throw new Error('a model call reached the feed cassette'); }) as unknown as typeof fetch });
+  const m = rehearsalModels({ mode: 'record', dir: d, cap: { dollars: 5 }, transport: provider });
+  const env = (k: string) => (k === 'ANTHROPIC_API_KEY' ? 'placeholder' : undefined);
+  const models = m(env, async () => {}, { tiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' }, fetch: feeds });
+  const base = { duty: 'microEvent', tier: 'light', messages: [{ role: 'user', content: 'Go.' }], schema: { type: 'object' }, maxTokens: 300 } as const;
+  const a = await models.chat({ ...base, system: 'first prompt' } as never);
+  const b = await models.chat({ ...base, system: 'second prompt' } as never);
+  assert.equal(reached, 2, 'the second call reached the provider');
+  assert.deepEqual(a.value, { line: 'first prompt' });
+  assert.deepEqual(b.value, { line: 'second prompt' });
+  assert.ok(!readdirSync(d).some((f) => f.startsWith('feed-')), 'no model call was saved as a feed');
+});
