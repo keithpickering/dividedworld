@@ -55,6 +55,9 @@ export function TrophyCase({ character, name }: { readonly character: Id; readon
     gen.current += 1;
     asked.current = new Set();
     setLineages({});
+    // A "More trophies" read still in flight for the last character returns early on its generation, so its paging is cleared here.
+    setPaging(false);
+    setOlderFailed(false);
     first();
     return () => { run.current += 1; };
   }, [first]);
