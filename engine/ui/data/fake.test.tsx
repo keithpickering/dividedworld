@@ -1280,7 +1280,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
 
   test('a wallet that holds less than the price is refused in the server\'s words, and nothing is spent or given', async () => {
     const { fake } = shopWorld(99);
-    expect(await fake.buyCard(await slotOf(fake, 'splat'))).toEqual(refused('that costs 100, and your wallet holds 99'));
+    expect(await fake.buyCard(await slotOf(fake, 'splat'))).toEqual(refused('that costs 1.00, and your wallet holds 0.99'));
     expect((await fake.wallet()).balance).toBe(99);
     expect(await fake.myCards()).toEqual([]);
   });
@@ -1382,7 +1382,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect(await fake.myCards()).toEqual([]);
     expect((await fake.wallet()).balance).toBe(500);
     const poor = shopWorld(299).fake;
-    expect(await poor.buyPack((await poor.machine()).find((m) => 'pack' in m.item)!)).toEqual(refused('that costs 300, and your wallet holds 299'));
+    expect(await poor.buyPack((await poor.machine()).find((m) => 'pack' in m.item)!)).toEqual(refused('that costs 3.00, and your wallet holds 2.99'));
     expect(await poor.myCards()).toEqual([]);
   });
 
@@ -1410,7 +1410,7 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     const { fake, ana, anaFace, boFace, thread } = shopWorld(0, 3);
     const long = fake.seed.post(thread, boFace, 'x'.repeat(30));
     fake.seed.wallet(ana, 49);
-    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('that costs 50, and your wallet holds 49'));
+    expect(await fake.playCard('splat', anaFace, long, {}, '')).toEqual(refused('that costs 0.50, and your wallet holds 0.49'));
     fake.seed.wallet(ana, 100);
     expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 1 });
     expect(must(await fake.playCard('splat', anaFace, long, {}, '')).payload).toMatchObject({ layer: 2 });

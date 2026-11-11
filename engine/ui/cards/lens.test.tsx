@@ -1380,7 +1380,7 @@ describe('a visit\'s tab', () => {
       openVisit(w);
       const l = await press(w);
       await userEvent.click(within(l).getByRole('button', { name: 'Pay 0.50 Aura' }));
-      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('that costs 50, and your wallet holds 0'));
+      await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('that costs 0.50, and your wallet holds 0.00'));
     });
 
     test('draws no try before its story is read, and none for a visit the story says has ended', async () => {

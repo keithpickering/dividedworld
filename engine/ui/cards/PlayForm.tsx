@@ -204,7 +204,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const ownBoth = hud !== null && other !== null && other !== hud.id && player.actingCharacters.some((c) => c.id === other);
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
-  const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
+  const shortWords = short && wallet ? plainRefusal(`that costs ${orbs(price)}, and your wallet holds ${orbs(wallet.balance)}`) : '';
   /* A Set waits for the card's own settings to be accepted, as a cast's price does (a set card that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
   const flawed = Object.keys(problems).length > 0;

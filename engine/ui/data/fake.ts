@@ -1389,7 +1389,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The appeals whose judgment failed and were refunded: the punishment can be appealed again. */
   const refundedAppeals = new Set<Id>();
   /** `wallet_spend`'s refusal of a price the wallet does not hold, or nothing. */
-  const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${amount}, and your wallet holds ${account.wallet}`) : null);
+  const covers = (account: AccountRec, amount: number): Refusal | null => (account.wallet < amount ? refuse(`that costs ${orbsOf(amount)}, and your wallet holds ${orbsOf(account.wallet)}`) : null);
 
   /** `buy_card` (0139_machine.sql): the slot's card at the price the screen showed, from the settled wallet, and one more of it in the hand. */
   function buyCard(shown: Slot): Answer<Bought> {

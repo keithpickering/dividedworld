@@ -60,7 +60,7 @@ describe('a purchase from the Vending Machine', () => {
     let balance = 562;
     let held = 2;
     const buyCard = vi.fn(async (slot: Slot) => {
-      if (refuse) return { ok: false as const, error: 'that costs 100, and your wallet holds 62' };
+      if (refuse) return { ok: false as const, error: 'that costs 1.00, and your wallet holds 0.62' };
       balance -= 100;
       held += 1;
       return { ok: true as const, value: { card: 'whoops', balance, held } };
@@ -105,7 +105,7 @@ describe('a purchase from the Vending Machine', () => {
     render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('hand').textContent).toBe('whoops×2'));
     act(() => screen.getByText('buy').click());
-    await waitFor(() => expect(bought).toEqual({ ok: false, error: 'that costs 100, and your wallet holds 62' }));
+    await waitFor(() => expect(bought).toEqual({ ok: false, error: 'that costs 1.00, and your wallet holds 0.62' }));
     expect(screen.getByTestId('wallet').textContent).toBe('562');
     expect(screen.getByTestId('hand').textContent).toBe('whoops×2');
   });
