@@ -43,9 +43,9 @@ export function addSpan(ms: number, span: Span): number {
 const SEASON_START = Date.UTC(2027, 0, 1);
 
 /**
- * When everything falls. Day 1 is `scenario.dayOfSeason` of the season. In the season's first half it counts from the season's start;
- * after that it counts back from the season's end, read off the calendar (`seasonEnd`, not a nominal 90 days), so `meltdown-handover`'s
- * day 83 puts day 1 exactly eight days before the end however long the months are.
+ * When everything falls. Day 1 is `scenario.dayOfSeason` of the season. The season's length is read off the calendar (`seasonEnd`, not
+ * a nominal 90 days), so counting from the start and counting back from the end are the same instant; the formula counts back from the
+ * end, so `meltdown-handover`'s day 83 puts day 1 exactly eight days before the end however long the months are.
  */
 export function timeline(scenario: Scenario, instance: Instance): Timeline {
   const seasonStart = SEASON_START;
@@ -54,9 +54,8 @@ export function timeline(scenario: Scenario, instance: Instance): Timeline {
   if (scenario.dayOfSeason < 1 || scenario.dayOfSeason > length) {
     throw new Error(`scenario ${scenario.key} starts on day ${scenario.dayOfSeason} of a season, and this instance's season is ${length} days`);
   }
-  const fromStart = scenario.dayOfSeason - 1 <= length / 2;
-  // Days left from day 1 to the end, counting day 1: the scenario's own figure is the season's length plus one, less its day number.
-  const day1 = fromStart ? seasonStart + (scenario.dayOfSeason - 1) * DAY_MS : seasonEnd - (length + 1 - scenario.dayOfSeason) * DAY_MS;
+  // Days from day 1 to the end, counting day 1: the season's length plus one, less the scenario's day number.
+  const day1 = seasonEnd - (length + 1 - scenario.dayOfSeason) * DAY_MS;
   return { seasonStart, seasonEnd, day1, clusterStart: day1 - scenario.backstoryDays * DAY_MS };
 }
 
@@ -99,6 +98,17 @@ const hex = (n: number): string => randomBytes(n).toString("hex");
  * backstory while this runs, so the cast and the first threads are made in its first minute.
  */
 export async function setUp(cluster: Cluster, admin: Connection, instance: Instance, content: RehearsalContent, scenario: Scenario, tl: Timeline): Promise<Setup> {
+  let conn: Connection | undefined;
+  try {
+    return await build(cluster, admin, instance, content, scenario, tl, (c) => { conn = c; });
+  } catch (e) {
+    // The connection it opened is its own to close when it fails; the caller never got it.
+    await conn?.end().catch(() => {});
+    throw e;
+  }
+}
+
+async function build(cluster: Cluster, admin: Connection, instance: Instance, content: RehearsalContent, scenario: Scenario, tl: Timeline, opened: (c: Connection) => void): Promise<Setup> {
   const notes: string[] = [];
   const hold = () => cluster.setClock(tl.clusterStart + 1000);
   hold();
@@ -106,6 +116,7 @@ export async function setUp(cluster: Cluster, admin: Connection, instance: Insta
   await admin.sql(`create database ${DATABASE}`);
   await admin.sql(`alter database ${DATABASE} set timezone to 'UTC'`);
   const conn = await connect(cluster.dir, cluster.port, DATABASE);
+  opened(conn);
   const service = conn.db("service");
   for (const file of await sqlFiles()) await conn.sql(readFileSync(file, "utf8"));
   hold();
@@ -196,6 +207,9 @@ export async function setUp(cluster: Cluster, admin: Connection, instance: Insta
  * Where the season began before the cluster did, the days between are history no one lived: one settlement window covers them, so the
  * first real window starts where backstory does. Without it the settlement would take one run a day to walk from the season's start,
  * and a run of a week would never reach its own days.
+ *
+ * Where the season starts after backstory begins (a scenario on day 1 of the season, like `season-opening`), no window covers the
+ * backstory days: they are before the season, so they stay unsettled, and the first window starts at the season's start.
  */
 async function dateSeason(conn: Connection, tl: Timeline): Promise<void> {
   await conn.sql("update seasons set starts_at = to_timestamp($1 / 1000.0) where ends_at is null", [tl.seasonStart]);

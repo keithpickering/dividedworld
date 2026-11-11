@@ -2,14 +2,14 @@
 // (`runMinute`: the clock, every cron job that is due, the dispatcher) and then any filler action due in it, through `runAction`, so every
 // filler Act is written by the code that writes a player's. The System's switch is off through backstory and on at day 1's first minute.
 // Each day's filler is drawn at that day's first minute from the public world read back then (`readWorld`).
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Instance } from "../../engine/rules/types.ts";
 import type { RehearsalContent, RehearsalCorpus, Scenario } from "../../engine/rehearsal/types.ts";
 import { dayActions, DAY_MS, MINUTE, type TimedAction, type World } from "../../engine/rehearsal/generate.ts";
 import { runAction } from "../../supabase/functions/act/core.ts";
 import type { JobDeps } from "../../supabase/functions/_shared/handler.ts";
-import { startCluster } from "./cluster.ts";
+import { startCluster, type Cluster } from "./cluster.ts";
 import { simulateClock } from "./clock.ts";
 import { connect, type Connection } from "./db.ts";
 import { rehearsalFetch, rehearsalModels, type KeptCall, type Mode } from "./models.ts";
@@ -18,7 +18,7 @@ import type { Dispatched } from "./dispatch.ts";
 import { collect } from "./collect.ts";
 import { reportHtml } from "../../engine/rehearsal/report.ts";
 import { rehearsedInstance } from "./instance.ts";
-import { setUp, timeline, type CastMember, type Players, type Setup, type Timeline } from "./setup.ts";
+import { DATABASE, setUp, timeline, type CastMember, type Players, type Setup, type Timeline } from "./setup.ts";
 
 /** One filler action's end: through, or refused (a refusal is recorded and the run goes on). */
 export interface FillerResult {
@@ -64,6 +64,8 @@ export interface RehearseOptions {
   /** Where the run's directory is made; defaults to `rehearsals/<scenario>`. */
   readonly runsDir?: string;
   readonly keep?: boolean;
+  /** Replaces `runAction` for the filler (tests). */
+  readonly act?: typeof runAction;
   /** A line a day, as it goes. */
   readonly onDay?: (line: string) => void;
   /** Called with the finished run before the cluster stops: the collector's place (Task 9), and where a test reads the database. */
@@ -82,10 +84,33 @@ export interface RawRun {
   readonly systemOnAt: number | null;
   readonly notes: readonly string[];
   readonly liveMicrodollars: number;
+  /** How many filler actions the generator drew over the run: each ran exactly once, so it is `filler.length`. */
+  readonly drawn: number;
   /** Where report.html and log.json were written. */
   readonly reportDir?: string;
   /** Set when the cluster was kept: where to reach it. */
-  readonly kept?: { readonly dir: string; readonly port: number; readonly database: string };
+  readonly kept?: Reach;
+}
+
+/** How to reach a kept cluster again: it is stopped, so the first line starts it with the fake clock, the second is psql. */
+export interface Reach {
+  readonly dir: string;
+  readonly port: number;
+  readonly database: string;
+  readonly pg_ctl: string;
+  readonly psql: string;
+}
+
+function reach(cluster: Cluster): Reach {
+  const lib = "/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1";
+  const root = "/usr/lib/postgresql";
+  const newest = existsSync(root) ? readdirSync(root).filter((v) => /^\d+$/.test(v)).sort((a, b) => Number(b) - Number(a))[0] : undefined;
+  const bin = newest ? join(root, newest, "bin") : "<postgres bin>";
+  const as = process.getuid?.() === 0 ? "runuser -u postgres -- " : "";
+  const start =
+    `${as}env LD_PRELOAD=${existsSync(lib) ? lib : "<libfaketime.so.1>"} FAKETIME_TIMESTAMP_FILE=${cluster.dir}/clock FAKETIME_NO_CACHE=1 ` +
+    `${bin}/pg_ctl -D ${cluster.dir}/data -w -l ${cluster.dir}/server.log -o "-k ${cluster.dir} -p ${cluster.port} -c listen_addresses='' -c fsync=off" start`;
+  return { dir: cluster.dir, port: cluster.port, database: DATABASE, pg_ctl: start, psql: `psql -h ${cluster.dir} -p ${cluster.port} -U postgres ${DATABASE}` };
 }
 
 const BACKSTORY_WINDOW = 7 * DAY_MS;
@@ -108,7 +133,7 @@ export async function readWorld(conn: Connection, instance: Instance, corpus: Re
     return player && sketch ? [{ id: String(c.id), name: String(c.name), player, sketch }] : [];
   });
   const threads = await conn.sql(
-    "select t.id, b.slug as board, t.title, b.is_system from threads t join boards b on b.id = t.board where coalesce(t.last_at, t.created_at) >= to_timestamp($1 / 1000.0) order by t.created_at, t.id",
+    "select t.id, b.slug as board, t.title, b.is_system from threads t join boards b on b.id = t.board where (t.last_at >= to_timestamp($1 / 1000.0) or (t.last_at is null and t.created_at >= to_timestamp($1 / 1000.0))) order by t.created_at, t.id",
     [since],
   );
   const posts = await conn.sql(
@@ -197,6 +222,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
     let pending: TimedAction[] = [];
     let next = 0;
     let dayPosts = 0;
+    let drawn = 0;
     const limits = { title: instance.settings.titleMaxLength, post: instance.settings.postMaxLength };
     const accountOf = setup.accounts;
 
@@ -220,20 +246,23 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
         const number = index < scenario.backstoryDays ? index - scenario.backstoryDays - 1 : index - scenario.backstoryDays + 1;
         const world = await readWorld(conn, instance, content.corpus, setup.players, minute);
         pending = dayActions(world, content.corpus, scenario, number, limits);
+        drawn += pending.length;
         next = 0;
       }
       while (next < pending.length && pending[next]!.at < minute + MINUTE) {
         const a = pending[next++]!;
         const account = accountOf.get(a.player);
         const action = String(a.request.action);
-        if (!account) { filler.push({ at: a.at, player: a.player, action, ok: false, error: "no such player" }); continue; }
-        try {
-          const answer = await runAction({ player: conn.db({ player: account }), service }, instance, a.request);
-          if (answer.status === 200) { filler.push({ at: a.at, player: a.player, action, ok: true, status: 200 }); dayPosts++; }
-          else filler.push({ at: a.at, player: a.player, action, ok: false, status: answer.status, error: JSON.stringify(answer.body) });
-        } catch (e) {
-          // A refusal the database raised (a DatabaseError that is not a refusal the action functions word): recorded, and the run goes on.
-          filler.push({ at: a.at, player: a.player, action, ok: false, error: e instanceof Error ? e.message : String(e) });
+        // The generator names only players that setup made: one it does not know is a bug here, and so is any throw below.
+        if (!account) throw new Error(`filler: ${action} names ${a.player}, who setup did not make`);
+        const answer = await (o.act ?? runAction)({ player: conn.db({ player: account }), service }, instance, a.request);
+        if (answer.status === 200) { filler.push({ at: a.at, player: a.player, action, ok: true, status: 200 }); dayPosts++; }
+        else if (answer.status >= 400 && answer.status < 500) {
+          // A refusal a player would see: recorded, and the run goes on.
+          filler.push({ at: a.at, player: a.player, action, ok: false, status: answer.status, error: JSON.stringify(answer.body) });
+        } else {
+          // A 5xx is the code failing, not the game refusing: it stops the run with what it said.
+          throw new Error(`filler: ${action} by ${a.player} answered ${answer.status}: ${JSON.stringify(answer.body)}`);
         }
       }
     }
@@ -254,11 +283,16 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
     writeFileSync(join(runDir, "log.json"), `${JSON.stringify(log, null, 2)}\n`);
     reportDir = runDir;
 
-    if (o.keep) kept = { dir: cluster.dir, port: cluster.port, database: "rehearsal" };
+    if (o.keep) kept = reach(cluster);
     return {
       scenario, mode, timeline: tl, jobs: sched.jobs, dispatched: sched.dispatched, calls: models.calls, filler, systemOnAt,
-      notes: setup.notes, liveMicrodollars: models.cap.liveMicrodollars(), ...(reportDir ? { reportDir } : {}), ...(kept ? { kept } : {}),
+      notes: setup.notes, liveMicrodollars: models.cap.liveMicrodollars(), drawn, ...(reportDir ? { reportDir } : {}), ...(kept ? { kept } : {}),
     };
+  } catch (e) {
+    // A failed run with --keep leaves its cluster for a look: the error says where, and how to start it again.
+    if (!o.keep) throw e;
+    const r = reach(cluster);
+    throw new Error(`${e instanceof Error ? e.message : String(e)}\nthe cluster is kept in ${r.dir} (stopped). To start it: ${r.pg_ctl}\nTo look: ${r.psql}`, { cause: e });
   } finally {
     clock.restore();
     await setup?.conn.end().catch(() => {});

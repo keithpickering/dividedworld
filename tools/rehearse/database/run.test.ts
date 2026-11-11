@@ -72,6 +72,12 @@ test("a one-day stub run: a meeting, every job at its minutes, nothing undispatc
       const early = await conn.sql("select count(*)::int as n from acts where kind in ('move', 'move_end') and created_at < to_timestamp($1 / 1000.0)", [day1]);
       assert.equal(Number(early[0]?.n), 0, "a move landed before day 1");
 
+      // Settlement windows: the first starts where the season (or the gap row) does, each starts where the last ended, none overlaps.
+      const windows = await conn.sql("select (extract(epoch from starts_at) * 1000)::float8 as s, (extract(epoch from ends_at) * 1000)::float8 as e from settlements order by starts_at");
+      assert.ok(windows.length >= 1, "no settlement window");
+      assert.equal(Number(windows[0]!.s), timeline.seasonStart, "the first window does not start at the season's start");
+      for (let i = 1; i < windows.length; i++) assert.equal(Number(windows[i]!.s), Number(windows[i - 1]!.e), `window ${i} does not start where window ${i - 1} ended`);
+
       // The world reader leaves out The System's own posts and staff characters.
       const staff = await conn.sql("select id, staff from characters where staff_kind = 'persona' order by staff limit 1");
       assert.equal(staff.length, 1, "the instance has no staff character");
@@ -97,6 +103,10 @@ test("a one-day stub run: a meeting, every job at its minutes, nothing undispatc
     },
   });
   assert.ok(seen, "onFinish never ran");
+  // Every drawn filler action ran exactly once, in time order.
+  assert.ok(raw.drawn > 0);
+  assert.equal(raw.filler.length, raw.drawn, "a drawn filler action did not run exactly once");
+  for (let i = 1; i < raw.filler.length; i++) assert.ok(raw.filler[i]!.at >= raw.filler[i - 1]!.at, "filler actions ran out of time order");
   // The report and the log are written, and the log has a meeting on day 1.
   assert.ok(raw.reportDir && existsSync(join(raw.reportDir, "report.html")), "no report.html");
   const log = JSON.parse(readFileSync(join(raw.reportDir!, "log.json"), "utf8"));
@@ -104,4 +114,15 @@ test("a one-day stub run: a meeting, every job at its minutes, nothing undispatc
   assert.match(readFileSync(join(raw.reportDir!, "report.html"), "utf8"), /<h2>Day 1,/);
   assert.ok(raw.jobs.length > 0 && raw.dispatched.length > 0);
   console.log(`one-day stub run (1 backstory day + 1 day): ${Math.round(performance.now() - started)} ms`);
+});
+
+test("a filler action that makes runAction answer 500 stops the run with its error", async () => {
+  const out = mkdtempSync(join(tmpdir(), "rehearsal-run-"));
+  await assert.rejects(
+    rehearse({
+      scenario: tiny, mode: "stub", cassetteDir: join(out, "cassette"), runsDir: out,
+      act: async () => ({ status: 500, body: { error: "the action could not be completed; try again" } }),
+    }),
+    /filler.*500/,
+  );
 });
