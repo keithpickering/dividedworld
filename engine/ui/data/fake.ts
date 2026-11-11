@@ -598,6 +598,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       hidden: cur,
+      ...(a.kind === 'post' && (own || edits(a).some((e) => hiddenVersions.has(e.id))) ? { anyHidden: true } : {}),
     };
   }
 
@@ -908,6 +909,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
   /** The most reports to admins an account holds open (`Settings.conduct.openReportsMost`): the fake's own, three. */
   const CONDUCT_OPEN_MOST = 3;
+  /** The pages the reports screen reads (admin_reports, admin_failed_mail): 50 reports and edits, 200 failed mails, each with a flag for more. */
+  const REPORTS_PAGE = 50;
+  const FAILED_PAGE = 200;
   const conductReports: ReportRec[] = [];
   const conductDecisions: DecisionRec[] = [];
   const conductReviews: { decision: number; post: Id; version: Id; words: string; at: number }[] = [];
@@ -3032,6 +3036,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const reports = conductReports
         .filter((r) => !conductDecisions.some((d) => d.report === r.id))
         .sort((a, b) => b.at - a.at || b.id - a.id)
+        .slice(0, REPORTS_PAGE + 1)
         .map((r): AdminReport => {
           const author = authorOf(r.version);
           const past = author === null ? [] : conductDecisions
@@ -3040,9 +3045,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             .map((d): PastDecision => ({ outcome: d.outcome, until: d.until === null ? null : iso(d.until), at: iso(d.at), note: d.note }));
           return { id: r.id, versionAct: r.version, post: postOf(r.version), thread: acts.get(r.version)?.thread ?? null, section: r.section, note: r.note, at: iso(r.at), author, words: wordsOf(r.version), past };
         });
-      const reviews = conductReviews.sort((a, b) => a.at - b.at).map((r): AdminReview => ({ decision: r.decision, post: r.post, versionAct: r.version, thread: acts.get(r.post)?.thread ?? null, editedAt: iso(r.at), author: authorOf(r.post), words: r.words }));
-      const failed = conductFailed.map(({ atMs: _at, ...m }): FailedMail => m);
-      return { reports, reviews, failed, waiting: conductAddress ? 0 : conductWaiting, addressSet: conductAddress };
+      const reviews = conductReviews.sort((a, b) => a.at - b.at).slice(0, REPORTS_PAGE + 1).map((r): AdminReview => ({ decision: r.decision, post: r.post, versionAct: r.version, thread: acts.get(r.post)?.thread ?? null, editedAt: iso(r.at), author: authorOf(r.post), words: r.words }));
+      const failed = [...conductFailed].sort((a, b) => b.atMs - a.atMs).slice(0, FAILED_PAGE + 1).map(({ atMs: _at, ...m }): FailedMail => m);
+      return {
+        reports: reports.slice(0, REPORTS_PAGE), moreReports: reports.length > REPORTS_PAGE, reviews: reviews.slice(0, REPORTS_PAGE), moreReviews: reviews.length > REPORTS_PAGE,
+        failed: failed.slice(0, FAILED_PAGE), moreFailed: failed.length > FAILED_PAGE, waiting: conductAddress ? 0 : conductWaiting, addressSet: conductAddress,
+      };
     },
     reportPost: lossy((version: Id, section: string, note: string): Answer<null> => {
       const account = me()?.id;

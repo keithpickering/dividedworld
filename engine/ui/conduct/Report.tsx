@@ -142,7 +142,7 @@ function ReportBody({ post, version, lead, onClose }: { readonly post: Id; reado
                 <input ref={i === 0 ? first : undefined} type="radio" name={`${ids}-section`} value={s.key} checked={section === s.key} onChange={() => { setSection(s.key); if (problem === CHOOSE) setProblem(null); }} />
                 <span>{s.title}</span>
               </label>
-              <Link to={`/conduct#${s.key}`} aria-label={`Read: ${s.title}`}>Read</Link>
+              <Link to={`/conduct#${s.key}`} target="_blank" rel="noopener" aria-label={`Read: ${s.title} (opens in a new tab)`}>Read</Link>
             </div>
           ))}
         </fieldset>

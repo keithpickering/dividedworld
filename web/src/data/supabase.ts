@@ -144,6 +144,7 @@ function toAct(r: Row): Act {
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
     ...(r['hidden'] === true ? { hidden: true } : {}),
+    ...(r['any_hidden'] === true ? { anyHidden: true } : {}),
   };
 }
 
@@ -1795,6 +1796,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           decision: num(x['decision']), post: String(x['post'] ?? ''), versionAct: String(x['versionAct'] ?? ''), thread: id(x['thread']), editedAt: String(x['editedAt'] ?? ''), author: id(x['author']), words: String(x['words'] ?? ''),
         })),
         failed: rowsOf(m['failed']).map((x): FailedMail => ({ id: num(x['id']), template: String(x['template'] ?? ''), account: String(x['account'] ?? ''), kind: x['kind'] === 'refused' ? 'refused' : 'failed', error: String(x['error'] ?? ''), at: String(x['at'] ?? '') })),
+        moreReports: r['moreReports'] === true, moreReviews: r['moreReviews'] === true, moreFailed: m['moreFailed'] === true,
         waiting: num(m['waiting']), addressSet: m['addressSet'] !== false,
       };
     },

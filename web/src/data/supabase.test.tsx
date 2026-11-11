@@ -163,8 +163,10 @@ describe('what the adapter may request', () => {
 
   it('reads a version\'s hidden flag from acts_public, absent when it is not hidden', async () => {
     const row = { id: B, character: A, kind: 'post', thread: T, target_act_id: null, seq: 1, created_at: '2026-11-01T00:00:00+00:00', payload: { body: null }, current_payload: { body: null }, edited_at: null, shown_edited_at: null };
-    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, hidden: true }, { ...row, id: A, payload: { body: 'Shown.' }, current_payload: { body: 'Shown.' } }]) : undefined));
-    expect((await h.api.history(B)).map((a) => a.hidden)).toEqual([true, undefined]);
+    const h = harness((r) => (r.url.pathname === `${REST}/acts_public` ? rows([{ ...row, hidden: true, any_hidden: true }, { ...row, id: A, payload: { body: 'Shown.' }, current_payload: { body: 'Shown.' } }]) : undefined));
+    const versions = await h.api.history(B);
+    expect(versions.map((a) => a.hidden)).toEqual([true, undefined]);
+    expect(versions.map((a) => a.anyHidden)).toEqual([true, undefined]);
   });
 
   it('reports a version to admins through report_post, the note empty as null, and refuses in the server\'s words', async () => {
@@ -1960,6 +1962,27 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     const player = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(false) : json({}, 404)));
     expect(await player.api.reportsPage()).toBeNull();
     expect(player.to('rpc/admin_reports')).toHaveLength(0);
+  });
+
+  it('reads the page\'s cut flags, coerces a mail kind it does not know to failed, and passes decide_report\'s and decide\'s refusals through in the server\'s words', async () => {
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/admin_reports')) return json({ reports: [], moreReports: true, reviews: [], moreReviews: true });
+      if (r.url.pathname.endsWith('/rpc/admin_failed_mail')) {
+        return json({ failed: [{ id: 5, template: 'nudge', account: B, kind: 'bounced', error: 'x', at: '2026-11-02T11:00:00+00:00' }, { id: 6, template: 'nudge', account: B, kind: 'refused', error: 'y', at: '2026-11-02T11:00:00+00:00' }], moreFailed: true, waiting: 0, addressSet: true });
+      }
+      if (r.url.pathname.endsWith('/rpc/decide_report')) return json({ code: '23514', message: 'that report is already decided; use decide to act further', hint: 'kayfabb.refusal' }, 400);
+      if (r.url.pathname.endsWith('/rpc/decide')) return json({ code: '42501', message: 'only an admin decides', hint: 'kayfabb.refusal' }, 403);
+      return json({}, 404);
+    });
+    const page = await h.api.reportsPage();
+    expect([page?.moreReports, page?.moreReviews, page?.moreFailed]).toEqual([true, true, true]);
+    expect(page?.failed.map((m) => m.kind)).toEqual(['failed', 'refused']);
+    expect(await h.api.decideReport(3, [{ outcome: 'none' }])).toEqual({ ok: false, error: 'that report is already decided; use decide to act further' });
+    expect(await h.api.decide({ version: B }, 'approve')).toEqual({ ok: false, error: 'only an admin decides' });
+    const plain = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(true) : r.url.pathname.endsWith('/rpc/admin_reports') ? json({ reports: [], reviews: [] }) : json({ failed: [], waiting: 0, addressSet: true })));
+    expect(await plain.api.reportsPage()).toMatchObject({ moreReports: false, moreReviews: false, moreFailed: false });
   });
 
   it('passes an admin function\'s refusal through in the server\'s words, and throws a plain error when the queue cannot be read', async () => {

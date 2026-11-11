@@ -13,12 +13,14 @@
  * the quote is still a quote, without a link. A counterfeit quote (`[quote=Name]`) quotes nobody's post: its name is plain text,
  * never a link, which is the cue a screen reader hears; its look (bbcode.css, Wobble.tsx) is the cue an eye sees.
  */
-import { Fragment, memo, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { colorHex, FONTS, parse, type BbNode } from '../../bbcode/parse.ts';
 import { visibleWalk } from '../../bbcode/visible.ts';
 import { stretchesOf, useTextLayers, type Stretch } from './layers.tsx';
 import { inkOn as bestInk } from '../contrast.ts';
 import { HiddenNote } from '../conduct/Hidden.tsx';
+import { useKayfaIfAny } from '../context.tsx';
+import { actLoader } from '../thread/locate.tsx';
 import { Mini } from '../mini.tsx';
 import { Link } from '../router.tsx';
 import { Video } from './Video.tsx';
@@ -126,12 +128,26 @@ function inkOn(color: string): string {
   return hex === null || bestInk(hex) === 'black' ? 'var(--kb-ink-black)' : 'var(--kb-ink-white)';
 }
 
-/**
- * Whether a quote of an Act has had its words taken: the server empties the contents of a quote of a post with a hidden version (`conceal_quotes`, 0148), keeping its opener
- * and its closer, so the cite still names the post. A quote with nothing in it is the hidden note's place. (A quote a player wrote empty by hand reads the same; the quote tool
- * copies the words it quotes, so an empty one is not the ordinary case.)
- */
+/** Whether a quote has nothing in it: either the server emptied it (`conceal_quotes`, 0148) or a player wrote it empty. */
 const concealed = (children: readonly BbNode[]): boolean => children.every((c) => (c.type === 'text' || c.type === 'noparse') && c.text.trim() === '');
+
+/**
+ * What stands in an empty quote: the hidden note only when the quoted post really has a hidden version now (`acts_public.any_hidden`, the predicate that empties a quote), read for its
+ * cite already by the located-act cache. The glass never claims an admin hid what is not hidden ("The fiction may lie; the log never does"), so an empty quote a player typed
+ * by hand, or one read where no backend is at hand, is drawn as the empty quote it is.
+ */
+function EmptyQuote({ act }: { readonly act: string }) {
+  const kayfa = useKayfaIfAny();
+  const api = kayfa?.api;
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (!api) return undefined;
+    let live = true;
+    void actLoader(api).ask(act).then((k) => { if (live) setHidden(k?.hidden === true); });
+    return () => { live = false; };
+  }, [api, act]);
+  return hidden ? <HiddenNote /> : null;
+}
 
 function nodes(list: readonly BbNode[], quoteHead: BbCodeProps['quoteHead'], layered?: Layered): ReactNode[] {
   return list.map((n, i) => node(n, i, quoteHead, layered));
@@ -164,7 +180,7 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
       return (
         <blockquote key={key} className="kb-quote">
           <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'real', act: n.act })}</cite>
-          <div className="kb-quote-body">{concealed(n.children) ? <HiddenNote /> : nodes(n.children, quoteHead)}</div>
+          <div className="kb-quote-body">{concealed(n.children) ? <EmptyQuote act={n.act} /> : nodes(n.children, quoteHead)}</div>
         </blockquote>
       );
     case 'counterfeit':

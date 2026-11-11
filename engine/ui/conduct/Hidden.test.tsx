@@ -152,10 +152,35 @@ describe('a quote of a hidden version', () => {
     const art = await article(4);
     const quote = art.querySelector('blockquote.kb-quote') as HTMLElement;
     expect(quote).not.toBeNull();
-    expect(within(quote.querySelector('.kb-quote-body') as HTMLElement).getByRole('note')).toHaveTextContent(NOTE);
+    expect(await within(quote.querySelector('.kb-quote-body') as HTMLElement).findByRole('note')).toHaveTextContent(NOTE);
     expect(within(quote.querySelector('cite') as HTMLElement).getByRole('link', { name: 'Post #2' })).toBeInTheDocument();
     expect(art).not.toHaveTextContent(WORDS);
     expect(art).toHaveTextContent('I answer that.');
+  });
+
+  test('a quote of a post with an older version hidden shows the note too, though the post itself shows', async () => {
+    const w = world();
+    w.fake.signInAs(w.other);
+    w.fake.clock.advance(10 * 60_000);
+    await w.fake.edit(w.theirs, w.spritey, 'a fix');
+    w.fake.signInAs(w.me);
+    w.fake.seed.hide(w.theirs, 'hide');
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    open(w);
+    const art = await article(4);
+    expect(await within(art.querySelector('.kb-quote-body') as HTMLElement).findByRole('note')).toHaveTextContent(NOTE);
+    expect(await article(2)).not.toHaveTextContent(NOTE.slice(0, 6));
+  });
+
+  test('an empty quote a player typed by hand, of a post that is not hidden, is drawn as an empty quote and never claims an admin hid it', async () => {
+    const w = world();
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}][/quote]Nothing quoted.`);
+    open(w);
+    const art = await article(4);
+    expect(art.querySelector('blockquote.kb-quote')).not.toBeNull();
+    await waitFor(() => expect(art.querySelector('cite a, cite')).not.toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(art).queryByRole('note')).toBeNull();
   });
 
   test('a quote of a post that shows is drawn as it was', async () => {

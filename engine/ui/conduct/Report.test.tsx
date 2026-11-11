@@ -128,8 +128,12 @@ describe('the report dialog', () => {
     const radios = within(dialog).getAllByRole('radio');
     expect(radios.map((r) => (r as HTMLInputElement).value)).toEqual(['person', 'hate']);
     expect(within(dialog).getByRole('group', { name: 'Which part of the code of conduct' })).toBeInTheDocument();
-    expect(within(dialog).getByRole('link', { name: 'Read: No hate.' })).toHaveAttribute('href', '/conduct#hate');
-    expect(within(dialog).getByRole('link', { name: 'Read: The mask is fair game.' })).toHaveAttribute('href', '/conduct#person');
+    /* Each opens the code in a new tab, so the note being typed survives, and says so in its name. */
+    const read = within(dialog).getByRole('link', { name: 'Read: No hate. (opens in a new tab)' });
+    expect(read).toHaveAttribute('href', '/conduct#hate');
+    expect(read).toHaveAttribute('target', '_blank');
+    expect(read).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    expect(within(dialog).getByRole('link', { name: 'Read: The mask is fair game. (opens in a new tab)' })).toHaveAttribute('href', '/conduct#person');
     expect(dialog).toHaveTextContent('This reaches a person, not the game. An admin reads every report, and the player is never told who sent it.');
     const note = within(dialog).getByRole('textbox', { name: 'Anything an admin should know (optional)' });
     expect(dialog).toHaveTextContent('0 of 1000');

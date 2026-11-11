@@ -306,6 +306,8 @@ export interface Act {
    * says whether its *current* version is hidden; to read whether one version in its History is, the version's `payload.body` is null.
    */
   readonly hidden?: boolean;
+  /** Whether any version of this post is hidden (`acts_public.any_hidden`, 0148): the predicate that empties a quote of it, so what a quote's hidden note stands on. Absent reads as no. */
+  readonly anyHidden?: boolean;
 }
 
 /**
@@ -1831,9 +1833,15 @@ export interface FailedMail {
 }
 /** The reports screen's page (`admin_reports` and `admin_failed_mail`); null for a caller who is not an admin. */
 export interface ReportsPage {
+  /** At most 50, newest first; `moreReports` says more are open than these. */
   readonly reports: readonly AdminReport[];
+  readonly moreReports: boolean;
+  /** At most 50, oldest first (the ones waiting longest); `moreReviews` says more wait. */
   readonly reviews: readonly AdminReview[];
+  readonly moreReviews: boolean;
+  /** At most 200, newest first; `moreFailed` says more failed. */
   readonly failed: readonly FailedMail[];
+  readonly moreFailed: boolean;
   /** Mail waiting to go with no admin reply-to address set (Settings.conduct.adminAddress), which is why it waits; 0 once one is set. */
   readonly waiting: number;
   readonly addressSet: boolean;

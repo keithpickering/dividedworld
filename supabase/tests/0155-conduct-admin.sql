@@ -77,6 +77,7 @@ begin
   if got -> 'reports' -> 1 ->> 'section' is distinct from 'mask' or got -> 'reports' -> 1 ->> 'note' is distinct from 'a note on one' then raise exception 'section and note: %', got -> 'reports' -> 1; end if;
   if got -> 'reports' -> 1 ->> 'author' is distinct from author::text then raise exception 'the author''s account: %', got -> 'reports' -> 1; end if;
   if got::text like '%' || rep::text || '%' or got::text like '%reporter%' then raise exception 'the reporter reached the screen: %', got; end if;
+  if got ->> 'moreReports' is distinct from 'false' or got ->> 'moreReviews' is distinct from 'false' then raise exception 'two reports are no more than a page: %', got; end if;
   if jsonb_typeof(got -> 'reports' -> 1 -> 'past') is distinct from 'array' or jsonb_array_length(got -> 'reports' -> 1 -> 'past') <> 0 then raise exception 'no past decisions yet: %', got -> 'reports' -> 1; end if;
 
   -- ---- A decided report leaves the list; the author's past decisions show on the next ----
@@ -230,6 +231,10 @@ begin
   perform tests.become(author);
   if my_hidden_version(p4) is not null then raise exception 'a version hidden outright is not read back to its author'; end if;
   perform tests.unbecome();
+  -- any_hidden is the predicate a quote's note stands on: a post with any version hidden, though its current version shows (p3's first version was hidden until edited), and not one never decided on.
+  if (select a.any_hidden from acts_public a where a.id = p3) is distinct from true or (select a.hidden from acts_public a where a.id = p3) is distinct from false then raise exception 'p3 shows, with an older version hidden'; end if;
+  if (select a.any_hidden from acts_public a where a.id = p4) is distinct from true then raise exception 'p4 is hidden'; end if;
+  if (select a.any_hidden from acts_public a where a.id = p1) is distinct from false then raise exception 'a post with nothing hidden is not any_hidden'; end if;
 
   -- ---- The caller's own open reports ----
   perform tests.become(rep);
@@ -240,4 +245,34 @@ begin
   perform tests.become(author);
   if my_open_reports() <> 0 then raise exception 'my_open_reports counted another account''s reports'; end if;
   perform tests.unbecome();
+
+  -- ---- Bounds: a page of 50 open reports, newest first, and a flag that more wait ----
+  select count(*) into n from conduct_reports r where not exists (select 1 from conduct_decisions d where d.report = r.id);
+  insert into conduct_reports (reporter, version_act, section, note) select rep, p1, 'hate', 'bulk ' || g from generate_series(1, 60 - n) g;
+  perform tests.become(admin_a);
+  got := admin_reports();
+  perform tests.unbecome();
+  if jsonb_array_length(got -> 'reports') <> 50 or got ->> 'moreReports' is distinct from 'true' then raise exception 'a page is 50 and says more wait: % %', jsonb_array_length(got -> 'reports'), got ->> 'moreReports'; end if;
+  if (got -> 'reports' -> 0 ->> 'id')::bigint < (got -> 'reports' -> 49 ->> 'id')::bigint then raise exception 'newest first'; end if;
+  if got::text like '%' || rep::text || '%' or got::text like '%reporter%' then raise exception 'the reporter reached the paged screen'; end if;
+
+  -- ---- An author's past decisions: their last 20, newest first, read through the author's own column ----
+  insert into conduct_decisions (version_act, admin, outcome, note) select p1, admin_a, 'none', 'past ' || g from generate_series(1, 25) g;
+  perform tests.become(admin_a);
+  got := admin_reports();
+  perform tests.unbecome();
+  if jsonb_array_length(got -> 'reports' -> 0 -> 'past') <> 20 or got -> 'reports' -> 0 -> 'past' -> 0 ->> 'note' is distinct from 'past 25' then
+    raise exception 'an author''s past decisions are the last 20, newest first: %', got -> 'reports' -> 0 -> 'past';
+  end if;
+  if (select d.author_account from conduct_decisions d where d.note = 'past 1') is distinct from author then raise exception 'a decision on a version is about the version''s author'; end if;
+  if (select d.author_account from conduct_decisions d where d.outcome = 'nudge' and d.account = author limit 1) is distinct from author then raise exception 'a decision on an account is about that account'; end if;
+
+  -- ---- Failed mail: 200 and a flag for more ----
+  select coalesce(max(id), 0) into last_id from mail_outbox;
+  insert into mail_outbox (account, template, facts) select author, 'nudge', '{}' from generate_series(1, 205);
+  insert into mail_attempts (outbox, at, kind, error) select id, now() - interval '1 hour' + (id - last_id) * interval '1 second', 'failed', 'bulk' from mail_outbox where id > last_id;
+  perform tests.become(admin_a);
+  got := admin_failed_mail();
+  perform tests.unbecome();
+  if jsonb_array_length(got -> 'failed') <> 200 or got ->> 'moreFailed' is distinct from 'true' then raise exception 'failed mail is a page of 200 with a flag: % %', jsonb_array_length(got -> 'failed'), got ->> 'moreFailed'; end if;
 end $$;

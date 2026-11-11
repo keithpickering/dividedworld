@@ -14,7 +14,7 @@
  * A staff character's post has no account behind it: the screen says so, and the outcomes that write to an account (nudge, suspend, ban) are
  * refused by the server in its words, which the form shows. Every decision reads the page again, so a stale row never stays.
  */
-import { useCallback, useId, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useId, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { REPORT_OUTCOMES, type AdminReport, type AdminReview, type FailedMail, type ReportOutcome, type ReportOutcomeKey, type ReportsPage } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { isNotAdminDoc, type NotAdminDoc } from '../glass-docs.ts';
@@ -61,6 +61,7 @@ function Reports({ page }: { readonly page: ReportsPage }) {
   const [failedRead, setFailedRead] = useState(false);
   const [said, setSaid] = useState('');
   const openHead = useRef<HTMLHeadingElement>(null);
+  const reviewHead = useRef<HTMLHeadingElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -73,10 +74,11 @@ function Reports({ page }: { readonly page: ReportsPage }) {
   }, [api, page]);
 
   const titleOf = (key: string): string => ui.conduct.sections.find((s) => s.key === key)?.title ?? key;
-  const decided = async (words: string, focus: boolean) => {
+  /* After a decision the page is read again and focus goes to the heading of the group it was made in, which the row that held it has left. */
+  const decided = async (words: string, head: RefObject<HTMLHeadingElement | null>) => {
     setSaid(words);
     await load();
-    if (focus) openHead.current?.focus();
+    head.current?.focus();
   };
 
   return (
@@ -96,21 +98,33 @@ function Reports({ page }: { readonly page: ReportsPage }) {
         </CalmRegion>
       )}
       <CalmRegion as="section" className="kb-queue-group" aria-labelledby="reports-open">
-        <h2 id="reports-open" ref={openHead} tabIndex={-1} className="kb-queue-group-head kb-glass-display">Open reports <span className="kb-queue-count">{shown.reports.length}</span></h2>
+        <Count id="reports-open" head={openHead} title="Open reports" count={shown.reports.length} more={shown.moreReports} />
         {shown.reports.length === 0 && <p className="kb-queue-note">No open reports.</p>}
-        {shown.reports.map((r) => <ReportItem key={r.id} report={r} section={titleOf(r.section)} onDecided={() => decided(`Decided report ${r.id}.`, true)} />)}
+        {shown.moreReports && <p className="kb-queue-note">More reports are waiting than are listed here. Decide these and the next ones will appear.</p>}
+        {shown.reports.map((r) => <ReportItem key={r.id} report={r} section={titleOf(r.section)} onDecided={() => decided(`Decided report ${r.id}.`, openHead)} />)}
       </CalmRegion>
       <CalmRegion as="section" className="kb-queue-group" aria-labelledby="reports-review">
-        <h2 id="reports-review" tabIndex={-1} className="kb-queue-group-head kb-glass-display">Edits to look at again <span className="kb-queue-count">{shown.reviews.length}</span></h2>
+        <Count id="reports-review" head={reviewHead} title="Edits to look at again" count={shown.reviews.length} more={shown.moreReviews} />
         {shown.reviews.length === 0 && <p className="kb-queue-note">Nothing waits for a second look.</p>}
-        {shown.reviews.map((v) => <ReviewItem key={v.decision} review={v} onDecided={(words) => decided(words, false)} />)}
+        {shown.moreReviews && <p className="kb-queue-note">More edits are waiting than are listed here. Decide these and the next ones will appear.</p>}
+        {shown.reviews.map((v) => <ReviewItem key={v.decision} review={v} onDecided={(words) => decided(words, reviewHead)} />)}
       </CalmRegion>
       <CalmRegion as="section" className="kb-queue-group" aria-labelledby="reports-mail">
-        <h2 id="reports-mail" tabIndex={-1} className="kb-queue-group-head kb-glass-display">Mail that failed <span className="kb-queue-count">{shown.failed.length}</span></h2>
+        <Count id="reports-mail" title="Mail that failed" count={shown.failed.length} more={shown.moreFailed} />
         {shown.failed.length === 0 && <p className="kb-queue-note">No mail has failed.</p>}
+        {shown.moreFailed && <p className="kb-queue-note">More failed mail exists than is listed here. These are the newest.</p>}
         {shown.failed.map((m) => <FailedItem key={m.id} mail={m} />)}
       </CalmRegion>
     </div>
+  );
+}
+
+/** A group's heading with its count: "N or more" where the page was cut, as the moves queue says it. */
+function Count({ id, head, title, count, more }: { readonly id: string; readonly head?: RefObject<HTMLHeadingElement | null>; readonly title: string; readonly count: number; readonly more: boolean }) {
+  return (
+    <h2 id={id} ref={head} tabIndex={-1} className="kb-queue-group-head kb-glass-display">
+      {title} <span className="kb-queue-count" aria-label={more ? `${count} or more` : `${count}`}>{count}{more ? '+' : ''}</span>
+    </h2>
   );
 }
 
@@ -130,7 +144,11 @@ function ReportItem({ report, section, onDecided }: { readonly report: AdminRepo
   const [until, setUntil] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /* A second press in the same moment is held by a ref, which a re-render has not yet had to say. */
+  const sending = useRef(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* A note goes to the author only with an outcome that writes to them; with only "No action" or "Close" there is nothing for it to go with. */
+  const noteUsed = picked.size === 0 || [...picked].some((k) => k !== 'none' && k !== 'close');
 
   const toggle = (k: ReportOutcomeKey) => {
     setRefusal(null);
@@ -141,16 +159,18 @@ function ReportItem({ report, section, onDecided }: { readonly report: AdminRepo
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy) return;
+    if (sending.current) return;
     if (picked.size === 0) { setRefusal('Pick at least one outcome.'); return; }
-    const ends = until === '' ? NaN : new Date(until).getTime();
+    /* The date is entered in UTC (the field says so), as the rest of the screen and the mail show it. */
+    const ends = until === '' ? NaN : Date.parse(`${until}:00Z`);
     if (picked.has('suspend') && !Number.isFinite(ends)) { setRefusal('A suspension needs an end date.'); return; }
     const words = note.trim();
     const outcomes: ReportOutcome[] = REPORT_OUTCOMES.filter((k) => picked.has(k)).map((k) => ({
       outcome: k,
       ...(k === 'suspend' ? { until: new Date(ends).toISOString() } : {}),
-      ...(words !== '' && k !== 'none' && k !== 'close' ? { note: words } : {}),
+      ...(noteUsed && words !== '' && k !== 'none' && k !== 'close' ? { note: words } : {}),
     }));
+    sending.current = true;
     setBusy(true);
     setRefusal(null);
     try {
@@ -160,6 +180,7 @@ function ReportItem({ report, section, onDecided }: { readonly report: AdminRepo
     } catch {
       setRefusal('No answer came back. It may have gone through: reload the page and look before you decide again.');
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
@@ -192,13 +213,14 @@ function ReportItem({ report, section, onDecided }: { readonly report: AdminRepo
         </fieldset>
         {picked.has('suspend') && (
           <div className="kb-reports-field">
-            <label htmlFor={`${id}-until`}>Suspended until</label>
+            <label htmlFor={`${id}-until`}>Suspended until (UTC)</label>
             <input id={`${id}-until`} className="kb-write-update-input" type="datetime-local" value={until} onChange={(e) => { setRefusal(null); setUntil(e.target.value); }} />
           </div>
         )}
         <div className="kb-reports-field">
           <label htmlFor={`${id}-note`}>A note for the author</label>
-          <textarea id={`${id}-note`} className="kb-write-update-input" value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} />
+          <textarea id={`${id}-note`} className="kb-write-update-input" value={note} maxLength={1000} disabled={!noteUsed} aria-describedby={noteUsed ? undefined : `${id}-nonote`} onChange={(e) => setNote(e.target.value)} />
+          {!noteUsed && <p id={`${id}-nonote`} className="kb-queue-note">No word goes to the author with this outcome.</p>}
         </div>
         <p>A hidden post&apos;s words stay with its author and with admins. A suspension ends on its date by itself; a ban and a hide end when an admin lifts them. The note goes into the author&apos;s mail.</p>
         <ButtonRow><GlassButton type="submit" kind="primary" busy={busy}>Decide</GlassButton></ButtonRow>
@@ -215,8 +237,10 @@ function ReviewItem({ review, onDecided }: { readonly review: AdminReview; reado
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
 
+  const sending = useRef(false);
   const decide = async (outcome: 'approve' | 'hideUntilEdited') => {
-    if (busy) return;
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     setRefusal(null);
     try {
@@ -227,6 +251,7 @@ function ReviewItem({ review, onDecided }: { readonly review: AdminReview; reado
     } catch {
       setRefusal('No answer came back. It may have gone through: reload the page and look before you decide again.');
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };

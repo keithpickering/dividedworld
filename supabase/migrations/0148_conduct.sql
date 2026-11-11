@@ -51,6 +51,9 @@ create table conduct_decisions (
   version_act uuid references acts (id),
   post uuid references acts (id),
   account uuid references accounts (id),
+  -- The account a decision is about: the account behind the version it names (none for a staff character's), else the account it names. Written by the trigger below,
+  -- so the admin screen reads one account's decisions through one index and never scans them all.
+  author_account uuid references accounts (id),
   admin uuid not null references accounts (id),
   outcome text not null check (outcome in ('none', 'nudge', 'hide', 'hideUntilEdited', 'suspend', 'ban', 'unhide', 'lift', 'approve', 'close')),
   until timestamptz,
@@ -64,6 +67,7 @@ create table conduct_decisions (
   check (report is not null or version_act is not null or account is not null)
 );
 create index conduct_decisions_report on conduct_decisions (report) where report is not null;
+create index conduct_decisions_author on conduct_decisions (author_account, id desc) where author_account is not null;
 -- Every version decision of a post, newest first: the hidden check's one lookup (the partial index is empty for a post nobody ever decided on).
 create index conduct_decisions_post on conduct_decisions (post, id desc) where outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve');
 -- An account's bar: its suspensions, bans and lifts, newest first, the one lookup behind every writer's refusal.
@@ -133,7 +137,9 @@ begin
       raise exception 'a decision about a version names a post or an edit' using hint = 'kayfabb.refusal', errcode = '23514';
     end if;
     new.post := p;
+    select c.owner into new.author_account from acts a join characters c on c.id = a.character where a.id = new.version_act;
   end if;
+  new.author_account := coalesce(new.author_account, new.account);
   if new.report is not null then
     select r.version_act into reported from conduct_reports r where r.id = new.report;
     if new.version_act is not null and new.version_act is distinct from reported then
@@ -405,7 +411,8 @@ create view reviews_due as
 
 -- acts_public (0022), every column and grant as it was, with `hidden` last: a hidden version's body is null, `hidden` says so, and the
 -- contents of a quote of a hidden post are empty in any body. `payload` is the version the Act is (a post's original, an edit's own words);
--- `current_payload` is the post's current version, and `hidden` says whether that version is hidden. A view calls its functions with its
+-- `current_payload` is the post's current version, and `hidden` says whether that version is hidden. `any_hidden` says whether any version of the post is (quote_hidden, the predicate that empties a
+-- quote of it), which is what a quote's note stands on. A view calls its functions with its
 -- caller's privileges, so each is granted to the roles that read it.
 create or replace view acts_public as
   select a.id, a.character, a.kind, a.thread, a.target_act_id, a.seq, a.created_at,
@@ -414,7 +421,8 @@ create or replace view acts_public as
          e.created_at as edited_at,
          case when e.created_at > a.created_at + coalesce(span_interval((select g.value from settings g where g.key = 'editGrace')), interval '0')
            then e.created_at end as shown_edited_at,
-         h.cur as hidden
+         h.cur as hidden,
+         a.kind = 'post' and quote_hidden(a.id) as any_hidden
   from acts a
   left join lateral (
     select x.id, x.payload, x.created_at from acts x
@@ -1492,8 +1500,8 @@ revoke execute on function conduct_author(uuid), conduct_write(bigint, uuid, uui
 -- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too);
 -- every other helper is reached through those and runs as its owner.
 revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text), public_payload(jsonb, boolean) from public, anon;
-revoke execute on function version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text) from authenticated;
-grant execute on function version_hidden(uuid, uuid), public_payload(jsonb, boolean) to authenticated, service_role, kayfabb_digest;
+revoke execute on function version_hidden(uuid), conceal_quotes(text) from authenticated;
+grant execute on function version_hidden(uuid, uuid), quote_hidden(uuid), public_payload(jsonb, boolean) to authenticated, service_role, kayfabb_digest;
 revoke execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),
   admin_version(uuid), my_bar(), my_conduct_log(integer) from public, anon;
 grant execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),

@@ -1,14 +1,15 @@
 -- The admin screen's reads (the conduct plan, Task 7; the conduct design, "The admin screen"). Two functions, each an admin's alone (`only_admins`, so a
 -- player or a visitor is refused and a refusal says nothing about any report):
 --
---   admin_reports()     {reports, reviews}. `reports` are the open reports (no decision names them), newest first, each with the version's words (as
+--   admin_reports()     {reports, moreReports, reviews, moreReviews}. `reports` are the open reports (no decision names them), newest first, each with the version's words (as
 --                       admin_version reads them), the post and thread it belongs to, the section and the note, the author's account (null for a staff
 --                       character's post, which has none) and that account's last 20 decisions. The reporter is not in it: the design asks the screen for
 --                       the report, the author's account and its past outcomes, and nobody has a reason to be shown who reported. `reviews` are the
---                       versions on the re-review list (`reviews_due`), oldest first, with the edit's words. Open reports are bounded by the open-report
---                       limit of each account, so the list is not capped; a cap would hide the oldest, which are the ones waiting longest.
---   admin_failed_mail() {failed, waiting, addressSet}. `failed` are the outbox rows whose latest attempt failed (it will be tried again) or was refused
---                       (it never will be), newest first, at most 200 (the outbox grows with admins' decisions only). `addressSet` says whether the
+--                       versions on the re-review list (`reviews_due`), oldest first, with the edit's words. Neither list is unbounded: an account's open
+--                       reports are limited, but accounts times that limit is not a bound, so each is a page of at most 50 with a `more` flag the screen says plainly
+--                       (reports newest first; reviews oldest first, the ones waiting longest). A list drains as admins decide, so what is left behind surfaces.
+--   admin_failed_mail() {failed, moreFailed, waiting, addressSet}. `failed` are the outbox rows whose latest attempt failed (it will be tried again) or was refused
+--                       (it never will be), newest first, at most 200 and a flag for more (read through a partial index, below). `addressSet` says whether the
 --                       instance's admin reply-to address (Settings.conduct.adminAddress) is set; while it is not, mail waits, so `waiting` counts the rows
 --                       with no attempt, which is the screen's plain "Mail is waiting" and the way out of that state. With an address set `waiting` is 0.
 --
@@ -19,67 +20,86 @@
 
 create function admin_reports() returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  most constant integer := 50;
+  reps jsonb;
+  revs jsonb;
+  failed jsonb;
+  waiting bigint;
 begin
   perform only_admins('reads the reports');
+  -- Open reports, newest first: a walk back down the primary key that stops at `most` + 1 open ones (a decided report is skipped by one lookup of conduct_decisions_report).
+  -- The extra row is only to say whether more wait.
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'id', r.id,
+      'versionAct', r.version_act,
+      'post', case when v.kind = 'edit' then v.target_act_id else v.id end,
+      'thread', v.thread,
+      'section', r.section,
+      'note', r.note,
+      'at', r.at,
+      'author', who.account,
+      'words', v.payload ->> 'body',
+      -- The author's last 20 decisions, by conduct_decisions_author (author_account, id desc): one index range, never a scan of every decision.
+      'past', coalesce((
+        select jsonb_agg(jsonb_build_object('outcome', p.outcome, 'until', p.until, 'at', p.at, 'note', p.note) order by p.id desc)
+        from (select d.id, d.outcome, d.until, d.at, d.note from conduct_decisions d where d.author_account = who.account order by d.id desc limit 20) p), '[]'::jsonb)
+    ) order by r.id desc), '[]'::jsonb)
+  into reps
+  from (
+    select x.* from conduct_reports x
+    where not exists (select 1 from conduct_decisions d where d.report = x.id)
+    order by x.id desc limit most + 1
+  ) r
+  join acts v on v.id = r.version_act
+  cross join lateral (select conduct_author(r.version_act) as account) who;
+  -- Versions awaiting a second look, oldest first (the ones waiting longest), at most `most` and a flag for more.
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'decision', u.decision,
+      'post', u.post,
+      'versionAct', u.version_act,
+      'thread', u.thread,
+      'editedAt', u.edited_at,
+      'author', conduct_author(u.version_act),
+      'words', (select e.payload ->> 'body' from acts e where e.id = u.version_act)
+    ) order by u.edited_at, u.decision), '[]'::jsonb)
+  into revs
+  from (select z.* from reviews_due z order by z.edited_at, z.decision limit most + 1) u;
   return jsonb_build_object(
-    'reports', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'id', r.id,
-        'versionAct', r.version_act,
-        'post', case when v.kind = 'edit' then v.target_act_id else v.id end,
-        'thread', v.thread,
-        'section', r.section,
-        'note', r.note,
-        'at', r.at,
-        'author', who.account,
-        'words', v.payload ->> 'body',
-        'past', coalesce((
-          select jsonb_agg(jsonb_build_object('outcome', p.outcome, 'until', p.until, 'at', p.at, 'note', p.note) order by p.at desc, p.id desc)
-          from (
-            select d.id, d.outcome, d.until, d.at, d.note
-            from conduct_decisions d
-            where who.account is not null and (d.account = who.account or conduct_author(coalesce(d.post, d.version_act)) = who.account)
-            order by d.at desc, d.id desc
-            limit 20
-          ) p), '[]'::jsonb)
-      ) order by r.at desc, r.id desc)
-      from conduct_reports r
-      join acts v on v.id = r.version_act
-      cross join lateral (select conduct_author(r.version_act) as account) who
-      where not exists (select 1 from conduct_decisions d where d.report = r.id)), '[]'::jsonb),
-    'reviews', coalesce((
-      select jsonb_agg(jsonb_build_object(
-        'decision', u.decision,
-        'post', u.post,
-        'versionAct', u.version_act,
-        'thread', u.thread,
-        'editedAt', u.edited_at,
-        'author', conduct_author(u.version_act),
-        'words', (select e.payload ->> 'body' from acts e where e.id = u.version_act)
-      ) order by u.edited_at, u.decision)
-      from reviews_due u), '[]'::jsonb));
+    'reports', (select coalesce(jsonb_agg(e order by ord), '[]'::jsonb) from jsonb_array_elements(reps) with ordinality t(e, ord) where ord <= most),
+    'moreReports', jsonb_array_length(reps) > most,
+    'reviews', (select coalesce(jsonb_agg(e order by ord), '[]'::jsonb) from jsonb_array_elements(revs) with ordinality t(e, ord) where ord <= most),
+    'moreReviews', jsonb_array_length(revs) > most);
 end $$;
+
+-- Mail whose latest attempt failed or was refused: a walk down mail_attempts_failed (the failed and refused attempts, newest first), keeping an attempt only when no later
+-- attempt of its mail exists (one lookup of mail_attempts_outbox), so the work is the failures and not the whole outbox, and it stops at 201 rows (200 and a flag for more).
+create index mail_attempts_failed on mail_attempts (at desc) where kind in ('failed', 'refused');
 
 create function admin_failed_mail() returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   address jsonb;
   unset boolean;
+  rows_ jsonb;
 begin
   perform only_admins('reads the mail that failed');
   address := setting('conduct') -> 'adminAddress';
   unset := address is null or jsonb_typeof(address) = 'null';
+  select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'template', f.template, 'account', f.account, 'kind', f.kind, 'error', coalesce(f.error, ''), 'at', f.at) order by f.at desc, f.id desc), '[]'::jsonb)
+  into rows_
+  from (
+    select o.id, o.template, o.account, l.kind, l.error, l.at
+    from mail_attempts l
+    join mail_outbox o on o.id = l.outbox
+    where l.kind in ('failed', 'refused')
+      and not exists (select 1 from mail_attempts n where n.outbox = l.outbox and n.at > l.at)
+    order by l.at desc, o.id desc
+    limit 201
+  ) f;
   return jsonb_build_object(
-    'failed', coalesce((
-      select jsonb_agg(jsonb_build_object('id', f.id, 'template', f.template, 'account', f.account, 'kind', f.kind, 'error', coalesce(f.error, ''), 'at', f.at) order by f.at desc, f.id desc)
-      from (
-        select o.id, o.template, o.account, l.kind, l.error, l.at
-        from mail_outbox o
-        cross join lateral (select a.kind, a.error, a.at from mail_attempts a where a.outbox = o.id order by a.at desc limit 1) l
-        where l.kind in ('failed', 'refused')
-        order by l.at desc, o.id desc
-        limit 200
-      ) f), '[]'::jsonb),
+    'failed', (select coalesce(jsonb_agg(e order by ord), '[]'::jsonb) from jsonb_array_elements(rows_) with ordinality t(e, ord) where ord <= 200),
+    'moreFailed', jsonb_array_length(rows_) > 200,
     'waiting', case when unset then (select count(*) from mail_outbox o where not exists (select 1 from mail_attempts a where a.outbox = o.id)) else 0 end,
     'addressSet', not unset);
 end $$;

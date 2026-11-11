@@ -111,7 +111,7 @@ declare
                            -- of its id as acts_public's `hidden` is, and what a payload shows.
                            'accept_conduct(integer)', 'conduct_accepted()', 'report_post(uuid,text,text)', 'my_bar()', 'my_conduct_log(integer)',
                            'admin_reports()', 'admin_failed_mail()', 'decide_report(bigint,jsonb)', 'decide(uuid,uuid,text,timestampwithtimezone,text)', 'admin_version(uuid)', 'my_hidden_version(uuid)', 'my_open_reports()',
-                           'version_hidden(uuid,uuid)', 'public_payload(jsonb,boolean)'];
+                           'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'public_payload(jsonb,boolean)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
