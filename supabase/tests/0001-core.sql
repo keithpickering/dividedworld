@@ -92,7 +92,7 @@ begin
       -- my_posts_played_on (0037) reads the owner to keep each caller to the plays on their own posts, and to leave out the
       -- plays made through their own characters; 0042-log-reads.sql holds that it shows nobody else's and names no owner.
       and not (u.view_name = 'my_posts_played_on' and (u.table_name, u.column_name) = ('characters', 'owner'))
-      -- my_posts_written_on (0146) reads the owner to keep each caller to the texts written on posts their own characters wrote;
+      -- my_posts_written_on (0147) reads the owner to keep each caller to the texts written on posts their own characters wrote;
       -- 0146-card-writes.sql holds that it shows nobody else's and names no owner, caster or account.
       and not (u.view_name = 'my_posts_written_on' and (u.table_name, u.column_name) = ('characters', 'owner'))
       -- my_followed_threads (0059) reads the owner to find the threads the caller's own characters started and to leave their own

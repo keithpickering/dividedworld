@@ -2941,7 +2941,7 @@ describe('a screen in one call is what the separate calls answer', () => {
 });
 
 
-describe('a card that writes: its tails, as post_tails and the worker leave them (0146)', () => {
+describe('a card that writes: its tails, as post_tails and the worker leave them (0147)', () => {
   const typewriter = {
     key: 'typewriter', name: 'Typewriter', alignment: 'salty' as const, rarity: 'common' as const, stack: 3, playPrice: () => 0,
     canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),

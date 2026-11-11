@@ -72,7 +72,7 @@ const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
 /** The most ids one read by id names, so its address stays short whoever asks (a page of the log can name a thousand Acts). */
 const ID_CHUNK = 100;
-/** The most posts one `post_tails` call takes (0146). */
+/** The most posts one `post_tails` call takes (0147). */
 const TAILS_CALL = 200;
 const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
 /**
@@ -415,7 +415,7 @@ function toVisit(v: Row): Visit {
 }
 /** effect_state rows, as effectStates() answers them. */
 const toStates = (list: Row[]): Record<Id, EffectState> => Object.fromEntries(list.map((r) => [r['play'], { state: r['state'], savedAt: r['saved_at'] }]));
-/** post_tails rows (0146), as tails() answers them: `failed` is the flag and never the predicate, and a waiting job has no text or time. */
+/** post_tails rows (0147), as tails() answers them: `failed` is the flag and never the predicate, and a waiting job has no text or time. */
 const toTails = (list: Row[]): Tail[] => list.map((r) => ({
   post: r['post'], play: r['play'], version: r['version'], text: str(r['text']), failed: r['failed'] === true, waiting: r['waiting'] === true, createdAt: str(r['created_at']),
 }));
@@ -962,7 +962,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* The packs the player bought (0139): kind, price, the Boss's markup and the cards in pull order; the pulled rows above name each by `pack`. */
       rows(() => client.from('my_packs').select('id,pack,price,repriced,contents,bought_at'), 'bought_at', (q) => q, ['id']),
       rows(() => client.from('my_posts_played_on').select('play,post,at,reach,target_name,target_character'), 'at', (q) => q, ['play']),
-      /* The texts and failures of cards that write on the posts the player's characters wrote (0146): the rows are the author's alone, and public facts. */
+      /* The texts and failures of cards that write on the posts the player's characters wrote (0147): the rows are the author's alone, and public facts. */
       rows(() => client.from('my_posts_written_on').select('play,post,version,failed,opening,over,at'), 'at', (q) => q.order('play', { ascending: true }).order('version', { ascending: true }), ['play', 'version']),
       rows(() => client.from('my_posts_played_on').select('play,post,saved_at').not('saved_at', 'is', null), 'saved_at', (q) => q, ['play']),
       /* The player's own cards set face down, by when each sprang or ended (0054); one still live has no end yet. */
@@ -1299,7 +1299,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return out;
     },
     async tails(posts) {
-      /* post_tails (0146) holds a call to 200 posts, which is what the screens ask for at most: a page's posts are one call, and a longer list is cut at that, run together. The rows come as the server orders them (version, then play). */
+      /* post_tails (0147) holds a call to 200 posts, which is what the screens ask for at most: a page's posts are one call, and a longer list is cut at that, run together. The rows come as the server orders them (version, then play). */
       const wanted = [...new Set(posts)].filter(idOk);
       if (wanted.length === 0) return [];
       const parts = Array.from({ length: Math.ceil(wanted.length / TAILS_CALL) }, (_, i) => wanted.slice(i * TAILS_CALL, (i + 1) * TAILS_CALL));

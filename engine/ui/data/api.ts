@@ -298,7 +298,7 @@ export interface Act {
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
   /**
-   * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0146): public, the
+   * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0147): public, the
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */
   readonly untaken?: true;
@@ -426,7 +426,7 @@ export interface EffectState {
 }
 
 /**
- * One row of a post's tails (`post_tails`, supabase/migrations/0146_card_writes.sql): what a writing card's play made for one version of its post.
+ * One row of a post's tails (`post_tails`, supabase/migrations/0147_card_writes.sql): what a writing card's play made for one version of its post.
  * Every row of every writing play on the post, in version order then play order, and the same for every reader: `text` is the generated words
  * (null where `failed`, and where `waiting`); `failed` is a flag and never the predicate; `waiting` is a job queued for a version that has no
  * row yet (`createdAt` null). The version is the post's own Act or an edit of it.
@@ -1036,15 +1036,15 @@ export interface LogSettlement {
 /** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe';
+  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0147): Aura given by the instance's operator, `ref` null. */
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
   /** What the floor held back of a settlement's debit. */
   readonly floored: number;
   readonly balanceAfter: number;
-  /** A play's Act, or a trap's spring for its payout; null for a settlement and a purchase. */
+  /** A play's Act, or a trap's spring for its payout; null for a settlement, a purchase and a grant. */
   readonly ref: Id | null;
   readonly at: string;
 }
@@ -1056,7 +1056,7 @@ export interface WalletEvent {
 export interface CardEvent {
   readonly card: string;
   /** `caught`: a card a Trap Card of the player's took (0142); its `act` is the spring, and it cost nothing. */
-  /** `returned`: a play whose old voice did not answer, so its price went back and its card with it (0146); its `act` is the play. */
+  /** `returned`: a play whose old voice did not answer, so its price went back and its card with it (0147); its `act` is the play. */
   readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
@@ -1267,7 +1267,7 @@ export const ALERTS_PAGE = 30;
 export const ALERTS_UNREAD_BOUND = 10;
 
 /**
- * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0146): the play, the post it is on, the
+ * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0147): the play, the post it is on, the
  * version of the post it was made for, whether the generation failed, whether it comes before any text of the play (`opening`: a text that is the
  * play's first continued the post; a later text was made again for an edit), whether it is the failure that ended the play (`over`: refunded, and
  * no row after it; a failure the play survived, or one after a text, is no line), and when. Public facts and the post's author alone.

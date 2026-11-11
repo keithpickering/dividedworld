@@ -102,7 +102,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0072): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
-      -- A card that writes (0146): a post carrying three plays, the first with its tail, the second still waiting, the third failed and refunded; the
+      -- A card that writes (0147): a post carrying three plays, the first with its tail, the second still waiting, the third failed and refunded; the
       -- queue, the texts and the refund are carried as they were, so an imported forum's tails are the same words and never made again.
       declare wp uuid := tests.post(a, t, 'A post that carries a tail.'); w1 uuid; w2 uuid; w3 uuid;
       begin

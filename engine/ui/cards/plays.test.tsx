@@ -379,7 +379,7 @@ describe('a play an admin ended', () => {
   });
 });
 
-/* A play whose first generation failed is refunded and over (0146): the read says so (`untaken` on its Act), and the client reads the flag, never works it out. */
+/* A play whose first generation failed is refunded and over (0147): the read says so (`untaken` on its Act), and the client reads the flag, never works it out. */
 describe('a play that did not take', () => {
   const at = '2026-10-30T10:00:00.000Z';
   const act = (id: string, over: Partial<Act> = {}): Act =>

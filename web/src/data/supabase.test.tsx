@@ -412,7 +412,7 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
   });
 
-  it('carries `untaken`, the public flag of a play that did not take (acts_public, 0146), onto the Act, and nothing of a play without it', async () => {
+  it('carries `untaken`, the public flag of a play that did not take (acts_public, 0147), onto the Act, and nothing of a play without it', async () => {
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'card', target_act_id: B, untaken: true }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, untaken: false }, { ...ACT_ROW, id: B, kind: 'card', target_act_id: B }])));
     const plays = await h.api.cardsOnMany([B], 10);
     expect(plays.map((p) => [p.id, p.untaken])).toEqual([[A, true], [B, undefined], [C, undefined]]);
@@ -2336,7 +2336,7 @@ describe('a screen in one call', () => {
       }]);
       expect(page.log.wallet).toEqual([{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }]);
       expect(page.log.saves).toEqual([{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }]);
-      /* The texts cards wrote on the player's posts (log_page, 0146), mapped as log() maps my_posts_written_on. */
+      /* The texts cards wrote on the player's posts (log_page, 0147), mapped as log() maps my_posts_written_on. */
       expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */
       expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }]);

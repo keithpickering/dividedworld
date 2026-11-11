@@ -214,7 +214,7 @@ export interface CardRules<Config = unknown> {
 }
 
 /**
- * The most tokens a play of a card that writes may buy: the bound require_write_tokens enforces (supabase/migrations/0146_card_writes.sql), since a
+ * The most tokens a play of a card that writes may buy: the bound require_write_tokens enforces (supabase/migrations/0147_card_writes.sql), since a
  * stored text is at most 4000 characters. A card that writes reads its most from the economy with this as its `max`, so a setting above it is
  * refused by the settings' validation and never by the database in a play.
  */
@@ -244,7 +244,7 @@ export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Partial<Pic
 /**
  * What a decided play is: its price, its checked configuration and message, and, for a card that writes, the tokens the play bought (`writes.tokens`
  * of the checked configuration, against the settings of this moment). The tokens are the play's own fact: the server writes them with the play
- * (supabase/migrations/0146_card_writes.sql), and a regeneration and the log read them there, never the settings of a later day.
+ * (supabase/migrations/0147_card_writes.sql), and a regeneration and the log read them there, never the settings of a later day.
  */
 export interface Decided { readonly price: Hundredths; readonly config: unknown; readonly message: string; readonly tokens?: number }
 
