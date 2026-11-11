@@ -656,24 +656,18 @@ end $$;
 
 -- ------------------------------------------------------------------------------------------- the bar ----
 
--- An account's bar now, or null: a ban not followed by a lift, else the furthest suspension not followed by a lift that has not ended
--- (a suspension ends by itself at its date). One index range read of the account's own decisions, the same walk for a lapsed suspension as
--- for none, so what it costs says nothing. {kind: 'banned' | 'suspended', until}.
+-- An account's bar now, or null: the latest suspend, ban or lift decides, and nothing before it is read. A lift is no bar, a ban is banned,
+-- a suspension is barred until its date and no bar once that has passed (it ends by itself). One index probe for the account's newest
+-- decision, the same single lookup for a lapsed suspension as for none, so what it costs says nothing. {kind: 'banned' | 'suspended', until}.
 create function account_bar(who uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
   d record;
-  banned boolean := false;
-  until_at timestamptz;
 begin
-  for d in select x.outcome, x.until from conduct_decisions x where x.account = who and x.outcome in ('suspend', 'ban', 'lift') order by x.id desc loop
-    exit when d.outcome = 'lift';
-    if d.outcome = 'ban' then banned := true;
-    elsif d.until > now() and (until_at is null or d.until > until_at) then until_at := d.until;
-    end if;
-  end loop;
-  if banned then return jsonb_build_object('kind', 'banned', 'until', null); end if;
-  if until_at is not null then return jsonb_build_object('kind', 'suspended', 'until', until_at); end if;
+  select x.outcome, x.until into d from conduct_decisions x
+    where x.account = who and x.outcome in ('suspend', 'ban', 'lift') order by x.id desc limit 1;
+  if d.outcome = 'ban' then return jsonb_build_object('kind', 'banned', 'until', null); end if;
+  if d.outcome = 'suspend' and d.until > now() then return jsonb_build_object('kind', 'suspended', 'until', d.until); end if;
   return null;
 end $$;
 

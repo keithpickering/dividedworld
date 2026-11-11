@@ -363,13 +363,12 @@ begin
   if (select my_bar()) is not null then raise exception 'a lifted suspension is still a bar'; end if;
   perform tests.unbecome();
 
-  -- ---- A ban bars until a lift, and a later lapsed suspension does not shorten it ----
+  -- ---- A ban bars until a lift ----
   perform tests.become(admin_a);
   perform decide(author, null, 'ban', null, '');
   seen := tests.refusal(format('select decide(%L, null, %L, %L, %L)', author, 'ban', (now() + interval '1 day')::text, ''));
   perform tests.unbecome();
   if seen is null or seen not like '22023|%' then raise exception 'a ban with an end date was accepted: %', seen; end if;
-  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'suspend', now() - interval '1 hour', 'lapsed again');
   perform tests.claims(author);
   seen := tests.refusal('select signed_in_account()');
   if seen is null or seen not like '28000|kayfabb.barred|%banned%' then raise exception 'a ban did not bar: %', seen; end if;
@@ -385,6 +384,38 @@ begin
   perform tests.claims(author);
   perform signed_in_account();
   perform tests.unbecome();
+
+  -- ---- The latest suspend, ban or lift decides, and nothing earlier is looked at ----
+  -- A ban followed by a suspension reads as that suspension: until its date, then nothing, even though the ban was never lifted.
+  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'ban', null, 'ban first');
+  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'suspend', now() + interval '5 days', 'then a suspension');
+  perform tests.become(author);
+  got := my_bar();
+  perform tests.unbecome();
+  if got ->> 'kind' is distinct from 'suspended' or (got ->> 'until')::timestamptz is distinct from (select x.until from conduct_decisions x where x.note = 'then a suspension') then
+    raise exception 'a suspension after a ban did not read as that suspension: %', got;
+  end if;
+  -- A suspension then a shorter one reads the shorter, not the furthest.
+  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'suspend', now() + interval '1 day', 'shorter');
+  perform tests.become(author);
+  got := my_bar();
+  perform tests.unbecome();
+  if got ->> 'kind' is distinct from 'suspended' or (got ->> 'until')::timestamptz is distinct from (select x.until from conduct_decisions x where x.note = 'shorter') then
+    raise exception 'a shorter re-suspension did not replace the longer one: %', got;
+  end if;
+  -- A suspension then a ban is banned.
+  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'ban', null, 'ban last');
+  perform tests.become(author);
+  got := my_bar();
+  perform tests.unbecome();
+  if got ->> 'kind' is distinct from 'banned' then raise exception 'a ban after a suspension did not read as banned: %', got; end if;
+  -- A lapsed suspension after a ban is the latest decision: no bar.
+  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'suspend', now() - interval '1 hour', 'lapsed last');
+  perform tests.become(author);
+  got := my_bar();
+  perform tests.unbecome();
+  if got is not null then raise exception 'a lapsed suspension after a ban still bars: %', got; end if;
+  insert into conduct_decisions (account, admin, outcome, until, note) values (author, admin_a, 'lift', null, 'clean up');
 
   -- ---- The log reads the caller's own versions' decisions only ----
   perform tests.become(author);
