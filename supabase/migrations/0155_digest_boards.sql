@@ -12,6 +12,11 @@
 --   board_merge_into       the digest role may call it (see below); without it boards_now, which the digest already read, refuses the role since 0152.
 --   settings_held (0149)   copied whole; digestBoards is a whole number from 1 to 30 (the ceiling the digest's prompt is bounded by) and digestBoardDays from 1 to 365.
 --
+-- Costs. Write: acts_posts_by_time adds one btree entry to each post insert (and none to any other kind of Act). acts_created would not serve: it holds every kind of Act, so a
+-- 21-day range of it reads the cards, visits, moves and the rest as well and filters them out in the heap; the partial index holds posts alone (EXPLAIN on 400k Acts, 60% not
+-- posts: 139 ms with it). Read: the count goes through acts_public, which runs a latest-edit probe (acts_edits) for each post. It cannot read `acts` directly: system_digest is
+-- owned by kayfabb_digest, which is granted no column of `acts` and is held to that by 0050, so the view is the only door; the probe is an index-only lookup per post.
+--
 -- Weighed at a busy instance: the count reads the posts of `digestBoardDays` days, as the digest's own window already reads its hours of them, once a meeting; the lines
 -- are bounded by `digestBoards`, whatever the number of boards.
 

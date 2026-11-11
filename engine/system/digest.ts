@@ -207,8 +207,8 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
     'Boards',
     digest.boards.slice(0, B).map((b) => {
       const premise = clip(line(b.premise), CLIPS.premise);
-      const days = Math.max(1, Math.trunc(digest.boardDays));
-      return `${clip(line(b.name), CLIPS.board)}${premise === '' ? '' : ` (${premise})`}: ${b.posts} post${b.posts === 1 ? '' : 's'} in ${days} day${days === 1 ? '' : 's'}.`;
+      const days = typeof digest.boardDays === 'number' && Number.isFinite(digest.boardDays) ? Math.max(1, Math.trunc(digest.boardDays)) : null;
+      return `${clip(line(b.name), CLIPS.board)}${premise === '' ? '' : ` (${premise})`}: ${b.posts} post${b.posts === 1 ? '' : 's'}${days === null ? '' : ` in ${days} day${days === 1 ? '' : 's'}`}.`;
     }),
     'No board is open.',
   );

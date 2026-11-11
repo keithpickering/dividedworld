@@ -155,3 +155,11 @@ test('the lines name no owner, class or reaction: a board line is its name, prem
   const line = text.split('\n').find((l) => l.startsWith('Busy Place'))!;
   assert.equal(line, 'Busy Place (Where it is loud.): 12 posts in 21 days.');
 });
+
+test('a board line with a days count that is no number never reads NaN', () => {
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number, '21' as unknown as number]) {
+    const text = renderDigest({ ...small, boardDays: bad }, null, []);
+    assert.ok(!text.includes('NaN') && !text.includes('Infinity') && !text.includes('undefined'), String(bad));
+    assert.ok(text.includes('Busy Place (Where it is loud.): 12 posts.'), `without days: ${String(bad)}`);
+  }
+});
