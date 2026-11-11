@@ -363,6 +363,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
     for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
   });
+  test('a card\'s boost names the card it came from, by the key the settlement wrote, and says nothing of a card it cannot find', () => {
+    expect(REASON_KEYS).toContain('card.boost');
+    for (const card of instance.cards.filter((c) => c.gimmick?.kind === 'earn')) expect(instanceUi.reasonWords('card.boost', { card: card.key })).toBe(`${card.name} added: what the card's boost on a reaction earned`);
+    expect(instanceUi.reasonWords('card.boost', {})).toMatch(/^A card added:/u);
+    expect(instanceUi.reasonWords('card.boost', { card: 'gone' })).toMatch(/^A card added:/u);
+  });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
     expect(boardSwitch(instanceUi.glass)).toBe(1152);
   });

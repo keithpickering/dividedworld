@@ -404,7 +404,7 @@ export interface InstanceUi {
    * settled before a retune says the numbers it was settled under; and, for a row with none and for
    * the live estimate, the economy as the server holds it now (`economyNow`).
    */
-  readonly reasonWords: (reason: string, params: Readonly<Record<string, number>>) => string;
+  readonly reasonWords: (reason: string, params: Readonly<Record<string, number | string>>) => string;
   readonly copy: UiCopy;
   /** Each pip style's images, by key; `default` is always there. */
   readonly pips: Readonly<Record<string, PipImages>>;

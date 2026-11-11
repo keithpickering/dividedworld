@@ -997,7 +997,7 @@ export interface LogLine {
   readonly reason: string;
   readonly amount: number;
   /** The numbers its reason's words state, as it was settled under them (`ledger.params`, 0073); absent on a row with none. */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: LedgerParams;
   /** Empty where the estimate valued no post for the reason, or the settlement was made before shares were kept. */
   readonly shares: readonly LogShare[];
 }
@@ -1251,6 +1251,9 @@ export interface EffectSaved {
   readonly savedAt: string;
 }
 
+/** The numbers a settled line's reason states, and for a card's boost (`card.boost`) the key of the card, as a string. */
+export type LedgerParams = Readonly<Record<string, number | string>>;
+
 /**
  * The end of a card the player set face down (`my_face_down`): it sprang (`spring`, a public Act by then), or its time came with
  * nothing springing it. Which card it was is the player's own row; nobody else reads it.
@@ -1262,6 +1265,8 @@ export interface FaceDownEnd {
   readonly post: Id;
   readonly spring: Id | null;
   readonly endedAt: string;
+  /** How it ended: it sprang, its setter took it back (a `take_back` Act), or its time passed (`my_face_down.ended_by`). */
+  readonly endedBy: 'sprung' | 'taken back' | 'time';
 }
 
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */

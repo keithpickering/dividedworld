@@ -36,7 +36,7 @@ export type Segment = string | { readonly text: string; readonly href: string };
 
 export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'onMine' | 'saved'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
-  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded'
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'gimmickEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
   | 'ended'
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
@@ -358,7 +358,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -581,6 +581,8 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
+    /* A card that came back to the hand (a take-back, or a back whose time passed) is the setter's end row's line (setEndRows), whose words say it. */
+    if (e.kind === 'returned') return;
     const play = e.act ? data.acts.get(e.act) : undefined;
     const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
     const caster = play?.character ?? null;
@@ -617,11 +619,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    /* A Use with a time up says when it ended, once that time has passed (the design's section 10: "a timed end"). */
+    /* A Use with a time up says when it ended, once that time has passed, whichever Gimmick it was (the design's section 10: "a timed end"). */
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
     if (ends && Date.parse(ends) <= Date.now()) {
       rows.push({
-        key: `wardEnded:${e.act}`, kind: 'wardEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
+        key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
         details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
@@ -754,8 +756,12 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
     const on = (post && actLink(post, data, words, own)) ?? 'your post';
     const characters = own ? [own] : [];
     const spring = e.spring ? data.acts.get(e.spring) : undefined;
+    if (e.endedBy === 'taken back') {
+      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `You took back ${cardName(e.card)}`, details: [`You took back ${cardName(e.card)} from `, on, '.'], aura: 0, wallet: null, characters });
+      continue;
+    }
     if (!e.spring) {
-      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `${cardName(e.card)} ended`, details: [`${cardName(e.card)} on `, on, ' ended; nothing sprang it.'], aura: 0, wallet: null, characters });
+      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `${cardName(e.card)} ended`, details: [`${cardName(e.card)} on `, on, ' ended; nothing sprang it, and it came back to your hand.'], aura: 0, wallet: null, characters });
       continue;
     }
     const did = spring?.payload.did;

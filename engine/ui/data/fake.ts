@@ -264,7 +264,7 @@ export interface SeedLine {
   readonly reason: string;
   readonly amount: number;
   /** The numbers its reason's words state, as the settlement wrote them into its ledger row (`ledger.params`, 0073). */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly shares?: readonly { readonly act: Id; readonly quadrant?: LogShare['quadrant']; readonly amount: number }[];
 }
 
@@ -1167,7 +1167,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
   interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
-  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number>>; readonly shares: readonly LogShare[] }
+  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number | string>>; readonly shares: readonly LogShare[] }
   const settlements: SettlementRec[] = [];
   const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
   const packLedger: { readonly account: Id; readonly order: number; readonly event: PackEvent; readonly ms: number }[] = [];
@@ -2548,8 +2548,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
-          /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */
-          setEnds: [],
+          /* The in-memory backend springs no trap, so a back ends here by its setter taking it back or by its time (my_face_down.ended_by); the caster's caught lines are the adapter's (my_caught). */
+          setEnds: newest([...faceDown].filter(([, f]) => f.account === account && f.sprung === null && (f.takenBack !== undefined || f.endsAt <= now()))
+            .map(([play, f]) => ({ ms: f.takenBack !== undefined ? acts.get(f.takenBack)!.at : f.endsAt, order: acts.get(play)!.order, f, play }))
+            .filter((x) => fits(x.ms)))
+            .map(({ f, play, ms }) => ({ play, card: f.card, post: f.post, spring: null, endedAt: iso(ms), endedBy: f.takenBack !== undefined ? 'taken back' as const : 'time' as const })),
           caught: [],
           /* my_cards_ended (0092): an admin's end of a play the player cast (`cast`, its own post's too) or of one that landed on theirs
              (`onMine`); a reversal between two other players is in neither's view. */

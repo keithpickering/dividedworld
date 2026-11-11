@@ -12,6 +12,6 @@ export function economyNow(settings: Settings, held: Readonly<Record<string, unk
 }
 
 /** The numbers a settled or estimated line's words state: its own where its ledger row holds them, over the economy now. */
-export function paramsOf(line: { readonly params?: Readonly<Record<string, number>> }, economy: Readonly<Record<string, number>>): Readonly<Record<string, number>> {
+export function paramsOf(line: { readonly params?: Readonly<Record<string, number | string>> }, economy: Readonly<Record<string, number>>): Readonly<Record<string, number | string>> {
   return line.params ? { ...economy, ...line.params } : economy;
 }
