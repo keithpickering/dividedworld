@@ -44,8 +44,17 @@ faketime`). It touches no deployed database.
   reach it), and any scenario field as `--players 6` or, for a range, `--postsPerDay 1-3`.
 - The report (`report.html`, with `log.json`) is written under `rehearsals/`, which git ignores; the command prints its
   path. `npm run test:rehearse` runs the tests that need Postgres and libfaketime.
-- A live run needs the Anthropic key stored on the environment as a credential, added through the secure form, never
-  pasted into a chat, a command line or a file.
+- A live run needs an Anthropic key in `ANTHROPIC_API_KEY`, passed from a variable rather than typed out, so the key
+  never lands in a chat, a command line, the shell's history or a file (`tools/rehearse/key.ts`). In a cloud session
+  whose environment holds the key as `DIVIDED_ANTHROPIC_KEY` (a session started after the variable was added):
+
+  ```bash
+  ANTHROPIC_API_KEY="$DIVIDED_ANTHROPIC_KEY" npm run rehearse -- season-opening --cap 5
+  ```
+
+  A cloud session's network proxy will not hold a credential for Anthropic's own API, so the key has to come from the
+  environment. With no key set, a live run sends a placeholder, which only a proxy holding the key can replace. `--stub`
+  and `--offline` never read the key.
 
 ## Deploying Divided World
 

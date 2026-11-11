@@ -17,6 +17,7 @@ import { rehearsalFetch, rehearsalModels, type KeptCall, type Mode } from "./mod
 import { runMinute, type JobRun, type ScheduleCtx } from "./schedule.ts";
 import { STALL_MS, Stalled, within, type Dispatched } from "./dispatch.ts";
 import { collect } from "./collect.ts";
+import { rehearsalApiKey } from "./key.ts";
 import { reportHtml } from "../../engine/rehearsal/report.ts";
 import { rehearsedInstance } from "./instance.ts";
 import { DATABASE, setUp, timeline, type CastMember, type Players, type Setup, type Timeline } from "./setup.ts";
@@ -190,8 +191,8 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       SUPABASE_URL: "http://rehearsal.invalid",
       SUPABASE_SECRET_KEYS: secretKeys,
       SUPABASE_PUBLISHABLE_KEYS: JSON.stringify({ default: setup.keys.publishable }),
-      // The proxy holds the real key; the rehearsal never does.
-      ANTHROPIC_API_KEY: "placeholder",
+      // The process environment's key for a live mode, or the placeholder for a proxy that holds it (./key.ts).
+      ANTHROPIC_API_KEY: rehearsalApiKey(mode, process.env),
       ...(profile ? { KAYFABB_PROFILE: profile } : {}),
     };
     const sent: { topic: string; event: string }[] = [];
