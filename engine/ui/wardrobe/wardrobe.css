@@ -286,3 +286,8 @@
   gap: 8px;
   min-height: 32px;
 }
+
+/* The base notice pads in em, so at a large text size the padding alone squeezed its words into a narrow strip; px padding keeps the column for the words. */
+.kb-glass .kb-wardrobe .kb-notice {
+  padding: 8px 12px;
+}
