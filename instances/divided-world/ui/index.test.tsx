@@ -15,6 +15,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
+import { spanWords } from './cards.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 
 describe('Divided World\'s developer persona', () => {
@@ -73,18 +74,12 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(guideMd).toContain('<!-- kayfabb:cards -->');
     expect(faces.map((f) => f.key)).toContain('hall-pass');
   });
-  test('Trap Card names the one card it catches, from the cards cast on a post, and takes it; it pays nothing and has no rarity bound', () => {
-    const t = face('trap-card');
+  test('Card Collector names the one card it catches, from the cards cast on a post at or below its rarity, and takes it; it pays nothing', () => {
+    const t = face('card-collector');
     expect(t.describe).toMatch(/you take it into your hand/u);
     expect(t.summary).toMatch(/takes it into your hand/u);
-    expect(t.describe).toMatch(/the one card it catches, from the cards cast on a post, at any rarity/u);
-    for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/uncommon or commoner|pays you|what it cost|wallet|what the caster paid/u);
-  });
-  test('Bluff does not compare itself to Trap Card, and might be any card', () => {
-    const b = face('bluff');
-    expect(b.describe).not.toMatch(/Trap Card/u);
-    expect(b.summary).not.toMatch(/trap/iu);
-    expect(b.describe).toMatch(/might be any card/u);
+    expect(t.describe).toMatch(/the one card it catches, from the cards cast on a post, uncommon or commoner/u);
+    for (const text of [t.describe, t.summary]) expect(text).not.toMatch(/pays you|what it cost|wallet|what the caster paid/u);
   });
   test('each Move says what setting it does, landing at its own reach and no other', () => {
     const lands = { whoops: 'the quoting post', 'stick-around': 'the quoting post', autocorrect: 'the quoting post', 'feelin-fab': 'the quoting post', 'glitter-bomb': "the quoting post's character", 'main-event': "the quoting post's thread" };
@@ -94,12 +89,36 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
-    expect(guideMd).toMatch(/- \*\*Move, Gimmick, Ward\.\*\*/u);
-    expect(guideMd).toMatch(/A Move is cast on a target or set face down on your own post/u);
-    expect(guideMd).toMatch(/A Gimmick is only set face down, and springs on its own trigger/u);
-    expect(guideMd).toMatch(/A Ward is used on your own post to guard it/u);
+    expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
+    expect(guideMd).toMatch(/A Move is cast on a target, or set face down on your own post/u);
+    expect(guideMd).toMatch(/A Reversal is only ever set face down on your own post/u);
+    expect(guideMd).toMatch(/A Gimmick is played face up on your own post, your own character, or a thread your own character started/u);
     expect(guideMd).toMatch(/every card back looks the same/u);
+    expect(guideMd).toMatch(/Sweet is babyface work, Salty is heel work/u);
+    expect(guideMd).toMatch(/comes back to your hand/u);
+    expect(guideMd).toMatch(/A Reversal takes no conditions/u);
+    expect(guideMd).not.toMatch(/A Gimmick takes no conditions|\bWard\b/u);
     expect(guideMd).not.toMatch(/pays you|what it cost/u);
+  });
+});
+
+describe('Divided World\'s Gimmick cards in plain words', () => {
+  test('a span says "an hour", "a day", "a week", and counts the rest', () => {
+    expect(spanWords({ unit: 'hour', count: 1 })).toBe('an hour');
+    expect(spanWords({ unit: 'day', count: 1 })).toBe('a day');
+    expect(spanWords({ unit: 'day', count: 7 })).toBe('a week');
+    expect(spanWords({ unit: 'hour', count: 36 })).toBe('36 hours');
+  });
+
+  test('each new Gimmick reads its span and its amount from its own rules', () => {
+    const faces = facesOf(instance.cards, instanceUi.cards, instance.settings, instanceUi.copy.cardKinds);
+    const say = (key: string) => {
+      const f = faces.find((x) => x.key === key)!;
+      return `${f.describe} ${f.summary}`;
+    };
+    for (const key of ['publicity-tour', 'heat-magnet']) expect(say(key), key).toMatch(/36 hours[\s\S]*earns from[\s\S]*10% higher/u);
+    expect(say('class-clown')).toMatch(/36 hours[\s\S]*earns from[\s\S]*50% higher/u);
+    expect(say('good-vibes')).toMatch(/3 days[\s\S]*costs 0\.25 more/u);
   });
 });
 
@@ -356,21 +375,27 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
     for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
   });
+  test('a card\'s boost names the card it came from, by the key the settlement wrote, and says nothing of a card it cannot find', () => {
+    expect(REASON_KEYS).toContain('card.boost');
+    for (const card of instance.cards.filter((c) => c.gimmick?.kind === 'earn')) expect(instanceUi.reasonWords('card.boost', { card: card.key })).toBe(`${card.name} added: what the card's boost on a reaction earned`);
+    expect(instanceUi.reasonWords('card.boost', {})).toMatch(/^A card added:/u);
+    expect(instanceUi.reasonWords('card.boost', { card: 'gone' })).toMatch(/^A card added:/u);
+  });
   test('the Main board\'s layout becomes the Phone board\'s at 1152px: 1440 times the smallest phone size (16) over the smallest Main board size (20)', () => {
     expect(boardSwitch(instanceUi.glass)).toBe(1152);
   });
 });
 
 describe('Divided World\'s kind words', () => {
-  test('Whoops! is a Move, Bluff a Gimmick, Force Field a Ward', () => {
+  test('Whoops! is a Move, Hall Pass a Reversal, Force Field a Gimmick', () => {
     const kind = (key: string): string => faceOf(instance.cards.find((c) => c.key === key)!, instanceUi.cards.find((c) => c.key === key), instance.settings, instanceUi.copy.cardKinds).kind;
-    expect([kind('whoops'), kind('bluff'), kind('force-field')]).toEqual(['Move', 'Gimmick', 'Ward']);
+    expect([kind('whoops'), kind('hall-pass'), kind('force-field')]).toEqual(['Move', 'Reversal', 'Gimmick']);
   });
 });
 
 describe('a Booster in the log (the booster packs plan, Task 7)', () => {
   const at = '2026-11-07T10:00:00.000000+00:00';
-  const contents = ['whoops', 'bluff', 'feelin-fab', 'stick-around', 'trap-card'];
+  const contents = ['whoops', 'glitter-bomb', 'feelin-fab', 'stick-around', 'card-collector'];
   const pulled = contents.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk1', price: 0, at }));
   const lines = (over: Partial<Log>, wallet: Log['wallet']) => logRows({
     log: { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet, cards: [], packs: [], playsOnMine: [], saves: [], setEnds: [], caught: [], ended: [], before: null, ...over },
@@ -383,25 +408,25 @@ describe('a Booster in the log (the booster packs plan, Task 7)', () => {
     const rows = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at }] }, [purchase(300, 1200)]);
     expect(rows.map((r) => r.kind)).toEqual(['pack']);
     expect(rows[0]!.what).toBe('You bought a Booster');
-    expect(said(rows[0]!)).toBe('Whoops!, Bluff, Feelin\' Fab, Stick Around and Trap Card. From the Vending Machine, for 3.00.');
+    expect(said(rows[0]!)).toBe('Whoops!, Glitter Bomb, Feelin\' Fab, Stick Around and Card Collector. From the Vending Machine, for 3.00.');
     expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([-300, 1200]);
   });
   test('a purchase at a price the Boss moved says so, for a pack and for a card', () => {
     const pack = lines({ cards: pulled, packs: [{ pack: 'pk1', kind: 'booster', price: 450, repriced: true, contents, at }] }, [purchase(450, 1050)]);
-    expect(said(pack[0]!)).toBe('Whoops!, Bluff, Feelin\' Fab, Stick Around and Trap Card. From the Vending Machine, for 4.50. The Boss had repriced it.');
+    expect(said(pack[0]!)).toBe('Whoops!, Glitter Bomb, Feelin\' Fab, Stick Around and Card Collector. From the Vending Machine, for 4.50. The Boss had repriced it.');
     const card = lines({ cards: [{ card: 'whoops', kind: 'bought', act: null, price: 150, repriced: true, at }] }, [purchase(150, 100)]);
     expect(said(card[0]!)).toBe('From the Vending Machine, for 1.50. The Boss had repriced it.');
     const plainCard = lines({ cards: [{ card: 'whoops', kind: 'bought', act: null, price: 100, repriced: false, at }] }, []);
     expect(said(plainCard[0]!)).toBe('From the Vending Machine, for 1.00.');
   });
   test('two packs bought at one instant are two lines, each with its own cards', () => {
-    const second = ['bluff', 'bluff', 'bluff', 'bluff', 'bluff'];
+    const second = ['glitter-bomb', 'glitter-bomb', 'glitter-bomb', 'glitter-bomb', 'glitter-bomb'];
     const rows = lines({
       cards: [...pulled, ...second.map((card) => ({ card, kind: 'pulled' as const, act: null, pack: 'pk2', price: 0, at }))],
       packs: [{ pack: 'pk1', kind: 'booster', price: 300, repriced: false, contents, at }, { pack: 'pk2', kind: 'booster', price: 300, repriced: false, contents: second, at }],
     }, [purchase(300, 900), purchase(300, 600)]);
     expect(rows.map((r) => r.kind)).toEqual(['pack', 'pack']);
     expect(new Set(rows.map((r) => r.wallet))).toEqual(new Set([900, 600]));
-    expect(rows.map(said).sort()[0]).toContain('Bluff, Bluff, Bluff, Bluff and Bluff');
+    expect(rows.map(said).sort()[0]).toContain('Glitter Bomb, Glitter Bomb, Glitter Bomb, Glitter Bomb and Glitter Bomb');
   });
 });

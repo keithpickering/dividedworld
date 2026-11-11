@@ -60,9 +60,12 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
       data-size={size}
       data-kb-card={face.key}
       data-kb-alignment={face.unknown ? undefined : face.alignment}
+      data-kb-play={face.unknown ? undefined : face.play}
       data-armed={armed ? '' : undefined}
       data-kb-art={size === 'slot' ? '' : undefined}
     >
+      {/* A Set's folded corner, at the bottom left; how a card is played is drawn in its frame (the card types' design, section 9), the lines in postcard.css. */}
+      {!face.unknown && face.play === 'set' && <span className="kb-postcard-fold" aria-hidden="true" />}
       {/* The canvas: the card's ground, a glow in its color and its art, clipped to the canvas's corners. Nothing in it is a word. */}
       <span className="kb-postcard-canvas" aria-hidden="true">
         {canvas ? <img className="kb-postcard-art" src={canvas} alt="" aria-hidden="true" draggable={false} /> : null}

@@ -22,13 +22,13 @@ begin
       ('spxbomb', 'Spx Bomb', 'salty', 'uncommon', 'cast', null, '{character}', interval '7 days'),
       ('spxthread', 'Spx Thread', 'salty', 'rare', 'cast', null, '{thread}', interval '1 day'),
       ('spxboard', 'Spx Board', 'salty', 'legendary', 'cast', null, '{board}', interval '1 day'),
-      ('spxrare', 'Spx Rare', 'sweet', 'rare', 'cast', null, '{post}', null),
+      ('spxrare', 'Spx Rare', 'sweet', 'uncommon', 'cast', null, '{post}', null),
       ('spxauto', 'Spx Auto', 'salty', 'common', 'cast', null, '{post}', null),
       ('spxtrap', 'Spx Trap', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
       ('spxpass', 'Spx Pass', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
-      ('spxbluff', 'Spx Bluff', 'pepperoni', 'common', 'set', null, '{post}', null);
-    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, ward) values
-      ('spxward', 'Spx Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', true);
+      ('spxidle', 'Spx Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
+    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
+      ('spxward', 'Spx Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "ward", "upTo": "uncommon"}');
     insert into characters (id, name, staff, staff_kind, debuted_at) values ('00000000-0000-4000-8000-0000000fd001', 'Spx Race Mod', 'spx-race-mod', 'persona', now()) on conflict do nothing;
   $sql$);
 end $$;
@@ -318,7 +318,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- card_kinds' trap shape: a Gimmick springs on a cast or a visit ----
+-- ---- card_kinds' trap shape: a set card springs on a cast or a visit ----
 do $$
 declare why text;
 begin
@@ -340,15 +340,15 @@ begin
     raise exception 'a valid Gimmick was refused: %', card_kinds_problem('[{"key": "ok", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}}}]');
   end if;
   why := card_kinds_problem('[{"key": "r", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]');
-  if why is distinct from 'card "r" springs on "reply"; a Gimmick springs on cast or visit' then raise exception 'a reply trigger: %', why; end if;
+  if why is distinct from 'card "r" springs on "reply"; a set card springs on cast or visit' then raise exception 'a reply trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "n", "rarity": "common", "play": "set", "trap": {}}]');
-  if why is distinct from 'card "n" springs on nothing; a Gimmick springs on cast or visit' then raise exception 'a trap with no trigger: %', why; end if;
+  if why is distinct from 'card "n" springs on nothing; a set card springs on cast or visit' then raise exception 'a trap with no trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "e", "rarity": "common", "play": "set", "trap": {"trigger": {"on": 5}}}]');
-  if why is distinct from 'card "e" springs on 5; a Gimmick springs on cast or visit' then raise exception 'a numeric trigger: %', why; end if;
+  if why is distinct from 'card "e" springs on 5; a set card springs on cast or visit' then raise exception 'a numeric trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "t", "rarity": "common", "play": "set", "trap": {"trigger": {}}}]');
-  if why is distinct from 'card "t" springs on nothing; a Gimmick springs on cast or visit' then raise exception 'a trigger with no on: %', why; end if;
+  if why is distinct from 'card "t" springs on nothing; a set card springs on cast or visit' then raise exception 'a trigger with no on: %', why; end if;
   why := card_kinds_problem('[{"key": "m", "rarity": "common", "play": "cast", "trap": {"trigger": {"on": "cast"}}}]');
-  if why is distinct from 'card "m" has a trap, and only a Gimmick does' then raise exception 'a Move with a trap: %', why; end if;
+  if why is distinct from 'card "m" has a trap, and only a set card has one' then raise exception 'a Move with a trap: %', why; end if;
 end $$;
 
 -- ---- card_held: bought and caught, less played; one count for every reader of a hand ----
@@ -442,7 +442,7 @@ begin
   insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
     ('fdsmove', 'Set Move', 'salty', 'common', 'cast', null, '{post}', null),
     ('fdsthread', 'Set Thread Move', 'salty', 'common', 'cast', null, '{thread}', '7 days'),
-    ('fdsgimmick', 'Set Gimmick', 'pepperoni', 'common', 'set', null, '{post}', null),
+    ('fdsgimmick', 'Set Gimmick', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
     ('fdsuse', 'Set Use', 'sweet', 'common', 'use', null, '{post}', null),
     ('fdstrap', 'Set Trap', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
     ('fdsvisit', 'Set Visit', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null);
@@ -470,7 +470,7 @@ begin
   if why is distinct from 'Set Use is used on your own post' then raise exception 'a Use was set: %', why; end if;
   -- A catch is a cast Gimmick's alone, and names a card cast on a post.
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdsgimmick', a, p6, '{}', 'fdsmove'));
-  if why is distinct from 'Set Gimmick catches no card' then raise exception 'a Bluff named a catch: %', why; end if;
+  if why is distinct from 'Set Gimmick catches no card' then raise exception 'an Idle named a catch: %', why; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdsmove', a, p6, '{}', 'fdsmove'));
   if why is distinct from 'Set Move catches no card' then raise exception 'a Move named a catch: %', why; end if;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'fdstrap', a, p6, '{}', 'fdsuse'));
@@ -529,7 +529,7 @@ begin
   if (select catches from face_down where play = (placed ->> 'id')::uuid) is distinct from 'fdpmove' then raise exception 'a persona''s Trap Card did not store its named catch'; end if;
   if (select account from face_down where play = (placed ->> 'id')::uuid) is not null then raise exception 'a persona''s back has an account'; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpmove', p2));
-  if why is distinct from 'Persona Move is not a Gimmick; a persona sets Gimmicks' then raise exception 'a persona set a Move: %', why; end if;
+  if why is distinct from 'Persona Move is not a set card; a persona sets set cards' then raise exception 'a persona set a Move: %', why; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L)', 'fdm-mod', 'fdpvisit', p3));
   if why is distinct from 'Persona Visit waits for a Mod Bot''s visit; a persona sets none' then raise exception 'a persona set a visit Gimmick: %', why; end if;
   why := pg_temp.refusal(format('select staff_set_card(%L, %L, %L, %L, %L)', 'fdm-mod', 'fdptrap', p3, '{"card": "nosuch"}', 'nosuch'));
@@ -706,9 +706,9 @@ begin
   if position(ann::text in caught::text) > 0 then raise exception 'the answer to the caster names the setter''s account: %', caught; end if;
   -- It is a finished back: the next cast of that card lands.
   if pg_temp.cast(bob, 'spxwhoops', b, p) -> 'sprung' is not null then raise exception 'a sprung Trap Card caught twice'; end if;
-  -- A rare card is caught when it is named.
+  -- A card the Reversal names is caught when it is named.
   caught := pg_temp.cast(bob, 'spxrare', b, pr);
-  if caught -> 'sprung' is null or card_held(ann, 'spxrare') is distinct from 1 then raise exception 'a rare card was not caught when named: %', caught; end if;
+  if caught -> 'sprung' is null or card_held(ann, 'spxrare') is distinct from 1 then raise exception 'a named card was not caught when named: %', caught; end if;
 end $$;
 
 -- ---- Casting on one's own other mask's Trap Card gives the card back to the same account, and names no account ----
@@ -870,22 +870,21 @@ declare
   a uuid := tests.character(ann, 'Sp Gone Ann');
   t uuid := tests.thread('Gone');
   p1 uuid := tests.post(a, t, 'One.'); p2 uuid := tests.post(a, t, 'Two.'); p3 uuid := tests.post(a, t, 'Three.');
-  s_move uuid; s_bluff uuid; why text;
+  s_move uuid; s_idle uuid; why text;
 begin
   if to_regclass('face_down_reply') is not null or to_regproc('face_down_reply_once') is not null or to_regproc('face_down_reply_backfill') is not null then raise exception 'face_down_reply is still there'; end if;
-  perform pg_temp.hand(ann, 'spxwhoops', 'spxbluff', 'spxtrap');
+  perform pg_temp.hand(ann, 'spxwhoops', 'spxidle', 'spxtrap');
   s_move := (set_card(ann, 'spxwhoops', a, p1, '{}', 0) ->> 'id')::uuid;
-  s_bluff := (set_card(ann, 'spxbluff', a, p2, '{}', 0) ->> 'id')::uuid;
+  s_idle := (set_card(ann, 'spxidle', a, p2, '{}', 0) ->> 'id')::uuid;
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'spxtrap', a, p3, '{}'));
   if why is distinct from 'Spx Trap names no card to catch' then raise exception 'a Trap Card was set naming nothing: %', why; end if;
   perform tests.become(ann);
   if (select springs from my_card_ledger where act = s_move) is distinct from true then raise exception 'a Move set face down does not spring, the log says'; end if;
-  if (select springs from my_card_ledger where act = s_bluff) is distinct from false then raise exception 'a Bluff set face down springs, the log says'; end if;
   if exists (select 1 from my_face_down where passed_at is not null) then raise exception 'a back was passed by a reply'; end if;
   perform tests.unbecome();
 end $$;
 
--- ---- Every back costs the same reads before its decision: a Bluff, a Trap Card naming another card, a Move whose phrase is absent, a Move that cannot land, a retired setter's Move, and a back that springs ----
+-- ---- Every back costs the same reads before its decision: an Idle (a visit trap, so no quote springs it), a Trap Card naming another card, a Move whose phrase is absent, a Move that cannot land, a retired setter's Move, and a back that springs ----
 -- What a call reads from the tables spring_facts and spring_traps decide from, and their indexes: rows fetched and index entries returned in this transaction so far, as 0077-trap-locks.sql counts them.
 create function pg_temp.reads() returns bigint[] language sql as $$
   select array_agg(x.n order by x.relname) from (
@@ -901,14 +900,14 @@ $$;
 do $$
 declare
   ann uuid := tests.account('sp-even-ann'); bob uuid := tests.account('sp-even-bob');
-  bluffer uuid := tests.character(ann, 'Even Bluffer'); trapper uuid := tests.character(ann, 'Even Trapper'); phrasey uuid := tests.character(ann, 'Even Phrasey');
+  idler uuid := tests.character(ann, 'Even Idler'); trapper uuid := tests.character(ann, 'Even Trapper'); phrasey uuid := tests.character(ann, 'Even Phrasey');
   bomber uuid := tests.character(ann, 'Even Bomber'); retiree uuid := tests.character(ann, 'Even Retiree'); springer uuid := tests.character(ann, 'Even Springer');
   q uuid := tests.character(bob, 'Even Quoter');
   t uuid := tests.thread('Even work');
-  p_bluff uuid := tests.post(bluffer, t, 'Bluffed.'); p_trap uuid := tests.post(trapper, t, 'Trapped.'); p_phrase uuid := tests.post(phrasey, t, 'Phrased.');
+  p_idle uuid := tests.post(idler, t, 'Idled.'); p_trap uuid := tests.post(trapper, t, 'Trapped.'); p_phrase uuid := tests.post(phrasey, t, 'Phrased.');
   p_bomb uuid := tests.post(bomber, t, 'Bombed.'); p_retired uuid := tests.post(retiree, t, 'Retired.'); p_spring uuid := tests.post(springer, t, 'Springing.');
   quoting uuid := tests.post(q, t, 'Quoting everything, and saying nothing of stripes.'); free uuid := tests.post(q, t, 'Quoting the last, unwarded.');
-  s_bluff uuid; s_trap uuid; s_phrase uuid; s_bomb uuid; s_retired uuid; s_spring uuid;
+  s_idle uuid; s_trap uuid; s_phrase uuid; s_bomb uuid; s_retired uuid; s_spring uuid;
   fd face_down; backs uuid[]; one uuid; n integer;
   before bigint[];
   facts_reads text[] := '{}'; full_reads text[] := '{}'; said jsonb;
@@ -918,8 +917,8 @@ begin
   -- does; key lookups through the indexes read the same rows for every key, and are the statements being counted. (A busy instance's tables are read through them.)
   perform set_config('enable_seqscan', 'off', true);
   discard plans;
-  perform pg_temp.hand(ann, 'spxbluff', 'spxtrap', 'spxauto', 'spxbomb', 'spxbomb', 'spxwhoops');
-  s_bluff := (set_card(ann, 'spxbluff', bluffer, p_bluff, '{}', 0) ->> 'id')::uuid;
+  perform pg_temp.hand(ann, 'spxidle', 'spxtrap', 'spxauto', 'spxbomb', 'spxbomb', 'spxwhoops');
+  s_idle := (set_card(ann, 'spxidle', idler, p_idle, '{}', 0) ->> 'id')::uuid;
   s_trap := (set_card(ann, 'spxtrap', trapper, p_trap, '{"card": "spxrare"}', 0, 'spxrare') ->> 'id')::uuid;
   s_phrase := (set_card(ann, 'spxauto', phrasey, p_phrase, '{}', 0, null, 'zebra') ->> 'id')::uuid;
   s_bomb := (set_card(ann, 'spxbomb', bomber, p_bomb, '{}', 0) ->> 'id')::uuid;
@@ -930,11 +929,11 @@ begin
   insert into play_reach (play, reach, character, ends_at) select a.id, 'character', q, now() + interval '3 days' from acts a where a.kind = 'card' and a.payload ->> 'card' = 'spxbomb' and a.payload ->> 'character' = q::text;
   update characters set retired_at = now() where id = retiree;
   -- Every setter's row has been rewritten once, as the retiree's was (a rewritten row is a longer chain to read, which says nothing of the statement).
-  update characters set debuted_at = debuted_at where id in (bluffer, trapper, phrasey, bomber, springer);
+  update characters set debuted_at = debuted_at where id in (idler, trapper, phrasey, bomber, springer);
   -- The quoting post is warded too: a Ward is read for every back, and the Whoops back (common) is turned away by it as a cast would be.
   perform tests.act(q, 'card', t, jsonb_build_object('card', 'spxward', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), quoting);
 
-  backs := array[p_bluff, p_trap, p_phrase, p_bomb, p_retired, p_spring];
+  backs := array[p_idle, p_trap, p_phrase, p_bomb, p_retired, p_spring];
   -- Warm: each statement planned, so a call's reads are its execution's alone.
   for n in 1 .. 8 loop
     foreach one in array backs loop
@@ -950,7 +949,7 @@ begin
     before := pg_temp.reads(); perform spring_facts(fd, 'quote', quoting, null); facts_reads := facts_reads || pg_temp.since(before);
     before := pg_temp.reads(); perform spring_facts(fd, 'cast', ghost, 'spxrare'); cast_reads := cast_reads || pg_temp.since(before);
   end loop;
-  if (select count(distinct r) from unnest(facts_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a quote''s decision: Bluff, Trap Card, phrase, Bomb, retired, springing = %', facts_reads; end if;
+  if (select count(distinct r) from unnest(facts_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a quote''s decision: Idle, Trap Card, phrase, Bomb, retired, springing = %', facts_reads; end if;
   if (select count(distinct r) from unnest(cast_reads) r) is distinct from 1::bigint then raise exception 'the backs make different reads before a cast''s decision: %', cast_reads; end if;
   if (select sum(v) from unnest(facts_reads[1]::bigint[]) v) < 8 then raise exception 'the reads were not counted (%)', facts_reads[1]; end if;
   -- The phrase's pattern is one fixed length for every back and its own for each (built around the back's id), a back with no phrase included.
@@ -970,10 +969,10 @@ begin
   end loop;
   foreach one in array backs[1:5] loop
     before := pg_temp.reads(); said := spring_traps('quote', one, quoting); full_reads := full_reads || pg_temp.since(before);
-    if said is not null then raise exception 'a back that cannot spring sprang: %', said; end if;
+    if said is not null then raise exception 'a back that does not spring in this test sprang: %', said; end if;
   end loop;
-  if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that cannot spring wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
-  if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that cannot spring read differently: Bluff, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
+  if exists (select 1 from acts where kind = 'spring' and target_act_id = any (backs[1:5])) then raise exception 'a back that does not spring in this test wrote a spring: %', (select jsonb_agg(s.payload) from acts s where s.kind = 'spring' and s.target_act_id = any (backs[1:5])); end if;
+  if (select count(distinct r) from unnest(full_reads) r) is distinct from 1::bigint then raise exception 'the backs that do not spring in this test read differently: Idle, Trap Card, phrase absent, Bomb that cannot land, retired setter = %', full_reads; end if;
   if spring_traps('quote', p_spring, quoting) is not null then raise exception 'the last back sprang through a Ward'; end if;
   said := spring_traps('quote', p_spring, free);
   if said is null then raise exception 'the last back did not spring'; end if;

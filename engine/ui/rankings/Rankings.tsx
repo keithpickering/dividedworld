@@ -120,12 +120,13 @@ export function Rankings({ season, settledAt, standings, reveals, turns, mine, t
   const { instance } = useKayfa();
   const root = useRef<HTMLDivElement>(null);
   const highlighted = final !== null && 'rows' in final ? final.highlight : null;
-  /* The linked row is brought into view when the table first has it. jsdom has no scrollIntoView. */
+  const finalSeason = final?.season.number;
+  /* The linked row is brought into view when the table first has it, and again only when the highlight, the page or the season changes (`final` is rebuilt on every render, so it is not a dependency: a re-scroll would make the row jump). jsdom has no scrollIntoView. */
   useEffect(() => {
     if (highlighted === null) return;
     const row = root.current?.querySelector('tr[data-kb-highlight]');
     if (row && typeof row.scrollIntoView === 'function') row.scrollIntoView({ block: 'center' });
-  }, [highlighted, page, final]);
+  }, [highlighted, page, finalSeason]);
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const own = new Map(mine.map((c) => [c.id, c]));
   const stated = statements(reveals, turns);

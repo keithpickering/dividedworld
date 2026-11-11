@@ -37,7 +37,7 @@ export interface WordsContext {
   readonly names?: ReadonlyMap<Id, string>;
   /** The settlement id (a row's `sub`) of the newest settlement, which `/log/settlement` shows. */
   readonly newestSettlement: string | null;
-  /** The staff characters among `names` (a public fact of a character): a staff setter's Trap Card takes nothing. Absent, none is known to be staff. */
+  /** The staff characters among `names` (a public fact of a character): a staff setter's catching set card takes nothing. Absent, none is known to be staff. */
   readonly staff?: ReadonlySet<Id>;
 }
 
@@ -146,7 +146,7 @@ export function spanWords(ms: number): string {
 }
 
 /**
- * A face-down card struck the player: it landed on their quoting post (the card Act names its spring), or a Trap Card caught their cast (the play
+ * A face-down card struck the player: it landed on their quoting post (the card Act names its spring), or a catching set card caught their cast (the play
  * names the set that caught it). Both are public Acts, so nothing here is computed from a private fact: the setter is the character the spring
  * (or the set) names, never an account. A part that could not be read is left out, never guessed.
  */

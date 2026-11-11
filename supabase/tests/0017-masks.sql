@@ -447,9 +447,9 @@ declare
   t uuid := tests.thread('Moment masks'); p uuid := tests.post(s, t, 'A back on me.');
   backed uuid; over uuid; as_setter text; as_stranger text;
 begin
-  insert into card_kinds (key, name, alignment, rarity, play) values ('mmbluff', 'Moment Bluff', 'pepperoni', 'common', 'set');
-  insert into card_ledger (account, card, kind, price) values (setter, 'mmbluff', 'bought', 0), (caster, 'sweetie', 'bought', 0);
-  backed := (set_card(setter, 'mmbluff', s, p, '{}', 0) ->> 'id')::uuid;
+  insert into card_kinds (key, name, alignment, rarity, play, trap) values ('mmidle', 'Moment Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}');
+  insert into card_ledger (account, card, kind, price) values (setter, 'mmidle', 'bought', 0), (caster, 'sweetie', 'bought', 0);
+  backed := (set_card(setter, 'mmidle', s, p, '{}', 0) ->> 'id')::uuid;
   over := (play_card(caster, 'sweetie', c, p, '{}', 0, '') ->> 'id')::uuid;
   perform tests.become(setter);
   as_setter := play_moment(over)::text || play_moment(backed)::text;
@@ -458,7 +458,7 @@ begin
   as_stranger := play_moment(over)::text || play_moment(backed)::text;
   perform tests.unbecome();
   if as_setter is distinct from as_stranger then raise exception 'a moment over a card back differs for its setter: % / %', as_setter, as_stranger; end if;
-  if as_setter like '%mmbluff%' or as_setter like '%Moment Bluff%' then raise exception 'a moment names the card behind a back: %', as_setter; end if;
+  if as_setter like '%mmidle%' or as_setter like '%Moment Idle%' then raise exception 'a moment names the card behind a back: %', as_setter; end if;
   perform tests.become_anon();
   begin
     perform play_moment(over);

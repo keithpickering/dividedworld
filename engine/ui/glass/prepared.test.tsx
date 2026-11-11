@@ -168,4 +168,46 @@ describe('usePrepared', () => {
     expect(screen.getByRole('dialog', { name: 'The overlay' })).toBeInTheDocument();
     expect(read).toHaveBeenCalledTimes(1);
   });
+
+  test('a press drops the pending rest timer: the press starts the read itself, and no second one follows', async () => {
+    const read = vi.fn(() => Promise.reject(new Error('down')));
+    renderInWorld(<Trigger read={read} />, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Open it' });
+    fireEvent.pointerEnter(button);
+    fireEvent.focus(button);
+    fireEvent.pointerDown(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('a key press (Enter or Space) drops the pending rest timers too', async () => {
+    const read = vi.fn(() => Promise.resolve('whole'));
+    renderInWorld(<Trigger read={read} />, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Open it' });
+    fireEvent.focus(button);
+    fireEvent.keyDown(button, { key: 'Enter' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(read).not.toHaveBeenCalled();
+    fireEvent.focus(button);
+    fireEvent.keyDown(button, { key: ' ' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test('a mouse press focuses the trigger after pointer down: that focus arms no rest timer either', async () => {
+    const read = vi.fn(() => Promise.reject(new Error('down')));
+    renderInWorld(<Trigger read={read} />, { path: '/characters' });
+    vi.useFakeTimers();
+    const button = screen.getByRole('button', { name: 'Open it' });
+    fireEvent.pointerDown(button);
+    fireEvent.focus(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(read).not.toHaveBeenCalled();
+    fireEvent.blur(button);
+    fireEvent.focus(button);
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
 });
