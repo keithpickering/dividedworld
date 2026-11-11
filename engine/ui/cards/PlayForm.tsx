@@ -26,7 +26,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
-import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, type CardTarget } from '../../rules/cards.ts';
+import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -133,7 +133,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const setting = how === 'set' || (choosing && down);
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
   const setter = (setting && post ? player.actingCharacters.find((c) => c.id === post.character) : undefined) ?? player.hudCharacter;
-  const castable = useMemo(() => instance.cards.filter(castOnPost).map((r) => faceOf(r, ui.cards.find((c) => c.key === r.key), priced, ui.copy.cardKinds)), [instance.cards, ui.cards, priced, ui.copy.cardKinds]);
+  const castable = useMemo(() => instance.cards.filter((r) => castOnPost(r) && !withheld(r, instance.settings)).map((r) => faceOf(r, ui.cards.find((c) => c.key === r.key), priced, ui.copy.cardKinds)), [instance.cards, instance.settings, ui.cards, priced, ui.copy.cardKinds]);
   const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced, ui.copy.cardKinds) : null), [rules, cardUi, priced, ui.copy.cardKinds]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;

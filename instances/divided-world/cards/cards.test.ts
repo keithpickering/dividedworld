@@ -429,7 +429,7 @@ test('Autocorrect\'s phrase is its set phrase', () => {
 test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the ten cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
-  const hit = packOdds(booster, cards).at(-1)!;
+  const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
   // Hall Pass (the face-down Moves design) joined the Booster by its rarity, as a new card does: four uncommons share the 75.
   assert.equal(cards.length, 10);

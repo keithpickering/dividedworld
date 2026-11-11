@@ -226,13 +226,17 @@ export function economyOf(settings: Settings, key: string): number {
 export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
 export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
-/** Whether a card is withheld from this instance: it writes, and the instance runs no completion endpoint (`Settings.oldVoice`). */
-export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Pick<Settings, 'oldVoice'>): boolean => rules.writes !== undefined && !settings.oldVoice;
+/**
+ * Whether a card is withheld from this instance: it writes, and the instance says it runs no completion endpoint (`Settings.oldVoice` is
+ * false). Only an explicit false withholds: an instance's settings always hold the key (settings validation requires a boolean), and the
+ * screens' landing check holds no settings at all, where a missing key must not refuse every writing card.
+ */
+export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Partial<Pick<Settings, 'oldVoice'>>): boolean => rules.writes !== undefined && settings.oldVoice === false;
 
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
 function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
-  // The configuration is checked first so the landing can read it, and the landing's refusal is still said first.
+  // The old voice's refusal is said first, then the landing's, then the configuration's; the configuration is checked first only so the landing can read it.
   const checked = rules.validateConfig(config);
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
   if (!lands.ok) return lands;
@@ -305,6 +309,7 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
+  if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.

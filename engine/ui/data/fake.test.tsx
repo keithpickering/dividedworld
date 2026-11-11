@@ -1253,6 +1253,22 @@ describe('the Vending Machine and a card play, refused as the server refuses the
     expect((await fake.log(null)).cards.find((c) => c.kind === 'bought')).toMatchObject({ price: 150, repriced: true });
   });
 
+  test('a card that writes is not sold where the instance runs no old voice, and is where it does', async () => {
+    const typewriter = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+    const sells = (oldVoice: boolean) => {
+      const own: Instance = { ...shop, cards: [splat, typewriter], settings: { ...shop.settings, oldVoice }, machine: [...shop.machine, { item: { card: 'typewriter' }, availability: 'onSale' as const, price: 100 }] };
+      const fake = createFake({ instance: own });
+      const ana = fake.seed.account('ana');
+      fake.seed.wallet(ana, 500);
+      fake.signInAs(ana);
+      return fake;
+    };
+    const on = sells(true);
+    expect((await on.buyCard(await slotOf(on, 'typewriter'))).ok).toBe(true);
+    const off = sells(false);
+    expect(await off.buyCard(await slotOf(off, 'typewriter'))).toEqual(refused("The old voice isn't running on this forum, so this card can't be played."));
+  });
+
   test('a purchase is refused in the server\'s words: a sold out slot, a stale price, the wrong kind of slot, and a wallet that falls short', async () => {
     const { fake } = shopWorld(500);
     const card = await slotOf(fake, 'splat');

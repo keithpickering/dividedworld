@@ -718,6 +718,8 @@ test('a card that writes reaches a post alone', () => {
   assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['character'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
   assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post', 'thread'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
   assert.match(instanceProblems(withCards({ rarity: 'rare', writes: 'yes' })).join('\n'), /card "splat" has writes that are not a tokens function and a frame function/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, play: 'set', trap: { trigger: { on: 'visit' } } })).join('\n'), /card "splat" writes, and only a Move that is cast does/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, play: 'use', lasts })).join('\n'), /card "splat" writes, and only a Move that is cast does/);
 });
 
 // Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): each refused, naming the card.

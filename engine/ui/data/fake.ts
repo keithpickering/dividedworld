@@ -22,7 +22,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -1241,6 +1241,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
     const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
     if (!seen) return refuse('the machine has no such slot');
+    if (wants === 'card' && 'card' in seen.item) {
+      const sold = instance.cards.find((c) => c.key === (seen.item as { card: string }).card);
+      if (sold && withheld(sold, instance.settings)) return refuse(OLD_VOICE_OFF);
+    }
     if (wants === 'card' && !('card' in seen.item)) return refuse('this slot sells a pack, not a card');
     if (wants === 'pack' && !('pack' in seen.item)) return refuse('this slot sells a card, not a pack');
     if (seen.availability === 'soldOut') return refuse('this slot is sold out');
@@ -1332,7 +1336,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(seen)) return seen;
     const pack = instance.packs.find((p) => p.key === (seen.item as { pack: string }).pack);
     if (!pack) return refuse('the machine has no such slot');
-    const contents = rollPack(pack, instance.cards, random);
+    const contents = rollPack(pack, instance.cards, instance.settings, random);
     const left = spend(account, seen.price, 'purchase', null);
     if (typeof left !== 'number') return left;
     for (const card of contents) account.cards[card] = (account.cards[card] ?? 0) + 1;

@@ -337,4 +337,8 @@ test('a card that writes is refused in plain words where the instance runs no ol
   assert.deepEqual(decidePlay(writer, { oldVoice: false } as Settings, post, [], {}, ''), { ok: false, why: sentence });
   assert.equal(decidePlay(writer, { oldVoice: true } as Settings, post, [], {}, '').ok, true);
   assert.equal(decidePlay(plain, { oldVoice: false } as Settings, post, [], {}, '').ok, true, 'a card that does not write is unaffected');
+  assert.equal(decidePlay(writer, {} as Settings, post, [], {}, '').ok, true, 'settings that say nothing about the old voice do not withhold');
+  assert.deepEqual(decideSet(writer, { oldVoice: false } as Settings, post, [], {}, [writer]), { ok: false, why: sentence });
+  const user: CardRules = { ...writer, key: 'user', play: 'use', lasts: { unit: 'day', count: 1 } };
+  assert.deepEqual(decideUse(user, { oldVoice: false } as Settings, post, [], {}, ''), { ok: false, why: sentence });
 });

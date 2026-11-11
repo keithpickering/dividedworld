@@ -14,7 +14,7 @@
  */
 import type { Instance } from './types.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
-import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach, type SetConditions } from './cards.ts';
+import { OLD_VOICE_OFF, REACHES, casterMessage, listed, reachesOf, withheld, type Play, type Reach, type SetConditions } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -91,7 +91,9 @@ const text = (r: Fields, field: string, most: number, { mayBeEmpty = false } = {
 
 const card = (r: Fields, instance: Instance): string => {
   const key = r.card;
-  if (typeof key !== 'string' || !instance.cards.some((c) => c.key === key)) throw new Refused('card', `the Vending Machine has no card ${JSON.stringify(key)}`);
+  const named = typeof key === 'string' ? instance.cards.find((c) => c.key === key) : undefined;
+  if (typeof key !== 'string' || named === undefined) throw new Refused('card', `the Vending Machine has no card ${JSON.stringify(key)}`);
+  if (withheld(named, instance.settings)) throw new Refused('card', OLD_VOICE_OFF);
   return key;
 };
 
