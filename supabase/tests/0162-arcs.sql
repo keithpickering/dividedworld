@@ -181,6 +181,13 @@ begin
   perform pg_temp.expect(said is not null and said like '%unlocked%', 'a beat was played before it unlocked: ' || coalesce(said, 'allowed'));
   said := pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'ar-boss', 'no-such-beat', 'unlocked'));
   perform pg_temp.expect(said like '%no beat%', 'a beat the persona lacks was unlocked: ' || coalesce(said, 'allowed'));
+  -- An import writes as a replica, before the persona's beats are in: a row for a beat the persona lacks is carried as written, and the log still refuses an edit.
+  perform set_config('session_replication_role', 'replica', true);
+  said := pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'ar-boss', 'no-such-beat', 'unlocked'));
+  perform pg_temp.expect(said is null, 'an import was refused a beat event whose persona it had not yet written: ' || coalesce(said, ''));
+  said := pg_temp.refusal('update arc_beat_events set event = ''lapsed''');
+  perform pg_temp.expect(said like '%only ever added%', 'a replica edited a beat event: ' || coalesce(said, 'allowed'));
+  perform set_config('session_replication_role', 'origin', true);
   said := pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'ar-boss', 'split', 'tired'));
   perform pg_temp.expect(said is not null, 'an unknown event was allowed');
   said := pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event, bundle) values (%s, %L, %L, %L, %L)', s, 'ar-boss', 'g-once', 'unlocked', b));
@@ -336,7 +343,9 @@ begin
   perform pg_temp.expect(not pg_temp.holds('ar-boss', jsonb_build_object('kind', 'boardActivity', 'board', gen_random_uuid(), 'days', 7, 'below', 100)), 'a board that does not exist has posts');
   perform pg_temp.expect(not pg_temp.holds('ar-boss', jsonb_build_object('kind', 'boardActivity', 'board', 'general', 'days', 7, 'below', 100)), 'a board that is no uuid has posts');
   -- Only the board a thread is on now: the system board's and others' posts are not counted here.
-  perform pg_temp.expect(not pg_temp.holds('ar-boss', jsonb_build_object('kind', 'boardActivity', 'board', pg_temp.board('general'), 'days', 7, 'above', 0)), 'posts on other boards were counted');
+  -- A board of its own: General is not empty here, since an earlier file's race tests commit posts to it through dblink, which this file's rollback cannot take back.
+  insert into boards (slug, name) values ('ar-quiet', 'Ar Quiet');
+  perform pg_temp.expect(not pg_temp.holds('ar-boss', jsonb_build_object('kind', 'boardActivity', 'board', pg_temp.board('ar-quiet'), 'days', 7, 'above', 0)), 'posts on other boards were counted');
   -- The mini-arc: unlocked by the next tick, once.
   perform system_tick();
   perform pg_temp.expect(pg_temp.state('lap') = 'unlocked' and pg_temp.n('lap') = 1, 'the mini-arc did not unlock when its board out-posted the other: ' || coalesce(pg_temp.state('lap'), 'nothing'));
@@ -430,6 +439,11 @@ begin
   perform pg_temp.expect(position(stmt in regexp_replace(pg_get_functiondef('arc_board_posts(uuid, integer)'::regprocedure), '\s+', ' ', 'g')) > 0, 'the statement read here is not the one arc_board_posts runs');
   -- A small test database would read a table in order whatever indexes there are; with that off, the plan says which indexes the statement can use at all.
   set local enable_seqscan = off;
+  -- Threads have other indexes that lead with the board (threads_board, threads_board_title), and on a database that has had a full run's rows the planner may take one for a
+  -- board equality alone. They are dropped here, inside this transaction, so the plan shows whether the statement can use the (board, last_at) index at all.
+  for r in select indexname::text as indexname from pg_indexes where schemaname = 'public' and tablename = 'threads' and indexname <> 'threads_board_last_at' and indexdef ~ '\(board[,)]' loop
+    execute format('drop index %I', r.indexname);
+  end loop;
   for r in execute 'explain (costs off) ' || replace(replace(stmt, 'in_board', quote_literal(pg_temp.board('fangame-palace')) || '::uuid'), 'since', 'now() - interval ''7 days''') loop
     plan := plan || r."QUERY PLAN" || E'\n';
   end loop;
