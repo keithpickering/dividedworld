@@ -208,6 +208,18 @@ test('a peek pulled 150px over [100, 80] lifts [100, 50]', () => {
   assert.equal(h.drain().filter((e) => e.kind === 'change').length, 0, 'nothing a reader does is saved');
 });
 
+test('a peek spends no pull on a lower piece already peeled off: the next one with tape comes up after the top', () => {
+  const h = make([
+    piece({ id: 'a:0', strip: 'a', w: 100, stuck: [[0, 100, 0]], under: ['b:0', 'c:0'] }),
+    piece({ id: 'b:0', strip: 'b', w: 80, open: false, stuck: [] }),
+    piece({ id: 'c:0', strip: 'c', w: 60, open: false, stuck: [[0, 60, 0]] }),
+  ], false);
+  assert.equal(h.press('a:0', 0, 1), 'peeking');
+  h.move(1, 150);
+  run(h, 16);
+  assert.equal(h.view('c:0').lift?.lift, 50);
+});
+
 test('a peek can come from the far end', () => {
   const h = make(chain(), false);
   h.press('a:0', 97, 1);

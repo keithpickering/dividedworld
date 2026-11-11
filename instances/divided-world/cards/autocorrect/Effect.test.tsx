@@ -683,6 +683,20 @@ describe('Autocorrect: the hands on a piece', () => {
     expect(document.querySelector('.dw-ac-corner')).toBeNull();
   });
 
+  test('the window stops listening once the held hand is let go', async () => {
+    vi.useFakeTimers();
+    mount({ author: true, body: 'Mario' });
+    const added = vi.spyOn(window, 'addEventListener');
+    const removed = vi.spyOn(window, 'removeEventListener');
+    down(pieces()[0]!, 3);
+    await pass(200);
+    const ups = added.mock.calls.filter(([t]) => t === 'pointerup').length;
+    expect(ups).toBe(1);
+    fireEvent.pointerUp(window, { pointerId: 1 });
+    await pass(50);
+    expect(removed.mock.calls.filter(([t]) => t === 'pointerup' || t === 'pointercancel').length).toBe(2);
+  });
+
   test('a peek held still lets the loop rest, and a move wakes it', async () => {
     vi.useFakeTimers();
     mount({ body: 'Mario' });

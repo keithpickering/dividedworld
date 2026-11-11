@@ -215,7 +215,8 @@ export class Hands {
 
   private chainOf(carrier: string): string[] {
     const p = this.pieces.get(carrier);
-    return p ? [carrier, ...p.spec.under.filter((id) => this.pieces.has(id))] : [];
+    /* A lower piece already peeled off is not in the chain: a pull is never spent lifting tape that is not there. */
+    return p ? [carrier, ...p.spec.under.filter((id) => (this.pieces.get(id)?.stuck.length ?? 0) > 0)] : [];
   }
 
   private pressPeek(p: Piece, x: number, pointer: number | string): 'covered' | 'peeking' {

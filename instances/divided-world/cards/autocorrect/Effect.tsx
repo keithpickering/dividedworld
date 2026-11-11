@@ -741,7 +741,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
       e.preventDefault();
       try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* A pointer already gone has nothing to capture. */ }
       onWindow.current?.();
-      const out = (ev: Event) => { hs.release((ev as { pointerId?: number }).pointerId ?? 0); after(hs); };
+      const out = (ev: Event) => { stop(); hs.release((ev as { pointerId?: number }).pointerId ?? 0); after(hs); };
       const stop = () => { window.removeEventListener('pointerup', out); window.removeEventListener('pointercancel', out); onWindow.current = null; };
       window.addEventListener('pointerup', out);
       window.addEventListener('pointercancel', out);
