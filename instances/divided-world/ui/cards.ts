@@ -39,7 +39,7 @@ import feelinFabArt from './cards/feelin-fab/art.json';
 import hallPassCanvas from './cards/hall-pass/art.webp?url';
 import hallPassMark from './cards/hall-pass/mark.svg?url';
 import hallPassArt from './cards/hall-pass/art.json';
-import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
+import youWereSayingCanvas from './cards/you-were-saying/art.webp?url';
 import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
 import youWereSayingArt from './cards/you-were-saying/art.json';
 import { ConfigForm as YouWereSayingConfigForm } from '../cards/you-were-saying/ConfigForm.tsx';
