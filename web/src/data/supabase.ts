@@ -39,6 +39,7 @@ import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
+  SurfaceAct, SurfaceNow, SurfaceWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, Answer, AvatarUpload, Board, Bought, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
@@ -129,6 +130,20 @@ const beyond = (reach: string | undefined, fromPost: string | undefined): Record
 
 /** The characters a body puts words in the mouth of, as the act function reads them (engine/rules/actions.ts): nothing when there are none. */
 const framed = (framing: readonly string[] | undefined): Record<string, unknown> => (framing && framing.length > 0 ? { framing } : {});
+
+/** A draw or a wash as `surface_acts` carries it: the public Act, and a draw's `share`, the cells it owns now. */
+function toSurfaceAct(r: Row): SurfaceAct {
+  return { ...toAct(r), ...(typeof r['share'] === 'number' ? { share: r['share'] } : {}) };
+}
+/** What draw_on_surface and wash_surface answer: the Act's projection, the cells now covered and the live Acts' ids. */
+function toSurfaceWritten(r: Row): SurfaceWritten {
+  return { ...toSurfaceAct(r), covered: num(r['covered']), live: (Array.isArray(r['live']) ? r['live'] : []).filter((x): x is Id => typeof x === 'string') };
+}
+/** thread_page's `surfaces`: by surface play, its cells covered and its live Acts' ids. */
+function toSurfaces(v: unknown): Record<Id, SurfaceNow> {
+  if (!isObject(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([, s]) => isObject(s)).map(([play, s]) => [play, { covered: num((s as Row)['covered']), live: ((s as Row)['live'] as unknown[] | undefined ?? []).filter((x): x is Id => typeof x === 'string') }]));
+}
 
 function toAct(r: Row): Act {
   return {
@@ -1385,6 +1400,16 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return Object.fromEntries(rows.map((r) => [r['play'], r['card']]));
     },
     saveEffect: (play, character, state) => act({ action: 'saveEffect', character, play, state }, (r) => ({ play: r['play'], savedAt: r['saved_at'] })),
+    /* A draw and a wash are written by the act function's `draw` and `wash` (draw_on_surface, wash_surface, 0154); the answer is the Act with the cells covered and the live ids. */
+    draw: (play, character, input) => act({ action: 'draw', character, play, input }, toSurfaceWritten),
+    wash: (play, character, input) => act({ action: 'wash', character, play, input }, toSurfaceWritten),
+    async surfaceActs(play) {
+      if (!idOk(play)) return null;
+      const r = await read(() => client.rpc('surface_acts', { play }));
+      const d = r.data as Row | null;
+      if (!isObject(d)) return null;
+      return { covered: num(d['covered']), acts: rowsOf(d['acts']).map(toSurfaceAct), older: num(d['older']) };
+    },
     characters,
     async characterCounts(id): Promise<CharacterCounts> {
       // One row of counters kept by a trigger (0030), never a count of the character's Acts; none for a character that has done nothing.
@@ -1613,6 +1638,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         })),
         visits: rowsOf(d['visits']).map(toVisit),
         plays, above, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])), states: toStates(rowsOf(d['states'])),
+        surfaces: toSurfaces(d['surfaces']),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
@@ -1955,8 +1981,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
 
     subscribeThread(thread, l) {
-      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'card_text'], (event, p) => {
+      return join(`thread:${thread}`, ['act', 'tally', 'effect', 'surface', 'card_text'], (event, p) => {
         if (event === 'act') l.onAct?.(toAct(p));
+        else if (event === 'surface') l.onSurface?.(p['play'], num(p['covered']));
         else if (event === 'tally') l.onTally?.(p['act'], (p['tally'] ?? {}) as Tally);
         else if (event === 'effect') l.onEffect?.(p['play'], p['saved_at']);
         else if (event === 'card_text') l.onText?.(p['play'], p['version']);

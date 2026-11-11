@@ -6,7 +6,7 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -97,7 +97,7 @@ test('only the cards the instance draws an effect for have a state to read', () 
 
 describe('the kinds of Act that hold a card\'s effect', () => {
   test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a take-back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false };
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false, donation: false, draw: false, wash: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
@@ -478,5 +478,70 @@ describe('a play that did not take', () => {
     expect(got.plays.map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
     expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k3']);
     expect(markedPlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
+  });
+});
+
+/* A surface (0154): what the page's read carries of it is its covered cells and its live Acts' ids; the live Acts' own words are read where a wall is near. */
+describe('a surface, in the store', () => {
+  const wall = 'k-wall';
+  const drawn = (id: string): Act => ({ id, kind: 'draw', character: 'c1', thread: 't', targetActId: wall, seq: null, createdAt: '2026-10-30T10:00:00.000Z', payload: { strokes: [], cells: '0'.repeat(10000) }, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const play = (): Act => card({ id: wall, payload: { card: 'slab', layer: 1, message: '', config: {} } });
+
+  test('hydrate carries the page\'s surfaces: the cells covered and the live ids, with no Acts read yet', () => {
+    const plays = createPlays();
+    hydrate(plays, [play()], {}, [], {}, { [wall]: { covered: 120, live: ['d1', 'd2'] } });
+    expect(plays.get(POST).surfaces).toEqual({ [wall]: { covered: 120, live: ['d1', 'd2'], acts: null } });
+  });
+
+  test('a surface for a play not here yet is kept for when it is, and a later page\'s numbers replace the earlier\'s', () => {
+    const plays = createPlays();
+    plays.setSurfaces({ [wall]: { covered: 5, live: ['d1'] } });
+    expect(plays.get(POST).surfaces).toEqual({});
+    plays.add([play()]);
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 5, live: ['d1'] });
+    plays.setSurfaces({ [wall]: { covered: 9, live: ['d1', 'd2'] } });
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 9, live: ['d1', 'd2'] });
+  });
+
+  test('a change to a surface wakes its post alone, and the same again wakes none', () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    const here = vi.fn();
+    const there = vi.fn();
+    plays.subscribe(POST, here);
+    plays.subscribe(OTHER, there);
+    plays.setSurfaces({ [wall]: { covered: 5, live: [] } });
+    expect(here).toHaveBeenCalledTimes(1);
+    plays.setSurfaces({ [wall]: { covered: 5, live: [] } });
+    expect(here).toHaveBeenCalledTimes(1);
+    expect(there).not.toHaveBeenCalled();
+  });
+
+  test('a surface\'s Acts are read once when asked for, and again on a change; a play never asked for is never read', async () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    const surfaceActs = vi.fn(async () => ({ covered: 7, acts: [drawn('d1')], older: 0 }));
+    const api = { surfaceActs } as never;
+    expect(plays.wantSurface(wall)).toBe(true);
+    expect(plays.wantSurface(wall)).toBe(false);
+    await readSurface(api, plays, wall);
+    expect(surfaceActs).toHaveBeenCalledWith(wall);
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 7, acts: [expect.objectContaining({ id: 'd1' })] });
+    expect(plays.wantsSurface(wall)).toBe(true);
+    expect(plays.wantsSurface('other-wall')).toBe(false);
+  });
+
+  test('a read that fails leaves the surface as it was and can be asked again', async () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    expect(plays.wantSurface(wall)).toBe(true);
+    await readSurface({ surfaceActs: async () => { throw new Error('offline'); } } as never, plays, wall);
+    expect(plays.get(POST).surfaces[wall]?.acts ?? null).toBeNull();
+    expect(plays.wantSurface(wall)).toBe(true);
+  });
+
+  test('a draw or a wash is no card effect and no line of a thread', () => {
+    expect(holdsEffects('draw')).toBe(false);
+    expect(holdsEffects('wash')).toBe(false);
   });
 });

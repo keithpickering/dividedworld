@@ -15,6 +15,7 @@ import type { CardPlay, CardView, EffectProps, Written } from '../../../../engin
 import { ratio } from '../../../../engine/ui/contrast.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { YouWereSayingEffect } from './Effect.tsx';
+import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
@@ -58,7 +59,7 @@ function mount(o: Options = {}) {
       <YouWereSayingEffect
         post={post} plays={plays} states={live.states} released={new Set()} written={new Map(Object.entries(live.written))} {...(live.version === null ? {} : { version: live.version })}
         reader={{ author: o.author ?? false, caster: false }} place="thread" reach="post" still={o.still ?? false} save={save}
-        release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
+        release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={(v) => { views.push(v); }} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
       >
         <p data-words>The old voice</p>
       </YouWereSayingEffect>

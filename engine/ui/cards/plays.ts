@@ -10,7 +10,7 @@
  * that arrives live is added to the post it names whichever page that post is on.
  */
 import { useSyncExternalStore } from 'react';
-import type { Act, ActKind, EffectState, Id, KayfaApi } from '../data/api.ts';
+import type { Act, ActKind, EffectState, Id, KayfaApi, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
 import { BEYOND_POST, type BeyondPost, type CardRules } from '../../rules/cards.ts';
 import type { Settings, Span } from '../../rules/types.ts';
@@ -145,9 +145,13 @@ export interface PostPlays {
   readonly read: number;
   /** Which card each of the reader's own card backs on the post is, by set (`my_face_down`): on the setter's screen alone. */
   readonly faces: Readonly<Record<Id, string>>;
+  /** Each of the post's surface plays (0154): the cells it covers, its live Acts' ids, and the live Acts themselves (null until read, where a wall is near). */
+  readonly surfaces: Readonly<Record<Id, Surface>>;
 }
+/** A surface play as the store holds it. */
+export interface Surface extends SurfaceNow { readonly acts: readonly SurfaceAct[] | null }
 
-const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}) });
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}), surfaces: Object.freeze({}) });
 
 const viewKey = (post: Id, card: string): string => `${post}\u0000${card}`;
 
@@ -202,6 +206,16 @@ export interface Plays {
   setReleased(plays: readonly Id[]): boolean;
   /** The reader's own card backs' cards, by set: drawn under the back on their screen alone, never sent. */
   setFaces(faces: Readonly<Record<Id, string>>): boolean;
+  /** Keep each surface play's cells covered and live ids, as the page's read or the channel says them (the live Acts read before are kept until read again); true when any changed. A surface for a play not here is kept for when it is. */
+  setSurfaces(surfaces: Readonly<Record<Id, Pick<SurfaceNow, 'covered'> & { readonly live?: readonly Id[] }>>): boolean;
+  /** Keep a surface play's live Acts, as `surfaceActs` read them, with the cells covered. */
+  setSurfaceActs(play: Id, covered: number, acts: readonly SurfaceAct[]): boolean;
+  /** Say the surface's live Acts are wanted (a wall is near the viewport): true the first time, so the caller reads once. */
+  wantSurface(play: Id): boolean;
+  /** Whether its live Acts are wanted, and so read again when it changes. */
+  wantsSurface(play: Id): boolean;
+  /** Take the want back, where a read failed, so the next ask reads again. */
+  unwantSurface(play: Id): void;
   /** The post's plays in billing order: as last set, then each play added since, in the order it arrived. */
   billing(post: Id): readonly Id[];
   /** Set the post's billing, when its page is read (a new read, even in the same order); a play it leaves out keeps its place after the ones it names. */
@@ -223,6 +237,8 @@ export function createPlays(): Plays {
   const states = new Map<Id, EffectState>();
   const released = new Set<Id>();
   const faces = new Map<Id, string>();
+  const surfaces = new Map<Id, Surface>();
+  const wanted = new Set<Id>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
   const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
   /* The backs their setters took back: a `take_back` that arrived before its back is kept here for when the back does. */
@@ -258,6 +274,7 @@ export function createPlays(): Plays {
           released: new Set(plays.filter((p) => released.has(p.id)).map((p) => p.id)),
           read: reads.get(post) ?? 0,
           faces: Object.fromEntries(plays.filter((p) => faces.has(p.id)).map((p) => [p.id, faces.get(p.id)!])),
+          surfaces: Object.fromEntries(plays.filter((p) => surfaces.has(p.id)).map((p) => [p.id, surfaces.get(p.id)!])),
         };
         snapshots.set(post, snap);
       }
@@ -379,6 +396,31 @@ export function createPlays(): Plays {
       changed(touched);
       return touched.size > 0;
     },
+    setSurfaces(next) {
+      const touched = new Set<Id>();
+      for (const [play, now] of Object.entries(next)) {
+        const was = surfaces.get(play);
+        const live = now.live ?? was?.live ?? [];
+        if (was && was.covered === now.covered && was.live.length === live.length && was.live.every((id, i) => id === live[i])) continue;
+        surfaces.set(play, { covered: now.covered, live, acts: was?.acts ?? null });
+        const post = postOf.get(play);
+        if (post !== undefined) touched.add(post);
+      }
+      changed(touched);
+      return touched.size > 0;
+    },
+    setSurfaceActs(play, covered, acts) {
+      const was = surfaces.get(play);
+      surfaces.set(play, { covered, live: acts.map((a) => a.id), acts });
+      const post = postOf.get(play);
+      if (post === undefined) return false;
+      const same = was?.acts != null && was.covered === covered && was.acts.length === acts.length && was.acts.every((a, i) => a.id === acts[i]!.id && a.share === acts[i]!.share);
+      if (!same) changed([post]);
+      return !same;
+    },
+    wantSurface(play) { if (wanted.has(play)) return false; wanted.add(play); return true; },
+    wantsSurface: (play) => wanted.has(play),
+    unwantSurface(play) { wanted.delete(play); },
     billing: (post) => order.get(post) ?? [],
     setBilling(post, ids) {
       const own = byPost.get(post);
@@ -449,11 +491,25 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
  * Task 13): the document holds what `readPlays`, `readAbove` and `readEffects` would have asked for. `faces` are the reader's own card
  * backs' cards, by set. The states and releases are the document's for the cards the instance draws an effect for.
  */
-export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}): void {
+export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}): void {
   plays.add(acts);
   plays.setStates(states);
   plays.setReleased(releases);
   plays.setFaces(faces);
+  plays.setSurfaces(surfaces);
+}
+
+/**
+ * Read a surface play's live draws and washes (`KayfaApi.surfaceActs`) into the store. Asked where a wall is near the viewport and again when the
+ * channel says it changed, so a page of many walls reads the few that are near. A failed read leaves the surface as it was, and the play can be asked for again.
+ */
+export async function readSurface(api: KayfaApi, plays: Plays, play: Id): Promise<void> {
+  try {
+    const read = await api.surfaceActs(play);
+    plays.setSurfaceActs(play, read?.covered ?? 0, read?.acts ?? []);
+  } catch {
+    plays.unwantSurface(play);
+  }
 }
 
 /**
@@ -475,5 +531,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

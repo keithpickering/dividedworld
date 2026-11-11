@@ -11,7 +11,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Settings } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
-import type { Act, Answer, Donated, DriveGift, EffectState, Id, Wallet } from '../data/api.ts';
+import type { Act, Answer, Donated, DriveGift, EffectState, Id, SurfaceAct, Wallet } from '../data/api.ts';
 import type { CardFace } from './faces.ts';
 
 /**
@@ -231,6 +231,34 @@ export interface EffectProps {
   readonly moreGifts: (drive: Id) => Promise<void>;
   /** The reader's own settled wallet, from the header's store (null before it is known): a give button short of Aura is the reader's own fact. */
   readonly wallet: Wallet | null;
+  /**
+   * The surface of this card's play on the post, for a card with `CardRules.surface`; undefined for every other card, and in a moment.
+   * Any character may add to it (`draw`) and the post's own character takes ink off (`wash`); both refuse without asking in a moment and on a sample page.
+   */
+  readonly surface?: {
+    /** The cells the layer covers now, of the grid's 10,000 (from the page's read, then the channel's). */
+    readonly covered: number;
+    /** The most cells it may cover: the card's limit (`CardRules.surface.limitKey`) as cells. */
+    readonly most: number;
+    /** The live draws and washes, oldest first; null until read (fetched near the viewport). */
+    readonly acts: readonly SurfaceAct[] | null;
+    /** Ask for `acts`: read once, and again each time the surface changes after. A page of many walls reads only the walls that ask. */
+    near(): void;
+    draw(play: Id, as: Id, input: unknown): Promise<Answer<SurfaceAct>>;
+    /** As the post's character; refused for anyone else. */
+    wash(play: Id, input: unknown): Promise<Answer<SurfaceAct>>;
+  };
+  /**
+   * The post's ink registry, so two cards that hold ink on one post share it: each effect that holds ink `claim`s a hit test (client px) and
+   * starts a stroke only where `topAt` is true, which it is for the outermost claimant whose hit test is true at that point. A press on an
+   * outer card's ink works that card, and a press beside it falls through to the card beneath.
+   */
+  readonly ink: {
+    /** Register a hit test; the answer takes it back. */
+    claim(hit: (x: number, y: number) => boolean): () => void;
+    /** Whether this effect is the outermost claimant whose hit test is true at the point. */
+    topAt(x: number, y: number): boolean;
+  };
   readonly children: ReactNode;
 }
 
@@ -305,6 +333,8 @@ export interface CardUi {
   readonly summary?: string;
   /** The effect covers the post (the reader cannot read it as it stands), so the Lens leads with the card's controls. */
   readonly takeover?: boolean;
+  /** `PostEffects` nests this card's effect innermost, whatever its play order, under every card without it (a layer other cards' ink lies on); among several, play order holds. A takeover is still outermost. */
+  readonly beneath?: true;
   /** One short line the Lens gives a reader who has not yet met the card's effect: the first-meet line. */
   readonly hint?: string;
   /**

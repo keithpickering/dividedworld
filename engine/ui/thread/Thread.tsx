@@ -34,7 +34,7 @@ import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, hydrate, readEffects } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, readEffects, readSurface } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -194,7 +194,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       asked.current.set(p.character.id, Promise.resolve());
     }
     const played = [...page.plays, ...page.above.map((x) => x.act)];
-    hydrate(plays, played, page.states, page.releases, page.faces);
+    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces);
     /* A play leaves a page's `above` when an admin ended it, when its thread moved, or when its time ran out (the server drops a play past its
        end; a reach play past its time is already hidden by the clock, so marking it changes nothing a reader sees), and sends no `card_end`
        with it: a page read again says so by what it no longer holds. Only a read asked after the remembered one says so. */
@@ -536,6 +536,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const listener: ThreadListener = {
       onAct(a) {
+        /* A draw or a wash is no post and no line of the thread: the surface it is on is told on its own event (`onSurface`). */
+        if (a.kind === 'draw' || a.kind === 'wash') return;
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
         if (a.kind === 'card') {
           void ensurePeople([a.character]).then(() => { plays.add([a]); return readEffects(api, plays, [a], effects); }).catch(quietly);
@@ -569,6 +571,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       onEffect(play) {
         /* A saved state is read where it is kept, by the play it names: the post author's newest version is what every reader loads. */
         void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ });
+      },
+      onSurface(play, covered) {
+        /* A draw or a wash landed: the cells it covers now, for every wall of the page; the live Acts of the play alone, and only if they are drawn (a wall that was near). */
+        plays.setSurfaces({ [play]: { covered } });
+        if (plays.wantsSurface(play)) void readSurface(api, plays, play);
       },
       onJoined() { joinedAt('thread'); },
       onTally(act, t) {

@@ -11,13 +11,14 @@
  * An effect (`CardUi.Effect`) wraps the post's words wherever they are drawn (the thread, and the ORIGIN box of a
  * thread spun from the post). Each played card's wraps the cards played before it, in play order, so the latest is
  * outermost, except a card with `CardUi.takeover` (Stick Around, which lifts the post out of its thread): those wrap last, so
- * every other card's effect is inside a takeover's `children`, and several takeovers wrap in their own play order. Only a
+ * every other card's effect is inside a takeover's `children`, and several takeovers wrap in their own play order. A card with `CardUi.beneath`
+ * (the layer other cards' ink lies on) wraps first of all, so every card without it is outside it, and among several play order holds. Only a
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { Act, EffectState, Id, PlayAbove, PlayMoment } from '../data/api.ts';
+import type { Act, EffectState, Id, KayfaApi, PlayAbove, PlayMoment, SurfaceAct } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { useMeet } from './Callout.tsx';
 import { useHoldScreen } from '../tips/Tips.tsx';
@@ -27,9 +28,11 @@ import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
-import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
+import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, readSurface, shownPlays, usePlays, type Plays } from './plays.ts';
+import { createClaims, NO_INK } from './claims.ts';
+import { drawnInMoment, surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
+import type { PostPlays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
 
@@ -114,6 +117,47 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    */
   const author = writingCharacters.find((c) => c.id === post.character) ?? null;
   const staged = useStaged();
+  /* The post's ink registry, one for all its effects (claims.ts). */
+  const claims = useMemo(createClaims, []);
+  /*
+   * A surface play's face for its effect (`EffectProps.surface`): its cells and live Acts as the store holds them, and the three things an effect
+   * does with it. Each play's `near`, and the object handed to its effect, are the same until what they say changes, so an effect may list them in its dependencies.
+   */
+  const nears = useRef(new Map<Id, () => void>());
+  const faces = useRef(new Map<Id, { readonly key: string; readonly face: NonNullable<EffectProps['surface']> }>());
+  const nearOf = (play: Id): (() => void) => {
+    let near = nears.current.get(play);
+    if (!near) { near = () => { if (plays.wantSurface(play)) void readSurface(api, plays, play); }; nears.current.set(play, near); }
+    return near;
+  };
+  const draw = useCallback<NonNullable<EffectProps['surface']>['draw']>(async (play, as, input) => {
+    if (staged) return { ok: false, error: SAMPLE };
+    const drawn = await api.draw(play, as, input);
+    if (drawn.ok) afterSurface(plays, api, play, drawn.value.covered, drawn.value.live);
+    return drawn;
+  }, [api, plays, staged]);
+  const wash = useCallback<NonNullable<EffectProps['surface']>['wash']>(async (play, input) => {
+    if (staged) return { ok: false, error: SAMPLE };
+    if (!author) return { ok: false, error: NOT_AUTHOR };
+    const washed = await api.wash(play, author.id, input);
+    if (washed.ok) afterSurface(plays, api, play, washed.value.covered, washed.value.live);
+    return washed;
+  }, [api, author, plays, staged]);
+  const surfaceOf = (key: string, mine: readonly CardPlay[], of: PostPlays): EffectProps['surface'] => {
+    const rules = instance.cards.find((c) => c.key === key);
+    const play = mine[0];
+    if (!rules?.surface || !play) return undefined;
+    const held = of.surfaces[play.id];
+    const acts: readonly SurfaceAct[] | null = held?.acts ?? null;
+    const covered = held?.covered ?? 0;
+    const most = surfaceMost(key, rules.surface.limitKey, instance.settings);
+    const stamp = `${covered}|${most}|${acts === null ? 'unread' : `read:${acts.map((a) => `${a.id}:${a.share ?? ''}`).join(',')}`}`;
+    const was = faces.current.get(play.id);
+    if (was && was.key === stamp && was.face.draw === draw && was.face.wash === wash) return was.face;
+    const face = { covered, most, acts, near: nearOf(play.id), draw, wash };
+    faces.current.set(play.id, { key: stamp, face });
+    return face;
+  };
   const save = useCallback<EffectProps['save']>(async (play, state) => {
     if (staged) return { ok: false, error: SAMPLE };
     if (!author) return { ok: false, error: NOT_AUTHOR };
@@ -162,7 +206,8 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   /* Each layer's cards in the order each was first played there, the first innermost; every takeover after all of them. */
   const wraps = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key) => ({ ...l, key })));
-  const ordered = [...wraps.filter((w) => !takes(w.key)), ...wraps.filter((w) => takes(w.key))];
+  const beneath = (key: string) => ui.cards.find((c) => c.key === key)?.beneath === true;
+  const ordered = [...wraps.filter((w) => !takes(w.key) && beneath(w.key)), ...wraps.filter((w) => !takes(w.key) && !beneath(w.key)), ...wraps.filter((w) => takes(w.key))];
   let wrapped = children;
   if (momentAct && bodyOf) {
     wrapped = (
@@ -172,7 +217,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       />
     );
   }
-  for (const { key, reach, acting, of } of momentAct ? ordered.filter((w) => takes(w.key)) : ordered) {
+  for (const [rank, { key, reach, acting, of }] of (momentAct ? ordered.filter((w) => takes(w.key)) : ordered).entries()) {
     const card = ui.cards.find((c) => c.key === key);
     if (!card?.Effect) continue;
     const mine = acting.filter((p) => p.card === key);
@@ -186,12 +231,19 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         give={give} moreGifts={moreGifts} wallet={wallet}
         {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
+        ink={claims.at(`${reach}:${key}`, rank)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
       >
         {wrapped}
       </BoundEffect>
     );
   }
   return <>{wrapped}</>;
+}
+
+/** What the store takes from a draw or a wash that landed: the cells now covered and the live ids, and the live Acts read again where they are wanted. */
+function afterSurface(plays: Plays, api: KayfaApi, play: Id, covered: number, live: readonly Id[]): void {
+  plays.setSurfaces({ [play]: { covered, live } });
+  if (plays.wantsSurface(play)) void readSurface(api, plays, play);
 }
 
 /** The keys of the cards that write (`CardRules.writes`): only their plays have tails to read. */
@@ -464,7 +516,7 @@ const NO_STATES: Readonly<Record<Id, EffectState>> = Object.freeze({});
  * notes, a play's each, top first (the last played first), where it gives any: a still view's heading is "as it landed", which the
  * frame says already (the owner, 2026-11-07), and the notes say how each layer stood. A view with no notes gives its heading.
  */
-function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet'> & {
+function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface' | 'ink'> & {
   readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly onWords: (card: string, words: string | null) => void;
 }) {
   const plays = props.plays;
@@ -473,7 +525,7 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
     onWords(card, view === null ? null : notes.length > 0 ? notes.join('; ') : view.state);
   }, [onWords, card, plays]);
   useEffect(() => () => onWords(card, null), [onWords, card]);
-  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} give={stillGive} moreGifts={stillMore} wallet={null} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} give={stillGive} moreGifts={stillMore} wallet={null} ink={NO_INK} /></Suspense>;
 }
 
 export { useNarrow, useSheet } from '../media.ts';

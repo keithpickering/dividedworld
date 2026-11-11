@@ -22,8 +22,9 @@
 import type { Instance, Quadrant, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, giftSplit, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -44,6 +45,7 @@ import type {
   Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -67,7 +69,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'card_text' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'surface' | 'card_text' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -391,7 +393,7 @@ const refuse = (error: string, field?: string): Refusal => (field === undefined 
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash']);
 
 /** The methods that are not a promise of something: everything else is made one. */
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
@@ -1243,6 +1245,115 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return [...plays, ...ends].map(publicAct);
   };
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
+
+  /* ------------------------------------------------------------------ surfaces (0154) ---- */
+  /** A surface as the database's `surfaces` row holds it: the cells covered, the live draw (1-based place in `live`, 0 for none) that last inked each, and the live list. */
+  interface SurfaceRec { cover: Cells; owners: Uint16Array; live: Id[]; readonly cells: Map<Id, Cells> }
+  const surfaceRecs = new Map<Id, SurfaceRec>();
+  const hasCell = (c: Cells, i: number): boolean => (c[i >> 3]! & (0x80 >> (i & 7))) !== 0;
+  const meets = (a: Cells, b: Cells): boolean => a.some((v, i) => (v & b[i]!) !== 0);
+  const inside = (a: Cells, b: Cells): boolean => a.every((v, i) => (v & ~b[i]! & 0xff) === 0);
+  /** The surface of a play of a card with one: opened with the play (open_surface), here the first time it is asked for. Null for any other Act. */
+  function surfaceOf(play: Id): SurfaceRec | null {
+    const p = playOf(play);
+    if (!p || p.target === null || typeof p.payload.card !== 'string' || instance.cards.find((c) => c.key === p.payload.card)?.surface === undefined) return null;
+    let s = surfaceRecs.get(play);
+    if (!s) { s = { cover: new Uint8Array(GRID * GRID / 8), owners: new Uint16Array(GRID * GRID), live: [], cells: new Map() }; surfaceRecs.set(play, s); }
+    return s;
+  }
+  /**
+   * surface_step (0154): the one transition. A draw covers its cells and owns each; a wash uncovers them and leaves them owned by no one; the Act joins the
+   * live list unless it is a wash that uncovered nothing; then the list is pruned (a draw that owns no cell, a wash that uncovers nothing a kept draw
+   * inked or that a later wash covers whole) and renumbered.
+   */
+  function surfaceStep(s: SurfaceRec, kind: 'draw' | 'wash', id: Id, cells: Cells): { cover: Cells; owners: Uint16Array; live: Id[] } {
+    const draw = kind === 'draw';
+    const index = s.live.length + 1;
+    const cover = draw ? union(s.cover, cells) : minus(s.cover, cells);
+    const owners = s.owners.map((o, i) => (!hasCell(cells, i) ? o : draw ? index : 0));
+    let live = draw || meets(s.cover, cells) ? [...s.live, id] : s.live;
+    const cellsOfLive = (at: Id): Cells => (at === id ? cells : s.cells.get(at)!);
+    const kindOf = (at: Id): 'draw' | 'wash' => (at === id ? kind : acts.get(at)!.kind as 'draw' | 'wash');
+    const owning = new Set(owners);
+    const kept = live.map((at, k) => {
+      const place = k + 1;
+      if (kindOf(at) === 'draw') return owning.has(place);
+      const mine = cellsOfLive(at);
+      const earlier = live.some((d, j) => j < k && kindOf(d) === 'draw' && owning.has(j + 1) && meets(cellsOfLive(d), mine));
+      const covered = live.some((w, j) => j > k && kindOf(w) === 'wash' && inside(mine, cellsOfLive(w)));
+      return earlier && !covered;
+    });
+    if (kept.some((k) => !k)) {
+      const remap = new Map<number, number>();
+      kept.forEach((k, j) => { if (k) remap.set(j + 1, remap.size + 1); });
+      for (let i = 0; i < owners.length; i++) if (owners[i] !== 0) owners[i] = remap.get(owners[i]!) ?? 0;
+      live = live.filter((_, j) => kept[j]);
+    }
+    return { cover, owners, live };
+  }
+  /** draw_on_surface and wash_surface (0154), in the order they refuse: the character, the wall, the lock, then the limits; a draw alone is held to them. */
+  function writeSurface(kind: 'draw' | 'wash', play: Id, character: Id, input: unknown): Answer<SurfaceWritten> {
+    const account = me();
+    if (!account) return refuse('sign in to act');
+    const p = playOf(play);
+    const rules = p && typeof p.payload.card === 'string' ? instance.cards.find((c) => c.key === p.payload.card) : undefined;
+    const author = p?.target == null ? undefined : acts.get(p.target)?.character;
+    if (kind === 'wash') {
+      /* The post's own player answers for the mask that wrote it, retired or not (0038); every other case is acting()'s. */
+      const mine = characters.get(character);
+      if (!(author === character && mine !== undefined && mine.owner === account.id && mine.debutedAt !== null)) {
+        const c = acting(character);
+        if (isRefusal(c)) return c;
+      }
+    } else {
+      const c = acting(character);
+      if (isRefusal(c)) return c;
+    }
+    const s = rules?.surface === undefined ? null : surfaceOf(play);
+    if (!p || !rules || !s || author === undefined) return refuse('there is no wall on that post');
+    if (kind === 'wash' && author !== character) return refuse('only the post\'s author washes what is on it');
+    if (reversedPlays.has(play)) return refuse('an admin ended that card');
+    if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
+    const drawn = kind === 'draw' ? decideDraw(rules, settings, input) : null;
+    const decided = drawn ?? decideWash(rules, settings, input);
+    if (!decided.ok) return refuse(decided.why);
+    const cells = fromBits(decided.value.cells);
+    const written = uuid();
+    const next = surfaceStep(s, kind, written, cells);
+    if (drawn?.ok) {
+      const most = drawn.value.most;
+      const before = count(s.cover);
+      const after = count(next.cover);
+      if (after > most && after > before) {
+        return refuse(`this wall is ${Math.floor(before / 100)}% covered, and its limit is ${Math.round(most / 100)}%; this tag would take it to ${Math.ceil(after / 100)}%`);
+      }
+      const mostLive = rules.surface!.mostLive;
+      if (new Set([...next.owners].filter((o) => o !== 0)).size > mostLive) return refuse(`this wall holds ${mostLive} tags; paint over one or wait for a wash`);
+    }
+    const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...decided.value.payload, cells: decided.value.cells } });
+    s.cells.set(written, cells);
+    s.cover = next.cover; s.owners = next.owners; s.live = next.live;
+    const covered = count(next.cover);
+    send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
+    return ok({ ...publicAct(rec), covered, live: [...next.live] });
+  }
+  /** surface_acts (0154): a play's live draws and washes, oldest first, each draw with the cells it owns now; null where the play has no surface. */
+  function surfaceActs(play: Id): SurfaceActs | null {
+    const s = surfaceOf(play);
+    if (!s) return null;
+    const owned = (place: number): number => { let n = 0; for (const o of s.owners) if (o === place) n++; return n; };
+    const shown = s.live.map((id, k): SurfaceAct => {
+      const a = publicAct(acts.get(id)!);
+      return a.kind === 'draw' ? { ...a, share: owned(k + 1) } : a;
+    });
+    const older = [...acts.values()].filter((a) => a.kind === 'draw' && a.target === play && !s.live.includes(a.id)).length;
+    return { covered: count(s.cover), acts: shown, older };
+  }
+  /** thread_page's `surfaces`: for each surface play among the page's plays, its covered cells and its live Acts' ids, never a stroke or an owner. */
+  const surfacesOn = (plays: readonly Act[]): Readonly<Record<Id, SurfaceNow>> => Object.fromEntries(plays.flatMap((a): [Id, SurfaceNow][] => {
+    const s = a.kind === 'card' ? surfaceOf(a.id) : null;
+    return s ? [[a.id, { covered: count(s.cover), live: [...s.live] }]] : [];
+  }));
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
   interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
@@ -2807,6 +2918,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
     saveEffect,
+    draw: (play, character, input) => writeSurface('draw', play, character, input),
+    wash: (play, character, input) => writeSurface('wash', play, character, input),
+    surfaceActs,
     buyCard: lossy(buyCard),
     buyPack: lossy(buyPack),
     machine: () => machine(),
@@ -3128,7 +3242,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           character, posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
+        plays, surfaces: surfacesOn(plays), above, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), states: core.effectStates(wanted), releases: core.myReleases(wanted),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(ids, SPUN_FROM_MAX), reading: core.reading([thread]),
         board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(),
