@@ -182,6 +182,8 @@ export interface Seed {
    * A conferGroup move that has landed (what `apply_mod_move`/`apply_meeting` write): `staff` moved `character` into `group` (a key of the instance's groups), barring it from `board` (a
    * slug; absent: no bar). It asks for an accepted apology (`apologyAccepted`) and runs to `expiresAt` (default three days on; null: it has no end date). Returns the move's Act.
    */
+  /** The Boss's trophy award, landed: a move Act of kind awardTrophy (no demand; it ends at once in the real thing, which the notice does not need). */
+  trophyMove(staff: string, move: { readonly character: Id; readonly trophy: string; readonly body?: string; readonly at?: number }): Id;
   groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number | null; readonly demand?: boolean }): Id;
   /** A staff character's office changes (a handover, a reassignment): moves it made before keep the office stamped on them. */
   setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched'): void;
@@ -3641,6 +3643,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c = characters.get(staffId(staff));
       if (!c?.staff) throw new Error(`no staff member ${staff}`);
       c.staff = { ...c.staff, office };
+    },
+    trophyMove(staff, m) {
+      const at = m.at ?? now();
+      return write({
+        character: staffId(staff), kind: 'move', thread: announcements(),
+        payload: { kind: 'awardTrophy', office: 'boss', body: m.body ?? 'Behold, a trophy.', params: { character: m.character, trophy: m.trophy }, expires_at: iso(at + 3 * DAY) }, at,
+      }).id;
     },
     groupMove(staff, m) {
       const at = m.at ?? now();

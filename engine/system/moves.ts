@@ -349,10 +349,12 @@ export const AWARD_TROPHY: MoveKind = {
     const who = text(g['character']);
     if (trophies.barred.has(who)) return { path: 'character', predicate: 'notStaffOrRetired' };
     if (kind.belt) return kind.holder === who ? { path: 'trophy', predicate: 'notItsHolder' } : null;
-    return trophies.given.has(`${kind.key}:${who}`) ? { path: 'trophy', predicate: 'notGivenThisSeason' } : null;
+    return trophies.given.has(`${kind.key}:${who}`.toLowerCase()) ? { path: 'trophy', predicate: 'notGivenThisSeason' } : null;
   },
   demand: () => 'none',
-  plain: 'the giving of a trophy',
+  plain: 'the giving of the {trophyName} trophy to {characterName}',
+  /** SQL's `system_line` fills them: the trophy's name from `trophy_kinds`, the character's from its row (both public: a trophy shows on a postbit). */
+  derived: ['trophyName', 'characterName'],
   template: (p, role, names) => `${role} gave ${names?.character ?? 'a member'} the trophy ${names?.trophy ?? text(p['trophy'])}.`,
   parts: (p, _was, tense, names) => [`${tense === 'plan' ? 'Give' : 'Gave'} ${names?.character ?? 'a member'} the trophy ${names?.trophy ?? text(p['trophy'])}`],
 };

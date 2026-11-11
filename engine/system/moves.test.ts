@@ -289,3 +289,17 @@ test('each limit on an award is refused by moveParamsProblems, naming the path a
   assert.ok(moveParamsProblems('awardTrophy', { trophy: 'pet', character: carol }, { ...machineLimits({}), trophies: facts }).ok);
   assert.ok(moveParamsProblems('awardTrophy', { trophy: 'belt', character: carol }, { ...machineLimits({}), trophies: facts }).ok, 'a belt passes to someone else');
 });
+
+test('the Boss\'s trophy award announces the trophy and the character by name, both derived by SQL from the instance\'s rows', () => {
+  const k = moveKind('awardTrophy')!;
+  assert.deepEqual([...(k.derived ?? [])].sort(), ['characterName', 'trophyName']);
+  assert.match(k.plain, /\{trophyName\}/);
+  assert.match(k.plain, /\{characterName\}/);
+});
+
+test('a trophy given this season is found whatever the case of the key (one normalization, in the check)', () => {
+  const k = moveKind('awardTrophy')!;
+  const who = '11111111-1111-4111-8111-AAAAAAAAAAAA';
+  const trophies = { boss: [{ key: 'Pet-Rock', name: 'Pet', belt: false, holder: null, holderName: null }], barred: new Set<string>(), given: new Set([`pet-rock:${who.toLowerCase()}`]) };
+  assert.deepEqual(k.check!({ trophy: 'Pet-Rock', character: who }, { ...machineLimits(), trophies }), { path: 'trophy', predicate: 'notGivenThisSeason' });
+});

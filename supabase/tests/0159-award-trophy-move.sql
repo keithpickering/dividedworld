@@ -23,12 +23,12 @@ begin
   perform seed_instance(jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true,
       'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.')),
-      'systemMoveWords', jsonb_build_object('awardTrophy', 'the giving of a trophy')),
+      'systemMoveWords', jsonb_build_object('awardTrophy', 'the giving of the {trophyName} trophy to {characterName}')),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'aw-boss',
       'staff', jsonb_build_array(jsonb_build_object('key', 'aw-boss', 'name', 'Aw Boss', 'title', 'Boss', 'signature', 'a')),
       'firstStaff', '[]'::jsonb,
-      'moves', jsonb_build_array(jsonb_build_object('key', 'awardTrophy', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss'))),
+      'moves', jsonb_build_array(jsonb_build_object('key', 'awardTrophy', 'structural', false, 'shapesBoard', false, 'offices', jsonb_build_array('boss'), 'derived', jsonb_build_array('trophyName', 'characterName'))),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'))),
     'trophies', catalog));
   perform tests.account('aw-ann'); perform tests.account('aw-bob'); perform tests.account('aw-cat'); perform tests.account('aw-dan'); perform tests.account('aw-adm');
@@ -74,6 +74,7 @@ begin
   perform pg_temp.expect((select count(*) from trophy_awards where act = got.landed_act) = 1, 'the move wrote one award and no other');
   perform pg_temp.expect((select payload ->> 'why' from acts where kind = 'move_end' and target_act_id = got.landed_act) = 'spent', 'the move ended at once, spent');
   perform pg_temp.expect(not exists (select 1 from open_moves where move_act = got.landed_act), 'the move is not in force');
+  perform pg_temp.expect((select payload ->> 'body' from acts where id = got.landed_act) = 'It is done: the giving of the Pet trophy to Aw Ann.', 'the announcement names the trophy and the character: ' || (select payload ->> 'body' from acts where id = got.landed_act));
   shown := trophies_of(ann) -> 'awards' -> 0;
   perform pg_temp.expect(shown ->> 'trophy' = 'aw-pet' and shown ->> 'by' = 'Aw Boss, the Boss', 'the trophy shows, given by the Boss in plain words: ' || shown::text);
 end $$;
