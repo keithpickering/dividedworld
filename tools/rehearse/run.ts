@@ -2,7 +2,8 @@
 // (`runMinute`: the clock, every cron job that is due, the dispatcher) and then any filler action due in it, through `runAction`, so every
 // filler Act is written by the code that writes a player's. The System's switch is off through backstory and on at day 1's first minute.
 // Each day's filler is drawn at that day's first minute from the public world read back then (`readWorld`).
-import { mkdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Instance } from "../../engine/rules/types.ts";
 import type { RehearsalContent, RehearsalCorpus, Scenario } from "../../engine/rehearsal/types.ts";
@@ -298,7 +299,10 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
         `select a.pid, a.state, a.wait_event_type, a.wait_event, now() - a.query_start as running, left(a.query, 400) as query,
                 (select string_agg(l.locktype || ' ' || l.mode || coalesce(' on ' || l.relation::regclass::text, ''), '; ') from pg_locks l where l.pid = a.pid and not l.granted) as waiting_for
          from pg_stat_activity a where a.datname is not null and a.pid <> pg_backend_pid() and a.backend_type = 'client backend'`), 15_000).catch((x: unknown) => `not read: ${x instanceof Error ? x.message : String(x)}`);
-      console.error(`${e.message}\nwhat the database was doing:\n${typeof doing === "string" ? doing : JSON.stringify(doing, null, 2)}`);
+      // Where the server itself does not answer, its own log and what each of its processes is waiting in are all there is to read.
+      const tail = (() => { try { return readFileSync(join(cluster.dir, "server.log"), "utf8").split("\n").slice(-40).join("\n"); } catch { return "no server log"; } })();
+      const processes = (() => { try { return execFileSync("ps", ["-eo", "pid,stat,wchan:32,etime,args"], { encoding: "utf8" }).split("\n").filter((l) => /postgres|PID/.test(l)).map((l) => l.slice(0, 200)).join("\n"); } catch { return "not read"; } })();
+      console.error(`${e.message}\nwhat the database was doing:\n${typeof doing === "string" ? doing : JSON.stringify(doing, null, 2)}\n--- server log tail ---\n${tail}\n--- the server's processes ---\n${processes}`);
     }
     // A failed run with --keep leaves its cluster for a look: the error says where, and how to start it again.
     if (!o.keep) throw e;
