@@ -18,7 +18,11 @@ export function simulateClock(): SimulatedClock {
       return RealDate.now() + offset;
     }
   }
-  globalThis.Date = SimulatedDate as unknown as DateConstructor;
+  // A class cannot be called without `new`, and the real Date can (it returns the time as a string), so the
+  // class is wrapped in a Proxy whose `apply` answers as Date() does, from the simulated time.
+  globalThis.Date = new Proxy(SimulatedDate, {
+    apply: () => new SimulatedDate().toString(),
+  }) as unknown as DateConstructor;
   return {
     setSimulated(ms) {
       offset = ms - RealDate.now();

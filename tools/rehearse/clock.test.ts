@@ -23,6 +23,10 @@ test("everything else about Date is unchanged", async () => {
     assert.equal(Date.parse("2020-01-01T00:00:00Z"), 1577836800000);
     assert.ok(new Date() instanceof Date);
     assert.equal(new Date(2020, 0, 1).getFullYear(), 2020);
+    // Called without `new`, Date returns the current time as a string, and that time is the simulated one.
+    const bare = (Date as unknown as () => string)();
+    assert.equal(typeof bare, "string");
+    assert.ok(Math.abs(Date.parse(bare) - Date.UTC(2027, 0, 1)) < 2000, bare);
     await new Promise<void>((resolve) => setTimeout(resolve, 10));
   } finally {
     clock.restore();
