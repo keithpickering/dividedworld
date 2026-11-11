@@ -112,8 +112,8 @@ describe('Divided World\'s Gimmick cards in plain words', () => {
       const f = faces.find((x) => x.key === key)!;
       return `${f.describe} ${f.summary}`;
     };
-    for (const key of ['publicity-tour', 'heat-magnet']) expect(say(key), key).toMatch(/36 hours[\s\S]*0\.1 more/u);
-    expect(say('class-clown')).toMatch(/36 hours[\s\S]*0\.5 more/u);
+    for (const key of ['publicity-tour', 'heat-magnet']) expect(say(key), key).toMatch(/36 hours[\s\S]*10% more/u);
+    expect(say('class-clown')).toMatch(/36 hours[\s\S]*50% more/u);
     expect(say('good-vibes')).toMatch(/3 days[\s\S]*costs 0\.25 more/u);
   });
 });
