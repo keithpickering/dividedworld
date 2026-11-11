@@ -14,14 +14,24 @@
   box-sizing: border-box;
   width: max-content;
   max-width: calc(100vw - 32px);
-  padding: 6px;
+  padding: 7px;
   transform: translateX(-50%);
-  background: var(--kb-glass-panel-strong);
-  border: 1px solid color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  /* The edge is the bar's own color, cut; the panel is its ::after, one pixel in (the glass's cut pieces are drawn so, engine/ui/glass/base.css), so the 1px edge runs along both diagonals. */
+  background: color-mix(in srgb, var(--kb-glass-neon) 60%, transparent);
+  isolation: isolate;
   box-shadow: 0 0 14px color-mix(in srgb, var(--kb-glass-neon) 25%, transparent);
   clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
   pointer-events: none;
   animation: kb-captions-in 150ms ease-out both;
+}
+
+.kb-captions-bar::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 1px;
+  background: var(--kb-glass-panel-strong);
+  clip-path: polygon(calc(8px - 0.5858px) 0, 100% 0, 100% calc(100% - 8px + 0.5858px), calc(100% - 8px + 0.5858px) 100%, 0 100%, 0 calc(8px - 0.5858px));
 }
 
 .kb-captions-bar[data-leaving='true'] {
