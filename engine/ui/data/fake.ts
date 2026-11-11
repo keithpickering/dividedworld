@@ -1546,8 +1546,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}) });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(first === undefined ? {} : { first }) });
     if (bad) return bad;
     if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost);
     const on = acts.get(target);
@@ -1556,7 +1556,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const effects = effectsOn(target);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
-    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
+    const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, first });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1816,14 +1816,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
-  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
-    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
+  function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Answer<Act> {
+    const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}), ...(first === undefined ? {} : { first }) });
     if (bad) return bad;
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
-    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, when ?? {}, new Date(now()));
+    const decided = decideSet(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text), effectsOn(target), config, instance.cards, { ...(when ?? {}), first }, new Date(now()));
     if (!decided.ok) return refuse(decided.why, 'config');
     /* As set_card (0144) says it: a named id that is not a debuted character, one message for a missing and an undebuted one, by its place in the list. */
     const unknown = (decided.value.who?.characters ?? []).findIndex((id) => characters.get(id)?.debutedAt == null);

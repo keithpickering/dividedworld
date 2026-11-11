@@ -60,7 +60,25 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const sets = how === 'cast' && own && landing(rules, act, here.plays, { ...context, faceDown: true }).ok;
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
-  const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
+  const cardUi = ui.cards.find((c) => c.key === rules.key);
+  const face = faceOf(rules, cardUi, withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
+  /* A card played on the post itself opens no form: its Compose mounts in the post's slot. On one's own post it offers the cast and the set as two marks, since the form's choice is not asked. */
+  if (cardUi?.Compose) {
+    const mark = (mode: 'cast' | 'set') => (
+      <button
+        key={mode} type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, mode === 'set' ? 'set' : how, act.seq!)} data-kb-card={rules.key} data-kb-alignment={rules.alignment} data-kb-compose={mode}
+        aria-pressed={play.compose?.card === rules.key && play.compose.target.post?.id === act.id && play.compose.mode === mode}
+        style={{ '--kb-mark-color': face.art.color } as CSSProperties}
+        onClick={() => play.openCompose(rules.key, target, mode)}
+      >
+        <span className="kb-meta-tile-in" aria-hidden="true">
+          {face.art.mark && <img className="kb-mark-icon kb-ghost-icon" src={face.art.mark} alt="" draggable={false} />}
+          <span className="kb-mark-plus">+</span>
+        </span>
+      </button>
+    );
+    return <>{how === 'cast' && casts && mark('cast')}{(how === 'set' ? casts : sets) && mark('set')}</>;
+  }
   return (
     <button
       type="button" className="kb-mark kb-meta-tile kb-ghost-mark" aria-label={ghostName(rules.name, down ? 'set' : how, act.seq)} data-kb-card={rules.key} data-kb-alignment={rules.alignment}

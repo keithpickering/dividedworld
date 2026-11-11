@@ -2317,9 +2317,10 @@ export interface KayfaApi {
    * Play a card the player holds on a post, as one of their characters: the card's own settings (`config`), the caster's message (plain
    * text, at most 200 characters, may be empty), the price its rules decide from the post as it stands. The card's Act comes back.
    * Beyond a post (`reach`), `target` is the character, the thread or the board, and a character play names the post whose postbit
-   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql).
+   * took it (`fromPost`); the Act comes back with its reach, its target and its end in its payload (0055_card_reach.sql). A surface card's play carries
+   * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
@@ -2332,9 +2333,9 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card. A surface card is set with its first draw (`first`).
    */
-  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
+  setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions, first?: unknown): Promise<Answer<Act>>;
   /**
    * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
    * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.

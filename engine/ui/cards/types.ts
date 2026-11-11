@@ -298,6 +298,31 @@ export interface CardArt {
   readonly tagline?: string;
 }
 
+/**
+ * A card whose play is made on the post itself (`CardUi.Compose`): mounted in the post's effect slot, innermost, where the card draws what it
+ * plays. The engine knows nothing of what is drawn; it says when to open, lands the play and holds the ways out.
+ */
+export interface ComposeProps {
+  readonly post: Act;
+  /** Cast now, or set face down on the player's own post. */
+  readonly mode: 'cast' | 'set';
+  /** The post body's box as the slot measures it (client px); null before it is measured. */
+  readonly box: { readonly w: number; readonly h: number } | null;
+  /**
+   * Land the play: `first` is the card's first draw, `config` its configuration. The answer is the play's or its refusal in the database's
+   * words; on a refusal the compose stays mounted and the card shows it. On success the compose is closed.
+   */
+  submit(config: unknown, first: unknown): Promise<Answer<unknown>>;
+  /** Leave, asking first when `hold` says work is held (Esc and the armed card pressed again do the same). */
+  cancel(): void;
+  /**
+   * Say whether the card holds work that leaving would lose. `ask` is the question put before any way out, in the card's own words
+   * ("Leave without tagging? Your drawing isn't saved."), or null when nothing is held. While one is held the browser asks too before the page is left.
+   */
+  hold(ask: string | null): void;
+  readonly children: ReactNode;
+}
+
 export interface CardUi {
   /** The rules' `CardRules.key`. */
   readonly key: string;
@@ -335,6 +360,8 @@ export interface CardUi {
   readonly takeover?: boolean;
   /** `PostEffects` nests this card's effect innermost, whatever its play order, under every card without it (a layer other cards' ink lies on); among several, play order holds. A takeover is still outermost. */
   readonly beneath?: true;
+  /** The card is played on the post itself: its ghost mark mounts this in the post's effect slot, innermost, instead of opening the play form. */
+  readonly Compose?: ComponentType<ComposeProps>;
   /** One short line the Lens gives a reader who has not yet met the card's effect: the first-meet line. */
   readonly hint?: string;
   /**

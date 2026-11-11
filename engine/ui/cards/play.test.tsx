@@ -8,7 +8,7 @@
  */
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, useId } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -20,7 +20,8 @@ import { hudKey, usePlayer } from '../player.tsx';
 import { usePlay } from './play.tsx';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
-import type { CardUi, ConfigFormProps } from './types.ts';
+import type { Answer } from '../data/api.ts';
+import type { CardUi, ComposeProps, ConfigFormProps } from './types.ts';
 import { LoadedThread } from '../loaded.tsx';
 
 const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
@@ -817,5 +818,180 @@ describe('from the Task 3 quality review', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(window.location.hash).toBe('#post-2');
     expect(here(1)).toBeInTheDocument();
+  });
+});
+
+/*
+ * A card whose play is made on the post itself (the graffiti plan's Task 5): `CardUi.Compose` mounts in the post's effect slot in place of the
+ * play form. The card here draws nothing; its buttons stand for a stroke (`hold`), a play (`submit`) and a way out (`cancel`), and the engine
+ * knows only what they say.
+ */
+describe('a card that is played on the post (CardUi.Compose)', () => {
+  const taggerRules: CardRules = { key: 'tagger', name: 'Tagger', alignment: 'salty', rarity: 'common', playPrice: () => 0, canApply: (target, effects, _c, now) => landsOn({ key: 'tagger' }, target, effects, now), validateConfig: (config) => ok(config) };
+  const ASK = 'Leave without tagging? Your drawing isn\'t saved.';
+  let answered: Answer<unknown> | null = null;
+  let seen: ComposeProps | null = null;
+  function Draw(props: ComposeProps) {
+    const { post, mode, submit, cancel, hold, children } = props;
+    const [answer, setAnswer] = useState<Answer<unknown> | null>(null);
+    seen = props;
+    return (
+      <div data-testid="compose" data-mode={mode} data-post={post.seq}>
+        {children}
+        <button type="button" onClick={() => hold(ASK)}>Scribble</button>
+        <button type="button" onClick={() => hold(null)}>Wipe</button>
+        <button type="button" onClick={() => void submit({ color: '#ff2bd6' }, { strokes: 1 }).then((a) => { answered = a; setAnswer(a); })}>Tag it</button>
+        <button type="button" onClick={cancel}>Cancel drawing</button>
+        {answer && !answer.ok && <p role="alert">{answer.error}</p>}
+      </div>
+    );
+  }
+  const tagger: CardUi = { key: 'tagger', art: { color: '#ffb000', ink: '#140f03', canvas: '', mark: '', credit: 'Test' }, Compose: Draw, describe: () => 'Tags a post.' };
+  const withTagger: Instance = { ...instance, cards: [...instance.cards, taggerRules] };
+  async function onPost() {
+    const w = world(withTagger);
+    w.fake.seed.cards(w.me, { whoops: 2, 'stick-around': 1, tagger: 2 });
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: withTagger, cards: [...cards, tagger], settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    await screen.findByRole('article', { name: /^Post 4 /u });
+    await screen.findByRole('button', { name: /^Hand, \d postcards?/u });
+    return w;
+  }
+  const armTagger = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(handButton());
+    await user.click(within(drawer()).getAllByRole('button', { name: /^Tagger, / })[0]!);
+  };
+  beforeEach(() => { answered = null; seen = null; });
+
+  test('pressing its ghost mark mounts Compose on that post, as a cast, and the play form does not open', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    const compose = await within(post(2)).findByTestId('compose');
+    expect(compose).toHaveAttribute('data-mode', 'cast');
+    expect(within(compose).getByText('x'.repeat(812))).toBeInTheDocument();
+    expect(seen!.post.id).toBe(w.ids[1]);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByTestId('compose', { })).toBe(compose);
+  });
+
+  test('submit plays through playCard with the first draw, says it in the status, and closes the compose', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    const played = vi.spyOn(w.fake, 'playCard');
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Tag it' }));
+    await waitFor(() => expect(played).toHaveBeenCalledWith('tagger', w.pipe, w.ids[1], { color: '#ff2bd6' }, '', undefined, undefined, { strokes: 1 }));
+    await waitFor(() => expect(screen.queryByTestId('compose')).toBeNull());
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Played Tagger on Gloomba\'s post #2.');
+    expect(answered).toMatchObject({ ok: true });
+  });
+
+  test('a refusal comes back to Compose, which stays mounted with its drawing', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    vi.spyOn(w.fake, 'playCard').mockResolvedValueOnce({ ok: false, error: 'the wall is full', field: 'first' });
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    await user.click(screen.getByRole('button', { name: 'Tag it' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('the wall is full');
+    expect(screen.getByTestId('compose')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('The wall is full.');
+  });
+
+  test('Esc with nothing drawn closes it at once, and the card stays armed', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await screen.findByTestId('compose');
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('compose')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' })).toBeInTheDocument();
+    expect(w.ids.length).toBe(4);
+  });
+
+  test('Esc with a drawing asks in the card\'s words first: Stay keeps it, Leave closes it', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    await user.keyboard('{Escape}');
+    const ask = await screen.findByRole('dialog');
+    expect(within(ask).getByText(ASK)).toBeInTheDocument();
+    await user.click(within(ask).getByRole('button', { name: 'Stay' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('compose')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    expect(screen.queryByTestId('compose')).toBeNull();
+  });
+
+  test('Cancel and the armed card pressed again leave the same way, and a wiped drawing asks nothing', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel drawing' }));
+    expect(within(await screen.findByRole('dialog')).getByText(ASK)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Stay' }));
+    await user.click(screen.getByRole('button', { name: 'Wipe' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel drawing' }));
+    expect(screen.queryByTestId('compose')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    /* The card is put back from the hand: with a drawing held, that asks too, and Leave puts the card back as well. */
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    await user.click(handButton());
+    await user.click(within(drawer()).getAllByRole('button', { name: /^Tagger, / })[0]!);
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    expect(screen.queryByTestId('compose')).toBeNull();
+    expect(within(post(2)).queryByRole('button', { name: 'Play Tagger on post 2' })).toBeNull();
+  });
+
+  test('a second compose replaces the first, after the same ask', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await user.click(await screen.findByRole('button', { name: 'Scribble' }));
+    await user.click(within(post(4)).getByRole('button', { name: 'Play Tagger on post 4' }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Leave' }));
+    expect(within(post(2)).queryByTestId('compose')).toBeNull();
+    expect(within(post(4)).getByTestId('compose')).toHaveAttribute('data-post', '4');
+  });
+
+  test('a drawing held asks the browser before the page is left, and nothing held does not', async () => {
+    const user = userEvent.setup();
+    await onPost();
+    await armTagger(user);
+    await user.click(within(post(2)).getByRole('button', { name: 'Play Tagger on post 2' }));
+    await screen.findByTestId('compose');
+    const clean = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(clean);
+    expect(clean.defaultPrevented).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Scribble' }));
+    const held = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(held);
+    expect(held.defaultPrevented).toBe(true);
+  });
+
+  test('Set on one\'s own post mounts it as a set, and submit goes through setCard with the first draw', async () => {
+    const user = userEvent.setup();
+    const w = await onPost();
+    const set = vi.spyOn(w.fake, 'setCard');
+    await armTagger(user);
+    expect(within(post(2)).queryByRole('button', { name: 'Set Tagger face down on post 2' })).toBeNull();
+    await user.click(within(post(3)).getByRole('button', { name: 'Set Tagger face down on post 3' }));
+    expect(await within(post(3)).findByTestId('compose')).toHaveAttribute('data-mode', 'set');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Tag it' }));
+    await waitFor(() => expect(set).toHaveBeenCalledWith('tagger', w.hooligan, w.ids[2], { color: '#ff2bd6' }, undefined, { strokes: 1 }));
+    await waitFor(() => expect(screen.queryByTestId('compose')).toBeNull());
   });
 });
