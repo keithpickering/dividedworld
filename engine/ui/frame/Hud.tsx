@@ -84,6 +84,16 @@ const PICKER_CHEVRON = 16;
 /** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
 export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
 
+/** The lock before the HUD's secret line: shut while the class is private, its shackle lifted off the right post once it is public. */
+function SecretLock({ open = false }: { readonly open?: boolean }) {
+  return (
+    <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12">
+      <rect x="1" y="5" width="9" height="6.5" rx="1" />
+      <path d={open ? 'M3 5 V3.4 a2.5 2.5 0 0 1 5 0' : 'M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5'} />
+    </svg>
+  );
+}
+
 export function Hud() {
   const { api, instance, settings, ui } = useKayfa();
   const player = usePlayer();
@@ -131,7 +141,7 @@ export function Hud() {
   const secret = useRef<HTMLButtonElement>(null);
   /* A reveal replaces the button with the Revealed line before the overlay closes, so focus returns to the line. */
   const revealedLine = useRef<HTMLSpanElement>(null);
-  /* The Reveal's done line, in a status region of the HUD's own that puts itself away. */
+  /* The Reveal's done line, in a status region of the HUD's own. It puts itself away, where My characters' flash stays until the player's next action: the HUD has no next action on its own surface to clear it. */
   useEffect(() => {
     if (!done) return undefined;
     const timer = setTimeout(() => setDone(''), 8000);
@@ -412,21 +422,12 @@ export function Hud() {
                             {className}
                           </span>
                           {hud.classShownAt !== null ? (
-                            <span ref={revealedLine} tabIndex={-1} className="kb-hud-secret">
-                              <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0" /></svg>
-                              Revealed
-                            </span>
+                            <span ref={revealedLine} tabIndex={-1} className="kb-hud-secret"><SecretLock open />Revealed</span>
                           ) : hud.debutedAt !== null && hud.retiredAt === null ? (
-                            <button ref={secret} type="button" className="kb-hud-secret" aria-label={`Only you see this: reveal ${hud.name}'s class`} onClick={() => setRevealing(true)}>
-                              <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
-                              Only you see this
-                            </button>
+                            <button ref={secret} type="button" className="kb-hud-secret" aria-label={`Only you see this: reveal ${hud.name}'s class`} onClick={() => setRevealing(true)}><SecretLock />Only you see this</button>
                           ) : (
                             /* Defensive: the HUD's mask is always a live one (player.tsx canAct), so this is never drawn today. */
-                            <span className="kb-hud-secret">
-                              <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
-                              Only you see this
-                            </span>
+                            <span className="kb-hud-secret"><SecretLock />Only you see this</span>
                           )}
                           {wide && hiddenMark}
                         </span>
