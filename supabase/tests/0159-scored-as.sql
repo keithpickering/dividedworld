@@ -51,7 +51,8 @@ end $$;
 -- (place_cast); a character has one class named per window, so whichever lands second must find the first. Both read "none named" unless the two are laid one at a time, which is the lock on the character's
 -- row: place_cast takes it as the target's, and the quote takes it as the poster's (lock_for_quote's step 2b, taken whenever the quoted post holds a live back, a public fact), before spring_facts reads
 -- `class_taken`. Whichever lands, the character carries exactly one, the quote is never refused, and nothing deadlocks. The window needs a settlement behind it, committed here where the suite left none and
--- removed again after.
+-- removed again after. A cast that lost is refused by either rule: "already has a class named" where the suite's last settlement is not after now(), and, where it is (a play made now is then
+-- before the last settled window's end, so the one-per-window rule never sees it), the stack rule's "already carries that card" on the back's play; what is held is the count of plays naming the window.
 do $$
 declare
   setter uuid := gen_random_uuid(); caster uuid := gen_random_uuid(); quoter uuid;
@@ -90,7 +91,7 @@ begin
     said := tests.race_as(quoter, format('select post(%L, %L, %L, %L)', t, q, 'Quoting it.', x),
                           null, format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', caster, 'sfrace', c, q, '{"class": "alpha"}', '', 'character', qpost));
     if said[1] is not null then raise exception 'a quote that lands an Off Day was refused, round %: %', round, said[1]; end if;
-    if said[2] is not null and said[2] not like '%already has a class named%' then raise exception 'a cast of an Off Day racing a quote, round %: %', round, said[2]; end if;
+    if said[2] is not null and said[2] not like '%already has a class named%' and said[2] not like '%already carries that card%' then raise exception 'a cast of an Off Day racing a quote, round %: %', round, said[2]; end if;
     select count(*) into landed from acts where kind = 'card' and payload ->> 'card' = 'sfrace' and payload ->> 'reach' = 'character' and payload ->> 'character' = q::text;
     if landed is distinct from 1::bigint then
       raise exception 'a quote and a cast at once on one character, round %: the character has % class(es) named for the window (cast said %, back sprang %)', round, landed, said[2],
