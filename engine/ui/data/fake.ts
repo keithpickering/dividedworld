@@ -576,7 +576,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
-      /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0154). */
+      /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0155). */
       ...(a.kind === 'set' && faceDown.get(a.id) ? { endsAt: iso(faceDown.get(a.id)!.endsAt) } : {}),
     };
   }
