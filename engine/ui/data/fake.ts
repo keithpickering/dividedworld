@@ -208,7 +208,7 @@ export interface Seed {
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
    * moments were snapshotted (0072): its moment is not taken.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id; tokens?: number }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -3802,6 +3802,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       /* A play a trap caught names its set, and takes no layer; a Use carries its end (0054). */
       if (o?.caught !== undefined) { payload.caught = o.caught; delete payload.layer; }
       if (o?.spring !== undefined) payload.spring = o.spring;
+      /* The key the server drew for the play (`CardRules.draws`), as play_card stores it. */
+      if (o?.drawn !== undefined) payload.drawn = o.drawn;
       if (o?.ends !== undefined) payload.ends = o.ends;
       /* A play of a drive card joins the post's open drive, or opens one named by its own id (place_cast, 0150). */
       const driveRules = instance.cards.find((c) => c.key === card);
