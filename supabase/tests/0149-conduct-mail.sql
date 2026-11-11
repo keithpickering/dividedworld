@@ -2,7 +2,7 @@
 -- decide_report and decide enqueue the author's mail for each outcome and the reporter's reportRead (the same template and facts whatever was decided),
 -- a staff author is sent nothing, mail_due lists a row until a sent or refused attempt exists (a failed one backs off 2^n minutes for n failures, at most a day), the
 -- bar it carries is the account's current one, never the decision's own (a row for a suspension read after a lift clears the login), the two service doors refuse a
--- player, both tables refuse update and delete, and open_account records the acceptance in the same transaction.
+-- player, both tables refuse update and delete, and open_account records the acceptance in the same transaction, when it is given the current version and not otherwise.
 --
 -- The poisons, each driven red once before the check was trusted:
 --   * mail_for_decision replaced by a function that enqueues nothing must fail the author's-mail assertion for a nudge;
@@ -52,6 +52,10 @@ declare
   susp_acct uuid := tests.account('mail-suspended');
   lifted_acct uuid := tests.account('mail-lifted');
   lapsed_acct uuid := tests.account('mail-lapsed');
+  no_box uuid := gen_random_uuid();
+  stale uuid := gen_random_uuid();
+  later uuid := gen_random_uuid();
+  cur integer;
   ids bigint[];
   due_ids bigint[];
 begin
@@ -218,14 +222,29 @@ begin
   if (select schedule from cron.job where jobname = 'kayfabb-mail') is distinct from '* * * * *' then raise exception 'the mail job runs every minute'; end if;
   if (select command from cron.job where jobname = 'kayfabb-mail') not like '%/functions/v1/mail%kayfabb_jobs_key%' then raise exception 'the mail job calls the mail function with the jobs key'; end if;
 
-  -- ---- Task 5: open_account records the acceptance of the code ----
+  -- ---- Task 5: open_account records the acceptance of the code only for the version the player agreed to ----
   update settings set value = '"open"' where key = 'registrationMode';
-  insert into auth.users (id, email) values (newcomer, 'mail-new@test.invalid');
+  cur := (select (value #>> '{}')::integer from settings where key = 'conductVersion');
+  insert into auth.users (id, email) values (newcomer, 'mail-new@test.invalid'), (no_box, 'mail-nobox@test.invalid'), (stale, 'mail-stale@test.invalid'), (later, 'mail-later@test.invalid');
+  -- With the version the register form's checkbox carried: recorded.
   perform tests.claims(newcomer);
-  if (open_account(null) ->> 'opened')::boolean is not true then raise exception 'the account should open'; end if;
-  if not exists (select 1 from conduct_acceptances c where c.account = newcomer and c.version = (select (value #>> '{}')::integer from settings where key = 'conductVersion')) then
-    raise exception 'open_account should record the acceptance of the current version';
+  if (open_account(null, cur) ->> 'opened')::boolean is not true then raise exception 'the account should open'; end if;
+  if not exists (select 1 from conduct_acceptances c where c.account = newcomer and c.version = cur) then
+    raise exception 'open_account should record the acceptance of the version it was given';
   end if;
-  if (open_account(null) ->> 'opened')::boolean is not false then raise exception 'a second call changes nothing'; end if;
+  if (open_account(null, cur) ->> 'opened')::boolean is not false then raise exception 'a second call changes nothing'; end if;
   if (select count(*) from conduct_acceptances c where c.account = newcomer) is distinct from 1 then raise exception 'one acceptance, once'; end if;
+  -- Without a version (the signed-in-with-no-account path shows no code): the account opens and nothing is recorded, so the Accept gate catches the player.
+  perform tests.claims(no_box);
+  if (open_account(null) ->> 'opened')::boolean is not true then raise exception 'the account should open without a version'; end if;
+  if exists (select 1 from conduct_acceptances c where c.account = no_box) then raise exception 'open_account recorded an acceptance nobody gave'; end if;
+  -- With a stale (or any other) version: nothing recorded.
+  perform tests.claims(stale);
+  if (open_account(null, cur + 1) ->> 'opened')::boolean is not true then raise exception 'the account should open with another version'; end if;
+  if exists (select 1 from conduct_acceptances c where c.account = stale) then raise exception 'open_account recorded an acceptance of a version that is not the current one'; end if;
+  -- An account already open that is later given the version records nothing: the call changes nothing.
+  perform tests.claims(later);
+  perform open_account(null);
+  perform open_account(null, cur);
+  if exists (select 1 from conduct_acceptances c where c.account = later) then raise exception 'a call on an account already open recorded an acceptance'; end if;
 end $$;

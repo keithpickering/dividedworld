@@ -34,7 +34,7 @@ export function gotrue(options: { url: string; key: string; fetch?: typeof globa
     console.error(`auth ${path} did not answer`);
   };
   return {
-    requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite } }),
+    requestCode: (email, o) => afterward('otp', { email, create_user: o.create, data: { invite: o.invite, ...(o.conduct === undefined ? {} : { conduct: o.conduct }) } }),
     async verifyCode(email, code) {
       let response: Response | undefined;
       for (let attempt = 1; attempt <= 2; attempt++) {

@@ -1791,7 +1791,8 @@ export interface KayfaApi {
   /* Signing in: passwordless, through the account function only, in the same words for every address. */
   session(): Promise<Session>;
   onSession(listener: (s: Session) => void): () => void;
-  requestCode(email: string, invite: string | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
+  /** `conduct` is the version of the code of conduct the register form's box agreed to; it rides with the login and the account records it when it opens. */
+  requestCode(email: string, invite: string | null, conduct?: number | null): Promise<Answer<{ readonly message: string; readonly invite?: string }>>;
   verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;

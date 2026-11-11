@@ -1014,10 +1014,10 @@ describe('signing in goes through the account function', () => {
       if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
       return undefined;
     });
-    expect(await h.api.requestCode(' a@b.c ', 'inv')).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
+    expect(await h.api.requestCode(' a@b.c ', 'inv', 4)).toEqual({ ok: true, value: { message: 'If this address can sign in...', invite: 'that invite opens nothing, so no new login is made with it' } });
     expect(await h.api.verifyCode('a@b.c', '123456')).toEqual({ ok: true, value: { account: true } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/account').map((r) => r.body)).toEqual([
-      { action: 'requestCode', email: ' a@b.c ', invite: 'inv' },
+      { action: 'requestCode', email: ' a@b.c ', invite: 'inv', conduct: 4 },
       { action: 'verifyCode', email: 'a@b.c', code: '123456' },
     ]);
     expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });

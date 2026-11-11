@@ -19,10 +19,12 @@ test('a code is asked for and checked at Supabase Auth\'s own endpoints, called 
   const auth = gotrue({ ...opts, fetch });
   await auth.requestCode('a@b.c', { create: true, invite: 'code' });
   await auth.requestCode('a@b.c', { create: false, invite: null });
+  await auth.requestCode('a@b.c', { create: true, invite: null, conduct: 2 });
   assert.deepEqual(await auth.verifyCode('a@b.c', '123456'), { session });
   assert.deepEqual(calls.map((c) => [c.url, c.body]), [
     ['https://p.example/auth/v1/otp', { email: 'a@b.c', create_user: true, data: { invite: 'code' } }],
     ['https://p.example/auth/v1/otp', { email: 'a@b.c', create_user: false, data: { invite: null } }],
+    ['https://p.example/auth/v1/otp', { email: 'a@b.c', create_user: true, data: { invite: null, conduct: 2 } }],
     ['https://p.example/auth/v1/verify', { type: 'email', email: 'a@b.c', token: '123456' }],
   ]);
   assert.ok(calls.every((c) => c.apikey === 'sb_publishable_p' && c.authorization === null), 'the key in apikey alone');

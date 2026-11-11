@@ -1032,8 +1032,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (a.ok) { await reloading; await reloadSession(); }
       return a.ok ? { ok: true, value: {} } : a;
     },
-    async requestCode(email, invite) {
-      const a = await edge('account', { action: 'requestCode', email, invite }, NOT_DONE);
+    async requestCode(email, invite, conduct) {
+      const a = await edge('account', { action: 'requestCode', email, invite, ...(typeof conduct === 'number' ? { conduct } : {}) }, NOT_DONE);
       return a.ok ? { ok: true, value: { message: String(a.value['message'] ?? ''), ...(str(a.value['invite']) ? { invite: a.value['invite'] } : {}) } } : a;
     },
     async verifyCode(email, code) {

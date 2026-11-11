@@ -380,6 +380,24 @@ describe('Register', () => {
     expect(requested).toHaveBeenCalledTimes(1);
   });
 
+  test('registering sends the version of the code the box agreed to; signing in sends none', async () => {
+    const w = world();
+    const requested = vi.spyOn(w.fake, 'requestCode');
+    open(w, 'register', '/register?invite=abc123');
+    await agree();
+    await ask('new@example.test');
+    await screen.findByLabelText('Code from the email');
+    expect(requested).toHaveBeenCalledTimes(1);
+    expect(requested.mock.calls[0]![2]).toBeGreaterThanOrEqual(1);
+    cleanup();
+    const w2 = world();
+    const signing = vi.spyOn(w2.fake, 'requestCode');
+    open(w2, 'sign-in');
+    await ask('someone@example.test');
+    await screen.findByLabelText('Code from the email');
+    expect(signing.mock.calls[0]![2] ?? null).toBeNull();
+  });
+
   test('Sign in asks for no agreement: the code of conduct box is Register\'s alone', async () => {
     open(world(), 'sign-in', '/sign-in');
     await screen.findByLabelText('Email address');
@@ -429,8 +447,11 @@ describe('Register', () => {
     await w.fake.requestCode('linked@example.test', null);
     await w.fake.verifyCode('linked@example.test', TEST_CODE);
     expect((await w.fake.session()).account).toBeNull();
+    const opening = vi.spyOn(w.fake, 'openAccount');
     open(w, 'sign-in');
     await userEvent.type(await screen.findByLabelText('Invite'), `${made.value.code}{Enter}`);
     await waitFor(async () => expect((await w.fake.session()).account).not.toBeNull());
+    /* This path shows no code of conduct, so it agrees to none: only the invite is sent, and the Accept gate asks the player. */
+    expect(opening.mock.calls[0]).toEqual([made.value.code]);
   });
 });

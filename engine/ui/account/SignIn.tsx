@@ -34,7 +34,7 @@ type Refusal = { readonly text: string; readonly field: Field | null };
 const NO_ANSWER = 'No answer came back; ask again in a moment.';
 
 export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }) {
-  const { api, settings } = useKayfa();
+  const { api, settings, ui } = useKayfa();
   const session = useSession();
   const { query } = useLocation();
   const navigate = useNavigate();
@@ -72,7 +72,8 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
     setBusy('sending');
     setRefusal(null);
     try {
-      const r = await api.requestCode(email.trim(), registering && invite.trim() !== '' ? invite.trim() : null);
+      const who = registering && invite.trim() !== '' ? invite.trim() : null;
+      const r = await (registering ? api.requestCode(email.trim(), who, ui.conduct.version) : api.requestCode(email.trim(), who));
       if (!r.ok) { setRefusal({ text: `${r.field === 'email' ? 'The address ' : ''}${r.error}`, field: r.field === 'email' || r.field === 'invite' ? r.field : null }); return; }
       setSent(r.value);
       setCode('');
@@ -162,7 +163,7 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
                 </label>
                 <p id="kb-ack-note" className="kb-acct-row-sentence kb-door-ack-note">An acknowledgement, nothing legally binding.</p>
                 <label className="kb-acct-ack">
-                  {/* The checkbox is the acceptance: open_account records it with the account (0147). */}
+                  {/* The checkbox is the acceptance: its version rides with the login and open_account records it with the account (0147), only here. */}
                   <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} {...tie('conduct')} /> I&apos;ve read and agree to the <Link to="/conduct" target="_blank" rel="noopener">code of conduct</Link>.
                 </label>
               </>

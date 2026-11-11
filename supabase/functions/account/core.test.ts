@@ -20,10 +20,11 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
   let now = 0;
   const clock = { now: () => now, sleep: async (ms: number) => { now += ms; } };
   const calls: string[] = [];
+  let override: Partial<Session['user']> = {};
   const work = (email: string) => { now += email === KNOWN ? 90 : 5; };
   const auth: Auth = {
     requestCode: async (email, o) => { work(email); calls.push(`requestCode:${email}:${JSON.stringify(o)}`); },
-    verifyCode: async (email, code) => { work(email); calls.push(`verifyCode:${email}`); return email === KNOWN && code === CODE ? { session } : { refused: 'code' }; },
+    verifyCode: async (email, code) => { work(email); calls.push(`verifyCode:${email}`); return email === KNOWN && code === CODE ? { session: { ...session, user: { ...session.user, ...override } } } : { refused: 'code' }; },
   };
   const mode = options.mode ?? 'invite';
   const service: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push(`service:${fn}:${JSON.stringify(args)}`); return (fn === 'invite_open' ? (mode === 'closed' ? 'closed' : mode === 'open' || args.code === INVITE ? 'opens' : 'nothing') : null) as T; } };
@@ -33,7 +34,7 @@ function world(options: { mode?: 'open' | 'invite' | 'closed' } = {}) {
     const out = await runAccount({ auth, service, player, clock }, request);
     return { ...out, took: now - start };
   };
-  return { answer, calls, clock };
+  return { answer, calls, clock, answerWith: (user: Partial<Session['user']>) => { override = user; } };
 }
 
 test('asking for a code answers the same, in the same time, for an address with an account and one without, and asks Auth only after', async () => {
@@ -125,6 +126,24 @@ test('the right code signs in, opens the login\'s account with the invite it ask
   assert.deepEqual(out.body, { session, account: true });
   assert.ok(w.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE })}`));
   assert.equal(out.took % ANSWER_FLOOR_MS, 0);
+});
+
+test('the version of the code the register form agreed to rides with the login, and open_account is given it; a request without one is given none', async () => {
+  const w = world({ mode: 'open' });
+  await (await w.answer({ action: 'requestCode', email: UNKNOWN, conduct: 3 })).later?.();
+  await (await w.answer({ action: 'requestCode', email: UNKNOWN })).later?.();
+  for (const bad of [0, 1.5, '3', null, true, -1]) await (await w.answer({ action: 'requestCode', email: UNKNOWN, conduct: bad })).later?.();
+  const asked = w.calls.filter((c) => c.startsWith('requestCode'));
+  assert.equal(asked[0], `requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: null, conduct: 3 })}`);
+  assert.ok(asked.slice(1).every((c) => c === `requestCode:${UNKNOWN}:${JSON.stringify({ create: true, invite: null })}`), 'only a positive whole number is carried');
+  // And at verification: the metadata's version goes to open_account as conduct_version, and nothing is passed where there is none.
+  const withVersion = world();
+  withVersion.answerWith({ user_metadata: { invite: INVITE, conduct: 3 } });
+  await withVersion.answer({ action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.ok(withVersion.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE, conduct_version: 3 })}`));
+  const without = world();
+  await without.answer({ action: 'verifyCode', email: KNOWN, code: CODE });
+  assert.ok(without.calls.includes(`player(tok):open_account:${JSON.stringify({ code: INVITE })}`), 'no version, none passed');
 });
 
 test('no path takes a password', async () => {

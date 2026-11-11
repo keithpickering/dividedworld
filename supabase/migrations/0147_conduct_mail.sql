@@ -234,9 +234,13 @@ select schedule_mail();
 
 -- -------------------------------------------------------------------------------- registration (Task 5) ----
 
--- open_account (0020), recording the acceptance of the code the sign-up page showed: the checkbox is the acceptance, so it is written in the
--- same transaction as the account. An instance with no code (no conductVersion) records nothing.
-create or replace function open_account(code text) returns jsonb
+-- open_account (0020), recording the acceptance of the code the sign-up page showed: the register form's checkbox is the acceptance, and the version it
+-- carries (`conduct_version`) is written in the same transaction as the account, only when it is the current conductVersion. The other way into an
+-- account (a signed-in login with no account, which shows no code) passes none, so records nothing, and the Accept gate asks the player instead. A
+-- stale version, or an instance with no code (no conductVersion), records nothing either. The one-argument form is replaced, so a call with a code
+-- alone is this function with the default.
+drop function open_account(text);
+create function open_account(code text, conduct_version integer default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   caller uuid := auth.uid();
@@ -256,7 +260,10 @@ begin
   insert into accounts (id) values (caller);
   if spent is not null then update invites set used_by = caller, used_at = now() where id = spent; end if;
   insert into conduct_acceptances (account, version)
-  select caller, (s.value #>> '{}')::integer from settings s where s.key = 'conductVersion'
+  select caller, open_account.conduct_version from settings s
+  where s.key = 'conductVersion' and open_account.conduct_version is not null and (s.value #>> '{}')::integer = open_account.conduct_version
   on conflict do nothing;
   return jsonb_build_object('account', caller, 'opened', true);
 end $$;
+revoke execute on function open_account(text, integer) from public, anon, authenticated;
+grant execute on function open_account(text, integer) to authenticated;
