@@ -181,6 +181,11 @@ export const defaults: Settings = deepFreeze<Settings>({
     'autocorrect.perVolume': 25,
     'autocorrect.volumeStep': 50,
     'autocorrect.mostAdded': 200,
+    /** You Were Saying?: a play writes 25 tokens and 25 more for each step, at most 200, and each step costs 0.25 on top of its price at the machine. */
+    'youWereSaying.baseTokens': 25,
+    'youWereSaying.stepTokens': 25,
+    'youWereSaying.stepPrice': 25,
+    'youWereSaying.mostTokens': 200,
     /** The Boss's moves on the machine, from the engine's own starting numbers. */
     ...MACHINE_DEFAULTS,
   },

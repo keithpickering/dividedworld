@@ -21,7 +21,7 @@ const priceOf = (key: string): number => instance.machine.find((m) => 'card' in 
 const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '' });
 
 test('the instance sells its cards at their prices', () => {
-  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100]]);
+  assert.deepEqual(cards.map((c) => [c.key, c.alignment, priceOf(c.key)]), [['stick-around', 'sweet', 100], ['whoops', 'salty', 100], ['trap-card', 'salty', 150], ['hall-pass', 'sweet', 150], ['force-field', 'sweet', 150], ['bluff', 'pepperoni', 25], ['glitter-bomb', 'pepperoni', 150], ['main-event', 'sweet', 300], ['feelin-fab', 'sweet', 20], ['autocorrect', 'pepperoni', 100], ['you-were-saying', 'pepperoni', 100]]);
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual(instance.cards, cards);
 });
@@ -426,13 +426,13 @@ test('Autocorrect\'s phrase is its set phrase', () => {
   assert.equal(by('bluff').setPhrase, undefined);
 });
 
-test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the ten cards', async () => {
+test('the Booster\'s hit pull gives Main Event 25% and shares 75% among the uncommons, over the eleven cards', async () => {
   const { packOdds } = await import('../../../engine/rules/packs.ts');
   const booster = instance.packs.find((p) => p.key === 'booster')!;
   const hit = packOdds(booster, cards, instance.settings).at(-1)!;
   const chance = new Map(hit.flatMap((r) => r.cards.map((c) => [c.card, c.chance] as const)));
-  // Hall Pass (the face-down Moves design) joined the Booster by its rarity, as a new card does: four uncommons share the 75.
-  assert.equal(cards.length, 10);
+  // Hall Pass (the face-down Moves design) joined the Booster by its rarity, as a new card does: four uncommons share the 75 (You Were Saying? is a common, and the hit pull takes none).
+  assert.equal(cards.length, 11);
   assert.ok(Math.abs(chance.get('main-event')! - 0.25) < 1e-9, `Main Event at ${chance.get('main-event')}`);
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
   assert.equal(uncommons.length, 4);
