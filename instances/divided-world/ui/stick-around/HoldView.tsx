@@ -20,7 +20,7 @@
  * answers the key first, glass/Float.tsx), so the next Esc is a press of Break free again. The post's words are not drawn here: they
  * are moved into `words` by the effect (Effect.tsx), so nothing in them is drawn again.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode, type RefCallback } from 'react';
 import type { CardPlay, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { LensHost } from '../../../../engine/ui/cards/Lens.tsx';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
@@ -58,8 +58,8 @@ interface Props {
   readonly onBreakFree: (pushed: number) => void;
   /** The post's marks, drawn in its head. */
   readonly marks: ReactNode;
-  /** The element the post's words are moved into (they are drawn once, by the effect, and never here). */
-  readonly words: RefObject<HTMLDivElement | null>;
+  /** Told the element the post's words are moved into, and null when it goes (they are drawn once, by the effect, and never here). */
+  readonly words: RefCallback<HTMLDivElement>;
 }
 
 export function HoldView({ post, play, stage, release, onBreakFree, marks, words }: Props) {
