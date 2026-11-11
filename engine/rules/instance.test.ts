@@ -959,3 +959,14 @@ test('a draw is a list of distinct keys, and a drive is a Cast on a post with re
   assert.match(say(withDrive({}, { lasts: { unit: 'day', count: 31 } })), /card "splat" has a drive that lasts 31 days, longer than the 30 days a drive may/);
   assert.deepEqual(instanceProblems(withDrive({}, { lasts: { unit: 'day', count: 30 } })), []);
 });
+
+// A card that needs a message (`needsMessage`): the refusal's words, for a card that carries a message, never a Set.
+test('needsMessage is a sentence for a cast or a use, and nothing for a set', () => {
+  const say = (over: Record<string, unknown>) => instanceProblems({ ...good, cards: [testCard(over)] } as unknown as Instance).join('\n');
+  assert.deepEqual(instanceProblems({ ...good, cards: [testCard({ needsMessage: 'say something' })] } as unknown as Instance), []);
+  assert.match(say({ needsMessage: '' }), /card "splat" needs a message, and its refusal is empty/);
+  assert.match(say({ needsMessage: '   ' }), /card "splat" needs a message, and its refusal is empty/);
+  assert.match(say({ needsMessage: true }), /card "splat" needsMessage true; it is the sentence a blank message is refused with/);
+  assert.match(say({ needsMessage: 'x'.repeat(201) }), /card "splat" needsMessage is longer than 200 characters/);
+  assert.match(say({ play: 'set', trap: { trigger: { on: 'cast' } }, needsMessage: 'say something' }), /card "splat" needs a message, and only a cast or a use carries one/);
+});

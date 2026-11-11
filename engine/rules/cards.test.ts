@@ -466,3 +466,40 @@ test('the open drive is the one whose close is after now, with its plays', () =>
   const stray = play('f', 'f', soon);
   assert.deepEqual(openDrive([b1, stray, b2], 'appeal', new Date())?.plays, [b1, b2]);
 });
+
+// A card that needs words (`needsMessage`): the refusal is the card's own words, said after the landing and the configuration, and only for a blank message.
+test('a card that needs a message refuses a blank one in its own words, after the landing and the configuration', () => {
+  const appeal: CardRules = { ...cast('appeal', 'uncommon'), needsMessage: 'an appeal needs a sob story' };
+  assert.deepEqual(decidePlay(appeal, settings, post, [], {}, ''), { ok: false, why: 'an appeal needs a sob story' });
+  assert.deepEqual(decidePlay(appeal, settings, post, [], {}, undefined), { ok: false, why: 'an appeal needs a sob story' });
+  assert.deepEqual(decidePlay(appeal, settings, post, [], {}, '   \n '), { ok: false, why: 'an appeal needs a sob story' }, 'a message of spaces is blank');
+  assert.equal(decidePlay(appeal, settings, post, [], {}, 'Please.').ok, true);
+  // The landing is said first, then the configuration, then the message.
+  assert.match((decidePlay(appeal, settings, post, [{ card: 'appeal', act: 'x' }], {}, '') as { why: string }).why, /already carries/);
+  const picky: CardRules = { ...inky, needsMessage: 'say something' };
+  assert.deepEqual(decidePlay(picky, settings, post, [], { ink: 'blue' }, ''), { ok: false, why: 'the ink is red' });
+  // A card that does not need one plays with none, and a Use that needs one is held to it too.
+  assert.equal(decidePlay(plain, settings, post, [], {}, '').ok, true);
+  assert.deepEqual(decideUse({ ...shield, needsMessage: 'say something' }, settings, post, [], {}, ''), { ok: false, why: 'say something' });
+});
+
+// A drive card refuses a play on its open drive only when that drive holds `stack` plays: a drive that has closed holds none (Jimmy Wails plan, Task 6).
+test('a drive card is full by its open drive\'s plays, never by the post\'s plays of earlier drives', () => {
+  const drive: CardRules = {
+    ...base, key: 'drivey', name: 'Test Drivey', rarity: 'uncommon', stack: 3,
+    drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g'], overhead: 'o' },
+    canApply: (t, e, _config, now) => {
+      const lands = landsOn({ key: 'drivey', reaches: ['post'], stack: Number.MAX_SAFE_INTEGER }, t, e, now);
+      if (!lands.ok) return lands;
+      const open = openDrive(e, 'drivey', now ?? new Date());
+      return open && open.plays.length >= 3 ? refuse('this post\'s drive already carries 3 appeals') : lands;
+    },
+  };
+  const play = (act: string, drive: string, closes: string): CardEffect => ({ card: 'drivey', act, drive, closes });
+  const open = [play('a', 'a', soon), play('b', 'a', soon)];
+  assert.equal(decidePlay(drive, settings, post, open, {}, '').ok, true, 'a third play joins the open drive');
+  assert.deepEqual(decidePlay(drive, settings, post, [...open, play('c', 'a', soon)], {}, ''), { ok: false, why: 'this post\'s drive already carries 3 appeals' }, 'a fourth is refused');
+  const closed = [play('a', 'a', gone), play('b', 'a', gone), play('c', 'a', gone)];
+  assert.equal(decidePlay(drive, settings, post, closed, {}, '').ok, true, 'a play after the close opens another drive');
+  assert.equal(decidePlay(drive, settings, post, [...closed, ...open], {}, '').ok, true, 'earlier closed drives do not count against the open one');
+});
