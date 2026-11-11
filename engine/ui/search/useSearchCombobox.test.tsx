@@ -98,7 +98,20 @@ describe('the debounce and the minimum', () => {
     const { user } = setup({}, vi.fn(async () => { throw new Error('down'); }));
     await user.type(box(), 'wari');
     await settle();
-    expect(screen.getByRole('status')).toHaveTextContent('No suggestions');
+    expect(screen.getByRole('status')).toHaveTextContent("Suggestions couldn't be loaded.");
+    expect(screen.getByRole('status')).not.toHaveTextContent('No suggestions');
+  });
+
+  test('a failed reply is cleared by the next reply that lands', async () => {
+    let n = 0;
+    const { user } = setup({}, vi.fn(async () => { if (n++ === 0) throw new Error('down'); return GROUPS; }));
+    await user.type(box(), 'wari');
+    await settle();
+    expect(screen.getByRole('status')).toHaveTextContent("Suggestions couldn't be loaded.");
+    await user.type(box(), 'o');
+    await settle();
+    expect(screen.getByRole('status')).toHaveTextContent('3 suggestions');
+    expect(screen.getByRole('status')).not.toHaveTextContent("couldn't");
   });
 });
 
@@ -278,11 +291,11 @@ describe('review fixes', () => {
     expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ id: 'all' }), null, 'warix');
   });
 
-  test('Q-3: a source that throws synchronously says No suggestions', async () => {
+  test('Q-3: a source that throws synchronously says it could not load', async () => {
     const { user } = setup({}, vi.fn(() => { throw new Error('sync'); }));
     await user.type(box(), 'wari');
     await settle();
-    expect(screen.getByRole('status')).toHaveTextContent('No suggestions');
+    expect(screen.getByRole('status')).toHaveTextContent("Suggestions couldn't be loaded.");
   });
 
   test('Q-4: choosing a suggestion drops the old list; refocus does not reopen it', async () => {

@@ -7,6 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
+import { failureKind, NOT_RUN, NOT_SENT } from '../../../engine/ui/data/api.ts';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -32,6 +33,7 @@ const FALLBACK: ScreenSettings = {
   titleMaxLength: 120,
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
+  setLasts: { unit: 'day', count: 7 },
   cardSettings: { 'whoops.clean': 95 },
   presencePollSeconds: 30,
   presenceWindow: { unit: 'minute', count: 5 },
@@ -412,6 +414,13 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
   });
 
+  it('carries a set\'s `ends_at` (acts_public, 0156) onto the Act as `endsAt`, and nothing on an Act with none', async () => {
+    const END = '2026-11-20T00:00:00+00:00';
+    const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'set', target_act_id: B, ends_at: END }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, ends_at: null }])));
+    const plays = await h.api.cardsOnMany([B], 10);
+    expect(plays.map((p) => [p.id, p.endsAt])).toEqual([[A, END], [C, undefined]]);
+    expect(plays.slice(1)).toSatisfy((rest: readonly object[]) => rest.every((p) => !('endsAt' in p)));
+  });
   it('carries `untaken`, the public flag of a play that did not take (acts_public, 0149), onto the Act, and nothing of a play without it', async () => {
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'card', target_act_id: B, untaken: true }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, untaken: false }, { ...ACT_ROW, id: B, kind: 'card', target_act_id: B }])));
     const plays = await h.api.cardsOnMany([B], 10);
@@ -932,6 +941,32 @@ describe('failures', () => {
     expect(err).not.toContain('down');
   });
 
+  it('a failed read says which kind it was: silent, server, a 4xx that is not a refusal, or offline', async () => {
+    const silent = harness(() => new TypeError('network'));
+    expect(failureKind(await silent.api.act(A).catch((e: unknown) => e))).toBe('silent');
+
+    const server = harness(() => json({ message: 'down' }, 500));
+    expect(failureKind(await server.api.act(A).catch((e: unknown) => e))).toBe('server');
+    expect(server.to('acts_public')).toHaveLength(2);
+
+    const missing = harness(() => json({ code: 'PGRST116', message: 'no such row', hint: null }, 404));
+    const e404 = await missing.api.act(A).catch((e: unknown) => e);
+    expect(failureKind(e404)).toBe('server');
+    expect((e404 as Error).message).toBe('that could not be read right now; try again');
+    expect(missing.to('acts_public')).toHaveLength(1);
+
+    const was = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+    Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false });
+    try {
+      const offline = harness(() => rows([ACT_ROW]));
+      expect(failureKind(await offline.api.act(A).catch((e: unknown) => e))).toBe('offline');
+      expect(offline.log).toHaveLength(0);
+    } finally {
+      if (was) Object.defineProperty(Navigator.prototype, 'onLine', was);
+      else delete (Navigator.prototype as { onLine?: boolean }).onLine;
+    }
+  });
+
   it('reads Acts by id in one acts_public read', async () => {
     const h = harness(() => rows([ACT_ROW]));
     expect(await h.api.actsById([A, B])).toEqual([ACT]);
@@ -968,6 +1003,26 @@ describe('failures', () => {
     const refused = harness(() => json({ error: 'you cannot do that' }, 409));
     expect(await refused.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: 'you cannot do that' });
     expect(rpcDown.to('rpc/set_preferences')).toHaveLength(1);
+  });
+
+  it('a write that was not sent says so: offline sends nothing, and a 503 body with sent: false is notSent, never uncertain', async () => {
+    const was = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+    Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false });
+    try {
+      const off = harness(() => json({}));
+      expect(await off.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+      expect(await off.api.setPreferences({ theme: 'dark' })).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+      expect(await off.api.saveMachine([])).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+      expect(off.log.filter((r) => r.url.pathname === '/functions/v1/act' || r.url.pathname.includes('/rpc/'))).toHaveLength(0);
+    } finally {
+      if (was) Object.defineProperty(Navigator.prototype, 'onLine', was);
+      else delete (Navigator.prototype as { onLine?: boolean }).onLine;
+    }
+    const never = harness(() => json({ error: NOT_RUN, sent: false }, 503));
+    const r = await never.api.post(T, B, 'hi', null);
+    expect(r).toEqual({ ok: false, error: NOT_RUN, notSent: true });
+    expect((r as { uncertain?: true }).uncertain).toBeUndefined();
+    expect(never.log.filter((x) => x.url.pathname === '/functions/v1/act')).toHaveLength(1);
   });
 });
 
@@ -1662,11 +1717,11 @@ describe('the log', () => {
         if (r.url.searchParams.get('select') === 'play,catches,phrase,passage,who,who_except') return rows([{ play: SET, catches: 'whoops', phrase: null }]);
         return rows([{ play: SET, card: 'dud', post: A, spring: null, ended_at: '2026-10-29T20:00:00+00:00', ended_by: 'taken back' }]);
       }
-      if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, bought_price: 100, at: '2026-10-29T19:00:00+00:00' }]);
+      if (name === 'my_caught') return rows([{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, at: '2026-10-29T19:00:00+00:00' }]);
       if (name === 'my_cards_ended') return rows([{ card_end: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', target_name: null, post_author_name: 'Pipewrench', caster_name: 'Spritey', character: B }]);
       if (name === 'my_infractions') return rows([{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, rule_number: 2, rule: 'Rule 2: No double posting', mod_name: 'The Clerk', post: A, post_seq: 41, thread: T, expires_at: '2026-11-12T20:30:00+00:00', relief: 0, emptied_at: null }]);
-      if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }]);
-      if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }]);
+      if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', own_until: '2026-10-31T20:31:00+00:00' }]);
+      if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }]);
       if (name === 'my_cosmetic_log') return rows([{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', by_name: 'Sighbot', season: null, place: null, line: null, to_name: 'Sock Puppet' }]);
       if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null }]);
       if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null },
@@ -1697,11 +1752,11 @@ describe('the log', () => {
       writes: [{ play: C, post: A, version: A, failed: false, opening: true, over: false, at: '2026-10-29T22:30:00+00:00' }, { play: C, post: A, version: SET, failed: true, opening: false, over: false, at: '2026-10-29T22:20:00+00:00' }],
       saves: [{ play: C, post: A, savedAt: '2026-10-29T23:00:00+00:00' }],
       setEnds: [{ play: SET, card: 'dud', post: A, spring: null, endedAt: '2026-10-29T20:00:00+00:00', endedBy: 'taken back' }],
-      caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, boughtPrice: 100, at: '2026-10-29T19:00:00+00:00' }],
+      caught: [{ play: C, card: 'whoops', post: A, trap: 'snare', spring: SPRING, price: 25, at: '2026-10-29T19:00:00+00:00' }],
       ended: [{ cardEnd: 'e1', play: C, card: 'whoops', at: '2026-10-29T22:00:00+00:00', side: 'onMine', reach: 'post', targetName: null, postAuthorName: 'Pipewrench', casterName: 'Spritey', character: B }],
       infractions: [{ infraction: 'i1', character: B, at: '2026-10-29T20:30:00+00:00', band: 'minor', points: 2, ruleNumber: 2, rule: 'Rule 2: No double posting', mod: 'The Clerk', post: A, postSeq: 41, thread: T, expiresAt: '2026-11-12T20:30:00+00:00', relief: 0, emptiedAt: null }],
-      bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }],
-      groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }],
+      bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', ownUntil: '2026-10-31T20:31:00+00:00' }],
+      groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00', ruledOffice: 'boss' }],
       reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null }],
       appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null },
         { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishmentKind: 'move', postSeq: null, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null }],
@@ -2620,7 +2675,7 @@ describe('a screen in one call', () => {
         ledger: [LEDGER_ROW], wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balance_after: 472, ref: null, at: '2026-10-30T08:17:02+00:00' }],
         saves: [{ play: C, post: A, saved_at: '2026-10-29T23:00:00+00:00' }],
         writes: [{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }],
-        groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00' }],
+        groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }],
       }), {
         shares: [{ settlement: 9, character: B, reason: 'heel.drewHeat', act: A, quadrant: 'excitedNegative', amount: 20 }], acts: [ACT_ROW], states: [{ play: C, state: { n: 1 }, saved_at: '2026-10-29T23:00:00+00:00' }],
         people: [{ ...CHAR, profile: PROFILE }], threads: [THREAD_ROW], boards: [BOARD_ROW], standings: [{ character: B, standing: 340 }], turns: [{ ...TURN_ROW, act: A, at: '2026-09-02T10:00:00+00:00', was: 'heel' }, TURN_ROW], season: SEASON_ROW,
@@ -2637,7 +2692,7 @@ describe('a screen in one call', () => {
       /* The texts cards wrote on the player's posts (log_page, 0149), mapped as log() maps my_posts_written_on. */
       expect(page.log.writes).toEqual([{ play: C, post: A, version: A, failed: true, opening: true, over: true, at: '2026-10-29T22:30:00+00:00' }]);
       /* The group moves (log_page, 0134), mapped as log() maps my_group_moves. */
-      expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00' }]);
+      expect(page.log.groupMoves).toEqual([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00', ruledOffice: 'boss' }]);
       expect(page.log.before).toBeNull();
       expect(page.acts).toEqual([ACT]);
       expect(page.states).toEqual({ [C]: { state: { n: 1 }, savedAt: '2026-10-29T23:00:00+00:00' } });
@@ -2839,6 +2894,16 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect((await run(null))?.ruling).toBeUndefined();
     expect((await run('nonsense'))?.ruling).toBeUndefined();
     expect((await run(undefined))?.ruling).toBeUndefined();
+  });
+
+  it('reads a reversed end with no by_act as dropped, and one with a by_act as reversed', async () => {
+    const doc = (end: unknown) => ({ summary: THREAD_ROW, page: 1, acts: [], plays: [], above: [], visits: [{ visit: 'v1', post: A, mod: B, at: '2026-10-01T10:00:00+00:00', ends_at: '2026-10-01T12:00:00+00:00', line: 'x', charges: [], challenge: { kind: 'distraction' }, end }] });
+    const run = async (end: unknown) => (await harness((r) => (r.url.pathname === `${REST}/rpc/thread_page` ? json(doc(end)) : undefined)).api.threadPage(T, { page: 1 }, 20, []))?.visits[0]?.end;
+    const at = '2026-10-01T13:00:00+00:00';
+    expect((await run({ act: 'e1', at, outcome: 'reversed', by_act: null, line: 'This visit could not be filed and was dropped.' }))?.outcome).toBe('dropped');
+    expect((await run({ act: 'e1', at, outcome: 'reversed', line: 'x' }))?.outcome).toBe('dropped');
+    expect((await run({ act: 'e1', at, outcome: 'reversed', by_act: 'a1', line: 'x' }))?.outcome).toBe('reversed');
+    expect((await run({ act: 'e1', at, outcome: 'dropped', line: 'x' }))?.outcome).toBe('dropped');
   });
 
   it('says a failed, refunded judgment in the server\'s words, and that it may be made again', async () => {

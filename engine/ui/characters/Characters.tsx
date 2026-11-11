@@ -15,7 +15,7 @@
  * history.state (New character's, the profile editor's), else on the HUD's, and no address names it.
  */
 import { AnimatePresence, motion, useIsPresent } from 'motion/react';
-import { useEffect, useId, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ComponentProps } from 'react';
 import { words } from '../../rules/pronouns.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import { useKayfa } from '../context.tsx';
@@ -37,6 +37,7 @@ import { ClassChip } from './ClassChip.tsx';
 import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, inDays, spanWords } from './format.ts';
+import { readBack } from './readBack.ts';
 import { RevealOverlay } from './RevealOverlay.tsx';
 import { TurnDialog } from './TurnDialog.tsx';
 import './characters.css';
@@ -96,6 +97,8 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
     return new Map([...latest].flatMap(([id, t]) => (t.was ? [[id, t.was] as const] : [])));
   }, [page.turns]);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  /* Each opening is its own dialog: one that is leaving as another opens never lends it a button left busy by a write that landed. */
+  const [opening, setOpening] = useState(0);
   const [flash, setFlash] = useState('');
   const [busy, setBusy] = useState<Id | null>(null);
   /* A pip style being saved: its character and the style chosen, shown while the save is out. */
@@ -144,9 +147,12 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   };
   const target = dialog ? mine.find((c) => c.id === dialog.id) ?? null : null;
   /* The dialogs have saved and refreshed the HUD's rows; the page's own document is read again in place. */
-  const done = (message: string) => { setFlash(message); if (dialog) setRefocus({ id: dialog.id, was: page }); setDialog(null); reload(); };
+  const current = useRef(opening);
+  current.current = opening;
+  /* A write that landed answers for the opening it was sent from: a late answer never closes or flashes over a newer dialog. */
+  const done = (message: string, from: number) => { if (from !== current.current) return; setFlash(message); if (dialog) setRefocus({ id: dialog.id, was: page }); setDialog(null); reload(); };
   /* Words from an earlier action are not left standing under a new one. */
-  const show = (next: Dialog) => { setFlash(''); setProblem(null); setDialog(next); };
+  const show = (next: Dialog) => { setFlash(''); setProblem(null); setOpening((n) => n + 1); setDialog(next); };
 
   const withdraw = async (c: MyCharacter) => {
     setBusy(c.id);
@@ -155,7 +161,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
     try {
       const answer = await api.withdrawTurn(c.id);
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error }); return; }
-      await player.refresh();
+      await readBack(player.refresh);
       reload();
       setFlash(`${c.name}'s Turn is withdrawn.`);
       setRefocus({ id: c.id, was: page });
@@ -204,7 +210,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       if (!answer.ok) { setProblem({ id: c.id, text: answer.error, pip: true }); return; }
       /* Saved: the select and the HUD's mark follow the characters read again (a read that fails keeps them, and says so). */
       reload();
-      try { await player.refresh(); } catch { setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true }); }
+      if (!(await readBack(player.refresh))) setProblem({ id: c.id, text: 'Saved, but this page could not read it back. Reload to see it.', pip: true });
     } catch {
       setProblem({ id: c.id, text: 'That could not be sent. Check your connection and try again.', pip: true });
     } finally {
@@ -404,10 +410,10 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       </div>
 
       <Layers>
-      {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" kicker="My characters › Reveal" character={target} at={thread} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
-      {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'turn' && <TurnDialog key={`turn-${opening}`} character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key={`reveal-${opening}`} kicker="My characters › Reveal" character={target} at={thread} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(message) => { if (opening === current.current) { setFlash(message); reload(); } }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
+      {dialog && target && dialog.kind === 'drop' && <DebutDialog key={`drop-${opening}`} character={target} timing="now" nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'debut' && <DebutDialog key={`debut-${opening}`} character={target} timing="tally" nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
       </Layers>
     </div>
   );

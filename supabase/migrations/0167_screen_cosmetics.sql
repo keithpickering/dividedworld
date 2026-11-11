@@ -19,7 +19,7 @@ $$;
 revoke execute on function profile_cosmetics(uuid) from public, anon;
 grant execute on function profile_cosmetics(uuid) to authenticated;
 
--- thread_page (0149), its faces also carrying the cosmetics. Everything else as 0149 wrote it.
+-- thread_page (0156, written again whole after acts_public gained `ends_at`; its body is 0149's), its faces also carrying the cosmetics. Everything else as 0156 wrote it.
 create or replace function thread_page(in_thread uuid, in_page integer, in_seq integer, per_page integer, effect_cards text[]) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -146,7 +146,7 @@ begin atomic
   ) end;
 end;
 
--- profile_page (0149), its faces also carrying the cosmetics. Everything else as 0149 wrote it.
+-- profile_page (0156, written again whole after acts_public gained `ends_at`; its body is 0149's), its faces also carrying the cosmetics. Everything else as 0156 wrote it.
 create or replace function profile_page(in_character uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -186,7 +186,7 @@ begin atomic
   ) end;
 end;
 
--- record_page (0149), its faces also carrying the cosmetics. Everything else as 0149 wrote it.
+-- record_page (0156, written again whole after acts_public gained `ends_at`; its body is 0149's), its faces also carrying the cosmetics. Everything else as 0156 wrote it.
 create or replace function record_page(in_character uuid, in_kind text, in_page integer) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -242,7 +242,7 @@ begin atomic
   ) end;
 end;
 
--- alerts_page (0149), its faces also carrying the cosmetics. Everything else as 0149 wrote it.
+-- alerts_page (0156, written again whole after acts_public gained `ends_at`; its body is 0149's), its faces also carrying the cosmetics. Everything else as 0156 wrote it.
 create or replace function alerts_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -279,7 +279,8 @@ begin atomic
   );
 end;
 
--- log_page (0153, which added a drive's gifts), its faces also carrying the cosmetics. Everything else as 0153 wrote it.
+-- log_page (0157, which reads my_caught without `bought_price`, a ban's `ruling` and `own_until`, and a group move's `ruled_office`), its faces also carrying the cosmetics.
+-- Everything else as 0157 wrote it.
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -323,7 +324,7 @@ begin atomic
     from my_face_down f where f.passed_at is not null and f.spring is null and (in_before is null or f.passed_at <= in_before)
     order by f.passed_at desc, f.play limit 200
   ), ca as materialized (
-    select c.play, c.card, c.post, c.trap, c.spring, c.price, c.bought_price, c.at
+    select c.play, c.card, c.post, c.trap, c.spring, c.price, c.at
     from my_caught c where in_before is null or c.at <= in_before
     order by c.at desc, c.play limit 200
   ), en as materialized (
@@ -335,12 +336,12 @@ begin atomic
     from my_infractions i where in_before is null or i.at <= in_before
     order by i.at desc, i.infraction limit 200
   ), bn as materialized (
-    select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread
+    select b.ban, b.character, b.at, b.days, b.until, b.infraction, b.rule, b.thread, b.ruling, b.own_until
     from my_bans b where in_before is null or b.at <= in_before
     order by b.at desc, b.ban limit 200
   ), gm as materialized (
     select g.move, g.character, g.at, g.thread, g.seq, g."group", g.board, g.board_name, g.expires_at, g.landed_until, g.check_at, g.demand, g.office,
-           g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until
+           g.ended_why, g.ended_by, g.ended_at, g.ruling, g.ruled_at, g.ruled_until, g.ruled_office
     from my_group_moves g where in_before is null or g.at <= in_before
     order by g.at desc, g.move limit 200
   ), rp as materialized (

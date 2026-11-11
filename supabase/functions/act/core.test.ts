@@ -4,6 +4,7 @@ import { REFUSAL_HINT, SAFE_TO_REPEAT, actDbs, afterTheAnswer, coalesced, forget
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance } from '../_shared/instance.ts';
 import { landsOn } from '../../../engine/rules/cards.ts';
+import { NOT_RUN } from '../../../engine/ui/data/api.ts';
 
 const id = '11111111-1111-4111-8111-111111111111';
 const recording = (answer: unknown = { id }) => {
@@ -248,6 +249,25 @@ test('a write whose answer was lost says plainly it may have gone through', asyn
   const out = await runAction({ player: lost, service: lost }, instance, { action: 'post', thread: id, character: id, body: 'x' });
   assert.equal(out.status, 503);
   assert.match((out.body as { error: string }).error, /may have gone through.*look before you try again/);
+});
+
+test('a write that certainly did not run says so: sent false, in the words the screen holds as NOT_RUN', async () => {
+  const buy = { action: 'buyCard', slot: id, price: 100 };
+  // A read before the write never answered: nothing was written.
+  const noWho: Db = { rpc: async () => { throw new TransportError('whoami: no answer after 4 attempt(s): no answer (fetch failed)'); } };
+  const early = await runAction({ player: noWho, service: noWho }, instance, buy);
+  assert.deepEqual({ status: early.status, body: early.body }, { status: 503, body: { error: NOT_RUN, sent: false } });
+  // The write itself got a 503 on every attempt: it never ran.
+  const player: Db = { rpc: async <T>() => id as T };
+  const never: Db = { rpc: async () => { throw new TransportError('buy_card: no answer after 4 attempt(s): HTTP 503; HTTP 503; HTTP 503; HTTP 503', 'never'); } };
+  const refused = await runAction({ player, service: never }, instance, buy);
+  assert.deepEqual({ status: refused.status, body: refused.body }, { status: 503, body: { error: NOT_RUN, sent: false } });
+  // The write's own fetch threw: it may have run, and no `sent` is said.
+  const threw: Db = { rpc: async () => { throw new TransportError('buy_card: no answer (fetch failed)', 'maybe'); } };
+  const lost = await runAction({ player, service: threw }, instance, buy);
+  assert.equal(lost.status, 503);
+  assert.match((lost.body as { error: string }).error, /may have gone through.*look before you try again/);
+  assert.equal('sent' in (lost.body as object), false);
 });
 
 test('the act function\'s player connection sends the publishable key and the session; its service connection, the secret key alone', async () => {

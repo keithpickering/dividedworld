@@ -326,10 +326,10 @@ begin
       update visits_open set failed_at = now(), attempts = attempts + 1 where visit_act = late.visit_act returning attempts into tries;
       insert into visit_file_failures (visit_act, attempts, error) values (late.visit_act, coalesce(tries, 1), left(sqlerrm || ' (' || sqlstate || ')', 500))
       on conflict (visit_act) do update set attempts = excluded.attempts, error = excluded.error, at = now();
-      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (reversed, no infraction), so it is never stuck for good.
+      -- The ceiling: a visit that cannot be filed after `visit_file_attempts_most` tries is dropped (ended `dropped`, no infraction), so it is never stuck for good.
       if coalesce(tries, 1) >= 10 then
         begin
-          perform end_visit(late.visit_act, 'reversed', null, 'This visit could not be filed and was dropped.');
+          perform end_visit(late.visit_act, 'dropped', null, 'This visit could not be filed and was dropped.');
         exception when others then
           raise warning 'system_tick: visit % could not be dropped: % (%)', late.visit_act, sqlerrm, sqlstate;
         end;

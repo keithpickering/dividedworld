@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
+import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { BannedNote } from '../composer/BannedNote.tsx';
 import { BarredNote, useBar } from '../composer/BarredNote.tsx';
 import { useBannedUntil } from '../composer/ban.ts';
@@ -17,7 +18,7 @@ import { Link, useNavigate } from '../router.tsx';
 
 export function NewThread({ board, boardId }: { readonly board: string; /** The board's id, which a bar names. */ readonly boardId: string }) {
   const { api, settings } = useKayfa();
-  const { hudCharacter, loaded, refresh } = usePlayer();
+  const { hudCharacter, loaded, refresh, charactersFailed } = usePlayer();
   const navigate = useNavigate();
   const id = useId();
   const [title, setTitle] = useState('');
@@ -78,7 +79,9 @@ export function NewThread({ board, boardId }: { readonly board: string; /** The 
       {toggle}
       <form id={`${id}-form`} ref={form} hidden={!open} className="kb-box kb-form kb-new-thread" aria-labelledby={`${id}-head`} onSubmit={(e) => void submit(e)} noValidate>
         <h2 className="kb-box-head" id={`${id}-head`}>Start a thread</h2>
-        {!hudCharacter ? (
+        {!hudCharacter && charactersFailed ? (
+          <CharactersFailed className="kb-new-thread-none" />
+        ) : !hudCharacter ? (
           <p className="kb-new-thread-none">
             None of your characters can post yet. <Link to="/characters/new">Make a character</Link>; a character waiting to debut can post after the debut.
           </p>

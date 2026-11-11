@@ -7,6 +7,7 @@
  * A route's key names the part of its address that names its document: a move that keeps it (a thread's `#post-142` on a page already
  * shown) is the screen's own, as before.
  */
+import { failureKind } from './data/api.ts';
 import type { BoardPage, IndexPage, KayfaApi, PostHit, ProfilePage, RecordPage, SearchPage, ThreadHit, ThreadPage } from './data/api.ts';
 import { recordKind, type RecordKind } from './profile/record.ts';
 import { seqOfHash } from './thread/pages.ts';
@@ -90,14 +91,11 @@ export interface SearchDoc {
 export const searchKey = (query: Query): string => String(searchParams(parseSearch(query)));
 
 /**
- * Whether a failed search failed to reach the server rather than being refused by it. The supabase adapter's read throws one fixed sentence
- * ("... could not be read right now; try again") for any error it could not tell apart, and a fetch that never answered is a TypeError; the
- * browser also says when it is offline. Anything else is the server's (or the fake's) own refusal of an argument.
+ * Whether a failed search failed for want of an answer rather than being refused by the server. The adapter's read throws a `ReadFailure`
+ * naming the kind (offline, no answer, or the server's error); a refusal of an argument comes in the server's own words, and is anything else.
  */
 function reachFailure(e: unknown): boolean {
-  if (e instanceof TypeError) return true;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
-  return e instanceof Error && /could not be read right now/.test(e.message);
+  return failureKind(e) !== 'broken';
 }
 
 export async function loadSearch(env: LoadEnv, query: Query): Promise<ScreenDoc<SearchDoc>> {

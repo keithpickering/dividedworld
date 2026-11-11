@@ -142,21 +142,21 @@ begin
   if doc -> 'sources' -> 'setPasses' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select play, card, post, ends_at, passed_at from my_face_down where passed_at is not null and spring is null order by passed_at desc, play limit 200) r)) then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
   if doc -> 'sources' -> 'caught' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select play, card, post, trap, spring, price, bought_price, at from my_caught order by at desc, play limit 200) r)) then raise exception 'caught: %', doc -> 'sources' -> 'caught'; end if;
+       select play, card, post, trap, spring, price, at from my_caught order by at desc, play limit 200) r)) then raise exception 'caught: %', doc -> 'sources' -> 'caught'; end if;
   if doc -> 'sources' -> 'ended' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select card_end, play, card, at, side, reach, target_name, post_author_name, caster_name, character from my_cards_ended order by at desc, card_end limit 200) r)) then raise exception 'ended: %', doc -> 'sources' -> 'ended'; end if;
   if doc -> 'sources' -> 'infractions' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select infraction, character, at, band, points, rule_number, rule, mod_name, post, post_seq, thread, expires_at, relief, emptied_at from my_infractions order by at desc, infraction limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'infractions') is distinct from 1 then raise exception 'infractions: %', doc -> 'sources' -> 'infractions'; end if;
   if doc -> 'sources' -> 'bans' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select ban, character, at, days, until, infraction, rule, thread from my_bans order by at desc, ban limit 200) r))
+       select ban, character, at, days, until, infraction, rule, thread, ruling, own_until from my_bans order by at desc, ban limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'bans') is distinct from 1 then raise exception 'bans: %', doc -> 'sources' -> 'bans'; end if;
   if doc -> 'sources' -> 'reports' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select report, character, at, post, post_seq, thread, verdict, verdict_at, mod_name, refund from my_reports order by at desc, report limit 200) r)) then raise exception 'reports: %', doc -> 'sources' -> 'reports'; end if;
   if doc -> 'sources' -> 'appeals' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select appeal, character, at, punishment, punishment_kind, post_seq, thread, verdict, ruled_at, points_delta, hearer_name, refund from my_appeals order by at desc, appeal limit 200) r)) then raise exception 'appeals: %', doc -> 'sources' -> 'appeals'; end if;
   if doc -> 'sources' -> 'groupMoves' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select move, character, at, thread, seq, "group", board, board_name, expires_at, landed_until, check_at, demand, office, ended_why, ended_by, ended_at, ruling, ruled_at, ruled_until
+       select move, character, at, thread, seq, "group", board, board_name, expires_at, landed_until, check_at, demand, office, ended_why, ended_by, ended_at, ruling, ruled_at, ruled_until, ruled_office
        from my_group_moves order by at desc, move limit 200) r)) then raise exception 'groupMoves: %', doc -> 'sources' -> 'groupMoves'; end if;
   -- The packs (0139): this caller bought none here, so the source is the view's empty read; 0139-machine.sql holds a bought pack's row.
   if doc -> 'sources' -> 'packs' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (

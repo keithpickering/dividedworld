@@ -135,6 +135,11 @@ const fires = (markdown, pattern, o = {}) => {
     check(`${name}: the real guide with an unknown setting appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nA {{setting:walletCapp}}.\n` }).length === 1);
     check(`${name}: the real guide with a retyped number appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nA wallet holds 6.00 orbs.\n` }).length === 1);
     check(`${name}: the real guide with a link to no section appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\n[x](#nope)\n` }).length === 1);
+    const LINE = 'Built, and not switched on here yet:';
+    check(`${name}: the real guide holds the not-switched-on line while the instance has The System off`, real.settings.systemEnabled === false && real.markdown.includes(LINE));
+    check(`${name}: the real guide with the not-switched-on line removed fires`, guideFaults({ ...real, markdown: real.markdown.replace(LINE, 'Built:') }).length === 1);
+    check(`${name}: the real guide against settings with The System on fires`, guideFaults({ ...real, settings: { ...real.settings, systemEnabled: true } }).length === 1);
+    check(`${name}: a guide without the line is clean where The System is on`, guideFaults({ ...real, markdown: real.markdown.replace(LINE, 'Built:'), settings: { ...real.settings, systemEnabled: true } }).length === 0);
     const r = guideFaults(real);
     check(`${name}: the real guide is clean`, r.length === 0, JSON.stringify(r));
   }
