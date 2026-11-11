@@ -103,15 +103,33 @@ describe('a page and the router\'s key', () => {
   const entered = () => vi.mocked(enter.enterScreen);
   beforeEach(() => entered().mockClear());
 
-  test('a change of key within one path swaps the screen and plays the entrance again', async () => {
-    const routes: Route[] = [{ path: '/log', load: async () => 'doc', key: (_p, q) => q.get('p') ?? '1', render: () => <p>log</p> }];
-    renderInWorld(<><Page surface="log"><p>page</p></Page><Routes routes={routes} /><Link to="/log?p=2">next</Link></>, { path: '/log', seed: signedIn });
-    await screen.findByText('log');
-    const before = entered().mock.calls.length;
-    await userEvent.click(screen.getByRole('link', { name: 'next' }));
-    expect(entered().mock.calls.length).toBe(before + 1);
-    expect(scrolled).toHaveBeenCalledWith(0, 0);
+  test('a change of key within one path keeps the one screen mounted: no second screen, no focus move, no scroll to the top', async () => {
+    const routes: Route[] = [{ path: '/settings', load: async () => 'doc', key: (_p, q) => q.get('section') ?? 'account', render: () => <p>settings</p> }];
+    renderInWorld(<><Page surface="settings"><p>page</p></Page><Routes routes={routes} /><Link to="/settings?section=board">board</Link></>, { path: '/settings', seed: signedIn });
+    await screen.findByText('settings');
+    const before = document.querySelector('.kb-glass-screen');
+    const entries = entered().mock.calls.length;
+    await userEvent.click(screen.getByRole('link', { name: 'board' }));
+    expect(document.querySelectorAll('.kb-glass-screen')).toHaveLength(1);
+    expect(document.querySelector('.kb-glass-screen')).toBe(before);
+    expect(document.querySelector('[data-kb-exiting]')).toBeNull();
+    expect(screen.getByRole('main')).not.toHaveFocus();
+    expect(scrolled).not.toHaveBeenCalled();
+    expect(entered().mock.calls.length).toBe(entries);
+  });
+
+  test('a change of path replaces the screen and focus moves to main', async () => {
+    const routes: Route[] = [
+      { path: '/settings', load: async () => 'doc', key: (_p, q) => q.get('section') ?? 'account', render: () => <p>settings</p> },
+      { path: '/season', load: async () => 'doc', key: () => 'season', render: () => <p>season</p> },
+    ];
+    renderInWorld(<><Page surface="settings"><p>page</p></Page><Routes routes={routes} /><Link to="/season">season</Link></>, { path: '/settings', seed: signedIn });
+    await screen.findByText('settings');
+    const before = document.querySelector('.kb-glass-screen');
+    await userEvent.click(screen.getByRole('link', { name: 'season' }));
+    expect(document.querySelector('.kb-glass-screen:not([data-kb-exiting])')).not.toBe(before);
     expect(screen.getByRole('main')).toHaveFocus();
+    expect(scrolled).toHaveBeenCalledWith(0, 0);
   });
 
   test('two paths that share a key are one screen: no new entrance, no scroll, and no second screen', async () => {
