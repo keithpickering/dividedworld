@@ -198,3 +198,16 @@ test('piecesOf: a stretch ending on a line break leaves no sliver on the next li
   assert.deepEqual(piecesOf([[0, 0.5, 1]], [99.96, 100.04]), [[[0, 99.96, 1]], []]);
   assert.deepEqual(piecesOf([[0.5, 1, 1]], [100.04, 99.96]), [[], [[0, 99.96, 1]]]);
 });
+
+test('stripsOf: a play whose phrase the post no longer holds has no strip, and has one again when an edit brings it back', () => {
+  const plays: TapePlay[] = [{ id: 'k1', phrase: 'mario', replacement: 'Luigi' }];
+  assert.deepEqual(stripsOf('only luigi here', plays).strips, []);
+  assert.equal(stripsOf('mario is back', plays).strips.length, 1);
+});
+
+test('stripsOf: a strip over a looser match covers the original words, punctuation and all', () => {
+  const text = "No, don't! Mario's here. DONT";
+  const { strips, total } = stripsOf(text, [{ id: 'k1', phrase: 'dont', replacement: 'do' }]);
+  assert.deepEqual(strips.map((s) => text.slice(s.from, s.to)), ["don't", 'DONT']);
+  assert.equal(total.k1, 2);
+});
