@@ -1070,6 +1070,23 @@ describe('Settings › Sound', () => {
       expect(within(group('Game sounds')).getByText('80%')).toBeInTheDocument();
     });
 
+    test('a release waiting to be saved is dropped when the account changes, and never saved to the next account', async () => {
+      const { w, slider } = await stepped();
+      const other = w.fake.seed.account('other');
+      const saved: unknown[] = [];
+      const real = w.fake.setPreferences.bind(w.fake);
+      w.fake.setPreferences = (patch) => { saved.push(patch); return real(patch); };
+      vi.useFakeTimers();
+      try {
+        fireEvent.change(slider, { target: { value: '10' } });
+        w.fake.signInAs(other);
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      } finally { vi.useRealTimers(); }
+      expect(saved).toEqual([]);
+      expect((await w.fake.preferences()).gameVolume).toBe(80);
+    });
+
     test('turning Off removes the range, and a change on it afterward saves nothing', async () => {
       const { w, slider } = await stepped();
       await userEvent.click(radio('Game sounds', 'Off'));
