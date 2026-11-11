@@ -8,7 +8,7 @@
  * Nothing here writes: a loader runs on a hover as well as a press, and a hover is not a visit.
  */
 import { createElement, lazy, useState, type ComponentProps, type ComponentType } from 'react';
-import type { KayfaApi, Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, SeasonPage, UpdatesPage } from './data/api.ts';
+import type { KayfaApi, Act, AlertsPage, ContactLink, Estimate, Id, LogPage, MyCharactersPage, MyInvite, QueuePage, ReportsPage, SeasonPage, UpdatesPage } from './data/api.ts';
 import { SIGNED_OUT_DOC, type LoadEnv, type ScreenDoc } from './screen-docs.ts';
 
 /** What a glass loader needs of the app: the api, and whether a player is signed in now. */
@@ -176,6 +176,16 @@ export function loadQueue(env: GlassEnv, preload: Preload): Promise<QueuePageDoc
     /* The boards are read beside the page (boot's are as the page loaded, and a description saved since would show stale). */
     const [page, boards] = await Promise.all([env.api.queuePage(), env.api.boards()]);
     return page === null ? NOT_ADMIN_DOC : { ...page, boards };
+  });
+}
+
+export const reportsKey = (): string => '/admin/reports';
+
+/** Signed out, or signed in and not an admin: the screen draws "The reports screen is for admins." */
+export function loadReports(env: GlassEnv, preload: Preload): Promise<ReportsPage | NotAdminDoc | typeof SIGNED_OUT_DOC> {
+  return beside(preload, async () => {
+    if (!(await env.signedIn())) return SIGNED_OUT_DOC;
+    return (await env.api.reportsPage()) ?? NOT_ADMIN_DOC;
   });
 }
 

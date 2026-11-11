@@ -34,6 +34,7 @@ import { WelcomeScreen } from './welcome/Welcome.tsx';
 import { AlertsScreen } from './alerts/Alerts.tsx';
 import { UpdatesScreen } from './updates/Updates.tsx';
 import { QueueScreen } from './admin/Queue.tsx';
+import { ReportsScreen } from './admin/Reports.tsx';
 import { MachineScreen } from './admin/Machine.tsx';
 import { LogScreen } from './log/Log.tsx';
 import { SettlementScreen } from './log/Settlement.tsx';
@@ -101,7 +102,7 @@ const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => (
 const SCREENS: GlassScreens = {
   signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
   settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
-  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), machine: direct(MachineScreen), log: direct(LogScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), log: direct(LogScreen),
   settlement: direct(SettlementScreen),
 };
 
@@ -120,6 +121,7 @@ const SETTINGS = ['/settings'];
 const ALERTS = ['/alerts'];
 const UPDATES = ['/updates'];
 const QUEUE = ['/admin/queue'];
+const REPORTS = ['/admin/reports'];
 const LOG = ['/log', '/log/settlement'];
 
 /** My characters at `/characters` and Edit profile at `/characters/edit`, one document: the page opens at the address it is given. */
@@ -132,6 +134,8 @@ export function LoadedAlerts() { return <Glass paths={ALERTS} />; }
 export function LoadedUpdates() { return <Glass paths={UPDATES} />; }
 /** The admin queue; `now` fixes the clock the countdowns are read against. */
 export function LoadedQueue({ now }: { readonly now?: number } = {}) { return <Glass paths={QUEUE} now={now} />; }
+/** The reports screen at `/admin/reports`. */
+export function LoadedReports() { return <Glass paths={REPORTS} />; }
 /** My log at `/log` and the settlement summary at `/log/settlement`, one document. */
 export function LoadedLog() { return <Glass paths={LOG} />; }
 

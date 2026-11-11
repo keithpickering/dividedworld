@@ -1761,6 +1761,66 @@ export interface UpdatesPage {
   readonly queue?: Awaited<ReturnType<KayfaApi['adminQueue']>>;
 }
 
+/** The outcomes an admin gives a report (`decide_report`, 0148): none and close end it with no word to the author, the others tell the author what happened. */
+export const REPORT_OUTCOMES = ['none', 'nudge', 'hide', 'hideUntilEdited', 'suspend', 'ban', 'close'] as const;
+export type ReportOutcomeKey = (typeof REPORT_OUTCOMES)[number];
+/** What `decide` takes besides a report's outcomes: bring a version back, lift a bar, approve an edit. */
+export type DecideOutcome = ReportOutcomeKey | 'unhide' | 'lift' | 'approve';
+/** One outcome of a decision: `until` (an ISO time) only for a suspension, `note` the words that go into the author's mail. */
+export interface ReportOutcome {
+  readonly outcome: ReportOutcomeKey;
+  readonly until?: string;
+  readonly note?: string;
+}
+/** An account's decision before this one, as the admin screen shows it. */
+export interface PastDecision {
+  readonly outcome: string;
+  readonly until: string | null;
+  readonly at: string;
+  readonly note: string;
+}
+/** An open report (`admin_reports`, 0150): the reported version's words, the section and note the reporter gave, and the author's account (null for a staff post) with its past decisions. The reporter is not shown. */
+export interface AdminReport {
+  readonly id: number;
+  readonly versionAct: Id;
+  readonly post: Id;
+  readonly thread: Id | null;
+  readonly section: string;
+  readonly note: string | null;
+  readonly at: string;
+  readonly author: Id | null;
+  readonly words: string;
+  readonly past: readonly PastDecision[];
+}
+/** A post hidden until its author edited it, edited since and not yet decided again: the admin's re-review list (`reviews_due`). */
+export interface AdminReview {
+  readonly decision: number;
+  readonly post: Id;
+  readonly versionAct: Id;
+  readonly thread: Id | null;
+  readonly editedAt: string;
+  readonly author: Id | null;
+  readonly words: string;
+}
+/** A mail whose latest attempt failed (it will be tried again) or was refused (it never will be). */
+export interface FailedMail {
+  readonly id: number;
+  readonly template: string;
+  readonly account: Id;
+  readonly kind: 'failed' | 'refused';
+  readonly error: string;
+  readonly at: string;
+}
+/** The reports screen's page (`admin_reports` and `admin_failed_mail`); null for a caller who is not an admin. */
+export interface ReportsPage {
+  readonly reports: readonly AdminReport[];
+  readonly reviews: readonly AdminReview[];
+  readonly failed: readonly FailedMail[];
+  /** Mail waiting to go with no admin reply-to address set (Settings.conduct.adminAddress), which is why it waits; 0 once one is set. */
+  readonly waiting: number;
+  readonly addressSet: boolean;
+}
+
 /** The admin queue page (queue_page, 0121); null for a caller who is not an admin. */
 export interface QueuePage {
   readonly queue: Awaited<ReturnType<KayfaApi['adminQueue']>>;
@@ -2051,6 +2111,12 @@ export interface KayfaApi {
   updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
   /** The admin queue page in one read; null for a caller who is not an admin. */
   queuePage(): Promise<QueuePage | null>;
+  /** The reports screen in one read; null for a caller who is not an admin. */
+  reportsPage(): Promise<ReportsPage | null>;
+  /** An admin decides an open report with one to six outcomes (`decide_report`); each tells the author what it says, the reporter is told the same whatever was decided. */
+  decideReport(report: number, outcomes: readonly ReportOutcome[]): Promise<Answer<{ readonly decisions: readonly number[] }>>;
+  /** An admin acts with no report (`decide`): approve or unhide a version, hide it again, or act on an account. */
+  decide(on: { readonly account?: Id; readonly version?: Id }, outcome: DecideOutcome, until?: string, note?: string): Promise<Answer<null>>;
   /** The log in one read, the rows at or before `before`. */
   logPage(before: string | null): Promise<LogPage>;
   /** A character's profile page in one read; null where the character is not shown. */

@@ -44,6 +44,7 @@ import type {
   Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  AdminReport, AdminReview, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogGroupMove, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
@@ -129,6 +130,16 @@ export interface Seed {
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
    */
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
+  /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
+  conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number }): void;
+  /** An open report (`report_post`, 0148) on a post's version, dated `at` (else now): the screen shows the version's words, the section and the note. */
+  conductReport(report: { version: Id; section: string; note?: string; at?: number }): number;
+  /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
+  conductReview(review: { post: Id; version?: Id; words: string; at?: number }): void;
+  /** A mail whose latest attempt failed (it is tried again) or was refused (never again). */
+  failedMail(mail: { account: Id; template: string; kind: 'failed' | 'refused'; error: string; at?: number }): void;
+  /** Mail waiting to go because no admin reply-to address is set (`n` rows with no attempt); with none set, `addressSet` is false. */
+  mailWaiting(n: number): void;
   /** The contact an admin set (`set_admin_contact`, 0081), past its admin check and held to its rules: a seed is the database's own hand. Refused in the server's words. */
   contact(links: readonly ContactLink[]): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
@@ -865,6 +876,28 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null }[] = [];
   /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
   const dismissedTodos = new Set<number>();
+  /* The conduct screen's world (0148-0150): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
+  interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number }
+  interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
+  const conductReports: ReportRec[] = [];
+  const conductDecisions: DecisionRec[] = [];
+  const conductReviews: { decision: number; post: Id; version: Id; words: string; at: number }[] = [];
+  const conductFailed: (FailedMail & { readonly atMs: number })[] = [];
+  let conductWaiting = 0;
+  let conductNextId = 1;
+  let conductAddress = true;
+  const authorOf = (version: Id): Id | null => {
+    const a = acts.get(version);
+    const c = a?.character == null ? undefined : characters.get(a.character);
+    return c === undefined || c.owner === '' ? null : c.owner;
+  };
+  const postOf = (version: Id): Id => { const a = acts.get(version); return a?.kind === 'edit' && a.target !== null ? a.target : version; };
+  const recordDecision = (d: Omit<DecisionRec, 'id' | 'at'>): number => {
+    const id = conductNextId++;
+    conductDecisions.push({ ...d, id, at: now() });
+    return id;
+  };
+
   /** The to-dos the admin queue holds: each change of Boss with no update after it and no dismissal, newest first (admin_queue's `todos`). */
   function handoverTodos(): HandoverTodo[] {
     const latest = updateActs()[0]?.at ?? -Infinity;
@@ -2964,6 +2997,55 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
       };
     },
+    reportsPage(): ReportsPage | null {
+      if (!core.isAdmin()) return null;
+      const wordsOf = (v: Id): string => String(acts.get(v)?.payload['body'] ?? '');
+      const reports = conductReports
+        .filter((r) => !conductDecisions.some((d) => d.report === r.id))
+        .sort((a, b) => b.at - a.at || b.id - a.id)
+        .map((r): AdminReport => {
+          const author = authorOf(r.version);
+          const past = author === null ? [] : conductDecisions
+            .filter((d) => d.account === author || (d.version !== null && authorOf(d.version) === author))
+            .sort((a, b) => b.at - a.at || b.id - a.id).slice(0, 20)
+            .map((d): PastDecision => ({ outcome: d.outcome, until: d.until === null ? null : iso(d.until), at: iso(d.at), note: d.note }));
+          return { id: r.id, versionAct: r.version, post: postOf(r.version), thread: acts.get(r.version)?.thread ?? null, section: r.section, note: r.note, at: iso(r.at), author, words: wordsOf(r.version), past };
+        });
+      const reviews = conductReviews.sort((a, b) => a.at - b.at).map((r): AdminReview => ({ decision: r.decision, post: r.post, versionAct: r.version, thread: acts.get(r.post)?.thread ?? null, editedAt: iso(r.at), author: authorOf(r.post), words: r.words }));
+      const failed = conductFailed.map(({ atMs: _at, ...m }): FailedMail => m);
+      return { reports, reviews, failed, waiting: conductAddress ? 0 : conductWaiting, addressSet: conductAddress };
+    },
+    decideReport(report, outcomes) {
+      if (!me()?.admin) return refuse('only an admin decides a report');
+      const r = conductReports.find((x) => x.id === report);
+      if (!r) return refuse('there is no such report');
+      if (conductDecisions.some((d) => d.report === r.id)) return refuse('that report is already decided; use decide to act further');
+      if (outcomes.length === 0 || outcomes.length > 6) return refuse('outcomes is a list of one to six outcomes');
+      const names = outcomes.map((o) => o.outcome);
+      if (new Set(names).size !== names.length) return refuse('an outcome is given once');
+      if ((names.some((n) => n === 'none' || n === 'close') && names.length > 1) || (names.includes('hide') && names.includes('hideUntilEdited')) || (names.includes('suspend') && names.includes('ban'))) return refuse('those outcomes contradict each other');
+      const author = authorOf(r.version);
+      if (author === null && names.some((n) => n === 'nudge' || n === 'suspend' || n === 'ban')) return refuse('that version has no player account to write to');
+      for (const o of outcomes) {
+        if (o.outcome === 'suspend' && (o.until === undefined || Date.parse(o.until) <= now())) return refuse('a suspension needs an end date in the future');
+        if (o.outcome !== 'suspend' && o.until !== undefined) return refuse('only a suspension has an end date');
+      }
+      const decisions = outcomes.map((o) => recordDecision({ report: r.id, version: r.version, account: o.outcome === 'nudge' || o.outcome === 'suspend' || o.outcome === 'ban' ? author : null, outcome: o.outcome, until: o.until === undefined ? null : Date.parse(o.until), note: o.note ?? '' }));
+      return ok({ decisions });
+    },
+    decide(on, outcome: DecideOutcome, until, note) {
+      if (!me()?.admin) return refuse('only an admin decides');
+      if (on.account === undefined && on.version === undefined) return refuse('name an account or a version');
+      if (outcome === 'suspend' && (until === undefined || Date.parse(until) <= now())) return refuse('a suspension needs an end date in the future');
+      if (outcome !== 'suspend' && until !== undefined) return refuse('only a suspension has an end date');
+      const decision = recordDecision({ report: null, version: on.version ?? null, account: on.account ?? (on.version === undefined ? null : authorOf(on.version)), outcome, until: until === undefined ? null : Date.parse(until), note: note ?? '' });
+      if (on.version !== undefined && (outcome === 'approve' || outcome === 'hide' || outcome === 'hideUntilEdited' || outcome === 'unhide')) {
+        const at = conductReviews.findIndex((v) => v.version === on.version || v.post === postOf(on.version!));
+        if (at >= 0) conductReviews.splice(at, 1);
+      }
+      void decision;
+      return ok(null);
+    },
     queuePage(): QueuePage | null {
       return core.isAdmin() ? { queue: core.adminQueue(), boardNames: core.boardNames(), bosses: core.bosses(), contact: core.adminContact() } : null;
     },
@@ -3350,6 +3432,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     admin(account, on = true) { accounts.get(account)!.admin = on; },
     bar(account, until) { if (until === undefined) bars.delete(account); else bars.set(account, { until }); },
     unaccepted(account) { unaccepted.add(account); },
+    conductDecision(d) { conductDecisions.push({ id: conductNextId++, report: null, version: null, account: d.account, outcome: d.outcome, until: d.until ?? null, note: d.note ?? '', at: d.at ?? now() }); },
+    conductReport(r) {
+      const id = conductNextId++;
+      if (!acts.has(r.version)) throw new Error(`no such act ${r.version}`);
+      conductReports.push({ id, version: r.version, section: r.section, note: r.note ?? null, at: r.at ?? now() });
+      return id;
+    },
+    conductReview(r) { conductReviews.push({ decision: conductNextId++, post: r.post, version: r.version ?? r.post, words: r.words, at: r.at ?? now() }); },
+    failedMail(m) { conductFailed.push({ id: conductNextId++, account: m.account, template: m.template, kind: m.kind, error: m.error, at: iso(m.at ?? now()), atMs: m.at ?? now() }); },
+    mailWaiting(n) { conductWaiting = n; conductAddress = false; },
     character(account, name, cls, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
       return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;

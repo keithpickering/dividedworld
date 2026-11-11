@@ -110,7 +110,7 @@ declare
                            -- each refused to anyone who is not an admin. And the two functions acts_public calls as its reader: whether a version is hidden, a public fact
                            -- of its id as acts_public's `hidden` is, and what a payload shows.
                            'accept_conduct(integer)', 'conduct_accepted()', 'report_post(uuid,text,text)', 'my_bar()', 'my_conduct_log(integer)',
-                           'decide_report(bigint,jsonb)', 'decide(uuid,uuid,text,timestampwithtimezone,text)', 'admin_version(uuid)',
+                           'admin_reports()', 'admin_failed_mail()', 'decide_report(bigint,jsonb)', 'decide(uuid,uuid,text,timestampwithtimezone,text)', 'admin_version(uuid)',
                            'version_hidden(uuid,uuid)', 'public_payload(jsonb,boolean)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',

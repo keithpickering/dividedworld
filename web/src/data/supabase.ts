@@ -43,7 +43,7 @@ import type {
   Act, ActKind, Answer, AvatarUpload, Board, Bought, BoardSummary, CardEnded, CardEvent, PackEvent, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent,
-  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
+  Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, AdminReport, AdminReview, FailedMail, PastDecision, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
@@ -1751,6 +1751,34 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         boardNames: rowsOf(d['boardNames']).map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: b['was'] ?? b['name'] })),
         bosses: toBosses(d['bosses']), contact: toContact(d['contact']),
       };
+    },
+    async reportsPage(): Promise<ReportsPage | null> {
+      /* A caller who is not an admin has no page (admin_reports would refuse them); is_admin is the one way to ask. */
+      if ((await read(() => client.rpc('is_admin'))).data !== true) return null;
+      const [reports, mail] = await Promise.all([read(() => client.rpc('admin_reports')), read(() => client.rpc('admin_failed_mail'))]);
+      const r = isObject(reports.data) ? reports.data : {};
+      const m = isObject(mail.data) ? mail.data : {};
+      const id = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+      return {
+        reports: rowsOf(r['reports']).map((x): AdminReport => ({
+          id: num(x['id']), versionAct: String(x['versionAct'] ?? ''), post: String(x['post'] ?? ''), thread: id(x['thread']), section: String(x['section'] ?? ''), note: id(x['note']), at: String(x['at'] ?? ''),
+          author: id(x['author']), words: String(x['words'] ?? ''),
+          past: rowsOf(x['past']).map((d): PastDecision => ({ outcome: String(d['outcome'] ?? ''), until: id(d['until']), at: String(d['at'] ?? ''), note: String(d['note'] ?? '') })),
+        })),
+        reviews: rowsOf(r['reviews']).map((x): AdminReview => ({
+          decision: num(x['decision']), post: String(x['post'] ?? ''), versionAct: String(x['versionAct'] ?? ''), thread: id(x['thread']), editedAt: String(x['editedAt'] ?? ''), author: id(x['author']), words: String(x['words'] ?? ''),
+        })),
+        failed: rowsOf(m['failed']).map((x): FailedMail => ({ id: num(x['id']), template: String(x['template'] ?? ''), account: String(x['account'] ?? ''), kind: x['kind'] === 'refused' ? 'refused' : 'failed', error: String(x['error'] ?? ''), at: String(x['at'] ?? '') })),
+        waiting: num(m['waiting']), addressSet: m['addressSet'] !== false,
+      };
+    },
+    async decideReport(report, outcomes) {
+      const a = await rpcWrite(() => client.rpc('decide_report', { report, outcomes: outcomes.map((o) => ({ outcome: o.outcome, ...(o.until === undefined ? {} : { until: o.until }), ...(o.note === undefined ? {} : { note: o.note }) })) }));
+      return a.ok ? { ok: true, value: { decisions: (Array.isArray(a.value) ? (a.value as unknown[]) : []).map((n) => num(n)) } } : a;
+    },
+    async decide(on, outcome, until, note) {
+      const a = await rpcWrite(() => client.rpc('decide', { account: on.account ?? null, version_act: on.version ?? null, outcome, until: until ?? null, note: note ?? '' }));
+      return a.ok ? { ok: true, value: null } : a;
     },
     async presenceBox(place): Promise<Presence> {
       const at = place.kind === 'thread' ? place.thread : place.kind === 'board' ? place.board : null;

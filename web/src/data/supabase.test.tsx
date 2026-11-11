@@ -1894,6 +1894,36 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(await refused.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: false, error: 'that nomination has already landed; reverse it instead' });
   });
 
+  it('reads the reports screen from admin_reports and admin_failed_mail, sends a decision as decide_report and an approval as decide, and gives a player no page', async () => {
+    const A = '00000000-0000-4000-8000-00000000000a';
+    const B = '00000000-0000-4000-8000-00000000000b';
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/admin_reports')) {
+        return json({
+          reports: [{ id: 3, versionAct: A, post: A, thread: B, section: 'hate', note: null, at: '2026-11-01T10:00:00+00:00', author: B, words: 'Words.', past: [{ outcome: 'nudge', until: null, at: '2026-10-30T10:00:00+00:00', note: 'Easy.' }] }],
+          reviews: [{ decision: 9, post: A, versionAct: B, thread: B, editedAt: '2026-11-02T10:00:00+00:00', author: null, words: 'Better.' }],
+        });
+      }
+      if (r.url.pathname.endsWith('/rpc/admin_failed_mail')) return json({ failed: [{ id: 5, template: 'nudge', account: B, kind: 'refused', error: 'no mailbox', at: '2026-11-02T11:00:00+00:00' }], waiting: 2, addressSet: false });
+      if (r.url.pathname.endsWith('/rpc/decide_report')) return json([11, 12]);
+      if (r.url.pathname.endsWith('/rpc/decide')) return json(13);
+      return json({}, 404);
+    });
+    const page = await h.api.reportsPage();
+    expect(page?.reports[0]).toEqual({ id: 3, versionAct: A, post: A, thread: B, section: 'hate', note: null, at: '2026-11-01T10:00:00+00:00', author: B, words: 'Words.', past: [{ outcome: 'nudge', until: null, at: '2026-10-30T10:00:00+00:00', note: 'Easy.' }] });
+    expect(page?.reviews[0]).toMatchObject({ decision: 9, versionAct: B, author: null, words: 'Better.' });
+    expect(page?.failed).toEqual([{ id: 5, template: 'nudge', account: B, kind: 'refused', error: 'no mailbox', at: '2026-11-02T11:00:00+00:00' }]);
+    expect([page?.waiting, page?.addressSet]).toEqual([2, false]);
+    expect(await h.api.decideReport(3, [{ outcome: 'suspend', until: '2026-12-01T12:00:00.000Z', note: 'A week.' }])).toEqual({ ok: true, value: { decisions: [11, 12] } });
+    expect(h.to('rpc/decide_report')[0]?.body).toEqual({ report: 3, outcomes: [{ outcome: 'suspend', until: '2026-12-01T12:00:00.000Z', note: 'A week.' }] });
+    expect(await h.api.decide({ version: B }, 'approve')).toEqual({ ok: true, value: null });
+    expect(h.to('rpc/decide')[0]?.body).toEqual({ account: null, version_act: B, outcome: 'approve', until: null, note: '' });
+    const player = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(false) : json({}, 404)));
+    expect(await player.api.reportsPage()).toBeNull();
+    expect(player.to('rpc/admin_reports')).toHaveLength(0);
+  });
+
   it('passes an admin function\'s refusal through in the server\'s words, and throws a plain error when the queue cannot be read', async () => {
     const refused = harness(() => json({ code: '42501', message: 'only an admin holds a move', hint: 'kayfabb.refusal' }, 403));
     expect(await refused.api.holdMove(4)).toEqual({ ok: false, error: 'only an admin holds a move' });
