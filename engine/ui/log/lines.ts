@@ -293,6 +293,9 @@ function scoredWords(lines: readonly LogLine[], words: Words): string {
   }).join(', ');
 }
 
+/** A character of the player's own pronouns, as the lines say them: the engine's default where the character has set none. */
+const pronounsIn = (data: LogData, id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
+
 /**
  * The log's rows, newest first: the open window's estimate on top, then each settlement with its Turns and rank changes beside
  * it. `tab` is a character of the player's, or null for All.
@@ -300,7 +303,7 @@ function scoredWords(lines: readonly LogLine[], words: Words): string {
 export function logRows(data: LogData, words: Words, cap: number, tab: Id | null): readonly LogRow[] {
   const { instance } = words;
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
-  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
+  const pronounsOf = (id: Id) => pronounsIn(data, id);
   const inTab = (ids: readonly Id[]) => tab === null || ids.length === 0 || ids.includes(tab);
   const settlementWallet = new Map<number, WalletEvent>();
   for (const e of data.log.wallet) if (e.kind === 'settlement' && e.settlement !== null) settlementWallet.set(e.settlement, e);
@@ -396,7 +399,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  */
 function groupRows(data: LogData, words: Words): LogRow[] {
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
-  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
+  const pronounsOf = (id: Id) => pronounsIn(data, id);
   const groups = [...words.instance.groups.ladder, ...words.instance.groups.conferred];
   const rows: LogRow[] = [];
   for (const g of data.log.groupMoves) {
@@ -453,7 +456,7 @@ function groupRows(data: LogData, words: Words): LogRow[] {
 function modRows(data: LogData, words: Words): LogRow[] {
   const now = Date.now();
   const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? 'one of your characters';
-  const pronounsOf = (id: Id) => pronounWords(data.mine.find((c) => c.id === id)?.pronouns ?? ENGINE_DEFAULT_PRONOUNS);
+  const pronounsOf = (id: Id) => pronounsIn(data, id);
   const post = (thread: Id, seq: number | null, own: boolean): Segment => (seq === null ? (own ? 'your post' : 'a post') : { text: `${own ? 'your ' : ''}post #${seq}`, href: threadHref(thread, pageOf(seq, words.postsPerPage), seq) });
   const rows: LogRow[] = [];
 
