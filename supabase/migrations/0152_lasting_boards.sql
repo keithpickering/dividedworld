@@ -29,7 +29,10 @@
 -- malformed Act as no move at all, 0151).
 --
 -- Cost on a busy instance: a landing or an end costs the threads it touches (one indexed read of threads by origin and by board per board in the route, an index probe of moves
--- per thread), never the history; a merge of a large board does one pass over that board's threads. The guard and the tick's check are a handful of indexed probes.
+-- per thread), never the history. A thread whose board changes is not free: threads_recount_board fires per thread, and threads_search_board (0117) rewrites post_search.board for
+-- every post of the thread, so a moved thread costs its posts. A merge of a large board does one pass over that board's threads, and so rewrites the post_search row of every post
+-- in the board, in the tick's one transaction (and the tick's statement bound): proportional to the posts in the merged board. Merging a very large board is a deliberate, rare
+-- admin-reviewed move (it waits a day in the queue); a batched rebuild is the way out if one ever outgrows a transaction. The guard and the tick's check are a handful of indexed probes.
 -- Masks. Public facts only (boards, threads, the Boss's own moves). Append-only: a move is an Act, its end an Act; the board row is the only thing a landing writes, and it is derived
 -- from the Act. Ways out: every lasting move can be reversed by an admin; a thread is never without a board.
 
