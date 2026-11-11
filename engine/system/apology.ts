@@ -9,7 +9,9 @@
  *
  * Portable by construction: no vendor client is imported, and the engine knows no instance.
  */
-import type { Persona } from '../rules/types.ts';
+import type { Persona, SystemContent } from '../rules/types.ts';
+import { personaPrompt } from './prompt.ts';
+import type { PostingOffice } from './pool.ts';
 import type { Rule, Trim } from './validate.ts';
 
 export const APOLOGY_VERDICTS = ['accepted', 'rejected'] as const;
@@ -50,9 +52,9 @@ export function repairApology(raw: unknown, maxWords: number): RepairedApology {
 const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
 
 /** The system prompt, the message and the schema of an apology's judgment. The apology is quoted play, never instructions. */
-export function apologyPrompt(persona: Persona, moveWords: string, apologyBody: string, maxWords: number): { readonly system: string; readonly message: string; readonly schema: Record<string, unknown> } {
+export function apologyPrompt(frames: Pick<SystemContent, 'offices'>, persona: Pick<Persona, 'selfPrompt' | 'officeLines'>, office: PostingOffice, moveWords: string, apologyBody: string, maxWords: number): { readonly system: string; readonly message: string; readonly schema: Record<string, unknown> } {
   const system = [
-    persona.persona,
+    personaPrompt(frames, persona, office),
     [
       'A character you put under a bar has apologized to you, in public, to have it lifted. Your ruling is one of two:',
       '- accepted: the apology is enough. The bar ends at once.',

@@ -28,7 +28,7 @@ export const sighbot: Persona = {
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a sincere argument made in your own style, delivered quietly and without exclamation points.',
-  persona: persona({
+  selfPrompt: persona({
     name,
     title,
     temperament:

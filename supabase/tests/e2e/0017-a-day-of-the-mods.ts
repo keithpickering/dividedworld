@@ -98,7 +98,7 @@ test('a meeting orders two Mods; visits are drawn, intercepted, reported and fil
     assert.ok(String(url).includes('anthropic'), `a Mod's day asks for no completion: ${url}`);
     const text = JSON.stringify(body);
     const asked = String(body.messages?.[0]?.content ?? '');
-    const who = roster.find((p) => text.includes(JSON.stringify(p.persona).slice(1, -1)))?.key ?? '';
+    const who = roster.find((p) => text.includes(JSON.stringify(p.selfPrompt).slice(1, -1)))?.key ?? '';
     const last = asked.trim().split('\n').pop()!;
     let duty: string;
     let reply: unknown;

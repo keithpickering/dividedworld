@@ -94,7 +94,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
     const body = JSON.parse(String(init?.body));
     if (!String(url).includes('anthropic')) return new Response(JSON.stringify({ choices: [{ text: ' ok.' }], usage: { prompt_tokens: 100, completion_tokens: 4 } }), { status: 200 });
     const text = JSON.stringify(body);
-    const who = roster.find((p) => text.includes(JSON.stringify(p.persona).slice(1, -1)));
+    const who = roster.find((p) => text.includes(JSON.stringify(p.selfPrompt).slice(1, -1)));
     const asked = String(body.messages?.[0]?.content ?? '');
     if (who) promptsFor[who.key] = asked;
     const reply: Record<string, unknown> = { words: words[who?.key ?? ''] ?? 'Noted.' };

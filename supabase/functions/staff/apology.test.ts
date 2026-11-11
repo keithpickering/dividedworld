@@ -15,7 +15,7 @@ const row = (apology: number, staff = MON) => ({
   line: 'Ann was made Pariah on Games.', title: null, body: 'I am sorry I bumped.', created_at: '2026-11-07T09:00:00Z',
 });
 
-function fakeDb(rows: ReturnType<typeof row>[], opts: { failOn?: string; enabled?: boolean } = {}) {
+function fakeDb(rows: ReturnType<typeof row>[], opts: { failOn?: string; enabled?: boolean; offices?: Record<string, string | null> } = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
   const db: Db = {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
@@ -24,6 +24,7 @@ function fakeDb(rows: ReturnType<typeof row>[], opts: { failOn?: string; enabled
       switch (fn) {
         case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: opts.enabled ?? true } as T;
         case 'pending_apologies': return rows as T;
+        case 'mod_standing': return { office: (opts.offices ?? { [BOSS]: 'boss', [MON]: 'mod' })[String(args.staff)] ?? null, allowance: 0, order: null, beat: [] } as T;
         case 'record_staff_call': return { recorded: true } as T;
         case 'rule_apology': return { state: args.verdict } as T;
         default: throw new Error(`unexpected ${fn}`);
@@ -94,8 +95,18 @@ test('a move the Boss made is judged by the Boss, a Mod\'s by the Mod; the promp
   await runApologies(d.db, m.models, dividedWorld);
   assert.deepEqual(m.chats.map((c) => c.staff), [BOSS, MON]);
   const boss = dividedWorld.system.roster.find((p) => p.key === BOSS)!;
-  assert.ok(m.chats[0]!.system.includes(boss.persona));
+  assert.ok(m.chats[0]!.system.includes(boss.selfPrompt));
+  assert.ok(m.chats[0]!.system.startsWith(dividedWorld.system.offices.boss.premise), 'a Boss judges in the Boss\'s frame');
+  assert.ok(m.chats[1]!.system.startsWith(dividedWorld.system.offices.mod.premise), 'a Mod in the Mod\'s');
   assert.match(m.chats[0]!.messages[0]!.content, /Ann was made Pariah on Games\./);
+});
+
+test('a judge who holds no posting office now (benched) judges in the member frame, which says it holds no office', async () => {
+  const d = fakeDb([row(8, MON)], { offices: { [MON]: 'benched' } });
+  const m = fakeModels(() => ({ verdict: 'accepted', ruling: 'Ok.' }));
+  await runApologies(d.db, m.models, dividedWorld);
+  assert.ok(m.chats[0]!.system.startsWith(dividedWorld.system.offices.member.premise));
+  assert.match(m.chats[0]!.system, /You hold no office now/);
 });
 
 test('a staff key not on the roster returns the apology without a call', async () => {

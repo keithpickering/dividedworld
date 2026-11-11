@@ -25,10 +25,11 @@
  * Portable by construction: no vendor client is imported, and the engine knows no instance.
  */
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
-import type { Persona } from '../rules/types.ts';
+import type { Persona, SystemContent } from '../rules/types.ts';
+import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
 import { noteMost, type Memory } from './memory.ts';
-import type { PoolTrigger } from './pool.ts';
+import type { PoolTrigger, PostingOffice } from './pool.ts';
 import type { Rule, Trim } from './validate.ts';
 
 /** A card the persona may play today: a Cast lands on the post it replies to, a Set on its own post. */
@@ -254,9 +255,12 @@ export interface ChatterLimits {
 }
 
 export interface ChatterInput {
-  /** What a pool post is, in the instance's frame: the persona's prompt already holds the instance's premise; this says what is different today. */
+  /** What a pool post is, in the instance's frame: the persona's prompt is set in its office's frame (`personaPrompt`); this says only what a pool post is today. */
   readonly premise: string;
-  readonly persona: Pick<Persona, 'persona'>;
+  readonly persona: Pick<Persona, 'selfPrompt' | 'officeLines'>;
+  /** The office the persona holds now: its prompt is set in that office's frame. */
+  readonly office: PostingOffice;
+  readonly offices: SystemContent['offices'];
   /** The persona's own pronouns: its file's, else `Settings.pronouns`, else the engine's it-set. Told to it after its persona. */
   readonly pronouns: PronounSet;
   readonly career: Career;
@@ -323,7 +327,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
     ].join('\n')
     : 'No card is on offer today; do not answer with one.';
   const system = [
-    i.persona.persona,
+    personaPrompt({ offices: i.offices }, i.persona, i.office),
     selfPronounLine(i.pronouns),
     career.length ? ['Your career, as plain facts (newest first):', ...career.map((c) => `- ${c}`)].join('\n') : 'You have held no office before.',
     ...(memory.length ? [['What you remember:', ...memory.map((m) => `- ${m}`)].join('\n')] : []),

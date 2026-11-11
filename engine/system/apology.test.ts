@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { testSystem } from '../rules/test-system.ts';
 import { APOLOGY_RULE, APOLOGY_VERDICTS, apologyPrompt, repairApology } from './apology.ts';
 import type { Persona } from '../rules/types.ts';
 
@@ -36,9 +37,9 @@ test('the shape the model layer repairs against passes anything, so a bad answer
   assert.equal(APOLOGY_RULE.type, 'object');
 });
 
-const persona = { persona: 'You are the Monitor, dry and fair.' } as Persona;
+const persona = { selfPrompt: 'You are the Monitor, dry and fair.' } as Persona;
 test('the prompt carries the voice, the move in words, the apology and both verdicts, and no owner', () => {
-  const p = apologyPrompt(persona, 'Ann was made Pariah on Games.', 'I am sorry I bumped.', 80);
+  const p = apologyPrompt(testSystem, persona, 'mod', 'Ann was made Pariah on Games.', 'I am sorry I bumped.', 80);
   assert.match(p.system, /dry and fair/);
   assert.match(p.system, /accepted/);
   assert.match(p.system, /rejected/);
@@ -47,4 +48,11 @@ test('the prompt carries the voice, the move in words, the apology and both verd
   assert.match(p.message, /I am sorry I bumped\./);
   assert.doesNotMatch(p.system + p.message, /owner|class/i);
   assert.deepEqual((p.schema as any).properties.verdict.enum, ['accepted', 'rejected']);
+});
+
+test('the judge is told the premise of the office it holds: a Mod\'s, a Boss\'s or, once benched, a member\'s', () => {
+  for (const [office, premise] of [['mod', 'Mod premise.'], ['boss', 'Boss premise.'], ['member', 'Member premise.']] as const) {
+    const p = apologyPrompt(testSystem, persona, office, 'Ann was made Pariah on Games.', 'Sorry.', 80);
+    assert.ok(p.system.startsWith(premise), office);
+  }
 });

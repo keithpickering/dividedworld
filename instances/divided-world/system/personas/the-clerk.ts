@@ -32,7 +32,7 @@ export const theClerk: Persona = {
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a citation of the thread\'s own numbers or a form filled in correctly; you are unmoved by volume.',
-  persona: persona({
+  selfPrompt: persona({
     name,
     title,
     temperament:

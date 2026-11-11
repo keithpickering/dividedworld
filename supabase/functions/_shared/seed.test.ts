@@ -72,7 +72,7 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
     assert.ok(s.title.length <= 40 && s.signature.length <= 500, 'the SQL cuts these in silence; instanceProblems holds them');
   }
   const bytes = JSON.stringify(seed);
-  for (const b of roster) assert.ok(!bytes.includes(b.persona.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
+  for (const b of roster) assert.ok(!bytes.includes(b.selfPrompt.slice(0, 80)), `${b.key}'s prompt stays in the instance module`);
 });
 
 test('a roster entry carries pronouns only when its persona declares them, and the developer when he does', () => {

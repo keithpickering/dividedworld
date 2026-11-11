@@ -17,12 +17,14 @@ import { placeholderMonitor } from './personas/placeholder-monitor.ts';
 import { feeds } from './feeds.ts';
 import { stockLines } from './lines.ts';
 import { nameStyle, nameStyleBrief } from './name-style.ts';
+import { offices } from './persona.ts';
 import { realWorld } from './real-world.ts';
 import { wheelhouse } from './wheelhouse.ts';
 
 export const system: SystemContent = Object.freeze({
   roster: deepFreeze([theClerk, hypeMan, sighbot, placeholderMonitor]),
   firstBoss: hypeMan.key,
+  offices,
   announcementsTitle: 'Announcements From The System',
   firstStaff: Object.freeze([placeholderMonitor.key]),
   // The Boss's own duties stay the season's Boss's; a visit's filing, a report's verdict and a patrol's finding are the Mod on the board's beat, and an appeal is

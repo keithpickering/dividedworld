@@ -126,7 +126,8 @@ export interface PoolContext {
 }
 
 /** The offices whose posts the pool pays for: every one that writes. A waiting persona is not debuted, a benched one is silent. */
-export const POSTING_OFFICES: readonly string[] = ['boss', 'mod', 'member'];
+export const POSTING_OFFICES = ['boss', 'mod', 'member'] as const;
+export type PostingOffice = (typeof POSTING_OFFICES)[number];
 
 /** An opinion at or above this is a favorite for `oldFlame`; a grudge is any grudge the memory holds. */
 export const FAVORITE_SCORE = 3;
@@ -139,7 +140,7 @@ export function candidates(
   ctx: PoolContext,
 ): Candidate[] {
   const byKey = new Map(roster.map((p) => [p.key, p]));
-  const writes = (key: string | null | undefined): key is string => key != null && byKey.has(key) && POSTING_OFFICES.includes(ctx.offices[key] ?? '');
+  const writes = (key: string | null | undefined): key is string => key != null && byKey.has(key) && (POSTING_OFFICES as readonly string[]).includes(ctx.offices[key] ?? '');
   const out: Candidate[] = [];
   const add = (staff: string | null | undefined, trigger: PoolTrigger, thread: string | null, quoting: string | null, act: string | null) => {
     if (writes(staff)) out.push({ staff, trigger, thread, quoting, act });

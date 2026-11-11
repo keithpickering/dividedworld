@@ -28,7 +28,7 @@ export const hypeMan: Persona = {
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.it,
   persuadedBy: 'DRAFT: a promo cut with real energy that makes the case sound like the main event.',
-  persona: persona({
+  selfPrompt: persona({
     name,
     title,
     temperament:

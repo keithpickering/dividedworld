@@ -32,6 +32,8 @@ import {
 import { PREDICATES } from '../rules/predicates.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 import { repair } from './validate.ts';
+import { testSystem } from '../rules/test-system.ts';
+import { personaPrompt } from './prompt.ts';
 
 const GAMES = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
@@ -241,9 +243,11 @@ test('the rules the model layer repairs against pass a move of any shape, so a b
 const she = PRONOUN_PRESETS.she;
 const they = PRONOUN_PRESETS.they;
 const it = PRONOUN_PRESETS.it;
-const persona = { persona: 'You are Mod One, a stern but fair moderator of the Divided World boards.' };
+const persona = { selfPrompt: 'You are Mod One, a stern but fair moderator of the Divided World boards.' };
 const base: ModPromptInput = {
   persona,
+  office: 'mod',
+  offices: testSystem.offices,
   pronouns: they,
   order: 'Crack down on bumping in Games.',
   career: { led: [], offices: [{ office: 'mod', since: '2026-10-01T00:00:00Z', until: null, cause: 'seed' }] },
@@ -270,7 +274,7 @@ const filing = (over: Partial<FilingInput> = {}): FilingInput => ({
 
 test('every prompt writes a character as Name (label), the Mod is told its own pronouns after its persona, and the old voice\'s frame carries no tag', () => {
   const m = modPrompt(base);
-  assert.ok(m.includes(`${persona.persona}\n\nYour pronouns are they/them (they, them, their, theirs, themself).`), 'the self line follows the persona');
+  assert.ok(m.includes(`${personaPrompt(testSystem, persona, 'mod')}\n\nYour pronouns are they/them (they, them, their, theirs, themself).`), 'the self line follows the persona');
   assert.ok(m.includes('until the Boss\'s next meeting') && !/until its next meeting/.test(m), 'no pronoun for the Boss');
   const f = filingPrompt(filing());
   assert.ok(f.message.includes('Ann (she/her): Odyssey.') && f.message.includes('Bob (they/them): Odyssey. Odyssey.'), 'the thread');
@@ -284,6 +288,16 @@ test('every prompt writes a character as Name (label), the Mod is told its own p
   const frame = filingCompletion({ name: 'Mod One', board: 'Games', thread: filing().thread, post: filing().post, charges: filing().charges, limits: filing().limits });
   assert.ok(!/\((she|they|it)\/(her|them|its)\)/.test(frame.prompt), 'the completion frame has no tag');
   assert.ok(frame.prompt.includes('Ann: Odyssey.'));
+});
+
+test('a Mod\'s prompt opens with the Mod premise and its answer rules; an appeal heard by the Boss opens with the Boss premise', () => {
+  assert.ok(modPrompt(base).startsWith(`${testSystem.offices.mod.premise}\n\n${persona.selfPrompt}`), 'the Mod premise opens it');
+  assert.ok(filingPrompt(filing()).system.startsWith(testSystem.offices.mod.premise), 'a filing');
+  assert.ok(patrolPrompt(patrol()).system.startsWith(testSystem.offices.mod.premise), 'a patrol');
+  assert.ok(reportPrompt(report()).system.startsWith(testSystem.offices.mod.premise), 'a report');
+  const boss = appealPrompt(appeal({ office: 'boss' })).system;
+  assert.ok(boss.startsWith(testSystem.offices.boss.premise), 'the Boss premise opens an appeal the Boss hears');
+  assert.ok(!boss.includes(testSystem.offices.mod.premise));
 });
 
 test('a rule is said in words: its number, its scope and its predicate', () => {
