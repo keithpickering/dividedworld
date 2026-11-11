@@ -375,11 +375,11 @@ describe('Register', () => {
     expect(screen.getByLabelText('Invite')).toBeInTheDocument();
   });
 
-  test('registration closed is said plainly, with the way on: when an admin opens it, the next sign-in opens the account', async () => {
+  test('registration closed is said plainly and once, with the way on: the account opens once an admin opens registration', async () => {
     const w = world('closed');
     open(w, 'register', '/register', 'closed');
-    expect(await screen.findByText('Registration is closed. When an admin opens it, your next sign-in opens your account.')).toBeInTheDocument();
-    expect(screen.getByText(/when an admin opens it/iu, { selector: '.kb-acct-notice' })).toBeInTheDocument();
+    expect(await screen.findByText('No password. We email you a code and a link. Registration is closed, so your account opens once an admin opens it.')).toBeInTheDocument();
+    expect(screen.getAllByText(/Registration is closed/u)).toHaveLength(1);
   });
 
   test('New here? says how registration works in each mode: invite, open and closed', async () => {

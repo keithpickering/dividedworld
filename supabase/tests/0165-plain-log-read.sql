@@ -1,4 +1,4 @@
--- What the log's read carries (supabase/migrations/0153_plain_log_read.sql; docs/plans/2026-11-11-plain-words-plan.md, Task 7).
+-- What the log's read carries (supabase/migrations/0157_plain_log_read.sql; docs/plans/2026-11-11-plain-words-plan.md, Task 7).
 --
 -- 1. write_staff_act stamps `office` on an appeal_ruling as it does on a move; a ruling written without a stamp stays without one.
 -- 2. my_group_moves says which office heard the latest ruling (`ruled_office`): the Boss's, though the move's own `office` is the Mod's that has since left staff.

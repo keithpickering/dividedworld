@@ -414,7 +414,7 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
   });
 
-  it('carries a set\'s `ends_at` (acts_public, 0155) onto the Act as `endsAt`, and nothing on an Act with none', async () => {
+  it('carries a set\'s `ends_at` (acts_public, 0156) onto the Act as `endsAt`, and nothing on an Act with none', async () => {
     const END = '2026-11-20T00:00:00+00:00';
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'set', target_act_id: B, ends_at: END }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, ends_at: null }])));
     const plays = await h.api.cardsOnMany([B], 10);

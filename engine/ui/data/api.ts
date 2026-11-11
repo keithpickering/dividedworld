@@ -205,7 +205,7 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
-  /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0155): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
+  /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
@@ -377,7 +377,7 @@ export interface Act {
    */
   readonly untaken?: true;
   /**
-   * Set only on a set (a card face down): when the server ends it if nothing springs it or takes it back first (`acts_public.ends_at`, 0155, the
+   * Set only on a set (a card face down): when the server ends it if nothing springs it or takes it back first (`acts_public.ends_at`, 0156, the
    * `face_down` row's, stored when the card was set). Public and the same span for every back, so it names no card. A screen reads a back's end from
    * here and never adds the setting to when it was set: an admin's change to the setting moves no back already set.
    */
@@ -1476,7 +1476,7 @@ export interface LogBan {
   readonly infraction: Id;
   readonly rule: string | null;
   readonly thread: Id;
-  /** The verdict of the ruling on its appeal (`my_bans`, 0156); null with no ruling. */
+  /** The verdict of the ruling on its appeal (`my_bans`, 0157); null with no ruling. */
   readonly ruling: AppealVerdict | null;
   /** When the ban ends by its own Act, before any ruling. */
   readonly ownUntil: string;
@@ -1525,7 +1525,7 @@ export interface LogGroupMove {
   readonly ruledAt: string | null;
   /** The end an appeal's ruling set. */
   readonly ruledUntil: string | null;
-  /** The office that heard the latest ruling (its stamp, 0156); null for a ruling written before the stamp, and for a move with none. No default stands in for it. */
+  /** The office that heard the latest ruling (its stamp, 0157); null for a ruling written before the stamp, and for a move with none. No default stands in for it. */
   readonly ruledOffice: Office | null;
 }
 

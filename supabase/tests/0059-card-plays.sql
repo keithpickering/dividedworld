@@ -344,7 +344,7 @@ begin
     raise exception 'a catch moved the setter''s wallet: %', (select jsonb_agg(to_jsonb(w)) from wallet_events w where w.account = ann);
   end if;
   if card_held(ann, 'blot') is distinct from 1 or card_held(bob, 'blot') is distinct from 0 then raise exception 'the caught card is not the setter''s'; end if;
-  -- The caster's log reads the catch from their own rows: the trap's card and the play's price, never the card's at the machine (0156).
+  -- The caster's log reads the catch from their own rows: the trap's card and the play's price, never the card's at the machine (0157).
   perform tests.unbecome();
   perform tests.become(bob);
   if (select jsonb_agg(jsonb_build_object('card', card, 'trap', trap, 'price', price, 'spring', spring)) from my_caught)

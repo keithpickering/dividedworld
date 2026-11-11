@@ -407,7 +407,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   holdMove: true, reverseMove: true, reverseCard: true, replaceSuccessor: true, replaceQueuedDescription: true, describeBoard: true, setSlot: true,
   moveSlot: true, saveMachine: true, intercept: true, fileReport: true, fileAppeal: true, markRead: true, setPresenceHidden: true,
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
-  seeAlerts: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
+  seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, spin: true,
   apologize: true, buyCard: true, buyPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true,
   react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
 } satisfies Record<WriteName, true>));
@@ -602,7 +602,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
-      /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0155). */
+      /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0156). */
       ...(a.kind === 'set' && faceDown.get(a.id) ? { endsAt: iso(faceDown.get(a.id)!.endsAt) } : {}),
     };
   }

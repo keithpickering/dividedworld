@@ -507,7 +507,7 @@ function groupRows(data: LogData, words: Words): LogRow[] {
       });
     }
     if (g.ruling !== null && g.ruledAt !== null) {
-      /* The hearer is the office stamped on the ruling (0156); a ruling written before the stamp names none, and no default stands in for it. */
+      /* The hearer is the office stamped on the ruling (0157); a ruling written before the stamp names none, and no default stands in for it. */
       const hearer = g.ruledOffice === null ? null : officeRole(words.ui.copy, g.ruledOffice);
       const ruled = g.ruledUntil === null ? Number.NaN : Date.parse(g.ruledUntil);
       const result = g.ruling === 'upheld' ? 'nothing changed'
@@ -554,7 +554,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
 
   for (const b of data.log.bans) {
     const over = Date.parse(b.until) <= now;
-    /* How the ban ends, by what an appeal's ruling did to it (`ruling`, 0156); a ban with no ruling, or an upheld one, ends as it was laid. */
+    /* How the ban ends, by what an appeal's ruling did to it (`ruling`, 0157); a ban with no ruling, or an upheld one, ends as it was laid. */
     const ends = b.ruling === 'overturned' ? `An appeal overturned the ban on ${utcWhen(b.until)} UTC.`
       : b.ruling === 'reduced' ? `An appeal shortened the ban: it ${over ? 'ended' : 'ends'} ${utcWhen(b.until)} UTC.`
       : b.ruling === 'increased' ? `An appeal lengthened the ban: it ${over ? 'ended' : 'ends by itself'} ${utcWhen(b.until)} UTC.`

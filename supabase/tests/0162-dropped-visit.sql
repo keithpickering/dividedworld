@@ -1,4 +1,4 @@
--- A dropped visit (supabase/migrations/0150_dropped_visit.sql; docs/plans/2026-11-11-plain-words-plan.md, Task 6).
+-- A dropped visit (supabase/migrations/0154_dropped_visit.sql; docs/plans/2026-11-11-plain-words-plan.md, Task 6).
 --
 -- A visit that cannot be filed after ten tries ends `dropped` with the stock line (it ended `reversed` before, which read as an admin's act); end_visit and the visit_end
 -- payload take five outcomes and refuse a sixth; and a charge on a dropped visit matches as one on a reversed visit did, so the rule can be charged again.

@@ -6,7 +6,7 @@
 -- 3. my_bans (0111) gains `ruling` (the verdict of the latest ruling on the ban's appeals, null with none) and `own_until` (the ban's own end), and its `until` reads the latest ruling that
 --    carries one, newest first, as the other readers of a ruling do. Both read the same appeal and ruling rows `until` already reads, through the indexes on an appeal's target.
 -- 4. my_caught (0054) loses `bought_price`: the log quotes what the cast cost, never the machine's price of the card. A view's column cannot be dropped in place, and log_page's
---    body depends on the view, so log_page is dropped, the view made again with its grants, and log_page made again, as 0151 wrote it with the three changes: no `bought_price`
+--    body depends on the view, so log_page is dropped, the view made again with its grants, and log_page made again, as 0153 wrote it with the three changes: no `bought_price`
 --    in `caught`, and `ruling` and `own_until` in `bans`, `ruled_office` in `groupMoves`.
 -- Masks: every new column is read from rows the player's own log already reads (their characters' bans and group moves, and the rulings on them, public Acts); none says who owns
 -- another character or who reacted. Ways out: reads only.
@@ -121,7 +121,7 @@ create view my_caught as
 revoke all on my_caught from public, anon, authenticated;
 grant select on my_caught to authenticated;
 
--- log_page (0151) as described above. The function is made again, so its grants are stated again.
+-- log_page (0153) as described above. The function is made again, so its grants are stated again.
 create function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -214,7 +214,7 @@ begin atomic
     union select x.post from sp x where x.post is not null
     union select x.play from ca x union select x.post from ca x where x.post is not null
     union select x.play from en x
-    union select x.ref from wl x where x.kind = 'bribe' and x.ref is not null
+    union select x.ref from wl x where x.kind in ('bribe', 'gift_out', 'gift_in') and x.ref is not null
   ), walk(id, depth) as (
     -- actsFollowed, twice: what the Acts read lead to. A loop costs the two rounds as a chain does.
     select n.id, 0 from named n
@@ -223,7 +223,7 @@ begin atomic
     from walk w
     join acts_public a on a.id = w.id
     cross join lateral (values
-      (case when a.kind in ('card', 'spring', 'set') then a.target_act_id end),
+      (case when a.kind in ('card', 'spring', 'set', 'donation') then a.target_act_id end),
       (case when a.kind = 'intercept' and a.payload ->> 'visit_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'visit_act')::uuid end),
       (case when a.kind in ('spring', 'card') and a.payload ->> 'spring' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'spring')::uuid end),
       (case when a.kind = 'spring' and a.payload ->> 'caught' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (a.payload ->> 'caught')::uuid end),

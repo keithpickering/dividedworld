@@ -138,9 +138,6 @@ export function SignInScreen({ mode }: { readonly mode: 'sign-in' | 'register' }
       {title}
       <div className="kb-door">
         <CalmRegion className="kb-door-form">
-        {registering && closed && (
-          <p className="kb-acct-notice">Registration is closed. When an admin opens it, your next sign-in opens your account.</p>
-        )}
         {step === 'email' ? (
           <form aria-label={registering ? 'Register' : 'Sign in'} aria-busy={busy === 'sending'} onSubmit={(e) => void ask(e)} noValidate>
             <p className="kb-acct-lead">{registering
