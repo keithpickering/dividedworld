@@ -1,0 +1,25 @@
+/* You Were Saying?'s play form (ConfigForm.tsx): a labeled range, the length in words and its price on one line, in the glass's own type. */
+.dw-ywsf-form {
+  display: grid;
+  gap: 0.35rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.dw-ywsf-legend {
+  padding: 0;
+  margin-bottom: 0.25rem;
+}
+.dw-ywsf-form input[type='range'] {
+  width: 100%;
+  margin: 0;
+}
+.dw-ywsf-length {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+}
+.dw-ywsf-fine {
+  margin: 0;
+}

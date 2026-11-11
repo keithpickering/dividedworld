@@ -41,6 +41,11 @@ import feelinFabArt from './cards/feelin-fab/art.json';
 import hallPassCanvas from './cards/hall-pass/art.svg?url';
 import hallPassMark from './cards/hall-pass/mark.svg?url';
 import hallPassArt from './cards/hall-pass/art.json';
+import youWereSayingCanvas from './cards/you-were-saying/art.svg?url';
+import youWereSayingMark from './cards/you-were-saying/mark.svg?url';
+import youWereSayingArt from './cards/you-were-saying/art.json';
+import { ConfigForm as YouWereSayingConfigForm } from '../cards/you-were-saying/ConfigForm.tsx';
+import { mostSteps, youWereSaying } from '../cards/you-were-saying.ts';
 import { ConfigForm as AutocorrectConfigForm } from '../cards/autocorrect/ConfigForm.tsx';
 import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
@@ -176,6 +181,26 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       if (clean === true) return { what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' };
       const n = Array.isArray(peeled) ? peeled.length : 0;
       return n ? { what: 'Strips peeled', said: `You peeled ${n} of its strips.` } : undefined;
+    },
+  },
+  /*
+   * You Were Saying? (docs/plans/2026-11-07-you-were-saying-design.md): Pepperoni's color. Its face is a terminal with a blinking cursor, and
+   * its price is a range: the machine's price at the base length, each step on top of it.
+   */
+  {
+    key: 'you-were-saying',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: youWereSayingCanvas, mark: youWereSayingMark, credit: youWereSayingArt.credit, tagline: 'Let an old chatbot keep going.' },
+    summary: 'Hands a post to a chatbot from 2021, which keeps writing after the author stops.',
+    /* Up to the rules' `stack` chain on a post, each continuing the last. */
+    status: (plays) => `Typing on, ${Math.min(plays.length, youWereSaying.stack!)} of ${youWereSaying.stack} chained`,
+    ConfigForm: YouWereSayingConfigForm,
+    surcharge: (settings: Settings) => {
+      const e = settings.economy;
+      return `Longer costs more: +${orbs(e['youWereSaying.stepPrice'] ?? 0)} per step, ${orbs(mostSteps(settings) * (e['youWereSaying.stepPrice'] ?? 0))} at most`;
+    },
+    describe: (settings: Settings) => {
+      const e = settings.economy;
+      return `A Pepperoni card, ${youWereSaying.rarity}, cast on a post with words of its own. A chatbot from 2021 reads the post and keeps going after the author stops, and its words type themselves in after the post's. You choose how much it writes, from about ${e['youWereSaying.baseTokens'] ?? 0} tokens, a sentence, up to ${e['youWereSaying.mostTokens'] ?? 0}, a rant. The base length costs nothing more to play; each step longer costs ${orbs(e['youWereSaying.stepPrice'] ?? 0)} more. The author can erase it, but all at once, and an edit to the post gets a fresh take. Its words are the chatbot's, never the author's, and the post's own words are always there.`;
     },
   },
   /*
