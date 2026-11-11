@@ -945,7 +945,8 @@ describe('As it landed', () => {
     await userEvent.click(landedButton(k1b));
     expect(await within(await frame()).findByText('post 2')).toBeInTheDocument();
     expect(read).toHaveBeenCalledTimes(2);
-    expect(within(lens()).queryByText('That didn\u2019t load. Try again.')).toBeNull();
+    /* The note clears in its own state update, which can land after the frame shows. */
+    await waitFor(() => expect(within(lens()).queryByText('That didn\u2019t load. Try again.')).toBeNull());
   });
 
   test('Back to now gives focus back to the play\'s As it landed', async () => {
