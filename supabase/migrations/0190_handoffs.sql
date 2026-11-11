@@ -341,7 +341,7 @@ begin
     exception when others then
       note := coalesce(note || '; ', '') || 'the offices were not moved: ' || sqlerrm;
     end;
-    -- The Boss's own farewell, written at its last meeting (0180), in place of the stock line; the stock line stands where none was written or it could not be posted.
+    -- The Boss's own farewell, written at its last meeting (0190, above), in place of the stock line; the stock line stands where none was written or it could not be posted.
     if not say_farewell(outgoing, new_season) then
       perform say_in_announcements(outgoing, 'bossFarewell');
     end if;
@@ -361,7 +361,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'boss', current_boss(),
     -- The Boss's arc (0187): the beats unlocked and not yet played, each with whether it is due, and the kinds still held back. Never a locked beat, a brief or a template.
     'arc', arc_for_meeting(current_boss(), (select x.id from seasons x where x.ends_at is null)),
-    -- The farewell and the handoff (0180): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;
+    -- The farewell and the handoff (0190, above): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;
     -- the new Boss is handed its predecessor's facts and note (`predecessor`) for inheritanceGraceDays after the handover. Both are null otherwise.
     'handoffFacts', case when in_farewell_window() then handoff_facts((select x.id from seasons x where x.ends_at is null)) end,
     'predecessor', predecessor_handoff(),
@@ -717,7 +717,7 @@ begin
     end if;
   end loop;
 
-  -- The farewell and the handoff (0180), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
+  -- The farewell and the handoff (0190, above), kept only from a meeting within farewellWindowHours of the season's end: the engine's repair already dropped them from any other, and the database holds
   -- the same line. Each is trimmed to its bound (the farewell to postMaxLength, the note to 2000) and the trim is recorded, never a lost answer. A blank one is none; a meeting that gives neither
   -- writes no row, so an earlier meeting's words are not displaced by silence. A new row is the latest of its season, and the ones before it stay.
   if hf_farewell is not null or hf_note is not null then
@@ -930,7 +930,7 @@ begin
            'bossWas', (select o.office from staff_offices o where o.staff = t.boss and o.at <= t.landed_at order by o.id desc limit 1),
            'outgoing', t.outgoing, 'outgoingName', oc.name, 'outgoingPronouns', (select p.pronouns from character_profiles p where p.character = oc.id), 'outgoingOffice', (select n.office from staff_office_now n where n.staff = t.outgoing),
            'how', h.how, 'landedAt', t.landed_at,
-           -- The outgoing Boss's handoff (0180): its note, out of character and an admin's to read, and the facts the code computed for the season it ended.
+           -- The outgoing Boss's handoff (0190, above): its note, out of character and an admin's to read, and the facts the code computed for the season it ended.
            'note', (select nullif(x.note, '') from handoffs_latest x where x.season = ps.id),
            'facts', handoff_facts(ps.id)) order by t.landed_at desc, t.number desc), '[]'::jsonb) into todos
   from season_boss_changes t
