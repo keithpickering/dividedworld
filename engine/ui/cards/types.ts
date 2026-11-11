@@ -11,7 +11,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { Settings } from '../../rules/types.ts';
 import type { BeyondPost, Reach } from '../../rules/cards.ts';
-import type { Act, Answer, EffectState, Id } from '../data/api.ts';
+import type { Act, Answer, Donated, DriveGift, EffectState, Id, Wallet } from '../data/api.ts';
 import type { CardFace } from './faces.ts';
 
 /**
@@ -60,6 +60,26 @@ export interface CardPlay {
    */
   readonly reach?: BeyondPost;
   readonly on?: Id;
+  /** The drive this play belongs to (`CardRules.drive`): its opening play's id, from the play's own payload. Only a play of a drive card has one. */
+  readonly drive?: Id;
+}
+
+/**
+ * One drive of a card on a post (`CardRules.drive`), as its effect is given it: its plays in play order, when it closes (its latest play's
+ * time plus the card's `lasts`), whether that is still ahead, what has been given (the total in hundredths and the count of gifts, which are
+ * the same for every reader) and its latest gifts, newest first, with `more` saying the wall holds older ones (`EffectProps.moreGifts`).
+ */
+export interface Drive {
+  /** The drive's id: its opening play's. */
+  readonly id: Id;
+  readonly plays: readonly CardPlay[];
+  /** An ISO time. */
+  readonly closes: string;
+  readonly open: boolean;
+  readonly total: number;
+  readonly count: number;
+  readonly gifts: readonly DriveGift[];
+  readonly more: boolean;
 }
 
 /** Who the reader is to a post an effect wraps, on their own screen only (it is computed from the player's own characters, never sent). */
@@ -193,6 +213,18 @@ export interface EffectProps {
   readonly release: (play: Id) => Promise<Answer<{ readonly play: Id; readonly releasedAt: string }>>;
   /** A character's name as the screen the post is drawn on knows it, for a card that names a play's caster ("top: Spritey's yellow"). */
   readonly nameOf: (character: Id | null) => string;
+  /** Each drive of this card on this post, in play order: only a card with `CardRules.drive` is given any (undefined for every other). */
+  readonly drives?: readonly Drive[];
+  /**
+   * Give `amount` (hundredths) to a drive, as the reader's character at the HUD: the gift's Act and the giver's own balance, or the
+   * refusal in the database's words (a closed drive, an amount not offered, a short wallet). A gift the answer carries is shown at once and
+   * counted once, however it also arrives on the thread's channel. Refuses without asking in a moment and on a sample page.
+   */
+  readonly give: (drive: Id, amount: number) => Promise<Answer<Donated>>;
+  /** Read the next page of a drive's wall, after the oldest gift shown, and append it. A failed read leaves the wall as it was. */
+  readonly moreGifts: (drive: Id) => Promise<void>;
+  /** The reader's own settled wallet, from the header's store (null before it is known): a give button short of Aura is the reader's own fact. */
+  readonly wallet: Wallet | null;
   readonly children: ReactNode;
 }
 

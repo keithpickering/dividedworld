@@ -25,11 +25,12 @@ import { useLensStore } from './Lens.tsx';
 import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
+import { driveStore, giftOf, useDriveGifts, type Gifts } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
 import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
-import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
+import { drawnInMoment, spanMs, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
-import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps, Written } from './types.ts';
+import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
@@ -56,7 +57,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   readonly nameOf: (character: Id | null) => string; readonly children: ReactNode;
 }) {
   const { api, ui, instance } = useKayfa();
-  const { actingCharacters, writingCharacters } = usePlayer();
+  const { actingCharacters, writingCharacters, hudCharacter, wallet, refresh } = usePlayer();
   const here = usePlays(plays, post.id);
   /*
    * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
@@ -90,6 +91,16 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       retry.current = setTimeout(() => { retry.current = null; setAgain((n) => n + 1); }, backoff(attempt));
     });
   }, [api, plays, post.id, here.plays, tailRows, writing, again]);
+  /*
+   * The drives of the cards here that have one, read for the page together (drives.ts): a post with none is never read. A drive is the plays of
+   * one card that name it (their payload's `drive`), and it closes `lasts` after its latest play.
+   */
+  const driving = useMemo(() => new Map(instance.cards.flatMap((c): [string, NonNullable<CardRules['drive']>][] => (c.drive ? [[c.key, c.drive]] : []))), [instance.cards]);
+  const driven = here.plays.filter((p) => p.drive !== undefined && driving.has(p.card) && !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach);
+  const driveIds = [...new Set(driven.map((p) => p.drive!))];
+  const gifts = useDriveGifts(post.thread, driveIds);
+  const closing = driveIds.map((id) => closeOf(driven.filter((p) => p.drive === id), driving));
+  const at = useAt(closing);
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
   const lens = useLensStore();
@@ -116,6 +127,19 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     if (released.ok) plays.setReleased([play]);
     return released;
   }, [api, plays, staged]);
+  const give = useCallback<EffectProps['give']>(async (drive, amount) => {
+    if (staged) return { ok: false, error: SAMPLE };
+    if (!hudCharacter) return { ok: false, error: 'choose a character to give as' };
+    const given = await api.donate(hudCharacter.id, drive, amount);
+    if (given.ok) {
+      /* The answer shows the gift at once; the same gift heard on the channel is the same gift (drives.ts keeps each by its id). */
+      const gift = giftOf(given.value.act);
+      if (gift) driveStore(api).add(gift.drive, gift.gift);
+      void refresh();
+    }
+    return given;
+  }, [api, hudCharacter, refresh, staged]);
+  const moreGifts = useCallback<EffectProps['moreGifts']>((drive) => driveStore(api).more(drive), [api]);
   /* The layers above the post, each its own reach's plays still live, redrawn at the soonest end (useUntil). */
   const above = [
     { reach: 'board' as const, drawn: board === null ? [] : onBoard.plays, of: onBoard },
@@ -159,6 +183,8 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
         written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
         save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
+        give={give} moreGifts={moreGifts} wallet={wallet}
+        {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(mine, driving.get(key)!, gifts, at) } : {})}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
         {wrapped}
@@ -172,6 +198,37 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
 const writingKeys = (cards: readonly CardRules[]): ReadonlySet<string> => new Set(cards.filter((c) => c.writes !== undefined).map((c) => c.key));
 /** Whether a play is of a card that writes, on its post's own reach (a card that writes reaches a post alone). */
 const writes = (play: CardPlay, keys: ReadonlySet<string>): boolean => keys.has(play.card) && !play.reach && !play.faceDown;
+/** When a drive closes: its latest play's time plus the card's span (the server's `closes` is the same, card_target), in epoch ms. */
+const closeOf = (plays: readonly CardPlay[], driving: ReadonlyMap<string, NonNullable<CardRules['drive']>>): number =>
+  Math.max(...plays.map((p) => Date.parse(p.playedAt))) + spanMs(driving.get(plays[0]!.card)!.lasts);
+
+/** Each drive among a card's plays, in the order each was first played, with what the page knows of its gifts. */
+function drivesOf(mine: readonly CardPlay[], drive: NonNullable<CardRules['drive']>, gifts: ReadonlyMap<Id, Gifts>, now: number): readonly Drive[] {
+  const ids = [...new Set(mine.filter((p) => p.drive !== undefined).map((p) => p.drive!))];
+  return ids.map((id): Drive => {
+    const own = mine.filter((p) => p.drive === id);
+    const closes = Math.max(...own.map((p) => Date.parse(p.playedAt))) + spanMs(drive.lasts);
+    const g = gifts.get(id);
+    return { id, plays: own, closes: new Date(closes).toISOString(), open: closes > now, total: g?.total ?? 0, count: g?.count ?? 0, gifts: g?.gifts ?? [], more: (g?.gifts.length ?? 0) < (g?.count ?? 0) };
+  });
+}
+
+/**
+ * The time, redrawn when the soonest of these ends passes, so a drive closes on the screen by itself (its way out) without a read. Nothing
+ * is scheduled while none is ahead.
+ */
+function useAt(ends: readonly number[]): number {
+  const [now, setNow] = useState(() => Date.now());
+  const ahead = ends.filter((e) => e > now);
+  const next = ahead.length === 0 ? null : Math.min(...ahead);
+  useEffect(() => {
+    if (next === null) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.min(TIMER_MOST, Math.max(0, next - Date.now()) + 1));
+    return () => clearTimeout(timer);
+  }, [next, now]);
+  return now;
+}
+
 const NOTHING_WRITTEN: ReadonlyMap<Id, Written> = new Map();
 /** What an effect is given of the tails: those of its own plays that write, and none for a card that does not. */
 function writtenOf(all: ReadonlyMap<Id, Written>, mine: readonly CardPlay[], keys: ReadonlySet<string>): ReadonlyMap<Id, Written> {
@@ -307,6 +364,8 @@ export function momentParts(moment: PlayMoment, rules: readonly CardRules[], ui:
 const NOTHING_SAVED = 'a moment is drawn as it was, and nothing in it is saved';
 const stillSave: EffectProps['save'] = async () => ({ ok: false, error: NOTHING_SAVED });
 const stillRelease: EffectProps['release'] = async () => ({ ok: false, error: NOTHING_SAVED });
+const stillGive: EffectProps['give'] = async () => ({ ok: false, error: NOTHING_SAVED });
+const stillMore: EffectProps['moreGifts'] = async () => {};
 const nothing = () => {};
 const NONE_RELEASED: ReadonlySet<Id> = new Set();
 
@@ -412,7 +471,7 @@ const NO_STATES: Readonly<Record<Id, EffectState>> = Object.freeze({});
  * notes, a play's each, top first (the last played first), where it gives any: a still view's heading is "as it landed", which the
  * frame says already (the owner, 2026-11-07), and the notes say how each layer stood. A view with no notes gives its heading.
  */
-function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'save' | 'release' | 'marks'> & {
+function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet'> & {
   readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly onWords: (card: string, words: string | null) => void;
 }) {
   const plays = props.plays;
@@ -421,7 +480,7 @@ function StillEffect({ Effect, card, onWords, ...props }: Omit<EffectProps, 'sho
     onWords(card, view === null ? null : notes.length > 0 ? notes.join('; ') : view.state);
   }, [onWords, card, plays]);
   useEffect(() => () => onWords(card, null), [onWords, card]);
-  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still show={show} met={nothing} holdScreen={nothing} marks={null} save={stillSave} release={stillRelease} give={stillGive} moreGifts={stillMore} wallet={null} /></Suspense>;
 }
 
 export { useNarrow, useSheet } from '../media.ts';
