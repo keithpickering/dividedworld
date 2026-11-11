@@ -640,6 +640,41 @@ describe('a fast scroll shakes glitter off', () => {
     for (const fl of loose(a)) expect(fl.x >= 0 && fl.x < 300 && fl.y >= 0 && fl.y < 300).toBe(true);
   });
 
+  /*
+   * The cost of a flake in the air over nothing to land on (docs/plans/2026-11-11-shake-design.md section 4): once past its hang it
+   * asks the browser what is under it, and a hit test is a layout-tree walk. Up to 400 flakes asking every frame is 24,000 hit tests
+   * a second; each flake asks at most every CHECK_S instead, so a place that comes under it catches it within that.
+   */
+  it('hit-tests a flake past its hang about every 100 ms, not every frame, and still lands it within one interval of a place coming under it', () => {
+    posts();
+    for (let i = 0; i < 10; i++) shake(-SHAKE_SPEED * 1.1, 0, 1);
+    expect(cling.falling()).toBe(MAX_AIR);
+    /* Nothing to land on: the posts are gone from under them. */
+    placed = [];
+    let t = 0;
+    for (; t < 1000; t += 16) cling.tick(t);
+    expect(cling.falling()).toBe(MAX_AIR);
+    const asks = vi.fn((x: number, y: number) => elAt(x, y));
+    document.elementFromPoint = asks;
+    for (const end = t + 1000; t < end; t += 16) cling.tick(t);
+    expect(cling.falling()).toBeGreaterThan(MAX_AIR * 0.9);
+    expect(asks.mock.calls.length).toBeGreaterThan(MAX_AIR * 5);
+    /* 400 flakes over 60 frames, every frame: 24,000. Every 100 ms: about 4,000. */
+    expect(asks.mock.calls.length).toBeLessThan(MAX_AIR * 60 / 4);
+    /* A place comes under them all: within one interval (and a frame) every one of them has landed on it. */
+    const under = host(0, 0, 1024, 768);
+    let told = 0;
+    cling.register(under, { landed: () => told++ });
+    const air = cling.falling();
+    let frames = 0;
+    for (; cling.falling() && frames < 20; frames++, t += 16) cling.tick(t);
+    expect(cling.falling()).toBe(0);
+    expect(frames).toBeLessThanOrEqual(Math.ceil(100 / 16) + 1);
+    /* All but any that left past the bottom in those frames. */
+    expect(told).toBeGreaterThan(air * 0.95);
+    expect(loose(under).length).toBeGreaterThan(0);
+  });
+
   it('a flake 10 px past the bottom or the sides is gone: none is drawn out there, and all leave', () => {
     posts();
     /* Thrown down the screen at up to 1.4 x 0.55 x 11,000 px a second: the first frames carry many past the bottom. */

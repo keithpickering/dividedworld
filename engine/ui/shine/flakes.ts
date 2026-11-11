@@ -902,7 +902,32 @@ export function drawLoose(host: object, ctx: CanvasRenderingContext2D, light: Li
   if (list?.length) drawList(ctx, list, light, band, now, idle, starSprite(list[0]!.pal), density, null, false, false);
 }
 
-function addLoose(host: object, f: Flake): void {
+/**
+ * A flake lying loose: where it landed, in its surface's px, and what it needs to be drawn still (docs/plans/2026-11-11-shake-design.md
+ * section 5): `ph`, the turn it landed at, and `band`, the board it landed on.
+ */
+export type LooseFlake = Flake & { ph?: number; band?: Band };
+
+/**
+ * What the landing surfaces (engine/ui/shine/landing.ts) hang on the cling layer. `page` is the thread screen's own surface, a
+ * place a flake lands where no registered host is under it and `ground` says the point's ground is the page's; `dropped` hears a
+ * loose flake go off a host's list to the 300 cap; `frameEnd` runs at the end of each frame that moved a flake, once, after every
+ * landing in it. Nothing here is a loop's job: tiles are drawn on a landing and on a return to view, never per frame.
+ */
+export interface Landing {
+  page: { readonly host: object; landed(): void } | null;
+  ground(el: Element): boolean;
+  dropped(host: object, f: LooseFlake): void;
+  frameEnd(): void;
+}
+let landing: Landing | null = null;
+/** Installs the landing surfaces' hooks, or takes them off with `null`. */
+export function setLanding(l: Landing | null): void { landing = l; }
+
+/** Every loose flake on the page in the order it landed, with the host it lies on: a read-only view for a probe. */
+export const looseEntries = (): readonly { readonly host: object; readonly flake: Flake }[] => looseOrder;
+
+function addLoose(host: object, f: LooseFlake): void {
   loose(host).push(f);
   looseOrder.push({ host, flake: f });
   while (looseOrder.length > MAX_LOOSE) {
@@ -910,6 +935,7 @@ function addLoose(host: object, f: Flake): void {
     const list = looseByHost.get(old.host);
     const at = list ? list.indexOf(old.flake) : -1;
     if (list && at >= 0) list.splice(at, 1);
+    try { landing?.dropped(old.host, old.flake as LooseFlake); } catch (err) { console.error(err); }
   }
 }
 
@@ -954,7 +980,7 @@ export interface ClingOptions {
 interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
 /* A flake in the air (docs/plans/2026-11-11-shake-design.md section 3): `vx, vy` in px a second, `ph` its turn, `spin` how fast it
    turns, `age` the seconds since it left and `hang` the seconds before it may land. It is drawn at full alpha always. */
-interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; ph: number; spin: number; age: number; hang: number; band: Band }
+interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; ph: number; spin: number; age: number; hang: number; next: number; band: Band }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
 /** Each registered host's `hit` (the host itself by default), to the hosts that name it in registration order: what a walk up from a node is matched against. */
@@ -1019,9 +1045,10 @@ function hostOf(n: EventTarget | null | undefined): HTMLElement | null {
   return null;
 }
 
-/** The registered host under a viewport point, as the browser hit-tests it. */
-const hostUnder = (x: number, y: number): HTMLElement | null =>
-  typeof document === 'undefined' || !document.elementFromPoint ? null : hostOf(document.elementFromPoint(x, y));
+/** The element under a viewport point, as the browser hit-tests it. */
+const elementAt = (x: number, y: number): Element | null =>
+  typeof document === 'undefined' || !document.elementFromPoint ? null : document.elementFromPoint(x, y);
+
 
 /** A band read from a board's computed style is kept per host for this long: a sweep over a post asks the browser once, not per flake. */
 const BAND_MS = 100;
@@ -1115,7 +1142,7 @@ function onMove(e: PointerEvent): void {
       if (cr() < moved * 0.006) {
         const c = carried.splice(i, 1)[0]!;
         /* The cursor's numbers: up to 20 px a second sideways, 30 to 80 down, a hang of 0.15 to 0.5 s. */
-        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vx: (cr() - 0.5) * 40, vy: 30 + cr() * 50, ph: c.ph, spin: 6 + cr() * 10, age: 0, hang: 0.15 + cr() * 0.35, band: c.band });
+        falling.push({ f: c.f, x: e.clientX + c.ox, y: e.clientY + c.oy, vx: (cr() - 0.5) * 40, vy: 30 + cr() * 50, ph: c.ph, spin: 6 + cr() * 10, age: 0, hang: 0.15 + cr() * 0.35, next: 0, band: c.band });
       }
     }
   }
@@ -1151,6 +1178,11 @@ export const FLUTTER = 35;
 export const FLUTTER_RATE = 5.5;
 export const HANG_S = 0.6;
 export const MAX_AIR = 400;
+/**
+ * A flake past its hang is hit-tested at most this often (seconds): a hit test is a walk of the layout tree, and 400 flakes asking
+ * every frame is 24,000 a second. A place that comes under a flake catches it within this and a frame.
+ */
+export const CHECK_S = 0.1;
 
 let scrollSeen: { y: number; t: number } | null = null;
 let shakeFrame = 0;
@@ -1219,7 +1251,7 @@ export function shake(v: number, now: number, dt: number): number {
       const x = r.left + fl.x, y = r.top + fl.y;
       if (x < 0 || y < 0 || x > vw || y > vh) continue;
       /* Thrown with the page: it leaves at a share of the scroll's speed, against the way the page went, sprayed sideways. */
-      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 2 * SPRAY * Math.abs(v), vy: -v * THROW * (0.6 + cr() * 0.8), ph: cr() * 6, spin: 6 + cr() * 14, age: 0, hang: HANG_S * (0.6 + cr() * 0.8), band });
+      falling.push({ f: { ...fl }, x, y, vx: (cr() - 0.5) * 2 * SPRAY * Math.abs(v), vy: -v * THROW * (0.6 + cr() * 0.8), ph: cr() * 6, spin: 6 + cr() * 14, age: 0, hang: HANG_S * (0.6 + cr() * 0.8), next: 0, band });
       off++;
     }
     took += off;
@@ -1248,14 +1280,22 @@ export function sampleCling(flakes: Flakes, band: Band): Set<string> {
   return out;
 }
 
-/** One flake of the cling layer: one `setTransform` places it (no save/restore); the host's base transform is `d`, the canvas's px per CSS px. */
-function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band, d: number): void {
+/**
+ * One flake of the cling layer: one `setTransform` places it (no save/restore); `d` is the canvas's px per CSS px. `x, y` are in the
+ * canvas's own CSS px, so a tile places a landed flake at its place in the tile. Draws at the context's alpha and records nothing.
+ */
+export function drawFlake(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, band: Band, d: number): void {
   const w = f.s * (0.4 + 0.6 * Math.abs(Math.cos(ph)));
   const rot = f.rot + ph * 0.3, cos = Math.cos(rot), sin = Math.sin(rot);
-  c.globalAlpha = alpha;
   c.fillStyle = clingColor(f, ph, band);
   c.setTransform(cos * d, sin * d, -sin * d, cos * d, x * d, y * d);
   c.fillRect(-f.s / 2, -f.s * 0.42, w, f.s * 0.84);
+}
+
+/** One flake of the cling layer, drawn and its square noted for the next frame's clear. */
+function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: number, alpha: number, band: Band, d: number): void {
+  c.globalAlpha = alpha;
+  drawFlake(c, f, x, y, ph, band, d);
   c.globalAlpha = 1;
   /* The rect reaches 0.66 s from its center whatever its turn; a px more for the smoothing. */
   const r = 0.66 * f.s + 1;
@@ -1270,6 +1310,30 @@ function unhit(host: HTMLElement, options: ClingOptions): void {
   const at = list.indexOf(host);
   if (at >= 0) list.splice(at, 1);
   if (!list.length) hits.delete(hit);
+}
+
+/**
+ * Lands a flake that is past its hang if a landing place is under it, and says whether it did. In order: the registered host whose hit
+ * the browser finds there (task order: an effect's surface, then a post cell), in that host's own px; else, where the thread's page
+ * surface is live and the point's ground is the page's, the page, in document px; else it keeps flying (chrome with a ground of its
+ * own would hide glitter lying on the page under it). The one hit test a flake costs per `CHECK_S`; the host's rect is the one measure a landing costs.
+ */
+function landOn(b: Falling, now: number): boolean {
+  const el = elementAt(b.x, b.y);
+  const host = hostOf(el);
+  let on: object, x: number, y: number, band: Band | null, told: (() => void) | undefined;
+  if (host) {
+    const r = host.getBoundingClientRect();
+    on = host; x = b.x - r.left; y = b.y - r.top; band = bandAt(host, now);
+    told = hosts.get(host)?.landed;
+  } else if (landing?.page && el && landing.ground(el)) {
+    on = landing.page.host; x = b.x + window.scrollX; y = b.y + window.scrollY; band = bandAt(document.documentElement, now);
+    told = landing.page.landed;
+  } else return false;
+  /* It keeps its turn and the board it lies on: a landed flake is drawn still, at that turn, in that board's band. */
+  addLoose(on, { ...b.f, x, y, ph: b.ph, band: band ?? b.band });
+  try { told?.(); } catch (err) { console.error(err); }
+  return true;
 }
 
 export const cling = {
@@ -1331,20 +1395,14 @@ export const cling = {
       b.ph += dt * b.spin * (0.35 + 0.65 * Math.min(1, Math.hypot(b.vx, b.vy) / 400 + 0.3));
       /* Off the bottom or the sides, it is gone, as glitter thrown off a table is; off the top, it comes back down. */
       if (b.y > vh + 10 || b.x < -10 || b.x > vw + 10) { falling.splice(i, 1); continue; }
-      if (b.age >= b.hang && b.y >= 0) {
-        const host = hostUnder(b.x, b.y);
-        if (host) {
-          falling.splice(i, 1);
-          /* The one measure a flake costs: the post it lands on, to put it in that post's own px. */
-          const r = host.getBoundingClientRect();
-          addLoose(host, { ...b.f, x: b.x - r.left, y: b.y - r.top });
-          try { hosts.get(host)?.landed?.(); } catch (err) { console.error(err); }
-          continue;
-        }
+      if (b.age >= b.hang && b.age >= b.next && b.y >= 0) {
+        b.next = b.age + CHECK_S;
+        if (landOn(b, now)) { falling.splice(i, 1); continue; }
       }
       paint(ctx, b.f, b.x, b.y, b.ph, 1, b.band, ratio);
     }
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    try { landing?.frameEnd(); } catch (err) { console.error(err); }
     if (!carried.length && !falling.length) settle();
   },
 
