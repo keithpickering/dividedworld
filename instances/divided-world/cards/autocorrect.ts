@@ -1,6 +1,8 @@
 /**
  * Autocorrect (Pepperoni, common): the caster types a phrase and a replacement, and every occurrence of the phrase in the post,
- * whole words in any case, is covered by a strip of label tape bearing the replacement (docs/plans/2026-11-03-autocorrect-design.md).
+ * whole words in any case, is covered by a strip of masking tape with the replacement written on it in marker
+ * (docs/plans/2026-11-03-autocorrect-design.md; the tape, its peel and peek, and the half peel it saves are
+ * docs/plans/2026-11-11-autocorrect-tape-design.md).
  * It is Minus World's signature spell, and the Jabroni's starter card.
  *
  * Its rules here are its bounds, where it lands, its price and the author's saved peels; the strips are the screens' to draw
