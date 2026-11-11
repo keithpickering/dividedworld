@@ -79,6 +79,15 @@ test('a model missing from the shipped table throws naming it, as does a priorit
   await assert.rejects(models(env, noRecord, { fetch: fake([message('{}', { service_tier: 'priority' })]).fetch, sleep: async () => {} }).chat(chat), /priority/);
 });
 
+test('a completion asked for many lines comes back with its lines; one asked for nothing is cut at the first', async () => {
+  const body = { choices: [{ text: ' and then\nit kept going\nPosted: later' }], usage: { prompt_tokens: 12, completion_tokens: 7 } };
+  const ask = { duty: 'standingOrderLine', prompt: 'Line:', temperature: 0.9, topP: 0.95, stop: ['\nPosted:'], maxTokens: 40 } as const;
+  const many = await models(env, noRecord, { fetch: fake([json(body)]).fetch, sleep: async () => {}, now: () => 0 }).complete({ ...ask, lines: 'many' });
+  assert.equal(many.value, ' and then\nit kept going');
+  const one = await models(env, noRecord, { fetch: fake([json(body)]).fetch, sleep: async () => {}, now: () => 0 }).complete(ask);
+  assert.equal(one.value, 'and then');
+});
+
 test('a completion goes to the instance\'s /v1/completions, cut at its stop, priced at zero', async () => {
   const f = fake([json({ choices: [{ text: ' The Director sighs.\nAnd more' }], usage: { prompt_tokens: 12, completion_tokens: 7 } })]);
   const r = await models(env, noRecord, { fetch: f.fetch, sleep: async () => {}, now: () => 0 }).complete({ duty: 'standingOrderLine', prompt: 'Line:', temperature: 0.9, topP: 0.95, stop: ['\n\n'], maxTokens: 40 });
@@ -159,7 +168,7 @@ test('a call that is used writes one ok row, with its tokens, cost, retries and 
   assert.deepEqual(l.rows[0], {
     duty: 'microEvent', staff: 'director', provider: 'anthropic', model: 'claude-haiku-5-5', serviceTier: 'standard',
     inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, gpuSeconds: null,
-    costMicrodollars: 350, outcome: 'ok', predicate: null, trims: [], retries: 1, meeting: 7,
+    costMicrodollars: 350, outcome: 'ok', predicate: null, trims: [], retries: 1, meeting: 7, play: null,
   });
 });
 
@@ -253,10 +262,10 @@ test('the real writer calls record_model_call with the row in snake case', async
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   const write = ledgerWriter({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push({ fn, args }); return 1 as T; } });
   await write({ duty: 'meeting', staff: null, provider: 'anthropic', model: 'm', serviceTier: 'standard', inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWrite5mTokens: 4, cacheWrite1hTokens: 5,
-    gpuSeconds: null, costMicrodollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null });
+    gpuSeconds: null, costMicrodollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null, play: 'a-play' });
   assert.equal(calls[0]?.fn, 'record_model_call');
   assert.deepEqual(calls[0]?.args, { payload: { duty: 'meeting', staff: null, provider: 'anthropic', model: 'm', service_tier: 'standard', input_tokens: 1, output_tokens: 2, cache_read_tokens: 3,
-    cache_write_5m_tokens: 4, cache_write_1h_tokens: 5, gpu_seconds: null, cost_microdollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null } });
+    cache_write_5m_tokens: 4, cache_write_1h_tokens: 5, gpu_seconds: null, cost_microdollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null, play: 'a-play' } });
 });
 
 test('a 200 whose body is not JSON is one attempt: not retried, and one rejected row naming validJson', async () => {
@@ -288,4 +297,15 @@ test('a completions server that reports no usage block records no tokens, never 
     .complete({ duty: 'standingOrderLine', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 40 });
   assert.equal(tgi.rows[0]?.outputTokens, 5);
   assert.equal(tgi.rows[0]?.inputTokens, null);
+});
+
+test('the card play a call was made for reaches its ledger row, and a call for none records null', async () => {
+  const l = ledger();
+  await models(env, l.record, { fetch: fake([json({ choices: [{ text: 'a line' }] })]).fetch, sleep: async () => {} })
+    .complete({ duty: 'cardText', play: 'the-play', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 10 });
+  assert.equal(l.rows[0]?.play, 'the-play');
+  const n = ledger();
+  await models(env, n.record, { fetch: fake([json({ choices: [{ text: 'a line' }] })]).fetch, sleep: async () => {} })
+    .complete({ duty: 'cardText', prompt: 'x', temperature: 1, topP: 1, stop: [], maxTokens: 10 });
+  assert.equal(n.rows[0]?.play, null);
 });

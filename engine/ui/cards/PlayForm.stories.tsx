@@ -1,10 +1,10 @@
 /**
  * The play form on the reader's own post #43 (Pipewrench's) of the boards fixture (docs/plans/2026-11-07-face-down-moves-design.md, section 8), as stories
  * for the owner's word: a Move in `Play` mode (Play it now chosen), the same Move in `SetFaceDown` mode (the sentence, the card's own
- * settings, "Ends by itself in N days."), and a Gimmick with a cast trap (`Gimmick`: opens as Set with no choice, and its picker of the cards
+ * settings, "Ends by itself in N days."), and a set card with a cast trap (`SetCard`: opens as Set with no choice, and its picker of the cards
  * cast on a post), and the Move set with its optional Only when group open (`Conditions`). Each has its `Phone` twin at 390 by 844; open the others at 1440 by 1120.
  *
- * The story names no instance: the Move is the instance's first cast card with a settings form, the Gimmick its first set card with one.
+ * The story names no instance: the Move is the instance's first cast card with a settings form, the set card its first one with one.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect } from 'react';
@@ -79,11 +79,11 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 export const Play: Story = { args: { scene: 'play' } };
 /** The same Move set face down: one sentence for what it does, the card's own settings, and when it ends by itself. */
 export const SetFaceDown: Story = { args: { scene: 'set' } };
-/** A Gimmick: opens as Set with no choice, and the picker of the cards it can wait for. */
-export const Gimmick: Story = { args: { scene: 'gimmick' } };
+/** A set card: opens as Set with no choice, and the picker of the cards it can wait for. */
+export const SetCard: Story = { args: { scene: 'gimmick' } };
 /** The same, with the optional Only when group open: They say…, They quote… with the post's words to select from, and Who. */
 export const Conditions: Story = { args: { scene: 'conditions' } };
 export const PlayPhone: Story = { args: { scene: 'play' }, ...phone };
 export const SetFaceDownPhone: Story = { args: { scene: 'set' }, ...phone };
-export const GimmickPhone: Story = { args: { scene: 'gimmick' }, ...phone };
+export const SetCardPhone: Story = { args: { scene: 'gimmick' }, ...phone };
 export const ConditionsPhone: Story = { args: { scene: 'conditions' }, ...phone };

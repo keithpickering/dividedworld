@@ -17,7 +17,7 @@ import type { Duty } from '../system/duties.ts';
 import type { HintSettings } from './hints.ts';
 import type { AlertKind } from './alerts.ts';
 import type { PhaseOverrides, PhaseSettings } from '../system/phases.ts';
-import type { PoolTrigger } from '../system/pool.ts';
+import type { PoolTrigger, PostingOffice } from '../system/pool.ts';
 import type { PronounSet } from './pronouns.ts';
 
 export type { PronounSet };
@@ -45,7 +45,7 @@ export type Hundredths = number;
 /** A length of time in calendar units, so "3 months" stays three months in SQL too. */
 export interface Span {
   /** Minutes only where a setting says it takes them (editGrace, presenceWindow, hints.window); a window, a season and a cooldown count days or more. */
-  readonly unit: 'minute' | 'day' | 'week' | 'month';
+  readonly unit: 'minute' | 'hour' | 'day' | 'week' | 'month';
   readonly count: number;
 }
 
@@ -232,6 +232,17 @@ export interface Settings {
    * do is seen by a player. An instance turns it on only once the screens that show a move's way out exist.
    */
   readonly systemEnabled: boolean;
+  /**
+   * Whether the instance runs a completion endpoint (the old voice). A card that writes (`CardRules.writes`) is withheld where there is none:
+   * not sold, not offered to the pool, and a play of one already held is refused in plain words. Switching The System off may keep it.
+   */
+  readonly oldVoice: boolean;
+  /**
+   * How long a card that writes waits after its post's last edit before its text is made again, in seconds. A tail is made for each version of the
+   * post, so a run of edits would make one for each; this waits for the editing to stop, and the first text after a cast is never made to wait.
+   * A player sees the typing cursor for about this long after an edit. 0 makes it at once. A starting point.
+   */
+  readonly cardWriteSettleSeconds: number;
   /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
   readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */
@@ -350,6 +361,12 @@ export interface InputAct {
    * carries no `target`; its own reactions pay its caster as any Act's do, and it is in no class's cards played or landed.
    */
   readonly reach?: BeyondPost;
+  /** The Act that sprang a `spring`: the cast it caught or the visit that tripped it. A spring is scored against it, not its trapped post; absent on older rows, which keep the trapped post. */
+  readonly by?: string;
+  /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing. An admin-ended play is not in the input. */
+  readonly ends?: number;
+  /** The character a character-reach play is on. */
+  readonly on?: string;
 }
 
 /** A staff post a card landed on: its author is staff, so it is named but never settled. */
@@ -426,6 +443,8 @@ export interface ReceivedReaction {
   readonly at: number;
   /** When the reacted Act was posted: public, as every post and card shows its time. */
   readonly actAt: number;
+  /** The reaction's kind (its key): public as the quadrant is, and what an earn gimmick that names a reaction reads. */
+  readonly kind: string;
   /**
    * What this window pays of the reacting player's one vote on the Act, in this quadrant, times
    * its halving: the difference from what earlier windows paid, so a vote that moved from this
@@ -570,9 +589,11 @@ export interface Earning {
    * settlement writes them into the ledger row (`ledger.params`), so a line settled before a retune is said with the numbers it was
    * settled under. Only on a reason whose words state a tunable number (`lurker.postedTooMuch` names `lurker.postsAllowed`).
    */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
+  /** The kind of the one reaction it pays for, where it pays for one: an earn gimmick that names reactions boosts by it. */
+  readonly kind?: string;
   /**
    * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's
    * lift is the votes on its target after it). The live estimate hangs its lines on them, and
@@ -669,8 +690,10 @@ export type Weakness =
  * without a second shape.
  */
 export interface Persona extends StaffSeed {
-  /** The system prompt that makes the model this persona, built on the instance's shared premise for the duty it is doing. */
-  readonly persona: string;
+  /** Who this persona is, in its own words: no premise and no answer rules; the engine sets it in its office's frame (`personaPrompt`). */
+  readonly selfPrompt: string;
+  /** A line it adds in that office only. */
+  readonly officeLines?: Readonly<Partial<Record<PostingOffice, string>>>;
   /** What it is into on its first day. */
   readonly startingHobby: string;
   /** A line of temperament, for an admin reading the roster and for the meeting to be told. */
@@ -701,6 +724,12 @@ export interface FeedSource {
   readonly url: string;
 }
 
+/** What an office is, in an instance's words: the premise a persona holding it is built on, and the rules its answer keeps. */
+export interface OfficeFrame {
+  readonly premise: string;
+  readonly answerRules: string;
+}
+
 /**
  * Everything The System needs from an instance: its roster of personas, who does each duty, the lines it falls back
  * on, what it reads from outside, what it leaves alone, and the shape of a board's name. The engine names this
@@ -711,6 +740,8 @@ export interface SystemContent {
   readonly roster: readonly Persona[];
   /** The roster key of the first season's Boss. */
   readonly firstBoss: string;
+  /** What each office that posts is: set around a persona's own words by the engine (`personaPrompt`). */
+  readonly offices: Readonly<Record<PostingOffice, OfficeFrame>>;
   /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
   readonly announcementsTitle: string;
   /** The roster keys on staff when the instance is seeded (never the first Boss). */
@@ -720,6 +751,11 @@ export interface SystemContent {
   readonly feeds: readonly FeedSource[];
   /** Subjects never amplified (politics, real tragedies); a starting list admins edit. */
   readonly realWorld: readonly string[];
+  /**
+   * Words the old-voice scrubber (engine/system/scrub.ts) refuses in a raw completion; a moderation blocklist, lower case, a
+   * starting list admins edit. An entry may be several words.
+   */
+  readonly scrubWords: readonly string[];
   /** Material the community likes, a starting list The System learns more of. */
   readonly wheelhouse: readonly string[];
   /** Problems with a board name The System proposes; empty when it is in style. */

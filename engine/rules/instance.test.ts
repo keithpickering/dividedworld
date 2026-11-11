@@ -36,6 +36,8 @@ const settings: Settings = {
   presenceNames: 15,
   presencePollSeconds: 30,
   systemEnabled: false,
+  oldVoice: true,
+  cardWriteSettleSeconds: 30,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
@@ -77,8 +79,8 @@ const botFields = {
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
   voice: 'chat', persuadedBy: 'Pedantry.',
 } as const;
-const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', persona: 'You are a boss.', ...bossFields, ...botFields };
-const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', persona: 'You are a bot.', ...bossFields, ...botFields };
+const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', ...bossFields, ...botFields };
+const bot: Persona = { key: 'bot-a', name: 'Bot A', title: 'Hall monitor', signature: 'Walk.', selfPrompt: 'You are a bot.', ...bossFields, ...botFields };
 
 const system: SystemContent = {
   roster: [boss, bot],
@@ -88,9 +90,11 @@ const system: SystemContent = {
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
+  scrubWords: ['badword'],
   wheelhouse: ['games'],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
+  offices: { boss: { premise: 'B.', answerRules: 'Br.' }, mod: { premise: 'M.', answerRules: 'Mr.' }, member: { premise: 'E.', answerRules: 'Er.' } },
   announcementsTitle: 'Announcements',
 };
 
@@ -311,6 +315,11 @@ test('a number a class reads can carry its bounds', () => {
   assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
 });
 
+test('a number a class reads can carry a most', () => {
+  const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 1, max: 4 }], earn: () => [] }] };
+  assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at most 4/);
+});
+
 test('a settlement window\'s length is a span', () => {
   assert.match(settingsProblems({ ...settings, settlementLength: { unit: 'hour', count: 1 } as never }).join('\n'), /settlementLength/);
   // A count the database's span_interval cannot hold would break every window: refused here as there.
@@ -488,8 +497,18 @@ test('a title over 40 characters or a signature over 500 is a problem, for a Bos
 
 test('a staff member needs a name, a title and a persona', () => {
   assert.match(said(withBot({ name: ' ' })), /persona "bot-a" has no name/);
-  assert.match(said(withBot({ persona: '' })), /persona "bot-a" has no persona/);
+  assert.match(said(withBot({ selfPrompt: '' })), /persona "bot-a" has no selfPrompt/);
   assert.match(said(withBoss({ title: '' })), /persona "boss-a" has no title/);
+});
+
+test('a persona in each office\'s frame: every posting office has a premise and answer rules, and an office line names an office that posts', () => {
+  const { member: _gone, ...noMember } = system.offices;
+  assert.match(said(withSystem({ offices: noMember as SystemContent['offices'] })), /system\.offices has no "member" frame/);
+  assert.match(said(withSystem({ offices: { ...system.offices, boss: { premise: ' ', answerRules: 'r' } } })), /system\.offices\.boss has a blank premise/);
+  assert.match(said(withSystem({ offices: { ...system.offices, mod: { premise: 'p', answerRules: '' } } })), /system\.offices\.mod has a blank answerRules/);
+  assert.match(said(withBoss({ officeLines: { janitor: 'Mop.' } as unknown as Persona['officeLines'] })), /persona "boss-a" has an office line for "janitor", which is not an office that posts \(boss, mod, member\)/);
+  assert.match(said(withBoss({ officeLines: { boss: ' ' } })), /persona "boss-a" has a blank office line for "boss"/);
+  assert.deepEqual(instanceProblems(withBoss({ officeLines: { boss: 'You run it.', mod: 'You patrol.' } })), []);
 });
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
@@ -536,6 +555,7 @@ test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5,
 test('the new settings are checked like the others', () => {
   const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
   assert.match(bad('systemEnabled', 'yes'), /systemEnabled/);
+  assert.match(bad('oldVoice', 'yes'), /oldVoice/);
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
@@ -653,45 +673,92 @@ test('a card carries one of the four rarities', () => {
   assert.match(instanceProblems(withCards({ rarity: 'mythic' })).join('\n'), /card "splat" has the rarity "mythic"; a rarity is common, uncommon, rare or legendary/);
 });
 
-test('a trap is a Gimmick\'s, and a ward and a time up are a Use card\'s', () => {
+test('a trap is a set card\'s, and a gimmick and a time up are a use card\'s', () => {
   const trap = { trigger: { on: 'visit' } };
+  const ward = { kind: 'ward', upTo: 'common' };
+  const day = { unit: 'day', count: 7 };
   assert.deepEqual(instanceProblems(withCards({ play: 'set', trap })), []);
-  assert.deepEqual(instanceProblems(withCards({ play: 'set' })), [], 'a Set card with no trap is a bluff');
-  assert.match(instanceProblems(withCards({ trap })).join('\n'), /card "splat" has a trap, and only a Gimmick does/);
-  assert.match(instanceProblems(withCards({ play: 'use', trap })).join('\n'), /card "splat" has a trap, and only a Gimmick does/);
-  assert.deepEqual(instanceProblems(withCards({ play: 'use', ward: true, lasts: { unit: 'day', count: 7 } })), []);
-  assert.match(instanceProblems(withCards({ ward: true })).join('\n'), /card "splat" is a ward, and only a Use card is/);
-  assert.match(instanceProblems(withCards({ play: 'use', ward: 'yes' })).join('\n'), /card "splat" is a ward of "yes"; a ward is true or left out/);
-  assert.match(instanceProblems(withCards({ play: 'use', ward: true })).join('\n'), /card "splat" is a ward with no time up \(lasts\); a ward ends at its time/);
-  assert.match(instanceProblems(withCards({ play: 'set', lasts: { unit: 'day', count: 7 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card or a card reaching beyond a post does/);
-  assert.match(instanceProblems(withCards({ play: 'use', lasts: { unit: 'hour', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
+  assert.match(instanceProblems(withCards({ play: 'set' })).join('\n'), /card "splat" is a set card with no trap/);
+  assert.match(instanceProblems(withCards({ trap })).join('\n'), /card "splat" has a trap, and only a set card has one/);
+  assert.match(instanceProblems(withCards({ play: 'use', trap, gimmick: ward, lasts: day })).join('\n'), /card "splat" has a trap, and only a set card has one/);
+  assert.deepEqual(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: day })), []);
+  assert.match(instanceProblems(withCards({ play: 'use', lasts: day })).join('\n'), /card "splat" is a use card with no gimmick/);
+  assert.match(instanceProblems(withCards({ gimmick: ward })).join('\n'), /card "splat" has a gimmick, and only a use card has one/);
+  assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward })).join('\n'), /card "splat" is a use card with no time up \(lasts\)/);
+  assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: day, reaches: ['board'] })).join('\n'), /card "splat" is a use card and reaches a board; a use card reaches a post, a character or a thread/);
+  assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: day, reaches: ['post', 'moon'] })).join('\n'), /a use card reaches a post, a character or a thread/);
+  assert.deepEqual(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'day', count: 1 }, rarity: 'rare', reaches: ['post', 'character', 'thread'] })), []);
+  assert.match(instanceProblems(withCards({ play: 'set', trap, lasts: day })).join('\n'), /card "splat" has a time up \(lasts\), and only a use card or a card reaching beyond a post does/);
+  assert.match(instanceProblems(withCards({ play: 'use', gimmick: ward, lasts: { unit: 'minute', count: 7 } })).join('\n'), /card "splat" lasts .*; it must be a span/);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'hour', count: 36 } })), [], 'a card may last hours');
   assert.match(instanceProblems(withCards({ play: 'deal' })).join('\n'), /card "splat" is played "deal"; a card is cast, used, set or kept/);
 });
 
-test('a Gimmick springs on a cast or a visit, and a Move\'s trigger is the engine\'s', () => {
+test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
+  const lasts = { unit: 'day', count: 7 };
+  const use = (gimmick: unknown) => instanceProblems(withCards({ play: 'use', lasts, gimmick })).join('\n');
+  assert.equal(use({ kind: 'ward', flavors: ['salty'] }), '');
+  assert.equal(use({ kind: 'ward', cards: ['splat'] }), '');
+  assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
+  assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
+  assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn or price/);
+  assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
+  assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 1.5 }), /card "splat" has an earn of 1.5; by is above 0 and at most 1/);
+  assert.match(use({ kind: 'earn', by: 0.5 }), /card "splat" has an earn that names no quadrant and no reaction/);
+  assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'] }), /an earn with no by/);
+  for (const bad of [[], 'excitedPositive', null]) assert.match(use({ kind: 'earn', quadrants: bad, by: 0.5 }), /card "splat" has an earn naming no quadrant/, JSON.stringify(bad));
+  for (const bad of [[], 'fire', null]) assert.match(use({ kind: 'earn', reactions: bad, by: 0.5 }), /card "splat" has an earn naming no reaction/, JSON.stringify(bad));
+  for (const bad of [[], [1], ['splat', 2]]) assert.match(use({ kind: 'ward', cards: bad }), /card "splat" has a ward of the cards .*; cards are named by key/, JSON.stringify(bad));
+  assert.match(use({ kind: 'earn', reactions: ['laugh'], by: 0.5 }), /card "splat" has an earn naming the reaction "laugh", which the instance does not have/);
+  assert.match(use({ kind: 'earn', quadrants: ['spicy'], by: 0.5 }), /card "splat" has an earn naming the quadrant "spicy"/);
+  assert.equal(use({ kind: 'price', flavors: ['salty'], add: 100 }), '');
+  assert.match(use({ kind: 'price', flavors: ['salty'], add: 0 }), /card "splat" has a price that adds 0; add is a positive whole number/);
+  assert.match(use({ kind: 'price', flavors: ['salty'], add: 1.5 }), /card "splat" has a price that adds 1.5; add is a positive whole number/);
+  assert.match(use({ kind: 'price', flavors: [], add: 100 }), /card "splat" has a price with no flavors/);
+  assert.match(use({ kind: 'price', add: 100 }), /card "splat" has a price with no flavors/);
+});
+
+test('a set card springs on a cast or a visit', () => {
   const catches = () => 'splat';
   assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'cast' } }, catches })), []);
   assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' } } })), []);
   for (const on of ['sneeze', 'quote', 'reply', 'reaction']) {
-    assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on } } })).join('\n'), new RegExp(`card "splat" springs on "${on}"; a Gimmick springs on cast or visit`), on);
+    assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on } } })).join('\n'), new RegExp(`card "splat" springs on "${on}"; a set card springs on cast or visit`), on);
   }
-  assert.match(instanceProblems(withCards({ play: 'set', trap: {} })).join('\n'), /card "splat" springs on nothing; a Gimmick springs on cast or visit/);
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: {} } })).join('\n'), /card "splat" springs on nothing; a Gimmick springs on cast or visit/);
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 5 } } })).join('\n'), /card "splat" springs on 5; a Gimmick springs on cast or visit/);
-  assert.match(instanceProblems(withCards({ trap: { trigger: { on: 'quote' } } })).join('\n'), /card "splat" has a trap, and only a Gimmick does/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: {} })).join('\n'), /card "splat" springs on nothing; a set card springs on cast or visit/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: {} } })).join('\n'), /card "splat" springs on nothing; a set card springs on cast or visit/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 5 } } })).join('\n'), /card "splat" springs on 5; a set card springs on cast or visit/);
+  assert.match(instanceProblems(withCards({ trap: { trigger: { on: 'quote' } } })).join('\n'), /card "splat" has a trap, and only a set card has one/);
 });
 
-test('a cast Gimmick has a catch, and nothing else has one; a phrase is a Move\'s alone', () => {
+test('a cast trap names its card or matches cards, never both; a visit trap does neither', () => {
+  const cast = { on: 'cast' };
   const catches = () => 'splat';
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'cast' } } })).join('\n'), /card "splat" springs on a cast and names no card to catch \(catches\)/);
-  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' } }, catches })).join('\n'), /card "splat" has a catch, and only a Gimmick that springs on a cast does/);
-  assert.match(instanceProblems(withCards({ play: 'set', catches })).join('\n'), /card "splat" has a catch, and only a Gimmick that springs on a cast does/);
-  assert.match(instanceProblems(withCards({ catches })).join('\n'), /card "splat" has a catch, and only a Gimmick that springs on a cast does/);
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { flavors: ['salty'], upTo: 'common' } } })), []);
+  assert.deepEqual(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { upTo: 'common' } } })), []);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' } , match: { upTo: 'common' } } })).join('\n'), /card "splat" has a match, and only a set card that springs on a cast does/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { upTo: 'common' } }, catches })).join('\n'), /card "splat" names a card \(catches\) and has a match; a set card has one of the two/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: {} } })).join('\n'), /card "splat" has a match that names no flavor and no rarity/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { flavors: [] } } })).join('\n'), /card "splat" has a match of the flavors \[\]; a flavor is/);
+  for (const bad of ['salty', 5, null]) assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: bad } })).join('\n'), /card "splat" has a match that is not an object/, String(bad));
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { upTo: 'mythic' } } })).join('\n'), /card "splat" has a match up to "mythic"/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match: { flavors: ['bitter'] } } })).join('\n'), /card "splat" has a match of the flavors \["bitter"\]/);
+});
+
+test('a cast set card has a catch, and nothing else has one; a phrase is a cast card\'s alone', () => {
+  const catches = () => 'splat';
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'cast' } } })).join('\n'), /card "splat" springs on a cast and names no card to catch \(catches\) or match \(match\)/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' } }, catches })).join('\n'), /card "splat" has a catch, and only a set card that springs on a cast does/);
+  assert.match(instanceProblems(withCards({ play: 'set', catches })).join('\n'), /card "splat" has a catch, and only a set card that springs on a cast does/);
+  assert.match(instanceProblems(withCards({ catches })).join('\n'), /card "splat" has a catch, and only a set card that springs on a cast does/);
   assert.match(instanceProblems(withCards({ catches: 'splat', play: 'set', trap: { trigger: { on: 'cast' } } })).join('\n'), /card "splat" has a catch that is not a function/);
   const setPhrase = () => 'a phrase';
   assert.deepEqual(instanceProblems(withCards({ setPhrase })), []);
-  assert.match(instanceProblems(withCards({ play: 'set', setPhrase })).join('\n'), /card "splat" has a set phrase, and only a Move does/);
-  assert.match(instanceProblems(withCards({ play: 'use', setPhrase })).join('\n'), /card "splat" has a set phrase, and only a Move does/);
+  assert.match(instanceProblems(withCards({ play: 'set', trap: { trigger: { on: 'visit' } }, setPhrase })).join('\n'), /card "splat" has a set phrase, and only a cast card has one/);
+  assert.match(instanceProblems(withCards({ play: 'use', setPhrase })).join('\n'), /card "splat" has a set phrase, and only a cast card has one/);
   assert.match(instanceProblems(withCards({ setPhrase: 'a phrase' })).join('\n'), /card "splat" has a set phrase that is not a function/);
 });
 
@@ -705,6 +772,18 @@ test('every Set lasts the same span, setLasts', () => {
   for (const bad of [{ unit: 'minute', count: 5 }, { unit: 'day', count: 0 }, 7]) {
     assert.match(settingsProblems({ ...settings, setLasts: bad as never }).join('\n'), /setting "setLasts"/, JSON.stringify(bad));
   }
+});
+
+test('a card that writes reaches a post alone', () => {
+  const writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) };
+  const lasts = { unit: 'day', count: 1 };
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', writes })), []);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post'] })), []);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['character'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post', 'thread'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes: 'yes' })).join('\n'), /card "splat" has writes that are not a tokens function and a frame function/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, play: 'set', trap: { trigger: { on: 'visit' } } })).join('\n'), /card "splat" writes, and only a cast card does: it is cast face up, never set face down/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, play: 'use', lasts })).join('\n'), /card "splat" writes, and only a cast card does: it is cast face up, never set face down/);
 });
 
 // Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): each refused, naming the card.
@@ -732,11 +811,11 @@ test('a card beyond a post ends at its time, and no later than its reach\'s boun
 });
 
 test('a Cast on a post alone has no time up', () => {
-  assert.match(instanceProblems(withCards({ reaches: ['post'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a Use card or a card reaching beyond a post does/);
+  assert.match(instanceProblems(withCards({ reaches: ['post'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" has a time up \(lasts\), and only a use card or a card reaching beyond a post does/);
 });
 
-test('a Set lands on a post alone', () => {
-  assert.match(instanceProblems(withCards({ rarity: 'legendary', play: 'set', reaches: ['post', 'board'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" is set face down, and a Set lands only on a post/);
+test('a set card lands on a post alone', () => {
+  assert.match(instanceProblems(withCards({ rarity: 'legendary', play: 'set', reaches: ['post', 'board'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" is a set card, and a set card lands only on a post/);
 });
 
 test('each reach\'s least rarity and longest time are settings', () => {
@@ -832,4 +911,13 @@ test('a stock line may use a staff token\'s pronoun forms and no other token\'s'
   assert.deepEqual(instanceProblems(line('visitFiled', '{mod} filed it.')), []);
   assert.match(said(line('visitFiled', '{mod.} left.')), /stock line "visitFiled".*\{mod\.\}/);
   assert.match(said(line('visitFiled', '{mod.they.x} left.')), /stock line "visitFiled".*\{mod\.they\.x\}/);
+});
+
+test('a scrubWords entry that is empty or not lower case is a problem', () => {
+  const withWords = (scrubWords: string[]) => ({ ...good, system: { ...system, scrubWords } }) as Instance;
+  assert.deepEqual(instanceProblems(withWords(['badword', 'two words'])), []);
+  assert.match(instanceProblems(withWords(['badword', ''])).join('\n'), /scrubWords entry is empty/);
+  assert.match(instanceProblems(withWords(['  '])).join('\n'), /scrubWords entry is empty/);
+  assert.match(instanceProblems(withWords(['BadWord'])).join('\n'), /scrubWords entry "BadWord" is not lower case/);
+  assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
 });

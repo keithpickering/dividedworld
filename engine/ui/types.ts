@@ -153,7 +153,7 @@ export interface AlertCopy {
   readonly seasonNews?: (sub: string, row: Alert) => { readonly line: string; readonly detail: string } | undefined;
   /**
    * A `trapStruck` alert's line and detail, for the player whose post a face-down card landed on after a quote (`how: 'quote'`), or whose cast a
-   * Trap Card caught (`how: 'caught'`), in the instance's voice. It is handed only what the spring already shows everyone: the setter's character
+   * catching set card caught (`how: 'caught'`), in the instance's voice. It is handed only what the spring already shows everyone: the setter's character
    * (null where it could not be read), the setter's card (the quote's `card`; for a caught cast, the caster's own card), the card laid (null for a
    * caught cast) and how long the card was set face down before it sprang ("two days"; null where unknown). It may gloat and may not bluff:
    * what it says happened did. Undefined for one the instance has no words for, which is then said in the engine's plain words.
@@ -168,7 +168,7 @@ export interface TrapStruckFacts {
   readonly card: string | null;
   readonly laid: string | null;
   readonly span: string | null;
-  /** Whether the setter is a staff character (a public fact of a character): a staff Trap Card takes nothing, so the caught card is spent. */
+  /** Whether the setter is a staff character (a public fact of a character): a staff catching set card takes nothing, so the caught card is spent. */
   readonly setterStaff: boolean;
   /** For a quote that met conditions: the passage the quoted excerpt held, already shortened and in quotation marks; null where none was set. Never an Anyone-but list. */
   readonly passage?: string | null;
@@ -404,7 +404,7 @@ export interface InstanceUi {
    * settled before a retune says the numbers it was settled under; and, for a row with none and for
    * the live estimate, the economy as the server holds it now (`economyNow`).
    */
-  readonly reasonWords: (reason: string, params: Readonly<Record<string, number>>) => string;
+  readonly reasonWords: (reason: string, params: Readonly<Record<string, number | string>>) => string;
   readonly copy: UiCopy;
   /** Each pip style's images, by key; `default` is always there. */
   readonly pips: Readonly<Record<string, PipImages>>;

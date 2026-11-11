@@ -15,7 +15,7 @@
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
-import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, EffectState, Id, PlayAbove, PlayMoment } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -24,10 +24,12 @@ import { useHoldScreen } from '../tips/Tips.tsx';
 import { useLensStore } from './Lens.tsx';
 import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
-import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
+import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
+import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
+import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
-import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps } from './types.ts';
+import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
@@ -53,9 +55,43 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /** A character's name as the screen knows it, for an effect that names a caster. */
   readonly nameOf: (character: Id | null) => string; readonly children: ReactNode;
 }) {
-  const { api, ui } = useKayfa();
+  const { api, ui, instance } = useKayfa();
   const { actingCharacters, writingCharacters } = usePlayer();
   const here = usePlays(plays, post.id);
+  /*
+   * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
+   * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
+   */
+  const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
+  const tailRows = useTails(post, here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken).map((p) => p.id));
+  /*
+   * A play whose first generation failed for good is over, which the page holds only from the plays' read (`untaken`). A page showing it learns
+   * it from its tails: every row of a play the page counts failed, none waiting, none a text (a failure a newer job waits behind shows that job
+   * waiting, and a failed regeneration after a text has the text). Then that one post's plays are read again (`cardsOnMany` for the one post, once
+   * for each play), so the mark's count, the Lens and the effect catch up without a reload. A read that fails is tried again after the wait the
+   * tails' own timer keeps (`backoff`), at most `REPEAT_TRIES` times, and then waits for the next change of the post's tails, so a server that
+   * keeps failing is asked a handful of times and never in a loop.
+   */
+  const reread = useRef<Set<Id>>(new Set());
+  const tries = useRef(0);
+  const [again, setAgain] = useState(0);
+  const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (retry.current !== null) clearTimeout(retry.current); }, []);
+  useEffect(() => {
+    const over = here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken && !reread.current.has(p.id)
+      && (() => { const own = tailRows.filter((r) => r.play === p.id); return own.length > 0 && own.every((r) => r.failed && r.text === null && !r.waiting); })());
+    if (over.length === 0) return;
+    for (const p of over) reread.current.add(p.id);
+    void api.cardsOnMany([post.id], PLAYS_PER_POST).then((acts) => { tries.current = 0; plays.add(acts); }, () => {
+      for (const p of over) reread.current.delete(p.id);
+      const attempt = tries.current++;
+      if (attempt + 1 >= REPEAT_TRIES) { tries.current = 0; return; }
+      if (retry.current !== null) clearTimeout(retry.current);
+      retry.current = setTimeout(() => { retry.current = null; setAgain((n) => n + 1); }, backoff(attempt));
+    });
+  }, [api, plays, post.id, here.plays, tailRows, writing, again]);
+  const drawn = currentVersion(tailRows);
+  const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
   const lens = useLensStore();
   const moment = useShownMoment(lens);
   const onBoard = usePlays(plays, board ?? '');
@@ -91,7 +127,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* A play a trap caught does nothing, and a card back draws no effect: neither wraps the post (the card mechanic's design, section 4). */
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.faceDown && !p.reach), of: here },
+    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping
@@ -121,6 +157,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       <BoundEffect
         key={`${reach}:${key}`} Effect={Effect} store={plays} reach={reach}
         post={post} plays={mine} states={of.states} released={of.released} place={place} marks={card.takeover ? marks : null}
+        written={writtenOf(written, mine, writing)} {...(drawn !== null && reach === 'post' ? { version: drawn } : {})}
         save={reach === 'post' ? save : beyondSave} release={release} nameOf={nameOf}
         reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
       >
@@ -129,6 +166,17 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     );
   }
   return <>{wrapped}</>;
+}
+
+/** The keys of the cards that write (`CardRules.writes`): only their plays have tails to read. */
+const writingKeys = (cards: readonly CardRules[]): ReadonlySet<string> => new Set(cards.filter((c) => c.writes !== undefined).map((c) => c.key));
+/** Whether a play is of a card that writes, on its post's own reach (a card that writes reaches a post alone). */
+const writes = (play: CardPlay, keys: ReadonlySet<string>): boolean => keys.has(play.card) && !play.reach && !play.faceDown;
+const NOTHING_WRITTEN: ReadonlyMap<Id, Written> = new Map();
+/** What an effect is given of the tails: those of its own plays that write, and none for a card that does not. */
+function writtenOf(all: ReadonlyMap<Id, Written>, mine: readonly CardPlay[], keys: ReadonlySet<string>): ReadonlyMap<Id, Written> {
+  if (all.size === 0 || !mine.some((p) => writes(p, keys))) return NOTHING_WRITTEN;
+  return new Map(mine.flatMap((p): [Id, Written][] => { const w = all.get(p.id); return w ? [[p.id, w]] : []; }));
 }
 
 /** A play beyond a post has no post author to save its state (save_effect_state, 0055): refused without asking. */
@@ -287,6 +335,16 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
     return own;
   }, [moment, parts]);
   const here = store.get(moment.version.id);
+  /*
+   * The tails of the plays then that write, at the version the play landed on (the post's own rows for it alone, so a tail that was made
+   * later, for an edit after it, is not here). The moment names its version by the Act, whose `editedAt` is the edit's time, so the version
+   * is found in the post's History, read once when a writing play is drawn here.
+   */
+  const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
+  const writingPlays = here.plays.filter((p) => writes(p, writing));
+  const tailRows = useTails(moment.version, writingPlays.map((p) => p.id));
+  const at = useMomentVersion(moment.version, writingPlays.length > 0);
+  const written = useMemo(() => resolveWritten(tailRows, [], at, 'version'), [tailRows, at]);
   const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
   const keys = [...new Set(here.plays.map((p) => p.card))];
   let wrapped = children;
@@ -295,6 +353,7 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key} onWords={onWords}
         post={moment.version} plays={here.plays.filter((p) => p.card === key)} states={here.states} released={NONE_RELEASED}
+        written={writtenOf(written, here.plays.filter((p) => p.card === key), writing)} {...(at !== null ? { version: at } : {})}
         reader={{ author: false, caster: false }} place={place} reach="post" nameOf={nameOf}>
         {wrapped}
       </StillEffect>
@@ -302,6 +361,51 @@ export function MomentEffects({ moment, place, nameOf, onWords, children }: {
   }
   return <>{wrapped}</>;
 }
+
+/** The id of the version a moment's post is drawn at, read from the post's History once it is wanted; null until then and where it is not found. */
+function useMomentVersion(version: Act, wanted: boolean): Id | null {
+  const { api } = useKayfa();
+  const [found, setFound] = useState<Id | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    let live = true;
+    api.history(version.id).then((history) => { if (live) setFound(versionAt(history, version.editedAt)); }, () => { /* the moment is drawn without its tails */ });
+    return () => { live = false; };
+  }, [api, version.id, version.editedAt, wanted]);
+  return found;
+}
+
+/**
+ * A version of a post drawn with the tails its writing plays made for it, still (History, design section 7): each play's effect in still mode,
+ * given `written` for this version's own rows and no saved state, so a tail shows in full whatever was cleared. A play with nothing for this
+ * version draws none, and a post whose plays have nothing draws its words alone. Nothing here saves, releases or takes input.
+ */
+export function VersionEffects({ post, version, plays, written, nameOf = () => '', children }: {
+  /** The post (its words are `children`, the version's own). */
+  readonly post: Act; readonly version: Id;
+  /** The live writing plays on the post, in play order; those with nothing in `written` are left out. */
+  readonly plays: readonly CardPlay[];
+  readonly written: ReadonlyMap<Id, Written>;
+  readonly nameOf?: (character: Id | null) => string; readonly children: ReactNode;
+}) {
+  const { ui } = useKayfa();
+  const has = plays.filter((p) => written.has(p.id));
+  const takes = (key: string) => ui.cards.find((c) => c.key === key)?.takeover === true;
+  const keys = [...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect);
+  let wrapped = children;
+  for (const key of [...keys.filter((k) => !takes(k)), ...keys.filter(takes)]) {
+    const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
+    wrapped = (
+      <StillEffect key={key} Effect={Effect} card={key} onWords={nothing}
+        post={post} plays={has.filter((p) => p.card === key)} states={NO_STATES} released={NONE_RELEASED} written={written} version={version}
+        reader={{ author: false, caster: false }} place="thread" reach="post" nameOf={nameOf}>
+        {wrapped}
+      </StillEffect>
+    );
+  }
+  return <>{wrapped}</>;
+}
+const NO_STATES: Readonly<Record<Id, EffectState>> = Object.freeze({});
 
 /**
  * One card's still effect in a moment, its `show` bound to its card, and its words cleared when it is gone. Its words are its view's

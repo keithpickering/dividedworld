@@ -34,9 +34,9 @@ import { quotedWords, shortQuote, springConditions, whoWords } from '../cards/le
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'onMine' | 'saved'
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'returned' | 'onMine' | 'saved' | 'written'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
-  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'wardEnded'
+  | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'gimmickEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
   | 'ended'
   /* The Mod Bots design, sections 5 to 9: warn points filed, a ban, a report made and an appeal made, each of the player's own characters. */
@@ -82,7 +82,7 @@ export interface LogData {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Names of the characters whose posts the lines name. */
   readonly names: ReadonlyMap<Id, string>;
-  /** The staff characters among them (a public fact of a character): a staff setter's Trap Card takes nothing. Absent, none is known to be staff. */
+  /** The staff characters among them (a public fact of a character): a staff setter's catching set card takes nothing. Absent, none is known to be staff. */
   readonly staff?: ReadonlySet<Id>;
   /** Titles of the threads the lines name (The System's Turn announcements). */
   readonly titles: ReadonlyMap<Id, string>;
@@ -179,7 +179,7 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
 
 /**
  * What a card set face down waits for, in the words after "It waits": "to spring on a quote", "for a Whoops!", "for a Mod Bot's visit". A Move waits for a
- * quote (and the phrase it needs, where it was set with one); a Gimmick waits for its trigger, and a Trap Card for the card it names. Null for a Bluff,
+ * quote (and the phrase it needs, where it was set with one); a set card waits for its trigger, and a Card Collector for the card it names. Null for a card with no trap,
  * which waits for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
  */
 export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase' | 'passage' | 'who' | 'whoExcept'>, words: Pick<Words, 'instance'>, nameOf: (id: Id) => string = () => 'someone'): string | null {
@@ -286,7 +286,11 @@ export function inOrder(lines: readonly LogLine[]): LogLine[] {
 
 /** The words of one character's lines in a settlement, as the board's row says them: "drew heat +0.20, stole thunder +0.20". */
 function scoredWords(lines: readonly LogLine[], words: Words): string {
-  return inOrder(lines).map((l) => `${lowerFirst(reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy))))} ${signed(l.amount)}`).join(', ');
+  /* A reason that names a card (a boost's `{ card }`) keeps the card's capital: only a reason's own first word is lowered into the sentence. */
+  return inOrder(lines).map((l) => {
+    const said = reasonName(words.ui.reasonWords(l.reason, paramsOf(l, words.economy)));
+    return `${typeof l.params?.['card'] === 'string' ? said : lowerFirst(said)} ${signed(l.amount)}`;
+  }).join(', ');
 }
 
 /**
@@ -361,7 +365,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, onMine: 4, saved: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, wardEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -538,10 +542,12 @@ function modRows(data: LogData, words: Words): LogRow[] {
  */
 function cardRows(data: LogData, words: Words): LogRow[] {
   const { instance, ui } = words;
-  /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. */
+  /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. It is given what the
+     play recorded with itself (the tokens a card that writes bought, in the play's own Act), never a number worked out from today's economy. */
   const said = (key: unknown, play: Act | undefined): string[] => {
     const config = play?.payload.config;
-    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {});
+    const tokens = play?.payload.tokens;
+    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {});
     return sentence ? [` ${sentence}`] : [];
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
@@ -571,7 +577,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    /* A card a Trap Card of the player's took: the card went to the player's hand, and cost nothing (the spring's line says what sprang). */
+    /* A card a catching set card of the player's took: the card went to the player's hand, and cost nothing (the spring's line says what sprang). */
     if (e.kind === 'caught') {
       const spring = e.act ? data.acts.get(e.act) : undefined;
       const took = typeof spring?.payload.caught === 'string' ? data.acts.get(spring.payload.caught) : undefined;
@@ -601,6 +607,24 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
+    /* A card back in the hand. From a face-down card (a take-back, its Act the take-back; or a back whose time passed, with no Act) it is the setter's
+       end row's line (setEndRows), whose words say it. From a play the old voice did not answer (its Act the play), its price went back to the
+       caster's wallet (the refund's own event, `ref` the play) and its card to the hand: its own line, after the play's; the card is the
+       instance's, and the engine names none. */
+    if (e.kind === 'returned') {
+      const acted = e.act ? data.acts.get(e.act) : undefined;
+      const refund = data.log.wallet.find((w) => w.kind === 'refund' && w.ref === e.act);
+      if (e.act === null || (acted ? acted.kind !== 'card' : refund === undefined)) return;
+      const actedPost = acted?.targetActId ? data.acts.get(acted.targetActId) : undefined;
+      const where = (acted ? placeOf(acted, data) : null) ?? (actedPost ? actLink(actedPost, data, words, acted?.character ?? undefined) : null);
+      const back = refund && refund.change > 0 ? `so your ${plain(refund.change)} came back, and the card is back in your hand.` : 'so the card is back in your hand.';
+      rows.push({
+        key: `returned:${e.act}`, kind: 'returned', at: e.at, what: `Your ${cardName(e.card)} came back`,
+        details: [`The old voice didn't answer for your ${cardName(e.card)} on `, where ?? 'a post', `, ${back}`],
+        aura: refund?.change ?? 0, wallet: refund?.balanceAfter ?? null, characters: acted?.character ? [acted.character] : [],
+      });
+      return;
+    }
     const play = e.act ? data.acts.get(e.act) : undefined;
     const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
     const caster = play?.character ?? null;
@@ -614,7 +638,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       const waits = setWaits(e, words, (id) => data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? 'someone');
       rows.push({
         key: `set:${e.act}`, kind: 'set', at: e.at, what: `You set ${cardName(e.card)} face down`,
-        /* A Bluff carries no trap (my_card_ledger's `springs`); a row with no `springs` keeps the trap's words. */
+        /* A card with no trap says so (my_card_ledger's `springs`); a row with no `springs` keeps the trap's words. */
         details: [`${cardName(e.card)} set face down on `, link ?? 'your post',
           e.springs === false ? '. It never springs, and ends by itself.' : waits ? `. It waits ${waits}, and ends by itself if none comes.` : '. It springs once, or ends by itself.'],
         aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: caster ? [caster] : [],
@@ -637,11 +661,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    /* A Use with a time up says when it ended, once that time has passed (the design's section 10: "a timed end"). */
+    /* A Use with a time up says when it ended, once that time has passed, whichever use card it was (the design's section 10: "a timed end"). */
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
     if (ends && Date.parse(ends) <= Date.now()) {
       rows.push({
-        key: `wardEnded:${e.act}`, kind: 'wardEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
+        key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
         details: [`${cardName(e.card)} on `, link ?? 'your post', ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
@@ -702,16 +726,43 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }
+  /* A post the author wrote, named by its number and linked: the words of a line about a card's text on it ("your post #3" where it says whose). */
+  const postRef = (post: Act | undefined, whose: string): Segment =>
+    post && post.seq !== null ? { text: `${whose}post #${post.seq}`, href: threadHref(post.thread, pageOf(post.seq, words.postsPerPage), post.seq) } : whose === '' ? 'a post' : 'your post';
   for (const s of data.log.saves) {
     const play = data.acts.get(s.play);
     const post = data.acts.get(s.post);
     const said = ui.cards.find((c) => c.key === play?.payload.card)?.logSave?.(data.states.get(s.play));
     if (!said) continue;
+    if ('verb' in said) {
+      /* The author's own act, said as theirs: "You erased <card> on post #3." */
+      rows.push({
+        key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
+        details: [`You ${said.verb} ${cardName(play?.payload.card)} on `, postRef(post, ''), '.'],
+        aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
+      });
+      continue;
+    }
     rows.push({
       key: `saved:${s.play}`, kind: 'saved', at: s.savedAt, what: said.what,
       details: [`${nameOf(play?.character, 'Someone')}'s ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `. ${said.said}`],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
+  }
+  /* What a card that writes did to the author's post (`my_posts_written_on`): the play's first text continued the post (whatever version it came
+     on), a text after an earlier text is the card again, and the failure that ended the play did not take. A failure the play survived, and a
+     failed regeneration after a text, kept things as they were and are no line. The words are the card's own. */
+  for (const x of data.log.writes) {
+    const play = data.acts.get(x.play);
+    const post = data.acts.get(x.post);
+    const hooks = ui.cards.find((c) => c.key === play?.payload.card)?.logWritten;
+    if (!hooks || (x.failed && !x.over)) continue;
+    const card = cardName(play?.payload.card);
+    const key = `written:${x.play}:${x.version}`;
+    const characters = post?.character && mine(post.character) ? [post.character] : [];
+    if (x.failed) rows.push({ key, kind: 'written', at: x.at, what: `${card} did not take`, details: [`${card} on `, postRef(post, ''), ` ${hooks.failed}.`], aura: 0, wallet: null, characters });
+    else if (x.opening) rows.push({ key, kind: 'written', at: x.at, what: `${card} continued your post`, details: [`${card} on `, postRef(post, 'your '), ` ${hooks.continued}.`], aura: 0, wallet: null, characters });
+    else rows.push({ key, kind: 'written', at: x.at, what: `Your edit got a new ${card}`, details: ['Your edit of ', postRef(post, ''), ` ${hooks.again(card)}.`], aura: 0, wallet: null, characters });
   }
   rows.push(...setEndRows(data, words, take));
   rows.push(...endedRows(data, words));
@@ -774,8 +825,12 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
     const on = (post && actLink(post, data, words, own)) ?? 'your post';
     const characters = own ? [own] : [];
     const spring = e.spring ? data.acts.get(e.spring) : undefined;
+    if (e.endedBy === 'taken back') {
+      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `You took back ${cardName(e.card)}`, details: [`You took back ${cardName(e.card)} from `, on, '.'], aura: 0, wallet: null, characters });
+      continue;
+    }
     if (!e.spring) {
-      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `${cardName(e.card)} ended`, details: [`${cardName(e.card)} on `, on, ' ended; nothing sprang it.'], aura: 0, wallet: null, characters });
+      rows.push({ key: `setEnded:${e.play}`, kind: 'setEnded', at: e.endedAt, what: `${cardName(e.card)} ended`, details: [`${cardName(e.card)} on `, on, ' ended; nothing sprang it, and it came back to your hand.'], aura: 0, wallet: null, characters });
       continue;
     }
     const did = spring?.payload.did;
@@ -870,6 +925,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const t of turns) ids.add(t.act);
   for (const c of log.cards) if (c.act) ids.add(c.act);
   for (const p of log.playsOnMine) { ids.add(p.play); ids.add(p.post); }
+  for (const w of log.writes) { ids.add(w.play); ids.add(w.post); }
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }

@@ -14,7 +14,7 @@
  */
 import type { Instance } from './types.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from './pronouns.ts';
-import { REACHES, casterMessage, listed, reachesOf, type Play, type Reach, type SetConditions } from './cards.ts';
+import { OLD_VOICE_OFF, REACHES, casterMessage, listed, reachesOf, withheld, type Play, type Reach, type SetConditions } from './cards.ts';
 
 /**
  * A decided action. Most are written as the player, whose session the database reads. A card's
@@ -91,7 +91,9 @@ const text = (r: Fields, field: string, most: number, { mayBeEmpty = false } = {
 
 const card = (r: Fields, instance: Instance): string => {
   const key = r.card;
-  if (typeof key !== 'string' || !instance.cards.some((c) => c.key === key)) throw new Refused('card', `the Vending Machine has no card ${JSON.stringify(key)}`);
+  const named = typeof key === 'string' ? instance.cards.find((c) => c.key === key) : undefined;
+  if (typeof key !== 'string' || named === undefined) throw new Refused('card', `the Vending Machine has no card ${JSON.stringify(key)}`);
+  if (withheld(named, instance.settings)) throw new Refused('card', OLD_VOICE_OFF);
   return key;
 };
 
@@ -256,7 +258,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     needsTarget: true,
     play: 'use',
   }),
-  // A Set carries no message: its Act says nothing, so a Bluff's and a trap's are alike.
+  // A Set carries no message: its Act says nothing, so every card set face down is alike.
   setCard: (r, instance) => ({
     rpc: 'set_card',
     args: setArgs(r, instance),
@@ -264,6 +266,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     needsTarget: true,
     play: 'set',
   }),
+  // A face-down card taken back to the hand (supabase/migrations/0148_card_types.sql): the service's call for the account, as set_card is; the database holds whose back it is.
+  takeBack: (r) => ({ rpc: 'take_back', args: { through: id(r, 'character'), set_act: id(r, 'set') }, asService: true }),
   createCharacter: (r, instance) => {
     const kind = r.class;
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);

@@ -11,9 +11,8 @@
  * its large color only on the Turn (`data-kb-large`), the one surface here that draws a class's
  * large text (engine/ui/glass/apply.ts); My characters and New character draw a class as a chip.
  *
- * The reveal is drawn twice: on My characters as a glass overlay beside Debut (RevealOverlay.tsx,
- * `.kb-reveal-dialog`), and from the composer as the board's own modal (RevealModal.tsx), which
- * keeps the last two rules of this file.
+ * The reveal is drawn once, as a glass overlay beside Debut (RevealOverlay.tsx, `.kb-reveal-dialog`).
+ * The `.kb-dialog-actions` rule near the foot of this file is the board's modal's (QuoteSomeone.tsx).
  */
 
 /* ---- the page's head ---- */
@@ -1572,7 +1571,7 @@
   flex: 2 1 auto;
 }
 
-/* ---- the reveal's board modal (RevealModal.tsx) ---- */
+/* ---- the board's modal's action row (QuoteSomeone.tsx, Cropper.tsx) ---- */
 
 .kb-dialog-actions {
   display: flex;
@@ -1582,11 +1581,6 @@
   border-top: 1px solid var(--kb-rule);
   padding-top: 0.6em;
   margin-top: 0.8em;
-}
-
-.kb-wide {
-  box-sizing: border-box;
-  width: 100%;
 }
 
 /* The rank's pips on the glass: the board's pip images in the glass's gold, the empty ones in its text. */

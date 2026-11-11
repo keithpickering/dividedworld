@@ -45,6 +45,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   searchRankPool: 5000,
   /** Switched off: The System holds no meeting and lands no move until Task 13 of its plan turns it on, after the screens that show a move's way out exist. */
   systemEnabled: false,
+  /** The instance runs a completion endpoint, so a card that writes in the old voice is sold and played. */
+  oldVoice: true,
+  /** An edit makes a card that writes wait half a minute for the editing to stop before it writes again. */
+  cardWriteSettleSeconds: 30,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
@@ -133,10 +137,10 @@ export const defaults: Settings = deepFreeze<Settings>({
   presencePollSeconds: 30,
   /** A card set face down stays set a week if nothing springs it (the card mechanic's design, section 3). */
   setLasts: { unit: 'day', count: 7 },
-  /** A card reaches a character from uncommon, a thread from rare and a board only as a legendary (the card mechanic's design, section 7). */
-  reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
-  /** A character effect lasts at most a week; a thread's and a board's at most a day. */
-  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  /** A card reaches a character from uncommon, a thread from uncommon (Good Vibes; Main Event is rare) and a board only as a legendary (the card mechanic's design, section 7). */
+  reachRarity: { character: 'uncommon', thread: 'uncommon', board: 'legendary' },
+  /** A character effect lasts at most a week; a thread's at most three days (Good Vibes); a board's at most a day. */
+  reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 3 }, board: { unit: 'day', count: 1 } },
   /**
    * Hints (the alerts design's section 5): a pattern needs a crowd (eight reactions in the window, so one stray reaction is never a trend),
    * a clear lead (six in ten in one quadrant), and a real split (three in ten on each side to be divisive), counted over six hours.
@@ -154,7 +158,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * tape; `give` how far a drag goes before a strip lets go, in pixels; `peekStayMs` how long a peeled corner stays curled; `peekSettle`
    * how fast it settles back, in pixels a second.
    */
-  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300 },
+  cardSettings: { 'whoops.clean': 95, 'autocorrect.pace': 90, 'autocorrect.pickMs': 450, 'autocorrect.give': 34, 'autocorrect.peekStayMs': 300, 'autocorrect.peekSettle': 300, 'youWereSaying.eraseCps': 6, 'youWereSaying.retypeMs': 2000, 'youWereSaying.typeCps': 40 },
   /** The classes' and cards' own numbers from the same table, each named for what reads it. */
   economy: {
     /** "Early" is among this many first players to react to a post. */
@@ -184,6 +188,11 @@ export const defaults: Settings = deepFreeze<Settings>({
     'autocorrect.perVolume': 25,
     'autocorrect.volumeStep': 50,
     'autocorrect.mostAdded': 200,
+    /** You Were Saying?: a play writes 25 tokens and 25 more for each step, at most 200, and each step costs 0.25 on top of its price at the machine. */
+    'youWereSaying.baseTokens': 25,
+    'youWereSaying.stepTokens': 25,
+    'youWereSaying.stepPrice': 25,
+    'youWereSaying.mostTokens': 200,
     /** The Boss's moves on the machine, from the engine's own starting numbers. */
     ...MACHINE_DEFAULTS,
   },

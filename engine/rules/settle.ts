@@ -28,8 +28,14 @@
  *   this settlement, over every reaction up to the window's end, without that player's own vote,
  *   so nobody's call is proven by itself; a tie is no direction. Reactions after the settlement
  *   do not reach back: a window is settled once.
- * - A trap's spring is settled as a play of its trap card on the trapped post, under the card's
- *   alignment; a caught play settles as the play it is.
+ * - A trap's spring is settled as a play of its trap card, under the card's alignment, on the Act
+ *   that sprang it (`by`): the cast it caught, or the staff Act or visit that tripped it, which is
+ *   no character's. A spring with no `by` (older rows) is scored on its trapped post. A caught
+ *   play settles as the play it is.
+ * - An earn gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
+ *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
+ *   positive earning of that character's Act that carries a time and a quadrant, falls in the
+ *   gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. Each gimmick boosts on its own.
  * - A play an admin reversed before the window's end is not in the input, nor are the votes on it
  *   (settlement_input and estimate_input leave it out), so there is no filter for it here.
  * - A card on a staff post is judged against the post's own reactions (`unscoredTargets`), which
@@ -46,10 +52,11 @@
  */
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
-  ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
+  ActKind, ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
   LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing, UnscoredTarget,
 } from './types.ts';
 import { QUADRANTS } from './types.ts';
+import type { GimmickEffect } from './cards.ts';
 
 /** One ledger row: whole hundredths for one player and character, for one reason, in one window. */
 export interface LedgerEntry {
@@ -59,14 +66,23 @@ export interface LedgerEntry {
   readonly reason: string;
   readonly amount: number;
   /** The numbers its reason's words state, as the earnings it sums were settled under (Earning.params); absent where they name none. */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: Readonly<Record<string, number | string>>;
 }
+
+/**
+ * What makes an entry one: a player's, character's and reason, and for a boost one card's too, so two Earn cards' boosts are two entries
+ * each naming its card. No other reason names a card, so no other class's entries change. A detail line and a share find their entry by it.
+ */
+export const entryKey = (c: { player: string; character: string; reason: string; params?: Readonly<Record<string, number | string>> }) =>
+  `${c.player}\u0000${c.character}\u0000${c.reason}${typeof c.params?.card === 'string' ? `\u0000${c.params.card}` : ''}`;
 
 /** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
 export interface Detail {
   readonly player: string;
   readonly character: string;
   readonly reason: string;
+  /** The card a boost line is for (`{ card }`), where the reason names one; it says which entry the line belongs to (`entryKey`). */
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
   /** The reactions it pays for, where they are not on `act` (Earning.valuing). */
@@ -138,12 +154,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const quadrantOf = new Map(instance.reactions.map((r) => [r.key, r.quadrant]));
   const classOf = new Map<string, ClassRules>(instance.classes.map((c) => [c.key, c]));
   const alignmentOf = new Map<string, Alignment>(instance.cards.map((c) => [c.key, c.alignment]));
+  const earnOf = new Map<string, Extract<GimmickEffect, { kind: 'earn' }>>();
+  for (const c of instance.cards) if (c.gimmick?.kind === 'earn') earnOf.set(c.key, c.gimmick);
 
   /* ---- the input, checked and in a canonical order; nothing at or after the window's end ---- */
   const systemActs = new Set(input.systemActs ?? []);
   const unscored = new Map<string, UnscoredTarget>((input.unscoredTargets ?? []).map((t) => [t.id, t]));
   /** A card's play or a trap's spring: each is a play of its card on its target. */
   const isPlay = (a: InputAct) => a.kind === 'card' || a.kind === 'spring';
+  /** What a play is scored against: its target post, or for a spring that names what sprang it, that Act (a cast, or a staff Act or visit). */
+  const scoredOn = (a: { kind?: ActKind; target?: string; by?: string }) => (a.kind === 'spring' && a.by !== undefined ? a.by : a.target);
   const characters = new Map<string, InputCharacter>();
   for (const c of [...input.characters].sort((a, b) => cmp(a.id, b.id))) {
     for (const k of c.classes) if (!classOf.has(k.class)) throw new Error(`settle: character ${c.id} holds class "${k.class}", which the instance does not have`);
@@ -290,7 +310,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const v of windowVotes) {
     const target = actOf(v.act);
     const list = received.get(target.character) ?? [];
-    list.push({ act: v.act, actKind: target.kind, quadrant: v.quadrant, at: v.at, actAt: target.at, votes: v.votes });
+    list.push({ act: v.act, actKind: target.kind, quadrant: v.quadrant, at: v.at, actAt: target.at, kind: v.kind, votes: v.votes });
     received.set(target.character, list);
   }
   const given = new Map<string, GivenReaction[]>();
@@ -343,7 +363,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      reaction per mask), so the estimate's lean can differ from the settled one; the settlement is exact. A play from an earlier
      window reads by this window's votes, so one the room has stopped reacting to stays Pepperoni here. */
   const readsAsOf = new Map<string, Alignment>();
-  const readsAs = (a: { id: string; character: string; card?: string; target?: string }): Alignment => {
+  const readsAs = (a: { id: string; character: string; card?: string; kind?: ActKind; target?: string; by?: string }): Alignment => {
     const own = alignmentOf.get(a.card!)!;
     if (own !== 'pepperoni') return own;
     let known = readsAsOf.get(a.id);
@@ -353,7 +373,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
        target can be absent (a staff post an earlier card landed on, or the post of an earlier card that is in the input only because
        it was reacted to): then no window play shares that target, so no window play ever looks its key up, and nothing here may
        throw on it. */
-    const target = a.target === undefined || unscored.has(a.target) ? undefined : acts.get(a.target);
+    const scored = scoredOn(a);
+    const target = scored === undefined || unscored.has(scored) ? undefined : acts.get(scored);
     const author = target ? playerOf(target.character) : undefined;
     let lean = 0;
     for (const v of windowVotesOn.get(a.id) ?? []) if (v.owner !== player && v.owner !== author) lean += (v.quadrant === 'excitedPositive' || v.quadrant === 'calmPositive' ? 1 : -1) * v.share;
@@ -363,14 +384,14 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   };
   const holder = new Map<string, string>();
   for (const c of [...acts.values()].filter((a) => isPlay(a) && a.reach === undefined && a.target && a.card && alignmentOf.has(a.card)).sort((x, y) => x.at - y.at || cmp(x.id, y.id))) {
-    const k = `${c.target}\u0000${playerOf(c.character)}\u0000${readsAs(c)}`;
+    const k = `${scoredOn(c)}\u0000${playerOf(c.character)}\u0000${readsAs(c)}`;
     if (!holder.has(k)) holder.set(k, c.id);
   }
   /* The play that holds a target for a player in the crowd it drew: their earliest play there, of any alignment, an
      earlier window's included (`holder` holds one per alignment, which the lift needs). */
   const earliest = new Map<string, string>();
   for (const c of [...acts.values()].filter((a) => isPlay(a) && a.reach === undefined && a.target && a.card && alignmentOf.has(a.card))) {
-    const k = `${c.target}\u0000${playerOf(c.character)}`;
+    const k = `${scoredOn(c)}\u0000${playerOf(c.character)}`;
     if (!earliest.has(k)) earliest.set(k, c.id);
   }
   // A play beyond a post has no target post to outdraw, and lands on no post (the card mechanic's design, section 7): its own
@@ -378,8 +399,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const a of windowActs.filter((x) => isPlay(x) && x.reach === undefined)) {
     if (!a.target) throw new Error(`settle: ${a.kind} Act ${a.id} has no target`);
     // A staff post is another's, and nobody's to land on.
-    const staffTarget = unscored.get(a.target);
-    const target = staffTarget ? { id: staffTarget.id, character: null } : actOf(a.target);
+    // A spring's `by` that is no scored Act (a staff Act, a visit; an unknown one too) is read as a staff target, as `unscoredTargets` are.
+    const scored = scoredOn(a)!;
+    const target = unscored.has(scored) || (a.kind === 'spring' && a.by !== undefined && !acts.has(scored)) ? { id: scored, character: null } : actOf(scored);
     const player = playerOf(a.character);
     const after: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
     // Each vote after the card counts once per player and alignment: for the earliest of that
@@ -434,9 +456,25 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class: string; params?: Readonly<Record<string, number>> };
+  type Contribution = Detail & { class: string; params?: Readonly<Record<string, number | string>>; kind?: string };
   const contributions: Contribution[] = [];
+  /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
+     play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
+     times the gimmicks on that character and the post of each earning, never the instance's gimmicks. */
+  type Boost = { card: string; from: number; ends: number; by: number; quadrants: readonly Quadrant[]; reactions: readonly string[] };
+  const boostsOn = new Map<string, Boost[]>();
+  for (const a of acts.values()) {
+    const earn = a.kind === 'card' && a.card ? earnOf.get(a.card) : undefined;
+    const on = a.reach === 'character' ? a.on : a.reach === undefined ? a.target : undefined;
+    if (!earn || on === undefined) continue;
+    const list = boostsOn.get(on) ?? [];
+    // Every use card lasts, so a play always has `ends`; a row without one is malformed and boosts nothing.
+    if (a.ends === undefined) continue;
+    list.push({ card: a.card!, from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
+    boostsOn.set(on, list);
+  }
   for (const c of characters.values()) {
+    const firstOfCharacter = contributions.length;
     for (const stretch of stretchesOf(c)) {
       const inside = <T extends { at: number }>(xs: readonly T[] | undefined) => (xs ?? []).filter((x) => x.at >= stretch.from && x.at < stretch.to);
       const classInput: ClassInput = {
@@ -459,7 +497,19 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}) });
+      }
+    }
+    /* Earn: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
+       names, adds `by` times itself under the reason `card.boost`. Boosts are added after, so none is boosted in turn. */
+    if (!boostsOn.size) continue;
+    for (const e of contributions.slice(firstOfCharacter)) {
+      if (!(e.amount > 0) || e.at === undefined || !e.quadrant || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
+      for (const g of [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])]) {
+        if (e.at < g.from || e.at >= g.ends || !(g.quadrants.includes(e.quadrant) || (e.kind !== undefined && g.reactions.includes(e.kind)))) continue;
+        const boost = tidy(e.amount * g.by);
+        if (!boost) continue;
+        contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card }, act: e.act, quadrant: e.quadrant, at: e.at });
       }
     }
   }
@@ -474,7 +524,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     }
     return [...out.entries()].sort((a, b) => cmp(a[0], b[0]));
   };
-  const entries: LedgerEntry[] = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}`)
+  const entries: LedgerEntry[] = sum(entryKey)
     /* An entry's numbers are its first earning's: one window settles under one set of settings, so its earnings of one reason agree. */
     .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount), ...(first.params ? { params: first.params } : {}) }))
     .filter((e) => e.amount !== 0);
@@ -482,22 +532,22 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
      which Act moved how much, and its lines never disagree with the ledger ("The fiction may
      lie; the log never does"). The rounding is shared by largest remainder, ties by key. A line
      is one Act, quadrant and reaction time, so two reactions' lines never merge (Earning.at). */
-  const lines = sum((c) => `${c.player}\u0000${c.character}\u0000${c.reason}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}\u0000${c.at ?? ''}`);
+  const lines = sum((c) => `${entryKey(c)}\u0000${c.act ?? ''}\u0000${c.quadrant ?? ''}\u0000${c.at ?? ''}`);
   const linesOf = new Map<string, { key: string; first: Contribution; amount: number }[]>();
   for (const [key, { first, amount }] of lines) {
-    const k = `${first.player}\u0000${first.character}\u0000${first.reason}`;
+    const k = entryKey(first);
     const list = linesOf.get(k) ?? [];
     list.push({ key, first, amount: tidy(amount) });
     linesOf.set(k, list);
   }
   const details: Detail[] = [];
-  const entryAmount = new Map(entries.map((e) => [`${e.player}\u0000${e.character}\u0000${e.reason}`, e.amount]));
+  const entryAmount = new Map(entries.map((e) => [entryKey(e), e.amount]));
   for (const [k, list] of [...linesOf].sort((a, b) => cmp(a[0], b[0]))) {
     const whole = apportion(entryAmount.get(k) ?? 0, list);
     list.forEach((l, i) => {
       if (whole[i] === 0) return;
       details.push({
-        player: l.first.player, character: l.first.character, reason: l.first.reason,
+        player: l.first.player, character: l.first.character, reason: l.first.reason, ...(typeof l.first.params?.card === 'string' ? { params: { card: l.first.params.card } } : {}),
         ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), ...(l.first.valuing ? { valuing: l.first.valuing } : {}), ...(l.first.at !== undefined ? { at: l.first.at } : {}), amount: whole[i]!,
       });
     });
@@ -520,6 +570,7 @@ export interface Share {
   readonly player: string;
   readonly character: string;
   readonly reason: string;
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act: string;
   readonly quadrant?: Quadrant;
   readonly amount: number;
@@ -544,7 +595,7 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
   const weights = new Map<string, Map<string, { act: string; quadrant?: Quadrant; amount: number }>>();
   const unplaced = new Map<string, { up: boolean; down: boolean }>();
   for (const d of estimate.details) {
-    const k = `${d.player}\u0000${d.character}\u0000${d.reason}`;
+    const k = entryKey(d);
     if (!d.act) {
       const u = unplaced.get(k) ?? { up: false, down: false };
       if (d.amount > 0) u.up = true; else u.down = true;
@@ -561,7 +612,7 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
   const shares: Share[] = [];
   for (const e of [...entries].sort((a, b) => cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.reason, b.reason))) {
     const sign = Math.sign(e.amount);
-    const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
+    const k = entryKey(e);
     // Weight of the entry's sign on no Act: the split would hand its part to the posts, so the entry is scored over the window.
     if (sign > 0 ? unplaced.get(k)?.up : unplaced.get(k)?.down) continue;
     const posts = [...(weights.get(k) ?? [])]
@@ -572,7 +623,7 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
     const whole = apportion(e.amount, posts.map(([key, w]) => ({ key, amount: tidy(e.amount * Math.abs(w.amount) / total) })));
     posts.forEach(([, w], i) => {
       if (whole[i] === 0) return;
-      shares.push({ player: e.player, character: e.character, reason: e.reason, act: w.act, ...(w.quadrant ? { quadrant: w.quadrant } : {}), amount: whole[i]! });
+      shares.push({ player: e.player, character: e.character, reason: e.reason, ...(typeof e.params?.card === 'string' ? { params: { card: e.params.card } } : {}), act: w.act, ...(w.quadrant ? { quadrant: w.quadrant } : {}), amount: whole[i]! });
     });
   }
   return shares;
@@ -592,6 +643,8 @@ export function applyCap(balance: number, entries: readonly { readonly amount: n
 export interface EstimateLine {
   readonly character: string;
   readonly reason: string;
+  /** The card a boost line is for, where the reason names one. */
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
   /** When the reaction it values landed, for a line that values one reaction. */
@@ -616,7 +669,7 @@ export interface EstimateLine {
  * The lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
-export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number }[]; lines: EstimateLine[] } {
+export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[] } {
   const s = settle(input, instance, { sharedVote: false, halving: false });
   const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
   const playerOf = new Map(input.characters.map((c) => [c.id, c.player]));
@@ -643,5 +696,5 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
       lines.push({ ...line, at, amount: each + step });
     }
   }
-  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount }) => ({ character, reason, amount })), lines: lines.filter((l) => l.amount !== 0) };
+  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
 }

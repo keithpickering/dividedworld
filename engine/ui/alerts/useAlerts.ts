@@ -30,7 +30,7 @@ export interface AlertsRead {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Public names of the authors of the posts a card an admin ended was played on. */
   readonly names: ReadonlyMap<Id, string>;
-  /** The staff characters among them: a staff Trap Card takes nothing, and its alert says the card is spent. */
+  /** The staff characters among them: a staff catching set card takes nothing, and its alert says the card is spent. */
   readonly staff: ReadonlySet<Id>;
   /** The furthest seq read in each followed thread; null where it could not be read. */
   readonly reading: Readonly<Record<Id, number>> | null;

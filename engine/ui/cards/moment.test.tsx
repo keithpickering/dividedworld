@@ -23,7 +23,7 @@ const smear = rule('smear', 'Smear', { stack: 3, validateState: (s) => ok(s) });
 const ripple = rule('ripple', 'Ripple', { stack: 2 });
 const holdy = rule('holdy', 'Holdy');
 const tagger = rule('tagger', 'Tagger');
-const shieldy = rule('shieldy', 'Shieldy', { play: 'use', ward: true, lasts: { unit: 'day', count: 7 } });
+const shieldy = rule('shieldy', 'Shieldy', { play: 'use', gimmick: { kind: 'ward', upTo: 'uncommon' }, lasts: { unit: 'day', count: 7 } });
 const trappy = rule('trappy', 'Trappy', { play: 'set', trap: { trigger: { on: 'visit' } } });
 const sparkly = rule('sparkly', 'Sparkly', { rarity: 'uncommon', reaches: ['character'], lasts: { unit: 'day', count: 7 } });
 /* Lifty is a takeover that stacks: drawn in a moment, and outermost there as it is live. */

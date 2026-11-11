@@ -3,7 +3,7 @@
  * (supabase/functions/chatter/core.ts) and the admin queue, against the real migrations on the scratch database, with the real model
  * adapters over a fake `fetch`. Posts name the Boss and quote a Mod Bot; the season is handed over (the Boss becomes a member, a waiting
  * persona debuts as Boss); the pool runs for the day. The ex-Boss answers the post that names it, quoting it, and its spend is a row of
- * `pool_spends`. The Mod Bot answers the post that quotes it with a Whoops! on that post, which a Trap Card its author set there catches
+ * `pool_spends`. The Mod Bot answers the post that quotes it with a Whoops! on that post, which a Card Collector its author set there catches
  * (the author takes a copy of the card into her hand, and no wallet moves); the ex-Boss's Whoops! on the other post lands and shows in that post's marks, where the screens read
  * them. Gabe's to-do is in the admin queue from the handover until an update is posted, and then it is gone. Run by tools/test-sql.mjs.
  *
@@ -16,9 +16,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { psqlDb, sql, scratchSeed } from './psql-db.ts';
 import { runChatter } from '../../functions/chatter/core.ts';
-import { instance } from '../../functions/_shared/instance.ts';
+import { instance as realInstance } from '../../functions/_shared/instance.ts';
+import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
+
+/** This file needs a second Boss, which the real roster no longer has: its world is the placeholder fixtures'. */
+const instance = placeholderWorld(realInstance);
 
 const tiers = { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' };
 const roster = instance.system.roster;
@@ -59,7 +63,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
     select json_object_agg(name, id) from c`));
   const admin = sql(`with u as (insert into auth.users (email) values ('e2e-staffday-admin@test.invalid') returning id), a as (insert into accounts (id) select id from u returning id), m as (insert into admins (account) select id from a returning account) select account from m`);
 
-  // ---- The posts: a Mod Bot speaks, Ann quotes it; Bo names the Boss. Ann lays a Trap Card on her post first, as she would on one she expects to be hit. ----
+  // ---- The posts: a Mod Bot speaks, Ann quotes it; Bo names the Boss. Ann lays a Card Collector on her post first, as she would on one she expects to be hit. ----
   const modPost = JSON.parse(sql(`select write_staff_act('${MOD}', 'post', '${thread}', null, '{"body": "Friendly reminder to keep it civil."}')`)).id as string;
   // The players' posts are dated inside the window the pool will read: the pool reads a day, and the files before this one left Acts of their own
   // in the last day (move ends, a handover), which would give the ex-Boss other reasons to post. So the day is the next one, and the posts are
@@ -70,9 +74,9 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   const bossName = persona(OLD).name;
   const boPostBody = `${bossName} would never have allowed this.`;
   const boPost = postAt(chars['Staffday Bo']!, 14, boPostBody, null);
-  sql(`insert into card_ledger (account, card, kind, price) values ('${account('Staffday Ann')}', 'trap-card', 'bought', 0);
+  sql(`insert into card_ledger (account, card, kind, price) values ('${account('Staffday Ann')}', 'card-collector', 'bought', 0);
        insert into wallets (account, balance) values ('${account('Staffday Ann')}', 0) on conflict (account) do update set balance = 0;
-       select set_card('${account('Staffday Ann')}', 'trap-card', '${chars['Staffday Ann']}', '${annPost}', '{"card": "whoops"}', 0, 'whoops');`);
+       select set_card('${account('Staffday Ann')}', 'card-collector', '${chars['Staffday Ann']}', '${annPost}', '{"card": "whoops"}', 0, 'whoops');`);
   assert.equal(sql(`select count(*) from face_down where post = '${annPost}'`), '1', 'the trap is set face down on Ann\'s post');
 
   // ---- The season is handed over: OLD becomes a member, NEXT debuts as Boss. ----
@@ -94,7 +98,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
     const body = JSON.parse(String(init?.body));
     if (!String(url).includes('anthropic')) return new Response(JSON.stringify({ choices: [{ text: ' ok.' }], usage: { prompt_tokens: 100, completion_tokens: 4 } }), { status: 200 });
     const text = JSON.stringify(body);
-    const who = roster.find((p) => text.includes(JSON.stringify(p.persona).slice(1, -1)));
+    const who = roster.find((p) => text.includes(JSON.stringify(p.selfPrompt).slice(1, -1)));
     const asked = String(body.messages?.[0]?.content ?? '');
     if (who) promptsFor[who.key] = asked;
     const reply: Record<string, unknown> = { words: words[who?.key ?? ''] ?? 'Noted.' };
@@ -138,7 +142,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   const boMarks = marks(boPost);
   assert.deepEqual(boMarks.map((m) => [m.id, m.payload.card, m.payload.caught ?? null]), [[oldPick.card, 'whoops', null]], 'a staff Whoops! shows in the post\'s marks, uncaught');
 
-  // The Whoops! on Ann's post was caught by her Trap Card, which names it: the card is hers now, a copy of a staff cast, and nothing is paid.
+  // The Whoops! on Ann's post was caught by her Card Collector, which names it: the card is hers now, a copy of a staff cast, and nothing is paid.
   assert.ok(modPick.card, `the Mod Bot's Whoops! was played: ${JSON.stringify(modPick)}`);
   const annMarks = marks(annPost);
   assert.equal(annMarks.length, 1);

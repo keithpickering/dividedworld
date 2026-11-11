@@ -206,6 +206,28 @@ describe('what the Lens says and offers', () => {
     expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Does a thing.');
   });
 
+  test('a ward with several conditions shows its full list in the report line', async () => {
+    width(false);
+    const warded = {
+      ...instance,
+      cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const, flavors: ['salty' as const, 'sweet' as const], cards: ['k3', 'k4'] }, lasts: { unit: 'day' as const, count: 7 } } : c)),
+    };
+    const fake = buildWorld(undefined, warded);
+    const me = fake.seed.account('me');
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    fake.clock.advance(60_000);
+    fake.seed.card(spritey, second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: warded, cards });
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const report = lens().querySelector('.kb-lens-report');
+    expect(report).toHaveTextContent('Turns away cards up to uncommon, Salty and Sweet cards, Card 3 and Card 4.');
+    expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Turns away some cards');
+  });
+
   test('Act draws the view\'s controls from the kit, and a card with none has no Act row', async () => {
     width(false);
     const w = world();
@@ -923,7 +945,8 @@ describe('As it landed', () => {
     await userEvent.click(landedButton(k1b));
     expect(await within(await frame()).findByText('post 2')).toBeInTheDocument();
     expect(read).toHaveBeenCalledTimes(2);
-    expect(within(lens()).queryByText('That didn\u2019t load. Try again.')).toBeNull();
+    /* The note clears in its own state update, which can land after the frame shows. */
+    await waitFor(() => expect(within(lens()).queryByText('That didn\u2019t load. Try again.')).toBeNull());
   });
 
   test('Back to now gives focus back to the play\'s As it landed', async () => {
@@ -1831,5 +1854,122 @@ describe('the buttons', () => {
     /* The React meta tile (36px) stands as tall as the kit tiles (44px), and the reaction tiles keep a line of their own over the grid. */
     expect(ruleOf('.kb-lens-row-foot .kb-react-button')).toMatch(/min-height:\s*44px/u);
     expect(ruleOf('.kb-lens-row-foot .kb-reaction-list')).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
+  });
+});
+
+/* A play whose first generation failed was refunded and is over (0149): the Lens says so in plain words and offers an admin no End this card, since there is nothing to end. */
+describe('a play that did not take', () => {
+  const writing = { ...instance.cards[1]!, key: 'kw', name: 'Card W', stack: 3, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const own = { ...instance, cards: [...instance.cards, writing] };
+  const ui = [...cards, cardUi('kw')];
+  function writingWorld() {
+    const fake = buildWorld(undefined, own);
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    const play = () => { fake.clock.advance(60_000); return fake.seed.card(spritey, second, 'kw', { message: '' }); };
+    return { fake, me, thread, second, play };
+  }
+  const drawn = (w: { fake: Fake; thread: Id }) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: own, cards: ui });
+  const openW = async () => { await userEvent.click(await within(await article(2)).findByRole('button', { name: /^Card W, \d plays?/u })); await userEvent.click(whoButton()); };
+  const row = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+
+  test('reads "Didn\'t take" as the state and in its row, says its text never arrived, and offers an admin no End this card, while a live play beside it does', async () => {
+    width(false);
+    const w = writingWorld();
+    w.fake.seed.admin(w.me);
+    const live = w.play();
+    const lost = w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    drawn(w);
+    await openW();
+    expect(within(row(lost)).getByText("Didn't take. Its text never arrived, so it is not in effect on this post.")).toBeInTheDocument();
+    expect(within(row(lost)).queryByRole('button', { name: 'End this card' })).toBeNull();
+    expect(within(row(live)).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
+    expect(within(row(live)).queryByText(/Didn't take/u)).toBeNull();
+    /* It stays an Act the room can react to. */
+    expect(within(row(lost)).getByRole('button', { name: /react/iu })).toBeInTheDocument();
+    /* Nothing says an admin did anything. */
+    expect(within(lens()).queryByText(/admin/iu)).toBeNull();
+  });
+
+  test('its effect is not drawn: the card\'s effect is given the plays that took alone', async () => {
+    width(false);
+    const w = writingWorld();
+    const lost = w.play();
+    w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    const Count = ({ plays, children }: EffectProps) => <><span data-testid="effect-plays">{plays.length}</span>{children}</>;
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: own, cards: [...cards, cardUi('kw', { Effect: Count })] });
+    expect((await screen.findByTestId('effect-plays')).textContent).toBe('1');
+  });
+
+  test('a kind whose plays all did not take reads "Didn\'t take" as its state', async () => {
+    width(false);
+    const w = writingWorld();
+    w.fake.seed.admin(w.me);
+    const lost = w.play();
+    w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
+    drawn(w);
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^Card W, 1 play/u }));
+    expect(within(lens()).getByText("Didn't take", { selector: '.kb-lens-line' })).toBeInTheDocument();
+    await userEvent.click(whoButton());
+    expect(within(lens()).queryByRole('button', { name: 'End this card' })).toBeNull();
+  });
+});
+
+describe('taking a back back', () => {
+  const takeButton = () => within(lens()).queryByRole('button', { name: 'Take back' });
+  const openBack = async (seq: number) => {
+    await userEvent.click(await within(await article(seq)).findByRole('button', { name: /^A card set face down/u }));
+    await userEvent.click(whoButton());
+  };
+  const mine = () => {
+    const w = world();
+    const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    w.fake.clock.advance(60_000);
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() });
+    return w;
+  };
+
+  test('is offered on the setter\'s own live back, with its words, and nowhere else', async () => {
+    width(false);
+    const w = mine();
+    w.fake.clock.advance(60_000);
+    w.fake.seed.set(w.spritey, w.second, 'k3', { at: Date.now() });
+    open(w);
+    await openBack(4);
+    expect(takeButton()).not.toBeNull();
+    expect(within(lens()).getByText('Take this card back into your hand. The card back leaves the post.')).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await openBack(2);
+    expect(takeButton()).toBeNull();
+  });
+
+  test('calls takeBack with the setter\'s character and the back, and closes the Lens once it is back', async () => {
+    width(false);
+    const w = mine();
+    const call = vi.spyOn(w.fake, 'takeBack');
+    open(w);
+    await openBack(4);
+    await userEvent.click(takeButton()!);
+    expect(call).toHaveBeenCalledWith(w.pipe, expect.any(String));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Cards on this post' })).toBeNull());
+    /* The mark is gone with the back: focus goes to the post, not to the page's body. */
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('post-4')));
+  });
+
+  test('says the refusal in plain words, and stays open', async () => {
+    width(false);
+    const w = mine();
+    vi.spyOn(w.fake, 'takeBack').mockResolvedValue({ ok: false, error: 'there is no face-down card to take back there' } as never);
+    open(w);
+    await openBack(4);
+    await userEvent.click(takeButton()!);
+    expect(await within(lens()).findByRole('alert')).toHaveTextContent('There is no face-down card to take back there.');
   });
 });

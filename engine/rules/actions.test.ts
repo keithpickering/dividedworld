@@ -21,6 +21,7 @@ const instance: Instance = {
 };
 const id = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
+const refusal2 = (request: unknown, on: Instance) => { const d = decide(request, on); return d.ok ? '' : `${d.field}: ${d.why}`; };
 const refusal = (request: unknown) => { const d = decide(request, instance); return d.ok ? null : `${d.field}: ${d.why}`; };
 
 test('each action is decided into the SQL function that writes it, with that function\'s arguments', () => {
@@ -126,6 +127,11 @@ test('a play names the card, the character, the post and the caster\'s configura
     { ok: true, rpc: 'play_card', args: { card: 'splat', through: id, target: other, config: { color: 'red' }, message: '' }, asService: true, needsTarget: true, play: 'cast' });
   assert.equal((decide({ action: 'playCard', card: 'splat', character: id, target: other, message: 'Take that.' }, instance) as unknown as { args: { message: unknown } }).args.message, 'Take that.', 'the caster\'s message travels to the card\'s rules');
   assert.match(refusal({ action: 'playCard', card: 'nothing', character: id, target: other }) ?? '', /^card:/);
+  const writing = { ...splat, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const where = (oldVoice: boolean): Instance => ({ ...instance, cards: [...instance.cards, writing], settings: { ...instance.settings, oldVoice } });
+  assert.equal(decide({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(true)).ok, true, 'a card that writes is played where the old voice runs');
+  assert.equal(decide({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(false)).ok, false, 'and refused where it does not');
+  assert.match(refusal2({ action: 'playCard', card: 'typewriter', character: id, target: other }, where(false)), /^card: The old voice isn't running/);
   assert.match(refusal({ action: 'playCard', card: 'splat', character: id, target: 'x' }) ?? '', /^target:/);
 });
 
@@ -153,6 +159,14 @@ test('a Set names the card, the character, the post and the configuration, and c
     assert.match(refusal({ action, card: 'splat', character: 'x', target: other }) ?? '', /^character:/, action);
     assert.match(refusal({ action, card: 'splat', character: id, target: 'x' }) ?? '', /^target:/, action);
   }
+});
+
+test('a take-back names the character and the set Act, and is the service\'s call for the account', () => {
+  assert.deepEqual(decide({ action: 'takeBack', character: id, set: other }, instance),
+    { ok: true, rpc: 'take_back', args: { through: id, set_act: other }, asService: true });
+  assert.match(refusal({ action: 'takeBack', character: 'x', set: other }) ?? '', /^character:/);
+  assert.match(refusal({ action: 'takeBack', character: id, set: 'x' }) ?? '', /^set:/);
+  assert.match(refusal({ action: 'takeBack', character: id }) ?? '', /^set:/);
 });
 
 test('saving an effect\'s state names the play, the character and the state', () => {

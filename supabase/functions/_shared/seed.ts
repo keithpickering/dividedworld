@@ -41,11 +41,13 @@ export function instanceSeed(instance: Instance) {
     cards: instance.cards.map((c) => ({
       key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true,
       reads: (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)),
-      // How it is played and how rare it is, and a Set card's trap, a Use card's ward and time up (0054), which seed_instance
-      // checks as instanceProblems does. A trap or a time up left out travels as none.
-      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts,
+      // How it is played and how rare it is, and a Set card's trap, a Use card's gimmick and time up (0054, 0148), which seed_instance
+      // checks as instanceProblems does. A trap (with its match), a gimmick or a time up left out travels as none.
+      rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, lasts: c.lasts,
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
+      // Whether its text is generated after it lands (0149): the SQL knows only this flag, never which card.
+      writes: c.writes !== undefined,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the
     // database does not hold yet and never changes one that is there, since a slot's place, availability and price are an admin's.

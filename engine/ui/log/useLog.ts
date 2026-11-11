@@ -21,6 +21,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     cards: [...newer.cards, ...older.cards],
     packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
+    writes: [...newer.writes, ...older.writes],
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
     caught: [...newer.caught, ...older.caught],
@@ -121,7 +122,7 @@ interface Held {
   readonly log: Log;
   readonly acts: ReadonlyMap<Id, Act>;
   readonly names: ReadonlyMap<Id, string>;
-  /** The staff characters among them: a Mod Bot's Trap Card takes nothing, so a line about its catch says the card is spent. */
+  /** The staff characters among them: a Mod Bot's catching set card takes nothing, so a line about its catch says the card is spent. */
   readonly staff: ReadonlySet<Id>;
   readonly titles: ReadonlyMap<Id, string>;
   readonly states: ReadonlyMap<Id, unknown>;

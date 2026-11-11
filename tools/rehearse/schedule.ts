@@ -2,7 +2,7 @@
 // adds runs with no edit), and at each simulated minute sets both clocks, checks the database agrees, runs the command of
 // every active job whose schedule matches, as the superuser pg_cron runs them as, and then drains the dispatcher.
 import { matches } from "./cron.ts";
-import { drain, type DispatchCtx } from "./dispatch.ts";
+import { drain, Stalled, within, type DispatchCtx } from "./dispatch.ts";
 
 export interface SqlConnection {
   sql(text: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
@@ -46,9 +46,11 @@ export async function runMinute(ctx: ScheduleCtx, minute: number): Promise<void>
     if (!matches(String(j.schedule), new Date(minute))) continue;
     const job = String(j.jobname ?? j.jobid);
     try {
-      await ctx.connection.sql(String(j.command));
+      await within(`the cron job ${job}`, ctx.connection.sql(String(j.command)));
       ctx.jobs.push({ at: minute, job, ok: true });
     } catch (e) {
+      // A job that never answers is not a job that failed: the run stops and names it.
+      if (e instanceof Stalled) throw e;
       // As pg_cron does: record it, and the next job still runs.
       ctx.jobs.push({ at: minute, job, ok: false, error: e instanceof Error ? e.message : String(e) });
     } finally {

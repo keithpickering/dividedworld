@@ -6,6 +6,7 @@ import { DEMAND_KINDS } from './demands.ts';
 import { DEMAND_ID_ROLES, MEETING_RULE, inheritedText, meetingSystemPrompt, namedCharacters, referenceText, repairAnswer, ruleSchema, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { noteMost } from './memory.ts';
 import { phaseAt } from './phases.ts';
+import { personaPrompt } from './prompt.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 
 const H = 3_600_000;
@@ -358,10 +359,18 @@ test('a Mod\'s section is written with its own pronouns: they/them reads "Their 
   for (const line of ['They have held no office before.', 'You last handed them 3 moves; they spent 2', 'Their beat now: Mario Fan Games', 'Your standing order to them: Crack down', 'Their memory: hobby birdwatching', 'Their notes since their last memory (their own thoughts;']) assert.ok(they.includes(line), line);
   const it = meetingSystemPrompt({ ...facts, mods: [{ ...mod, pronouns: PRONOUN_PRESETS.it }] });
   for (const line of ['## Sir Patrols-a-Lot (it/its, key mod-one)', 'It has held no office before.', 'You last handed it 3 moves; it spent 2', 'Its beat now: Mario Fan Games', 'Its notes since its last memory (its own thoughts;']) assert.ok(it.includes(line), line);
-  assert.ok(they.includes(`${testSystem.roster[0]!.persona}\n\nYour pronouns are she/her (she, her, her, hers, herself).`), 'the self line follows the persona');
+  assert.ok(they.includes(`${personaPrompt(testSystem, testSystem.roster[0]!, 'boss')}\n\nYour pronouns are she/her (she, her, her, hers, herself).`), 'the self line follows the persona');
   assert.ok(they.includes('mod-x (Xe, he/him)'), 'the successors\' roster');
   const section = they.slice(they.indexOf('## Sir Patrols-a-Lot'), they.indexOf('The season is in its last week'));
   assert.ok(!/ its |\bIt \b/.test(section), section);
+});
+
+test('the Boss\'s prompt opens with the Boss premise, holds the Boss\'s office line, and no other office\'s premise or line', () => {
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [] };
+  const text = meetingSystemPrompt(facts);
+  assert.ok(text.startsWith(testSystem.offices.boss.premise), 'opens with the Boss premise');
+  assert.ok(text.includes(testSystem.roster[0]!.officeLines!.boss!), 'the Boss line');
+  for (const other of ['Mod premise.', 'Member premise.', 'You used to run the place.']) assert.ok(!text.includes(other), other);
 });
 
 test('the inheritance section names no pronoun for the Boss before', () => {
@@ -401,7 +410,7 @@ const SLOT_HIDDEN = '51000000-0000-4000-8000-000000000011';
 const SLOT_OUT = '51000000-0000-4000-8000-000000000022';
 const facts = (id: string, over: Partial<MachineSlotFacts> = {}): MachineSlotFacts => ({ id, position: 1, card: 'whoops', pack: null, availability: 'onSale', price: 100, pullable: true, move: null, ...over });
 const SHELF: MachineSlotFacts[] = [
-  facts(SLOT_A), facts(SLOT_B, { card: 'bluff' }), facts(SLOT_C, { card: 'trap' }),
+  facts(SLOT_A), facts(SLOT_B, { card: 'dud' }), facts(SLOT_C, { card: 'trap' }),
   facts(SLOT_PACK, { card: null, pack: 'booster', price: 300, pullable: false }),
   facts(SLOT_HIDDEN, { card: 'main-event', availability: 'hidden', pullable: false }),
   facts(SLOT_OUT, { card: 'glitter', availability: 'soldOut', pullable: false }),
