@@ -320,7 +320,7 @@ test('a schema the provider would refuse is never sent: SchemaRefused, one faile
   assert.equal(l.rows[0]?.outcome, 'failed');
   assert.equal(l.rows[0]?.predicate, 'emptySchema');
   assert.equal(l.rows[0]?.costMicrodollars, 0);
-  assert.equal(l.rows[0]?.inputTokens, null);
+  for (const k of ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWrite5mTokens', 'cacheWrite1hTokens', 'gpuSeconds'] as const) assert.equal(l.rows[0]?.[k], null, `${k}: no usage`);
   assert.equal(l.rows[0]?.retries, 0);
   const g = fake([message('{}')]);
   const n = ledger();

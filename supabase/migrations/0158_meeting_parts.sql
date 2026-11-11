@@ -182,12 +182,12 @@ begin
     insert into staff_memory (staff, meeting, body) values (boss, apply_meeting.meeting, memory);
   end if;
   if jsonb_typeof(payload -> 'profile') = 'object' then
-  insert into staff_profiles (staff, meeting, interests, favorites, mood, signature)
-  values (boss, apply_meeting.meeting,
-    array(select jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'interests', '[]'))),
-    array(select f.id from (select case when t.f ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then t.f::uuid end as id, min(t.ord) as ord from jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'favorites', '[]')) with ordinality t(f, ord) group by 1) f
-      where f.id in (select c.id from characters_public c) order by f.ord),
-    coalesce(payload -> 'profile' ->> 'mood', ''), coalesce(payload -> 'profile' ->> 'signature', ''));
+    insert into staff_profiles (staff, meeting, interests, favorites, mood, signature)
+    values (boss, apply_meeting.meeting,
+      array(select jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'interests', '[]'))),
+      array(select f.id from (select case when t.f ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then t.f::uuid end as id, min(t.ord) as ord from jsonb_array_elements_text(coalesce(payload -> 'profile' -> 'favorites', '[]')) with ordinality t(f, ord) group by 1) f
+        where f.id in (select c.id from characters_public c) order by f.ord),
+      coalesce(payload -> 'profile' ->> 'mood', ''), coalesce(payload -> 'profile' ->> 'signature', ''));
   end if;
 
   for mv in select value from jsonb_array_elements(kept_moves) loop

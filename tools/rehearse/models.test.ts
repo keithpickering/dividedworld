@@ -196,6 +196,9 @@ test('record mode: two different live chats on one simulated day each reach the 
 
 const refused = { ...chat, schema: { type: 'object', properties: { xs: { type: 'array', items: { type: 'string' }, maxItems: 3 } }, required: ['xs'], additionalProperties: false } } as ChatRequest;
 
+/** A refused schema is sent nowhere, so its row carries no usage. */
+const noUsage = ['inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWrite5mTokens', 'cacheWrite1hTokens', 'gpuSeconds'] as const;
+
 test('stub holds a schema to the provider\'s rules: SchemaRefused, its failed row written, nothing answered', async () => {
   const s = setup('stub', dir());
   await assert.rejects(() => s.m.chat(refused), (e: unknown) => e instanceof SchemaRefused && e.predicate === 'keyword(maxItems)');
@@ -203,6 +206,7 @@ test('stub holds a schema to the provider\'s rules: SchemaRefused, its failed ro
   assert.equal(s.rows[0]!.outcome, 'failed');
   assert.equal(s.rows[0]!.predicate, 'keyword(maxItems)');
   assert.equal(s.rows[0]!.costMicrodollars, 0);
+  for (const k of noUsage) assert.equal(s.rows[0]![k], null, `${k}: no usage`);
   assert.deepEqual(s.live.calls, []);
 });
 
@@ -220,5 +224,7 @@ test('a cassette does not hide a refused schema: a held call whose schema is now
     await assert.rejects(() => s.m.chat(refused), (e: unknown) => e instanceof SchemaRefused && e.predicate === 'keyword(maxItems)', mode);
     assert.deepEqual(s.live.calls, [], mode);
     assert.deepEqual(s.rows.map((r) => [r.outcome, r.predicate]), [['failed', 'keyword(maxItems)']], mode);
+    assert.equal(s.rows[0]!.costMicrodollars, 0, mode);
+    for (const k of noUsage) assert.equal(s.rows[0]![k], null, `${mode}: ${k}: no usage`);
   }
 });
