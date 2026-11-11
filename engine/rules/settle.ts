@@ -28,10 +28,12 @@
  *   this settlement, over every reaction up to the window's end, without that player's own vote,
  *   so nobody's call is proven by itself; a tie is no direction. Reactions after the settlement
  *   do not reach back: a window is settled once.
- * - A trap's spring is settled as a play of its trap card, under the card's alignment, on the Act
- *   that sprang it (`by`): the cast it caught, or the staff Act or visit that tripped it, which is
- *   no character's. A spring with no `by` (older rows) is scored on its trapped post. A caught
- *   play settles as the play it is.
+ * - A Reversal's spring (a set card's) is settled as a play of its card, under the card's alignment,
+ *   on the Act that sprang it (`by`): the cast it caught, or the staff Act or visit that tripped it,
+ *   which is no character's. A face-down Move's spring is scored on its own post, which is its
+ *   setter's, so for no class: the quote that sprang it is in `by` too, but the card the spring lands
+ *   on the quoting post is the play there, and the two are one play (#420). A spring with no `by`
+ *   (older rows) is scored on its trapped post. A caught play settles as the play it is.
  * - An earn gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
  *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
  *   positive earning of that character's Act that carries a time and a quadrant, falls in the
@@ -162,8 +164,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   const unscored = new Map<string, UnscoredTarget>((input.unscoredTargets ?? []).map((t) => [t.id, t]));
   /** A card's play or a trap's spring: each is a play of its card on its target. */
   const isPlay = (a: InputAct) => a.kind === 'card' || a.kind === 'spring';
-  /** What a play is scored against: its target post, or for a spring that names what sprang it, that Act (a cast, or a staff Act or visit). */
-  const scoredOn = (a: { kind?: ActKind; target?: string; by?: string }) => (a.kind === 'spring' && a.by !== undefined ? a.by : a.target);
+  const reversals = new Set(instance.cards.filter((c) => c.play === 'set').map((c) => c.key));
+  /** The Act a Reversal's spring names as what sprang it (a cast, or a staff Act or visit); nothing for any other play, a face-down Move's spring included. */
+  const sprungBy = (a: { kind?: ActKind; card?: string; by?: string }) => (a.kind === 'spring' && a.card !== undefined && reversals.has(a.card) ? a.by : undefined);
+  /** What a play is scored against: for a Reversal's spring, what sprang it; for every other play, its target post. */
+  const scoredOn = (a: { kind?: ActKind; target?: string; card?: string; by?: string }) => sprungBy(a) ?? a.target;
   const characters = new Map<string, InputCharacter>();
   for (const c of [...input.characters].sort((a, b) => cmp(a.id, b.id))) {
     for (const k of c.classes) if (!classOf.has(k.class)) throw new Error(`settle: character ${c.id} holds class "${k.class}", which the instance does not have`);
@@ -399,9 +404,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const a of windowActs.filter((x) => isPlay(x) && x.reach === undefined)) {
     if (!a.target) throw new Error(`settle: ${a.kind} Act ${a.id} has no target`);
     // A staff post is another's, and nobody's to land on.
-    // A spring's `by` that is no scored Act (a staff Act, a visit; an unknown one too) is read as a staff target, as `unscoredTargets` are.
+    // A Reversal's spring's `by` that is no scored Act (a staff Act, a visit; an unknown one too) is read as a staff target, as `unscoredTargets` are.
     const scored = scoredOn(a)!;
-    const target = unscored.has(scored) || (a.kind === 'spring' && a.by !== undefined && !acts.has(scored)) ? { id: scored, character: null } : actOf(scored);
+    const target = unscored.has(scored) || (sprungBy(a) !== undefined && !acts.has(scored)) ? { id: scored, character: null } : actOf(scored);
     const player = playerOf(a.character);
     const after: Record<Quadrant, number> = { excitedPositive: 0, excitedNegative: 0, calmPositive: 0, boredNegative: 0 };
     // Each vote after the card counts once per player and alignment: for the earliest of that
