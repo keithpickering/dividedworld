@@ -1,6 +1,6 @@
 /**
  * Graffiti (Pepperoni, rare): a wall on a post that any character may draw on, and the post's own character may wash. Divided World's
- * instance of the engine's surface (docs/plans/2026-11-11-graffiti-design.md, sections 2, 3, 8 and 9; plan Task 7). The engine counts the
+ * instance of the engine's surface (docs/plans/2026-11-11-graffiti-design.md, sections 2, 3, 8 and 9). The engine counts the
  * cells the strokes cover against `graffiti.limit` (a whole percent of its 100 x 100 grid) and holds at most `surface.mostLive` live draws;
  * this card's part is the cans, the caps and the stencils, and the shape of a draw.
  *
@@ -15,7 +15,7 @@
  * - **A wash** is `{ strokes }` of `{ aspect, points }` with the same bounds, at the sponge's width: 0.06 of the box's width.
  * - **A Mod Bot** names `{ stencil, can, spot }` and never freehands (The System acts inside bounded choices). Its options are a
  *   configuration `validateConfig` keeps, and `staffConfigs` are valid draws of the same shape, one for each stencil, which a Mod Bot's
- *   first draw is chosen from (the plan's Task 3 wires that: `staffConfigOf` returns `{}` for this card, since `validateConfig({})` accepts).
+ *   first draw is chosen from.
  */
 import { landsOn, ok, refuse, type CardRules, type Verdict } from '../../../engine/rules/cards.ts';
 import type { SurfaceStroke } from '../../../engine/rules/surface.ts';
