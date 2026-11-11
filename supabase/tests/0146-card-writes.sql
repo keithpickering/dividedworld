@@ -1,0 +1,398 @@
+-- The queue, the texts and the refund of a card that writes (supabase/migrations/0146_card_writes.sql;
+-- the plan for the card that writes, Task 4; its design sections 3, 4, 6, 12, 14 and 15).
+--
+-- A card whose kind `writes` has a text made for it by the server after it lands, once per version of the post. These files hold the
+-- SQL half: a play queues a job (a trigger on acts), an edit queues one for each live writing play on the post, the worker claims jobs
+-- in batches (a later play waits behind an earlier one on the same post) and finishes each with a text or a failure, a failure on a
+-- paid play pays its wallet event back and returns the card, and a reader gets the tails of a page of posts. A race file beside this one
+-- (0146-race-card-writes.sql) holds the concurrent cases.
+--
+-- Acts are written with explicit times where their order matters (plays on one post are ordered by (created_at, id), and a test's
+-- transaction has one now()).
+
+create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
+
+-- The Edge Function's calls, as the service role makes them.
+create function pg_temp.claim(most integer, only_post uuid default null) returns jsonb language plpgsql as $$
+declare r jsonb;
+begin
+  perform tests.become_service();
+  if only_post is null then r := claim_card_writes(most); else r := claim_card_writes(most, only_post); end if;
+  perform tests.unbecome();
+  return r;
+end $$;
+create function pg_temp.finish(p uuid, v uuid, t text, f text, c bigint default null) returns jsonb language plpgsql as $$
+declare r jsonb;
+begin
+  perform tests.become_service();
+  r := finish_card_write(p, v, t, f, c);
+  perform tests.unbecome();
+  return r;
+end $$;
+-- The jobs of one post's claim among a batch's answer.
+create function pg_temp.of_post(got jsonb, p uuid) returns jsonb language sql as $$
+  select coalesce(jsonb_agg(e), '[]'::jsonb) from jsonb_array_elements(got) e where e ->> 'post' = p::text
+$$;
+create function pg_temp.plan(q text) returns text language plpgsql as $$
+declare l text; out text := '';
+begin
+  for l in execute 'explain ' || q loop out := out || l || E'\n'; end loop;
+  return out;
+end $$;
+
+-- The vocabulary: a card that writes (three to a post) and one that does not, both uncommon so the pool's cap lets a Mod Bot play them.
+do $$
+begin
+  insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 3, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}')
+    on conflict (key) do update set value = excluded.value;
+  insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('cw-scribe', 'Scribe', 'salty', 'uncommon', 'cast', 3, true);
+  insert into card_kinds (key, name, alignment, rarity, play) values ('cw-plain', 'Plain', 'sweet', 'uncommon', 'cast');
+end $$;
+
+-- ---------------------------------------------------------------------------------------- the queue, the chain, the claim ----
+do $$
+declare
+  ann uuid := tests.account('cw-ann'); bob uuid := tests.account('cw-bob'); cat uuid := tests.account('cw-cat');
+  a uuid := tests.character(ann, 'Cw Caster'); b uuid := tests.character(bob, 'Cw Author'); c uuid := tests.character(cat, 'Cw Reader');
+  t uuid := tests.thread('Tail thread');
+  base timestamptz := '2030-01-01T00:00:00Z';
+  p0 uuid; p uuid; p2 uuid; p3 uuid;
+  play1 uuid; play2 uuid; play3 uuid; e1 uuid; e2 uuid; e3 uuid; e4 uuid;
+  got jsonb; seen jsonb; seen_b jsonb; seen_c jsonb; jobs jsonb;
+begin
+  p0 := tests.post(c, t, 'An earlier post, before the one that carries the card.', base - interval '1 minute');
+  p := tests.post(b, t, 'The first words of a post', base);
+  p2 := tests.post(b, t, 'A post that carries nothing', base + interval '1 minute');
+
+  -- A play of a writing card queues one job, at the post's own version.
+  play1 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '2 minutes');
+  if (select count(*) from card_writes where post = p) is distinct from 1 or (select w.version from card_writes w where w.play = play1) is distinct from p then
+    raise exception 'a play of a writing card queues one job at the post''s version: %', (select jsonb_agg(to_jsonb(w)) from card_writes w where w.post = p);
+  end if;
+  -- A play of a card that does not write queues nothing.
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'cw-plain', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '3 minutes');
+  if (select count(*) from card_writes where post = p) is distinct from 1 then raise exception 'a play of a card that does not write queued a job'; end if;
+
+  -- An edit makes the job again at the newer version; a second edit before the worker ran leaves one job, at the newest.
+  e1 := tests.act(b, 'edit', t, jsonb_build_object('body', 'The first words, mended'), p, base + interval '4 minutes');
+  if (select count(*) from card_writes where post = p) is distinct from 1 or (select w.version from card_writes w where w.play = play1) is distinct from e1 then
+    raise exception 'an edit queues its play again at the edit';
+  end if;
+  e2 := tests.act(b, 'edit', t, jsonb_build_object('body', 'The first words, mended again'), p, base + interval '5 minutes');
+  if (select count(*) from card_writes where post = p) is distinct from 1 or (select w.version from card_writes w where w.play = play1) is distinct from e2 then
+    raise exception 'a second edit before the worker runs leaves one job at the newer version: %', (select jsonb_agg(to_jsonb(w)) from card_writes w where w.post = p);
+  end if;
+
+  -- An edit on a post with no writing play queues nothing, and its probe is an index's: the post's layers, never a scan of the Acts.
+  perform tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended, and still nothing on it'), p2, base + interval '5 minutes');
+  if (select count(*) from card_writes where post = p2) is distinct from 0 then raise exception 'an edit on a post with no writing play queued a job'; end if;
+  set local enable_seqscan = off;
+  if pg_temp.plan(format('select * from live_writing_plays(%L)', p2)) like '%Seq Scan on acts%' or pg_temp.plan(format('select * from live_writing_plays(%L)', p2)) not like '%acts_%' then
+    raise exception 'the edit probe is not an index on acts: %', pg_temp.plan(format('select * from live_writing_plays(%L)', p2));
+  end if;
+  reset enable_seqscan;
+
+  -- A second play on the post queues its job, at the post's current version.
+  play2 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 2), p, base + interval '6 minutes');
+  if (select count(*) from card_writes where post = p) is distinct from 2 or (select w.version from card_writes w where w.play = play2) is distinct from e2 then
+    raise exception 'the second play queues its job at the current version: %', (select jsonb_agg(to_jsonb(w)) from card_writes w where w.post = p);
+  end if;
+
+  -- The chain: the claim holds the second play's job back while the first's waits.
+  got := pg_temp.claim(10);
+  jobs := pg_temp.of_post(got, p);
+  if jsonb_array_length(jobs) is distinct from 1 or jobs -> 0 ->> 'play' is distinct from play1::text then
+    raise exception 'the claim holds back the second play''s job while the first''s waits: %', jobs;
+  end if;
+  if jobs -> 0 ->> 'version' is distinct from e2::text or (jobs -> 0 ->> 'attempts')::integer is distinct from 1 or jobs -> 0 ->> 'card' is distinct from 'cw-scribe'
+     or jobs -> 0 ->> 'author' is distinct from 'Cw Author' or jobs -> 0 ->> 'body' is distinct from 'The first words, mended again' or jobs -> 0 ->> 'title' is distinct from 'Tail thread'
+     or jobs -> 0 -> 'earlier' is distinct from '[]'::jsonb or (jobs -> 0 ->> 'post') is distinct from p::text or (jobs -> 0 ->> 'thread') is distinct from t::text then
+    raise exception 'the claim carries the frame''s inputs and the attempt: %', jobs;
+  end if;
+  if jobs -> 0 -> 'before' is distinct from jsonb_build_array(jsonb_build_object('name', 'Cw Reader', 'body', 'An earlier post, before the one that carries the card.')) then
+    raise exception 'the claim carries the public posts before this one: %', jobs -> 0 -> 'before';
+  end if;
+  -- A claimed job is not claimed again until its claim runs out.
+  if jsonb_array_length(pg_temp.of_post(pg_temp.claim(10), p)) is distinct from 0 then raise exception 'a claimed job was claimed again before its claim ran out'; end if;
+
+  -- A claim for one post takes only that post's jobs, and touches no other's.
+  p3 := tests.post(b, t, 'Another post, with a play of its own', base + interval '7 minutes');
+  play3 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p3, base + interval '8 minutes');
+  jobs := pg_temp.claim(10, p3);
+  if jsonb_array_length(jobs) is distinct from 1 or jobs -> 0 ->> 'play' is distinct from play3::text then raise exception 'a claim for one post takes that post''s job alone: %', jobs; end if;
+  if (select w.attempts from card_writes w where w.play = play1) is distinct from 1 then raise exception 'a claim for another post counted an attempt on this one'; end if;
+  if jsonb_array_length(pg_temp.claim(10, p3)) is distinct from 0 then raise exception 'a claimed job was claimed again by a claim for its post'; end if;
+
+  -- A claim that ran out is taken again, and counted.
+  update card_writes set claimed_until = clock_timestamp() - interval '1 second' where play = play1;
+  jobs := pg_temp.of_post(pg_temp.claim(10, p), p);
+  if jsonb_array_length(jobs) is distinct from 1 or (jobs -> 0 ->> 'attempts')::integer is distinct from 2 then raise exception 'a job whose claim ran out is claimed again with its attempts counted: %', jobs; end if;
+
+  -- A finish writes the row, clears its job and tells the thread, in words that name only the play and the version.
+  seen := pg_temp.finish(play1, e2, 'A tail for the first.', null);
+  if (select count(*) from card_texts x where x.play = play1 and x.version = e2 and x.text = 'A tail for the first.' and x.failed is null) is distinct from 1 then raise exception 'a finish writes its row'; end if;
+  if exists (select 1 from card_writes w where w.play = play1) then raise exception 'a finish for the queued version clears its job'; end if;
+  if (select count(*) from broadcasts_due d where d.topic = 'thread:' || t and d.event = 'card_text' and d.payload = jsonb_build_object('play', play1, 'version', e2)) is distinct from 1 then
+    raise exception 'a finish tells the thread of the play and the version and nothing else: %', (select jsonb_agg(to_jsonb(d)) from broadcasts_due d where d.event = 'card_text');
+  end if;
+  -- A finish of the same version again (a retry, a sweep and a kick landing together) writes nothing more and says nothing more.
+  perform pg_temp.finish(play1, e2, 'A second tail for the same version.', null);
+  if (select count(*) from card_texts x where x.play = play1 and x.version = e2) is distinct from 1 or (select x.text from card_texts x where x.play = play1 and x.version = e2) is distinct from 'A tail for the first.' then
+    raise exception 'a second finish of one version changed the text';
+  end if;
+  if (select count(*) from broadcasts_due d where d.event = 'card_text' and d.payload = jsonb_build_object('play', play1, 'version', e2)) is distinct from 1 then raise exception 'a second finish told the thread again'; end if;
+
+  -- The second play's job is now free, and carries the first's text for the same version.
+  jobs := pg_temp.of_post(pg_temp.claim(10), p);
+  if jsonb_array_length(jobs) is distinct from 1 or jobs -> 0 ->> 'play' is distinct from play2::text
+     or jobs -> 0 -> 'earlier' is distinct from jsonb_build_array(jsonb_build_object('play', play1, 'text', 'A tail for the first.')) then
+    raise exception 'the second play''s job follows the first''s finish and carries its text: %', jobs;
+  end if;
+
+  -- An edit while the second is claimed replaces its job; the late finish writes its row for the version it made and leaves the newer job.
+  e3 := tests.act(b, 'edit', t, jsonb_build_object('body', 'The first words, mended a third time'), p, base + interval '9 minutes');
+  if (select count(*) from card_writes where post = p) is distinct from 2 then raise exception 'the edit queues both plays again: %', (select jsonb_agg(to_jsonb(w)) from card_writes w where w.post = p); end if;
+  perform pg_temp.finish(play2, e2, 'A tail that came late.', null);
+  if (select count(*) from card_texts x where x.play = play2 and x.version = e2) is distinct from 1 then raise exception 'a finish for a replaced version writes its row'; end if;
+  if (select w.version from card_writes w where w.play = play2) is distinct from e3 or (select w.attempts from card_writes w where w.play = play2) is distinct from 0 then
+    raise exception 'a finish for a replaced version leaves the newer job as it was queued';
+  end if;
+
+  -- What a reader gets: every row of the page's posts, the waiting jobs marked, the same to everyone and never the predicate.
+  perform tests.become(ann);
+  seen := (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from post_tails(array[p, p2]) x);
+  perform tests.become(bob);
+  seen_b := (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from post_tails(array[p, p2]) x);
+  perform tests.become(cat);
+  seen_c := (select coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) from post_tails(array[p, p2]) x);
+  perform tests.unbecome();
+  if seen is distinct from seen_b or seen is distinct from seen_c then raise exception 'post_tails varies with who reads it: % / % / %', seen, seen_b, seen_c; end if;
+  if jsonb_array_length(seen) is distinct from 4 then raise exception 'post_tails answers each row and each waiting job: %', seen; end if;
+  if seen -> 0 ->> 'play' is distinct from play1::text or seen -> 0 ->> 'version' is distinct from e2::text or seen -> 0 ->> 'text' is distinct from 'A tail for the first.'
+     or (seen -> 0 ->> 'failed')::boolean is distinct from false or (seen -> 0 ->> 'waiting')::boolean is distinct from false or seen -> 0 ->> 'post' is distinct from p::text
+     or seen -> 1 ->> 'play' is distinct from play2::text or seen -> 1 ->> 'version' is distinct from e2::text or seen -> 1 ->> 'text' is distinct from 'A tail that came late.' then
+    raise exception 'post_tails orders by version then play, and carries the text: %', seen;
+  end if;
+  if (seen -> 2 ->> 'waiting')::boolean is distinct from true or seen -> 2 ->> 'version' is distinct from e3::text or seen -> 2 ->> 'text' is not null
+     or (seen -> 3 ->> 'waiting')::boolean is distinct from true or seen -> 3 ->> 'play' is distinct from play2::text then
+    raise exception 'post_tails marks a job still waiting for the current version: %', seen;
+  end if;
+  if exists (select 1 from jsonb_array_elements(seen) e where e ? 'predicate' or e ? 'call' or e ? 'attempts') then raise exception 'post_tails shows more than a reader may see: %', seen; end if;
+
+  -- An ended play gets no new job, and the one it had is let go at the next claim.
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, play2, jsonb_build_object('why', 'reversed', 'by', 'admin'));
+  perform set_config('kayfabb.card_end_writer', '', true);
+  e4 := tests.act(b, 'edit', t, jsonb_build_object('body', 'The first words, mended a fourth time'), p, base + interval '10 minutes');
+  if (select w.version from card_writes w where w.play = play1) is distinct from e4 then raise exception 'an edit still queues a play that is in force'; end if;
+  jobs := pg_temp.of_post(pg_temp.claim(10, p), p);
+  if jsonb_array_length(jobs) is distinct from 1 or jobs -> 0 ->> 'play' is distinct from play1::text or exists (select 1 from card_writes w where w.play = play2) then
+    raise exception 'an ended play''s job is let go and its place in the chain is not held: %', jobs;
+  end if;
+end $$;
+
+-- ------------------------------------------------------------------------------------------------------------ the refund ----
+do $$
+begin
+  perform seed_instance(jsonb_build_object(
+    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'rosterRecentExcluded', 0, 'inheritanceGraceDays', 3,
+      'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('Landed: {move}.'),
+        'bossFarewell', jsonb_build_array('Farewell from {boss}.'), 'bossArrival', jsonb_build_array('Hello from {boss}.'))),
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb,
+    'cards', jsonb_build_array(jsonb_build_object('key', 'cw-seeded', 'name', 'Seeded', 'alignment', 'salty', 'rarity', 'uncommon', 'play', 'cast', 'writes', true),
+                               jsonb_build_object('key', 'cw-seeded-plain', 'name', 'Seeded plain', 'alignment', 'sweet', 'rarity', 'uncommon', 'play', 'cast')),
+    'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'cw-boss',
+      'staff', jsonb_build_array(
+        jsonb_build_object('key', 'cw-boss', 'name', 'Cw Boss', 'title', 'Boss', 'signature', 'a'),
+        jsonb_build_object('key', 'cw-mod', 'name', 'Cw Mod', 'title', 'Mod', 'signature', 'b')),
+      'firstStaff', jsonb_build_array('cw-mod'),
+      'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
+      'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
+end $$;
+
+do $$
+declare
+  ann uuid := tests.account('cw2-ann'); bob uuid := tests.account('cw2-bob');
+  a uuid := tests.character(ann, 'Cw Payer'); b uuid := tests.character(bob, 'Cw Writer');
+  t uuid := tests.thread('Refund thread');
+  base timestamptz := '2030-02-01T00:00:00Z';
+  p4 uuid; p5 uuid; p6 uuid; p7 uuid;
+  pl uuid; played jsonb; e uuid; said jsonb;
+  made bigint; wallets_before bigint;
+begin
+  insert into wallets (account, balance) values (ann, 600), (bob, 600);
+  insert into card_ledger (account, card, kind, price) values (ann, 'cw-scribe', 'bought', 0), (ann, 'cw-scribe', 'bought', 0), (ann, 'cw-scribe', 'bought', 0);
+
+  -- The seed carries whether a card writes into the catalog.
+  if (select k.writes from card_kinds k where k.key = 'cw-seeded') is distinct from true or (select k.writes from card_kinds k where k.key = 'cw-seeded-plain') is distinct from false
+     or (select k.writes from card_kinds k where k.key = 'sweetie') is distinct from false then
+    raise exception 'seed_instance sets card_kinds.writes from the card';
+  end if;
+
+  -- A paid play, played through the door the Edge Function uses.
+  p4 := tests.post(b, t, 'A post that will be played on.', base);
+  perform tests.become_service();
+  played := play_card(ann, 'cw-scribe', a, p4, '{}', 50, '');
+  perform tests.unbecome();
+  pl := (played ->> 'id')::uuid;
+  if (select count(*) from card_writes where play = (played ->> 'id')::uuid) is distinct from 1 then raise exception 'play_card of a writing card queues one job'; end if;
+  if (select balance from wallets where account = ann) is distinct from 550 or card_held(ann, 'cw-scribe') is distinct from 2 then raise exception 'the play cost its price and took a card'; end if;
+
+  -- A failure on it pays exactly the play's wallet event back, returns the card, and says why once.
+  said := pg_temp.finish(pl, p4, null, 'unreachable');
+  if (select count(*) from wallet_events w where w.kind = 'refund' and w.ref = pl and w.account = ann and w.change = 50) is distinct from 1 or (select balance from wallets where account = ann) is distinct from 600 then
+    raise exception 'a failed finish on a paid play refunds exactly the play''s wallet event: %', said;
+  end if;
+  if (select count(*) from card_write_refunds r where r.play = pl and r.amount = 50) is distinct from 1 then raise exception 'the refund is recorded once'; end if;
+  if (select count(*) from card_ledger l where l.kind = 'returned' and l.act = pl and l.account = ann and l.card = 'cw-scribe' and l.price = 50) is distinct from 1 or card_held(ann, 'cw-scribe') is distinct from 3 then
+    raise exception 'a failed finish returns the card to the hand, and card_held counts it';
+  end if;
+  if exists (select 1 from card_writes w where w.play = pl) or (select count(*) from card_texts x where x.play = pl and x.text is null and x.failed = 'unreachable') is distinct from 1 then raise exception 'a failed finish writes its row and clears its job'; end if;
+  -- A second finish of it, and a second call of the refund, pay nothing more.
+  perform pg_temp.finish(pl, p4, null, 'unreachable');
+  said := pg_temp.finish(pl, p4, null, 'scrub:word');
+  perform tests.become_service();
+  said := refund_card_write(pl);
+  perform tests.unbecome();
+  if (select count(*) from wallet_events w where w.kind = 'refund' and w.ref = pl) is distinct from 1 or (select count(*) from card_ledger l where l.kind = 'returned' and l.act = pl) is distinct from 1
+     or (select count(*) from card_write_refunds r where r.play = pl) is distinct from 1 or (said ->> 'refunded')::boolean is distinct from false or (select balance from wallets where account = ann) is distinct from 600 then
+    raise exception 'a second call refunds nothing: %', said;
+  end if;
+
+  -- A failure on a play that already has a text pays nothing: the tail it had stays, and so does the price.
+  p5 := tests.post(b, t, 'A post whose tail comes, and then fails once mended.', base + interval '1 minute');
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p5, '{}', 30, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  made := record_model_call(jsonb_build_object('duty', 'cardText', 'provider', 'local', 'model', 'old', 'cost_microdollars', 0, 'outcome', 'ok', 'play', pl, 'gpu_seconds', 1.5));
+  if (select m.play from model_calls m where m.id = made) is distinct from pl then raise exception 'record_model_call writes the play a call was made for'; end if;
+  perform pg_temp.finish(pl, p5, 'It came.', null, made);
+  if (select x.call from card_texts x where x.play = pl and x.version = p5) is distinct from made then raise exception 'a finish names its model call'; end if;
+  e := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended.'), p5, base + interval '2 minutes');
+  perform pg_temp.finish(pl, e, null, 'unreachable');
+  if exists (select 1 from wallet_events w where w.kind = 'refund' and w.ref = pl) or exists (select 1 from card_ledger l where l.kind = 'returned' and l.act = pl) or exists (select 1 from card_write_refunds r where r.play = pl) then
+    raise exception 'a failed finish on a play that already has a text refunded';
+  end if;
+  if (select count(*) from card_texts x where x.play = pl) is distinct from 2 then raise exception 'the failure is a row beside the text it kept'; end if;
+
+  -- A failure of a version that a newer job replaced decides nothing: the newer one may yet make the tail, and a failure of it refunds.
+  p6 := tests.post(b, t, 'A post mended before its first tail came.', base + interval '3 minutes');
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p6, '{}', 20, '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  e := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended before the tail.'), p6, base + interval '4 minutes');
+  perform pg_temp.finish(pl, p6, null, 'unreachable');
+  if exists (select 1 from wallet_events w where w.kind = 'refund' and w.ref = pl) or (select w.version from card_writes w where w.play = pl) is distinct from e then
+    raise exception 'a failure of a replaced version refunded, or took the newer job with it';
+  end if;
+  perform pg_temp.finish(pl, e, null, 'nonEmpty');
+  if (select count(*) from wallet_events w where w.kind = 'refund' and w.ref = pl and w.change = 20) is distinct from 1 or (select count(*) from card_ledger l where l.kind = 'returned' and l.act = pl) is distinct from 1 then
+    raise exception 'a failure of the newest version refunds';
+  end if;
+
+  -- A Mod Bot's play pays nothing and holds no hand, so its failure moves no wallet and returns nothing.
+  p7 := tests.post(b, t, 'A post a Mod Bot played on.', base + interval '5 minutes');
+  perform tests.become_service();
+  pl := (staff_play_card('cw-mod', 'cw-scribe', p7, '{}', '') ->> 'id')::uuid;
+  perform tests.unbecome();
+  if (select count(*) from card_writes where play = (select a2.id from acts a2 where a2.target_act_id = p7 and a2.kind = 'card')) is distinct from 1 then raise exception 'a Mod Bot''s play of a writing card queues one job'; end if;
+  select coalesce(sum(w.balance), 0) into wallets_before from wallets w;
+  perform pg_temp.finish(pl, p7, null, 'scrub:word');
+  if (select coalesce(sum(w.balance), 0) from wallets w) is distinct from wallets_before or exists (select 1 from wallet_events w where w.ref = pl) or exists (select 1 from card_ledger l where l.act = pl)
+     or exists (select 1 from card_write_refunds r where r.play = pl) or exists (select 1 from card_writes w where w.play = pl) then
+    raise exception 'a Mod Bot''s play''s failure moved a wallet or a hand';
+  end if;
+  if (select count(*) from card_texts x where x.play = pl and x.failed = 'scrub:word') is distinct from 1 then raise exception 'a Mod Bot''s failure is still a row'; end if;
+end $$;
+
+-- ------------------------------------------------------------------------------------------- append-only, bounds, access ----
+do $$
+declare
+  ann uuid := tests.account('cw3-ann'); bob uuid := tests.account('cw3-bob');
+  a uuid := tests.character(ann, 'Cw Third Caster'); b uuid := tests.character(bob, 'Cw Third Author');
+  t uuid := tests.thread('Bounds thread');
+  base timestamptz := '2030-03-01T00:00:00Z';
+  p uuid; pl uuid; e1 uuid; e2 uuid; e3 uuid; e4 uuid; slot uuid; said text; rolled text[]; scribes integer := 0; plains integer := 0; n integer;
+begin
+  p := tests.post(b, t, 'A post for the bounds.', base);
+  pl := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '1 minute');
+  e1 := tests.act(b, 'edit', t, jsonb_build_object('body', 'one'), p, base + interval '2 minutes');
+  e2 := tests.act(b, 'edit', t, jsonb_build_object('body', 'two'), p, base + interval '3 minutes');
+  e3 := tests.act(b, 'edit', t, jsonb_build_object('body', 'three'), p, base + interval '4 minutes');
+  e4 := tests.act(b, 'edit', t, jsonb_build_object('body', 'four'), p, base + interval '5 minutes');
+  insert into card_texts (play, version, text) values (pl, e1, 'one text');
+
+  -- A text is kept as it was made: no update, no delete, no truncate; and a row says a text or a failure, never both or neither.
+  said := pg_temp.refusal(format('update card_texts set text = %L where play = %L', 'changed', pl));
+  if said is null or said not like '%never edited%' then raise exception 'card_texts took an update: %', said; end if;
+  said := pg_temp.refusal(format('delete from card_texts where play = %L', pl));
+  if said is null or said not like '%never edited%' then raise exception 'card_texts took a delete: %', said; end if;
+  said := pg_temp.refusal('truncate card_texts');
+  if said is null or said not like '%never edited%' then raise exception 'card_texts took a truncate: %', said; end if;
+  if pg_temp.refusal(format('insert into card_texts (play, version) values (%L, %L)', pl, e2)) is null then raise exception 'a row of neither a text nor a failure was accepted'; end if;
+  if pg_temp.refusal(format('insert into card_texts (play, version, text, failed) values (%L, %L, %L, %L)', pl, e2, 'both', 'unreachable')) is null then raise exception 'a row of a text and a failure was accepted'; end if;
+  if pg_temp.refusal(format('insert into card_texts (play, version, text) values (%L, %L, %L)', pl, e2, '')) is null then raise exception 'an empty text was accepted'; end if;
+  if pg_temp.refusal(format('insert into card_texts (play, version, text) values (%L, %L, %L)', pl, e2, repeat('x', 4001))) is null then raise exception 'a text of 4,001 characters was accepted'; end if;
+  if pg_temp.refusal(format('insert into card_texts (play, version, text) values (%L, %L, %L)', pl, e2, repeat('x', 4000))) is not null then raise exception 'a text of 4,000 characters was refused'; end if;
+  if pg_temp.refusal(format('insert into card_texts (play, version, text) values (%L, %L, %L)', pl, e1, 'again')) is null then raise exception 'a second text for one version was accepted'; end if;
+
+  -- The tables are the server's alone: no signed-in player reads the queue, the texts or the refunds, and no one calls the worker's doors.
+  perform tests.become(ann);
+  foreach said in array array['card_writes', 'card_texts', 'card_write_refunds'] loop
+    if pg_temp.refusal(format('select * from %I', said)) is null then raise exception '% is readable by a signed-in player', said; end if;
+  end loop;
+  if pg_temp.refusal('select claim_card_writes(1)') is null or pg_temp.refusal(format('select finish_card_write(%L, %L, %L, null, null)', pl, e1, 'x')) is null
+     or pg_temp.refusal(format('select refund_card_write(%L)', pl)) is null then
+    raise exception 'a signed-in player calls the worker''s doors';
+  end if;
+  if pg_temp.refusal(format('select * from post_tails(array[%L]::uuid[])', p)) is not null then raise exception 'a signed-in player cannot read tails'; end if;
+  perform tests.become_anon();
+  if pg_temp.refusal(format('select * from post_tails(array[%L]::uuid[])', p)) is null then raise exception 'post_tails is readable by anon'; end if;
+  perform tests.unbecome();
+
+  -- Without the old voice nothing writing is sold, played or pulled, in the words the engine's decidePlay says.
+  update settings set value = 'false' where key = 'oldVoice';
+  insert into machine_slots (position, card, availability, price) values (9101, 'cw-scribe', 'onSale', 100) returning id into slot;
+  insert into wallets (account, balance) values (ann, 600);
+  insert into card_ledger (account, card, kind, price) values (ann, 'cw-scribe', 'bought', 0);
+  perform tests.become_service();
+  said := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'cw-scribe', a, p, '{}', ''));
+  if said is distinct from 'The old voice isn''t running on this forum, so this card can''t be played.' then raise exception 'play_card with oldVoice off: %', said; end if;
+  said := pg_temp.refusal(format('select buy_card(%L, %L, 100)', ann, slot));
+  if said is distinct from 'The old voice isn''t running on this forum, so this card can''t be played.' then raise exception 'buy_card with oldVoice off: %', said; end if;
+  said := pg_temp.refusal(format('select staff_play_card(%L, %L, %L)', 'cw-mod', 'cw-scribe', p));
+  if said is distinct from 'The old voice isn''t running on this forum, so this card can''t be played.' then raise exception 'staff_play_card with oldVoice off: %', said; end if;
+  perform tests.unbecome();
+  if (select balance from wallets where account = ann) is distinct from 600 or card_held(ann, 'cw-scribe') is distinct from 1 then raise exception 'a refused purchase or play took something'; end if;
+  perform setseed(0.5);
+  for n in 1..60 loop
+    rolled := roll_pack('[{"weights": {"uncommon": 100}}]', '{}');
+    if rolled[1] = 'cw-scribe' or rolled[1] = 'cw-seeded' then scribes := scribes + 1; end if;
+  end loop;
+  if scribes is distinct from 0 then raise exception 'a pack pulled a writing card with oldVoice off (% times)', scribes; end if;
+  -- And with it on they are sold, played and pulled as any card is.
+  update settings set value = 'true' where key = 'oldVoice';
+  perform setseed(0.5);
+  for n in 1..60 loop
+    rolled := roll_pack('[{"weights": {"uncommon": 100}}]', '{}');
+    if rolled[1] = 'cw-scribe' then scribes := scribes + 1; end if;
+  end loop;
+  if scribes < 1 then raise exception 'a pack never pulled a writing card with oldVoice on'; end if;
+  perform tests.become_service();
+  if (buy_card(ann, slot, 100) ->> 'card') is distinct from 'cw-scribe' then raise exception 'buy_card with oldVoice on'; end if;
+  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '');
+  perform tests.unbecome();
+
+  -- The worker is woken every minute, by the schedule the other jobs use.
+  if not exists (select 1 from cron.job j where j.jobname = 'kayfabb-write' and j.schedule = '* * * * *' and j.command like '%/functions/v1/write%' and j.command like '%kayfabb_jobs_key%') then
+    raise exception 'the sweep is not scheduled: %', (select jsonb_agg(to_jsonb(j)) from cron.job j);
+  end if;
+end $$;

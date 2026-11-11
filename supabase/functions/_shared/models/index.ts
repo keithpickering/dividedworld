@@ -104,7 +104,7 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
           duty: request.duty, staff: request.staff ?? null, provider: call.provider, model: call.model, serviceTier: u.serviceTier ?? null,
           inputTokens: u.inputTokens ?? null, outputTokens: u.outputTokens ?? null, cacheReadTokens: u.cacheReadTokens ?? null,
           cacheWrite5mTokens: u.cacheWrite5mTokens ?? null, cacheWrite1hTokens: u.cacheWrite1hTokens ?? null, gpuSeconds: u.gpuSeconds ?? null,
-          costMicrodollars: call.costMicrodollars, outcome: call.outcome, predicate: call.predicate, trims: call.trims, retries: call.retries, meeting: request.meeting ?? null,
+          costMicrodollars: call.costMicrodollars, outcome: call.outcome, predicate: call.predicate, trims: call.trims, retries: call.retries, meeting: request.meeting ?? null, play: request.play ?? null,
         });
       } catch (e) {
         throw new LedgerWriteFailed(`the model call could not be recorded in the ledger: ${e instanceof Error ? e.message : String(e)}`, threw ? { cause: failure } : { cause: e });

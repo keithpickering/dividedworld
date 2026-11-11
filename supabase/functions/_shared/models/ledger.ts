@@ -25,6 +25,8 @@ export interface ModelCallRow {
   readonly trims: readonly unknown[];
   readonly retries: number;
   readonly meeting: number | null;
+  /** The card play a call was made for (a card that writes), or null. */
+  readonly play: string | null;
 }
 
 export type RecordModelCall = (row: ModelCallRow) => Promise<void>;
@@ -36,7 +38,7 @@ export function ledgerWriter(db: Db): RecordModelCall {
         duty: row.duty, staff: row.staff, provider: row.provider, model: row.model, service_tier: row.serviceTier,
         input_tokens: row.inputTokens, output_tokens: row.outputTokens, cache_read_tokens: row.cacheReadTokens,
         cache_write_5m_tokens: row.cacheWrite5mTokens, cache_write_1h_tokens: row.cacheWrite1hTokens, gpu_seconds: row.gpuSeconds,
-        cost_microdollars: row.costMicrodollars, outcome: row.outcome, predicate: row.predicate, trims: row.trims, retries: row.retries, meeting: row.meeting,
+        cost_microdollars: row.costMicrodollars, outcome: row.outcome, predicate: row.predicate, trims: row.trims, retries: row.retries, meeting: row.meeting, play: row.play,
       },
     });
   };

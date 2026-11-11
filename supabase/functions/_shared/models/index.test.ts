@@ -168,7 +168,7 @@ test('a call that is used writes one ok row, with its tokens, cost, retries and 
   assert.deepEqual(l.rows[0], {
     duty: 'microEvent', staff: 'director', provider: 'anthropic', model: 'claude-haiku-5-5', serviceTier: 'standard',
     inputTokens: 1000, outputTokens: 500, cacheReadTokens: 0, cacheWrite5mTokens: 0, cacheWrite1hTokens: 0, gpuSeconds: null,
-    costMicrodollars: 350, outcome: 'ok', predicate: null, trims: [], retries: 1, meeting: 7,
+    costMicrodollars: 350, outcome: 'ok', predicate: null, trims: [], retries: 1, meeting: 7, play: null,
   });
 });
 
@@ -262,10 +262,10 @@ test('the real writer calls record_model_call with the row in snake case', async
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
   const write = ledgerWriter({ rpc: async <T>(fn: string, args: Record<string, unknown>) => { calls.push({ fn, args }); return 1 as T; } });
   await write({ duty: 'meeting', staff: null, provider: 'anthropic', model: 'm', serviceTier: 'standard', inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWrite5mTokens: 4, cacheWrite1hTokens: 5,
-    gpuSeconds: null, costMicrodollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null });
+    gpuSeconds: null, costMicrodollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null, play: 'a-play' });
   assert.equal(calls[0]?.fn, 'record_model_call');
   assert.deepEqual(calls[0]?.args, { payload: { duty: 'meeting', staff: null, provider: 'anthropic', model: 'm', service_tier: 'standard', input_tokens: 1, output_tokens: 2, cache_read_tokens: 3,
-    cache_write_5m_tokens: 4, cache_write_1h_tokens: 5, gpu_seconds: null, cost_microdollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null } });
+    cache_write_5m_tokens: 4, cache_write_1h_tokens: 5, gpu_seconds: null, cost_microdollars: 9, outcome: 'ok', predicate: null, trims: [], retries: 0, meeting: null, play: 'a-play' } });
 });
 
 test('a 200 whose body is not JSON is one attempt: not retried, and one rejected row naming validJson', async () => {

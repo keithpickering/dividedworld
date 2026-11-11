@@ -102,6 +102,18 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0072): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
+      -- A card that writes (0146): a post carrying three plays, the first with its tail, the second still waiting, the third failed and refunded; the
+      -- queue, the texts and the refund are carried as they were, so an imported forum's tails are the same words and never made again.
+      declare wp uuid := tests.post(a, t, 'A post that carries a tail.'); w1 uuid; w2 uuid; w3 uuid;
+      begin
+        insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('expwrite', 'Exported Writer', 'salty', 'uncommon', 'cast', 3, true);
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wp, '{"card": "expwrite", "message": "", "config": {}, "layer": 1}') returning id into w1;
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wp, '{"card": "expwrite", "message": "", "config": {}, "layer": 2}') returning id into w2;
+        insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, wp, '{"card": "expwrite", "message": "", "config": {}, "layer": 3}') returning id into w3;
+        perform finish_card_write(w1, wp, 'A tail, carried across.', null);
+        perform finish_card_write(w3, wp, null, 'scrub:word');
+        insert into card_write_refunds (play, amount) values (w3, 40);
+      end;
       -- A trap of the export's own (#136 F1): Ann sets a Trap Card naming Blot on her post through set_card, and Bob's Blot cast on it
       -- through play_card is caught, so a face_down row, a spring and a caught card are the cast's own, by their ids, below.
       insert into card_kinds (key, name, alignment, rarity, play, trap) values ('expcatch', 'Exported Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}');
@@ -311,7 +323,7 @@ test('an instance exported and imported into a fresh database is the same instan
     insert into public.export_probe values (1, 12.50, array['a,b', 'q"uote', null], 'astral 😀 and \\. alone');`);
   const before = contents(from);
   // The staff roster's tables hold a row in the fixture, so the comparison below carries each (an empty table would round-trip as well, and prove nothing).
-  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies']) {
+  for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds']) {
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
@@ -518,7 +530,7 @@ test('an instance exported and imported into a fresh database is the same instan
     const xe = '{"plural": false, "object": "xem", "subject": "xe", "reflexive": "xemself", "determiner": "xyr", "possessive": "xyrs"}';
     const setOf = (url: string) => psqlOn(url, `select p.pronouns::text from character_profiles p join characters c on c.id = p.character where c.name = 'Exported A'`).trim();
     assert.deepEqual(JSON.parse(setOf(fresh.toString())), JSON.parse(xe), 'a custom pronoun set survives the round trip');
-    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
+    for (const t of ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds']) { const rows = after.get(`public.${t}`); assert.ok(rows !== undefined && rows !== '[]', `${t} is in the imported instance (got ${rows === undefined ? 'no such table' : rows})`); }
     // A season's frozen results are carried as they were written, and the import (a replica's write, inserts only) leaves their guard firing always (0099).
     const guards = (url: string) => psqlOn(url, `select string_agg(tgname || ':' || tgenabled::text, ',' order by tgname) from pg_trigger where tgrelid = 'public.season_results'::regclass and not tgisinternal`);
     assert.equal(guards(fresh.toString()), 'season_results_no_truncate:A,season_results_no_update:A', 'the guards on season_results are still enabled always after the import');
@@ -578,7 +590,7 @@ test('an instance exported and imported into a fresh database is the same instan
 
     // The jobs that run the instance are there, each scheduled from the imported settings: the
     // settlement's, the view count's, the Boss's meeting and the pool's chatter.
-    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts');
+    assert.equal(psqlOn(fresh.toString(), `select string_agg(jobname, ',' order by jobname) from cron.job where jobname like 'kayfabb-%'`), 'kayfabb-chatter,kayfabb-meet,kayfabb-search-rebuild,kayfabb-settle,kayfabb-staff,kayfabb-system-tick,kayfabb-view-counts,kayfabb-write');
 
     // And a second import onto what is no longer a fresh instance is refused, naming why.
     const twice = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
