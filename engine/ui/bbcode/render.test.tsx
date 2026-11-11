@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BbCode, type QuoteOf } from './render.tsx';
 import { TextLayer, type TextRun } from './layers.tsx';
@@ -416,6 +416,14 @@ describe('layout and effects', () => {
       const el = draw([wrapRun(7, 15, 'r', 0, trailOf('t')), cover], 'I love big cats today');
       expect(el.querySelector('b')).toHaveTextContent('X');
       expect(trailsIn(el)).toEqual([]);
+    });
+
+    test('belongs to the run on top where a higher wrap run covers a lower one\'s end, and follows a start that is covered', () => {
+      const el = draw([wrapRun(7, 15, 'low', 0, trailOf('low')), wrapRun(11, 21, 'high', 1, trailOf('high'))], 'I love big cats today');
+      expect(trailsIn(el)).toEqual(['high']);
+      cleanup();
+      const el2 = draw([wrapRun(7, 15, 'under', 0, trailOf('under')), wrapRun(2, 9, 'over', 1, trailOf('over'))], 'I love big cats today');
+      expect(trailsIn(el2)).toEqual(['over', 'under']);
     });
 
     test('of two touching wrap runs are both drawn, in order', () => {
