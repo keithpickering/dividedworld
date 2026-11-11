@@ -2088,6 +2088,15 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
   });
 
+  test('a banned character cannot take a back, in the ban\'s words', async () => {
+    const { fake, anaFace, opener } = setup2();
+    const set = must(await fake.setCard('snare', anaFace, opener, {}));
+    const until = fake.clock.now() + 24 * 3_600_000;
+    const visit = fake.seed.visit(fake.seed.staff('mod', 'Mod Bot', 'mod'), opener);
+    fake.seed.ban(anaFace, until, { infraction: fake.seed.infraction(visit) });
+    expect(await fake.takeBack(anaFace, set.id)).toMatchObject({ ok: false, error: `this character is banned until ${new Date(until).toISOString()}; the ban ends by itself then` });
+  });
+
   test('a back whose time passes unsprung is back in the hand, and one that sprang is not', async () => {
     const { fake, ana, bo, anaFace, boFace, opener } = setup2();
     const held = async () => (await fake.myCards()).find((c) => c.card === 'snare')?.held ?? 0;
