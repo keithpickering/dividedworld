@@ -5,11 +5,71 @@
 import { DAY_MS } from "../../engine/rehearsal/generate.ts";
 import type { LogApology, LogCall, LogChatter, LogCost, LogDay, LogInfraction, LogMeeting, LogMove, LogOrder, LogPatrol, LogSkip, LogTrim, LogVisit, RehearsalLog } from "../../engine/rehearsal/report.ts";
 import type { ChatRequest, CompletionRequest } from "../../engine/system/model.ts";
+import type { KeptCall } from "./models.ts";
 import type { RunContext } from "./run.ts";
 
 const iso = (ms: unknown): string => new Date(Number(ms)).toISOString();
 const isoOrNull = (ms: unknown): string | null => (ms === null || ms === undefined ? null : iso(ms));
 const ms = (col: string): string => `(extract(epoch from ${col}) * 1000)::float8`;
+
+/** One tick of any job; a call attaches to an Act made within this after it, and a ledger row pairs with a call within it. */
+export const BOUND = 2 * 60_000;
+/** The database's clock and the process's differ by a hair, so a call may read a hair after the Act it made. */
+const SLACK = 1000;
+
+/**
+ * The unused call of `duty` (and of `staff`, where the Act has a Mod) that produced the Act made at `at`: the nearest one made at or
+ * before it, and within `BOUND`. An Act with no call that close shows none, so a dropped call never attaches to a later Act.
+ */
+export function takeCall(calls: readonly KeptCall[], used: Set<KeptCall>, duty: string, staff: string | null, at: number): KeptCall | null {
+  let best: KeptCall | undefined;
+  for (const c of calls) {
+    if (used.has(c) || c.duty !== duty || (staff !== null && c.staff !== staff)) continue;
+    if (c.at > at + SLACK || at - c.at > BOUND) continue;
+    if (!best || Math.abs(c.at - at) < Math.abs(best.at - at)) best = c;
+  }
+  if (best) used.add(best);
+  return best ?? null;
+}
+
+export interface LedgerRow { readonly id: unknown; readonly ms: number; readonly duty: string; readonly staff: unknown; readonly meeting: unknown; readonly cost: number }
+
+/**
+ * Pairs each ledger row with the kept call of the same duty, Mod and meeting made nearest it, within `BOUND` (the cassette key is not on the
+ * ledger row, so those three and the time are what there is to match on). A key whose rows and calls do not all pair is one note.
+ */
+export function pairLedger(rows: readonly LedgerRow[], calls: readonly KeptCall[]): { pairs: Map<KeptCall, LedgerRow>; unmatched: LedgerRow[]; notes: string[] } {
+  const keyOf = (duty: string, staff: unknown, meeting: unknown): string => `${duty}|${staff ?? ""}|${meeting ?? ""}`;
+  const label = (k: string): string => { const [duty, staff, meeting] = k.split("|"); return `${duty}${staff ? `, ${staff}` : ""}${meeting ? `, meeting ${meeting}` : ""}`; };
+  const keptBy = new Map<string, KeptCall[]>();
+  for (const c of calls) keptBy.set(keyOf(c.duty, c.staff, c.request.meeting), [...(keptBy.get(keyOf(c.duty, c.staff, c.request.meeting)) ?? []), c]);
+  const pairs = new Map<KeptCall, LedgerRow>();
+  const unmatched: LedgerRow[] = [];
+  const rowsBy = new Map<string, number>();
+  const unmatchedBy = new Map<string, number>();
+  for (const r of rows) {
+    const k = keyOf(r.duty, r.staff, r.meeting);
+    rowsBy.set(k, (rowsBy.get(k) ?? 0) + 1);
+    let best: KeptCall | undefined;
+    for (const c of keptBy.get(k) ?? []) {
+      if (pairs.has(c) || Math.abs(c.at - r.ms) > BOUND) continue;
+      if (!best || Math.abs(c.at - r.ms) < Math.abs(best.at - r.ms)) best = c;
+    }
+    if (best) pairs.set(best, r);
+    else { unmatched.push(r); unmatchedBy.set(k, (unmatchedBy.get(k) ?? 0) + 1); }
+  }
+  const notes: string[] = [];
+  for (const k of new Set([...rowsBy.keys(), ...keptBy.keys()])) {
+    const nRows = rowsBy.get(k) ?? 0;
+    const nCalls = keptBy.get(k)?.length ?? 0;
+    const paired = nRows - (unmatchedBy.get(k) ?? 0);
+    if (paired === nRows && paired === nCalls) continue;
+    if (nCalls === 0) notes.push(`${label(k)}: ${nRows} ledger rows have no kept call`);
+    else if (nRows === 0) notes.push(`${label(k)}: ${nCalls} kept calls have no ledger row`);
+    else notes.push(`${label(k)}: ${nRows} ledger rows but ${nCalls} kept calls, ${paired} paired`);
+  }
+  return { pairs, unmatched, notes };
+}
 
 export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   const { conn, scenario, timeline, calls, jobs, dispatched, filler } = ctx;
@@ -25,29 +85,17 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   const params = [day1, end];
   const range = (col: string): string => `${col} >= to_timestamp($1 / 1000.0) and ${col} < to_timestamp($2 / 1000.0)`;
 
-  // The ledger (model_calls, 0042) is the book of record for cost: each row is paired with the kept call of the same duty, Mod and
-  // meeting, in order, which says whether it was replayed. A row with no kept call, or a call with no row, is a note.
-  const ledger = await conn.sql(`select id, ${ms("at")} as ms, duty, staff, meeting, cost_microdollars::float8 as cost from model_calls order by at, id`);
-  const keyOf = (duty: string, staff: unknown, meeting: unknown): string => `${duty}|${staff ?? ""}|${meeting ?? ""}`;
-  const keptByKey = new Map<string, typeof calls[number][]>();
-  for (const c of calls) {
-    const k = keyOf(c.duty, c.staff, c.request.meeting);
-    keptByKey.set(k, [...(keptByKey.get(k) ?? []), c]);
-  }
+  // The ledger (model_calls, 0042) is the book of record for cost. Each row pairs with the kept call that made it (pairLedger), which says
+  // whether it was replayed; what does not pair is counted as unmatched, never as live, and noted once per key.
+  const ledger = (await conn.sql(`select id, ${ms("at")} as ms, duty, staff, meeting, cost_microdollars::float8 as cost from model_calls order by at, id`)).map((r) => ({ id: r.id, ms: Number(r.ms), duty: String(r.duty), staff: r.staff, meeting: r.meeting, cost: Number(r.cost) }));
+  const paired = pairLedger(ledger, calls);
+  const notes: string[] = [...ctx.notes, ...paired.notes];
   const ledgerCost = new Map<typeof calls[number], number>();
-  const ledgerRows: { at: number; duty: string; cost: number; replayed: boolean }[] = [];
-  const notes: string[] = [...ctx.notes];
-  const taken = new Map<string, number>();
-  for (const r of ledger) {
-    const k = keyOf(String(r.duty), r.staff, r.meeting);
-    const i = taken.get(k) ?? 0;
-    const kept = keptByKey.get(k)?.[i];
-    taken.set(k, i + 1);
-    if (kept) ledgerCost.set(kept, Number(r.cost));
-    else notes.push(`ledger row ${r.id} (${r.duty}${r.staff ? `, ${r.staff}` : ""}) has no kept call`);
-    ledgerRows.push({ at: Number(r.ms), duty: String(r.duty), cost: Number(r.cost), replayed: kept?.replayed === true });
-  }
-  for (const c of calls) if (!ledgerCost.has(c)) notes.push(`the kept ${c.duty} call at ${iso(c.at)}${c.staff ? ` (${c.staff})` : ""} has no ledger row`);
+  for (const [c, r] of paired.pairs) ledgerCost.set(c, r.cost);
+  const unmatchedRows = new Set(paired.unmatched);
+  const outside = ledger.filter((r) => !within(r.ms));
+  if (outside.length) notes.push(`${outside.length} ledger rows (${(outside.reduce((n, r) => n + r.cost, 0) / 1e6).toFixed(2)} dollars) fall outside the run's days, before day 1 or after the last`);
+  const replayedRows = new Set([...paired.pairs].filter(([c]) => c.replayed).map(([, r]) => r));
 
   const logCalls = new Map<typeof calls[number], LogCall>();
   const logCall = (c: typeof calls[number]): LogCall => {
@@ -63,16 +111,9 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
     return row;
   };
   const used = new Set<typeof calls[number]>();
-  /** The unused call of a duty (and Mod, where known) made nearest to `at`: the call that produced the Act or row made then. */
-  const takeCall = (duty: string, staff: string | null, at: number): LogCall | null => {
-    let best: typeof calls[number] | undefined;
-    for (const c of calls) {
-      if (used.has(c) || c.duty !== duty || (staff !== null && c.staff !== staff)) continue;
-      if (!best || Math.abs(c.at - at) < Math.abs(best.at - at)) best = c;
-    }
-    if (!best) return null;
-    used.add(best);
-    return logCall(best);
+  const take = (duty: string, staff: string | null, at: number): LogCall | null => {
+    const c = takeCall(calls, used, duty, staff, at);
+    return c ? logCall(c) : null;
   };
 
   // Meetings, with the Boss's memory before and after and the call that answered.
@@ -126,17 +167,17 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
   }
   const filings = await conn.sql(`select ${ms("created_at")} as ms, kind, payload from acts where kind in ('infraction', 'ban') and ${range("created_at")} order by created_at, id`, params);
   for (const f of filings) {
-    const row: LogInfraction = { at: iso(f.ms), kind: String(f.kind), payload: f.payload, call: takeCall("filing", null, Number(f.ms)) };
+    const row: LogInfraction = { at: iso(f.ms), kind: String(f.kind), payload: f.payload, call: take("filing", null, Number(f.ms)) };
     put(Number(f.ms))?.infractions.push(row);
   }
   const patrols = await conn.sql(`select meeting, n, staff, ${ms("at")} as ms, ${ms("ran_at")} as ran, cardinality(sampled) as sampled, dropped, outcome from patrols where ${range("at")} order by id`, params);
   for (const p of patrols) {
-    const row: LogPatrol = { meeting: Number(p.meeting), n: Number(p.n), staff: String(p.staff), at: iso(p.ms), ranAt: isoOrNull(p.ran), sampled: Number(p.sampled), dropped: p.dropped, outcome: p.outcome, call: takeCall("patrolJudge", String(p.staff), Number(p.ran ?? p.ms)) };
+    const row: LogPatrol = { meeting: Number(p.meeting), n: Number(p.n), staff: String(p.staff), at: iso(p.ms), ranAt: isoOrNull(p.ran), sampled: Number(p.sampled), dropped: p.dropped, outcome: p.outcome, call: take("patrolJudge", String(p.staff), Number(p.ran ?? p.ms)) };
     put(Number(p.ms))?.patrols.push(row);
   }
-  const apologies = await conn.sql(`select ${ms("a.created_at")} as ms, c.name, a.state from apologies a join characters c on c.id = a.character where ${range("a.created_at")} order by a.id`, params);
+  const apologies = await conn.sql(`select ${ms("a.created_at")} as ms, ${ms("r.created_at")} as ruled, c.name, a.state from apologies a join characters c on c.id = a.character left join acts r on r.id = a.ruling_act where ${range("a.created_at")} order by a.id`, params);
   for (const a of apologies) {
-    const row: LogApology = { at: iso(a.ms), character: String(a.name), state: String(a.state), call: takeCall("apologyJudge", null, Number(a.ms)) };
+    const row: LogApology = { at: iso(a.ms), character: String(a.name), state: String(a.state), call: take("apologyJudge", null, Number(a.ruled ?? a.ms)) };
     put(Number(a.ms))?.apologies.push(row);
   }
 
@@ -146,7 +187,7 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
       `where c.staff is not null and a.kind in ('post', 'spin') and ${range("a.created_at")} order by a.created_at, a.id`, params,
   );
   for (const c of chatter) {
-    const row: LogChatter = { at: iso(c.ms), staff: String(c.staff), character: String(c.name), body: String(c.body ?? ""), call: takeCall("chatter", String(c.staff), Number(c.ms)) };
+    const row: LogChatter = { at: iso(c.ms), staff: String(c.staff), character: String(c.name), body: String(c.body ?? ""), call: take("chatter", String(c.staff), Number(c.ms)) };
     put(Number(c.ms))?.chatter.push(row);
   }
 
@@ -159,18 +200,18 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
     for (const t of c.trims) day.trims.push({ where, path: t.path, predicate: t.predicate, before: t.before, after: t.after } satisfies LogTrim);
     if (c.error) day.skips.push({ at: iso(c.at), what: where, why: `answer dropped (${c.error.predicate}): ${c.error.message}` });
   }
-  const byJob = new Map<number, Map<string, { calls: number; live: number; replayed: number }>>();
-  for (const r of ledgerRows) {
-    if (!within(r.at)) continue;
-    const d = dayOf(r.at);
+  const byJob = new Map<number, Map<string, { calls: number; live: number; replayed: number; unmatched: number }>>();
+  for (const r of ledger) {
+    if (!within(r.ms)) continue;
+    const d = dayOf(r.ms);
     const jobs2 = byJob.get(d) ?? new Map();
     byJob.set(d, jobs2);
-    const j = jobs2.get(r.duty) ?? { calls: 0, live: 0, replayed: 0 };
+    const j = jobs2.get(r.duty) ?? { calls: 0, live: 0, replayed: 0, unmatched: 0 };
     j.calls++;
-    if (r.replayed) j.replayed += r.cost; else j.live += r.cost;
+    if (unmatchedRows.has(r)) j.unmatched += r.cost; else if (replayedRows.has(r)) j.replayed += r.cost; else j.live += r.cost;
     jobs2.set(r.duty, j);
   }
-  for (const [d, jobs2] of byJob) for (const [job, j] of jobs2) days[d]!.costByJob.push({ job, calls: j.calls, liveMicrodollars: j.live, replayedMicrodollars: j.replayed } satisfies LogCost);
+  for (const [d, jobs2] of byJob) for (const [job, j] of jobs2) days[d]!.costByJob.push({ job, calls: j.calls, liveMicrodollars: j.live, replayedMicrodollars: j.replayed, unmatchedMicrodollars: j.unmatched } satisfies LogCost);
 
   // Skips: jobs that failed and requests the cap held back or a function refused.
   for (const j of jobs) if (!j.ok) put(j.at)?.skips.push({ at: iso(j.at), what: `job ${j.job}`, why: j.error ?? "failed" } satisfies LogSkip);
@@ -185,10 +226,11 @@ export async function collect(ctx: RunContext): Promise<RehearsalLog> {
 
   let live = 0;
   let replayed = 0;
-  for (const r of ledgerRows) if (r.replayed) replayed += r.cost; else live += r.cost;
+  let unmatched = 0;
+  for (const r of ledger) if (unmatchedRows.has(r)) unmatched += r.cost; else if (replayedRows.has(r)) replayed += r.cost; else live += r.cost;
   return {
     scenario: scenario.key, seed: scenario.seed, mode: ctx.mode, daysRun: scenario.days, day1: iso(day1), systemOnAt: isoOrNull(ctx.systemOnAt),
-    cost: { liveMicrodollars: live, replayedMicrodollars: replayed, capDollars: scenario.costCapDollars }, notes,
+    cost: { liveMicrodollars: live, replayedMicrodollars: replayed, unmatchedMicrodollars: unmatched, capDollars: scenario.costCapDollars }, notes,
     days: Object.values(days) as LogDay[],
   };
 }

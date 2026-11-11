@@ -53,7 +53,7 @@ export interface LogInfraction { readonly at: string; readonly kind: string; rea
 export interface LogPatrol { readonly meeting: number; readonly n: number; readonly staff: string; readonly at: string; readonly ranAt: string | null; readonly sampled: number; readonly dropped: unknown; readonly outcome: unknown; readonly call: LogCall | null }
 export interface LogApology { readonly at: string; readonly character: string; readonly state: string; readonly call: LogCall | null }
 export interface LogChatter { readonly at: string; readonly staff: string; readonly character: string; readonly body: string; readonly call: LogCall | null }
-export interface LogCost { readonly job: string; readonly calls: number; readonly liveMicrodollars: number; readonly replayedMicrodollars: number }
+export interface LogCost { readonly job: string; readonly calls: number; readonly liveMicrodollars: number; readonly replayedMicrodollars: number; /** Ledger rows no kept call paired with: cost the rehearsal cannot place as live or replayed. */ readonly unmatchedMicrodollars: number }
 export interface LogSkip { readonly at: string; readonly what: string; readonly why: string }
 export interface LogDay {
   readonly day: number;
@@ -80,7 +80,7 @@ export interface RehearsalLog {
   readonly daysRun: number;
   readonly day1: string;
   readonly systemOnAt: string | null;
-  readonly cost: { readonly liveMicrodollars: number; readonly replayedMicrodollars: number; readonly capDollars: number };
+  readonly cost: { readonly liveMicrodollars: number; readonly replayedMicrodollars: number; readonly unmatchedMicrodollars: number; readonly capDollars: number };
   readonly notes: readonly string[];
   readonly days: readonly LogDay[];
 }
@@ -138,7 +138,7 @@ ${table(['Time', 'Character', 'State', 'Call'], d.apologies.map((a) => [a.at, a.
 <h3>Chatter</h3>${table(['Time', 'Mod', 'Character', 'Said', 'Call'], d.chatter.map((c) => [c.at, c.staff, c.character, c.body, callHtml(c.call)]), 'No chatter.')}
 <h3>Other calls</h3>${table(['Time', 'Job', 'Mod', 'Cost', 'Call'], d.calls.map((c) => [c.at, c.duty, c.staff ?? '', dollars(c.costMicrodollars), callHtml(c)]), 'None.')}
 <h3>Trims and drops</h3>${table(['Where', 'Path', 'Bound', 'Before', 'After'], d.trims.map((t) => [t.where, t.path, t.predicate, t.before, t.after]), 'None.')}
-<h3>Cost by job</h3>${table(['Job', 'Calls', 'Live', 'Replayed'], d.costByJob.map((c) => [c.job, c.calls, dollars(c.liveMicrodollars), dollars(c.replayedMicrodollars)]), 'No model calls.')}
+<h3>Cost by job</h3>${table(['Job', 'Ledger rows', 'Live', 'Replayed', 'Unmatched'], d.costByJob.map((c) => [c.job, c.calls, dollars(c.liveMicrodollars), dollars(c.replayedMicrodollars), dollars(c.unmatchedMicrodollars)]), 'No model calls.')}
 <h3>Skips</h3>${table(['Time', 'What', 'Why'], d.skips.map((s) => [s.at, s.what, s.why]), 'Nothing skipped.')}
 </section>`;
 }
@@ -156,7 +156,7 @@ summary{cursor:pointer}`;
 export function reportHtml(log: RehearsalLog): string {
   const head = `<h1>Rehearsal: ${esc(log.scenario)}</h1>
 <p>Seed ${esc(log.seed)}, mode ${esc(log.mode)}, ${esc(log.daysRun)} days from ${esc(log.day1)}. The System switched on ${esc(log.systemOnAt ?? 'never')}.</p>
-<p>Cost: ${esc(dollars(log.cost.liveMicrodollars))} live of a $${esc(log.cost.capDollars)} cap, ${esc(dollars(log.cost.replayedMicrodollars))} replayed from the cassette.</p>
+<p>Cost: ${esc(dollars(log.cost.liveMicrodollars))} live of a $${esc(log.cost.capDollars)} cap, ${esc(dollars(log.cost.replayedMicrodollars))} replayed from the cassette, ${esc(dollars(log.cost.unmatchedMicrodollars))} on ledger rows no kept call matched.</p>
 ${log.notes.length ? `<ul>${log.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rehearsal: ${esc(log.scenario)}</title><style>${CSS}</style></head>

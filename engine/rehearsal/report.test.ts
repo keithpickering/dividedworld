@@ -13,8 +13,8 @@ const meeting = {
 const move = { id: 5, staff: 'boss', kind: 'rename', why: 'because', demand: { kind: 'postsOnBoard' }, goLiveAt: '2026-12-02T00:00:00.000Z', expiresAt: null, held: false, landedAt: '2026-12-02T00:00:00.000Z', endedHow: 'met', failure: null };
 const clean = (): RehearsalLog => ({
   scenario: 'tiny', seed: 7, mode: 'stub', daysRun: 1, day1: '2026-12-01T00:00:00.000Z', systemOnAt: '2026-12-01T00:00:00.000Z',
-  cost: { liveMicrodollars: 1500000, replayedMicrodollars: 250000, capDollars: 5 }, notes: [],
-  days: [{ ...emptyDay(1), meetings: [meeting], moves: [move], costByJob: [{ job: 'meeting', calls: 1, liveMicrodollars: 1500000, replayedMicrodollars: 0 }] }],
+  cost: { liveMicrodollars: 1500000, replayedMicrodollars: 250000, unmatchedMicrodollars: 0, capDollars: 5 }, notes: [],
+  days: [{ ...emptyDay(1), meetings: [meeting], moves: [move], costByJob: [{ job: 'meeting', calls: 1, liveMicrodollars: 1500000, replayedMicrodollars: 0, unmatchedMicrodollars: 0 }] }],
 });
 
 test('a move\'s why and a chatter post are text, never markup (the poison)', () => {
@@ -97,4 +97,34 @@ test('a call with no Act shows under its job, and a rejected answer shows its pr
 test('notes (the ledger mismatches) are shown', () => {
   const html = reportHtml({ ...clean(), notes: ['ledger row 9 (chatter) has no kept call'] });
   assert.ok(html.includes('ledger row 9 (chatter) has no kept call'));
+});
+
+// Every string in the log carries a marker with a tag, a quote and an ampersand; none may reach the page as markup.
+const MARK = '<b>x</b>&"\'';
+const marked = (v: unknown): unknown => (typeof v === 'string' ? MARK : Array.isArray(v) ? v.map(marked) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, marked(x)])) : v);
+
+test('a marker planted in every string field of the log never becomes a tag', () => {
+  const c = call({ replayed: true, error: { message: 'm', predicate: 'p' }, trims: [{ where: 'w', path: 'p', predicate: 'q', before: 2, after: 1 }] });
+  const full: RehearsalLog = {
+    ...clean(),
+    notes: ['n'],
+    days: [{
+      ...emptyDay(1),
+      meetings: [{ ...meeting, error: 'e', sent: { system: 's', messages: [{ role: 'user', content: 'c' }] }, answer: { a: 'b', list: ['x'] }, memoryBefore: { h: 'x' }, memoryAfter: 'y' }],
+      moves: [{ ...move, held: true, failure: 'f', expiresAt: 'x', demand: { kind: 'k' } }],
+      orders: [{ meeting: 1, staff: 's', line: 'l', allowance: 1, boards: 2 }],
+      visits: [{ at: 'a', staff: 's', line: 'l', outcome: 'o', call: c }],
+      infractions: [{ at: 'a', kind: 'k', payload: { r: 'x' }, call: c }],
+      patrols: [{ meeting: 1, n: 1, staff: 's', at: 'a', ranAt: 'r', sampled: 1, dropped: [{ why: 'x' }], outcome: { o: 'x' }, call: c }],
+      apologies: [{ at: 'a', character: 'c', state: 's', call: c }],
+      chatter: [{ at: 'a', staff: 's', character: 'c', body: 'b', call: c }],
+      calls: [c],
+      trims: [{ where: 'w', path: 'p', predicate: 'q', before: 2, after: 1 }],
+      costByJob: [{ job: 'j', calls: 1, liveMicrodollars: 1, replayedMicrodollars: 1, unmatchedMicrodollars: 1 }],
+      skips: [{ at: 'a', what: 'w', why: 'y' }],
+    }],
+  };
+  const html = reportHtml(marked(full) as RehearsalLog);
+  assert.ok(html.includes('&lt;b&gt;x&lt;/b&gt;&amp;&quot;&#39;'));
+  assert.ok(!/<b>/i.test(html), 'a planted <b> tag is in the page');
 });
