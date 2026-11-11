@@ -9,20 +9,21 @@
 --   3. the derived row   surfaces: the covered cells (bit(10000), row-major), for each cell the live draw that last inked it, the live list. It holds only what the Acts already say: rebuild_surface computes it
 --                        from them. face_down_draws is the private draft of a face-down surface card, read by no player.
 --   4. the functions     surface_step (the pure step every write and every rebuild takes), surface_apply (the lock, the limits, the Act), open_surface, draw_on_surface, wash_surface, staff_draw_on_surface,
---                        play_surface_card, staff_play_surface_card, set_surface_card, surface_draft_fits, surface_acts, rebuild_surface; place_cast, lay_sprung, spring_traps and card_target are redefined.
+--                        play_surface_card, staff_play_surface_card, set_surface_card, surface_draft_fits, surface_acts, rebuild_surface; place_cast, lay_sprung, spring_traps and card_target are redefined, and the pool's three (pool_thread, pool_orphans, record_pool_spend: the walls on a page, and a wall draw as a persona's card for the day).
 --   5. the readers       thread_page returns `surfaces: {play: {covered, live}}` (ids and counts, never strokes or owners); card_target shows a surface's `covered`; surface_acts is the Lens's read.
 --
 -- Cells. The grid is 100 x 100, row-major: bit i of a cover is the cell at row i / 100, column i % 100 (engine/rules/surface.ts: GRID, toBits). The server function computes a draw's cells from its strokes and passes
 -- them as a bit string; SQL does bit arithmetic only. A draw's and a wash's cells are kept in their payloads (`cells`, 10,000 characters of 0 and 1), which is what lets rebuild_surface and the live list work from the
 -- Acts alone. They are not counted in the 64 KiB a drawing is held to.
 --
--- The live list. A draw stays live while it owns at least one cell. A wash stays live while some draw before it in the list is live and inked under it (the draw's own cells meet the wash's), and no later live wash
--- covers all of its cells: it is needed by a renderer that draws the live Acts in order, and by nothing else. A wash that uncovers no cell is written and never enters the list. (The plan's "owns a cell under the
+-- The live list. A draw stays live while it owns at least one cell. A wash stays live while some cell of it is inked by a live draw before it in the list (the draw's own cells) and is not covered by the live washes after it: it is
+-- needed by a renderer that draws the live Acts in order, and by nothing else. A wash that uncovers no cell is written and never enters the list. (The plan's "owns a cell under the
 -- wash's cells" cannot be read of the owners as they stand after the wash: the wash has just taken them. It is read of the draws' own cells.) Indices in `owners` are renumbered with `live` after a prune.
 --
 -- Bound on the live list. Every live wash is the last live wash over at least one cell (a later live wash that covers all of its cells replaces it), so the live washes each own a cell the others do not, and at most
 -- 10,000 washes are live: the case where the author washes one cell at a time and each wash cuts a drawing that is still live. Only the post's own character writes a wash, so only the author's own washes, of one
--- cell or more each, can reach that bound; draws are held to 48 live. Every live wash leaves the list once the draws it cut do.
+-- cell or more each, can reach that bound; draws are held to 48 live. Every live wash leaves the list once the draws it cut do. The prune is linear in the live list (two passes, each live Act's cells read once), not quadratic: one wash write on a wall with 1,000 live washes takes about 26 ms
+-- under the lock, measured on a laptop-class Postgres 16 (the 10,000-wash bound is the worst case and an author's own doing).
 --
 -- The limits. A draw is refused past the wall's limit in cells (`most`, which the server function computes from the instance's setting), with the wall's own figures in whole percents, and past the 48th live draw
 -- (surfaces.most_live), counted after the draw has painted over what it covers, so painting over a tag is the way out of a full wall. A draw that adds no cell is never refused for the limit. A wash is never refused for
@@ -230,22 +231,40 @@ declare
   kept integer[];
   n integer;
   remap integer[];
+  kinds text[];
+  cs bit(10000)[];
+  hit bit(10000)[];
+  keep boolean[];
+  owning integer[];
+  zero constant bit(10000) := repeat('0', 10000)::bit(10000);
+  seen bit(10000) := repeat('0', 10000)::bit(10000);
 begin
   st.cover := case when in_kind = 'draw' then in_cover | in_cells else in_cover & ~in_cells end;
   st.owners := array(select case when get_bit(in_cells, u.i::integer - 1) = 0 then u.o when in_kind = 'draw' then idx::smallint else 0::smallint end
                      from unnest(in_owners) with ordinality u(o, i) order by u.i);
   st.live := case when in_kind = 'draw' or bit_count(in_cover & in_cells) > 0 then coalesce(in_live, '{}') || in_act else coalesce(in_live, '{}') end;
   n := cardinality(st.live);
-  with l as (
-    select u.ord::integer as ord, u.id, coalesce(a.kind, in_kind) as kind, case when u.id = in_act then in_cells else (a.payload ->> 'cells')::bit(10000) end as c
-    from unnest(st.live) with ordinality u(id, ord) left join acts a on a.id = u.id
-  ), d as (
-    select l.ord, l.c from l where l.kind = 'draw' and l.ord = any (st.owners)
-  )
-  select array_agg(l.ord order by l.ord) into kept from l
-  where case when l.kind = 'draw' then l.ord = any (st.owners)
-             else exists (select 1 from d where d.ord < l.ord and bit_count(d.c & l.c) > 0)
-                  and not exists (select 1 from l w2 where w2.kind = 'wash' and w2.ord > l.ord and bit_count(l.c & ~w2.c) = 0) end;
+  -- The prune, in two linear passes over the live list. The kind and cells of each live Act are read once (the new act's own come in as arguments). A draw is kept while it owns a cell. A wash is kept
+  -- while some cell of it is inked by a kept draw before it and is not covered by the kept washes after it: pass one walks oldest to newest, keeping the union of the kept draws' cells, and notes for
+  -- each wash which of its cells that union holds; pass two walks newest to oldest, keeping the union of the kept washes' cells, and keeps a wash that has a noted cell outside it.
+  select array_agg(coalesce(a.kind, in_kind) order by u.ord), array_agg(case when u.id = in_act then in_cells else (a.payload ->> 'cells')::bit(10000) end order by u.ord)
+    into kinds, cs
+  from unnest(st.live) with ordinality u(id, ord) left join acts a on a.id = u.id;
+  owning := array(select distinct o from unnest(st.owners) o where o <> 0);
+  keep := array_fill(false, array[n]);
+  hit := array_fill(zero, array[n]);
+  for j in 1..n loop
+    if kinds[j] = 'draw' then
+      if j = any (owning) then keep[j] := true; seen := seen | cs[j]; end if;
+    else
+      hit[j] := seen & cs[j];
+    end if;
+  end loop;
+  seen := zero;
+  for j in reverse n..1 loop
+    if kinds[j] = 'wash' and bit_count(hit[j] & ~seen) > 0 then keep[j] := true; seen := seen | cs[j]; end if;
+  end loop;
+  select array_agg(j order by j) into kept from generate_series(1, n) j where keep[j];
   kept := coalesce(kept, '{}');
   if cardinality(kept) <> n then
     remap := array_fill(0, array[n]);
@@ -304,19 +323,25 @@ declare
   st surface_state;
   written uuid := gen_random_uuid();
   in_thread uuid;
-  at timestamptz := clock_timestamp();
+  at timestamptz;
   flag text;
   before_cells integer;
   after_cells integer;
 begin
   select * into s from surfaces x where x.play = on_play for update;
   if not found then raise exception 'there is no wall on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- An admin's End this card can commit between the caller's early check and the lock: the card is read again here, under the lock, and a draw or a wash that waited for it is refused.
+  if exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = on_play) then
+    raise exception 'an admin ended that card' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- Read after the lock, so the Acts' created_at order is the order the lock was taken in, which is the order rebuild_surface replays them in.
+  at := clock_timestamp();
   st := surface_step(s.live, s.owners, s.cover, in_kind, written, in_cells);
   if in_kind = 'draw' then
     before_cells := bit_count(s.cover);
     after_cells := bit_count(st.cover);
     if after_cells > most and after_cells > before_cells then
-      raise exception '%', format('this wall is %s%% covered, and its limit is %s%%; this tag would take it to %s%%', before_cells / 100, round(most / 100.0)::integer, ceil(after_cells / 100.0)::integer)
+      raise exception '%', format('this wall is %s%% covered, and its limit is %s%%; this tag would take it to %s%%', floor(before_cells / 100.0)::integer, floor(most / 100.0)::integer, ceil(after_cells / 100.0)::integer)
         using hint = 'kayfabb.refusal', errcode = '55000';
     end if;
     if (select count(distinct o) from unnest(st.owners) o where o <> 0) > s.most_live then
@@ -458,8 +483,8 @@ begin
     raise exception 'that card has no surface to draw on' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   perform surface_check_payload(draft);
-  -- A back that ran out writes no Act, so nothing ends its draft; each surface card set sweeps the drafts of backs past their time, which nobody can read or spring.
-  delete from face_down_draws d using face_down f where f.play = d.play and f.ends_at <= now();
+  -- A back that ran out writes no Act, so nothing ends its draft; each surface card set sweeps the drafts of backs over for at least a minute, which nobody can read or spring (a back that ran out a moment ago may still be read by a spring in flight, so it keeps its draft that long).
+  delete from face_down_draws d using face_down f where f.play = d.play and f.ends_at <= now() - interval '1 minute';
   set_made := set_card(who, card, through, target, config, price, catches, phrase, passage, named, who_except);
   insert into face_down_draws (play, payload, cells, most, most_live)
   values ((set_made ->> 'id')::uuid, draft - 'cells', draft_cells, most, coalesce(set_surface_card.most_live, 48));
@@ -517,6 +542,80 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function surface_draft_fits(uuid) from public, anon, authenticated, service_role;
 
+-- ------------------------------------------------------------------------------------------------------ the pool's reads ----
+
+-- The pool's persona reads the live walls on the page it reads, and a wall it draws on is its card for the day. The digest role (0045) reads the public play of a surface and nothing of an owner: the play and
+-- the post it is on (never the cover, the owners or the live list), and the end of a play that did not take.
+grant select (play, post) on surfaces to kayfabb_digest;
+create policy digest_reads on surfaces for select to kayfabb_digest using (true);
+grant select (play) on card_write_refunds to kayfabb_digest;
+create policy digest_reads on card_write_refunds for select to kayfabb_digest using (true);
+
+-- pool_thread (0127), also carrying `walls`: the live surface plays on the posts the read returns (an ended play, or one that did not take, is left out), each {play, card, about}, oldest first. `about` is plain
+-- words about the post it is on, its author's name and its number, both public. Nothing here is computed from who owns a character or from what is drawn.
+create or replace function pool_thread(in_thread uuid, most integer, chars integer, also uuid default null) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  with page as (
+    select a.id, a.seq, a.created_at, c.name, (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
+           left(coalesce(a.current_payload ->> 'body', ''), greatest(chars, 1)) as body
+    from acts_public a join characters_public c on c.id = a.character
+    where a.thread = in_thread and a.kind = 'post'
+      and (a.id = also or a.id in (select n.id from acts_public n where n.thread = in_thread and n.kind = 'post'
+                                   order by n.created_at desc, n.id desc limit greatest(most, 0)))
+  )
+  select jsonb_build_object(
+    'title', coalesce((select t.title from thread_list t where t.id = in_thread), ''),
+    'posts', coalesce((select jsonb_agg(jsonb_build_object('act', p.id, 'name', p.name, 'pronouns', p.pronouns, 'body', p.body) order by p.created_at, p.id) from page p), '[]'::jsonb),
+    'walls', coalesce((select jsonb_agg(jsonb_build_object('play', k.id, 'card', k.payload ->> 'card',
+                                                           'about', 'a post by ' || p.name || coalesce(' (#' || p.seq || ')', '')) order by p.created_at, p.id, k.id)
+                       from page p join surfaces s on s.post = p.id join acts_public k on k.id = s.play
+                       where not exists (select 1 from acts_public e where e.kind = 'card_end' and e.target_act_id = k.id)
+                         and not exists (select 1 from card_write_refunds r where r.play = k.id)), '[]'::jsonb))
+$$;
+
+-- pool_orphans (0089), the tie of a card also taking a persona's wall draw: a draw by the persona that carries the day's `pool` in its payload (the Edge Function puts it there, as the card doors merge it into a
+-- card Act's) is the post's card, on any wall; no spend names it. Everything else as 0089 wrote it.
+create or replace function pool_orphans(through date) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(jsonb_build_object('staff', o.staff, 'day', o.day, 'act', o.id, 'startedThread', o.seq = 1,
+    'card', (select k.id from acts k
+             where k.character = o.character
+               and ((k.kind = 'set' and k.target_act_id = o.id)
+                    or (k.kind = 'card' and k.payload ->> 'pool' = o.day and o.target_act_id is not null and k.target_act_id = o.target_act_id)
+                    or (k.kind = 'draw' and k.payload ->> 'pool' = o.day))
+               and not exists (select 1 from pool_spends s where s.card_act = k.id)
+             order by k.created_at, k.id limit 1)) order by o.day, o.staff), '[]'::jsonb)
+  from (select distinct on (c.staff, a.payload ->> 'pool') c.staff, a.payload ->> 'pool' as day, a.id, a.seq, a.character, a.target_act_id
+        from acts a join characters c on c.id = a.character
+        where c.staff is not null and a.kind = 'post' and a.payload ->> 'pool' ~ '^\d{4}-\d{2}-\d{2}$'
+          and (a.payload ->> 'pool')::date between date_trunc('week', through::timestamp)::date and through
+          and not exists (select 1 from pool_spends s where s.post_act = a.id)
+        order by c.staff, a.payload ->> 'pool', a.created_at, a.id) o
+$$;
+
+-- record_pool_spend (0089): the spend's card may also be a wall draw of the persona's.
+create or replace function record_pool_spend(on_day date, of_staff text, by_trigger text, post uuid, card uuid, started boolean, note jsonb default '{}')
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  made bigint;
+begin
+  select c.id into who from characters c where c.staff = of_staff and c.staff_kind = 'persona';
+  if who is null then raise exception 'there is no persona "%"', of_staff using errcode = 'P0002'; end if;
+  if not exists (select 1 from acts a where a.id = post and a.character = who and a.kind = 'post') then
+    raise exception 'the spend''s post is not a post of %', of_staff using errcode = '22023';
+  end if;
+  if card is not null and not exists (select 1 from acts a where a.id = card and a.character = who and a.kind in ('card', 'set', 'draw')) then
+    raise exception 'the spend''s card is not a card of %', of_staff using errcode = '22023';
+  end if;
+  insert into pool_spends (day, staff, trigger, post_act, card_act, started_thread, record)
+  values (on_day, of_staff, by_trigger, post, card, coalesce(started, false), coalesce(note, '{}'::jsonb))
+  on conflict (day, staff) do nothing returning id into made;
+  if made is null then return jsonb_build_object('status', 'already'); end if;
+  return jsonb_build_object('status', 'spent', 'id', made);
+end $$;
+
 -- ------------------------------------------------------------------------------------------------------------ 5. readers ----
 
 -- surface_acts(play): the live Acts of a surface, oldest first, each as acts_public shows it, a draw with its `share` of the wall (the cells it owns now) and a wash with none, and the count of the draws that are no
@@ -525,8 +624,9 @@ create function surface_acts(play uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp as $$
   select case when s.play is null then null else jsonb_build_object(
     'covered', bit_count(s.cover),
-    'acts', coalesce((select jsonb_agg((to_jsonb(a) #- '{payload,cells}' #- '{current_payload,cells}') || case when a.kind = 'draw' then jsonb_build_object('share', (select count(*) from unnest(s.owners) o where o = u.ord)) else '{}'::jsonb end order by u.ord)
-                      from unnest(s.live) with ordinality u(id, ord) join acts_public a on a.id = u.id), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg((to_jsonb(a) #- '{payload,cells}' #- '{current_payload,cells}') || case when a.kind = 'draw' then jsonb_build_object('share', coalesce(sh.n, 0)) else '{}'::jsonb end order by u.ord)
+                      from unnest(s.live) with ordinality u(id, ord) join acts_public a on a.id = u.id
+                      left join (select o.o, count(*) as n from unnest(s.owners) o(o) where o.o <> 0 group by o.o) sh on sh.o = u.ord), '[]'::jsonb),
     'older', (select count(*) from acts_public d where d.target_act_id = s.play and d.kind = 'draw' and d.id <> all (s.live))) end
   from (select 1) x left join surfaces s on s.play = surface_acts.play
 $$;

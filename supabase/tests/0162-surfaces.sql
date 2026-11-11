@@ -93,6 +93,113 @@ begin
   end loop;
 end $$;
 
+-- ---- 4c. Two draws whose created_at order is the lock order: B holds the wall's row lock in an open transaction; A enters its call and waits on that lock; B, still holding it, enters its own call and commits;
+-- A then takes the lock. A is the later writer, so its Act is the later one, and the Acts rebuild the stored row. (Two sessions; committed rows, in the scratch database the run drops.) ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); cal uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid(); c uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); pl uuid := gen_random_uuid();
+  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  url text := current_setting('kayfabb.scratch_url');
+  said_a text; said_b text; n integer; s surfaces%rowtype; r surfaces%rowtype; at_a timestamptz; at_b timestamptz;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sf-ord-ann@test.invalid'), (%2$L, 'sf-ord-bob@test.invalid'), (%3$L, 'sf-ord-cal@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L), (%3$L);
+    insert into characters (id, owner, name, debuted_at) values (%4$L, %1$L, 'Sf Ord Ann', now()), (%5$L, %2$L, 'Sf Ord Bob', now()), (%6$L, %3$L, 'Sf Ord Cal', now());
+    insert into class_history (character, class_key) values (%4$L, 'alpha'), (%5$L, 'alpha'), (%6$L, 'alpha');
+    insert into threads (id, board, title) select %7$L, id, 'Sf order' from boards where slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "Order me."}');
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%9$L, %4$L, 'card', %7$L, %8$L, '{"card": "sfracewall", "message": "", "config": {}, "layer": 1}');
+    do $x$ begin perform open_surface(%9$L); end $x$;
+  $sql$, ann, bob, cal, a, b, c, t, p, pl));
+  perform extensions.dblink_connect('ord_a', url);
+  perform extensions.dblink_connect('ord_b', url);
+  -- B: take the row lock, wait until A is seen waiting on it, then draw (overlapping A's cells) and commit.
+  perform extensions.dblink_send_query('ord_b', format($sql$
+    begin;
+    select 1 from surfaces where play = %1$L for update;
+    do $x$ begin
+      for i in 1..400 loop
+        exit when exists (select 1 from pg_stat_activity where query like '%%sf-order-a%%' and wait_event_type = 'Lock' and pid <> pg_backend_pid());
+        perform pg_sleep(0.025);
+      end loop;
+    end $x$;
+    select draw_on_surface(%2$L, %3$L, %1$L, %4$L, %5$L, 9000);
+    commit;
+  $sql$, pl, cal, c, payload, (repeat('0', 1000) || repeat('1', 3000) || repeat('0', 6000))));
+  perform pg_sleep(0.3);
+  perform extensions.dblink_send_query('ord_a', format($sql$select draw_on_surface(%L, %L, %L, %L, %L, 9000) /* sf-order-a */$sql$,
+    bob, b, pl, payload, (repeat('1', 3000) || repeat('0', 7000))));
+  begin loop select count(*) into n from extensions.dblink_get_result('ord_b') as r(x text); exit when n = 0; end loop;
+  exception when others then said_b := sqlerrm; end;
+  begin loop select count(*) into n from extensions.dblink_get_result('ord_a') as r(x text); exit when n = 0; end loop;
+  exception when others then said_a := sqlerrm; end;
+  perform extensions.dblink_disconnect('ord_a');
+  perform extensions.dblink_disconnect('ord_b');
+  if said_a is not null or said_b is not null then raise exception 'both draws land: a: %, b: %', said_a, said_b; end if;
+  if (select count(*) from acts where target_act_id = pl and kind = 'draw') is distinct from 2 then raise exception 'two draws are two Acts'; end if;
+  select created_at into at_b from acts where target_act_id = pl and kind = 'draw' and character = c;
+  select created_at into at_a from acts where target_act_id = pl and kind = 'draw' and character = b;
+  if at_a <= at_b then raise exception 'the draw that took the lock second is the later Act: a at %, b at %', at_a, at_b; end if;
+  select * into s from surfaces where play = pl;
+  r := rebuild_surface(pl);
+  if r.cover is distinct from s.cover or r.owners is distinct from s.owners or r.live is distinct from s.live then raise exception 'the stored row is what the Acts rebuild when the later writer takes the lock first'; end if;
+end $$;
+
+-- ---- 4d. An admin's End this card that commits while a draw waits on the lock: the draw is refused, not landed. B holds the row lock and ends the card; A, already past its early check, waits for the lock. ----
+do $$
+declare
+  ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
+  a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
+  t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); pl uuid := gen_random_uuid();
+  payload text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+  url text := current_setting('kayfabb.scratch_url');
+  said_a text; said_b text; n integer;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'sf-end-ann@test.invalid'), (%2$L, 'sf-end-bob@test.invalid');
+    insert into accounts (id) values (%1$L), (%2$L);
+    insert into admins (account) values (%1$L);
+    insert into characters (id, owner, name, debuted_at) values (%3$L, %1$L, 'Sf End Ann', now()), (%4$L, %2$L, 'Sf End Bob', now());
+    insert into class_history (character, class_key) values (%3$L, 'alpha'), (%4$L, 'alpha');
+    insert into threads (id, board, title) select %5$L, id, 'Sf end' from boards where slug = 'general';
+    insert into acts (id, character, kind, thread, payload) values (%6$L, %3$L, 'post', %5$L, '{"body": "End me."}');
+    insert into acts (id, character, kind, thread, target_act_id, payload) values (%7$L, %3$L, 'card', %5$L, %6$L, '{"card": "sfracewall", "message": "", "config": {}, "layer": 1}');
+    do $x$ begin perform open_surface(%7$L); end $x$;
+  $sql$, ann, bob, a, b, t, p, pl));
+  perform extensions.dblink_connect('end_a', url);
+  perform extensions.dblink_connect('end_b', url);
+  perform extensions.dblink_send_query('end_b', format($sql$
+    begin;
+    select 1 from surfaces where play = %1$L for update;
+    do $x$ begin
+      for i in 1..400 loop
+        exit when exists (select 1 from pg_stat_activity where query like '%%sf-end-a%%' and wait_event_type = 'Lock' and pid <> pg_backend_pid());
+        perform pg_sleep(0.025);
+      end loop;
+    end $x$;
+    select set_config('request.jwt.claims', jsonb_build_object('sub', %2$L, 'role', 'authenticated')::text, true);
+    set local role authenticated;
+    select reverse_card(%1$L);
+    reset role;
+    commit;
+  $sql$, pl, ann));
+  perform pg_sleep(0.3);
+  perform extensions.dblink_send_query('end_a', format($sql$select draw_on_surface(%L, %L, %L, %L, %L, 4000) /* sf-end-a */$sql$, bob, b, pl, payload, (repeat('1', 100) || repeat('0', 9900))));
+  begin loop select count(*) into n from extensions.dblink_get_result('end_b') as r(x text); exit when n = 0; end loop;
+  exception when others then said_b := sqlerrm; end;
+  begin loop select count(*) into n from extensions.dblink_get_result('end_a') as r(x text); exit when n = 0; end loop;
+  exception when others then said_a := sqlerrm; end;
+  perform extensions.dblink_disconnect('end_a');
+  perform extensions.dblink_disconnect('end_b');
+  if said_b is not null and said_b not like 'could not%' then raise exception 'the admin''s end lands: %', said_b; end if;
+  if not exists (select 1 from acts where target_act_id = pl and kind = 'card_end') then raise exception 'the card is ended (b: %)', said_b; end if;
+  if said_a is distinct from 'an admin ended that card' then raise exception 'a draw that waited on the lock while the card was ended is refused: %', said_a; end if;
+  if (select count(*) from acts where target_act_id = pl and kind = 'draw') is distinct from 0 then raise exception 'a draw landed after the card ended'; end if;
+end $$;
+
 insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, stack, surface)
 values ('sfwall', 'Sf Wall', 'pepperoni', 'rare', 'cast', null, '{post}', 1, true);
 
@@ -243,6 +350,9 @@ begin
   if got like 'ERROR:%' then raise exception 'a draw that adds no cells lands on a full wall: %', got; end if;
   got := pg_temp.draw(bob, b, w.play, pg_temp.cells(5000, 1), 4000);
   if got not like 'ERROR: this wall is 40% covered, and its limit is 40%; this tag would take it to 41%' then raise exception 'the full wall refuses one more cell: %', got; end if;
+  -- A limit that is not a whole percent shows rounded down, so the figure after is always above it: 4,060 is 40%, and 4,061 cells is 41%, never "limit 41%, would take it to 41%".
+  got := pg_temp.draw(bob, b, w.play, pg_temp.cells(5000, 61), 4060);
+  if got is distinct from 'ERROR: this wall is 40% covered, and its limit is 40%; this tag would take it to 41%' then raise exception 'a limit of 4,060 cells reads 40%%, and 4,061 reads 41%%: %', got; end if;
 end $$;
 
 -- ---- 5. Washes: the post's character, anyone else refused, a wash on a full wall, a wash that cuts nothing ----
@@ -606,8 +716,8 @@ do $$
 declare
   ann uuid := tests.account('sf-17-ann');
   a uuid := tests.character(ann, 'Sf Seventeen Ann');
-  t uuid := tests.thread('Sf seventeen'); p1 uuid := tests.post(a, t, 'To be taken back.'); p2 uuid := tests.post(a, t, 'To run out.'); p3 uuid := tests.post(a, t, 'Set after.');
-  set1 uuid; set2 uuid; got text;
+  t uuid := tests.thread('Sf seventeen'); p1 uuid := tests.post(a, t, 'To be taken back.'); p2 uuid := tests.post(a, t, 'To run out.'); p3 uuid := tests.post(a, t, 'Set after.'); p4 uuid := tests.post(a, t, 'Just ran out.');
+  set1 uuid; set2 uuid; set4 uuid; got text;
   draft text := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
 begin
   insert into card_ledger (account, card, kind, price) values (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0), (ann, 'sfwall', 'bought', 0);
@@ -620,8 +730,125 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, p2, '{}') returning id into set2;
   insert into face_down (play, account, card, config, post, thread, round, ends_at) values (set2, ann, 'sfwall', '{}', p2, t, 9, now() - interval '1 hour');
   insert into face_down_draws (play, payload, cells, most) values (set2, draft::jsonb, pg_temp.cells(0, 10), 4000);
+  -- A back that ran out seconds ago may be read by a spring in flight: its draft is swept only once the back has been over for a minute.
+  insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, p4, '{}') returning id into set4;
+  insert into face_down (play, account, card, config, post, thread, round, ends_at) values (set4, ann, 'sfwall', '{}', p4, t, 9, now() - interval '10 seconds');
+  insert into face_down_draws (play, payload, cells, most) values (set4, draft::jsonb, pg_temp.cells(0, 10), 4000);
   got := pg_temp.as_val(null, format('select set_surface_card(%L, %L, %L, %L, %L, 0, null, null, null, null, null, %L, %L, 4000, 48)::text', ann, 'sfwall', a, p3, '{}', draft, pg_temp.cells(0, 10)::text));
   if got like 'ERROR:%' then raise exception 'a card is set: %', got; end if;
   if exists (select 1 from face_down_draws where play = set2) then raise exception 'the draft of a back past its time is swept'; end if;
-  if (select count(*) from face_down_draws) is distinct from 1 then raise exception 'only the live back keeps its draft'; end if;
+  if not exists (select 1 from face_down_draws where play = set4) then raise exception 'the draft of a back that ran out seconds ago is kept, for a spring in flight'; end if;
+  if (select count(*) from face_down_draws) is distinct from 2 then raise exception 'only the live back and the one just over keep their drafts'; end if;
+end $$;
+
+-- ---- 18. pool_thread names the live walls on the page it reads: play, card key and a few plain words about whose post it is on; nothing of an owner ----
+do $$
+declare
+  ann uuid := tests.account('sf-18-ann'); a uuid := tests.character(ann, 'Sf Eighteen Ann');
+  t uuid := tests.thread('Sf eighteen'); t2 uuid := tests.thread('Sf eighteen bare');
+  w1 record := pg_temp.wall(a, t); w_ended record; op uuid; opl uuid;
+  w1_seq integer; th jsonb; extra uuid;
+begin
+  op := tests.post(a, t, 'An old wall.', now() - interval '1 hour');
+  opl := tests.act(a, 'card', t, jsonb_build_object('card', 'sfwall', 'message', '', 'config', '{}'::jsonb, 'layer', 1), op, now() - interval '1 hour');
+  perform open_surface(opl);
+  w_ended := pg_temp.wall(a, t);
+  insert into admins (account) values (ann);
+  perform tests.become(ann);
+  perform reverse_card(w_ended.play);
+  perform tests.unbecome();
+  extra := tests.post(a, t, 'A post with no wall.');
+  select seq into w1_seq from acts where id = w1.post;
+  perform tests.become_service();
+  th := pool_thread(t, 3, 10);
+  perform tests.unbecome();
+  if jsonb_typeof(th -> 'walls') is distinct from 'array' then raise exception 'pool_thread carries walls: %', th; end if;
+  if not exists (select 1 from jsonb_array_elements(th -> 'walls') w where w ->> 'play' = w1.play::text and w ->> 'card' = 'sfwall'
+                 and w ->> 'about' = format('a post by Sf Eighteen Ann (#%s)', w1_seq)) then
+    raise exception 'the live wall on the page is named with its play, its card and whose post: %', th -> 'walls';
+  end if;
+  if exists (select 1 from jsonb_array_elements(th -> 'walls') w where w ->> 'play' = w_ended.play::text) then raise exception 'an ended wall is not offered: %', th -> 'walls'; end if;
+  if exists (select 1 from jsonb_array_elements(th -> 'walls') w where w ->> 'play' = opl::text) then raise exception 'a wall on a post outside the page is not offered: %', th -> 'walls'; end if;
+  if th::text ~* 'owner|account' then raise exception 'the thread read carries a private column: %', th; end if;
+  perform tests.become_service();
+  th := pool_thread(t2, 3, 10);
+  perform tests.unbecome();
+  if th -> 'walls' is distinct from '[]'::jsonb then raise exception 'a thread with no wall reports none: %', th; end if;
+end $$;
+
+-- ---- 19. A persona's wall draw is adopted into the spend of its day's post, as a card Act is ----
+do $$
+declare
+  ann uuid := tests.account('sf-19-ann'); a uuid := tests.character(ann, 'Sf Nineteen Ann');
+  t uuid := tests.thread('Sf nineteen'); w record := pg_temp.wall(a, t);
+  pc uuid; pc2 uuid; pp uuid; pp2 uuid; d1 uuid; d_other uuid; got jsonb; el jsonb; r jsonb;
+  payload jsonb := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}], "pool": "2030-01-08"}';
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Sf Persona', 'sf-persona', 'persona', now()) returning id into pc;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Sf Persona Two', 'sf-persona2', 'persona', now()) returning id into pc2;
+  pp := tests.act(pc, 'post', t, '{"body": "A pool post.", "pool": "2030-01-08"}');
+  pp2 := tests.act(pc2, 'post', t, '{"body": "Another pool post.", "pool": "2030-01-08"}');
+  perform set_config('kayfabb.staff_writer', '', true);
+  perform tests.become_service();
+  got := staff_draw_on_surface('sf-persona', w.play, payload, pg_temp.cells(0, 100), 4000);
+  d1 := (got ->> 'id')::uuid;
+  -- A draw of the day with no marker is nobody's to adopt, and nor is a draw of the other persona's with the first one's tie.
+  d_other := (staff_draw_on_surface('sf-persona2', w.play, '{"strokes": []}', pg_temp.cells(200, 10), 4000) ->> 'id')::uuid;
+  el := (select e from jsonb_array_elements(pool_orphans('2030-01-13')) e where e ->> 'staff' = 'sf-persona' and e ->> 'day' = '2030-01-08');
+  if el ->> 'card' is distinct from d1::text then raise exception 'the persona''s wall draw of the day is adopted as its card: %', el; end if;
+  el := (select e from jsonb_array_elements(pool_orphans('2030-01-13')) e where e ->> 'staff' = 'sf-persona2' and e ->> 'day' = '2030-01-08');
+  if el ->> 'card' is not null then raise exception 'a draw with no pool day is not adopted: %', el; end if;
+  r := record_pool_spend('2030-01-08', 'sf-persona', 'named', pp, d1, false);
+  perform tests.unbecome();
+  if r ->> 'status' is distinct from 'spent' then raise exception 'a spend names a wall draw as its card: %', r; end if;
+  if (select card_act from pool_spends where staff = 'sf-persona' and day = '2030-01-08') is distinct from d1 then raise exception 'the draw is the spend''s card'; end if;
+end $$;
+
+-- ---- 20. The prune keeps exactly what is needed: after each of sixty random draws and washes over a small patch, replaying the live list alone reproduces the wall's cover and owners, every live draw owns a cell,
+-- and every live wash has a cell inked by a live draw before it that no live wash after it covers ----
+do $$
+declare
+  ann uuid := tests.account('sf-20-ann'); bob uuid := tests.account('sf-20-bob');
+  a uuid := tests.character(ann, 'Sf Twenty Ann'); b uuid := tests.character(bob, 'Sf Twenty Bob');
+  t uuid := tests.thread('Sf twenty'); w record := pg_temp.wall(a, t);
+  s surfaces%rowtype; ink bit(10000); seen bit(10000); later bit(10000); own integer[]; c bit(10000); k text;
+  at integer; len integer; got text; washes integer := 0; draws integer := 0;
+begin
+  for i in 1..60 loop
+    at := floor(random() * 190)::integer; len := 1 + floor(random() * 10)::integer;
+    if random() < 0.55 then got := pg_temp.draw(bob, b, w.play, pg_temp.cells(at, len), 10000); draws := draws + 1;
+    else got := pg_temp.wash(ann, a, w.play, pg_temp.cells(at, len)); washes := washes + 1; end if;
+    select * into s from surfaces where play = w.play;
+    ink := repeat('0', 10000)::bit(10000); own := array_fill(0, array[200]);
+    for j in 1..cardinality(s.live) loop
+      select a2.kind, (a2.payload ->> 'cells')::bit(10000) into k, c from acts a2 where a2.id = s.live[j];
+      if k = 'draw' then
+        ink := ink | c;
+        for x in 0..199 loop if get_bit(c, x) = 1 then own[x + 1] := j; end if; end loop;
+      else
+        ink := ink & ~c;
+        for x in 0..199 loop if get_bit(c, x) = 1 then own[x + 1] := 0; end if; end loop;
+      end if;
+    end loop;
+    if ink is distinct from s.cover then raise exception 'step %: the live list alone does not reproduce the cover', i; end if;
+    if own is distinct from (select array_agg(o::integer order by n) from unnest(s.owners[1:200]) with ordinality u(o, n)) then raise exception 'step %: the live list alone does not reproduce the owners', i; end if;
+    seen := repeat('0', 10000)::bit(10000);
+    for j in 1..cardinality(s.live) loop
+      select a2.kind, (a2.payload ->> 'cells')::bit(10000) into k, c from acts a2 where a2.id = s.live[j];
+      if k = 'draw' then
+        if not (j = any (s.owners)) then raise exception 'step %: a live draw owns no cell', i; end if;
+        seen := seen | c;
+      else
+        later := repeat('0', 10000)::bit(10000);
+        for y in j + 1..cardinality(s.live) loop
+          select (a2.payload ->> 'cells')::bit(10000) into c from acts a2 where a2.id = s.live[y] and a2.kind = 'wash';
+          if c is not null then later := later | c; end if;
+        end loop;
+        select (a2.payload ->> 'cells')::bit(10000) into c from acts a2 where a2.id = s.live[j];
+        if bit_count(seen & c & ~later) = 0 then raise exception 'step %: a live wash that wipes nothing visible is kept', i; end if;
+      end if;
+    end loop;
+  end loop;
+  if draws < 10 or washes < 10 then raise exception 'the run mixed draws and washes (% and %)', draws, washes; end if;
 end $$;
