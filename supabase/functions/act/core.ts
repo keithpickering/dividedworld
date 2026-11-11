@@ -16,7 +16,7 @@ import { decide } from '../../../engine/rules/actions.ts';
 import { hintFor, windowStart, type HintSettings, type QuadrantCounts } from '../../../engine/rules/hints.ts';
 import { casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, postTarget, type CardEffect, type SetConditions, type CardTarget, type EffectsAbove, type PostTarget, type Reach } from '../../../engine/rules/cards.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
-import { DatabaseError, TransportError, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, barredAnswer, postgrest, sessionRefused, type Db } from '../_shared/rpc.ts';
 import type { Broadcast } from '../_shared/broadcast.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 
@@ -202,6 +202,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
     const body = await dbs.service.rpc<unknown>(decision.rpc, args);
     return { status: 200, body, broadcasts: live(decision.rpc, body) };
   } catch (e) {
+    const barred = barredAnswer(e);
+    if (barred) return barred;
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) {
       const answer: ActionAnswer = { status: e.status >= 400 && e.status < 500 ? e.status : 400, body: { error: e.reason, code: e.code } };
       // 28000: the SQL function found no account behind the session (0002, 0005, 0009 raise it so).

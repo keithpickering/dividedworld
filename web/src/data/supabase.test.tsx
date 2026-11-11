@@ -2571,7 +2571,27 @@ describe('the session carries the bar and the code (the conduct plan, Task 4)', 
     await h.api.verifyCode('a@b.c', '123456');
     const heard = vi.fn();
     h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 30));
+    heard.mockClear();
     await h.api.markRead(T, 3, null);
     await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true }));
+  });
+
+  it('an edge function answer carrying the hint kayfabb.barred reloads the session the same way', async () => {
+    let barred = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(barred ? { kind: 'suspended', until: '2099-01-01T00:00:00+00:00' } : null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      if (r.url.pathname === '/functions/v1/act') { barred = true; return json({ error: 'this account is suspended until 2099-01-01', hint: 'kayfabb.barred' }, 403); }
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await new Promise((r) => setTimeout(r, 30));
+    heard.mockClear();
+    const out = await h.api.post(T, B, 'hi', null);
+    expect(out.ok).toBe(false);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: '2099-01-01T00:00:00+00:00' }, conductAccepted: true }));
   });
 });

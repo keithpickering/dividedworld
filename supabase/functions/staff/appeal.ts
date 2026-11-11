@@ -31,7 +31,7 @@ import { APPEAL_RULE, appealPrompt, repairAppeal, type AppealPunishment, type Ru
 import { phaseAt, type SeasonSpan } from '../../../engine/system/phases.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
-import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
 import { instanceSet, learnMod, postFor, pronounsOfCharacter, said, threadFor, type ThreadRead } from './core.ts';
@@ -91,6 +91,8 @@ export async function runAppeal(dbs: { player: Db; service: Db }, getModels: () 
     opened = await dbs.player.rpc<Opened>('open_appeal', { through: req.through, punishment_act: req.punishment, plea: req.plea });
   } catch (e) {
     if (sessionRefused(e)) return answer(401, { error: 'sign in to appeal' });
+    const barred = barredAnswer(e);
+    if (barred) return answer(barred.status, barred.body);
     if (e instanceof DatabaseError && e.hint === REFUSAL_HINT) return answer(e.status >= 400 && e.status < 500 ? e.status : 400, { error: e.reason, code: e.code });
     // The answer was lost, and the appeal may be open and paid: said so, never "it failed". An appeal with no ruling is refunded by the filing run.
     if (e instanceof TransportError) return answer(503, { error: 'no answer came back, so this may have gone through: look before you try again. If your appeal is open with no answer, your Aura comes back by itself.' });

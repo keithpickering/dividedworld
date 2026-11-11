@@ -736,6 +736,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       parsed = null;
     }
     if (got.status >= 200 && got.status < 300 && parsed) return { ok: true, value: parsed };
+    /* A refusal for a bar, from a function that answers for the player: the session is read again, as the rpc path does. */
+    if (parsed?.['hint'] === BARRED_HINT) void reloadSession();
     const words = parsed ? str(parsed['error']) : null;
     /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
     if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
