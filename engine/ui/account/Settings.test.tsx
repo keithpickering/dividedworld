@@ -1013,4 +1013,72 @@ describe('Settings › Sound', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(fetched).not.toHaveBeenCalled();
   });
+
+  describe('a volume that steps, drifts or is refused', () => {
+    const stepped = async (sounds: SoundsUi = BOTH) => {
+      const sources = fakeSound().sources;
+      const w = sound(sounds);
+      await screen.findByRole('radiogroup', { name: 'Game sounds' });
+      await userEvent.click(radio('Game sounds', 'On'));
+      const slider = await screen.findByRole('slider', { name: 'Game volume' });
+      await waitFor(async () => expect((await w.fake.preferences()).gameSound).toBe('on'));
+      return { w, slider, sources };
+    };
+
+    test('three quick releases are one save of the last value, and their previews replace one another', async () => {
+      const { w, slider, sources } = await stepped();
+      const save = vi.spyOn(w.fake, 'setPreferences');
+      vi.useFakeTimers();
+      try {
+        for (const v of ['85', '90', '95']) { fireEvent.change(slider, { target: { value: v } }); await act(async () => { await vi.advanceTimersByTimeAsync(50); }); }
+        expect(save).not.toHaveBeenCalled();
+        await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      } finally { vi.useRealTimers(); }
+      expect(save).toHaveBeenCalledTimes(1);
+      expect(save).toHaveBeenCalledWith(expect.objectContaining({ gameVolume: 95 }));
+      expect(sources).toHaveLength(3);
+      expect(sources[0]!.stop).toHaveBeenCalledWith(0.08);
+      expect(sources[1]!.stop).toHaveBeenCalledWith(0.08);
+      expect(sources[2]!.stop).not.toHaveBeenCalled();
+    });
+
+    test('leaving the slider saves what is waiting at once, and so does turning the sound Off', async () => {
+      const { w, slider } = await stepped();
+      fireEvent.change(slider, { target: { value: '40' } });
+      fireEvent.blur(slider);
+      await waitFor(async () => expect((await w.fake.preferences()).gameVolume).toBe(40));
+      fireEvent.change(slider, { target: { value: '25' } });
+      await userEvent.click(radio('Game sounds', 'Off'));
+      await waitFor(async () => expect(await w.fake.preferences()).toMatchObject({ gameVolume: 25, gameSound: 'off' }));
+    });
+
+    test('a drag that ends without a release puts the number back to the saved volume on blur', async () => {
+      const { slider } = await stepped();
+      fireEvent.input(slider, { target: { value: '15' } });
+      expect(within(group('Game sounds')).getByText('15%')).toBeInTheDocument();
+      fireEvent.blur(slider);
+      await waitFor(() => expect(within(group('Game sounds')).getByText('80%')).toBeInTheDocument());
+      expect(slider).toHaveValue('80');
+    });
+
+    test('a refused save puts the slider back to the saved volume', async () => {
+      const { w, slider } = await stepped();
+      w.fake.setPreferences = async () => ({ ok: false, error: 'the volume is 0 to 100' });
+      fireEvent.change(slider, { target: { value: '10' } });
+      fireEvent.blur(slider);
+      await waitFor(() => expect(slider).toHaveValue('80'));
+      expect(within(group('Game sounds')).getByText('80%')).toBeInTheDocument();
+    });
+
+    test('turning Off removes the range, and a change on it afterward saves nothing', async () => {
+      const { w, slider } = await stepped();
+      await userEvent.click(radio('Game sounds', 'Off'));
+      await waitFor(() => expect(screen.queryByRole('slider', { name: 'Game volume' })).toBeNull());
+      const save = vi.spyOn(w.fake, 'setPreferences');
+      fireEvent.change(slider, { target: { value: '5' } });
+      await act(async () => { await new Promise((r) => setTimeout(r, 350)); });
+      expect(save).not.toHaveBeenCalled();
+      expect((await w.fake.preferences()).gameVolume).toBe(80);
+    });
+  });
 });

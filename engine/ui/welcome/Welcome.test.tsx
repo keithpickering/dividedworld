@@ -138,6 +138,7 @@ describe('the welcome page', () => {
     await waitFor(() => expect(fetched).toHaveBeenCalledWith('/boo.mp3'));
     /* The interface bus names no preview here: releasing its volume plays nothing more. */
     await userEvent.click(within(within(before).getByRole('radiogroup', { name: 'Interface sounds' })).getByRole('radio', { name: 'On' }));
+    await waitFor(async () => expect((await fake.preferences()).interfaceSound).toBe('on'));
     fetched.mockClear();
     fireEvent.change(await within(before).findByRole('slider', { name: 'Interface volume' }), { target: { value: '20' } });
     await waitFor(async () => expect((await fake.preferences()).interfaceVolume).toBe(20));

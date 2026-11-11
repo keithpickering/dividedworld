@@ -85,6 +85,9 @@ export function EffectsRow({ value, onChange, level }: { readonly value: Prefere
   );
 }
 
+/** How long a volume release waits for another before it is saved, in milliseconds. */
+const SAVE_QUIET_MS = 250;
+
 const SOUND_ROW: Readonly<Record<SoundBus, { readonly legend: string; readonly volume: string; readonly says: string }>> = {
   game: { legend: 'Game sounds', volume: 'Game volume', says: 'Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen.' },
   interface: { legend: 'Interface sounds', volume: 'Interface volume', says: 'Sounds the board itself makes, apart from the game.' },
@@ -110,19 +113,35 @@ export function SoundRow({ bus, value, volume, onChange, onVolume, level }: {
   const [shown, setShown] = useState(volume);
   useEffect(() => { setShown(volume); }, [volume]);
   const range = useRef<HTMLInputElement>(null);
-  const released = useRef<(v: number) => void>(() => {});
-  released.current = (v) => {
-    onVolume(v);
-    if (preview !== undefined) void play(preview);
-  };
+  /* A release is kept for SAVE_QUIET_MS and saved once if no other follows (a key held on the range releases at every step); leaving the
+     range, turning the sound Off and leaving the screen save what waits at once, so nothing is lost. A preview replaces the last. */
+  const waiting = useRef<{ readonly v: number } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const latest = useRef({ onVolume, play, preview, volume });
+  latest.current = { onVolume, play, preview, volume };
+  const flush = useRef((): boolean => {
+    clearTimeout(timer.current);
+    const w = waiting.current;
+    waiting.current = null;
+    if (!w) return false;
+    latest.current.onVolume(w.v);
+    return true;
+  });
   const open = value === 'on';
   useEffect(() => {
     const el = range.current;
     if (!el) return undefined;
-    const release = () => { released.current(Number(el.value)); };
+    const release = () => {
+      const v = Number(el.value);
+      waiting.current = { v };
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => { flush.current(); }, SAVE_QUIET_MS);
+      if (latest.current.preview !== undefined) void latest.current.play(latest.current.preview, { group: 'settings-preview', fadeMs: 80 });
+    };
     el.addEventListener('change', release);
-    return () => el.removeEventListener('change', release);
+    return () => { el.removeEventListener('change', release); flush.current(); };
   }, [open]);
+  const left = () => { if (!flush.current()) setShown(latest.current.volume); };
   return (
     <Choice legend={words.legend} options={SOUND} value={value} onChange={onChange} level={level}
       sentence={none ? `${words.says} This forum has none yet.` : words.says}>
@@ -130,7 +149,7 @@ export function SoundRow({ bus, value, volume, onChange, onVolume, level }: {
         <div className="kb-acct-volume">
           <label htmlFor={`${id}-volume`} className="kb-acct-volume-label">{words.volume}</label>
           <input ref={range} id={`${id}-volume`} className="kb-acct-volume-range" type="range" min={0} max={100} step={5} value={shown}
-            onChange={(e) => setShown(Number(e.target.value))} aria-valuetext={`${shown}%`} />
+            onChange={(e) => setShown(Number(e.target.value))} onBlur={left} aria-valuetext={`${shown}%`} />
           <span className="kb-acct-volume-value" aria-hidden="true">{shown}%</span>
         </div>
       )}
