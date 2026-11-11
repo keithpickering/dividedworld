@@ -5,10 +5,11 @@
 -- the character and the class held. Null while it is not public, and again after a Turn, since an older reveal predates the class's
 -- new start. It is read only through this view, bounded by the caller's own characters. Everything else as 0138 wrote it.
 --
--- unmask() (0104, which added not_banned to 0074's), refusing a class that is already public: a class_reveals row for the
--- character's current class dated on or after that class's start. Its way out is the sentence's own: after a Turn, the new class can be revealed. The check follows acting(), so
--- another player's character gets the refusal it always did, whether or not the class is public; and it follows the character's row
--- lock, so two reveals racing cannot both land. write_unmask() is untouched. Everything else as 0104 wrote it.
+-- unmask() (0104's definition, in its pg_dump form at 0104_warn_bar.sql:751, which added not_banned to 0074's), refusing a class
+-- that is already public: a class_reveals row for the character's current class dated on or after that class's start. Its way out
+-- is the sentence's own: after a Turn, the new class can be revealed. The check follows acting(), so another player's character
+-- gets the refusal it always did, whether or not the class is public; and it follows the character's row lock, so two reveals
+-- racing cannot both land. write_unmask() is untouched. Everything else as 0104 wrote it.
 create or replace view my_characters as
   select c.id, c.name, h.class_key as class, h.started_at as class_since,
          case when t.at > now() then t.at end as turn_opens_at,

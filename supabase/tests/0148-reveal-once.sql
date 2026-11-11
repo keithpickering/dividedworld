@@ -124,3 +124,57 @@ begin
   if (select count(class_shown_at) from my_characters) is distinct from 0::bigint then raise exception 'another player''s class_shown_at was read'; end if;
   perform tests.unbecome();
 end $$;
+
+-- ---- The date compared is when the class started, not when it was due ----
+do $$
+declare
+  ann uuid := tests.account('shown-started');
+  a uuid := tests.character(ann, 'Started Late', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Started, not due');
+  said uuid;
+begin
+  -- A class row due two days ago that started an hour ago (its class held before it, so a reveal of that class a day ago names it);
+  -- the reveal is newer than the row's due date and older than its start.
+  insert into class_history (character, class_key, started_at, due_at) values (a, 'alpha', now() - interval '1 hour', now() - interval '2 days');
+  perform write_unmask(a, t, 'act', now() - interval '1 day');
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is not null then raise exception 'a reveal older than the class''s start (though newer than its due date) shows the class as public'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, 'Alpha again.')) is not null then raise exception 'a class started after its only reveal could not be revealed'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- A public class whose Turn is due is refused as public, before the Turn's own refusal ----
+-- The settle run's claim makes the Turn due (0074), as 0077-settle-claim.sql sets it up: the settlements moved a century back so the
+-- season's first window has no known end, then a claim on a window that ended an hour ago, which no settlement has applied. Undone
+-- with the block.
+do $$
+declare
+  ann uuid := tests.account('shown-due');
+  a uuid := tests.character(ann, 'Public And Due', 'alpha', now() - interval '60 days');
+  b uuid := tests.character(ann, 'Private And Due', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Due');
+  due text := 'this character''s Turn takes effect at the settlement now due; reveal once it has run, or withdraw the Turn';
+begin
+  begin
+    update settlements set starts_at = starts_at - interval '100 years', ends_at = ends_at - interval '100 years';
+    delete from settlement_claims;
+    perform write_unmask(a, t, 'act', now() - interval '1 day');
+    perform tests.become(ann);
+    perform turn(a, 'beta', 'silent');
+    perform turn(b, 'beta', 'silent');
+    perform tests.unbecome();
+    update pending_turns set asked_at = now() - interval '2 hours' where character in (a, b);
+    perform tests.become_service();
+    perform claim_settlement_window(now() - interval '1 day', now() - interval '1 hour');
+    perform tests.unbecome();
+    perform tests.become(ann);
+    -- The control: a Turn due refuses a class that is not public with the Turn's own words.
+    if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is distinct from due then raise exception 'the control: a due Turn refuses a reveal in its own words'; end if;
+    if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, '')) is distinct from 'that character''s class is already public; after a Turn, the new class can be revealed' then
+      raise exception 'a public class with a due Turn is refused as public';
+    end if;
+    perform tests.unbecome();
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;
