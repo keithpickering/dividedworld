@@ -79,16 +79,30 @@ export function stripsOf(text: string, plays: readonly TapePlay[]): { strips: Ta
  * `saved` (the author peeled it before this load) takes its words' own width and is left out.
  */
 export function roomOf(stack: readonly TapeStrip[], measure: Measure, saved: ReadonlySet<string> = new Set()): Map<number, number> {
-  const kept = stack.filter((s) => !saved.has(s.key));
+  /* The kept strips by end, once; the rooms set so far, ascending by end, with running totals, so a strip's inner rooms are two searches. */
+  const byEnd = new Map<number, TapeStrip[]>();
+  for (const s of stack) if (!saved.has(s.key)) (byEnd.get(s.to) ?? byEnd.set(s.to, []).get(s.to)!).push(s);
   const fills = new Map<number, number>();
-  for (const end of [...new Set(kept.map((s) => s.to))].sort((a, b) => a - b)) {
+  const ats: number[] = [];
+  const upTo: number[] = [0];
+  /* The count of the first `i` rooms' break-spaces; `ats` is ascending, so the rooms strictly between two offsets are a run of it. */
+  const after = (x: number) => { let lo = 0, hi = ats.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (ats[mid]! <= x) lo = mid + 1; else hi = mid; } return lo; };
+  const before = (x: number) => { let lo = 0, hi = ats.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (ats[mid]! < x) lo = mid + 1; else hi = mid; } return lo; };
+  for (const end of [...byEnd.keys()].sort((a, b) => a - b)) {
     let need = 0;
-    for (const s of kept.filter((q) => q.to === end)) {
+    for (const s of byEnd.get(end)!) {
       let have = measure.words(s.from, end);
-      for (const [at, n] of fills) if (at > s.from && at < end) have += n * measure.space;
+      const lo = after(s.from);
+      const hi = before(end);
+      if (hi > lo) have += (upTo[hi]! - upTo[lo]!) * measure.space;
       need = Math.max(need, measure.replacement(s.replacement) + 2 * measure.pad - have);
     }
-    if (need > 0) fills.set(end, Math.ceil(need / measure.space));
+    if (need > 0) {
+      const n = Math.ceil(need / measure.space);
+      fills.set(end, n);
+      ats.push(end);
+      upTo.push(upTo[upTo.length - 1]! + n);
+    }
   }
   return fills;
 }

@@ -66,6 +66,8 @@ const MAX_SAVE_RETRIES = 3;
 const MARKER = 1.3 * 1.02;
 /** The padding on each side of a piece's writing, against the board's text size. */
 const PAD_EM = 0.35;
+/** The side of a cell in the grid that finds the boxes near a box, in pixels. */
+const CELL = 64;
 /** The most pixels the residue's one canvas holds. */
 const MOST_RESIDUE_PIXELS = 4_000_000;
 
@@ -786,13 +788,32 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     const marker = (scale: number) => `${(base * MARKER * scale).toFixed(2)}px "Gochi Hand", cursive`;
     const segs = [...host.querySelectorAll<HTMLElement>('[data-kb-ac-seg]')];
     const edge = (el: HTMLElement) => (el.dataset.kbAcSeg ?? '0-0').split('-').map(Number) as [number, number];
+    /* The segments indexed once, by the offsets they start and end at, so no strip walks them all. */
     const width = new Map<string, number>();
-    for (const s of segs) width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((a, r) => a + r.width, 0));
+    const firstAt = new Map<number, number>();
+    const lastAt = new Map<number, number>();
+    segs.forEach((s, i) => {
+      const [a, b] = edge(s);
+      if (!firstAt.has(a)) firstAt.set(a, i);
+      lastAt.set(b, i);
+      width.set(s.dataset.kbAcSeg!, (width.get(s.dataset.kbAcSeg!) ?? 0) + [...s.getClientRects()].reduce((t, r) => t + r.width, 0));
+    });
+    /* The segments' widths ascending by start with running totals: the words from one offset to another are a run of them (the segments partition the text, so their ends ascend with their starts). */
+    const byStart = [...width].map(([id, w]) => { const [a, b] = id.split('-').map(Number) as [number, number]; return { a, b, w }; }).sort((x, y) => x.a - y.a || x.b - y.b);
+    const upTo = [0];
+    for (const q of byStart) upTo.push(upTo[upTo.length - 1]! + q.w);
+    const startsAtOrAfter = (x: number) => { let lo = 0, hi = byStart.length; while (lo < hi) { const m = (lo + hi) >> 1; if (byStart[m]!.a < x) lo = m + 1; else hi = m; } return lo; };
+    const endsAtOrBefore = (x: number) => { let lo = 0, hi = byStart.length; while (lo < hi) { const m = (lo + hi) >> 1; if (byStart[m]!.b <= x) lo = m + 1; else hi = m; } return lo; };
+    /* The rooms in the line, by end, queried once. */
+    const roomEls = new Map<number, HTMLElement>();
+    for (const e of host.querySelectorAll<HTMLElement>('[data-kb-ac-room]')) { const n = Number(e.dataset.kbAcRoom); if (!roomEls.has(n)) roomEls.set(n, e); }
+    const roomEnds = [...roomEls.keys()].sort((x, y) => x - y);
     const spaces = new Map<number, number>();
     const spaceAt = (end: number): number => {
       let w = spaces.get(end);
       if (w === undefined) {
-        const last = segs.filter((s) => edge(s)[1] === end).at(-1);
+        const lastIdx = lastAt.get(end);
+        const last = lastIdx === undefined ? undefined : segs[lastIdx];
         w = last ? ruler(fontOf(last), ' ') : base * 0.25;
         spaces.set(end, w || base * 0.25);
       }
@@ -803,20 +824,33 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     for (const stack of groups) {
       /* The ends ascending, each strip's room measured with the space where it sits; a room set strictly inside a strip counts at its true width. */
       const inner = new Map<number, number>();
-      for (const end of [...new Set(stack.map((s) => s.to))].sort((a, b) => a - b)) {
+      const innerAts: number[] = [];
+      const innerUpTo: number[] = [0];
+      const ofEnd = new Map<number, TapeStrip[]>();
+      for (const s of stack) (ofEnd.get(s.to) ?? ofEnd.set(s.to, []).get(s.to)!).push(s);
+      for (const end of [...ofEnd.keys()].sort((a, b) => a - b)) {
         const measure: Measure = {
           words: (from, to) => {
-            let sum = 0;
-            for (const [id, w] of width) { const [a, b] = id.split('-').map(Number) as [number, number]; if (a >= from && b <= to) sum += w; }
-            for (const [at, n] of inner) if (at > from && at < to) sum += n * spaceAt(at);
+            const lo = startsAtOrAfter(from);
+            let sum = Math.max(0, upTo[endsAtOrBefore(to)]! - upTo[lo]!);
+            /* The rooms set so far are ascending: those strictly inside are a run of them. */
+            let i = 0, j = innerAts.length;
+            { let l = 0, h = j; while (l < h) { const m = (l + h) >> 1; if (innerAts[m]! <= from) l = m + 1; else h = m; } i = l; }
+            { let l = i, h = j; while (l < h) { const m = (l + h) >> 1; if (innerAts[m]! < to) l = m + 1; else h = m; } j = l; }
+            sum += innerUpTo[j]! - innerUpTo[i]!;
             return sum;
           },
           replacement: (t) => ruler(marker(1), t),
           space: spaceAt(end),
           pad,
         };
-        const made = roomOf(stack.filter((s) => s.to === end), measure, before).get(end);
-        if (made) { inner.set(end, made); nextRooms[String(end)] = made; }
+        const made = roomOf(ofEnd.get(end)!, measure, before).get(end);
+        if (made) {
+          inner.set(end, made);
+          nextRooms[String(end)] = made;
+          innerAts.push(end);
+          innerUpTo.push(innerUpTo[innerUpTo.length - 1]! + made * spaceAt(end));
+        }
       }
     }
     /*
@@ -830,22 +864,26 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
 
     const out: Record<string, Laid> = {};
     const bump: Record<string, number> = {};
+    /* One Range for the whole pass: every Range made is live on the document until it is collected, and each node the page removes meanwhile updates them all. */
+    const r = document.createRange();
     /*
      * The boxes of a strip's words and its room, and only those: a Range from the first word to the room also takes the text of the
      * visually hidden anchor buttons between them (a clipped one-pixel button whose label still has a box as wide as the replacement),
      * and that box would join the line and carry the piece past the post's edge.
      */
     const rectsOf = (strip: TapeStrip): Rect[] | null => {
-      const first = segs.find((s) => edge(s)[0] === strip.from);
-      const last = segs.filter((s) => edge(s)[1] === strip.to).at(-1);
-      if (!first || !last) return null;
-      const room = before.has(strip.key) ? null : host.querySelector<HTMLElement>(`[data-kb-ac-room="${strip.to}"]`);
+      const firstIdx = firstAt.get(strip.from);
+      const lastIdx = lastAt.get(strip.to);
+      if (firstIdx === undefined || lastIdx === undefined) return null;
+      const room = before.has(strip.key) ? null : roomEls.get(strip.to);
       /* The rooms of strips ending inside this one are part of its footprint, as its own is. */
-      const inner = [...host.querySelectorAll<HTMLElement>('[data-kb-ac-room]')].filter((e) => Number(e.dataset.kbAcRoom) > strip.from && Number(e.dataset.kbAcRoom) < strip.to);
-      const parts = [...segs.slice(segs.indexOf(first), segs.indexOf(last) + 1), ...inner, ...(room ? [room] : [])];
+      let lo = 0, hi = roomEnds.length;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (roomEnds[m]! <= strip.from) lo = m + 1; else hi = m; }
+      const inner: HTMLElement[] = [];
+      for (let i = lo; i < roomEnds.length && roomEnds[i]! < strip.to; i++) inner.push(roomEls.get(roomEnds[i]!)!);
+      const parts = [...segs.slice(firstIdx, lastIdx + 1), ...inner, ...(room ? [room] : [])];
       const rects: Rect[] = [];
       for (const part of parts) {
-        const r = document.createRange();
         r.selectNodeContents(part);
         if (typeof r.getClientRects !== 'function') return null;
         rects.push(...r.getClientRects());
@@ -904,7 +942,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
         render: ({ text: words, key }) => (
           <Fragment key={key}>
             {key === `ac:${id}@${start}` ? anchors.map((s) => (
-              <Anchor key={s.key} strip={s} author={reader.author} still={still} open={exposed(s, live)} onKey={onKey} onFocus={setFocused} />
+              <Anchor key={s.key} strip={s} author={reader.author} still={still} open={openKeys.has(s.key)} onKey={onKey} onFocus={setFocused} />
             )) : null}
             <span data-kb-ac-seg={id} {...(covered ? { 'aria-hidden': true, 'data-kb-quotable': 'hidden' } : null)}>{words}</span>
           </Fragment>
@@ -921,6 +959,41 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
    * what lies over them and what lies under them on their lines (only within the strip's own stack, where strips overlap).
    */
   const stackOf = useMemo(() => new Map(stacks.flatMap((st) => st.map((q): [string, readonly TapeStrip[]] => [q.key, st]))), [stacks]);
+  /* Which live strips have nothing live over them, found once per stack (strips overlap only within their own), not once per strip over all of them. */
+  const openKeys = useMemo(() => {
+    const out = new Set<string>();
+    for (const st of stacks) {
+      const mine = st.filter((q) => liveKeys.has(q.key));
+      for (const q of mine) if (exposed(q, mine)) out.add(q.key);
+    }
+    return out;
+  }, [stacks, liveKeys]);
+  /* Every strip's boxes in a grid of cells, so a box finds the lower strips' boxes near it without a pass over all of them. */
+  const grid = useMemo(() => {
+    const cells = new Map<string, { z: number; key: string; j: number; at: number; box: Box }[]>();
+    if (!laid) return cells;
+    let at = 0;
+    for (const q of strips) {
+      (laid.strips[q.key]?.boxes ?? []).forEach((box, j) => {
+        for (let r = Math.floor(box.y / CELL); r <= Math.floor((box.y + box.h) / CELL); r++) {
+          for (let c = Math.floor(box.x / CELL); c <= Math.floor((box.x + box.w) / CELL); c++) {
+            const k = `${r}:${c}`;
+            (cells.get(k) ?? cells.set(k, []).get(k)!).push({ z: q.z, key: q.key, j, at, box });
+          }
+        }
+        at++;
+      });
+    }
+    return cells;
+  }, [laid, strips]);
+  /* The boxes of strips lower than `z` that touch `b`, in the order the strips and their boxes come. */
+  const nearLower = (b: Box, z: number) => {
+    const found = new Map<number, { z: number; key: string; j: number; at: number; box: Box }>();
+    for (let r = Math.floor(b.y / CELL); r <= Math.floor((b.y + b.h) / CELL); r++) {
+      for (let c = Math.floor(b.x / CELL); c <= Math.floor((b.x + b.w) / CELL); c++) for (const e of grid.get(`${r}:${c}`) ?? []) if (e.z < z) found.set(e.at, e);
+    }
+    return [...found.values()].sort((x, y) => x.at - y.at);
+  };
   const drawn = useRef(new Map<string, Drawn>());
   const drawOf = (s: TapeStrip): Drawn | null => {
     const at = laid?.strips[s.key];
@@ -929,9 +1002,8 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
     const was = drawn.current.get(s.key);
     if (was && was.src === src && was.laid === laid && was.live === live && was.still === still) return was;
     const px = piecesOf(src, at.boxes.map((b) => b.w));
-    const open = exposed(s, live);
+    const open = openKeys.has(s.key);
     const lower = (stackOf.get(s.key) ?? []).filter((q) => q.z < s.z && liveKeys.has(q.key)).sort((x, y) => y.z - x.z);
-    const lowerBoxes = strips.filter((q) => q.z < s.z).flatMap((q) => laid.strips[q.key]?.boxes ?? []);
     const pieces: DrawnPiece[] = [];
     const regions: Region[] = [];
     const specs: PieceSpec[] = [];
@@ -941,7 +1013,7 @@ export function AutocorrectEffect({ post, plays, states, reader, still, save, sh
       pieces.push({ own, mask: maskOf(own, b.w), clip: tornPath(own, b.h, id), attr: own.map(([lo, hi]) => `${lo.toFixed(1)}-${hi.toFixed(1)}`).join(',') });
       const peeled = peeledOf(own, b.w);
       if (peeled.length) {
-        const cut = lowerBoxes.flatMap((q): Box[] => {
+        const cut = nearLower(b, s.z).flatMap(({ box: q }): Box[] => {
           const [x0, y0, x1, y1] = [Math.max(b.x, q.x), Math.max(b.y, q.y), Math.min(b.x + b.w, q.x + q.w), Math.min(b.y + b.h, q.y + q.h)];
           return x1 > x0 && y1 > y0 ? [{ x: x0 - b.x, y: y0 - b.y, w: x1 - x0, h: y1 - y0 }] : [];
         });

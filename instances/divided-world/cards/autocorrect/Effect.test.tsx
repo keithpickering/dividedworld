@@ -311,6 +311,44 @@ describe('Autocorrect: the room', () => {
   });
 });
 
+describe('Autocorrect: the layout at a busy post\'s scale', () => {
+  /* The work of one layout pass, counted where a per-strip pass over all strips shows: attribute reads on elements, elements returned by
+   * the host's queries, ids split by the segment map's walk, and the boxes asked for. Linear work quadruples from 40 to 160, quadratic work sixteen-folds. */
+  const workOf = (n: number) => {
+    document.body.innerHTML = '';
+    mount({ body: 'mario '.repeat(n), plays: [playOf(1, 'mario', 'Luigi')] });
+    expect(document.querySelectorAll('[data-kb-ac-anchor]').length).toBeGreaterThanOrEqual(n);
+    let work = 0;
+    const dataset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'dataset')!;
+    Object.defineProperty(HTMLElement.prototype, 'dataset', { configurable: true, get(this: HTMLElement) { work++; return dataset.get!.call(this); } });
+    const realAll = Element.prototype.querySelectorAll;
+    const realOne = Element.prototype.querySelector;
+    const all = vi.spyOn(Element.prototype, 'querySelectorAll').mockImplementation(function (this: Element, sel: string) {
+      const found = realAll.call(this, sel);
+      /* The stand-in layout's own scan (rectOf) is not the card's. */
+      if (sel !== '[data-kb-ac-seg], .dw-ac-room') work += found.length + 1;
+      return found;
+    });
+    const one = vi.spyOn(Element.prototype, 'querySelector').mockImplementation(function (this: Element, sel: string) { work += 1; return realOne.call(this, sel); });
+    const realSplit = String.prototype.split;
+    String.prototype.split = function (this: string, sep: never, lim?: number) { if (sep === '-') work++; return realSplit.call(this, sep, lim); } as never;
+    try { resize(); } finally {
+      String.prototype.split = realSplit;
+      Object.defineProperty(HTMLElement.prototype, 'dataset', dataset);
+      all.mockRestore();
+      one.mockRestore();
+    }
+    return { work };
+  };
+
+  test('one layout pass does linear work in the strips: 160 occurrences cost under six times what 40 do', () => {
+    const small = workOf(40);
+    const big = workOf(160);
+    expect(small.work).toBeGreaterThan(0);
+    expect(big.work / small.work).toBeLessThan(6);
+  }, 60_000);
+});
+
 describe('Autocorrect: the tape', () => {
   test('each live strip is drawn as a piece over the post, with its paper drawn and the writing on it', () => {
     mount({ body: 'Mario', plays: [playOf(1, 'mario', 'Luigi')] });
