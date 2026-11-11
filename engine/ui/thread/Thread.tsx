@@ -169,13 +169,18 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const pronounsOf = useCallback((id: Id | null) => (id === null ? ENGINE_DEFAULT_PRONOUNS : people.current.get(id)?.character.pronouns ?? ENGINE_DEFAULT_PRONOUNS), []);
 
   /*
+   * The plays above the posts that each page number's latest read held, so a later read of the same page can tell which have left it. Each
+   * read takes a ticket when it is asked (the first document's is 0), and only a read asked after the one remembered is compared and
+   * remembered: answers arrive in any order, and an older one must not end what a newer one saw.
+   */
+  const aboveOf = useRef(new Map<number, { readonly ticket: number; readonly ids: ReadonlySet<Id> }>());
+  const tickets = useRef(0);
+  /*
    * A page document taken into the stores: its authors, the plays on its posts and above them with their saved states, the player's releases
    * and card backs, the tallies, the player's own reactions and the threads spun from them, all ready to show, and each post's plays billed
    * (cards/billing.ts), once for this page: a live count moves no tag. No read: the document holds what a page used to read in a dozen.
    */
-  /* The plays above the posts that each page number's last read held, so a later read of the same page can tell which have left it. */
-  const aboveOf = useRef(new Map<number, ReadonlySet<Id>>());
-  const absorb = useCallback((page: ThreadPage) => {
+  const absorb = useCallback((page: ThreadPage, ticket: number) => {
     const said = reveals(page.people.flatMap((p) => p.reveals), page.people.flatMap((p) => p.turns));
     for (const p of page.people) {
       const statement = said.get(p.character.id);
@@ -190,11 +195,15 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     const played = [...page.plays, ...page.above.map((x) => x.act)];
     hydrate(plays, played, page.states, page.releases, page.faces);
-    /* A play above the posts that an admin ended, or that left with a thread's move, leaves a page's `above` and sends no `card_end` with it: a page read again says so by what it no longer holds. */
-    const above = new Set(page.above.map((x) => x.act.id));
+    /* A play leaves a page's `above` when an admin ended it, when its thread moved, or when its time ran out (the server drops a play past its
+       end; a reach play past its time is already hidden by the clock, so marking it changes nothing a reader sees), and sends no `card_end`
+       with it: a page read again says so by what it no longer holds. Only a read asked after the remembered one says so. */
     const was = aboveOf.current.get(page.page);
-    if (was) plays.setEnded([...was].filter((id) => !above.has(id)));
-    aboveOf.current.set(page.page, above);
+    if (!was || ticket > was.ticket) {
+      const above = new Set(page.above.map((x) => x.act.id));
+      if (was) plays.setEnded([...was.ids].filter((id) => !above.has(id)));
+      aboveOf.current.set(page.page, { ticket, ids: above });
+    }
     const posts = page.acts.filter((a) => a.kind === 'post').map((a) => a.id);
     const ids = [...new Set([...page.acts.map((a) => a.id), ...played.map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
@@ -218,16 +227,17 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
   const back = useRef(returnOf(loc.state));
   const [feed, dispatch] = useReducer(feedReducer, undefined, () => {
-    absorb(doc);
+    absorb(doc, 0);
     return feedReducer(emptyFeed, loadedFrom(doc, P, back.current));
   });
   feedRef.current = feed;
 
   /* A page read from the server (a next page, a gap, a move to a page not shown): one request, on the meter. */
   const readPage = useCallback(async (at: { readonly page?: number | null; readonly seq?: number | null }): Promise<ThreadPage> => {
+    const ticket = ++tickets.current;
     const page = await track(api.threadPage(thread, at, P, effectList));
     if (!page) throw new Error('the thread could not be read');
-    absorb(page);
+    absorb(page, ticket);
     return page;
   }, [api, thread, P, effectList, track, absorb]);
 
@@ -422,7 +432,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const sleeping = useRef(new Set<() => void>());
   const catchUpWith = useRef<() => Promise<void>>(async () => {});
   catchUpWith.current = async () => {
-    const asked = async <T,>(read: () => Promise<T | null>): Promise<T | null> => {
+    const tried = async <T,>(read: () => Promise<T | null>): Promise<T | null> => {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (!mounted.current) return null;
         try {
@@ -439,11 +449,20 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const start = feedRef.current;
     if (!start.ready) return;
+    /* The pages this run reads are the ones drawn when it began. A read that was asked before the join and lands during the run (a next page, a jump) moves them,
+       and its window is not caught up by this run: it stops and asks for one more, which reads the range as it now stands. The run's own `fill` moves neither end. */
+    const moved = () => {
+      if (feedRef.current.firstPage === start.firstPage && feedRef.current.lastPage === start.lastPage) return false;
+      running.current.again = true;
+      return true;
+    };
     let lastSeq = start.serverLast;
     for (let page = start.firstPage; page <= start.lastPage; page++) {
-      const read = await asked(() => api.threadPage(thread, { page }, P, effectList));
+      let ticket = 0;
+      const read = await tried(() => { ticket = ++tickets.current; return api.threadPage(thread, { page }, P, effectList); });
       if (!read || !mounted.current) return;
-      absorb(read);
+      absorb(read, ticket);
+      if (moved()) return;
       lastSeq = Math.max(lastSeq, read.thread.lastSeq);
       const fresh: Act[] = [];
       for (const a of read.acts) {
@@ -457,8 +476,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     /* Posts on pages beyond the drawn tail: read as a gap is, on the meter. */
     for (let from = pageRange(feedRef.current.lastPage, P).end + 1; feedRef.current.tailLoaded && from <= lastSeq; ) {
       const at = from;
-      const read = await asked(async () => { try { return await readPage({ seq: at }); } catch { return null; } });
+      const read = await tried(async () => { try { return await readPage({ seq: at }); } catch { return null; } });
       if (!read || !mounted.current) return;
+      if (moved()) return;
       lastSeq = Math.max(lastSeq, read.thread.lastSeq);
       if (feedRef.current.tailLoaded) dispatch({ type: 'fill', acts: read.acts.filter((a) => a.seq !== null && a.seq >= at) });
       const next = pageRange(read.page, P).end + 1;

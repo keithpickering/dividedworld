@@ -1976,6 +1976,65 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
       expect(Math.max(...tracking)).toBe(0);
     });
 
+    /* Reads of one page that are answered in an order other than the one they were asked in: each read's answer is taken when it is asked, and given when its gate opens. */
+    const gated = (fake: Fake, gates: readonly Promise<void>[]) => {
+      const real = fake.threadPage.bind(fake);
+      return vi.spyOn(fake, 'threadPage').mockImplementation(async (...a) => {
+        const at = gates[vi.mocked(fake.threadPage).mock.calls.length - 1];
+        const answer = await real(...a);
+        if (at) await at;
+        return answer;
+      });
+    };
+    const gate = () => { let open!: () => void; const promise = new Promise<void>((r) => { open = r; }); return { promise, open }; };
+
+    test('an older read of a page that is answered after a newer one does not end a play the newer one held', async () => {
+      const w = world(45);
+      w.fake.seed.admin(w.me);
+      const head = () => document.querySelector('.kb-thread-head') as HTMLElement;
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 2 }, 20, []))!;
+      const first = gate();
+      /* The catch-up's read of page 2 is asked first and answered last; the reads of pages 1 and 2 again are asked after it and answered at once. */
+      gated(w.fake, [first.promise]);
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=2`, boot });
+      await article(21);
+      await waitFor(() => expect(vi.mocked(w.fake.threadPage)).toHaveBeenCalledTimes(1));
+      w.fake.seed.reach(w.spritey, 'thread', w.thread, 'whoops', { ends: Date.now() + 86_400_000, message: 'between' });
+      await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+      await article(1);
+      await userEvent.click(screen.getAllByRole('link', { name: 'Page 2' })[0]!);
+      await article(21);
+      await act(async () => { await pause(50); });
+      const beyond = /^Whoops!, 1 play\b.*Opens the cards on this thread\./u;
+      expect(await within(head()).findByRole('button', { name: beyond })).toBeInTheDocument();
+      await act(async () => { first.open(); await pause(30); });
+      expect(within(head()).getByRole('button', { name: beyond })).toBeInTheDocument();
+    });
+
+    test('a page the reader continues to, read before the join and answered during the catch-up, is caught up too', async () => {
+      const w = world(45);
+      w.fake.broadcast.holdJoins();
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+      const onContinue = gate();
+      const onCatchUp = gate();
+      /* The continue's read (the first) is taken before the play; the catch-up's read of page 1 (the second) waits for it to land. */
+      gated(w.fake, [onContinue.promise, onCatchUp.promise]);
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=1`, boot });
+      await article(1);
+      await userEvent.click(screen.getByRole('link', { name: 'Continue to page 2' }));
+      await waitFor(() => expect(vi.mocked(w.fake.threadPage)).toHaveBeenCalledTimes(1));
+      await act(async () => { await pause(10); });
+      w.fake.seed.card(w.spritey, w.ids[21]!, 'whoops', { message: 'oops' });
+      await act(async () => { w.fake.broadcast.join(); });
+      await waitFor(() => expect(vi.mocked(w.fake.threadPage)).toHaveBeenCalledTimes(2));
+      await act(async () => { onContinue.open(); await pause(30); });
+      await article(21);
+      await act(async () => { onCatchUp.open(); await pause(30); });
+      expect(await within(post(22)).findByRole('button', { name: mark })).toBeInTheDocument();
+    });
+
     test('it moves nothing the reader is looking at: no scroll, no focus change, no announcement of a post already announced', async () => {
       const w = world(3);
       await landed(w, { page: 1 }, [], () => { w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' }); });
