@@ -49,3 +49,32 @@ test("a */5 job over 30 minutes writes six rows, each on its own minute; a faili
     await cluster.stop();
   }
 });
+
+test("a job rescheduled mid-run takes its new schedule from the next minute; an inactive job stops", async () => {
+  const cluster = await startCluster({ at: T });
+  const sim = simulateClock();
+  const conn = await connect(cluster.dir, cluster.port, "postgres");
+  try {
+    await conn.sql(readFileSync(new URL("../../../supabase/tests/setup/auth-shim.sql", import.meta.url), "utf8"));
+    await conn.sql("create table ran (job text, at timestamptz)");
+    await conn.sql("select cron.schedule('a', '* * * * *', $$insert into ran values ('a', now())$$)");
+    await conn.sql("select cron.schedule('b', '* * * * *', $$insert into ran values ('b', now())$$)");
+    const ctx: ScheduleCtx = { connection: conn, deps: {} as ScheduleCtx["deps"], cap: { reached: () => false }, lastDrained: 0, dispatched: [], cluster, clock: sim, jobs: [] };
+    for (let i = 0; i < 20; i++) {
+      if (i === 10) {
+        // The shim's cron.schedule upserts by name, as a settings trigger's reschedule does.
+        await conn.sql("select cron.schedule('a', '*/5 * * * *', $$insert into ran values ('a', now())$$)");
+        await conn.sql("update cron.job set active = false where jobname = 'b'");
+      }
+      await runMinute(ctx, T + i * MIN);
+    }
+    const minutes = async (job: string) =>
+      (await conn.sql("select (extract(epoch from date_trunc('minute', at)) / 60 - $1)::int as m from ran where job = $2 order by at", [T / MIN, job])).map((r) => Number(r.m));
+    assert.deepEqual(await minutes("a"), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15], "every minute to 9, then */5 from minute 10");
+    assert.deepEqual(await minutes("b"), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], "inactive from minute 10");
+  } finally {
+    sim.restore();
+    await conn.end();
+    await cluster.stop();
+  }
+});

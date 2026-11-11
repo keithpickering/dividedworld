@@ -60,3 +60,8 @@ test("a capped model function is skipped and recorded; settle still runs", async
   assert.deepEqual(ctx.dispatched.map((d) => [d.function, d.skipped ?? null]), [["meet", "cost cap"], ["chatter", "cost cap"], ["staff", "cost cap"], ["settle", null]]);
   assert.equal(ctx.lastDrained, 4);
 });
+
+test("a path named like an Object property (constructor) is unknown, not resolved", async () => {
+  const { ctx } = setup([row(1, "constructor")]);
+  await assert.rejects(() => drain(ctx), (e: unknown) => e instanceof UnknownFunction);
+});

@@ -62,3 +62,28 @@ test("a malformed expression throws rather than matching", () => {
   assert.throws(() => matches("61 * * * *", new Date()), /minute/);
   assert.throws(() => matches("MON * * * *", new Date()));
 });
+
+test("day of week with a step and 7 inside a range", () => {
+  const sun = at(2027, 3, 7, 0, 0), mon = at(2027, 3, 1, 0, 0), tue = at(2027, 3, 2, 0, 0);
+  assert.ok(matches("0 0 * * 1-7", sun) && matches("0 0 * * 1-7", mon), "1-7 covers Sunday as 7");
+  assert.ok(matches("0 0 * * */2", sun), "*/2 is 0,2,4,6");
+  assert.ok(matches("0 0 * * */2", tue));
+  assert.ok(!matches("0 0 * * */2", mon));
+  assert.ok(matches("0 0 * * 5-7", sun));
+  assert.ok(!matches("0 0 * * 5-7", mon));
+});
+test("day of month with a step", () => {
+  assert.ok(matches("0 0 */10 * *", at(2027, 3, 11, 0, 0)));
+  assert.ok(matches("0 0 */10 * *", at(2027, 3, 1, 0, 0)), "*/10 from 1: 1, 11, 21, 31");
+  assert.ok(!matches("0 0 */10 * *", at(2027, 3, 10, 0, 0)));
+});
+test("a field starting with * counts as unrestricted for the either-rule (vixie cron, pg_cron)", () => {
+  // 2027-03-01 is a Monday; dom */10 matches 1, 11, 21, 31, and dow is restricted to Mondays. Starting with `*`, dom is
+  // unrestricted, so both must match (and): Monday the 8th fails, Monday the 1st passes, a non-Monday the 11th fails.
+  assert.ok(matches("0 0 */10 * 1", at(2027, 3, 1, 0, 0)));
+  assert.ok(!matches("0 0 */10 * 1", at(2027, 3, 8, 0, 0)));
+  assert.ok(!matches("0 0 */10 * 1", at(2027, 3, 11, 0, 0)));
+  // Same for dow */2 with a restricted dom: both must match.
+  assert.ok(matches("0 0 7 * */2", at(2027, 3, 7, 0, 0)), "the 7th is a Sunday");
+  assert.ok(!matches("0 0 8 * */2", at(2027, 3, 8, 0, 0)), "the 8th is a Monday");
+});

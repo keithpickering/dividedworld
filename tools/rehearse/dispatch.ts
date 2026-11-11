@@ -48,7 +48,7 @@ const REAL = ["meet", "chatter", "staff", "settle"];
 
 async function handlerFor(ctx: DispatchCtx, name: string, path: string): Promise<Handler> {
   if (ctx.handlers) {
-    const h = ctx.handlers[name];
+    const h = Object.hasOwn(ctx.handlers, name) ? ctx.handlers[name] : undefined;
     if (!h) throw new UnknownFunction(path);
     return h;
   }
