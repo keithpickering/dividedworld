@@ -539,7 +539,9 @@ button.kb-vending-slot {
   font-size: var(--kb-glass-size-display-m);
 }
 
+/* The face's glow (its ring's box-shadow, about 30px) rises into whatever stands over it, and the title is 52px of text on solid ground under high contrast: the body starts one glow's reach under the bar. */
 .kb-vending-about-card {
+  margin-top: 32px;
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
   column-gap: 40px;
@@ -556,7 +558,8 @@ button.kb-vending-slot {
 
 :where(:root[data-kb-layout='phone']) .kb-vending-about-card {
   grid-template-columns: minmax(0, 1fr);
-  row-gap: 14px;
+  /* One glow's reach between the face and the price under it. */
+  row-gap: 32px;
   justify-items: center;
 }
 

@@ -30,11 +30,11 @@ const part = (id: string, role: string, name: string, more: Partial<Landmark> = 
 /**
  * Where the build stands what the board draws in its right column, as the run measured: the board sets the eyebrow and the title at the top of that column,
  * beside the face; the frame's bar sets them at the dialog's left, over everything, and the body (the face, then the price and the rules beside it) starts under the bar.
- * So the eyebrow and the title stand 316px further left (the 276px face column and its 40px gap), the face 75px lower, and the price and the rules, which the board
- * draws under its title, stand 30px and 39px higher, beside the face.
+ * (The body also starts 32px under the bar, one glow's reach of the face, so the glow never lies under the title.) So the eyebrow and the title stand 316px further left (the 276px face column and its 40px gap), the face 107px lower, and the price and the rules, which the board
+ * draws under its title, stand 2px lower and 7px higher, beside the face.
  */
 const BAR = { x: -316 } as const;
-const FACE = { y: 75 } as const;
+const FACE = { y: 107 } as const;
 
 /** The instance's rules for Whoops!, in its own words (instances/divided-world/ui/cards.ts), where the board draws two shorter paragraphs. */
 const RULES = "A Salty card. It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. Playing it on a long post costs 0.25 more for every 500 characters, 2.00 at most.";
@@ -50,8 +50,8 @@ const manifest: BoardManifest = {
     part('title', 'heading', 'WHOOPS!', { buildShift: BAR }),
     part('close', 'button', 'Close', { box: 'size' }),
     part('face', 'figure', 'Whoops!, Salty, Cast, Common', { buildRole: 'article', buildName: 'Whoops!, Salty, Move, common postcard', box: 'full', buildShift: FACE }),
-    part('price', 'text', '1.00 to buy · more to play on a long post', { buildShift: { y: -30 } }),
-    part('rules', 'text', "It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink.", { buildShift: { y: -39 }, buildName: RULES }),
+    part('price', 'text', '1.00 to buy · more to play on a long post', { buildShift: { y: 2 } }),
+    part('rules', 'text', "It splats a post in the ink you choose, and a reader can scrub the ink away on their own screen; the post's author can wash it away for everyone. Up to three can stack on one post, each in its own ink.", { buildShift: { y: -7 }, buildName: RULES }),
   ],
 };
 
