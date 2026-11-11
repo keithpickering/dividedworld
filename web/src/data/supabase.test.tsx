@@ -756,6 +756,13 @@ describe('failures', () => {
     expect(set).toMatchObject({ ok: true, value: { pronouns: PRONOUN_PRESETS.she } });
   });
 
+  it('sends set_profile a custom set trimmed and lowercased, as the picker judged it', async () => {
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const h = harness(() => json({ character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: xe }));
+    await h.api.setProfile(B, 'T', 's', 'default', { subject: 'xe ', object: ' Xem', determiner: 'xyr\t', possessive: ' xyrs', reflexive: ' XEMSELF ', plural: false });
+    expect(h.to('rpc/set_profile').map((r) => r.body)).toEqual([{ through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: xe }]);
+  });
+
   it('passes an rpc refusal through by its hint, and quotes nothing else', async () => {
     const refused = harness(() => json({ code: '22023', message: 'a title is at most 40 characters', details: null, hint: 'kayfabb.refusal' }, 400));
     expect(await refused.api.setProfile(B, 'x'.repeat(41), '', 'default')).toEqual({ ok: false, error: 'a title is at most 40 characters' });

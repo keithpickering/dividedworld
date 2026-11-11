@@ -35,7 +35,7 @@ import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
-import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../../engine/rules/pronouns.ts';
+import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import type {
@@ -1899,8 +1899,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
     async setProfile(character, title, signature, pipStyle, pronouns) {
-      /* A null set keeps the stored one (set_profile, 0124). */
-      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns ?? null }));
+      /* A null set keeps the stored one (set_profile, 0124). A set goes out normalized: the picker and the fake judge it trimmed and lowercased, as the act
+         function sends createCharacter's, and set_profile lowers a set but refuses a space, in words that name no form. */
+      const a = await rpcWrite(() => client.rpc('set_profile', { through: character, title, signature, pip_style: pipStyle, pronouns: pronouns === undefined ? null : normalizePronouns(pronouns) }));
       return a.ok ? { ok: true, value: await profileCharacter(a.value) } : a;
     },
     async setAvatar(upload: AvatarUpload) {
