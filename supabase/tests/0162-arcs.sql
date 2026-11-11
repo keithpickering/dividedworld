@@ -429,6 +429,11 @@ begin
 end $$;
 
 -- ---- 10. The bound: the board count is one read of the indexes, never a scan of the posts ----
+-- The property: no Seq Scan; the board's threads reached by an Index Cond on the board and the window; the posts by an Index Cond on the thread. No index is named, because the
+-- planner's pick among the indexes that can serve it depends on the database's rows.
+create function pg_temp.reads_by_ranges(plan text) returns boolean language sql as $$
+  select plan !~* 'seq scan' and plan ~* 'index cond: \(\(board = \S+\) and \(last_at' and plan ~* 'index cond: \(+thread = t\.id'
+$$;
 do $$
 declare
   -- The statement arc_board_posts runs, copied here so its plan can be read: the board's threads active in the window by (board, last_at desc), then each one's posts in the window by thread and time.
@@ -444,17 +449,26 @@ begin
   for r in select indexname::text as indexname from pg_indexes where schemaname = 'public' and tablename = 'threads' and indexname <> 'threads_board_last_at' and indexdef ~ '\(board[,)]' loop
     execute format('drop index %I', r.indexname);
   end loop;
-  for r in execute 'explain (costs off) ' || replace(replace(stmt, 'in_board', quote_literal(pg_temp.board('fangame-palace')) || '::uuid'), 'since', 'now() - interval ''7 days''') loop
-    plan := plan || r."QUERY PLAN" || E'\n';
-  end loop;
-  perform pg_temp.expect(plan !~* 'seq scan' and plan ~* 'threads_board_last_at', 'the board count does not start from the board''s threads by index: ' || plan);
-  -- The posts of each thread are read by acts_patrol_posts (thread, created_at): with the other indexes that could serve the posts out of the way (this transaction's, rolled back with it), that is the index the plan uses.
+  -- The indexes that could serve the posts some other way (by time alone, or thread-first but read whole by skipping the character) go too, rolled back with this transaction, so the plan
+  -- shows whether a range per board and per thread exists at all.
   drop index acts_thread_posts, acts_posts_by_time, acts_recent_posts, acts_created;
   plan := '';
   for r in execute 'explain (costs off) ' || replace(replace(stmt, 'in_board', quote_literal(pg_temp.board('fangame-palace')) || '::uuid'), 'since', 'now() - interval ''7 days''') loop
     plan := plan || r."QUERY PLAN" || E'\n';
   end loop;
-  perform pg_temp.expect(plan ~* 'acts_patrol_posts' and plan !~* 'seq scan', 'the posts of a thread are not read by acts_patrol_posts: ' || plan);
+  perform pg_temp.expect(pg_temp.reads_by_ranges(plan), 'the board count and the posts of its threads are not read by index ranges: ' || plan);
+  -- Driven red: with index and bitmap scans off the planner reads both tables in order, and the same predicate must say so (restored after).
+  set local enable_seqscan = on;
+  set local enable_indexscan = off;
+  set local enable_bitmapscan = off;
+  plan := '';
+  for r in execute 'explain (costs off) ' || replace(replace(stmt, 'in_board', quote_literal(pg_temp.board('fangame-palace')) || '::uuid'), 'since', 'now() - interval ''7 days''') loop
+    plan := plan || r."QUERY PLAN" || E'\n';
+  end loop;
+  perform pg_temp.expect(plan ~* 'seq scan' and not pg_temp.reads_by_ranges(plan), 'the plan check did not fail on a seq scan: ' || plan);
+  set local enable_seqscan = off;
+  set local enable_indexscan = on;
+  set local enable_bitmapscan = on;
 end $$;
 
 -- ---- 11. The masks: nothing the conditions read is a private fact. A grep of each definition finds no owner, account or reaction; the grep is driven red on a planted function ----

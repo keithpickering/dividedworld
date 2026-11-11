@@ -53,6 +53,17 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   const db = psqlDb();
   await db.rpc('seed_instance', { payload: scratchSeed(world) });
   sql(`update settings set value = 'true' where key = 'systemEnabled'`);
+  /* The seasons earlier files left (13 and 15 end a season and open the next one after it) may reach past the days this file moves the open season to, and no two seasons may
+     overlap (seasons_tstzrange_excl). So the closed ones are carried back, one at a time and the earliest first, until the latest ends a year ago, and the open season is
+     then free to start anywhere from a season's length ago to now. */
+  sql(`do $$ declare s record; d interval; begin
+    select now() - interval '365 days' - max(ends_at) into d from seasons where ends_at is not null;
+    if d < interval '0' then
+      for s in select id from seasons where ends_at is not null order by starts_at loop
+        update seasons set starts_at = starts_at + d, ends_at = ends_at + d where id = s.id;
+      end loop;
+    end if;
+  end $$`);
   sql(`update seasons set boss = '${BOSS}' where ends_at is null`);
   sql(`update characters set debuted_at = coalesce(debuted_at, now() - interval '30 days') where staff = '${BOSS}'`);
   const topUp = (staff: string, n: number) => sql(`insert into move_bank (staff, balance, as_of) values ('${staff}', ${n}, now()) on conflict (staff) do update set balance = ${n}, as_of = now()`);
