@@ -183,8 +183,10 @@ end $$;
 -- The outbox rows still to send, oldest first: those with no sent or refused attempt, and whose failed attempts (n of them) are not still backing off (due again
 -- 2^n minutes after the last, at most a day; n is capped at 11 so the power cannot overflow). Each bar-carrying row (suspended, banned, lifted) carries the account's
 -- bar now, never its own decision's: a lift, or a suspension that has ended, reads as {outcome: 'lift'}, so an old failed row applied late clears the login instead
--- of barring it again, and the Auth ban follows the SQL bar. The cost is one decision probe per bar row of the at most `most` returned, and one lookup of attempts per
--- open row; the outbox grows with admin decisions, not with posts.
+-- of barring it again, and the Auth ban follows the SQL bar. Its cost grows with the whole outbox, sent rows included:
+-- the attempt lookups and the anti-join run over every row before the limit, and account_bar is one indexed probe per bar row the anti-join
+-- leaves. That is modest because only an admin's decision writes a row (the outbox grows with decisions, never with posts or players), and
+-- an open-rows marker would cost a second table for no gain at that scale.
 create function mail_due(most integer) returns table (id bigint, account uuid, template text, facts jsonb, bar jsonb)
 language sql stable security definer set search_path = public, pg_temp as $$
   select o.id, o.account, o.template, o.facts,
