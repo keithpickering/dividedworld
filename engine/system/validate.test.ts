@@ -136,3 +136,9 @@ test('an answer that is only newlines is rejected under one line and under many'
   assert.deepEqual(cutCompletion('\n\n\n', [], 200, 'many'), { ok: false, predicate: 'nonEmpty' });
   assert.deepEqual(cutCompletion(' \n \n', [], 200, 'many'), { ok: false, predicate: 'nonEmpty' });
 });
+
+test('under many lines the cap counts the kept leading space, and CRLF runs collapse as newlines do', () => {
+  const capped = cutCompletion(` ${'x'.repeat(300)}`, [], 200, 'many');
+  assert.deepEqual(capped, { ok: true, text: ` ${'x'.repeat(199)}`, trims: [{ path: '', predicate: 'maxLength(200)', before: 301, after: 200 }] });
+  assert.deepEqual(cutCompletion('a\r\n\r\n\r\n\r\nb', [], 200, 'many'), { ok: true, text: 'a\n\nb', trims: [] });
+});

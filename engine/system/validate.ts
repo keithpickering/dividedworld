@@ -141,14 +141,15 @@ export function cutCompletion(text: string, stop: readonly string[], most: numbe
     const at = body.indexOf(s);
     if (at !== -1 && at < end) end = at;
   }
-  let cut = many ? body.slice(0, end).replace(/(?:[ \t]*\n){3,}/g, '\n\n').trim() : body.slice(0, end).trim();
+  let cut = many ? body.slice(0, end).replace(/(?:[ \t\r]*\n){3,}/g, '\n\n').trim() : body.slice(0, end).trim();
   if (cut === '') return { ok: false, predicate: 'nonEmpty' };
+  // The one leading space a continuation keeps is part of the text the cap counts.
+  if (many && text.startsWith(' ')) cut = ` ${cut}`;
   const trims: Trim[] = [];
   if (cut.length > most) {
     const before = cut.length;
     cut = capLength(cut, most);
     trims.push({ path: '', predicate: `maxLength(${most})`, before, after: cut.length });
   }
-  if (many && text.startsWith(' ')) cut = ` ${cut}`;
   return { ok: true, text: cut, trims };
 }
