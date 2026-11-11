@@ -29,7 +29,7 @@ import { Overlay } from '../glass/Overlay.tsx';
 import { shortDate } from '../postbit/dates.ts';
 import { readable } from '../reactions/Reactions.tsx';
 import { Link } from '../router.tsx';
-import { moveLabel, officeRole, wayOut } from './move-words.ts';
+import { moveBoardNames, moveLabel, officeRole, useMovedThread, wayOut } from './move-words.ts';
 import './move.css';
 
 /**
@@ -123,22 +123,24 @@ export function MoveNotice({ act }: { readonly act: Id }) {
           </tbody>
         </table>
       </div>
-      <Layers>{open && <MoveDetail loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}</Layers>
+      <Layers>{open && <MoveDetail act={act} loaded={loaded} onClose={() => setOpen(false)} returnFocusTo={() => way.current} />}</Layers>
     </>
   );
 }
 
 /** The overlay: what was done and when, the demand in words, a progress bar, the expiry, and that an admin can reverse it. Plain. */
-function MoveDetail({ loaded, onClose, returnFocusTo }: { readonly loaded: Loaded; readonly onClose: () => void; readonly returnFocusTo: () => HTMLElement | null }) {
+function MoveDetail({ act, loaded, onClose, returnFocusTo }: { readonly act: Id; readonly loaded: Loaded; readonly onClose: () => void; readonly returnFocusTo: () => HTMLElement | null }) {
   const { ui, settings } = useKayfa();
   const { notice, boards, boss, subject } = loaded;
   const kind = moveKind(notice.kind);
   const role = officeRole(ui.copy, notice.office);
   /* A group move names its character, group and board; the params hold ids and keys, and the instance's rows give the names. */
+  const moved = useMovedThread(notice.kind, notice.params, act, boards);
   const names = {
     ...(subject !== null ? { character: subject } : {}),
     ...(settings.groups.find((g) => g.key === notice.params['group']) ? { group: settings.groups.find((g) => g.key === notice.params['group'])!.name } : {}),
-    ...(boards.find((b) => b.id === notice.params['board']) ? { board: boards.find((b) => b.id === notice.params['board'])!.name } : {}),
+    ...moveBoardNames(notice.kind, notice.params, boards),
+    ...(moved ?? {}),
   };
   const demand = notice.demand;
   const progress = notice.progress;

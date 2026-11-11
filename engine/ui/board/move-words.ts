@@ -8,8 +8,10 @@
  */
 import { demandAsk, demandKind } from '../../system/demands.ts';
 import { moveKind, type MoveNames, type MoveParts } from '../../system/moves.ts';
+import { useEffect, useState } from 'react';
+import { useKayfa } from '../context.tsx';
 import { modRole } from '../cards/visit.ts';
-import type { Demand, DemandProgress, MoveEnd, Office } from '../data/api.ts';
+import type { BoardName, Demand, DemandProgress, MoveEnd, Office } from '../data/api.ts';
 import type { UiCopy } from '../types.ts';
 import { shortDate } from '../postbit/dates.ts';
 
@@ -75,3 +77,38 @@ export const demandNeeds = (demand: Demand | null, kind?: string): string =>
     : kind === 'nameSuccessor' ? 'It asks nothing: it ends at the handover, or when an admin reverses it.'
       : kind !== undefined && moveKind(kind)?.lasting ? 'It asks nothing and does not run out: it stays until an admin reverses it or a later move replaces it.'
         : 'It asks nothing: it ends at its expiry, or when an admin reverses it.';
+
+
+/**
+ * The boards a move names, by their names now: the board a rename or a thread move names (`board`), and for a merge the board that takes the threads (`into`) as the sentence's second
+ * board and the one that closes (`board`) as `from`. A board the list does not hold is left out, and the sentence falls to its neutral words rather than name another.
+ */
+export function moveBoardNames(kind: string, params: Readonly<Record<string, unknown>>, boards: readonly BoardName[]): MoveNames {
+  const named = (id: unknown) => boards.find((b) => b.id === id)?.name;
+  if (kind === 'mergeBoard') {
+    const into = named(params['into']);
+    const closed = named(params['board']);
+    return { ...(into !== undefined ? { board: into } : {}), ...(closed !== undefined ? { from: closed } : {}) };
+  }
+  const board = named(params['board']);
+  return board !== undefined ? { board } : {};
+}
+
+/**
+ * The title of the thread a `moveThread` moved and the board it left, read once for the move (`act` when it has landed, else the thread it will move): null until read, for another
+ * kind, and when the thread cannot be read, so a sentence says "a thread" rather than guess.
+ */
+export function useMovedThread(kind: string, params: Readonly<Record<string, unknown>>, act: string | null | undefined, boards: readonly BoardName[]): Pick<MoveNames, 'thread' | 'from' | 'fromId'> | null {
+  const { api } = useKayfa();
+  const thread = kind === 'moveThread' && typeof params['thread'] === 'string' ? params['thread'] : null;
+  const [got, setGot] = useState<{ readonly title: string; readonly from: string | null } | null>(null);
+  useEffect(() => {
+    if (thread === null) return;
+    let live = true;
+    api.moveThreadNames([{ thread, act: act ?? null }]).then((r) => { if (live) setGot(r[act ?? thread] ?? null); }, () => undefined);
+    return () => { live = false; };
+  }, [api, thread, act]);
+  if (got === null || got.title === '') return null;
+  const from = got.from === null ? undefined : boards.find((b) => b.id === got.from)?.name;
+  return { thread: got.title, ...(from !== undefined && got.from !== null ? { from, fromId: got.from } : {}) };
+}

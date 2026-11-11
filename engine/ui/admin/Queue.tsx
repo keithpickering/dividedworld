@@ -387,7 +387,7 @@ function InForce({ rows, more, boards, bosses, onReverse }: { readonly rows: rea
               {m.expiresAt && <p className="kb-queue-time">ends {shortDate(m.expiresAt)}</p>}
             </div>
             <div className="kb-queue-body">
-              <h3 className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} boards={boards} bosses={bosses} tense="done" /></h3>
+              <h3 className="kb-queue-sentence"><MoveSentence kind={m.kind} params={m.params} boards={boards} bosses={bosses} tense="done" act={m.act} /></h3>
               {m.demand === null && <p>{demandNeeds(null, m.kind)}</p>}
               {m.demand !== null && (known ? <p>{(ok ? demandWords(m.demand, m.progress) : demandAsk(m.demand))}</p> : <p>It asks for something this page has no words for.</p>)}
               {ok && (
@@ -466,7 +466,7 @@ function Ended({ rows, more, boards, bosses }: { readonly rows: readonly MoveEnd
           <article key={`${e.act ?? 'q'}${e.id ?? ''}${e.at}`} className="kb-queue-move" data-kb-state="ended" data-kb-how={e.how}>
             <div className="kb-queue-body">
               <h3 className="kb-queue-sentence">
-                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} />}
+                {e.card != null ? `${e.card}${e.boss ? ` by ${e.boss}` : ''}` : <MoveSentence kind={e.kind} params={e.params} boards={boards} bosses={bosses} tense={e.how === 'held' || e.how === 'refused' ? 'plan' : 'done'} act={e.act} />}
               </h3>
               <p>{endedLine(e)}</p>
             </div>
@@ -509,7 +509,7 @@ function Confirm({ asked, boards, bosses, onClose, onDone, onRefused, returnFocu
   return (
     <Overlay title={hold ? 'Hold this move?' : 'Reverse this move?'} kicker="The System's moves" surface="settings" className="kb-queue-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
       <div className="kb-queue-confirm">
-        <p className="kb-queue-sentence"><MoveSentence kind={row.kind} params={row.params} boards={boards} bosses={bosses} tense={hold ? 'plan' : 'done'} was={hold ? (row as QueuedMove).boardName : undefined} /></p>
+        <p className="kb-queue-sentence"><MoveSentence kind={row.kind} params={row.params} boards={boards} bosses={bosses} tense={hold ? 'plan' : 'done'} was={hold ? (row as QueuedMove).boardName : undefined} act={hold ? null : (row as MoveInForce).act} /></p>
         <p>
           {hold
             ? `It will never land, and no player will see it. A hold cannot be taken back. ${role} chooses ${bw.their} next move at ${bw.their} next meeting, and learns of the hold only then.`

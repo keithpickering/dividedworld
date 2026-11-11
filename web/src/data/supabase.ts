@@ -1069,6 +1069,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const was = new Map(own.map((b) => [b['id'] as string, String(b['name'])]));
       return now.map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: was.get(b['id']) ?? b['name'] }));
     },
+    async moveThreadNames(items) {
+      const wanted = items.filter((i) => idOk(i.thread)).slice(0, 50);
+      if (wanted.length === 0) return {};
+      const d = (await read(() => client.rpc('move_thread_names', { items: wanted.map((i) => ({ thread: i.thread, act: i.act })) }))).data;
+      return Object.fromEntries(rowsOf(d).map((r) => [r['key'] as Id, { title: str(r['title']) ?? '', from: typeof r['from'] === 'string' ? r['from'] : null }]));
+    },
     async moveNotice(id) {
       if (!idOk(id)) return null;
       const a = (await list(() => client.from('acts_public').select('*').eq('id', id).eq('kind', 'move').limit(1)))[0];

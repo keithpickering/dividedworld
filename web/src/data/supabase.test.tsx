@@ -2106,6 +2106,13 @@ describe('a screen in one call', () => {
     expect(older?.stubs).toEqual([]);
   });
 
+  it('move_thread_names: sends the thread and move of each item, and maps the titles and the boards left by key; a bad id is not sent', async () => {
+    const h = once('move_thread_names', [{ key: A, title: 'Best bread', from: C }, { key: T, title: 'Waiting', from: null }]);
+    const got = await h.api.moveThreadNames([{ thread: T, act: A }, { thread: T, act: null }, { thread: 'nope', act: null }]);
+    expect(only(h, 'move_thread_names')).toEqual({ items: [{ thread: T, act: A }, { thread: T, act: null }] });
+    expect(got).toEqual({ [A]: { title: 'Best bread', from: C }, [T]: { title: 'Waiting', from: null } });
+  });
+
   it('search_posts and search_threads: send the filters by their column names and the cursor as given, and map the page to camelCase', async () => {
     const hit = { act: A, thread: T, title: 'Mario Kart', board: C, board_slug: 'general', board_name: 'General', seq: 3, page: 2, character: B, name: 'Bea', created_at: '2026-10-01T10:00:00+00:00', snippet: 'a <<banana>> day', cards: ['splat', 7] };
     const query = { q: 'banana', author: B, board: C, fromAt: '2026-10-01T00:00:00Z', toAt: '2026-10-02T00:00:00Z', titlesOnly: true, sort: 'newest', perPage: 10 } as const;

@@ -105,7 +105,9 @@ declare
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)',
                            -- A board's page reads the stubs of the threads moved away from it and, for a closed board, where its threads went (0158); the page is a signed-in read of public facts.
-                           'board_stubs(uuid)', 'board_closed_to(uuid)'];
+                           'board_stubs(uuid)', 'board_closed_to(uuid)',
+                           -- The title of a moved thread and the board it left, for a move's sentence (0159): public facts.
+                           'move_thread_names(jsonb)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.

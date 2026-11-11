@@ -191,7 +191,7 @@ export interface Seed {
    * A landed move: the Boss's `move` Act in a thread of The System's board (the first thread there is used, or one is made), as the
    * tick writes it. A rename takes the board's slug; the demand's board is the same board unless the demand names another.
    */
-  move(staff: string, move: SeedMove): Id;
+  move(staff: string, move: SeedMove & { lasting?: { readonly kind: string; readonly params: Readonly<Record<string, unknown>> } }): Id;
   /** A move's end, as end_move writes it: the board's old name returns. */
   endMove(act: Id, end: { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent'; by?: string; at?: number }): Id;
   /** The new Boss keeps a move of an earlier Boss after a handover (a `move_keep` Act): the move's log row says who keeps it. */
@@ -740,6 +740,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const moveParams = (m: SeedMove) => ({
     board: boards.find((b) => b.slug === m.board)?.id ?? m.board, name: m.name, premise: m.premise ?? `The subject of ${m.name}`, description: m.description ?? `About ${m.name}`,
   });
+  /** A lasting move's params as its Act carries them: a board named by slug becomes its id. */
+  const lastingParams = (p: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+    Object.fromEntries(Object.entries(p).map(([k, v]) => [k, (k === 'board' || k === 'into' || k === 'fallback') && typeof v === 'string' ? boards.find((b) => b.slug === v)?.id ?? v : v]));
   const moveDemand = (m: SeedMove): Demand | null => {
     if (!m.demand) return null;
     const named = m.demand.params['board'];
@@ -2179,6 +2182,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const found = boards.find((b) => b.slug === slugOrId || b.id === slugOrId);
       return found ? boardNow(found) : null;
     },
+    moveThreadNames: (items) => Object.fromEntries(items.flatMap((i) => {
+      const t = threads.get(i.thread);
+      if (!t) return [];
+      /* A landed move left the board it was taken from (the latest departure of the thread); a waiting one leaves the board the thread is on. */
+      const left = i.act === null ? t.board : departures.filter((d) => d.thread === i.thread).at(-1)?.from ?? null;
+      return [[i.act ?? i.thread, { title: t.title, from: left }] as const];
+    })),
     boardNames: () => boards.map((b): BoardName => ({ id: b.id, slug: b.slug, name: boardNow(b).name, was: b.name })),
     moveNotice(id) {
       const a = acts.get(id);
@@ -3709,7 +3719,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const demand = moveDemand(m);
       const id = write({
         character: boss, kind: 'move', thread: announcements(),
-        payload: { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
+        payload: m.lasting
+          ? { kind: m.lasting.kind, body: m.body ?? 'It is done.', params: lastingParams(m.lasting.params) }
+          : { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
       }).id;
       if (m.uncounted) uncounted.add(id);
       return id;
@@ -3755,7 +3767,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     queueMove(staff, m) {
       staffId(staff);
-      const lasting = m.lasting === undefined ? undefined : { kind: m.lasting.kind, params: Object.fromEntries(Object.entries(m.lasting.params).map(([k, v]) => [k, (k === 'board' || k === 'into' || k === 'fallback') && typeof v === 'string' ? boards.find((b) => b.slug === v)?.id ?? v : v])) };
+      const lasting = m.lasting === undefined ? undefined : { kind: m.lasting.kind, params: lastingParams(m.lasting.params) };
       const rec: QueueRec = { id: queue.length + 1, staff, ...(lasting ? { lasting } : {}), move: m, why: m.why ?? 'it seemed time', goLiveAt: m.goLiveAt, failure: m.failure ?? null, ...(m.refusal ? { refusal: m.refusal } : {}), heldAt: null, landed: null };
       queue.push(rec);
       return rec.id;

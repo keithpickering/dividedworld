@@ -215,3 +215,20 @@ begin
   perform pg_temp.expect(pg_temp.refusal($q$select board_page('bs-three', 1, array[]::text[])$q$) like '42501%', 'anon reads a closed board');
   perform tests.unbecome();
 end $$;
+
+-- ---- 6. move_thread_names: a landed move names the thread's title and the board it left; a waiting one the board the thread is on ----
+do $$
+declare
+  c uuid := (select id from characters where name = 'Stub Reader');
+  t uuid;
+  mv uuid;
+  got jsonb;
+begin
+  t := pg_temp.mk('Named for the sentence', 'bs-one', c);
+  got := move_thread_names(jsonb_build_array(jsonb_build_object('thread', t, 'act', null)));
+  perform pg_temp.expect(got -> 0 ->> 'key' = t::text and got -> 0 ->> 'title' = 'Named for the sentence' and got -> 0 ->> 'from' = pg_temp.board('bs-one')::text, 'a waiting move does not name the thread and the board it is on: ' || got::text);
+  mv := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('bs-two'))));
+  got := move_thread_names(jsonb_build_array(jsonb_build_object('thread', t, 'act', mv)));
+  perform pg_temp.expect(got -> 0 ->> 'key' = mv::text and got -> 0 ->> 'from' = pg_temp.board('bs-one')::text, 'a landed move does not name the board the thread left: ' || got::text);
+  perform pg_temp.expect(move_thread_names('"nonsense"') = '[]'::jsonb and move_thread_names(jsonb_build_array(jsonb_build_object('thread', 'not-a-uuid'))) = '[]'::jsonb, 'a bad item is not skipped');
+end $$;

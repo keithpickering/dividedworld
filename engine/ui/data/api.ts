@@ -1936,6 +1936,11 @@ export interface KayfaApi {
   /** Every board's name now and the name it had before any move: a handful of rows, for the words that name a board (the moderation log, the admin queue). */
   boardNames(): Promise<readonly BoardName[]>;
   /**
+   * The words that name the threads a `moveThread` moves (move_thread_names, 0159): each thread's title now and the board it left, keyed by the move's Act when it has landed, else by
+   * the thread (a waiting move leaves the board the thread is on now). A thread that cannot be read is left out, and the sentence says "a thread".
+   */
+  moveThreadNames(items: readonly { readonly thread: Id; readonly act: Id | null }[]): Promise<Readonly<Record<Id, { readonly title: string; readonly from: Id | null }>>>;
+  /**
    * A move in force, as its board shows it, or null when the Act is no move (or none the reader may see). The progress is
    * `move_progress`, a public read: it counts characters, posts and public tallies and never players.
    */
