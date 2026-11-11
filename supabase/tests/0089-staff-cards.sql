@@ -29,13 +29,13 @@ begin
   insert into staff_offices (staff, office, cause) values ('sc-bench', 'benched', 'admin');
   -- The pool plays up to uncommon.
   insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
-  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts) values
-    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', false, null),
-    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', false, null),
-    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, false, null),
-    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, false, null),
-    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, true, interval '7 days'),
-    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts) values
+    ('snare', 'Snare', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', null, null),
+    ('catcher', 'Catcher', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', null, null),
+    ('bluffy', 'Bluffy', 'pepperoni', 'common', 'set', null, null, null),
+    ('grandie', 'Grandie', 'sweet', 'legendary', 'cast', null, null, null),
+    ('shield', 'Shield', 'sweet', 'uncommon', 'use', null, '{"kind": "ward", "upTo": "uncommon"}', interval '7 days'),
+    ('hook', 'Hook', 'salty', 'uncommon', 'cast', null, null, null);
 end $$;
 
 create function pg_temp.refused(stmt text) returns text language plpgsql as $$

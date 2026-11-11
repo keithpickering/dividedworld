@@ -17,7 +17,7 @@ $$;
 insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values
   ('cqmove', 'Cq Move', 'salty', 'common', 'cast', null, '{post}', null),
   ('cqbluff', 'Cq Bluff', 'pepperoni', 'common', 'set', null, '{post}', null);
-insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, ward) values ('cqward', 'Cq Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', true);
+insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values ('cqward', 'Cq Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "ward", "upTo": "uncommon"}');
 
 -- A back on a fresh post of `setter`'s, a quote of that post by `quoter` (the quoting post's words are `says`, then a real quote of the back's post holding `quoted`), and the call a quote makes.
 -- Returns the spring's payload, or null when nothing sprang (and then checks nothing was written).

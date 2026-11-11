@@ -374,7 +374,7 @@ declare
   i acts%rowtype;
   e acts%rowtype;
 begin
-  insert into card_kinds (key, name, alignment, rarity, play, stack, ward, lasts, reaches, pins, trap) values ('ic-th', 'Ic Thread', 'sweet', 'common', 'cast', 3, false, interval '1 day', '{thread}', false, null) on conflict (key) do nothing;
+  insert into card_kinds (key, name, alignment, rarity, play, stack, gimmick, lasts, reaches, pins, trap) values ('ic-th', 'Ic Thread', 'sweet', 'common', 'cast', 3, null, interval '1 day', '{thread}', false, null) on conflict (key) do nothing;
   v1 := pg_temp.visit(p1, 'ic-m3');
   v2 := pg_temp.visit(p2, 'ic-m1');
   v3 := pg_temp.visit(p3, 'ic-m3');
@@ -494,8 +494,8 @@ declare
   why text;
 begin
   update settings set value = value || '{"ic.trap": 25}' where key = 'economy';
-  insert into card_kinds (key, name, alignment, rarity, play, trap, ward, lasts)
-    values ('ic-trap', 'Ic Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', false, null);
+  insert into card_kinds (key, name, alignment, rarity, play, trap, gimmick, lasts)
+    values ('ic-trap', 'Ic Trap', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', null, null);
   setting_ := tests.act(c, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (setting_, pg_temp.ann(), 'ic-trap', p, t, 1, now() + interval '1 day');
   v := start_visit(p, 'ic-m1', jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', p));

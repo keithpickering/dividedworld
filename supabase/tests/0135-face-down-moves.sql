@@ -27,8 +27,8 @@ begin
       ('spxtrap', 'Spx Trap', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}}', '{post}', null),
       ('spxpass', 'Spx Pass', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "visit"}}', '{post}', null),
       ('spxbluff', 'Spx Bluff', 'pepperoni', 'common', 'set', null, '{post}', null);
-    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, ward) values
-      ('spxward', 'Spx Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', true);
+    insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
+      ('spxward', 'Spx Ward', 'sweet', 'uncommon', 'use', null, '{post}', interval '7 days', '{"kind": "ward", "upTo": "uncommon"}');
     insert into characters (id, name, staff, staff_kind, debuted_at) values ('00000000-0000-4000-8000-0000000fd001', 'Spx Race Mod', 'spx-race-mod', 'persona', now()) on conflict do nothing;
   $sql$);
 end $$;
@@ -318,7 +318,7 @@ begin
   perform tests.unbecome();
 end $$;
 
--- ---- card_kinds' trap shape: a Gimmick springs on a cast or a visit ----
+-- ---- card_kinds' trap shape: a set card springs on a cast or a visit ----
 do $$
 declare why text;
 begin
@@ -340,15 +340,15 @@ begin
     raise exception 'a valid Gimmick was refused: %', card_kinds_problem('[{"key": "ok", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}}}]');
   end if;
   why := card_kinds_problem('[{"key": "r", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]');
-  if why is distinct from 'card "r" springs on "reply"; a Gimmick springs on cast or visit' then raise exception 'a reply trigger: %', why; end if;
+  if why is distinct from 'card "r" springs on "reply"; a set card springs on cast or visit' then raise exception 'a reply trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "n", "rarity": "common", "play": "set", "trap": {}}]');
-  if why is distinct from 'card "n" springs on nothing; a Gimmick springs on cast or visit' then raise exception 'a trap with no trigger: %', why; end if;
+  if why is distinct from 'card "n" springs on nothing; a set card springs on cast or visit' then raise exception 'a trap with no trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "e", "rarity": "common", "play": "set", "trap": {"trigger": {"on": 5}}}]');
-  if why is distinct from 'card "e" springs on 5; a Gimmick springs on cast or visit' then raise exception 'a numeric trigger: %', why; end if;
+  if why is distinct from 'card "e" springs on 5; a set card springs on cast or visit' then raise exception 'a numeric trigger: %', why; end if;
   why := card_kinds_problem('[{"key": "t", "rarity": "common", "play": "set", "trap": {"trigger": {}}}]');
-  if why is distinct from 'card "t" springs on nothing; a Gimmick springs on cast or visit' then raise exception 'a trigger with no on: %', why; end if;
+  if why is distinct from 'card "t" springs on nothing; a set card springs on cast or visit' then raise exception 'a trigger with no on: %', why; end if;
   why := card_kinds_problem('[{"key": "m", "rarity": "common", "play": "cast", "trap": {"trigger": {"on": "cast"}}}]');
-  if why is distinct from 'card "m" has a trap, and only a Gimmick does' then raise exception 'a Move with a trap: %', why; end if;
+  if why is distinct from 'card "m" has a trap, and only a set card has one' then raise exception 'a Move with a trap: %', why; end if;
 end $$;
 
 -- ---- card_held: bought and caught, less played; one count for every reader of a hand ----
