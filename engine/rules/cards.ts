@@ -122,7 +122,7 @@ const wrongPlay = (rules: CardRules): Verdict<never> => refuse(`${rules.name} is
 export type Verdict<T = undefined> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly why: string };
 
 /**
- * What a card that writes hands the old voice (the You were saying design, sections 3 and 11): the post the play is on, a few posts before it
+ * What a card that writes hands the old voice (`docs/plans/2026-11-07-you-were-saying-design.md`, sections 3 and 11): the post the play is on, a few posts before it
  * and the thread's title, as the frame's words need them. `text` is a post's visible text (`visibleText`), never its markup; `tails` are the
  * tails already chained on this post, in play order, which this one continues from the end of; `settings` are the instance's.
  */
