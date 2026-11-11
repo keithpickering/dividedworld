@@ -62,13 +62,14 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
   const effects = effectsOnTarget(target, effectsOf(plays, context.cards), context.above ?? {});
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
   /*
-   * Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. A card that names a
-   * quadrant or a class when it is played (a skim card, a ride back, a scored-as card) is checked by the rules to have its configuration name
-   * one, so the settings held here do name one, a placeholder no rule reads, and the card's own landing is asked with no settings at all.
+   * Only where the card lands is asked here: its settings and its message are the form's, so the card's own refusal of none is set aside. A
+   * card that names a quadrant or a class when it is played (a skim card, a ride back, a scored-as card) is checked by the rules to have its
+   * configuration name one, so the settings held here do name one, a placeholder no rule reads, and the card's own landing is asked with no
+   * settings at all.
    */
   const lenient: CardRules = {
     ...rules, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any' } }), playPrice: () => 0,
-    canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now),
+    canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now), needsMessage: undefined,
   };
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)

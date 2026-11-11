@@ -44,7 +44,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* Member groups, Task 11: a staff move into a group, how it ended and an appeal's ruling on it. */
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
-  | 'grant';
+  | 'grant'
+  /* A drive's gift, the giver's and the post's author's (docs/plans/2026-11-03-jimmy-wails-design.md, section 10). */
+  | 'gift';
 
 /** One row of the log. */
 export interface LogRow {
@@ -371,8 +373,9 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
+  rows.push(...giftRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, gift: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -414,6 +417,53 @@ function grantRows(data: LogData): LogRow[] {
       key: `grant:${w.at}`, kind: 'grant', at: w.at, what: 'An admin gave you Aura',
       details: [`An admin gave you ${plain(w.change)} Aura.${w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : ''}`],
       aura: w.change, wallet: w.balanceAfter, characters: [],
+    });
+  }
+  return rows;
+}
+
+/**
+ * A drive's gifts (docs/plans/2026-11-03-jimmy-wails-design.md, section 10): the wallet's own events `gift_out` (the giver's) and `gift_in` (the post's author's), each named by `ref`, the gift's
+ * Act, whose payload holds the amount, the overhead The System kept and what arrived, in whole hundredths, public with the Act. The overhead is said as the amount the Act stored, never a
+ * percent: a percent is today's setting and rounding makes it never exact, and the Act is what was done. The giver's line is read from the giver's event and the Act alone and says nothing of the
+ * author's wallet or whose it is ("A response never proves a private fact"); the author's says what its own event held back. Each links the post the drive is on. The engine names no card:
+ * a gift is an Act of kind `donation` on a drive's opening play, whatever card made the drive.
+ */
+function giftRows(data: LogData, words: Words): LogRow[] {
+  const rows: LogRow[] = [];
+  const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
+  for (const w of data.log.wallet) {
+    if ((w.kind !== 'gift_out' && w.kind !== 'gift_in') || w.ref === null) continue;
+    const gift = data.acts.get(w.ref);
+    /* The giver's own event holds what they paid when the Act could not be read; the author's holds only what reached them. */
+    const amount = typeof gift?.payload.amount === 'number' ? gift.payload.amount : w.kind === 'gift_out' ? -w.change : null;
+    const overhead = typeof gift?.payload.overhead === 'number' ? gift.payload.overhead : null;
+    const arrives = typeof gift?.payload.arrives === 'number' ? gift.payload.arrives : null;
+    const drive = gift?.targetActId ? data.acts.get(gift.targetActId) : undefined;
+    const onPost = drive?.targetActId ? data.acts.get(drive.targetActId) : undefined;
+    const placed = onPost && onPost.seq !== null ? onPost : undefined;
+    const href = placed ? threadHref(placed.thread, pageOf(placed.seq!, words.postsPerPage), placed.seq!) : null;
+    const post = (yours: boolean): Segment => {
+      const text = yours ? `your post #${placed?.seq}` : `post #${placed?.seq}`;
+      return href ? { text, href } : text;
+    };
+    if (w.kind === 'gift_out') {
+      const gave = `You gave ${plain(amount ?? 0)} to`;
+      const went = overhead === null || arrives === null ? '' : arrives === 0 ? '; it all went to overhead' : `; ${plain(arrives)} reached its author after an overhead of ${plain(overhead)}`;
+      rows.push({
+        key: `gift:${w.ref}:gift_out`, kind: 'gift', at: w.at, what: 'You gave to a drive',
+        details: placed ? [`${gave} the drive on `, post(false), `${went}.`] : [`${gave} a drive${went}.`],
+        aura: w.change, wallet: w.balanceAfter, characters: gift?.character && mine(gift.character) ? [gift.character] : [],
+      });
+      continue;
+    }
+    const giver = gift?.character ? data.mine.find((c) => c.id === gift.character)?.name ?? data.names.get(gift.character) : undefined;
+    const got = arrives ?? w.change + w.overflow;
+    const lost = w.overflow > 0 ? `, and your wallet was full, so ${plain(w.overflow)} of it was lost` : '';
+    rows.push({
+      key: `gift:${w.ref}:gift_in`, kind: 'gift', at: w.at, what: 'A gift reached you',
+      details: [`${giver ?? 'Someone'} gave ${amount === null ? '' : `${plain(amount)} `}to `, ...(placed ? ['the drive on ', post(true)] : ['a drive on one of your posts']), `; you received ${plain(got)}${lost}.`],
+      aura: w.change, wallet: w.balanceAfter, characters: onPost?.character && mine(onPost.character) ? [onPost.character] : [],
     });
   }
   return rows;
@@ -589,9 +639,14 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   const said = (key: unknown, play: Act | undefined): string[] => {
     const config = play?.payload.config;
     const tokens = play?.payload.tokens;
+    /* A drive card's play opened its drive where the drive is its own id (a later play's names the play that opened it); a play with no drive says neither. */
+    const drive = play?.payload.drive;
     const starts = play?.payload.starts;
     const ends = play?.payload.ends;
-    const recorded = { ...(typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {}), ...(typeof starts === 'string' ? { starts } : {}), ...(typeof ends === 'string' ? { ends } : {}) };
+    const recorded = {
+      ...(typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {}), ...(typeof drive === 'string' ? { opened: drive === play?.id } : {}),
+      ...(typeof starts === 'string' ? { starts } : {}), ...(typeof ends === 'string' ? { ends } : {}),
+    };
     const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, recorded);
     return sentence ? [` ${sentence}`] : [];
   };
@@ -1007,18 +1062,18 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }
   for (const e of log.ended) ids.add(e.play);
-  for (const w of log.wallet) if (w.kind === 'bribe' && w.ref) ids.add(w.ref);
+  for (const w of log.wallet) if ((w.kind === 'bribe' || w.kind === 'gift_out' || w.kind === 'gift_in') && w.ref) ids.add(w.ref);
   return [...ids];
 }
 
 /**
  * The Acts the Acts already read lead to, for their lines: the post a card play or a spring landed on, the spring a strike's card
- * came from, and what a spring caught or was sprung by. Read in rounds until none is new (two at most: a spring, then its catch's post).
+ * came from, and what a spring caught or was sprung by. Read in rounds until none is new (two at most: a spring, then its catch's post; a gift, then its drive's opening play, then the post).
  */
 export function actsFollowed(acts: ReadonlyMap<Id, Act>): Id[] {
   const ids = new Set<Id>();
   for (const a of acts.values()) {
-    if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set') && a.targetActId) ids.add(a.targetActId);
+    if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set' || a.kind === 'donation') && a.targetActId) ids.add(a.targetActId);
     if (a.kind === 'intercept' && typeof a.payload.visit_act === 'string') ids.add(a.payload.visit_act);
     for (const key of ['spring', 'caught', 'by'] as const) {
       const v = a.payload[key];

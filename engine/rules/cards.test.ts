@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -273,6 +273,7 @@ test('staffOffers: a card with staffOptions and no default is offered, and a car
   assert.equal(staffOffers({ ...inky, staffConfigs: [{ ink: 'red' }] }), true, 'the fallback list alone still offers it');
   assert.equal(staffOffers(plain), true, 'a default alone offers it');
   assert.equal(staffOffers(hallway), false, 'a set card that springs on a visit is never offered: a Mod Bot visits only players\' posts');
+  assert.equal(staffOffers({ ...plain, needsMessage: 'an appeal needs words' }), false, 'a card that needs a message is never offered: a persona plays with none');
   assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a set card that springs on a cast is offered with its options');
 });
 
@@ -427,6 +428,92 @@ test('a set card names, or matches, only cards at or below its own rarity', () =
 test('a set card with no trap is refused', () => {
   const none: CardRules = { ...watcher, trap: undefined };
   assert.deepEqual(decideSet(none, settings, post, [], {}, []), { ok: false, why: 'Test Watcher has no trap to spring' });
+});
+
+test('a gift splits into the overhead, rounded up, and what arrives', () => {
+  assert.deepEqual(giftSplit(10, 25), { overhead: 3, arrives: 7 });
+  assert.deepEqual(giftSplit(25, 25), { overhead: 7, arrives: 18 });
+  assert.deepEqual(giftSplit(50, 25), { overhead: 13, arrives: 37 });
+  assert.deepEqual(giftSplit(100, 25), { overhead: 25, arrives: 75 });
+  assert.deepEqual(giftSplit(10, 0), { overhead: 0, arrives: 10 });
+  assert.deepEqual(giftSplit(10, 100), { overhead: 10, arrives: 0 });
+  // Every overhead and every amount up to a wallet's cap: the overhead is the integer ceiling, and the parts add up.
+  for (let pct = 0; pct <= 100; pct++) {
+    for (let amount = 1; amount <= 600; amount++) {
+      const { overhead, arrives } = giftSplit(amount, pct);
+      const exact = Math.floor((amount * pct + 99) / 100);
+      if (overhead !== exact || overhead + arrives !== amount || overhead < 0 || overhead > amount) assert.fail(`${amount} at ${pct}%: ${overhead} + ${arrives}`);
+    }
+  }
+});
+
+test('the open drive is the one whose close is after now, with its plays', () => {
+  const play = (act: string, drive: string, closes: string): CardEffect => ({ card: 'appeal', act, drive, closes });
+  const a = play('a', 'a', gone);
+  const b1 = play('b', 'b', soon);
+  const b2 = play('c', 'b', soon);
+  const open = openDrive([a, b1, b2, { card: 'other', act: 'z' }], 'appeal', new Date());
+  assert.equal(open?.id, 'b');
+  assert.equal(open?.closes, soon);
+  assert.deepEqual(open?.plays, [b1, b2]);
+  assert.equal(openDrive([a], 'appeal', new Date()), undefined, 'every drive has closed');
+  assert.equal(openDrive([b1], 'other', new Date()), undefined, 'another card has none');
+  assert.equal(openDrive([], 'appeal', new Date()), undefined);
+  // A drive closing at this very moment has closed; a play of the card with no drive is no drive's.
+  const now = new Date();
+  assert.equal(openDrive([play('d', 'd', now.toISOString())], 'appeal', now), undefined, 'a drive is open only before its close');
+  assert.equal(openDrive([{ card: 'appeal', act: 'e' }], 'appeal', now), undefined, 'a play with no drive');
+  // Another drive's plays, open by a stale close the server would never give, are not the open drive's.
+  const stray = play('f', 'f', soon);
+  assert.deepEqual(openDrive([b1, stray, b2], 'appeal', new Date())?.plays, [b1, b2]);
+});
+
+// A card that needs words (`needsMessage`): the refusal is the card's own words, said after the landing and the configuration, and only for a blank message.
+test('a card that needs a message refuses a blank one in its own words, after the landing and the configuration', () => {
+  const appeal: CardRules = { ...cast('appeal', 'uncommon'), needsMessage: 'an appeal needs a sob story' };
+  assert.deepEqual(decidePlay(appeal, settings, post, [], {}, ''), { ok: false, why: 'an appeal needs a sob story' });
+  assert.deepEqual(decidePlay(appeal, settings, post, [], {}, undefined), { ok: false, why: 'an appeal needs a sob story' });
+  assert.deepEqual(decidePlay(appeal, settings, post, [], {}, '   \n '), { ok: false, why: 'an appeal needs a sob story' }, 'a message of spaces is blank');
+  assert.equal(decidePlay(appeal, settings, post, [], {}, 'Please.').ok, true);
+  // The landing is said first, then the configuration, then the message.
+  assert.match((decidePlay(appeal, settings, post, [{ card: 'appeal', act: 'x' }], {}, '') as { why: string }).why, /already carries/);
+  const picky: CardRules = { ...inky, needsMessage: 'say something' };
+  assert.deepEqual(decidePlay(picky, settings, post, [], { ink: 'blue' }, ''), { ok: false, why: 'the ink is red' });
+  // A card that does not need one plays with none, and a Use that needs one is held to it too.
+  assert.equal(decidePlay(plain, settings, post, [], {}, '').ok, true);
+  assert.deepEqual(decideUse({ ...shield, needsMessage: 'say something' }, settings, post, [], {}, ''), { ok: false, why: 'say something' });
+});
+
+// A drive card refuses a play on its open drive only when that drive holds `stack` plays: a drive that has closed holds none (Jimmy Wails plan, Task 6).
+test('a drive card is full by its open drive\'s plays, never by the post\'s plays of earlier drives', () => {
+  const drive: CardRules = {
+    ...base, key: 'drivey', name: 'Test Drivey', rarity: 'uncommon', stack: 3,
+    drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g'], overhead: 'o' },
+    canApply: (t, e, _config, now) => {
+      const lands = landsOn({ key: 'drivey', reaches: ['post'], stack: Number.MAX_SAFE_INTEGER }, t, e, now);
+      if (!lands.ok) return lands;
+      const open = openDrive(e, 'drivey', now ?? new Date());
+      return open && open.plays.length >= 3 ? refuse('this post\'s drive already carries 3 appeals') : lands;
+    },
+  };
+  const play = (act: string, drive: string, closes: string): CardEffect => ({ card: 'drivey', act, drive, closes });
+  const open = [play('a', 'a', soon), play('b', 'a', soon)];
+  assert.equal(decidePlay(drive, settings, post, open, {}, '').ok, true, 'a third play joins the open drive');
+  assert.deepEqual(decidePlay(drive, settings, post, [...open, play('c', 'a', soon)], {}, ''), { ok: false, why: 'this post\'s drive already carries 3 appeals' }, 'a fourth is refused');
+  const closed = [play('a', 'a', gone), play('b', 'a', gone), play('c', 'a', gone)];
+  assert.equal(decidePlay(drive, settings, post, closed, {}, '').ok, true, 'a play after the close opens another drive');
+  assert.equal(decidePlay(drive, settings, post, [...closed, ...open], {}, '').ok, true, 'earlier closed drives do not count against the open one');
+});
+
+test('a Move that writes, needs a message, draws or runs a drive is cast face up only, and decideSet refuses it in plain words', () => {
+  const needy: CardRules = { ...cast('needy', 'common'), needsMessage: 'say why' };
+  const dealer: CardRules = { ...cast('dealer', 'common'), draws: ['a', 'b'] };
+  const driver: CardRules = { ...cast('driver', 'common'), drive: { lasts: { unit: 'day', count: 7 }, gifts: ['g'], overhead: 'o' } };
+  for (const card of [writer, needy, dealer, driver]) assert.equal(faceUpOnly(card), true, `${card.key} is face up only`);
+  assert.equal(faceUpOnly(plain), false);
+  for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is cast face up and never set face down` });
+  assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  assert.equal(decideSet(plain, settings, post, [], {}, [plain]).ok, true);
 });
 
 // A skim card as the engine reads one (Mooch's kind, in test-world words): a quadrant in its checked configuration.
