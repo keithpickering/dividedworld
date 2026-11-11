@@ -607,6 +607,62 @@ describe('live events', () => {
     await flush();
     expect(got).toEqual([]);
   });
+  test('a listener is told when it is joined, a microtask after it subscribes, and an event sent in the same tick is still heard', async () => {
+    const { fake, anaFace, thread } = world();
+    const told: string[] = [];
+    fake.subscribeThread(thread, { onJoined: () => told.push('thread'), onAct: (a) => told.push(`act ${a.seq}`) });
+    fake.subscribeReach({ onJoined: () => told.push('reach') });
+    expect(told).toEqual([]);
+    await fake.post(thread, anaFace, 'two', null);
+    await flush();
+    expect(told).toEqual(['thread', 'reach', 'act 2']);
+  });
+  test('with joins held an event reaches no listener, and after join() the listener has been told and hears the next one', async () => {
+    const { fake, anaFace, thread } = world();
+    const told: string[] = [];
+    const got: number[] = [];
+    fake.broadcast.holdJoins();
+    fake.subscribeThread(thread, { onJoined: () => told.push('thread'), onAct: (a) => got.push(a.seq!) });
+    fake.subscribeReach({ onJoined: () => told.push('reach') });
+    await flush();
+    expect(told).toEqual([]);
+    await fake.post(thread, anaFace, 'two', null);
+    await flush();
+    expect(got).toEqual([]);
+    expect(fake.broadcast.join()).toBe(2);
+    expect(told).toEqual(['thread', 'reach']);
+    await fake.post(thread, anaFace, 'three', null);
+    await flush();
+    expect(got).toEqual([3]);
+    // The hold ended with the join: the next listener joins on its own.
+    fake.subscribeReach({ onJoined: () => told.push('later') });
+    await flush();
+    expect(told).toEqual(['thread', 'reach', 'later']);
+  });
+  test('rejoin() tells every joined thread and reach listener again, and one that left or never joined is not told', async () => {
+    const { fake, thread } = world();
+    const told: string[] = [];
+    fake.subscribeThread(thread, { onJoined: () => told.push('thread') });
+    fake.subscribeReach({ onJoined: () => told.push('reach') });
+    fake.subscribeThread(thread, { onJoined: () => told.push('left') })();
+    await flush();
+    expect(told).toEqual(['thread', 'reach']);
+    fake.broadcast.rejoin();
+    expect(told).toEqual(['thread', 'reach', 'thread', 'reach']);
+    fake.broadcast.holdJoins();
+    fake.subscribeThread(thread, { onJoined: () => told.push('waiting') });
+    fake.broadcast.rejoin();
+    expect(told.filter((t) => t === 'waiting')).toEqual([]);
+  });
+  test('a listener that left while joins were held is never told', async () => {
+    const { fake, thread } = world();
+    const told = vi.fn();
+    fake.broadcast.holdJoins();
+    fake.subscribeThread(thread, { onJoined: told })();
+    expect(fake.broadcast.join()).toBe(0);
+    await flush();
+    expect(told).not.toHaveBeenCalled();
+  });
 });
 
 describe('reading', () => {
