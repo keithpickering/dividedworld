@@ -34,7 +34,7 @@ interface Args {
 const POST = 'I have spent three years on this tileset, and I am told that is "too long". Here it is, and I hope somebody likes it.';
 const SHORT = ['Please, a few Aura keep the Mushroom Kingdom online.', 'The Thwomps are very tired and so am I.', 'Chip in, or I will rewrite the physics again.'];
 /** Exactly 200 characters. */
-const LONG = 'Every year I ask, and every year the Mushroom Kingdom answers with a polite silence. This year I only need enough Aura to keep the lights on, the pipes warm and the Goombas fed, so please, read this far.';
+const LONG = 'Every year I ask, and every year the Mushroom Kingdom answers with a polite silence. This year I only need enough Aura to keep the lights on, the pipes warm and the Goombas fed, so, please, read this.';
 const DONORS = ['Gloomba', 'Spritey', 'Toadette', 'Mrs. Hooligan', 'Wiggler', 'Koopa Kid', 'Blooper', 'Lakitu Jr.', 'Bob-omb', 'Thwomp', 'Shy Guy', 'Boo Hoo', 'Pokey', 'Chain Chomp', 'Cheep Cheep', 'Fuzzy', 'Podoboo', 'Rex', 'Dry Bones', 'Monty Mole', 'Birdo', 'Petey', 'Hammer Bro', 'Piranha', 'Amazing Flyin', 'Magikoopa'];
 const PLATE_KEYS = ['blue-shirt', 'close-up', 'dark-logo'] as const;
 const DAY = 86_400_000;
@@ -50,10 +50,12 @@ const seededFor = new WeakMap<object, Map<string, Promise<string>>>();
 
 async function seedCase(fake: Fake, thread: string, shown: Case, instanceClass: string): Promise<string> {
   const { seed } = fake;
-  const [[author], ...casters] = await Promise.all([41, 42, 43, 44].map((n) => fake.acts(thread, n, n)));
-  if (!author?.character) throw new Error('the boards fixture has no #41');
-  const caster = (n: number) => casters[n % casters.length]![0]!.character!;
-  const post = seed.post(thread, author.character, POST);
+  const found = await Promise.all([41, 42, 43, 44].map(async (n) => (await fake.acts(thread, n, n))[0]?.character ?? null));
+  const author = found[0];
+  const casters = found.slice(1).filter((c): c is string => c !== null);
+  if (!author || casters.length === 0) throw new Error('the boards fixture has no #41 to #44');
+  const caster = (n: number) => casters[n % casters.length]!;
+  const post = seed.post(thread, author, POST);
   const play = (n: number, message: string, at?: number) => seed.card(caster(n), post, 'jimmy-wails', { layer: n + 1, live: true, message, drawn: PLATE_KEYS[n % PLATE_KEYS.length]!, ...(at === undefined ? {} : { at }) });
 
   /* The reader, last signed in: a new account that wrote none of the thread, with the wallet the case calls for. */
