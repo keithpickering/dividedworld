@@ -17,6 +17,12 @@ import { system } from './system/index.ts';
 
 const boards = deepFreeze([
   { slug: 'general', name: 'General', description: 'Anything and everything. The staff are watching.' },
+  // The starting boards (the owner, 2026-11-11; README, "Boards to start with"). No fangame board: FanGaME's Split makes his own.
+  { slug: 'video-games', name: 'Video Games', description: 'What you are playing, what you are stuck on, and what you will defend to the end.' },
+  { slug: 'movies-tv', name: 'Movies & TV', description: 'Reviews, reruns and spoilers. Mark your spoilers, or face the staff.' },
+  { slug: 'art-showcase', name: 'Art Showcase', description: 'Sprites, pixels and drawings. Post your work and be kind about everyone else\'s.' },
+  // Keep this name exactly: FanGaME's prompt names it, and The System's board names take its shape (system/name-style.ts).
+  { slug: 'pointless-post-palace', name: 'Pointless Post Palace', description: 'Forum games, nonsense and posts with no point. The point is that there is no point.' },
   // Only the staff and the game post here: the Boss's arrivals and farewells, the characters' Promos (the board look design, section 7).
   { slug: 'announcements', name: 'Staff Announcements', description: 'Where the staff post. Reply by spinning a thread.', system: true },
 ]);

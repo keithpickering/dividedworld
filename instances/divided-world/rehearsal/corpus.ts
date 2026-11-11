@@ -75,6 +75,34 @@ const openers: RehearsalCorpus['openers'] = {
     { title: 'Rate my sprite, be kind', body: 'Sixteen by sixteen, four colors, took all evening. The hat is the hard part.' },
     { title: 'Remember when everyone had a custom avatar?', body: 'Now it is all the same circle. Show me your oldest avatar and I will show you mine.' },
   ],
+  'video-games': [
+    { title: 'What are you playing this week?', body: 'I am forty hours into a farming game and I have not farmed once. Fishing only. Your turn.' },
+    { title: 'Best final boss of all time', body: 'It has to be fun to fight, not just hard. Make your case in one paragraph.' },
+    { title: 'A game you defend that everyone hates', body: 'Mine has a camera that fights you, and I love it anyway. Who is with me?' },
+    { title: 'Stuck on a puzzle, no spoilers please', body: 'There is a room with four statues and a door. I have pushed every statue. Hints only, nothing more.' },
+    { title: 'Handheld or console?', body: 'I play everything in bed now. Tell me what you play on, and why yours is wrong.' },
+  ],
+  'movies-tv': [
+    { title: 'What did you watch last night?', body: 'I put on a documentary about bridges and stayed up until two. No regrets.' },
+    { title: 'Sequels better than the original', body: 'Give me one, and the scene that proves it. Keep the spoilers marked.' },
+    { title: 'The show you quit after one episode', body: 'Everyone said it gets good in season two. I am not waiting that long. What did you drop?' },
+    { title: 'Best video game movie, honestly', body: 'The bar is on the floor and that is the fun of it. Rank the ones you have seen.' },
+    { title: 'Comfort rewatch thread', body: 'The thing you put on when you are sick or sad. Mine is a cooking show from before I was born.' },
+  ],
+  'art-showcase': [
+    { title: 'Sprite WIP, feedback wanted', body: 'A walking cycle in six frames. The arms feel stiff and I cannot tell why. Be honest.' },
+    { title: 'Palette swap challenge', body: 'Take your favorite sprite and give it four colors only. Post the before and the after.' },
+    { title: 'Drew the staff, sorry in advance', body: 'Quick doodles of every Mod Bot I have met so far. Nobody looks like their badge.' },
+    { title: 'Show your oldest art next to your newest', body: 'I will go first, and it is humbling. Everyone gets a pat on the back.' },
+    { title: 'Tiny tileset, free to use', body: 'Grass, dirt and one sad tree. Credit if you like, and show me what you build.' },
+  ],
+  'pointless-post-palace': [
+    { title: 'Count to one thousand, one post at a time', body: 'One. Someone else does two. Nobody posts twice in a row or we start over.' },
+    { title: 'Rate the username above you', body: 'Out of ten, with one reason. No reasons longer than five words.' },
+    { title: 'Word association, go', body: 'Pipe. Next person says the first word that comes to mind, and so on until it gets weird.' },
+    { title: 'This thread is about nothing', body: 'Please keep it that way. Posts with a point will be gently ignored.' },
+    { title: 'Ban the person above you', body: 'For a made-up reason. Not a real ban. The staff are not in on this, probably.' },
+  ],
 };
 
 const replies: readonly string[] = [
