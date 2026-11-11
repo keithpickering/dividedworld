@@ -54,6 +54,8 @@ export const STALL_MS = 120_000;
 export function within<T>(step: string, work: Promise<T>, ms: number = STALL_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const limit = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Stalled(step, ms)), ms); });
+  // The work that lost the race may still fail later (its connection is closed under it): that is already told by Stalled.
+  work.catch(() => {});
   return Promise.race([work, limit]).finally(() => clearTimeout(timer));
 }
 

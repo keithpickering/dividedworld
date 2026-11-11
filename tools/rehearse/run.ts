@@ -14,7 +14,7 @@ import { simulateClock } from "./clock.ts";
 import { connect, type Connection } from "./db.ts";
 import { rehearsalFetch, rehearsalModels, type KeptCall, type Mode } from "./models.ts";
 import { runMinute, type JobRun, type ScheduleCtx } from "./schedule.ts";
-import { STALL_MS, within, type Dispatched } from "./dispatch.ts";
+import { STALL_MS, Stalled, within, type Dispatched } from "./dispatch.ts";
 import { collect } from "./collect.ts";
 import { reportHtml } from "../../engine/rehearsal/report.ts";
 import { rehearsedInstance } from "./instance.ts";
@@ -64,6 +64,8 @@ export interface RehearseOptions {
   /** Where the run's directory is made; defaults to `rehearsals/<scenario>`. */
   readonly runsDir?: string;
   readonly keep?: boolean;
+  /** How long one step may take in real time before the run stops as stalled (dispatch.ts, STALL_MS; tests shorten it). */
+  readonly stallMs?: number;
   /** Replaces `runAction` for the filler (tests). */
   readonly act?: typeof runAction;
   /** A line a day, as it goes. */
@@ -167,6 +169,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
   const clock = simulateClock();
   clock.setSimulated(tl.clusterStart + 1000);
   let admin: Connection | undefined;
+  let stalled = false;
   let setup: Setup | undefined;
   let kept: RawRun["kept"];
   let reportDir: string | undefined;
@@ -209,7 +212,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       })) as unknown as JobDeps["broadcaster"],
     };
     const sched: ScheduleCtx = {
-      connection: conn, deps, cap: models.cap, lastDrained: 0, dispatched: [], cluster, clock, jobs: [],
+      connection: conn, deps, cap: models.cap, ...(o.stallMs === undefined ? {} : { stallMs: o.stallMs }), lastDrained: 0, dispatched: [], cluster, clock, jobs: [],
     };
     const filler: FillerResult[] = [];
     let systemOnAt: number | null = null;
@@ -235,7 +238,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
         systemOnAt = minute;
       }
       // A step inside the minute names itself first (dispatch.ts, Stalled); this is for whatever else the minute waits on.
-      await within(`the minute ${new Date(minute).toISOString()}`, runMinute(sched, minute), 2 * STALL_MS);
+      await within(`the minute ${new Date(minute).toISOString()}`, runMinute(sched, minute), 2 * (o.stallMs ?? STALL_MS));
       if (dayStarts) {
         if (index > 0) o.onDay?.(`${dayName(minute - DAY_MS)}: ${dayPosts} filler actions through, ${filler.filter((f) => !f.ok && f.at >= minute - DAY_MS).length} refused, ${sched.dispatched.length} requests dispatched so far`);
         dayPosts = 0;
@@ -252,7 +255,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
         const action = String(a.request.action);
         // The generator names only players that setup made: one it does not know is a bug here, and so is any throw below.
         if (!account) throw new Error(`filler: ${action} names ${a.player}, who setup did not make`);
-        const answer = await within(`the filler's ${action} by ${a.player}`, (o.act ?? runAction)({ player: conn.db({ player: account }), service }, instance, a.request));
+        const answer = await within(`the filler's ${action} by ${a.player}`, (o.act ?? runAction)({ player: conn.db({ player: account }), service }, instance, a.request), o.stallMs);
         if (answer.status === 200) { filler.push({ at: a.at, player: a.player, action, ok: true, status: 200 }); dayPosts++; }
         else if (answer.status >= 400 && answer.status < 500) {
           // A refusal a player would see: recorded, and the run goes on.
@@ -286,14 +289,31 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       notes: setup.notes, liveMicrodollars: models.cap.liveMicrodollars(), drawn, ...(reportDir ? { reportDir } : {}), ...(kept ? { kept } : {}),
     };
   } catch (e) {
+    if (e instanceof Stalled) {
+      // The step's own connection is still waiting on its answer, so nothing more is asked of it (its close would wait behind the
+      // answer that is not coming, and the error would never be said). What the database is doing is read on the other connection
+      // and said at once, before anything else can wait.
+      stalled = true;
+      const doing = await within("the read of what the database is doing", admin!.sql(
+        `select a.pid, a.state, a.wait_event_type, a.wait_event, now() - a.query_start as running, left(a.query, 400) as query,
+                (select string_agg(l.locktype || ' ' || l.mode || coalesce(' on ' || l.relation::regclass::text, ''), '; ') from pg_locks l where l.pid = a.pid and not l.granted) as waiting_for
+         from pg_stat_activity a where a.datname is not null and a.pid <> pg_backend_pid() and a.backend_type = 'client backend'`), 15_000).catch((x: unknown) => `not read: ${x instanceof Error ? x.message : String(x)}`);
+      console.error(`${e.message}\nwhat the database was doing:\n${typeof doing === "string" ? doing : JSON.stringify(doing, null, 2)}`);
+    }
     // A failed run with --keep leaves its cluster for a look: the error says where, and how to start it again.
     if (!o.keep) throw e;
     const r = reach(cluster);
     throw new Error(`${e instanceof Error ? e.message : String(e)}\nthe cluster is kept in ${r.dir} (stopped). To start it: ${r.pg_ctl}\nTo look: ${r.psql}`, { cause: e });
   } finally {
     clock.restore();
-    await setup?.conn.end().catch(() => {});
-    await admin?.end().catch(() => {});
+    // After a stall the connections are not closed politely (the stalled one would never answer): stopping the cluster ends them.
+    if (stalled) {
+      setup?.conn.drop();
+      admin?.drop();
+    } else {
+      await setup?.conn.end().catch(() => {});
+      await admin?.end().catch(() => {});
+    }
     await cluster.stop({ keep: o.keep === true });
   }
 }
