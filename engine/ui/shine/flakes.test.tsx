@@ -195,6 +195,63 @@ describe('the cling layer', () => {
     for (const f of loose(b)) expect(f.x >= 0 && f.x < 300 && f.y >= 0 && f.y < 300).toBe(true);
   });
 
+  /*
+   * Issue #399. A host may take no pointer: Glitter Bomb registers the surface its canvases stand on, which has `pointer-events:
+   * none` and holds nothing a pointer hits, so the pointer is over it only as the post's body, the element it is laid on. That body
+   * is named as the host's `hit`; a flake picked up over it wears the surface's inks, and one that lands on it is in the surface's px.
+   */
+  it('a host that takes no pointer is picked up from and landed on through its hit, in the host\'s own px', () => {
+    let surfaceMeasured = 0;
+    const surfaceOn = (left: number, top: number): { body: HTMLElement; surface: HTMLElement } => {
+      const body = host(left, top);
+      const surface = document.createElement('div');
+      for (const k of ['--kb-bg', ...POST_INK]) surface.style.setProperty(k, light[k]!);
+      /* The body's padding box, inside its 2 px border. */
+      surface.getBoundingClientRect = () => (surfaceMeasured++, { left: left + 2, top: top + 2, right: left + 298, bottom: top + 298, width: 296, height: 296, x: left + 2, y: top + 2, toJSON() {} });
+      body.append(surface);
+      return { body, surface };
+    };
+    const a = surfaceOn(0, 0), b = surfaceOn(2000, 0);
+    const flakes = makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    let landed = 0;
+    cling.register(a.surface, { sticky: true, flakes, hit: a.body });
+    cling.register(b.surface, { landed: () => landed++, hit: b.body });
+    carryOver();
+    expect(loose(b.surface).length).toBeGreaterThan(0);
+    expect(loose(b.body)).toHaveLength(0);
+    expect(landed).toBe(loose(b.surface).length);
+    /* In the surface's px: each landing measures the surface it lands on, never the body it was hit-tested through. */
+    expect(surfaceMeasured).toBe(landed);
+    for (const f of loose(b.surface)) expect(f.x >= -2 && f.x < 298 && f.y >= -2 && f.y < 298).toBe(true);
+  });
+
+  it('a host that takes no pointer, registered with no hit, picks nothing up (the pointer is never over it)', () => {
+    const body = host(0, 0);
+    const surface = document.createElement('div');
+    body.append(surface);
+    const flakes = makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    cling.register(surface, { sticky: true, flakes });
+    load();
+    expect(cling.carried()).toBe(0);
+  });
+
+  it('unregistering a host lets go of its hit, and a hit reregistered for a new host belongs to that host', () => {
+    const body = host(0, 0);
+    const first = document.createElement('div'), second = document.createElement('div');
+    for (const s of [first, second]) { for (const k of ['--kb-bg', ...POST_INK]) s.style.setProperty(k, light[k]!); body.append(s); }
+    const flakes = makeFlakes({ seed: 'sticky', box: { w: 296, h: 296 }, inks: GLITTER, holo: 7, density: 70, glint: GLINT });
+    const off = cling.register(first, { sticky: true, flakes, hit: body });
+    off();
+    load();
+    expect(cling.carried()).toBe(0);
+    const offFirst = cling.register(first, { sticky: true, flakes, hit: body });
+    cling.register(second, { sticky: true, flakes, hit: body });
+    /* The first's way out, taken after the second took the hit, leaves the second's. */
+    offFirst();
+    load();
+    expect(cling.carried()).toBeGreaterThan(0);
+  });
+
   it('a dropped flake over nothing fades and lands nowhere', () => {
     const { a, b } = page();
     load();

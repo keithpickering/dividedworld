@@ -11,7 +11,8 @@
  *   `stepBurst(flakes, now)` and paints it with `drawBurst(ctx, flakes, band, now)` on a second canvas over the words. Both return whether another frame is needed. At most `MAX_IN_FLIGHT` fly across the page; past that a
  *   burst lands its remainder at once. Under reduced motion there is no burst and every flake is placed at once.
  * - Cling: a mouse passing over a `sticky` registered host picks flakes up (at most 26), they ride the pointer, drop off over
- *   anything else and land on whichever registered host is under them (or fade). Loose glitter is `loose(host)`, 300 across
+ *   anything else and land on whichever registered host is under them (or fade). A host that takes no pointer names the element
+ *   the pointer is over instead (`hit`), and is still where its flakes land, in its own px. Loose glitter is `loose(host)`, 300 across
  *   the page, oldest first, the reader's own and never saved. One page-fixed canvas draws the flakes in the air; it is made on
  *   the first pickup and removed after `IDLE_MS` with nothing carried or falling, in the shape of Whoops!'s drawn cursor so a
  *   later port to the engine loop is a move.
@@ -929,6 +930,12 @@ export interface ClingOptions {
   readonly flakes?: Flakes;
   /** Called when a flake lands loose on this host, so it can redraw. */
   readonly landed?: () => void;
+  /**
+   * The element the pointer is over when it is over this host, where the host itself takes none: a layer with `pointer-events:
+   * none`, laid over that element, holds nothing a pointer hits, so the browser names only the element (or what is in it) as an
+   * event's target or at a point. By default the host. A flake that lands is still placed in the host's own px (issue #399).
+   */
+  readonly hit?: HTMLElement;
 }
 
 /* The cling layer is page-fixed and has no host of its own, so each flake keeps the band of the host it was picked up from
@@ -939,6 +946,8 @@ interface Carried { f: Flake; ox: number; oy: number; ph: number; band: Band }
 interface Falling { f: Flake; x: number; y: number; vx: number; vy: number; land: number; fallen: number; ph: number; band: Band; over?: boolean }
 
 const hosts = new Map<HTMLElement, ClingOptions>();
+/** Each registered host's `hit` (the host itself by default), to the host: what a walk up from a node is matched against. */
+const hits = new Map<HTMLElement, HTMLElement>();
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let ratio = 1;
@@ -983,9 +992,12 @@ const clingReduced = (): boolean => typeof document !== 'undefined' && motionRed
 
 const canAct = (e: Pick<PointerEvent, 'pointerType'>): boolean => e.pointerType === 'mouse' && watch().fine;
 
-/** The registered host that holds this node, if any: a walk up from the node, no measuring. */
+/** The registered host whose hit holds this node, if any: a walk up from the node, no measuring. */
 function hostOf(n: EventTarget | null | undefined): HTMLElement | null {
-  for (let el = n instanceof Element ? n : null; el; el = el.parentElement) if (hosts.has(el as HTMLElement)) return el as HTMLElement;
+  for (let el = n instanceof Element ? n : null; el; el = el.parentElement) {
+    const host = hits.get(el as HTMLElement);
+    if (host) return host;
+  }
   return null;
 }
 
@@ -1200,16 +1212,25 @@ function paint(c: CanvasRenderingContext2D, f: Flake, x: number, y: number, ph: 
   dirty.push(Math.floor((x - r) * d), Math.floor((y - r) * d), Math.ceil((x + r) * d), Math.ceil((y + r) * d));
 }
 
+/** Lets go of a host's hit, unless another host has taken it since. */
+function unhit(host: HTMLElement, options: ClingOptions): void {
+  const hit = options.hit ?? host;
+  if (hits.get(hit) === host) hits.delete(hit);
+}
+
 export const cling = {
   /**
    * Registers a host whose box a dropped flake may land on (and, with `sticky`, one that lends flakes to the pointer).
    * Returns the way back out. The host registers when it mounts and unregisters when it unmounts.
    */
   register(host: HTMLElement, options: ClingOptions = {}): () => void {
+    const was = hosts.get(host);
+    if (was) unhit(host, was);
     hosts.set(host, options);
+    hits.set(options.hit ?? host, host);
     if (options.sticky) hearScroll(true);
     return () => {
-      if (hosts.get(host) === options) hosts.delete(host);
+      if (hosts.get(host) === options) { hosts.delete(host); unhit(host, options); }
       if (![...hosts.values()].some((o) => o.sticky)) hearScroll(false);
     };
   },
@@ -1227,7 +1248,7 @@ export const cling = {
     const dt = lastTick === null ? 0 : Math.min(0.05, Math.max(0, (now - lastTick) / 1000));
     lastTick = now;
     if (clingReduced()) { carried = []; falling = []; }
-    for (const h of hosts.keys()) if (!h.isConnected) hosts.delete(h);
+    for (const [h, o] of hosts) if (!h.isConnected) { hosts.delete(h); unhit(h, o); }
     if (!ctx || !canvas) return;
     if (!carried.length && !falling.length) {
       clearDirty(ctx);
@@ -1276,6 +1297,7 @@ export const cling = {
     clearTimeout(idleTimer);
     idleTimer = undefined;
     hosts.clear();
+    hits.clear();
     cr = seededRng('cursor');
     dirty = [];
     sweepLoose();
