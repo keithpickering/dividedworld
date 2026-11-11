@@ -8,7 +8,7 @@ function setup(rows: QueueRow[], capped = false) {
   const seen: { name: string; body: unknown; auth: string | null; method: string }[] = [];
   const queue = [...rows];
   const handler = (name: string) => async (req: Request) => {
-    seen.push({ name, body: await req.json(), auth: req.headers.get("authorization"), method: req.method });
+    seen.push({ name, body: await req.json(), auth: req.headers.get("apikey"), method: req.method });
     return new Response(JSON.stringify({ ran: name }), { status: 200 });
   };
   const ctx: DispatchCtx = {
@@ -28,14 +28,14 @@ function setup(rows: QueueRow[], capped = false) {
   return { ctx, seen, queue };
 }
 const row = (id: number, name: string, body: unknown = { slot: "s" }): QueueRow => ({
-  id, method: "POST", url: `https://x.supabase.co/functions/v1/${name}`, headers: { Authorization: "Bearer k", "Content-Type": "application/json" }, body,
+  id, method: "POST", url: `https://x.supabase.co/functions/v1/${name}`, headers: { apikey: "k", "Content-Type": "application/json" }, body,
 });
 
 test("requests are handed over in id order, once each", async () => {
   const { ctx, seen, queue } = setup([row(3, "settle"), row(1, "meet"), row(2, "staff")]);
   await drain(ctx);
   assert.deepEqual(seen.map((s) => s.name), ["meet", "staff", "settle"]);
-  assert.equal(seen[0]!.auth, "Bearer k");
+  assert.equal(seen[0]!.auth, "k");
   assert.equal(seen[0]!.method, "POST");
   assert.deepEqual(seen[0]!.body, { slot: "s" });
   await drain(ctx);

@@ -78,3 +78,36 @@ test("a job rescheduled mid-run takes its new schedule from the next minute; an 
     await cluster.stop();
   }
 });
+
+test("each job starts in a fresh session state, as pg_cron's own session per job gives it", async () => {
+  const cluster = await startCluster({ at: T });
+  const sim = simulateClock();
+  const conn = await connect(cluster.dir, cluster.port, "postgres");
+  try {
+    await conn.sql(readFileSync(new URL("../../../supabase/tests/setup/auth-shim.sql", import.meta.url), "utf8"));
+    await conn.sql("create table seen (who text, path text)");
+    await conn.sql("grant all on seen to public");
+    // The first job leaves a role, a search_path and an open transaction behind; the second must see none of them.
+    await conn.sql("select cron.schedule('a-leaky', '* * * * *', 'set role service_role; set search_path = pg_temp; begin')");
+    await conn.sql("select cron.schedule('b-reader', '* * * * *', $$insert into public.seen values (current_user, current_setting('search_path'))$$)");
+    const ctx: ScheduleCtx = {
+      connection: conn,
+      deps: {} as ScheduleCtx["deps"],
+      cap: { reached: () => false },
+      lastDrained: 0,
+      dispatched: [],
+      cluster,
+      clock: sim,
+      jobs: [],
+    };
+    for (let i = 0; i < 2; i++) await runMinute(ctx, T + i * MIN);
+    assert.deepEqual(await conn.sql("select who, path from public.seen"), [
+      { who: "postgres", path: '"$user", public' },
+      { who: "postgres", path: '"$user", public' },
+    ]);
+  } finally {
+    sim.restore();
+    await conn.end();
+    await cluster.stop();
+  }
+});

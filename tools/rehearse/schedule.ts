@@ -51,6 +51,12 @@ export async function runMinute(ctx: ScheduleCtx, minute: number): Promise<void>
     } catch (e) {
       // As pg_cron does: record it, and the next job still runs.
       ctx.jobs.push({ at: minute, job, ok: false, error: e instanceof Error ? e.message : String(e) });
+    } finally {
+      // pg_cron runs each job in a session of its own; here they share one, so whatever a job left behind (a
+      // role, a setting, an open transaction) is cleared before the next. `discard all` cannot run inside a
+      // transaction, hence the rollback first; it warns harmlessly when there is none.
+      await ctx.connection.sql("rollback");
+      await ctx.connection.sql("discard all");
     }
   }
   await drain(ctx);
