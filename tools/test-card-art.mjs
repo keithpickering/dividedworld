@@ -3,7 +3,8 @@
  *
  *   node tools/test-card-art.mjs
  *
- * The guard fails a card-art folder (instances/<name>/ui/cards/<key>/) that lacks a file, has no
+ * The guard fails a card-art folder (instances/<name>/ui/cards/<key>/), or an instance's card back
+ * folder (instances/<name>/ui/card-back/, docs/plans/2026-11-11-rendered-card-back-plan.md, Task 1), that lacks a file, has no
  * canvas or two, the wrong canvas (an SVG off its viewBox; a WebP that is not one, is the wrong size
  * or is animated), a bad manifest, an oversize file, or an SVG that runs or reaches out
  * (docs/plans/2026-11-05-card-template-plan.md, Task 2; docs/plans/2026-11-11-rendered-card-art-plan.md,
@@ -208,6 +209,57 @@ try {
     const c = run(dir);
     check('  and the command exits 1 naming it', c.status === 1 && /second-card.*missing a canvas/.test(c.stderr), `${c.status} ${c.stderr}`);
   }
+
+  /* ---- a back folder (docs/plans/2026-11-11-rendered-card-back-design.md section 3) ---- */
+  // A repository with the clean card folder and, beside the cards, `instances/demo/ui/card-back/` holding `files`
+  // (the same shape as repo()'s: a name to its content, or null for no file) after `poison(files)` is applied.
+  /** @param {(files: Record<string, string | Buffer | null>) => void} [poison] */
+  const backRepo = (poison = () => {}) => {
+    /** @type {Record<string, string | Buffer | null>} */
+    const files = { 'art.webp': WEBP_LOSSY, 'art.json': JSON_OK };
+    poison(files);
+    const dir = repo();
+    const back = path.join(dir, 'instances/demo/ui/card-back');
+    fs.mkdirSync(back, { recursive: true });
+    for (const [f, body] of Object.entries(files)) if (body !== null) fs.writeFileSync(path.join(back, f), body);
+    return dir;
+  };
+  const backGreen = (name, poison) => {
+    const dir = backRepo(poison);
+    const faults = cardArtFaults(dir);
+    check(name, faults.length === 0, JSON.stringify(faults));
+    const c = run(dir);
+    check('  and the command exits 0', c.status === 0, `${c.status} ${c.stderr}`);
+  };
+  const backRed = (name, poison, want) => {
+    const dir = backRepo(poison);
+    const faults = cardArtFaults(dir);
+    check(name, faults.some((f) => want.test(f)), JSON.stringify(faults));
+    const c = run(dir);
+    check('  and the command exits 1 naming it', c.status === 1 && want.test(c.stderr), `${c.status} ${c.stderr}`);
+  };
+
+  backGreen('a back with art.webp and art.json', () => {});
+  backGreen('a back with art.webp, hit.webp and art.json', (f) => { f['hit.webp'] = WEBP_LOSSLESS; });
+  backGreen('a back with art.svg and hit.svg (no mark.svg asked for)', (f) => { f['art.webp'] = null; f['art.svg'] = ART(); f['hit.svg'] = ART(); });
+  backGreen('a back with a scene.py beside its pictures', (f) => { f['scene.py'] = 'print(1)'; });
+  {
+    const dir = backRepo();
+    const c = run(dir);
+    check('the passing line counts the card folder and the back folder', c.status === 0 && /1 card folder\(s\).*1 card back folder\(s\)/.test(c.stdout), c.stdout);
+  }
+
+  backRed('a back folder with no art.*', (f) => { f['art.webp'] = null; }, /card-back.*missing a canvas; a card back's folder holds art\.svg or art\.webp, optionally hit\.svg or hit\.webp, and art\.json/);
+  backRed('a back with art.svg and art.webp', (f) => { f['art.svg'] = ART(); }, /card-back.*holds art\.svg and art\.webp/);
+  backRed('a back with hit.svg and hit.webp', (f) => { f['hit.svg'] = ART(); f['hit.webp'] = WEBP_LOSSY; }, /card-back.*holds hit\.svg and hit\.webp/);
+  backRed('a hit.webp of 540 by 840', (f) => { f['hit.webp'] = WEBP_SMALL; }, /hit\.webp.*is 540 by 840; a raster canvas is exactly 1080 by 1680/);
+  backRed('a hit.webp that is a PNG', (f) => { f['hit.webp'] = PNG; }, /hit\.webp.*is not a WebP image$/m);
+  backRed('an art.svg in a back holding <script', (f) => { f['art.webp'] = null; f['art.svg'] = ART('<script/>'); }, /card-back.*art\.svg.*<script/i);
+  backRed('a back with no art.json', (f) => { f['art.json'] = null; }, /card-back.*art\.json.*missing/);
+  backRed('a back with an art.json with an empty credit', (f) => { f['art.json'] = JSON.stringify({ credit: '', license: 'x' }); }, /card-back.*art\.json.*credit/);
+  backRed('a hit.webp padded past 400 KB', (f) => { f['hit.webp'] = Buffer.concat([WEBP_LOSSY, Buffer.alloc(401 * 1024)]); }, /hit\.webp.*400 KB/);
+  backRed('a hit.svg over 200 KB', (f) => { f['art.webp'] = null; f['art.svg'] = ART(); f['hit.svg'] = ART(`<!--${'a'.repeat(201 * 1024)}-->`); }, /hit\.svg.*200 KB/);
+  backRed('a hit.svg off the canvas', (f) => { f['hit.svg'] = `<svg ${NS} viewBox="0 0 120 110"/>`; }, /hit\.svg.*viewBox/);
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }
