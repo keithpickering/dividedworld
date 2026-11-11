@@ -1,5 +1,5 @@
 /**
- * What the scheduled functions' handlers (meet, chatter, staff, settle: each `handler.ts` beside its `index.ts`) take from outside:
+ * What the scheduled functions' handlers (meet, chatter, staff, settle, write: each `handler.ts` beside its `index.ts`) take from outside:
  * the environment, the database client, the model factory, `fetch` and the broadcaster. The deployed set is `deployedDeps`, built
  * from `Deno.env.get` by the one line each `index.ts` holds; the rehearsal (tools/rehearse/) hands the same handlers its own set
  * and runs them in Node. A handler reads no global of Deno's: everything it reaches comes through here.

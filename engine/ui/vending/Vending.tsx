@@ -518,17 +518,17 @@ export function Vending() {
 
   /* The pack picked: its odds beside the machine, and what is in it by the price. */
   const pack = picked?.pack ?? null;
-  const packOf = (it: Item | null) => (it?.pack ? { odds: oddsGroups(it.pack, instance.cards), line: packLine(it.pack, instance.cards) } : null);
+  const packOf = (it: Item | null) => (it?.pack ? { odds: oddsGroups(it.pack, instance.cards, instance.settings), line: packLine(it.pack, instance.cards, instance.settings) } : null);
   const picks = packOf(picked);
   /* The cards a pack can give that the machine is not selling now: "Main Event isn't sold on its own." */
-  const unsold = (p: PackRules) => unsoldOnTheirOwn(packCards(p, instance.cards).filter((k) => !slots?.some((s) => 'card' in s.item && s.item.card === k)).map((k) => cardFaces.find((f) => f.key === k)?.name ?? k));
+  const unsold = (p: PackRules) => unsoldOnTheirOwn(packCards(p, instance.cards, instance.settings).filter((k) => !slots?.some((s) => 'card' in s.item && s.item.card === k)).map((k) => cardFaces.find((f) => f.key === k)?.name ?? k));
   /* Every Boss move in force, in plain words, in the machine's order. */
   const moves = items.flatMap((it) => {
     const move = it.slot.move;
     if (!move) return [];
     const board = move.demand && typeof move.demand.params['board'] === 'string' ? boards.find((b) => b.id === move.demand!.params['board'])?.name ?? null : null;
     const key = it.face?.key;
-    const carrier = key ? items.find((o) => o.pack && !o.sold && packCards(o.pack, instance.cards).includes(key)) : undefined;
+    const carrier = key ? items.find((o) => o.pack && !o.sold && packCards(o.pack, instance.cards, instance.settings).includes(key)) : undefined;
     return [{ id: it.slot.id, ...moveWords(move, { name: it.name, price: it.price, board, inPacks: move.kind === 'pullSlot' && carrier !== undefined, packsWord: `${carrier?.name ?? 'packs'}s` }) }];
   });
   const emptied = status === 'ready' ? slotsFor(items.length) - items.length : 0;
@@ -626,8 +626,8 @@ export function Vending() {
           ) : aboutItem.pack ? (
             <div className="kb-vending-about-body">
               <p className="kb-vending-about-price kb-num">{orbs(aboutItem.price)}</p>
-              <p className="kb-vending-about-says">{packLine(aboutItem.pack, instance.cards)}</p>
-              <PackOdds name={aboutItem.name} groups={oddsGroups(aboutItem.pack, instance.cards)} />
+              <p className="kb-vending-about-says">{packLine(aboutItem.pack, instance.cards, instance.settings)}</p>
+              <PackOdds name={aboutItem.name} groups={oddsGroups(aboutItem.pack, instance.cards, instance.settings)} />
               <p className="kb-vending-about-says">{unsold(aboutItem.pack) ? `${unsold(aboutItem.pack)} ` : ''}Within a rarity, every card is equally likely.</p>
             </div>
           ) : null}

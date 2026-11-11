@@ -99,7 +99,9 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', instance.settings.setLasts, (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark;
-  const caught = plays.every((p) => p.caught || p.reversed);
+  const caught = plays.every((p) => p.caught || p.reversed || p.untaken);
+  /* What the mark counts: the plays that took. A play that did not take (`untaken`) is over, so it is no layer on the post; where none took, the mark counts them all, since it still says what became of each. */
+  const counted = plays.filter((p) => !p.untaken).length || plays.length;
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
   const onInk = useOnInk();
@@ -116,15 +118,15 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   return (
     <>
     <button
-      ref={button} type="button" className="kb-mark kb-meta-tile" data-kb-card={kind} data-kb-plays={plays.length} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
+      ref={button} type="button" className="kb-mark kb-meta-tile" data-kb-card={kind} data-kb-plays={counted} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
       data-kb-back={back ? (revealed ? 'sprung' : 'down') : undefined} data-kb-caught={caught ? 'true' : undefined}
-      aria-label={markName({ card: name, plays: plays.length, state: back ? '' : view.state, more, yours: view.yours, where })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
+      aria-label={markName({ card: name, plays: counted, state: back ? '' : view.state, more, yours: view.yours, where })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
       <span className="kb-meta-tile-in" aria-hidden="true">
         {/* A back is the face-down card itself, its cloud drawn by the tile (marks.css), and the same for every reader, its setter too, whose card the Lens names (the card template design's amendment of 2026-11-07). */}
         {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
-        {plays.length > 1 && <span className="kb-mark-count">×{plays.length}</span>}
+        {counted > 1 && <span className="kb-mark-count">×{counted}</span>}
       </span>
       {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}
       {view.yours && <span className="kb-mark-notch" data-kb-notch="" aria-hidden="true" />}

@@ -3,7 +3,8 @@
  * of pulls, each a set of weights over rarities, and a slot is one place in the machine's grid, holding a card or a pack at a
  * price. Pure: the fake backend rolls with `rollPack`, the SQL rolls on its own, and the screens show `packOdds`.
  */
-import { RARITIES, type CardRules, type Rarity } from './cards.ts';
+import { RARITIES, withheld, type CardRules, type Rarity } from './cards.ts';
+import type { Settings } from './types.ts';
 
 /** One pull of a pack: a weight for each rarity it can roll, positive whole numbers. */
 export interface Pull { readonly weights: Readonly<Partial<Record<Rarity, number>>> }
@@ -39,28 +40,28 @@ export interface RarityOdds {
   readonly cards: readonly { readonly card: string; readonly chance: number }[];
 }
 
-/** The cards a pack can hand out at a rarity: the instance's, in its order, less what the pack leaves out. */
-function eligible(pack: PackRules, cards: readonly CardRules[], rarity: Rarity): string[] {
+/** The cards a pack can hand out at a rarity: the instance's, in its order, less what the pack leaves out and what the instance withholds (a card that writes, with no old voice); the SQL roll leaves the same ones out. */
+function eligible(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>, rarity: Rarity): string[] {
   const left = new Set(pack.leaves ?? []);
-  return cards.filter((c) => c.rarity === rarity && !left.has(c.key)).map((c) => c.key);
+  return cards.filter((c) => c.rarity === rarity && !left.has(c.key) && !withheld(c, settings)).map((c) => c.key);
 }
 
 /** The rarities of a pull that have a card to give, with their weights, in rarity order. A rarity with none is not rolled. */
-function rollable(pack: PackRules, cards: readonly CardRules[], pull: Pull): { rarity: Rarity; weight: number; keys: string[] }[] {
+function rollable(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>, pull: Pull): { rarity: Rarity; weight: number; keys: string[] }[] {
   const out: { rarity: Rarity; weight: number; keys: string[] }[] = [];
   for (const rarity of RARITIES) {
     const weight = pull.weights[rarity];
     if (weight === undefined || !(weight > 0)) continue;
-    const keys = eligible(pack, cards, rarity);
+    const keys = eligible(pack, cards, settings, rarity);
     if (keys.length) out.push({ rarity, weight, keys });
   }
   return out;
 }
 
 /** For each pull of a pack, each rarity's chance and the eligible cards with their chances. */
-export function packOdds(pack: PackRules, cards: readonly CardRules[]): RarityOdds[][] {
+export function packOdds(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>): RarityOdds[][] {
   return pack.pulls.map((pull) => {
-    const rolls = rollable(pack, cards, pull);
+    const rolls = rollable(pack, cards, settings, pull);
     const total = rolls.reduce((sum, r) => sum + r.weight, 0);
     return rolls.map((r) => {
       const chance = r.weight / total;
@@ -73,9 +74,9 @@ export function packOdds(pack: PackRules, cards: readonly CardRules[]): RarityOd
  * One card key per pull, in pull order. Each pull takes two draws from `random` (a number from 0 up to, not including, 1): the
  * first picks the rarity by weight, the second a card of it, evenly.
  */
-export function rollPack(pack: PackRules, cards: readonly CardRules[], random: () => number): string[] {
+export function rollPack(pack: PackRules, cards: readonly CardRules[], settings: Pick<Settings, 'oldVoice'>, random: () => number): string[] {
   return pack.pulls.map((pull, i) => {
-    const rolls = rollable(pack, cards, pull);
+    const rolls = rollable(pack, cards, settings, pull);
     if (!rolls.length) throw new Error(`pack ${pack.key}'s pull ${i + 1} has no card to give`);
     const total = rolls.reduce((sum, r) => sum + r.weight, 0);
     const at = random() * total;

@@ -22,7 +22,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { atOrBelow, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -41,7 +41,7 @@ import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-page.ts';
 import type {
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
+  Act, Apology, Bar, AccountListener, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
@@ -67,7 +67,7 @@ export const START = Date.UTC(2026, 9, 29, 12);
 
 export interface LiveEvent {
   readonly topic: string;
-  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'alert' | 'news' | 'settled';
+  readonly event: 'act' | 'tally' | 'thread' | 'effect' | 'card_text' | 'alert' | 'news' | 'settled';
 }
 
 export interface Seed {
@@ -208,7 +208,7 @@ export interface Seed {
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
    * moments were snapshotted (0072): its moment is not taken.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id; tokens?: number }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -244,6 +244,15 @@ export interface Seed {
   judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict | 'failed' }): void;
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
+  /**
+   * What a writing play made for a version of its post (`finish_card_write`, 0149): its row (`text`, or `failed`), the waiting job it ends, and
+   * the `card_text` event on the post's thread, which carries the play and the version alone. A play of a card whose rules `write` is
+   * queued at the post's version when it lands, and again at each edit, as the server does; this delivers what the model made, later.
+   * `quiet` keeps the event back (a screen that was not listening), so a test can see the row without it. A failure of a play's first
+   * generation, with no newer job waiting, refunds it as the server does: the play is over and its Act reads `untaken` from then (`acts_public`,
+   * 0149); a failure of a regeneration of a play that made a text before refunds nothing, and a play already over takes no text.
+   */
+  text(play: Id, version: Id, result: { readonly text: string } | { readonly failed: true }, options?: { readonly quiet?: boolean }): void;
   /**
    * The next post, edit or spin gets no answer, as when the network drops: it answers with an
    * uncertain refusal. `went` says whether the server did it before the answer was lost.
@@ -548,6 +557,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       currentPayload: latest?.payload ?? a.payload,
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
+      ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
     };
   }
 
@@ -971,6 +981,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     acts.set(rec.id, rec);
     if (rec.kind === 'card_end' && rec.target !== null) reversedPlays.add(rec.target);
     if ((rec.kind === 'card' || rec.kind === 'set' || rec.kind === 'spring') && rec.target !== null && onPost(rec)) takeMoment(rec);
+    queueWrites(rec);
     return rec;
   }
   function openThread(board: Id, title: string, origin: Id | null, at?: number): ThreadRec {
@@ -1106,6 +1117,41 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ act, tally });
   }
 
+  /* --------------------------------------------------------------- a card that writes ---- */
+  /** card_texts (0149): one row per play and version, the generation or its failure. */
+  const texts: { play: Id; version: Id; text: string | null; at: number; order: number }[] = [];
+  /** card_writes (0149): a play's waiting job, at the version it will continue; one per play, a newer version replacing it. */
+  const jobs = new Map<Id, { post: Id; version: Id }>();
+  const writes = (card: unknown): boolean => instance.cards.some((c) => c.key === card && c.writes !== undefined);
+  /** A card Act that is a live writing play on a post (live_writing_plays): a card of the post's own reach that writes, no caught play, no ended one. */
+  const writingPlay = (a: ActRec): boolean => a.kind === 'card' && a.target !== null && (a.payload.reach ?? 'post') === 'post' && a.payload.caught === undefined && writes(a.payload.card);
+  /** The trigger on acts (card_writes_enqueue): a writing play queues its job at the post's version, an edit queues each live writing play on the post again. */
+  function queueWrites(rec: ActRec) {
+    if (rec.kind !== 'card' && rec.kind !== 'edit') return;
+    if (writingPlay(rec)) jobs.set(rec.id, { post: rec.target!, version: edits(acts.get(rec.target!)!).at(-1)?.id ?? rec.target! });
+    else if (rec.kind === 'edit' && rec.target !== null) {
+      for (const k of acts.values()) if (writingPlay(k) && k.target === rec.target && !over(k.id)) jobs.set(k.id, { post: rec.target, version: rec.id });
+    }
+  }
+  /** post_tails (0149): every row of every writing play on the posts, oldest version first, then each waiting job whose version has no row yet. */
+  function tails(posts: readonly Id[]): Tail[] {
+    if (new Set(posts).size > 200) throw new Error('tails are read for at most 200 posts at a time');
+    const out: { row: Tail; vat: number; pat: number; order: number }[] = [];
+    for (const post of new Set(posts)) {
+      for (const k of acts.values()) {
+        if (!writingPlay(k) || k.target !== post) continue;
+        for (const x of texts.filter((t) => t.play === k.id)) {
+          out.push({ row: { post, play: k.id, version: x.version, text: x.text, failed: x.text === null, waiting: false, createdAt: iso(x.at) }, vat: acts.get(x.version)!.at, pat: k.at, order: k.order });
+        }
+        const job = jobs.get(k.id);
+        if (job && !texts.some((t) => t.play === k.id && t.version === job.version) && !over(k.id)) {
+          out.push({ row: { post, play: k.id, version: job.version, text: null, failed: false, waiting: true, createdAt: null }, vat: acts.get(job.version)!.at, pat: k.at, order: k.order });
+        }
+      }
+    }
+    return out.sort((a, b) => a.vat - b.vat || a.pat - b.pat || a.order - b.order).map((x) => x.row);
+  }
+
   /** The state a play's effect has saved, as effect_state keeps it: one row per play, the newest save. */
   const effects = new Map<Id, { state: unknown; at: number }>();
   /**
@@ -1158,6 +1204,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const releases = new Map<string, number>();
   /** The card plays an admin has ended (a `card_end` beside each, 0092): not in force, though the play and its layer stay. */
   const reversedPlays = new Set<Id>();
+  /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0149): over, as an ended play is, and public as `untaken`. */
+  const untakenPlays = new Set<Id>();
+  /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
+  const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play);
+  /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0149), and no card named. */
+  const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
   const withEnds = (plays: readonly ActRec[]): Act[] => {
     const wanted = new Set(plays.filter((p) => p.kind === 'card').map((p) => p.id));
@@ -1212,8 +1264,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /** `card_in_open_pack` (0139): whether a pack on sale can still give the card. */
   function cardInOpenPack(card: string): boolean {
-    const rarity = instance.cards.find((c) => c.key === card)?.rarity;
-    if (!rarity) return false;
+    const rules = instance.cards.find((c) => c.key === card);
+    const rarity = rules?.rarity;
+    /* A card the instance withholds is never rolled (roll_pack, 0149; packOdds), so no pack can give it. */
+    if (!rules || !rarity || withheld(rules, instance.settings)) return false;
     return slotRecs.some((r) => {
       if (!('pack' in r.item) || r.availability !== 'onSale') return false;
       const key = r.item.pack;
@@ -1242,6 +1296,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function slotForSale(shown: Slot, wants: 'card' | 'pack'): SlotRec | Refusal {
     const seen = slotRecs.find((r) => r.id === shown.id && r.availability !== 'hidden');
     if (!seen) return refuse('the machine has no such slot');
+    if (wants === 'card' && 'card' in seen.item) {
+      const sold = instance.cards.find((c) => c.key === (seen.item as { card: string }).card);
+      if (sold && withheld(sold, instance.settings)) return refuse(OLD_VOICE_OFF);
+    }
     if (wants === 'card' && !('card' in seen.item)) return refuse('this slot sells a pack, not a card');
     if (wants === 'pack' && !('pack' in seen.item)) return refuse('this slot sells a card, not a pack');
     if (seen.availability === 'soldOut') return refuse('this slot is sold out');
@@ -1266,6 +1324,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!played) return refuse('there is no such card on a post');
     if (acts.get(played.target!)?.character !== character) return refuse('only the post\'s author saves what is on it');
     if (reversedPlays.has(play)) return refuse('an admin ended that card');
+    if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
     const at = now();
     effects.set(play, { state, at });
     send(`thread:${played.thread}`, 'effect', () => { for (const l of [...(threadListeners.get(played.thread) ?? [])]) l.onEffect?.(play, iso(at)); });
@@ -1277,6 +1336,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!account) return refuse('sign in to act');
     if (!playOf(play)) return refuse('there is no such card on a post');
     if (reversedPlays.has(play)) return refuse('an admin ended that card');
+    if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
     /* Kept from the first release. */
     const key = `${account.id} ${play}`;
     if (!releases.has(key)) releases.set(key, now());
@@ -1333,7 +1393,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(seen)) return seen;
     const pack = instance.packs.find((p) => p.key === (seen.item as { pack: string }).pack);
     if (!pack) return refuse('the machine has no such slot');
-    const contents = rollPack(pack, instance.cards, random);
+    const contents = rollPack(pack, instance.cards, instance.settings, random);
     const left = spend(account, seen.price, 'purchase', null);
     if (typeof left !== 'number') return left;
     for (const card of contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
@@ -1385,7 +1445,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches ? { caught: trap!.set } : { layer }) } });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
@@ -1428,7 +1488,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const out: CardEffect[] = [];
     for (const a of acts.values()) {
       if (a.target !== target) continue;
-      if (a.kind === 'card' && a.payload.caught === undefined && !reversedPlays.has(a.id) && onPost(a)) {
+      if (a.kind === 'card' && a.payload.caught === undefined && !over(a.id) && onPost(a)) {
         const r = instance.cards.find((c) => c.key === a.payload.card);
         out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
       } else if (a.kind === 'set') {
@@ -2233,7 +2293,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const staffCards = [...acts.values()].filter((a) => {
         if (a.kind !== 'card' || a.character === null || !characters.get(a.character)?.staff || a.at < since) return false;
         const ends = reachPlays.get(a.id)?.endsAt ?? (typeof a.payload.ends === 'string' ? Date.parse(a.payload.ends) : null);
-        return a.payload.caught === undefined && (ends === null || ends > now()) && !reversedPlays.has(a.id);
+        return a.payload.caught === undefined && (ends === null || ends > now()) && !over(a.id);
       }).sort((a, b) => b.at - a.at || a.order - b.order).map((a): StaffCardPlay => {
         const who = characters.get(a.character!)!;
         const reach = reachPlays.get(a.id)?.reach;
@@ -2323,6 +2383,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const ends = reachPlays.get(play)?.endsAt ?? (typeof p.payload.ends === 'string' ? Date.parse(p.payload.ends) : null);
       if (ends !== null && ends <= now()) return refuse('that card has already worn off');
       if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
+      if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
       const end = write({ character: null, kind: 'card_end', thread: p.thread, target: play, payload: { why: 'reversed', by: 'admin' } });
       sendAct(end);
       if (!onPost(p)) { const shown = publicAct(end); send('reach', 'effect', () => { for (const l of [...reachListeners]) l.onPlay?.(shown); }); }
@@ -2515,6 +2576,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = new Set(ids);
       return withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit));
     },
+    tails: (posts) => tails(posts),
     effectStates(plays) {
       const out: Record<Id, EffectState> = {};
       for (const play of plays) {
@@ -2561,6 +2623,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
+          /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
+          writes: newest(texts.flatMap((t) => {
+            const play = acts.get(t.play);
+            const post = play?.kind === 'card' && play.target !== null ? acts.get(play.target) : undefined;
+            if (!play || !post || (play.payload.reach ?? 'post') !== 'post' || characters.get(post.character ?? '')?.owner !== account || !fits(t.at)) return [];
+            const mine = texts.filter((x) => x.play === t.play);
+            /* `opening`: no earlier text of the play; `over`: the failure that ended it (refunded, and no row after it). */
+            const opening = !mine.some((x) => x.text !== null && x.order < t.order);
+            const over = t.text === null && untakenPlays.has(t.play) && !mine.some((x) => x.order > t.order);
+            return [{ ms: t.at, order: t.order, w: { play: t.play, post: post.id, version: t.version, failed: t.text === null, opening, over, at: iso(t.at) } }];
+          })).map(({ w }) => w),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
           /* The in-memory backend springs no trap, so a back ends here by its setter taking it back or by its time (my_face_down.ended_by); the caster's caught lines are the adapter's (my_caught). */
@@ -3646,6 +3719,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.message !== undefined) payload.message = o.message;
       if (o?.layer !== undefined) payload.layer = o.layer;
       if (o?.config !== undefined) payload.config = o.config;
+      /* The tokens a card that writes bought are the play's own fact (play_card writes them with the play): given, else what its rules say of the configuration against the settings of the seed. */
+      const bought = o?.tokens ?? instance.cards.find((c) => c.key === card)?.writes?.tokens((o?.config ?? {}) as never, settings);
+      if (bought !== undefined && Number.isSafeInteger(bought) && bought >= 1) payload.tokens = bought;
       /* A play a trap caught names its set, and takes no layer; a Use carries its end (0054). */
       if (o?.caught !== undefined) { payload.caught = o.caught; delete payload.layer; }
       if (o?.spring !== undefined) payload.spring = o.spring;
@@ -3773,6 +3849,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     judging(answers) {
       if (answers.report) judged.report = answers.report;
       if (answers.appeal) judged.appeal = answers.appeal;
+    },
+    text(play, version, result, o) {
+      const k = acts.get(play);
+      if (!k || !writingPlay(k)) throw new Error(`no such writing play ${play}`);
+      if (!acts.has(version)) throw new Error(`no such version ${version}`);
+      /* A play that is over (an admin ended it, or its first generation failed and it was refunded) makes no text: a late finish writes nothing (finish_card_write, 0149). */
+      if (over(play)) return;
+      const job = jobs.get(play);
+      texts.push({ play, version, text: 'text' in result ? result.text : null, at: now(), order: ++order });
+      if (job && job.version === version) jobs.delete(play);
+      /* finish_card_write (0149): a failure with no newer job waiting, for a play that never made a text, refunds it, and the play is over. */
+      if (!('text' in result) && !jobs.has(play) && !texts.some((t) => t.play === play && t.text !== null) && !reversedPlays.has(play)) untakenPlays.add(play);
+      if (o?.quiet) return;
+      send(`thread:${k.thread}`, 'card_text', () => { for (const l of [...(threadListeners.get(k.thread) ?? [])]) l.onText?.(play, version); });
     },
     effect(thread, play) {
       const savedAt = iso(now());

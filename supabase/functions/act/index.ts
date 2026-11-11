@@ -16,6 +16,10 @@ import { chooseInstance } from '../_shared/instance.ts';
 import { CORS, boundedJson, environment } from '../_shared/serve.ts';
 import { broadcaster } from '../_shared/broadcast.ts';
 import { sendWaiting } from '../_shared/outbox.ts';
+import { models } from '../_shared/models/index.ts';
+import { ledgerWriter } from '../_shared/models/ledger.ts';
+import { withDatabaseSettings } from '../_shared/settings.ts';
+import { runWrites } from '../write/core.ts';
 
 /** A post at its longest is 20,000 characters of up to four bytes; a Whoops! save is bounded at 256 KB. */
 const MOST_BYTES = 512 * 1024;
@@ -41,8 +45,14 @@ Deno.serve(async (request) => {
   // misses a send sees the change on their next load, a failed send is retried by the next drain, and neither a slow Realtime nor
   // what was queued ever holds up, or shows in, a player's answer (afterTheAnswer says why). Without EdgeRuntime, the local
   // runtime, nothing awaits the work either.
+  const instance = chooseInstance(Deno.env.get('KAYFABB_PROFILE'));
   const out = await handleAction({
-    dbs, instance: chooseInstance(Deno.env.get('KAYFABB_PROFILE')), body,
+    dbs, instance, body,
+    // The kick for a post's card texts (core.ts, postThatMayWrite): the same work as the write function's sweep, for one post.
+    write: async (post) => {
+      const tuned = await withDatabaseSettings(instance, dbs.service);
+      return runWrites(dbs.service, models((name) => Deno.env.get(name), ledgerWriter(dbs.service), { tiers: tuned.settings.modelTiers }), tuned, tuned.settings, 4, post);
+    },
     send: live.send,
     drain: (drainOutbox ??= coalesced(() => sendWaiting(dbs.service, live.deliver))),
     after: (work) => afterTheAnswer(work, { waitUntil: typeof EdgeRuntime !== 'undefined' && EdgeRuntime ? (p) => EdgeRuntime.waitUntil(p) : undefined }),

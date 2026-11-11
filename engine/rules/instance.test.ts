@@ -36,6 +36,8 @@ const settings: Settings = {
   presenceNames: 15,
   presencePollSeconds: 30,
   systemEnabled: false,
+  oldVoice: true,
+  cardWriteSettleSeconds: 30,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
@@ -88,6 +90,7 @@ const system: SystemContent = {
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
+  scrubWords: ['badword'],
   wheelhouse: ['games'],
   nameStyle: () => [],
   nameStyleBrief: 'any name',
@@ -310,6 +313,11 @@ test('a number a class reads can carry its bounds', () => {
   const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 6 }], earn: () => [] }] };
   assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at least 6/);
   assert.match(instanceProblems({ ...bounded, settings: { ...settings, economy: { ...settings.economy, 'a.bonus': 6.5 } } }).join('\n'), /a whole number/);
+});
+
+test('a number a class reads can carry a most', () => {
+  const bounded = { ...good, classes: [{ key: 'a', name: 'A', reads: [{ key: 'a.bonus', whole: true, min: 1, max: 4 }], earn: () => [] }] };
+  assert.match(instanceProblems(bounded).join('\n'), /class "a" reads economy "a\.bonus" as 5; it must be at most 4/);
 });
 
 test('a settlement window\'s length is a span', () => {
@@ -547,6 +555,7 @@ test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5,
 test('the new settings are checked like the others', () => {
   const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
   assert.match(bad('systemEnabled', 'yes'), /systemEnabled/);
+  assert.match(bad('oldVoice', 'yes'), /oldVoice/);
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
@@ -765,6 +774,18 @@ test('every Set lasts the same span, setLasts', () => {
   }
 });
 
+test('a card that writes reaches a post alone', () => {
+  const writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) };
+  const lasts = { unit: 'day', count: 1 };
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', writes })), []);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post'] })), []);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['character'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post', 'thread'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes: 'yes' })).join('\n'), /card "splat" has writes that are not a tokens function and a frame function/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, play: 'set', trap: { trigger: { on: 'visit' } } })).join('\n'), /card "splat" writes, and only a cast card does: it is cast face up, never set face down/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, play: 'use', lasts })).join('\n'), /card "splat" writes, and only a cast card does: it is cast face up, never set face down/);
+});
+
 // Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): each refused, naming the card.
 test('a card reaches no further than its rarity allows', () => {
   const lasts = { unit: 'day', count: 1 };
@@ -890,4 +911,13 @@ test('a stock line may use a staff token\'s pronoun forms and no other token\'s'
   assert.deepEqual(instanceProblems(line('visitFiled', '{mod} filed it.')), []);
   assert.match(said(line('visitFiled', '{mod.} left.')), /stock line "visitFiled".*\{mod\.\}/);
   assert.match(said(line('visitFiled', '{mod.they.x} left.')), /stock line "visitFiled".*\{mod\.they\.x\}/);
+});
+
+test('a scrubWords entry that is empty or not lower case is a problem', () => {
+  const withWords = (scrubWords: string[]) => ({ ...good, system: { ...system, scrubWords } }) as Instance;
+  assert.deepEqual(instanceProblems(withWords(['badword', 'two words'])), []);
+  assert.match(instanceProblems(withWords(['badword', ''])).join('\n'), /scrubWords entry is empty/);
+  assert.match(instanceProblems(withWords(['  '])).join('\n'), /scrubWords entry is empty/);
+  assert.match(instanceProblems(withWords(['BadWord'])).join('\n'), /scrubWords entry "BadWord" is not lower case/);
+  assert.match(instanceProblems({ ...good, system: { ...system, scrubWords: undefined } } as unknown as Instance).join('\n'), /no system\.scrubWords list/);
 });

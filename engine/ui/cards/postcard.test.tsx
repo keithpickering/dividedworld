@@ -66,6 +66,26 @@ describe('the frame at every size', () => {
     expect(body('.kb-postcard-name')).toMatch(/text-overflow:\s*ellipsis/u);
   });
 
+  test('a long name breaks onto two lines at the slot and the phone only, still one name, sized by its longer line', () => {
+    for (const size of ['slot', 'phone'] as const) {
+      const card = shown(size, { ...face(), name: 'You Were Saying?' });
+      expect(card.getAttribute('data-lines'), size).toBe('2');
+      expect(card.style.getPropertyValue('--kb-name-chars'), size).toBe('8');
+      const name = card.querySelector('.kb-postcard-name')!;
+      expect([...name.querySelectorAll('.kb-postcard-name-line')].map((l) => l.textContent?.trim()), size).toEqual(['You Were', 'Saying?']);
+      expect(name.textContent, size).toBe('You Were Saying?');
+      expect(card.querySelector('.kb-postcard-plate')?.getAttribute('aria-hidden')).toBe('true');
+      document.body.innerHTML = '';
+    }
+    for (const size of ['fan', 'sheet'] as const) {
+      const card = shown(size, { ...face(), name: 'You Were Saying?' });
+      expect(card.hasAttribute('data-lines'), size).toBe(false);
+      expect(card.style.getPropertyValue('--kb-name-chars'), size).toBe('16');
+      expect(card.querySelectorAll('.kb-postcard-name-line'), size).toHaveLength(0);
+      document.body.innerHTML = '';
+    }
+  });
+
   test('the forced-colors edge: the card, its gem and the back each get an outline', () => {
     const forced = /@media \(forced-colors: active\)\s*\{([\s\S]*?)\n\}/u.exec(css)?.[1] ?? '';
     for (const sel of ['.kb-postcard', '.kb-postcard-gem', '.kb-postcard-back']) expect(forced, sel).toMatch(new RegExp(`${sel.replace(/\./gu, '\\.')}[^{]*\\{[^}]*outline:\\s*1px solid CanvasText`, 'u'));

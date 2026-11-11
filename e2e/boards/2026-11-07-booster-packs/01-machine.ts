@@ -15,11 +15,13 @@
  *    (7 of 12 so far)". So only the bold clause that opens each is found by its words, and the rest of each is held by its place.
  *  - A sold out slot's chip says "SOLD OUT" alone: with the code beside it ("A2 · SOLD OUT"), the chip and the info control would not fit one shelf at the
  *    glass's type size, and a wrapped shelf makes every row of the machine taller. The slot's own name carries the code's place.
- *  - The kind word is the instance's (Move, Reversal, Gimmick) where the board draws Cast, Set and Use. Hall Pass (face-down moves plan) takes D2, after Card Collector, so the slots after it
- *    stand one place later than the board draws them: the board's D2 is the build's Hall Pass, its E1 the build's Force Field, and its empty E2 the build's Glitter Bomb, which is the one marked up (the board's mark on E1 stands on E2). Each is held by its place.
- *  - Card types added four cards after the board was drawn (a record, not redrawn): Publicity Tour takes the board's C1, where the board draws Bluff (deleted), so C1 is held by the board's words (`name`) and the build's
- *    (`buildName`), and Heat Magnet, Class Clown and Good Vibes take the slots after Hall Pass's. Glitter Bomb is then the build's G1, a row and a column away from the board's empty E2, which it
- *    is compared to, so the build is held to the board's place plus (-176, 253). The wrapped grid is 253px taller, which nothing else on the board stands under.
+ *  - The kind word is the instance's (Move, Reversal, Gimmick) where the board draws Cast, Set and Use. Hall Pass (face-down moves plan) stocks the slot after Card Collector, so the slots
+ *    after it stand one place later than the board draws them. You Were Saying? (its own plan) takes C1, after Autocorrect, so every slot after it stands one place later again.
+ *  - Card types added four cards after the board was drawn (a record, not redrawn): Publicity Tour takes Bluff's slot (deleted), which You Were Saying? has moved to C2, and Heat Magnet,
+ *    Class Clown and Good Vibes take the slots after Force Field's. So the board's C1 (Bluff) is the build's You Were Saying?, its C2 Publicity Tour, D1 Feelin' Fab, D2 Card Collector, E1
+ *    Hall Pass and E2 Force Field, each held by its place, with the board's words (`name`) and the build's (`buildName`). Glitter Bomb, the one marked up (the board's mark on E1), is the
+ *    build's G2, two rows under the board's empty E2 in the same column, which it is compared to, so the build is held to the board's place plus (0, 253). The wrapped grid is 253px
+ *    taller (seven rows of slots where the board draws five), which nothing else on the board stands under.
  *  - A slot's price is "orbs" and the board's "orb" (the glass's names say "1.00 orb" and "3.00 orbs", as board 07 holds them).
  *  - The wallet's name says "buying Booster", where the board draws "buying the Booster": a card's reads "buying Whoops!" and a pack is named as one.
  *  - The machine's sign is a marquee the instance picks at random, and the machine's drawing is the instance's art (`data-kb-art`): not compared.
@@ -51,12 +53,12 @@ const manifest: BoardManifest = {
     { id: 'slot-a2', role: 'button', name: 'Whoops!, sold out: pulled by the Boss until Nov 9', type: false, box: 'position' },
     { id: 'slot-b1', role: 'button', name: 'Buy Stick Around, 1.00 orb, common Cast', buildName: 'Buy Stick Around, 1.00 orb, common Move', type: false, box: 'position' },
     { id: 'slot-b2', role: 'button', name: 'Buy Autocorrect, 1.00 orb, common Cast', buildName: 'Buy Autocorrect, 1.00 orb, common Move', type: false, box: 'position' },
-    { id: 'slot-c1', role: 'button', name: 'Buy Bluff, 0.25 orb, common Set', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },
-    { id: 'slot-c2', role: 'button', name: 'Buy Feelin\' Fab, 0.20 orb, common Cast', buildName: 'Buy Feelin\' Fab, 0.20 orbs, common Move', type: false, box: 'position' },
-    { id: 'slot-d1', role: 'button', name: 'Buy Trap Card, 1.50 orb, uncommon Set', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
-    { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy Hall Pass, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
-    { id: 'slot-e1', role: 'button', name: 'Buy Glitter Bomb, 2.25 orb, marked up from 1.50, uncommon Cast', buildName: 'Buy Force Field, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },
-    { id: 'slot-e2', role: 'img', name: 'Empty slot E2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 2.25 orbs, marked up from 1.50, uncommon Move', type: false, box: 'position', buildShift: { x: -176, y: 253 } },
+    { id: 'slot-c1', role: 'button', name: 'Buy Bluff, 0.25 orb, common Set', buildName: 'Buy You Were Saying?, 1.00 orb, common Move', type: false, box: 'position' },
+    { id: 'slot-c2', role: 'button', name: 'Buy Feelin\' Fab, 0.20 orb, common Cast', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Gimmick', type: false, box: 'position' },
+    { id: 'slot-d1', role: 'button', name: 'Buy Trap Card, 1.50 orb, uncommon Set', buildName: 'Buy Feelin\' Fab, 0.20 orbs, common Move', type: false, box: 'position' },
+    { id: 'slot-d2', role: 'button', name: 'Buy Force Field, 1.50 orb, uncommon Use', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
+    { id: 'slot-e1', role: 'button', name: 'Buy Glitter Bomb, 2.25 orb, marked up from 1.50, uncommon Cast', buildName: 'Buy Hall Pass, 1.50 orbs, uncommon Reversal', type: false, box: 'position' },
+    { id: 'slot-e2', role: 'img', name: 'Empty slot E2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 2.25 orbs, marked up from 1.50, uncommon Move', type: false, box: 'position', buildShift: { x: 0, y: 253 } },
 
     /* Beside the slots: the pick, what is in the pack, and Buy. */
     { id: 'selected', role: 'region', name: 'Selected', buildRole: 'status', buildName: 'Selected: A1, Booster, 3.00', type: false, box: 'across' },

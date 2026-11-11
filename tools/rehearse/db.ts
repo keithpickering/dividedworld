@@ -19,6 +19,8 @@ export interface Connection {
   /** Plain SQL as the superuser, for setup and the scheduler. */
   sql(text: string, params?: unknown[]): Promise<Record<string, unknown>[]>;
   end(): Promise<void>;
+  /** Closes the socket at once, without waiting for a call in flight (a stalled run's connections). */
+  drop(): void;
 }
 
 interface Arg { name: string; type: string; hasDefault: boolean }
@@ -109,6 +111,9 @@ function wrap(client: pg.Client): Connection {
     // Plain SQL and the close take the same turn as a call, so neither lands inside a call's open transaction.
     sql: (text, params) => exclusive(async () => (await client.query(text, params)).rows),
     end: () => exclusive(() => client.end()),
+    // For a connection whose call will never answer (a stalled run): no turn is waited for, the socket is closed under it, and what the
+    // client says of that afterwards is nobody's to hear.
+    drop: () => { client.on('error', () => {}); (client as unknown as { connection?: { stream?: { destroy(): void } } }).connection?.stream?.destroy(); },
     db(as) {
       const claims = as === 'service' ? { role: 'service_role' } : { sub: as.player, role: 'authenticated' };
       const role = as === 'service' ? 'service_role' : 'authenticated';

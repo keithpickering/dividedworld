@@ -115,5 +115,13 @@ export const caughtWords = (trap: string | null, fate?: { readonly taken?: strin
 
 /** The Lens's state for a play an admin ended: plain words, never in character. Its layer is off for everyone and nothing was refunded. */
 export const endedWords = (): string => 'Ended by an admin';
+/**
+ * The Lens's words for a play whose first generation failed: it did not take, so its text never arrived and it is not in effect on the post.
+ * Plain and true for every reader, in the glass's voice: it names no card and claims nothing about a hand or an Aura (a Mod Bot's play has none).
+ */
+export const UNTAKEN_STATE = 'Didn\'t take';
+export const untakenWords = (): string => 'Didn\'t take. Its text never arrived, so it is not in effect on this post.';
+/** The state for a kind whose plays are all over, some ended by an admin and some not taken: true of both. */
+export const OVER_STATE = 'Over';
 /** The Lens's heading for a kind whose plays a trap caught: a short status, the same for every kind; what caught it is each play's note (`caughtWords`). */
 export const CAUGHT_STATE = 'Caught, did nothing';

@@ -126,3 +126,14 @@ test("a filler action that makes runAction answer 500 stops the run with its err
     /filler.*500/,
   );
 });
+
+test("a filler action that never answers stops the run as stalled, naming the action, and the run ends", async () => {
+  const out = mkdtempSync(join(tmpdir(), "rehearsal-run-"));
+  await assert.rejects(
+    rehearse({
+      scenario: tiny, mode: "stub", cassetteDir: join(out, "cassette"), runsDir: out, stallMs: 200,
+      act: () => new Promise(() => {}),
+    }),
+    /the filler's \w+ by .+ has not answered in 0 s/,
+  );
+});

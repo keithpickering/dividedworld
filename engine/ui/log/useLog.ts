@@ -21,6 +21,7 @@ export function mergeLogs(newer: Log, older: Log): Log {
     cards: [...newer.cards, ...older.cards],
     packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
+    writes: [...newer.writes, ...older.writes],
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
     caught: [...newer.caught, ...older.caught],

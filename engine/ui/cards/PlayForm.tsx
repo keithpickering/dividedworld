@@ -26,7 +26,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
-import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, type CardEffect, type CardTarget } from '../../rules/cards.ts';
+import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -128,13 +128,13 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const cardUi = ui.cards.find((c) => c.key === card);
   /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
-  /* The post is one of the player's own characters': a Move on it may be set face down; a set card is set there alone. */
+  /* The post is one of the player's own characters': a cast card on it may be set face down, but for one that writes, which is only cast face up (decideSet); a set card is set there alone. */
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
-  const choosing = how === 'cast' && ownPost;
+  const choosing = how === 'cast' && ownPost && rules?.writes === undefined;
   const setting = how === 'set' || (choosing && down);
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
   const setter = (setting && post ? player.actingCharacters.find((c) => c.id === post.character) : undefined) ?? player.hudCharacter;
-  const castable = useMemo(() => instance.cards.filter(castOnPost).map((r) => faceOf(r, ui.cards.find((c) => c.key === r.key), priced, ui.copy.cardKinds)), [instance.cards, ui.cards, priced, ui.copy.cardKinds]);
+  const castable = useMemo(() => instance.cards.filter((r) => castOnPost(r) && !withheld(r, instance.settings)).map((r) => faceOf(r, ui.cards.find((c) => c.key === r.key), priced, ui.copy.cardKinds)), [instance.cards, instance.settings, ui.cards, priced, ui.copy.cardKinds]);
   const face = useMemo(() => (rules ? faceOf(rules, cardUi, priced, ui.copy.cardKinds) : null), [rules, cardUi, priced, ui.copy.cardKinds]);
   const hud = player.hudCharacter;
   const wallet = player.wallet;

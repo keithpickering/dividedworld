@@ -46,7 +46,7 @@
  * fail, the trim names the predicate and plain code's seeded configuration is played instead; where code can build none, the card is dropped
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
-import { atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { withheld, atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
@@ -63,6 +63,7 @@ import {
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
+import { scrubbedComplete } from '../../../engine/system/scrub.ts';
 import {
   allowance,
   candidates,
@@ -233,7 +234,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c);
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c) && !withheld(c, settings);
   });
 
   for (const p of picked.picks) {
@@ -319,9 +320,9 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     try {
       if (persona.voice === 'oldVoice') {
         const frame = chatterCompletion({ name: persona.name, thread, limits });
-        const out = await models.complete({
+        const out = await scrubbedComplete(models, {
           duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens: 400, maxChars: settings.postMaxLength,
-        });
+        }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
@@ -385,8 +386,10 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         // above and this play is not refused (as before the options existed).
         // A catching set card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
         const catches = rules?.catches?.(config);
+        // A card that writes buys its tokens at this decision, from the settings as the rows hold them now, as a player's play does (act/core.ts); the database writes them with the play.
+        const tokens = rules?.writes?.tokens(config as never, tuned.settings);
         const played = answer.card.on === 'reply'
-          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day })
+          ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day, ...(tokens === undefined ? {} : { tokens }) })
           : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config, ...(catches === undefined ? {} : { catches }) });
         card = played.id;
       } catch (e) {

@@ -466,6 +466,25 @@ test('a persona on the old voice writes its words in raw completion and gives no
   assert.equal(d.count('write_staff_note') + d.count('staff_play_card') + d.count('staff_set_card'), 0);
 });
 
+test('an old-voice answer that hits the scrubber twice files a rejected pick and writes nothing; one hit is retried', async () => {
+  const withWords = (scrubWords: string[]): Instance => ({ ...dividedWorld, system: { ...dividedWorld.system, scrubWords, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } });
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const m = fakeModels(() => ({ words: 'chat' }), 'you absolute badword');
+  const out = await run(d, m, withWords(['badword']));
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 2, 'asked again once');
+  assert.equal(out.picks[0]!.status, 'rejected');
+  assert.equal(d.count('write_staff_act'), 0);
+  const once = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH] });
+  const answers = ['you absolute badword', 'a kinder post'];
+  const m2 = fakeModels(() => ({ words: 'chat' }));
+  m2.models.complete = async (r) => { m2.completions.push(r); return result(answers[m2.completions.length - 1]!); };
+  const ok = await run(once, m2, withWords(['badword']));
+  assert.ok(ok.status === 'ok');
+  assert.equal(m2.completions.length, 2);
+  assert.equal(once.of('write_staff_act')[0]!.payload.body, 'a kinder post');
+});
+
 test('a thread start whose persona has no beats board replies in its trigger\'s thread', async () => {
   const d = fakeDb({ boards: { [GENERAL]: 'elsewhere' } });
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
@@ -703,4 +722,39 @@ test('a persona\'s Card Collector is offered with its options and stores the car
   const d2 = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
   await run(d2, hallModels);
   assert.equal(d2.count('staff_set_card'), 0, 'a Hall Pass the model names is not set');
+});
+
+test('a card that writes is not offered to the pool where the instance runs no old voice, and is where it does', async () => {
+  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const withVoice = (oldVoice: boolean): Instance => ({ ...dividedWorld, cards: [...dividedWorld.cards, typewriter], settings: { ...dividedWorld.settings, oldVoice } });
+  const offered = async (oldVoice: boolean) => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 } });
+    const m = fakeModels(normal);
+    await run(d, m, withVoice(oldVoice));
+    return m.chats.some((c) => c.system.includes('Test Typewriter') || c.messages.some((x) => x.content.includes('Test Typewriter')));
+  };
+  assert.equal(await offered(true), true, 'the card is on offer where the endpoint runs');
+  assert.equal(await offered(false), false, 'and withheld where there is none');
+});
+
+test('a completion made for a card play is a request with the duty cardText and the play it was made for', () => {
+  const request: CompletionRequest = { duty: 'cardText', play: 'act-1', prompt: 'p', temperature: 1, topP: 1, stop: [], maxTokens: 40, lines: 'many' };
+  assert.equal(request.duty, 'cardText');
+  assert.equal(request.play, 'act-1');
+});
+
+test('a Mod Bot\'s play of a card that writes hands staff_play_card the tokens the card\'s rules decide, from the settings as the rows hold them', async () => {
+  const writing = { ...dividedWorld.cards.find((c) => c.key === 'you-were-saying')!, rarity: 'common' as const };
+  const withVoice: Instance = { ...dividedWorld, settings: { ...dividedWorld.settings, oldVoice: true }, cards: dividedWorld.cards.map((c) => (c.key === writing.key ? writing : c)) };
+  const d = fakeDb({ pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: writing.key, on: 'reply' } }));
+  const out = await run(d, m, withVoice);
+  assert.ok(out.status === 'ok');
+  const play = d.of('staff_play_card')[0];
+  assert.ok(play, 'the writing card was played');
+  assert.equal(play.tokens, writing.writes!.tokens(play.config as never, withVoice.settings));
+  assert.ok(Number.isSafeInteger(play.tokens) && (play.tokens as number) >= 1);
+  const plain = fakeDb({ pool: { threadsWeekly: 0 } });
+  await run(plain, fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'stick-around', on: 'reply' } })));
+  assert.equal('tokens' in plain.of('staff_play_card')[0]!, false, 'a play of any other card carries none');
 });

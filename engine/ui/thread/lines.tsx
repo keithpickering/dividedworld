@@ -2,16 +2,20 @@
  * The pieces of an Act that the thread and the ORIGIN box both draw: the link a quote carries, the
  * lines for an unmask and The System's posts, "Last edited", and the History of a post.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BbCode, type QuoteOf } from '../bbcode/render.tsx';
 import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id } from '../data/api.ts';
+import type { Act, Id, Tail } from '../data/api.ts';
+import { VersionEffects } from '../cards/Effects.tsx';
+import { PLAYS_PER_POST, createPlays, livePlays, type Plays } from '../cards/plays.ts';
+import type { CardPlay } from '../cards/types.ts';
+import { resolveWritten } from '../cards/written.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
 
 import { sameYear } from '../postbit/dates.ts';
 import { Link } from '../router.tsx';
-import { useThread } from './context.ts';
+import { ThreadCtx, useThread } from './context.ts';
 import { useCharacter, useKnownAct, useLocated } from './locate.tsx';
 import { Byline, Mini } from '../mini.tsx';
 import { pageOf, threadHref } from './pages.ts';
@@ -54,26 +58,68 @@ export function QuoteHead({ of }: { readonly of: QuoteOf }) {
 }
 export const quoteHead = (q: QuoteOf): ReactNode => <QuoteHead of={q} />;
 
-/** Every version of a post, the original first, for anyone who asks. */
+/**
+ * What History needs of a post's writing plays: the live plays of cards that write on it and every row of their tails, read once when History
+ * is open. In a thread the plays are the ones the page already holds (`known`), so a post with no writing play costs no request at all; where
+ * the page is not known the plays are read, and the tails only if one of them writes. Null while they load, where there is none and where they
+ * could not be read, and then the versions show their words alone.
+ */
+function useTailsOf(post: Id, wanted: boolean, known: Plays | null): { readonly plays: readonly CardPlay[]; readonly rows: readonly Tail[] } | null {
+  const { api, instance } = useKayfa();
+  const [read, setRead] = useState<{ readonly plays: readonly CardPlay[]; readonly rows: readonly Tail[] } | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    let live = true;
+    const writing = new Set(instance.cards.filter((c) => c.writes !== undefined).map((c) => c.key));
+    const writers = (all: readonly CardPlay[]) => livePlays(all).filter((p) => writing.has(p.card) && !p.caught && !p.reach && !p.faceDown);
+    const fail = () => { /* the versions are shown without their tails */ };
+    const tailed = (plays: readonly CardPlay[]) => {
+      if (plays.length === 0) return;
+      api.tails([post]).then((rows) => { if (live) setRead({ plays, rows }); }, fail);
+    };
+    if (known) { tailed(writers(known.get(post).plays)); return () => { live = false; }; }
+    api.cardsOn(post, PLAYS_PER_POST).then((acts) => {
+      if (!live) return;
+      const store = createPlays();
+      store.add(acts);
+      tailed(writers(store.get(post).plays));
+    }, fail);
+    return () => { live = false; };
+  }, [api, instance.cards, post, wanted, known]);
+  return read;
+}
+
+/** Every version of a post, the original first, for anyone who asks, each with the tails its writing plays made for it, drawn still (design section 7: a tail shows in full, whatever was cleared). */
 function Versions({ post }: { readonly post: Id }) {
-  const { api } = useKayfa();
+  const { api, instance, ui } = useKayfa();
+  const nameOf = useContext(ThreadCtx)?.nameOf;
   const [versions, setVersions] = useState<readonly Act[] | null | 'failed'>(null);
   useEffect(() => {
     let live = true;
     api.history(post).then((v) => { if (live) setVersions(v); }, () => { if (live) setVersions('failed'); });
     return () => { live = false; };
   }, [api, post]);
+  const draws = useMemo(() => instance.cards.some((c) => c.writes !== undefined && ui.cards.some((u) => u.key === c.key && u.Effect)), [instance.cards, ui.cards]);
+  const tails = useTailsOf(post, draws, useContext(ThreadCtx)?.plays ?? null);
+  const ids = useMemo(() => (Array.isArray(versions) ? versions.map((v) => v.id) : []), [versions]);
   if (versions === 'failed') return <p className="kb-notice" data-kb-tone="refusal">The history could not be loaded. Close it and try again.</p>;
   if (versions === null) return <p className="kb-muted kb-small" aria-busy="true">Loading the history…</p>;
   if (versions.length < 2) return <p className="kb-muted kb-small">This post has not been edited.</p>;
   return (
     <ol className="kb-post-history" data-kb-quotable="hidden" aria-label="Versions of this post, oldest first">
-      {versions.map((v, i) => (
-        <li key={v.id}>
-          <span className="kb-small kb-muted">{i === 0 ? 'Original' : `Edit ${i}`}, {when(v.createdAt)}{i === versions.length - 1 ? ' · Current' : ''}</span>
-          <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />
-        </li>
-      ))}
+      {versions.map((v, i) => {
+        const words = <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />;
+        /* Only the version's own rows are drawn: a version with none for a play draws none for it. */
+        const written = tails ? resolveWritten(tails.rows, ids, v.id, 'version') : null;
+        return (
+          <li key={v.id}>
+            <span className="kb-small kb-muted">{i === 0 ? 'Original' : `Edit ${i}`}, {when(v.createdAt)}{i === versions.length - 1 ? ' · Current' : ''}</span>
+            {tails && written && written.size > 0
+              ? <VersionEffects post={versions[0]!} version={v.id} plays={tails.plays} written={written} {...(nameOf ? { nameOf } : {})}>{words}</VersionEffects>
+              : words}
+          </li>
+        );
+      })}
     </ol>
   );
 }

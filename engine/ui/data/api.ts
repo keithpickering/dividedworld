@@ -297,6 +297,11 @@ export interface Act {
   readonly editedAt: string | null;
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
+  /**
+   * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0149): public, the
+   * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
+   */
+  readonly untaken?: true;
 }
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */
@@ -418,6 +423,22 @@ export interface AppealResult {
 export interface EffectState {
   readonly state: unknown;
   readonly savedAt: string;
+}
+
+/**
+ * One row of a post's tails (`post_tails`, supabase/migrations/0149_card_writes.sql): what a writing card's play made for one version of its post.
+ * Every row of every writing play on the post, in version order then play order, and the same for every reader: `text` is the generated words
+ * (null where `failed`, and where `waiting`); `failed` is a flag and never the predicate; `waiting` is a job queued for a version that has no
+ * row yet (`createdAt` null). The version is the post's own Act or an edit of it.
+ */
+export interface Tail {
+  readonly post: Id;
+  readonly play: Id;
+  readonly version: Id;
+  readonly text: string | null;
+  readonly failed: boolean;
+  readonly waiting: boolean;
+  readonly createdAt: string | null;
 }
 
 /** A crop frame, in fractions of the picture it was cut from. */
@@ -1037,6 +1058,10 @@ export interface WalletEvent {
 export interface CardEvent {
   readonly card: string;
   /** `caught`: a card a catching set card of the player's took (0142); its `act` is the spring, and it cost nothing. */
+  /**
+   * `returned`: a card back in the hand. A face-down card taken back (0148; its `act` is the take-back) or whose time passed unsprung (no
+   * `act`), or a play whose old voice did not answer, so its price went back and its card with it (0149; its `act` is the play).
+   */
   readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
@@ -1246,6 +1271,22 @@ export const ALERTS_PAGE = 30;
 /** The count `alertsUnread` stops at: a result at the bound means that many or more, and a screen says "9+". */
 export const ALERTS_UNREAD_BOUND = 10;
 
+/**
+ * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0149): the play, the post it is on, the
+ * version of the post it was made for, whether the generation failed, whether it comes before any text of the play (`opening`: a text that is the
+ * play's first continued the post; a later text was made again for an edit), whether it is the failure that ended the play (`over`: refunded, and
+ * no row after it; a failure the play survived, or one after a text, is no line), and when. Public facts and the post's author alone.
+ */
+export interface WrittenOnMine {
+  readonly play: Id;
+  readonly post: Id;
+  readonly version: Id;
+  readonly failed: boolean;
+  readonly opening: boolean;
+  readonly over: boolean;
+  readonly at: string;
+}
+
 /** When the effect of a play on one of the player's posts was last saved: the post's author's save, which may wash it clean. */
 export interface EffectSaved {
   readonly play: Id;
@@ -1438,6 +1479,8 @@ export interface Log {
   /** The packs the player bought, by when each was bought. */
   readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
+  /** The texts and failures of cards that write on the player's posts, by when each was made (`my_posts_written_on`). */
+  readonly writes: readonly WrittenOnMine[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
@@ -1489,6 +1532,8 @@ export interface ThreadListener {
   /** A tally that only grows: keep each kind's largest. */
   readonly onTally?: (act: Id, tally: Tally) => void;
   readonly onEffect?: (play: Id, savedAt: string) => void;
+  /** A writing play made a tail (`card_text`): the play and the version of its post and nothing else. Read the post's tails again. */
+  readonly onText?: (play: Id, version: Id) => void;
 }
 
 export interface BoardListener {
@@ -1921,6 +1966,11 @@ export interface KayfaApi {
   pinnedThreads(board: Id): Promise<readonly PinnedThread[]>;
   /** The state each play's effect has saved (the post's author saves it), by play; a play that has saved none is absent. Any signed-in reader may read it. */
   effectStates(plays: readonly Id[]): Promise<Readonly<Record<Id, EffectState>>>;
+  /**
+   * The tails of a page of posts (`post_tails`): every row of every writing play on them, in version order then play order, and the waiting jobs.
+   * At most 200 posts a call (the server refuses more); a post with no writing play has no row. The same for every signed-in reader.
+   */
+  tails(posts: readonly Id[]): Promise<readonly Tail[]>;
   /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
   playMoment(play: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */

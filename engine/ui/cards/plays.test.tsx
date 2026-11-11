@@ -395,3 +395,24 @@ describe('a play an admin ended', () => {
     expect(markedPlays(ended).map((p) => p.id)).toEqual(['k1']);
   });
 });
+
+/* A play whose first generation failed is refunded and over (0149): the read says so (`untaken` on its Act), and the client reads the flag, never works it out. */
+describe('a play that did not take', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const act = (id: string, over: Partial<Act> = {}): Act =>
+    ({ id, kind: 'card', character: 'c1', thread: 't', targetActId: 'p1', seq: null, createdAt: at, payload: { card: 'whoops' }, currentPayload: { card: 'whoops' }, editedAt: null, shownEditedAt: null, ...over });
+
+  test('the flag on the Act is on the play, and a play without it has none', () => {
+    expect(playOf(act('k1', { untaken: true }))?.untaken).toBe(true);
+    expect(playOf(act('k2'))).not.toHaveProperty('untaken');
+  });
+
+  test('it is not live: left out of what a post carries, though it stays among the post\'s plays and its marks for the Lens to say so', () => {
+    const plays = createPlays();
+    plays.add([act('k1'), act('k2', { untaken: true }), act('k3')]);
+    const got = plays.get('p1');
+    expect(got.plays.map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
+    expect(livePlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k3']);
+    expect(markedPlays(got.plays).map((p) => p.id)).toEqual(['k1', 'k2', 'k3']);
+  });
+});

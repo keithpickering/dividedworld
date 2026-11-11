@@ -153,6 +153,34 @@ const wrongPlay = (rules: CardRules): Verdict<never> => refuse(`${rules.name} is
 
 export type Verdict<T = undefined> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly why: string };
 
+/**
+ * What a card that writes hands the old voice (`docs/plans/2026-11-07-you-were-saying-design.md`, sections 3 and 11): the post the play is on, a few posts before it
+ * and the thread's title, as the frame's words need them. `text` is a post's visible text (`visibleText`), never its markup; `tails` are the
+ * tails already chained on this post, in play order, which this one continues from the end of; `settings` are the instance's.
+ */
+export interface WriteFrameInput {
+  readonly post: { readonly name: string; readonly text: string };
+  readonly before: readonly { readonly name: string; readonly text: string }[];
+  readonly title: string;
+  readonly tails: readonly string[];
+  readonly settings: Settings;
+}
+
+/**
+ * A card whose effect holds generated text: `tokens` is how many the play bought (from its checked configuration and the settings), and
+ * `frame` is a pure function from the thread to a completion's prompt and the stops that end it. The engine owns the queue, the call, the
+ * scrubber and the refund; the card owns only these two, and names nothing the engine knows. A card that writes is a cast card that reaches a
+ * post alone, and is only cast face up: it is never set face down, so it never springs later on a post its caster did not choose, with no length
+ * bought (decideSet refuses it, and so does the server, 0149_card_writes.sql). An instance with no completion endpoint (`Settings.oldVoice`
+ * false) does not sell, offer or play it.
+ */
+export interface Writes<Config = unknown> {
+  tokens(config: Config, settings: Settings): number;
+  frame(input: WriteFrameInput): { readonly prompt: string; readonly stop: readonly string[] };
+}
+
+export const OLD_VOICE_OFF = "The old voice isn't running on this forum, so this card can't be played.";
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
@@ -181,6 +209,8 @@ export interface CardRules<Config = unknown> {
   readonly lasts?: Span;
   /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
   readonly pins?: true;
+  /** Generated text its effect holds (a card that writes); a cast card, cast face up on a post alone and never set face down, withheld where `Settings.oldVoice` is false. */
+  readonly writes?: Writes<Config>;
   /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
@@ -217,6 +247,13 @@ export interface CardRules<Config = unknown> {
   validateState?(state: unknown): Verdict<unknown>;
 }
 
+/**
+ * The most tokens a play of a card that writes may buy: the bound require_write_tokens enforces (supabase/migrations/0149_card_writes.sql), since a
+ * stored text is at most 4000 characters. A card that writes reads its most from the economy with this as its `max`, so a setting above it is
+ * refused by the settings' validation and never by the database in a play.
+ */
+export const WRITE_TOKENS_MOST = 2000;
+
 /** The largest whole number Postgres's integer holds, which a price is read as there (0006_cards.sql). */
 export const INT4_MAX = 2_147_483_647;
 
@@ -230,9 +267,24 @@ export function economyOf(settings: Settings, key: string): number {
 export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
 export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
+/**
+ * Whether a card is withheld from this instance: it writes, and the instance says it runs no completion endpoint (`Settings.oldVoice` is
+ * false). Only an explicit false withholds: an instance's settings always hold the key (settings validation requires a boolean), and the
+ * screens' landing check holds no settings at all, where a missing key must not refuse every writing card.
+ */
+export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Partial<Pick<Settings, 'oldVoice'>>): boolean => rules.writes !== undefined && settings.oldVoice === false;
+
+/**
+ * What a decided play is: its price, its checked configuration and message, and, for a card that writes, the tokens the play bought (`writes.tokens`
+ * of the checked configuration, against the settings of this moment). The tokens are the play's own fact: the server writes them with the play
+ * (supabase/migrations/0149_card_writes.sql), and a regeneration and the log read them there, never the settings of a later day.
+ */
+export interface Decided { readonly price: Hundredths; readonly config: unknown; readonly message: string; readonly tokens?: number }
+
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
-function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date, surcharge = false): Verdict<{ price: Hundredths; config: unknown; message: string }> {
-  // The configuration is checked first so the landing can read it, and the landing's refusal is still said first.
+function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date, surcharge = false): Verdict<Decided> {
+  if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
+  // The old voice's refusal is said first, then the landing's, then the configuration's; the configuration is checked first only so the landing can read it.
   const checked = rules.validateConfig(config);
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
   if (!lands.ok) return lands;
@@ -243,7 +295,10 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   const added = surcharge ? effects.reduce((sum, e) => (e.gimmick?.kind === 'price' && isLive(e, now) && e.gimmick.flavors.includes(rules.alignment) ? sum + e.gimmick.add : sum), 0) : 0;
   const price = Math.max(0, rules.playPrice(settings, target, checked.value) + added);
   if (!Number.isSafeInteger(price) || price < 0) throw new Error(`card ${rules.key} priced a play at ${price}`);
-  return ok({ price, config: checked.value, message: said.value });
+  if (!rules.writes) return ok({ price, config: checked.value, message: said.value });
+  const tokens = rules.writes.tokens(checked.value, settings);
+  if (!Number.isSafeInteger(tokens) || tokens < 1) throw new Error(`card ${rules.key} bought ${tokens} tokens`);
+  return ok({ price, config: checked.value, message: said.value, tokens });
 }
 
 /** What a decision reads beyond the play: the time, and each card's name by key, for a ward's refusal. */
@@ -262,7 +317,7 @@ export interface PlayContext {
  * or shorter in the moment before the play lands costs the caster what it would have a moment
  * earlier: the caster pays what they were shown, and nobody else is touched.
  */
-export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<Decided> {
   if (playOf(rules) !== 'cast') return wrongPlay(rules);
   const now = context.now ?? new Date();
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
@@ -274,7 +329,7 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
  * A Use card played on a target. That the target is the player's own post is SQL's to hold, since
  * only SQL reads who wrote it; a ward does not refuse a Use, and a price effect adds nothing to one.
  */
-export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<Decided> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
   return decided(rules, settings, target, effects, config, message, context.now ?? new Date());
 }
@@ -307,6 +362,9 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
+  if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
+  // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
+  if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.

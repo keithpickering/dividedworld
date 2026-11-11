@@ -16,6 +16,7 @@ import { stockLines } from './lines.ts';
 import { nameStyle, nameStyleBrief } from './name-style.ts';
 import { offices } from './persona.ts';
 import { realWorld } from './real-world.ts';
+import { scrubWords } from './scrub-words.ts';
 import { wheelhouse } from './wheelhouse.ts';
 
 export const system: SystemContent = Object.freeze({
@@ -30,6 +31,7 @@ export const system: SystemContent = Object.freeze({
   stockLines,
   feeds,
   realWorld,
+  scrubWords,
   wheelhouse,
   nameStyle,
   nameStyleBrief,

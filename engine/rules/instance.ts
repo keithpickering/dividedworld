@@ -233,6 +233,8 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  oldVoice: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  cardWriteSettleSeconds: whole(0, 'seconds', 600),
   pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
@@ -393,11 +395,12 @@ export function instanceProblems(instance: Instance): string[] {
   const economy = instance.settings?.economy;
   if (economy && typeof economy === 'object' && !Array.isArray(economy)) {
     const check = (who: string, read: EconomyRead) => {
-      const { key, whole = false, min = undefined } = typeof read === 'string' ? { key: read } : read;
+      const { key, whole = false, min = undefined, max = undefined } = typeof read === 'string' ? { key: read } : read;
       const n = economy[key];
       if (typeof n !== 'number' || !Number.isFinite(n)) return `${who} reads economy "${key}", which the settings do not hold`;
       if (whole && !Number.isSafeInteger(n)) return `${who} reads economy "${key}" as ${n}; it must be a whole number`;
       if (min !== undefined && n < min) return `${who} reads economy "${key}" as ${n}; it must be at least ${min}`;
+      if (max !== undefined && n > max) return `${who} reads economy "${key}" as ${n}; it must be at most ${max}`;
       return null;
     };
     for (const c of instance.classes) for (const r of c.reads ?? []) { const why = check(`class "${c.key}"`, r); if (why) out.push(why); }
@@ -458,6 +461,10 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (match !== undefined && play === 'set') out.push(...matchProblems(match, who));
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
+  if (c.writes !== undefined && (typeof c.writes !== 'object' || c.writes === null || typeof c.writes.tokens !== 'function' || typeof c.writes.frame !== 'function')) out.push(`${who} has writes that are not a tokens function and a frame function`);
+  else if (c.writes !== undefined && Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} writes, and a card that writes reaches a post alone`);
+  // A card that writes is a cast card, cast face up: never a set card, which springs later, nor a use card; and decideSet refuses to set it face down.
+  if (c.writes !== undefined && play !== 'cast') out.push(`${who} writes, and only a cast card does: it is cast face up, never set face down`);
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
   else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a cast card has one`);
   return out;
@@ -640,7 +647,13 @@ function systemProblems(instance: Instance): string[] {
   if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   if (typeof sys.announcementsTitle !== 'string' || sys.announcementsTitle.trim() === '') out.push('system.announcementsTitle is empty; the seed makes The System\'s announcements thread from it, and with none no move can land');
-  for (const key of ['feeds', 'realWorld', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  for (const key of ['feeds', 'realWorld', 'scrubWords', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
+  if (Array.isArray(sys.scrubWords)) {
+    for (const w of sys.scrubWords) {
+      if (typeof w !== 'string' || w.trim() === '') out.push('a scrubWords entry is empty; it would hit every text');
+      else if (w !== w.toLowerCase()) out.push(`scrubWords entry "${w}" is not lower case; the scrubber folds the text to lower case, so it could never match`);
+    }
+  }
   // A feed is fetched by the meeting: only over https, so nothing in between reads or rewrites what the Boss is told.
   if (Array.isArray(sys.feeds)) {
     for (const f of sys.feeds) {

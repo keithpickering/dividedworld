@@ -17,6 +17,7 @@ const glue: CardRules = { ...base, key: 'glue', name: 'Test Glue', rarity: 'comm
 const ground: CardRules = { ...cast('ground', 'common'), reaches: ['thread'], lasts: { unit: 'day', count: 1 } };
 const watcher: CardRules = { ...base, key: 'watcher', name: 'Test Watcher', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 
+const writer: CardRules = { ...cast('writer', 'rare'), writes: { tokens: () => 40, frame: ({ post }) => ({ prompt: post.text, stop: ['\n\n'] }) } };
 const settings = {} as Settings;
 const post = { reach: 'post', act: 'p', kind: 'post', length: 10, text: '' } as const satisfies CardTarget;
 const soon = new Date(Date.now() + 86_400_000).toISOString();
@@ -329,6 +330,19 @@ test('a Who with no characters, more than five, or one twice is refused, and non
   assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who([A, B, A], true) }), { ok: false, why: 'name each character once' });
   // An id is the same id in either case: the UUID check accepts both.
   assert.deepEqual(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who(['abcdefab-1111-4111-8111-111111111111', 'ABCDEFAB-1111-4111-8111-111111111111'], true) }), { ok: false, why: 'name each character once' });
+});
+
+test('a card that writes is refused in plain words where the instance runs no old voice, and decided as any card where it does', () => {
+  const sentence = "The old voice isn't running on this forum, so this card can't be played.";
+  assert.deepEqual(decidePlay(writer, { oldVoice: false } as Settings, post, [], {}, ''), { ok: false, why: sentence });
+  assert.equal(decidePlay(writer, { oldVoice: true } as Settings, post, [], {}, '').ok, true);
+  assert.equal(decidePlay(plain, { oldVoice: false } as Settings, post, [], {}, '').ok, true, 'a card that does not write is unaffected');
+  assert.equal(decidePlay(writer, {} as Settings, post, [], {}, '').ok, true, 'settings that say nothing about the old voice do not withhold');
+  assert.deepEqual(decideSet(writer, { oldVoice: false } as Settings, post, [], {}, [writer]), { ok: false, why: sentence });
+  // Where the old voice runs, it is still never set face down: a card that writes is cast face up.
+  assert.deepEqual(decideSet(writer, { oldVoice: true } as Settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  const user: CardRules = { ...writer, key: 'user', play: 'use', lasts: { unit: 'day', count: 1 } };
+  assert.deepEqual(decideUse(user, { oldVoice: false } as Settings, post, [], {}, ''), { ok: false, why: sentence });
 });
 
 const wardOf = (gimmick: object, over: Partial<CardEffect> = {}): CardEffect => ({ card: 'shield', act: 'w', gimmick, ends: soon, ...over } as CardEffect);

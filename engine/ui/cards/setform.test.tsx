@@ -70,8 +70,8 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /** Post 2 is another player's; post 3 is the HUD's own (Pipewrench); post 4 is another of the player's masks' (Mrs. Hooligan). */
-function world(held: Record<string, number> = { blot: 2, spark: 1, snare: 1, pass: 1, dud: 1, shield: 1 }) {
-  const fake = buildWorld({ postMaxLength: 1000 }, instance);
+function world(held: Record<string, number> = { blot: 2, spark: 1, snare: 1, pass: 1, dud: 1, shield: 1 }, played: Instance = instance) {
+  const fake = buildWorld({ postMaxLength: 1000 }, played);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -87,8 +87,8 @@ function world(held: Record<string, number> = { blot: 2, spark: 1, snare: 1, pas
   localStorage.setItem(hudKey(me), pipe);
   return { fake, thread, pipe, hooligan, me };
 }
-async function open(w: ReturnType<typeof world>) {
-  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, settings: { postMaxLength: 1000 } });
+async function open(w: ReturnType<typeof world>, played: Instance = instance) {
+  renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance: played, cards, settings: { postMaxLength: 1000 } });
   await screen.findByRole('article', { name: /^Post 4 /u });
   await screen.findByRole('button', { name: /^Hand, \d+ postcards?/u });
 }
@@ -100,6 +100,24 @@ async function armAndOpen(user: ReturnType<typeof userEvent.setup>, card: string
   await user.click(await within(post(seq)).findByRole('button', { name: markName }));
   return screen.findByRole('dialog');
 }
+
+describe('a card that writes, where the instance runs no old voice', () => {
+  const typewriter: CardRules = { ...blot, key: 'typewriter', name: 'Typewriter', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
+  const castable = async (oldVoice: boolean) => {
+    const user = userEvent.setup();
+    const played: Instance = { ...instance, cards: [...instance.cards, typewriter], settings: { ...instance.settings, oldVoice } };
+    const w = world({ blot: 2 }, played);
+    await open(w, played);
+    const dialog = await armAndOpen(user, 'Blot', 'Play Blot on post 2', 2);
+    return within(within(dialog).getByRole('list', { name: 'Castable cards' })).getAllByRole('listitem').map((li) => li.textContent);
+  };
+  test('is among the castable cards a form is handed where the old voice runs', async () => {
+    expect(await castable(true)).toContain('Typewriter');
+  });
+  test('is not among them where it does not', async () => {
+    expect(await castable(false)).not.toContain('Typewriter');
+  });
+});
 
 describe('a Move on one\'s own post', () => {
   test('offers Play it now (chosen) and Set face down, labeled radios, on its own post and not on another\'s', async () => {
