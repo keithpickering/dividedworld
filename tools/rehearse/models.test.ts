@@ -206,6 +206,7 @@ test('stub holds a schema to the provider\'s rules: SchemaRefused, its failed ro
   assert.equal(s.rows[0]!.outcome, 'failed');
   assert.equal(s.rows[0]!.predicate, 'keyword(maxItems)');
   assert.equal(s.rows[0]!.costMicrodollars, 0);
+  assert.deepEqual([s.rows[0]!.provider, s.rows[0]!.model], ['stub', 'stub'], 'stub mode names stub');
   for (const k of noUsage) assert.equal(s.rows[0]![k], null, `${k}: no usage`);
   assert.deepEqual(s.live.calls, []);
 });
@@ -225,6 +226,26 @@ test('a cassette does not hide a refused schema: a held call whose schema is now
     assert.deepEqual(s.live.calls, [], mode);
     assert.deepEqual(s.rows.map((r) => [r.outcome, r.predicate]), [['failed', 'keyword(maxItems)']], mode);
     assert.equal(s.rows[0]!.costMicrodollars, 0, mode);
+    assert.deepEqual([s.rows[0]!.provider, s.rows[0]!.model], ['anthropic', 'big-model'], `${mode}: the row names where the call would have gone`);
     for (const k of noUsage) assert.equal(s.rows[0]![k], null, `${mode}: ${k}: no usage`);
   }
+});
+
+test('a refused schema in record mode with an empty cassette never reaches the live adapter and writes one failed row naming the tier\'s provider and model', async () => {
+  const d = dir();
+  const s = setup('record', d);
+  await assert.rejects(() => s.m.chat({ ...refused, tier: 'light' }), (e: unknown) => e instanceof SchemaRefused);
+  assert.deepEqual(s.live.calls, []);
+  assert.equal(s.rows.length, 1);
+  assert.deepEqual([s.rows[0]!.outcome, s.rows[0]!.provider, s.rows[0]!.model, s.rows[0]!.costMicrodollars], ['failed', 'anthropic', 'small-model', 0]);
+  assert.equal(readdirSync(d).length, 0, 'nothing is saved');
+  assert.equal(s.made.cap.liveMicrodollars(), 0);
+});
+
+test('a completion request is never schema-checked: it goes live in record mode and fails as production does in stub', async () => {
+  const live = setup('record', dir());
+  assert.equal((await live.m.complete({ ...completion, schema: refused.schema } as never)).value, 'text');
+  assert.deepEqual(live.live.calls, ['chatter']);
+  const stub = setup('stub', dir());
+  await assert.rejects(() => stub.m.complete({ ...completion, schema: refused.schema } as never), (e: unknown) => !(e instanceof SchemaRefused) && e instanceof Error && e.message === 'SYSTEM_COMPLETIONS_URL is not set');
 });

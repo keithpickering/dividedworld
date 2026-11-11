@@ -129,7 +129,9 @@ export function rehearsalModels(o: RehearsalModelsOptions): RehearsalModels {
         const problems = schemaProblems((request as ChatRequest).schema);
         if (problems.length > 0) {
           const refused = new SchemaRefused(problems);
-          await record(emptyRow(request.duty, request, { outcome: 'failed', predicate: refused.predicate }));
+          // Named as the real factory names it (provider 'anthropic', the tier's model), so the ledger reads the same in every mode but stub.
+          const where = o.mode === 'stub' ? { provider: 'stub', model: 'stub' } : { provider: 'anthropic', model };
+          await record(emptyRow(request.duty, request, { ...where, outcome: 'failed', predicate: refused.predicate }));
           keep({ replayed: false, error: { message: refused.message, predicate: refused.predicate }, trims: [], cost: 0 });
           throw refused;
         }

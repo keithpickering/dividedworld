@@ -1,9 +1,11 @@
--- apply_meeting (0140), writing a meeting's two parts only when they came (docs/plans/2026-11-11-provider-schemas-design.md, section 4: a part that fails leaves its fields as
--- they were). The meeting is three calls: the Boss's answer, its memory and its profile. A part that failed arrives as no `memory` or no `profile` in the payload, and then
--- the Boss's staff_memory row, or its staff_profiles row, is not written for this meeting. Both tables are append-only, so "as it was" is the last row: staff_memory_latest
--- and the newest staff_profiles row still say what they said. The staff_memory insert runs only when `memory` is an object, and the staff_profiles insert only when
--- `profile` is. The bank, the moves, the orders and the patrols are applied whichever part is missing. Everything else is as 0140 wrote it: signature, security,
--- search_path and grants.
+-- apply_meeting as supabase/migrations/0140_machine_moves.sql wrote it, writing a meeting's two parts only when they came
+-- (docs/plans/2026-11-11-provider-schemas-design.md, section 4: a part that fails leaves its fields as they were). The meeting
+-- is three calls: the Boss's answer, its memory and its profile. A part that failed arrives as no `memory` or no `profile` in
+-- the payload, and then the Boss's staff_memory row, or its staff_profiles row, is not written for this meeting. Both tables
+-- are append-only, so "as it was" is the last row: staff_memory_latest and the newest staff_profiles row still say what they
+-- said. The staff_memory insert runs only when `memory` is an object, and the staff_profiles insert only when `profile` is.
+-- The bank, the moves, the orders and the patrols are applied whichever part is missing. Everything else is as 0140 wrote it:
+-- signature, security, search_path and grants.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -174,11 +176,10 @@ begin
     at_order := at_order - 1;
   end loop;
 
-  -- Only debuted public characters are named: the engine checks this too, and the database keeps it whatever the caller sent.
+  -- Only debuted public characters are named: the engine checks this too, and the database keeps it whatever the caller sent. The
+  -- memory is written only when it came.
   if jsonb_typeof(memory) = 'object' then
     memory := jsonb_set(jsonb_set(memory, '{opinions}', public_entries(memory -> 'opinions')), '{grudges}', public_entries(memory -> 'grudges'));
-  end if;
-  if jsonb_typeof(memory) = 'object' then
     insert into staff_memory (staff, meeting, body) values (boss, apply_meeting.meeting, memory);
   end if;
   if jsonb_typeof(payload -> 'profile') = 'object' then

@@ -4,6 +4,16 @@
 -- The meeting is three calls (the Boss's answer, its memory and its profile), and a part that failed arrives as no `memory` or no `profile` in the payload. apply_meeting then
 -- writes no staff_memory row and no staff_profiles row for the Boss: both tables are append-only, so "as it was" is the last row, which staff_memory_latest and the newest
 -- staff_profiles row still say. The bank and the moves are applied whichever part is missing.
+--
+-- 1. Both parts are written, and the move and the bank land.
+--    (Poison: a guard that drops one part when the other is present. The test is red on "a meeting with both parts wrote no memory" or "no profile".)
+-- 2. No memory: no staff_memory row for the meeting, the latest memory unchanged, the profile, the move and the bank landing.
+--    (Poison: the memory insert unguarded. The test is red on "a meeting without a memory wrote one".)
+-- 3. No profile: no staff_profiles row for the meeting, the newest profile unchanged, the memory, the move and the bank landing.
+--    (Poison: the profile insert unguarded. The test is red on "a meeting without a profile wrote one".)
+-- 4. Neither, each sent as a value that is not an object: the memory a JSON string, the profile a JSON string. Nothing of either is written.
+--    (Poison: the profile guard loosened to `payload -> 'profile' is not null`. The test is red on "a meeting with neither part wrote a row", since the
+--    JSON string passes a null check and the insert runs.)
 
 create function pg_temp.memory(hobby text) returns jsonb language sql as $$
   select jsonb_build_object('hobby', jsonb_build_object('name', hobby, 'since', 'today', 'from', 'a friend'), 'opinions', '[]'::jsonb, 'grudges', '[]'::jsonb,
@@ -70,9 +80,9 @@ begin
   if (select count(*) from queued_moves where meeting = m3) is distinct from 1::bigint then raise exception 'no profile: the move was not queued'; end if;
   if (select balance from move_bank where staff = 'mp-boss') is distinct from 5::numeric then raise exception 'no profile: the bank was not debited'; end if;
 
-  -- Neither (a part that is not an object counts as missing too): nothing of either is written, the rest lands.
+  -- Neither (a part that is not an object, a JSON string for both, counts as missing too): nothing of either is written, the rest lands.
   m4 := (begin_meeting('2031-03-04T09:00:00Z') ->> 'meeting')::bigint;
-  r := apply_meeting(m4, pg_temp.payload(general, 'Fourth Name', null, null) || jsonb_build_object('memory', 'nope', 'profile', null));
+  r := apply_meeting(m4, pg_temp.payload(general, 'Fourth Name', null, null) || jsonb_build_object('memory', 'nope', 'profile', 'nope'));
   if r ->> 'status' is distinct from 'applied' or (r ->> 'queued')::integer is distinct from 1 then raise exception 'neither: %', r; end if;
   if exists (select 1 from staff_memory where meeting = m4) or exists (select 1 from staff_profiles where meeting = m4) then raise exception 'a meeting with neither part wrote a row'; end if;
   if staff_memory_latest('mp-boss') -> 'hobby' ->> 'name' is distinct from 'chess' then raise exception 'neither: the latest memory moved'; end if;
