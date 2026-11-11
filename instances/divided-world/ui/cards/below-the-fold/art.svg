@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 840" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<defs>
+<linearGradient id="shade" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#14030a" stop-opacity="0"/>
+<stop offset="1" stop-color="#14030a" stop-opacity=".45"/>
+</linearGradient>
+</defs>
+<!-- the sheet's tucked half, behind the fold -->
+<rect x="90" y="360" width="360" height="300" rx="10" fill="#d9c9d1"/>
+<rect x="90" y="360" width="360" height="300" rx="10" fill="url(#shade)"/>
+<!-- the top strip, with its lines of text -->
+<rect x="90" y="120" width="360" height="240" rx="10" fill="#fff4f8" stroke="#14030a" stroke-width="5"/>
+<path d="M130 175 H410 M130 215 H380 M130 255 H410 M130 295 H340" stroke="#14030a" stroke-width="12" stroke-linecap="round"/>
+<!-- the fold itself -->
+<path d="M90 360 H450" stroke="#14030a" stroke-width="7"/>
+<path d="M90 360 L450 360 L450 392 L90 392 Z" fill="#ffd3e2" stroke="#14030a" stroke-width="5"/>
+<!-- the disclosure triangle in Salty's pink -->
+<path d="M126 366 L156 376 L126 386 Z" fill="#ff3d7f" stroke="#14030a" stroke-width="4" stroke-linejoin="round"/>
+<path d="M190 376 H300" stroke="#14030a" stroke-width="8" stroke-linecap="round" opacity=".55"/>
+<path d="M90 392 V640 M450 392 V640" stroke="#14030a" stroke-width="5"/>
+<path d="M90 660 H450" stroke="#14030a" stroke-width="5"/>
+</svg>
