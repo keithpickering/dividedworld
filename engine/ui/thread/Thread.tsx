@@ -233,11 +233,21 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   feedRef.current = feed;
 
   /* A page read from the server (a next page, a gap, a move to a page not shown): one request, on the meter. */
+  /* How many times the catch-up has been asked to run by a join (both channels joined), and the way to ask it for one more run. */
+  const joins = useRef(0);
+  const askCatchUp = useRef<() => void>(() => {});
+  /* The ask is made after the render that follows the read, once the caller has put the page in the feed and `feedRef` shows the range as it now stands. */
+  const [lateRead, setLateRead] = useState(0);
   const readPage = useCallback(async (at: { readonly page?: number | null; readonly seq?: number | null }): Promise<ThreadPage> => {
     const ticket = ++tickets.current;
+    const noted = joins.current;
     const page = await track(api.threadPage(thread, at, P, effectList));
     if (!page) throw new Error('the thread could not be read');
     absorb(page, ticket);
+    /* A read the server answered before a join and that landed after it may have run after that join's catch-up finished, so its page was read
+       before the channel heard anything and no run reads it again: ask for one more, through the same one-at-a-time path. A read with no join
+       between its asking and its answer, or answered before the first join, asks for nothing. */
+    if (joins.current !== noted) setLateRead((n) => n + 1);
     return page;
   }, [api, thread, P, effectList, track, absorb]);
 
@@ -489,6 +499,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const joinedAt = useCallback((which: 'thread' | 'reach') => {
     joined.current[which] = true;
     if (!joined.current.thread || !joined.current.reach || !mounted.current) return;
+    joins.current++;
+    askCatchUp.current();
+  }, []);
+  askCatchUp.current = () => {
+    if (!mounted.current) return;
     const run = running.current;
     if (run.going) { run.again = true; return; }
     run.going = true;
@@ -500,7 +515,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         } while (run.again && mounted.current);
       } finally { run.going = false; }
     })();
-  }, []);
+  };
+  useEffect(() => { if (lateRead > 0) askCatchUp.current(); }, [lateRead]);
   useEffect(() => () => { for (const wake of [...sleeping.current]) wake(); }, []);
 
   /* ----------------------------------------------------------------------- live ---- */

@@ -2035,6 +2035,43 @@ describe('a thread drawn from its document (the forum-load plan, Task 13)', () =
       expect(await within(post(22)).findByRole('button', { name: mark })).toBeInTheDocument();
     });
 
+    test('a page read before the join and answered after its catch-up run has finished is caught up by one more run', async () => {
+      const w = world(45);
+      w.fake.broadcast.holdJoins();
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+      const onContinue = gate();
+      /* The continue's read (the first) is answered before the play and given after the run; the catch-up's own read of page 1 is not held. */
+      gated(w.fake, [onContinue.promise]);
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=1`, boot });
+      await article(1);
+      await userEvent.click(screen.getByRole('link', { name: 'Continue to page 2' }));
+      await waitFor(() => expect(vi.mocked(w.fake.threadPage)).toHaveBeenCalledTimes(1));
+      await act(async () => { await pause(10); });
+      w.fake.seed.card(w.spritey, w.ids[21]!, 'whoops', { message: 'oops' });
+      await act(async () => { w.fake.broadcast.join(); await pause(50); });
+      /* The run read page 1 only (the drawn range then) and is over. */
+      expect(vi.mocked(w.fake.threadPage)).toHaveBeenCalledTimes(2);
+      await act(async () => { onContinue.open(); await pause(50); });
+      await article(21);
+      expect(await within(post(22)).findByRole('button', { name: mark })).toBeInTheDocument();
+    });
+
+    test('a continue with no join in between asks for no catch-up read', async () => {
+      const w = world(45);
+      const boot = await w.fake.boot();
+      const doc = (await w.fake.threadPage(w.thread, { page: 1 }, 20, []))!;
+      const spy = vi.spyOn(w.fake, 'threadPage');
+      renderIn(w.fake, <ThreadScreen thread={w.thread} doc={doc} />, { path: `/t/${w.thread}?page=1`, boot });
+      await article(1);
+      await act(async () => { await pause(50); });
+      const start = spy.mock.calls.length;
+      await userEvent.click(screen.getByRole('link', { name: 'Continue to page 2' }));
+      await article(21);
+      await act(async () => { await pause(50); });
+      expect(spy.mock.calls.length - start).toBe(1);
+    });
+
     test('it moves nothing the reader is looking at: no scroll, no focus change, no announcement of a post already announced', async () => {
       const w = world(3);
       await landed(w, { page: 1 }, [], () => { w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'oops' }); });
