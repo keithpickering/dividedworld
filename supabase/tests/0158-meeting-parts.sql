@@ -8,7 +8,7 @@
 -- 1. Both parts are written, and the move and the bank land.
 --    (Poison: a guard that drops one part when the other is present. The test is red on "a meeting with both parts wrote no memory" or "no profile".)
 -- 2. No memory: no staff_memory row for the meeting, the latest memory unchanged, the profile, the move and the bank landing.
---    (Poison: the memory insert unguarded. The test is red on "a meeting without a memory wrote one".)
+--    (Poison: the memory insert unguarded. The test is red on the not-null violation of staff_memory.body, as the first red run showed.)
 -- 3. No profile: no staff_profiles row for the meeting, the newest profile unchanged, the memory, the move and the bank landing.
 --    (Poison: the profile insert unguarded. The test is red on "a meeting without a profile wrote one".)
 -- 4. Neither, each sent as a value that is not an object: the memory a JSON string, the profile a JSON string. Nothing of either is written.
