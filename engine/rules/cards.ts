@@ -9,6 +9,7 @@
  * function re-checks what it can.
  */
 import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
+import { QUADRANTS } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleText } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
@@ -68,19 +69,23 @@ export interface CardEffect {
   readonly faceDown?: true;
   /** Which reach the effect is on: the target's own, or one above it (effectsOnTarget). A post's unless it says. */
   readonly reach?: Reach;
+  /** The quadrant a live skim play names (its checked configuration's `quadrant`), carried so a second play of the card on the post can be refused for the same one (quadrantFree). */
+  readonly quadrant?: Quadrant;
 }
 
 /**
  * What a use card does while it is up: one of a fixed list the engine holds, each card picking one and setting its numbers.
  * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn raises what reactions earn the
- * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it.
+ * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it;
+ * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
   | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number }
-  | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths };
+  | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
+  | { readonly kind: 'ride'; readonly share: number };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride']);
 
 /** What a cast set card matches, besides a named card (`catches`): the printed flavors, and the rarity it takes up to. Pepperoni is its own flavor. */
 export interface Match {
@@ -192,12 +197,25 @@ export interface CardRules<Config = unknown> {
    * A set card's trap: what springs it. What a spring does is the engine's per trigger: a cast trap catches the card it names (`catches`) or
    * the cards its `match` covers, and takes it; a visit trap ends the visit. Every set card has one. A cast card has none: set face down,
    * it springs on a quote, and the quote lands it. A cast trap names its card (`catches`) or has a `match`, never both.
+   *
+   * With an `outcome` the spring is a ride and not a catch: the cast that springs the trap lands as usual, and the setter is paid `share` of a
+   * vote for each vote that cast draws in the quadrant the set named (its checked configuration's `quadrant`). Only a trap that names its card has one.
    */
-  readonly trap?: { readonly trigger: Trigger; readonly match?: Match };
-  /** A cast trap's catch: the key of the card it waits for, from its checked configuration. Only a set card that springs on a cast and has no `match` has it. */
+  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: { readonly kind: 'ride'; readonly share: number } };
+  /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap names its card here too). Only a set card that springs on a cast and has no `match` has it. */
   catches?(config: Config): string;
   /** A cast card's set phrase: the phrase its landing needs, found in the quoting post's own words, from its checked configuration. Only a cast card has it. */
   setPhrase?(config: Config): string;
+  /**
+   * A cast card that reaches a post alone and has a `lasts`: its play pays its caster `share` of a vote for each vote its target post draws in the
+   * quadrant the play names (its checked configuration's `quadrant`, one of the four). The settlement pays it; nothing here reads who reacted.
+   */
+  readonly skim?: { readonly share: number };
+  /**
+   * A cast card that reaches a character alone: its play names a class (its checked configuration's `class`, a string) the character is scored as
+   * for one settlement window. Whether the window can be named is the server's, which reads the settlements.
+   */
+  readonly scoresAs?: true;
   /** A use card's effect while it is up. Every use card has one, and nothing else does. */
   readonly gimmick?: GimmickEffect;
   /** Where it can land; a post unless it says (`['post']`). A reach beyond a post takes at least its `reachRarity`. */
@@ -281,11 +299,22 @@ export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Partial<Pic
  */
 export interface Decided { readonly price: Hundredths; readonly config: unknown; readonly message: string; readonly tokens?: number }
 
+const namedQuadrant = (v: unknown): boolean => QUADRANTS.includes((v as { quadrant?: never } | null)?.quadrant as never);
+
+/** Throws where a card's checked configuration lacks what its kind names: a skim card's quadrant, a scored-as card's class. */
+function namedProblem(rules: CardRules, value: unknown): void {
+  if (rules.skim !== undefined && !namedQuadrant(value)) throw new Error(`card ${rules.key} has a skim and its checked configuration names no quadrant`);
+  const named = (value as { class?: unknown } | null)?.class;
+  if (rules.scoresAs !== undefined && (typeof named !== 'string' || named === '')) throw new Error(`card ${rules.key} scores as a class and its checked configuration names none`);
+}
+
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
 function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date, surcharge = false): Verdict<Decided> {
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // The old voice's refusal is said first, then the landing's, then the configuration's; the configuration is checked first only so the landing can read it.
   const checked = rules.validateConfig(config);
+  // What a play names is the card's to check: a validator that lets a skim card's quadrant or a scored-as card's class through unset is a fault in the card, never the caster's.
+  if (checked.ok) namedProblem(rules, checked.value);
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
   if (!lands.ok) return lands;
   if (!checked.ok) return checked;
@@ -373,6 +402,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (!lands.ok) return lands;
   const checked = rules.validateConfig(config);
   if (!checked.ok) return checked;
+  // A ride trap pays on the quadrant the set names, so a card whose validator lets it through unset is at fault.
+  if (rules.trap?.outcome !== undefined && !namedQuadrant(checked.value)) throw new Error(`card ${rules.key} has a ride and its checked configuration names no quadrant`);
   let catches: string | undefined;
   if (rules.catches) {
     catches = rules.catches(checked.value);
@@ -495,6 +526,15 @@ export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches'>, tar
     const where = target.reach === 'post' ? 'this post' : `this ${target.reach}`;
     return refuse(stack === 1 ? `${where} already carries that card` : `${where} already carries ${stack} of that card, the most it takes`);
   }
+  return ok(undefined);
+}
+
+/**
+ * Whether a skim card may be played on this post for a quadrant: refused where a live effect of the same card on the post itself (not one above
+ * it) names the same quadrant. A skim card's `canApply` calls this after `landsOn`, when it is given a configuration; the server holds the same.
+ */
+export function quadrantFree(rules: Pick<CardRules, 'key'>, target: CardTarget, effects: readonly CardEffect[], quadrant: Quadrant, now: Date = new Date()): Verdict {
+  if (effects.some((e) => e.card === rules.key && (e.reach ?? 'post') === target.reach && isLive(e, now) && e.quadrant === quadrant)) return refuse('this post already carries that card for that quadrant');
   return ok(undefined);
 }
 

@@ -15,6 +15,7 @@ import { classes } from './index.ts';
 import { instance } from '../index.ts';
 import { defaults as settings } from '../settings.ts';
 import { estimateForOwner, settle } from '../../../engine/rules/settle.ts';
+import { economyOf } from '../../../engine/rules/cards.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import type {
   ClassInput, ClassRules, HeldVote, LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing,
@@ -601,7 +602,8 @@ test('settled whole: a Pepperoni card drawing heat that outdraws the post pays a
   assert.equal(paid(settle(cast('fa', 'facepalm', true), pepWorld), 'fa', 'face.liftedAPost'), 0, 'groaned at, it reads as Salty: no lift');
 });
 
-/* A spring settles on what sprang it (`by`): the cast it caught, or a staff visit. */
+/* A Reversal's spring settles on what sprang it (`by`): the cast it caught, or a staff visit. A face-down Move's spring stays on its own post (#420). */
+const reversal = (key: string, alignment: 'salty' | 'sweet', on: 'cast' | 'visit') => ({ ...world.cards[0]!, key, name: key, alignment, play: 'set' as const, trap: { trigger: { on } } });
 test('settled whole: a Salty spring catching another player\'s cast that it outdraws pays a Heel; catching its own other mask\'s cast pays nothing', () => {
   const b = board();
   const spring = (castBy: string): SettlementInput => ({
@@ -610,17 +612,35 @@ test('settled whole: a Salty spring catching another player\'s cast that it outd
     acts: [...b.acts,
       { id: 'hp', character: 'he', kind: 'post', at: 5 * H, thread: 't' },
       { id: 'cast', character: castBy, kind: 'card', at: 6 * H, thread: 't', target: 'hp', card: 'whoops' },
-      { id: 'sp', character: 'he', kind: 'spring', at: 7 * H, thread: 't', target: 'hp', card: 'whoops', by: 'cast' }],
+      { id: 'sp', character: 'he', kind: 'spring', at: 7 * H, thread: 't', target: 'hp', card: 'counter', by: 'cast' }],
     reactions: [...b.reactions, { act: 'sp', player: 'pl', character: 'lu', kind: 'tomato', at: 8 * H }, { act: 'sp', player: 'pj', character: 'ja', kind: 'tomato', at: 8 * H }],
   });
   const stole = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.character === 'he' && e.reason === 'heel.stoleThunder').length;
-  assert.equal(stole(settle(spring('fa'), world)), 1, 'another player\'s cast, outdrawn by the spring');
-  assert.equal(stole(settle(spring('he2'), world)), 0, 'the setter\'s own other mask\'s cast');
+  const counterWorld = { ...world, cards: [...world.cards, reversal('counter', 'salty', 'cast')] };
+  assert.equal(stole(settle(spring('fa'), counterWorld)), 1, 'another player\'s cast, outdrawn by the spring');
+  assert.equal(stole(settle(spring('he2'), counterWorld)), 0, 'the setter\'s own other mask\'s cast');
+});
+test('settled whole: a face-down Salty Move that lands by a Jabroni\'s quote sells one L, and its spring steals no thunder', () => {
+  const b = board();
+  const input: SettlementInput = {
+    ...b,
+    acts: [...b.acts,
+      { id: 'hp', character: 'he', kind: 'post', at: 5 * H, thread: 't' },
+      { id: 'jq', character: 'ja', kind: 'post', at: 6 * H, thread: 't' },
+      // The quote springs the back on the Heel's own post, and the spring lands the card on the quoting post.
+      { id: 'sp', character: 'he', kind: 'spring', at: 6 * H, thread: 't', target: 'hp', card: 'whoops', by: 'jq' },
+      { id: 'laid', character: 'he', kind: 'card', at: 6 * H, thread: 't', target: 'jq', card: 'whoops' }],
+    reactions: [...b.reactions, { act: 'sp', player: 'pl', character: 'lu', kind: 'tomato', at: 8 * H }, { act: 'sp', player: 'pf', character: 'fa', kind: 'tomato', at: 8 * H }],
+  };
+  const entries = (r: { entries: readonly { character: string; reason: string; amount: number }[] }, who: string, reason: string) => r.entries.filter((e) => e.character === who && e.reason === reason);
+  const r = settle(input, world);
+  assert.equal(entries(r, 'ja', 'jabroni.soldTheL').reduce((t, e) => t + e.amount, 0), economyOf(settings, 'jabroni.saltyLanded'), 'one Salty card landed on the Jabroni, not the card and its spring');
+  assert.equal(entries(r, 'he', 'heel.stoleThunder').length, 0, 'the spring is on the Heel\'s own post, so its reactions outdraw nothing of the Jabroni\'s');
+  assert.equal(entries(estimateForOwner(input, world, 'pj'), 'ja', 'jabroni.soldTheL').reduce((t, e) => t + e.amount, 0), economyOf(settings, 'jabroni.saltyLanded'), 'the estimate counts one landing too');
 });
 test('settled whole: a Sweet spring on a staff visit that draws hype pays a Face, and its estimate values the visit\'s reactions', () => {
   const b = board();
-  const sweet = { key: 'sweetie', name: 'Sweetie', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
-  const sweetWorld = { ...world, cards: [...world.cards, sweet] };
+  const sweetWorld = { ...world, cards: [...world.cards, reversal('sweetie', 'sweet', 'visit')] };
   const input: SettlementInput = {
     ...b,
     acts: [...b.acts, { id: 'fp', character: 'fa', kind: 'post', at: 5 * H, thread: 't' }, { id: 'sp', character: 'fa', kind: 'spring', at: 6 * H, thread: 't', target: 'fp', card: 'sweetie', by: 'visit1' }],

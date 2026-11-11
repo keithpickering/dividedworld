@@ -1,7 +1,7 @@
 /**
  * What a player does with the cosmetics the service alone may write, as a pure module (the cosmetics design; the plan, Task 6): saving what a character wears
- * (set_outfit, supabase/migrations/0150_gear.sql), choosing which of its trophies its postbit shows (show_trophies, 0151) and rolling a Random Event for it
- * (random_event, 0152). Each is a SQL function that only the service role may call and that takes `who`, the account, as an argument, so none could be called
+ * (set_outfit, supabase/migrations/0153_gear.sql), choosing which of its trophies its postbit shows (show_trophies, 0154) and rolling a Random Event for it
+ * (random_event, 0155). Each is a SQL function that only the service role may call and that takes `who`, the account, as an argument, so none could be called
  * from a browser without being told whose account to act for. This reads that account from the caller's own session (whoami()), as avatar and act do, and calls the
  * function as the service for it; played_by in each function refuses a character the account does not play, in the same words whoever owns it.
  *

@@ -156,13 +156,26 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const springId = act && typeof act.payload.spring === 'string' ? act.payload.spring : null;
   const spring = springId ? ctx.acts.get(springId) : undefined;
   const caughtSet = act && typeof act.payload.caught === 'string' ? act.payload.caught : null;
-  const set = ctx.acts.get(caughtSet ?? (typeof spring?.payload.set === 'string' ? spring.payload.set : ''));
+  /* A cast that rode a ride back names the set whose spring it sprang (`rode`); the cast landed as usual, so it is no catch. */
+  const rodeSet = act && typeof act.payload.rode === 'string' ? act.payload.rode : null;
+  const set = ctx.acts.get(caughtSet ?? rodeSet ?? (typeof spring?.payload.set === 'string' ? spring.payload.set : ''));
   const setterId = spring?.character ?? set?.character ?? null;
   const setter = setterId === null ? null : ctx.names?.get(setterId) ?? null;
   const ended = spring ? Date.parse(spring.createdAt) : act ? Date.parse(act.createdAt) : NaN;
   const span = set && Number.isFinite(ended) ? spanWords(ended - Date.parse(set.createdAt)) : null;
   const laid = cardName(act?.payload.card, ctx);
   const setterStaff = setterId !== null && ctx.staff?.has(setterId) === true;
+  if (rodeSet !== null && act) {
+    /* The setter's card is public once its spring is, and the spring is in hand only where it was read: it is named only then. */
+    const sprung = [...ctx.acts.values()].find((a) => a.kind === 'spring' && a.payload.did === 'rode' && a.payload.by === act.id);
+    const card = cardName(sprung?.payload.card, ctx);
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'rode', setter, card, laid, span, setterStaff });
+    return {
+      line: own ? [own.line] : [`${setter ? `${setter}'s` : 'A'} face-down ${card ?? 'card'} was waiting for your ${laid ?? 'card'}`],
+      detail: own ? [own.detail] : sentences([`${laid ? `Your ${laid}` : 'Your card'} landed as usual, and you keep everything it earns.`], inTitle(row)),
+      ways: postWay(act.targetActId ? ctx.acts.get(act.targetActId) : undefined, row, ctx), who,
+    };
+  }
   if (caughtSet !== null) {
     const post = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
     const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'caught', setter, card: laid, laid: null, span, setterStaff });
@@ -231,10 +244,11 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       const card = cardName(act?.payload.card, ctx);
       /* A spring written before the face-down Moves has no `did`: its words stay as they were. */
       const did = act?.kind === 'spring' ? act.payload.did : undefined;
-      if (did === 'landed' || did === 'caught' || did === 'ended') {
+      if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode') {
         const m = springConditions(act?.payload ?? {});
         const quote = `A quote${m.passage ? ` of ${shortQuote(m.passage)}` : ''}${m.says ? ` saying ${shortQuote(m.says)}` : ''}`;
-        const set = did === 'landed' ? `${quote} set it off, and it landed.` : did === 'caught' ? 'A cast of the card it named set it off, and the card is now in your hand.' : 'A Mod Bot\'s visit set it off, and it ended the visit.';
+        const set = did === 'landed' ? `${quote} set it off, and it landed.` : did === 'caught' ? 'A cast of the card it named set it off, and the card is now in your hand.'
+          : did === 'rode' ? 'A cast of the card it named set it off. The cast landed, and its reactions of the kind you named pay you at each settlement.' : 'A Mod Bot\'s visit set it off, and it ended the visit.';
         return { line: [card ? `Your face-down ${card} sprang` : 'Your face-down card sprang'], detail: sentences([set], inTitle(row)), ways: postWay(post, row, ctx), who };
       }
       return { line: ['Your trap sprang'], detail: sentences(card ? [`The trap was ${card}, in `, ...(row.title ? [{ em: row.title }] : ['a thread']), '.'] : inTitle(row)), ways: postWay(post ?? act, row, ctx), who };

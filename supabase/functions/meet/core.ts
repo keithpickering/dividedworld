@@ -271,7 +271,7 @@ export async function runMeeting(
     const groupOf = new Map(
       (shown.length ? await db.rpc<{ id: string; group: string }[]>('character_groups', { ids: shown.map((c) => c.id) }) : []).map((g) => [g.id.toLowerCase(), g.group]),
     );
-    // The Boss's trophies (0153): the instance's list with each belt's holder now, public facts of a trophy case; no wardrobe and nobody's account.
+    // The Boss's trophies (0156): the instance's list with each belt's holder now, public facts of a trophy case; no wardrobe and nobody's account.
     const bossList = (await db.rpc<{ key: string; name: string; belt: boolean; holder: { id: string; name: string } | null }[]>('boss_trophies', {})).map((t) => ({
       key: t.key, name: t.name, belt: t.belt, holder: t.holder ? t.holder.id.toLowerCase() : null, holderName: t.holder ? t.holder.name : null,
     }));

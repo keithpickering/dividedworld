@@ -1,5 +1,5 @@
 /**
- * End to end: rolling a Random Event is serialized per account (supabase/migrations/0152_random_events.sql random_event; the cosmetics plan, Task 4's review focus).
+ * End to end: rolling a Random Event is serialized per account (supabase/migrations/0155_random_events.sql random_event; the cosmetics plan, Task 4's review focus).
  * Two connections to the scratch database, each holding a transaction open: one account with two masks (so the mask's own row lock cannot serialize them) and a roll window of a day. A rolls through one mask and holds its
  * transaction; B's roll through the other must wait on the roll row (it neither sees A's uncommitted stamp nor rolls beside it), and once A commits, B reads the
  * stamp and answers null. Exactly one event is written, and the account has one roll row, so the first-ever roll cannot be taken twice. Run by tools/test-sql.mjs.

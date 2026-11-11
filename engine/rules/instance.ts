@@ -408,7 +408,7 @@ function cosmeticsProblems(instance: Instance): string[] {
   if (typeof catalog !== 'object' || catalog === null || !Array.isArray(catalog.kinds)) out.push('the instance has no trophy catalog');
   else {
     for (const k of duplicates(catalog.kinds, (t) => t.key)) out.push(`trophy key "${k}" is used twice`);
-    // What trophy_kinds holds (supabase/migrations/0151_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
+    // What trophy_kinds holds (supabase/migrations/0154_trophies.sql): a key of lower-case words, never the admin page's `made-` prefix, a short name, short words.
     for (const t of catalog.kinds) {
       if (typeof t.key === 'string' && t.key.startsWith('made-')) out.push(`trophy key "${t.key}" begins "made-", which is the admin page's`);
       else if (typeof t.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(t.key)) out.push(`trophy key "${String(t.key)}" is not lower-case words (letters, digits and hyphens, beginning with a letter)`);
@@ -541,7 +541,8 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
     if (outside.length) out.push(`${who} is a use card and reaches ${outside.map((r) => (r === 'board' ? 'a board' : JSON.stringify(r))).join(' and ')}; a use card reaches a post, a character or a thread`);
   }
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
-  if (c.lasts !== undefined && play !== 'use' && !beyond) out.push(`${who} has a time up (lasts), and only a use card or a card reaching beyond a post does`);
+  const postAlone = !beyond;
+  if (c.lasts !== undefined && play !== 'use' && !beyond && c.skim === undefined) out.push(`${who} has a time up (lasts), and only a use card or a card reaching beyond a post does`);
   if (c.lasts !== undefined && !isSpan(c.lasts, LASTS_UNITS)) out.push(`${who} lasts ${JSON.stringify(c.lasts)}; it must be a span: a unit of hour, day, week or month and a whole count from 1 to 1000`);
   const on = (c.trap?.trigger as { on?: unknown } | undefined)?.on;
   if (c.trap !== undefined && !TRIGGERS.includes(on as never)) out.push(`${who} springs on ${on === undefined || on === null ? 'nothing' : JSON.stringify(on)}; a set card springs on ${TRIGGERS.join(' or ')}`);
@@ -552,12 +553,55 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   else if (match !== undefined && play === 'set') out.push(...matchProblems(match, who));
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
+  if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
+  if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on, match));
+  if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
+  if (c.scoresAs !== undefined) {
+    if (c.scoresAs !== true) out.push(`${who} has scoresAs ${JSON.stringify(c.scoresAs)}; scoresAs is true or left out`);
+    else {
+      if (play !== 'cast') out.push(`${who} scores as a class, and only a cast card does`);
+      if (!(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character')) out.push(`${who} scores as a class, and a card that does reaches a character alone`);
+    }
+  }
   if (c.writes !== undefined && (typeof c.writes !== 'object' || c.writes === null || typeof c.writes.tokens !== 'function' || typeof c.writes.frame !== 'function')) out.push(`${who} has writes that are not a tokens function and a frame function`);
   else if (c.writes !== undefined && Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} writes, and a card that writes reaches a post alone`);
   // A card that writes is a cast card, cast face up: never a set card, which springs later, nor a use card; and decideSet refuses to set it face down.
   if (c.writes !== undefined && play !== 'cast') out.push(`${who} writes, and only a cast card does: it is cast face up, never set face down`);
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
   else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a cast card has one`);
+  return out;
+}
+
+/** A ride's or a skim's share: a fraction of a vote, above 0 and at most 1. `said` is how the card's words name what holds it ("a ride", "an outcome of share"). */
+function shareProblem(e: Record<string, unknown>, who: string, what: string, said: string): string | null {
+  if (e.share === undefined) return `${who} has ${what} with no share; share is above 0 and at most 1`;
+  if (typeof e.share !== 'number' || !(e.share > 0 && e.share <= 1)) return `${who} has ${said} ${JSON.stringify(e.share)}; share is above 0 and at most 1`;
+  return null;
+}
+
+/** A cast trap's outcome (Part 6 of the card notes): a ride, on a set card that springs on a cast and names its card, never one that matches. */
+function outcomeProblems(o: unknown, who: string, play: string, on: unknown, match: unknown): string[] {
+  if (typeof o !== 'object' || o === null) return [`${who} has an outcome that is not an object`];
+  if (play !== 'set' || on !== 'cast') return [`${who} has an outcome, and only a set card that springs on a cast does`];
+  const e = o as Record<string, unknown>;
+  const out: string[] = [];
+  if (match !== undefined) out.push(`${who} has an outcome beside a match; a ride outcome names its card (catches)`);
+  if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride`);
+  else { const why = shareProblem(e, who, 'an outcome', 'an outcome of share'); if (why) out.push(why); }
+  return out;
+}
+
+/** A skim: a cast card that reaches a post alone, lasts and does not write, with a share of a vote. */
+function skimProblems(c: CardRules, who: string, play: string): string[] {
+  const k = c.skim as unknown;
+  if (typeof k !== 'object' || k === null) return [`${who} has a skim that is not an object`];
+  const out: string[] = [];
+  const why = shareProblem(k as Record<string, unknown>, who, 'a skim', 'a skim of');
+  if (why) out.push(why);
+  if (play !== 'cast') out.push(`${who} has a skim, and only a cast card does`);
+  if (Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} has a skim, and a card with a skim reaches a post alone`);
+  if (c.lasts === undefined) out.push(`${who} has a skim with no time up (lasts); a skim ends at its time`);
+  if (c.writes !== undefined) out.push(`${who} has a skim and writes; a card with a skim does not write`);
   return out;
 }
 
@@ -598,6 +642,9 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'price') {
     if (!list(e.flavors) || flavorsBad(e.flavors)) out.push(`${who} has a price with no flavors; name at least one of ${ALIGNMENTS.join(', ')}`);
     if (!Number.isSafeInteger(e.add) || (e.add as number) <= 0) out.push(`${who} has a price that adds ${JSON.stringify(e.add)}; add is a positive whole number`);
+  } else if (e.kind === 'ride') {
+    const why = shareProblem(e, who, 'a ride', 'a ride of');
+    if (why) out.push(why);
   } else {
     out.push(`${who} has a gimmick of kind ${JSON.stringify(e.kind)}; a gimmick is ${GIMMICK_KINDS.slice(0, -1).join(', ')} or ${GIMMICK_KINDS.at(-1)}`);
   }

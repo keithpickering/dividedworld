@@ -211,6 +211,44 @@ describe('a trap', () => {
     expect(said(r, ctx([spring({ payload: { card: 'trap', trigger: 'cast', did: 'caught', set: 'set1', by: 'k', caught: 'k' } }), post])).detail).toBe('A cast of the card it named set it off, and the card is now in your hand. In Hobbies.');
     expect(said(r, ctx([spring({ payload: { card: 'pass', trigger: 'visit', did: 'ended', set: 'set1' } }), post])).detail).toBe('A Mod Bot\'s visit set it off, and it ended the visit. In Hobbies.');
   });
+  /* A ride back (card notes, Part 6): the cast landed as usual, so the caster is told, and the setter is told its pay. */
+  describe('a ride back', () => {
+    const chess = { key: 'chess', name: '4D Chess' };
+    const rides = () => ctx([], {}).instance;
+    const withChess = (acts: readonly Act[], o: Partial<WordsContext> = {}) => ctx(acts, { instance: { cards: [...(rides() as unknown as { cards: object[] }).cards, chess] } as unknown as WordsContext['instance'], names, ...o });
+    const cast = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', rode: 'set1', layer: 1 } });
+    const rode = spring({ payload: { card: 'chess', trigger: 'cast', did: 'rode', quadrant: 'excitedPositive', set: 'set1', by: 'k' } });
+    test('the caster is told the cast landed as usual and keeps what it earns, naming the setter and, where the spring is read, the card', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      expect(said(r, withChess([cast, rode, set(), act('post9', { seq: 9, character: 'cPipe' })]))).toEqual({
+        line: 'Pipewrench\'s face-down 4D Chess was waiting for your Whoops!',
+        detail: 'Your Whoops! landed as usual, and you keep everything it earns. In Hobbies.',
+        ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Spritey',
+      });
+      /* The spring is not always at hand: the words never guess the card. */
+      expect(said(r, withChess([cast, set(), act('post9', { seq: 9, character: 'cPipe' })])).line).toBe('Pipewrench\'s face-down card was waiting for your Whoops!');
+      expect(JSON.stringify(wordsFor(r, withChess([cast, rode, set()])))).not.toMatch(/account|owner|quadrant|excitedPositive/iu);
+    });
+    test('the instance voice is handed how: rode, the setter, the card where known, and the Move that landed', () => {
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey' });
+      said(r, withChess([cast, rode, set(), act('post9', { seq: 9 })], { ui }));
+      said(r, withChess([cast, set(), act('post9', { seq: 9 })], { ui }));
+      expect(seen).toEqual([
+        { how: 'rode', setter: 'Pipewrench', card: '4D Chess', laid: 'Whoops!', span: 'two days', setterStaff: false },
+        { how: 'rode', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: 'two days', setterStaff: false },
+      ]);
+    });
+    test('sprang (yours) says the cast landed and its reactions of the kind named pay at each settlement', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+      expect(said(r, withChess([rode, act('post9', { seq: 9 })]))).toEqual({
+        line: 'Your face-down 4D Chess sprang',
+        detail: 'A cast of the card it named set it off. The cast landed, and its reactions of the kind you named pay you at each settlement. In Hobbies.',
+        ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Pipewrench',
+      });
+    });
+  });
   test('sprang, as it was written before: the old words', () => {
     const old = act('sp', { kind: 'card', targetActId: 'post9', payload: { card: 'whoops', trigger: 'cast' } });
     const s = said(row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([old, act('post9', { seq: 9 })]));

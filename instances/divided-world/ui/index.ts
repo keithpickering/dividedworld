@@ -7,8 +7,10 @@
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
+import { shareWords } from '../../../engine/ui/copy-words.ts';
 import glassData from './glass.json';
 import { cardsUi } from './cards.ts';
+import { quadrantLabels } from './quadrant-labels.ts';
 import { cards as instanceCards } from '../cards/index.ts';
 import { packsUi } from './packs.ts';
 import { gearUi, trophiesUi } from './cosmetics.ts';
@@ -89,6 +91,17 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'tweener.stirredThePot': 'Stirred the pot: hype and heat drawn to another\'s post by players who came after the character\'s card, paid on the smaller side',
   /* A card's boost (settlement's `card.boost`, params `{ card }`): the card's key is public (it is on the post), so its name is said; a card this instance does not have is "a card". */
   'card.boost': (n) => `${instanceCards.find((c) => c.key === n['card'])?.name ?? 'A card'} added: what the card's boost on a reaction earned`,
+  /* A card's payout (settlement's `card.skim` and `card.ride`, params `{ card }`): the card is named and its share said from its own rules, never restated here; a card this instance does not have, or one that is not the kind this reason is for, is "A card". */
+  'card.skim': (n) => {
+    const card = instanceCards.find((c) => c.key === n['card']);
+    return card?.skim === undefined ? 'A card: what its payout on a reaction earned' : `${card.name}: ${shareWords(card.skim.share)} for each vote its post drew in the reactions it named, from players who first reacted after it`;
+  },
+  'card.ride': (n) => {
+    const card = instanceCards.find((c) => c.key === n['card']);
+    if (card?.gimmick?.kind === 'ride') return `${card.name}: ${shareWords(card.gimmick.share)} for each vote on a Move another player cast on the post`;
+    if (card?.trap?.outcome !== undefined) return `${card.name}: ${shareWords(card.trap.outcome.share)} for each vote, of the kind it named, on the Move that sprang it`;
+    return 'A card: what its payout on a reaction earned';
+  },
   'tweener.shrugged': 'Shrugged off: calm or bored reactions to the character\'s posts and cards',
 };
 
@@ -116,13 +129,7 @@ export const instanceUi: InstanceUi = Object.freeze({
     // Fan Site's name is open (the board look design, Open); it ships as "Fan Site" until the owner names it.
     { key: 'fan-site', name: 'Fan Site', href: fanSite, modes: 'dark' as const, preview: fanSitePreview },
   ]),
-  // Placeholders until the owner names them.
-  quadrantLabels: Object.freeze({
-    excitedNegative: 'Heat',
-    excitedPositive: 'Hype',
-    boredNegative: 'Groan',
-    calmPositive: 'Calm',
-  }),
+  quadrantLabels,
   // The React board's quadrants, each in a class's glass colors.
   quadrantClasses: Object.freeze({
     excitedNegative: 'heel',

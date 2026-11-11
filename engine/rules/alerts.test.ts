@@ -39,8 +39,8 @@ test('no ruling has a build yet, so none has a sub-key', () => {
 });
 
 test('the kinds in TypeScript are the kinds the toast choice accepts, in the column\'s check, set_preferences and the toastDefaults setting (the lists are one list)', () => {
-  /* The latest redefinition of all three is 0158's (the cosmetics log and alerts); 0118 added framed the same way. */
-  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0158_cosmetics_log.sql'), 'utf8');
+  /* The latest redefinition of all three is 0161's (the cosmetics log and alerts); 0118 added framed the same way. */
+  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0161_cosmetics_log.sql'), 'utf8');
   const lists = [...sql.matchAll(/array\[((?:'[A-Za-z]+',?\s*)+)\]/g)].map((m) => [...m[1]!.matchAll(/'([A-Za-z]+)'/g)].map((k) => k[1]!).sort());
   /* The migration redefines the check, set_preferences and settings_held with trophy, beltLost and beltBack added; its other arrays are not kind lists. */
   const kindLists = lists.filter((l) => l.includes('quote'));

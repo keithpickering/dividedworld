@@ -6,13 +6,13 @@
  */
 import { describe, expect, test, vi } from 'vitest';
 import type { Instance, Settings } from '../../rules/types.ts';
-import { landsOn, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
+import { landsOn, quadrantFree, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
 import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
-import { createFake, FAKE_BACKEND_MARKER, TEST_CODE } from './fake.ts';
-import { LOG_ROWS, micros } from './log-page.ts';
+import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE } from './fake.ts';
+import { cutLog, LOG_ROWS, micros } from './log-page.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
@@ -750,6 +750,11 @@ describe('the account', () => {
     expect(must(await fake.setPreferences({ toasts: [] })).toasts).toEqual([]);
     expect(must(await fake.setPreferences({ toasts: null })).toasts).toBeNull();
   });
+  test('a card key may open with a digit, as the catalog and meet_card allow, but not with a hyphen', async () => {
+    const { fake } = world();
+    expect(must(await fake.meetCard('4d-chess')).cardsMet).toContain('4d-chess');
+    expect(await fake.meetCard('-chess')).toEqual(refused('a card is named in lowercase words joined by hyphens'));
+  });
   test('cards met are added once, refused past 64 or when malformed, and forgotten whole, setPreferences leaving them alone', async () => {
     const { fake } = world();
     expect(must(await fake.meetCard('whoops')).cardsMet).toEqual(['whoops']);
@@ -968,6 +973,29 @@ describe('what a list row shows', () => {
     const old = fake.seed.card(anaFace, opener, 'whoops');
     fake.seed.legacyNumber(old);
     expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post });
+  });
+
+  test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0152)', async () => {
+    const { fake, anaFace, boFace } = world();
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const spun = must(await fake.spin(fake.seed.reach(boFace, 'board', general.id, 'glint'), anaFace, 'Spun', 'b')).thread.id;
+    // The place from the thread's own read and from its board's row, which must agree, beside the name the board list gives.
+    const names = async () => {
+      const one = (await fake.thread(spun))?.origin;
+      const row = (await fake.threads(general.id, { offset: 0, limit: 50 })).threads.find((t) => t.id === spun)?.origin;
+      expect(row).toEqual(one);
+      return [one, (await fake.boards()).find((b) => b.id === general.id)?.name];
+    };
+    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name } }, name];
+    expect(await names()).toEqual(on('General'));
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const first = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
+    expect(await names()).toEqual(on('Toast Palace'));
+    fake.seed.endMove(first, { why: 'reversed' });
+    expect(await names()).toEqual(on('General'));
+    // A second rename, after the first has ended: the place follows it too.
+    fake.seed.move('boss', { board: 'general', name: 'Crumb Hall' });
+    expect(await names()).toEqual(on('Crumb Hall'));
   });
 
   test('a thread spun from an update has the update\'s place, and a play on an update lands on the update', async () => {
@@ -2689,6 +2717,39 @@ describe('framed alerts', () => {
     must(await w.fake.apologize(move, w.anaFace, 'Sorry', w.named(w.boFace), [w.boFace]));
     expect(await w.framedFor(w.bo)).toHaveLength(1);
   });
+  describe('an apology is read as the action rule reads it, before anything else', () => {
+    function apologyWorld() {
+      const w = framedWorld();
+      const at = Date.now() - 3_600_000;
+      const move = w.fake.seed.groupMove('boss', { character: w.anaFace, group: 'trialMembers', board: 'general', at, expiresAt: at + 86_400_000 });
+      const wrote = async () => ({ threads: (await w.fake.threads('general', { offset: 0, limit: 50 })).total, apologies: await w.fake.myApologies(w.anaFace) });
+      return { ...w, move, wrote };
+    }
+    test.each([['empty', ''], ['whitespace', '  \n ']])('a %s body is refused by body, and writes no thread, Act or apology', async (_name, body) => {
+      const w = apologyWorld();
+      const before = await w.wrote();
+      const acts = await w.fake.thread(w.thread);
+      const answer = await w.fake.apologize(w.move, w.anaFace, 'Sorry', body);
+      expect(answer).toMatchObject({ ok: false, field: 'body', error: 'is empty' });
+      expect(await w.wrote()).toEqual(before);
+      expect(await w.fake.thread(w.thread)).toEqual(acts);
+    });
+    test('a title over the limit is refused by title', async () => {
+      const w = apologyWorld();
+      const before = await w.wrote();
+      expect(await w.fake.apologize(w.move, w.anaFace, 'x'.repeat(21), 'I was wrong.')).toMatchObject({ ok: false, field: 'title', error: 'is longer than 20 characters' });
+      expect(await w.wrote()).toEqual(before);
+    });
+    test('signed out, it is refused with "sign in to act"', async () => {
+      const w = apologyWorld();
+      w.fake.signOut();
+      expect(await w.fake.apologize(w.move, w.anaFace, 'Sorry', 'I was wrong.')).toMatchObject({ ok: false, error: 'sign in to act' });
+    });
+    test('with a body it is sent', async () => {
+      const w = apologyWorld();
+      expect((await w.fake.apologize(w.move, w.anaFace, 'Sorry', 'I was wrong.')).ok).toBe(true);
+    });
+  });
   test('none for an undebuted, unknown, unnamed-in-the-body, staff or own-mask target, and the answer is the same ok', async () => {
     const w = framedWorld();
     const nowhere = '99999999-9999-4999-8999-999999999999';
@@ -3411,5 +3472,235 @@ describe('gear, trophies and Random Events', () => {
     fake.seed.eventsOn();
     const drawn = must(await fake.randomEvent(a1));
     expect(drawn === null || ['line', 'gear', 'card'].includes(drawn.outcome)).toBe(true);
+  });
+});
+
+/* Card notes, Part 6 (docs/plans/2026-11-11-card-notes-part-6-plan.md, Task 6): the plays Task 4 makes in SQL (a skim, a ride back, a scored-as play),
+   decided by the cards' own rules and written in the server's words. The cards here are stubs that carry only the rules the fake reads. */
+describe('a skim, a ride back and a scored-as play, as the server holds them', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const WEEK = 7 * DAY;
+  const QUADS = ['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative'];
+  const named = (c: unknown, key: string, why: string) => { const v = (c as Record<string, unknown> | null)?.[key]; return typeof v === 'string' && v !== '' ? ok(c as Record<string, unknown>) : { ok: false as const, why }; };
+  const base = { playPrice: () => 0 };
+  const skimmer = {
+    ...base, key: 'skimmer', name: 'Skimmer', alignment: 'salty' as const, rarity: 'uncommon' as const, skim: { share: 0.1 }, lasts: { unit: 'week' as const, count: 1 }, stack: 4,
+    validateConfig: (c: unknown) => (QUADS.includes((c as { quadrant?: string } | null)?.quadrant ?? '') ? ok({ quadrant: (c as { quadrant: string }).quadrant }) : { ok: false as const, why: 'this card names a reaction quadrant' }),
+    canApply: (t: CardTarget, e: readonly CardEffect[], c?: { quadrant: never }, now?: Date) => { const l = landsOn({ key: 'skimmer', stack: 4 }, t, e, now); return l.ok && c ? quadrantFree({ key: 'skimmer' }, t, e, c.quadrant, now) : l; },
+  };
+  const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, validateConfig: (c: unknown) => ok(c ?? {}), canApply: () => ok(undefined) };
+  const other = { ...blot, key: 'other', name: 'Other' };
+  const rider = {
+    ...base, key: 'rider', name: 'Rider', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, outcome: { kind: 'ride' as const, share: 1 } },
+    catches: (c: { card: string }) => c.card, canApply: () => ok(undefined),
+    validateConfig: (c: unknown) => (QUADS.includes((c as { quadrant?: string } | null)?.quadrant ?? '') ? ok(c as { card: string; quadrant: string }) : { ok: false as const, why: 'this card names a reaction quadrant' }),
+  };
+  const dayoff = {
+    ...base, key: 'dayoff', name: 'Day Off', alignment: 'salty' as const, rarity: 'legendary' as const, reaches: ['character' as const], scoresAs: true as const, lasts: { unit: 'day' as const, count: 2 }, stack: 2,
+    validateConfig: (c: unknown) => named(c, 'class', 'choose the class to name'),
+    canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'dayoff', reaches: ['character'], stack: 2 }, t, e, now),
+  };
+  const cards = [skimmer, blot, other, rider, dayoff] as unknown as CardRules[];
+  const world: Instance = { ...instance, cards, machine: cards.map((c) => ({ item: { card: c.key }, availability: 'onSale' as const, price: 100 })), settings: { ...settings, economy: {}, reachLasts: { character: { unit: 'day', count: 400 }, thread: { unit: 'day', count: 400 }, board: { unit: 'day', count: 400 } } } };
+  function setup() {
+    const fake = createFake({ instance: world });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const boss = fake.seed.account('boss', { admin: true });
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
+    const { act: boPost } = fake.seed.thread('general', boFace, 'Bo', 'Bo post');
+    fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
+    fake.seed.cards(ana, { skimmer: 8, blot: 4, other: 2, rider: 2, dayoff: 4 });
+    fake.seed.cards(bo, { skimmer: 8, blot: 4, other: 2, rider: 2, dayoff: 4 });
+    fake.signInAs(ana);
+    return { fake, ana, bo, boss, anaFace, anaHeel, boFace, opener, boPost };
+  }
+
+  describe('a skim', () => {
+    test('lands with its end a week out and its quadrant in its configuration; one on another quadrant lands beside it', async () => {
+      const { fake, boFace, boPost, anaFace } = setup();
+      const first = must(await fake.playCard('skimmer', anaFace, boPost, { quadrant: 'excitedPositive' }, ''));
+      expect(first.payload.config).toEqual({ quadrant: 'excitedPositive' });
+      expect(Date.parse(String(first.payload.ends)) - Date.parse(first.createdAt)).toBe(WEEK);
+      const second = must(await fake.playCard('skimmer', anaFace, boPost, { quadrant: 'calmPositive' }, ''));
+      expect(second.payload).toMatchObject({ layer: 2, config: { quadrant: 'calmPositive' } });
+      void boFace;
+    });
+
+    test('a second on the same quadrant is refused in the server\'s words, and lands once the first has ended by time', async () => {
+      const { fake, anaFace, boPost } = setup();
+      must(await fake.playCard('skimmer', anaFace, boPost, { quadrant: 'excitedPositive' }, ''));
+      expect(await fake.playCard('skimmer', anaFace, boPost, { quadrant: 'excitedPositive' }, '')).toEqual(refused('this post already carries that card for that quadrant', 'config'));
+      fake.clock.advance(WEEK + 1);
+      expect(must(await fake.playCard('skimmer', anaFace, boPost, { quadrant: 'excitedPositive' }, '')).kind).toBe('card');
+    });
+
+    test('a play that names no quadrant is refused in the card\'s words', async () => {
+      const { fake, anaFace, boPost } = setup();
+      expect(await fake.playCard('skimmer', anaFace, boPost, {}, '')).toEqual(refused('this card names a reaction quadrant', 'config'));
+      expect(await fake.playCard('skimmer', anaFace, boPost, { quadrant: 'sideways' }, '')).toEqual(refused('this card names a reaction quadrant', 'config'));
+    });
+
+    test('a play on a post of the caster\'s own other mask lands exactly as on a stranger\'s', async () => {
+      const { fake, anaHeel, opener, boPost } = setup();
+      const mine = must(await fake.playCard('skimmer', anaHeel, opener, { quadrant: 'excitedPositive' }, ''));
+      const theirs = must(await fake.playCard('skimmer', anaHeel, boPost, { quadrant: 'excitedPositive' }, ''));
+      expect(Object.keys(mine.payload).sort()).toEqual(Object.keys(theirs.payload).sort());
+      expect(await fake.playCard('skimmer', anaHeel, opener, { quadrant: 'excitedPositive' }, '')).toEqual(refused('this post already carries that card for that quadrant', 'config'));
+    });
+  });
+
+  describe('a ride back', () => {
+    const set = async (fake: ReturnType<typeof setup>['fake'], face: string, post: string, quadrant = 'calmPositive') => must(await fake.setCard('rider', face, post, { card: 'blot', quadrant }));
+
+    test('springs on a cast of the card it names: the cast lands with its layer and `rode`, the spring says it rode and names the quadrant', async () => {
+      const { fake, bo, anaFace, boFace, opener } = setup();
+      const back = await set(fake, anaFace, opener);
+      fake.signInAs(bo);
+      const cast = must(await fake.playCard('blot', boFace, opener, {}, ''));
+      expect(cast.payload).toMatchObject({ card: 'blot', layer: 1, rode: back.id });
+      expect(cast.payload).not.toHaveProperty('caught');
+      const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+      expect(spring.payload).toEqual({ card: 'rider', trigger: 'cast', did: 'rode', quadrant: 'calmPositive', set: back.id, by: cast.id });
+      expect(spring.payload).not.toHaveProperty('caught');
+      /* The back has sprung: the next cast rides nothing. */
+      expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload).toMatchObject({ layer: 2 });
+      expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload).not.toHaveProperty('rode');
+    });
+
+    test('the setter takes no card and has no `caught` row', async () => {
+      const { fake, ana, bo, anaFace, boFace, opener } = setup();
+      await set(fake, anaFace, opener);
+      const before = (await fake.myCards()).find((c) => c.card === 'blot')?.held;
+      fake.signInAs(bo);
+      must(await fake.playCard('blot', boFace, opener, {}, ''));
+      fake.signInAs(ana);
+      expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(before);
+      expect((await fake.log()).cards.some((e) => e.kind === 'caught')).toBe(false);
+    });
+
+    test('a cast of another card passes over it, and a cast by the setter\'s own other mask springs it the same', async () => {
+      const { fake, anaFace, anaHeel, opener } = setup();
+      const back = await set(fake, anaFace, opener);
+      must(await fake.playCard('other', anaHeel, opener, {}, ''));
+      expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
+      const cast = must(await fake.playCard('blot', anaHeel, opener, {}, ''));
+      expect(cast.payload).toMatchObject({ rode: back.id });
+      expect((await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
+    });
+
+    test('a ride set with no quadrant is refused in the card\'s words', async () => {
+      const { fake, anaFace, opener } = setup();
+      expect(await fake.setCard('rider', anaFace, opener, { card: 'blot' })).toEqual(refused('this card names a reaction quadrant', 'config'));
+    });
+  });
+
+  describe('a scored-as play', () => {
+    const NEXT = START + DAY / 2;
+    /* The last settlement ended now; the next is half a day on, the window after it a settlement's length (one day) long. */
+    function open() {
+      const s = setup();
+      s.fake.seed.settle({});
+      s.fake.seed.nextSettlementAt(NEXT);
+      return s;
+    }
+    const play = (s: ReturnType<typeof setup>, cls = 'heel', on = s.boFace) => s.fake.playCard('dayoff', s.anaFace, on, { class: cls }, '', 'character', on === s.boFace ? s.boPost : s.opener);
+
+    test('its `starts` is the next settlement and its `ends` the close of the window after it', async () => {
+      const s = open();
+      const played = must(await play(s));
+      expect(played.payload).toMatchObject({ card: 'dayoff', reach: 'character', character: s.boFace, config: { class: 'heel' } });
+      expect(played.payload.starts).toBe(new Date(NEXT).toISOString());
+      expect(played.payload.ends).toBe(new Date(NEXT + DAY).toISOString());
+    });
+
+    test('an unknown class is refused', async () => {
+      const s = open();
+      expect(await play(s, 'nothing')).toEqual(refused('there is no such class'));
+    });
+
+    test('where the next settlement\'s time is not known, no window can be named', async () => {
+      const s = setup();
+      s.fake.seed.settle({});
+      expect(await play(s)).toEqual(refused('the next settlement\'s time is not known yet, so no window can be named; play it after that settlement'));
+    });
+
+    test('where a next settlement time is seeded but none has been applied, no window can be named, as next_settlement_at is null with no settlement', async () => {
+      const s = setup();
+      s.fake.seed.nextSettlementAt(NEXT);
+      expect(await play(s)).toEqual(refused('the next settlement\'s time is not known yet, so no window can be named; play it after that settlement'));
+    });
+
+    test('where the season ends at the next settlement, there is no window after it', async () => {
+      const s = open();
+      s.fake.seed.season({ number: 1, endsAt: new Date(NEXT).toISOString() });
+      expect(await play(s)).toEqual(refused('this season ends at the next settlement, so there is no window after it to name'));
+    });
+
+    test('a window the season cuts short closes with the season', async () => {
+      const s = open();
+      s.fake.seed.season({ number: 1, endsAt: new Date(NEXT + DAY / 4).toISOString() });
+      expect(must(await play(s)).payload.ends).toBe(new Date(NEXT + DAY / 4).toISOString());
+    });
+
+    test('a second play of any scored-as card on the character in the same open window is refused, and one after the next settlement lands', async () => {
+      const s = open();
+      must(await play(s));
+      const words = 'this character already has a class named for the window after the next settlement';
+      expect(await play(s, 'face')).toEqual(refused(words));
+      /* Another character is its own. */
+      expect(must(await play(s, 'face', s.anaFace)).kind).toBe('card');
+      s.fake.clock.advance(DAY);
+      s.fake.seed.settle({});
+      s.fake.seed.nextSettlementAt(START + 2 * DAY);
+      expect(must(await play(s, 'face')).payload.starts).toBe(new Date(START + 2 * DAY).toISOString());
+    });
+
+    test('an admin-ended play frees the window', async () => {
+      const s = open();
+      const first = must(await play(s));
+      s.fake.signInAs(s.boss);
+      must(await s.fake.reverseCard(first.id));
+      s.fake.signInAs(s.ana);
+      expect(must(await play(s, 'face')).kind).toBe('card');
+    });
+
+    test('the target\'s class, its Turns and its history are untouched, and no Act but the play is written', async () => {
+      const s = open();
+      s.fake.signInAs(s.bo);
+      const before = await s.fake.myCharacters();
+      s.fake.signInAs(s.ana);
+      const played = must(await play(s));
+      s.fake.signInAs(s.bo);
+      expect(await s.fake.myCharacters()).toEqual(before);
+      expect((await s.fake.cardsOn(s.boPost, 20)).map((a) => a.kind)).toEqual(['card']);
+      expect(played.payload).not.toHaveProperty('layer');
+    });
+  });
+});
+
+describe('the log\'s scored-as rows (card notes, Part 6, Task 6)', () => {
+  const rows = [
+    { settlement: 3, character: 'c1', classKey: 'heel', play: 'p3', card: 'dayoff', startsAt: '2026-10-31T00:00:00.000Z', endsAt: '2026-11-01T00:00:00.000Z' },
+    { settlement: 2, character: 'c1', classKey: 'face', play: 'p2', card: 'dayoff', startsAt: '2026-10-30T00:00:00.000Z', endsAt: '2026-10-31T00:00:00.000Z' },
+  ];
+  const empty = { ledger: [], shares: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], saves: [], setEnds: [], caught: [], ended: [], infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], cosmetics: [] };
+
+  test('a page from an older payload, with no scoredAs key, has none, and the fake sends none', async () => {
+    expect(cutLog(empty)).not.toHaveProperty('scoredAs');
+    const fake = createFake({ instance });
+    fake.seed.account('ana');
+    expect(await fake.log()).not.toHaveProperty('scoredAs');
+  });
+
+  test('the rows come newest settlement first and are cut at the page like the settlements', () => {
+    expect(cutLog({ ...empty, scoredAs: rows }).scoredAs).toEqual(rows);
+    /* A source that came back full leaves out what is not newer than its oldest row. */
+    const full = { ...empty, scoredAs: rows };
+    expect(cutLog(full, 3).scoredAs).toEqual(rows);
+    expect(cutLog({ ...full, ledger: [{ settlement: 2, startsAt: rows[1]!.startsAt, endsAt: rows[1]!.endsAt, sharesKept: true, character: 'c1', reason: 'r', amount: 1 }, { settlement: 2, startsAt: rows[1]!.startsAt, endsAt: rows[1]!.endsAt, sharesKept: true, character: 'c2', reason: 'r', amount: 1 }] }, 2).scoredAs).toEqual([rows[0]]);
   });
 });

@@ -10,7 +10,8 @@
  *
  * The post's words are this effect's `children`, and nothing in them is ever drawn twice or drawn again: they are drawn once,
  * by a portal into an element this effect makes and keeps (`words`), and a layout effect moves that element between its place
- * in the thread and its place in the view (`appendChild`). React never unmounts what is inside, so a lift and a release keep every
+ * in the thread and its place in the current view (`appendChild`): each stacked play has a view of its own, one after
+ * another. React never unmounts what is inside, so a lift and a release keep every
  * inner effect's state, a reader's unsaved scrubbing in Whoops! included (marks-and-the-lens design, section 4). The thread keeps a
  * space of the same height while the words are in the view, so the page does not jump when they leave.
  *
@@ -81,14 +82,19 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
    */
   const [words] = useState(() => { const el = document.createElement('div'); el.className = 'kb-hold-words'; return el; });
   const home = useRef<HTMLDivElement>(null);
-  const slot = useRef<HTMLDivElement>(null);
+  /*
+   * The view's place for the words, as the element itself and not a ref to read: each play's view is its own (HoldView is keyed by
+   * the play), so when one play is released and the next takes its place the view's element is a new one while there is a view
+   * before and after. The words follow the element, whatever made the view anew (#325), and go home when there is none.
+   */
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
   const inView = lifted && held && !!play;
   /* While the view holds the reader, no tip is shown over it (the page's pacing, engine/ui/tips/store.ts). */
   useEffect(() => { holdScreen(inView); }, [holdScreen, inView]);
   useLayoutEffect(() => {
-    const into = inView ? slot.current : home.current;
+    const into = inView ? slot : home.current;
     if (into && words.parentElement !== into) into.appendChild(words);
-  }, [inView, words]);
+  }, [inView, slot, words]);
 
   const take = useCallback(() => {
     /* The space the post leaves in the thread, so the thread does not move when the post is lifted out of it. */
@@ -125,7 +131,7 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
       <Layers>
       {held && lifted && play && (
         <HoldView
-          key={play.id} post={post} play={play} stage={stage} release={release} onBreakFree={breakFree} marks={marks} words={slot}
+          key={play.id} post={post} play={play} stage={stage} release={release} onBreakFree={breakFree} marks={marks} words={setSlot}
         />
       )}
       </Layers>

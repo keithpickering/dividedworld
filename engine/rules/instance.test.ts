@@ -728,7 +728,7 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn or price/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price or ride/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
@@ -745,6 +745,62 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'price', flavors: ['salty'], add: 1.5 }), /card "splat" has a price that adds 1.5; add is a positive whole number/);
   assert.match(use({ kind: 'price', flavors: [], add: 100 }), /card "splat" has a price with no flavors/);
   assert.match(use({ kind: 'price', add: 100 }), /card "splat" has a price with no flavors/);
+});
+
+test('a ride is a gimmick with a share of a vote, on a card that reaches a post alone', () => {
+  const lasts = { unit: 'day', count: 7 };
+  const use = (gimmick: unknown, more: Record<string, unknown> = {}) => instanceProblems(withCards({ play: 'use', lasts, gimmick, ...more })).join('\n');
+  assert.equal(use({ kind: 'ride', share: 0.5 }), '');
+  assert.equal(use({ kind: 'ride', share: 1 }), '');
+  assert.match(use({ kind: 'ride', share: 0 }), /card "splat" has a ride of 0; share is above 0 and at most 1/);
+  assert.match(use({ kind: 'ride', share: 1.5 }), /card "splat" has a ride of 1.5; share is above 0 and at most 1/);
+  assert.match(use({ kind: 'ride' }), /card "splat" has a ride with no share; share is above 0 and at most 1/);
+  assert.match(use({ kind: 'ride', share: 0.5 }, { reaches: ['character'], rarity: 'rare' }), /card "splat" has a ride, and a card with a ride reaches a post alone/);
+  assert.equal(use({ kind: 'ride', share: 0.5 }, { reaches: ['post'] }), '');
+});
+
+test('a trap outcome is a ride on a set card that springs on a cast and names its card', () => {
+  const cast = { on: 'cast' };
+  const catches = () => 'splat';
+  const set = (trap: unknown, more: Record<string, unknown> = { catches }) => instanceProblems(withCards({ play: 'set', trap, ...more })).join('\n');
+  assert.equal(set({ trigger: cast, outcome: { kind: 'ride', share: 1 } }), '');
+  assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 0 } }), /card "splat" has an outcome of share 0; share is above 0 and at most 1/);
+  assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 2 } }), /card "splat" has an outcome of share 2; share is above 0 and at most 1/);
+  assert.match(set({ trigger: cast, outcome: { kind: 'ride' } }), /card "splat" has an outcome with no share/);
+  assert.match(set({ trigger: cast, outcome: { kind: 'sneeze', share: 1 } }), /card "splat" has an outcome of kind "sneeze"; an outcome is ride/);
+  assert.match(set({ trigger: cast, outcome: 'ride' }), /card "splat" has an outcome that is not an object/);
+  assert.match(set({ trigger: { on: 'visit' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome, and only a set card that springs on a cast does/);
+  assert.match(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome beside a match; a ride outcome names its card \(catches\)/);
+  assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" springs on a cast and names no card to catch/);
+  assert.match(instanceProblems(withCards({ trap: { trigger: cast, outcome: { kind: 'ride', share: 1 } } })).join('\n'), /card "splat" has a trap, and only a set card has one/);
+});
+
+test('a skim is a cast card that reaches a post alone, lasts, and does not write', () => {
+  const lasts = { unit: 'week', count: 1 };
+  const skim = { share: 0.1 };
+  const bad = (more: Record<string, unknown>) => instanceProblems(withCards({ skim, lasts, ...more })).join('\n');
+  assert.deepEqual(instanceProblems(withCards({ skim, lasts })), []);
+  assert.deepEqual(instanceProblems(withCards({ skim: { share: 1 }, lasts, reaches: ['post'] })), []);
+  assert.match(bad({ skim: { share: 0 } }), /card "splat" has a skim of 0; share is above 0 and at most 1/);
+  assert.match(bad({ skim: { share: 1.2 } }), /card "splat" has a skim of 1.2; share is above 0 and at most 1/);
+  assert.match(bad({ skim: {} }), /card "splat" has a skim with no share/);
+  assert.match(bad({ skim: 0.1 }), /card "splat" has a skim that is not an object/);
+  assert.match(bad({ play: 'use', gimmick: { kind: 'ward', upTo: 'common' } }), /card "splat" has a skim, and only a cast card does/);
+  assert.match(instanceProblems(withCards({ skim })).join('\n'), /card "splat" has a skim with no time up \(lasts\)/);
+  assert.match(bad({ reaches: ['thread'], rarity: 'rare' }), /card "splat" has a skim, and a card with a skim reaches a post alone/);
+  assert.match(bad({ reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has a skim, and a card with a skim reaches a post alone/);
+  assert.match(bad({ writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a skim and writes; a card with a skim does not write/);
+});
+
+test('scoresAs is true or left out, on a cast card that reaches a character alone', () => {
+  const lasts = { unit: 'day', count: 2 };
+  const on = (more: Record<string, unknown>) => instanceProblems(withCards({ scoresAs: true, lasts, reaches: ['character'], rarity: 'rare', ...more })).join('\n');
+  assert.equal(on({}), '');
+  assert.match(instanceProblems(withCards({ scoresAs: true })).join('\n'), /card "splat" scores as a class, and a card that does reaches a character alone/);
+  assert.match(on({ reaches: ['character', 'thread'] }), /card "splat" scores as a class, and a card that does reaches a character alone/);
+  assert.match(on({ scoresAs: false }), /card "splat" has scoresAs false; scoresAs is true or left out/);
+  assert.match(on({ scoresAs: 1 }), /card "splat" has scoresAs 1; scoresAs is true or left out/);
+  assert.match(on({ play: 'use', gimmick: { kind: 'ward', upTo: 'common' } }), /card "splat" scores as a class, and only a cast card does/);
 });
 
 test('a set card springs on a cast or a visit', () => {
@@ -960,7 +1016,7 @@ test('a gear key is used once, a trophy key is used once, and no gear is named a
   assert.match(said({ ...good, gear: [...good.gear, { key: 'a', name: 'A', line: 'x', rarity: 'common' }] }), /gear key "a" is also a card's key/);
 });
 
-test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0151)', () => {
+test('a trophy kind is held to what the database holds: a key of lower-case words that never begins "made-", a name of 1 to 60 characters, words of at most 200 (0154)', () => {
   const kinds = (k: Partial<Instance['trophies']['kinds'][number]> & { key: string }) => trophied({ kinds: [...good.trophies.kinds, { name: 'Ok', ...k }] });
   assert.match(said(kinds({ key: 'made-1' })), /trophy key "made-1" begins "made-", which is the admin page's/);
   assert.match(said(kinds({ key: 'Bad Key' })), /trophy key "Bad Key" is not lower-case words/);

@@ -38,11 +38,11 @@ export function args(argv, usage) {
 /**
  * The buckets an instance keeps files in, each with the table and columns that name its files: an
  * export carries every file a row names, and an import puts each back under its name, so the
- * imported forum shows the same avatars and trophy pictures (supabase/migrations/0019_profiles.sql, 0025_avatars.sql, 0151_trophies.sql).
+ * imported forum shows the same avatars and trophy pictures (supabase/migrations/0019_profiles.sql, 0025_avatars.sql, 0154_trophies.sql).
  */
 export const BUCKETS = [
   { bucket: 'avatars', table: 'public.character_profiles', columns: ['avatar_square', 'avatar_portrait'], contentType: 'image/webp' },
-  // The pictures of the trophies an admin made (supabase/migrations/0151_trophies.sql): the file each kind's `art` names, put back under the same name.
+  // The pictures of the trophies an admin made (supabase/migrations/0154_trophies.sql): the file each kind's `art` names, put back under the same name.
   { bucket: 'trophies', table: 'public.trophy_kinds', columns: ['art'], contentType: 'image/webp' },
 ];
 

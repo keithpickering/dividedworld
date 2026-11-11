@@ -2,7 +2,7 @@
  * A trophy's picture, as a pure module (the cosmetics design; the plan, Task 3): an admin makes a trophy on the admin page and gives it a picture, a small WebP. This
  * checks that the caller is an admin, reads the file's bytes (the same reading an avatar's file gets, _shared/webp.ts: only a picture's own chunks pass, so nothing a
  * camera or an editor wrote rides along), holds it to 48 by 48 pixels and 16 KB, stores it under a random name in the `trophies` bucket through the Storage it is given,
- * and answers the name. The admin then gives that name to make_trophy (supabase/migrations/0151_trophies.sql), which checks the file is there. The bucket is
+ * and answers the name. The admin then gives that name to make_trophy (supabase/migrations/0154_trophies.sql), which checks the file is there. The bucket is
  * public by URL and listed by nobody, as avatars is, and takes WebP alone at the same size (the migration holds the bucket to LIMITS).
  *
  * Nothing is read of the file (not even the request's body: `request.file` is a function the edge gives, called after the check), or stored, for a caller that is not an admin:
@@ -12,7 +12,7 @@ import { DatabaseError, TransportError, sessionRefused, type Db } from '../_shar
 import type { Storage } from '../_shared/storage.ts';
 import { readWebp } from '../_shared/webp.ts';
 
-/** A trophy's picture: at most this many pixels a side and this many bytes. supabase/migrations/0151_trophies.sql makes the bucket's size limit the same bytes. */
+/** A trophy's picture: at most this many pixels a side and this many bytes. supabase/migrations/0154_trophies.sql makes the bucket's size limit the same bytes. */
 export const LIMITS = { side: 48, bytes: 16 * 1024 } as const;
 
 /** The file is read by `file()` only once the caller is known to be an admin; it answers the bytes, or anything else (nothing, a field that was not a file) for "send a file". */

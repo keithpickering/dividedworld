@@ -63,7 +63,7 @@ begin
     and not exists (select 1 from pg_depend d where d.classid = 'pg_proc'::regclass and d.objid = p.oid and d.deptype = 'e');
   if fns is distinct from (select string_agg(x, ', ' order by x) from unnest(array[
       'setting(text)', 'span_interval(jsonb)', 'standings_season()', 'current_boss()', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
-      -- Who a met demand credits (0151), reading the same public Acts and their public tallies; never `reactions`.
+      -- Who a met demand credits (0154), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
       'system_digest(timestamp with time zone,timestamp with time zone)', 'staff_career(text)',
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
@@ -125,7 +125,7 @@ begin
   -- A later function given the role's ownership fails here, to be reviewed (0046 added the demand evaluator).
   select string_agg(p.oid::regprocedure::text, ', ') into bad from pg_proc p join pg_roles r on r.oid = p.proowner
   where r.rolname = 'kayfabb_digest' and p.oid::regprocedure::text <> all (array['system_digest(timestamp with time zone,timestamp with time zone)', 'demand_progress(uuid)', 'demand_progress_or_error(uuid)',
-      -- Who a met demand credits (0151), reading the same public Acts and their public tallies; never `reactions`.
+      -- Who a met demand credits (0154), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
     'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)',
     'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer)']);

@@ -53,6 +53,7 @@ check('a template literal table name fires', fires('client.from(`reactions`).sel
 check('a table name the guard cannot read fires, since it could be anything', fires(`const t = 'reactions'; client.from(t).select();`).length === 1);
 check('a schema-qualified read fires', fires(`client.schema('public').from('ledger').select();`).length === 1);
 check('an rpc outside the allowlist fires', fires(`client.rpc('estimate_input', { who });`).length === 1);
+check('the apologize rpc fires, since an apology goes through the act function', fires(`client.rpc('apologize', {});`).length === 1);
 check('a service-only rpc fires', fires(`client.rpc('instance_settings');`).length === 1);
 check('an rpc whose name the guard cannot read fires', fires(`client.rpc(name);`).length === 1);
 check('a REST path to a private table fires', fires(`fetch(url + '/rest/v1/reactions?select=*');`).length === 1);

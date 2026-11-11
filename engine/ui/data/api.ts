@@ -468,8 +468,10 @@ export interface Character {
   /** The awards its postbit shows in the order its player chose, then each belt it holds (`profile_projection`'s `trophies`). Empty where a read carries none. */
   readonly trophies: readonly ShownTrophy[];
   readonly pipStyle: string;
-  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row has the engine's it/its. */
+  /** Its pronouns (character_profiles.pronouns, public like a title): copy about this one character is written with them. A character with no profile row, or whose set a read did not carry (`pronounsUnread`), has the engine's it/its. */
   readonly pronouns: PronounSet;
+  /** Set only when a read gave this character's profile row without its set: `pronouns` is then the engine's it/its for display only, and is never offered for saving, so a save cannot overwrite the set the player chose. A character with no profile row at all is not marked: nothing is stored to overwrite. */
+  readonly pronounsUnread?: true;
   /** The first day of the month it debuted, "2026-10-01": the month and never the time ("Joined Oct 2026"). */
   readonly joined: string;
   /** Set only for a staff character (a persona or the developer): the instance's key for it. A staff member is known to be staff, signed in or not. */
@@ -1486,6 +1488,25 @@ export interface FaceDownEnd {
   readonly endedBy: 'sprung' | 'taken back' | 'time';
 }
 
+/**
+ * A class an Off Day-shaped play (a card with `scoresAs`) named for one of the player's characters, as the settlement that scored it
+ * recorded it (`my_scored_as`, sent by `log_page` as `scoredAs`): the settled window's own dates, the class the character was scored as
+ * there and the play that named it. Its character is one of the caller's own, so it is the only reader's.
+ */
+export interface ScoredAs {
+  readonly settlement: number;
+  readonly character: Id;
+  /** The class the character was scored as for that window (`class_key`). */
+  readonly classKey: string;
+  /** The play's Act. */
+  readonly play: Id;
+  /** The play's card key. */
+  readonly card: string;
+  /** The settled window's start and end (`settlements.starts_at`, `ends_at`). */
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
 export interface CaughtPlay {
   readonly play: Id;
@@ -1660,6 +1681,8 @@ export interface Log {
   readonly setEnds: readonly FaceDownEnd[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
+  /** The classes the player's characters were scored as for a settled window, newest settlement first. Absent from a payload older than the card that names them; read it as none. */
+  readonly scoredAs?: readonly ScoredAs[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
   readonly ended: readonly CardEnded[];
   /** What happened to the player's characters beside the game's Aura: a Random Event's find, an admin's gear, a trophy given or taken back and a belt lost, by when each happened (`my_cosmetic_log`). */
@@ -1669,7 +1692,7 @@ export interface Log {
 }
 
 /**
- * One line of the cosmetics log (`my_cosmetic_log`, 0158), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
+ * One line of the cosmetics log (`my_cosmetic_log`, 0161), the caller's own and never another account's. A `found` row is a Random Event of the character (`outcome`: the line it said, a piece of gear or a card, `item` the gear's or card's key,
  * `text` the line the Event was rolled with); a `granted` row is gear an admin gave (`item`, `copies`, `character` the mask it was given through, or null where the grant did not name one); an `awarded` row is a trophy given
  * (`by`, and the Boss's name in `byName`; a season's `season` and `place`; the award's own `line` where an admin wrote one); a `reversed` row is an award an admin took back; a `lost` row is a belt that passed from the character to
  * `toName`, a character's name, which is public (`by`, `byName` as an award's). A field a kind does not use is null.
