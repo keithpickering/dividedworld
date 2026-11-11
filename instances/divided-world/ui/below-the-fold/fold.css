@@ -1,7 +1,7 @@
 /*
  * Below the Fold (Effect.tsx; docs/plans/2026-11-11-below-the-fold-plan.md, Task 3): the fold is drawn on a post, so it is in the board's
  * world, a 2003 `[spoiler]` bar in the board's own ink and ground. The bar is a full-width row in the tokens a quote box's header
- * uses; the arrow alone takes Salty's pink (`--kb-salty`). It is at least 44px tall on a coarse pointer, and takes the engine's focus
+ * uses; the arrow alone takes Salty's color on the board (`--kb-salty`, a blue there; pink is the card's face). It is at least 44px tall on a coarse pointer, and takes the engine's focus
  * ring (base.css's `:focus-visible`). Nothing animates.
  */
 .dw-fold {

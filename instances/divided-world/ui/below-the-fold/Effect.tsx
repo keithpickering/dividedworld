@@ -8,10 +8,10 @@
  * once and never unmounted by a fold (the `hidden` attribute hides them), so an effect inside this one keeps its state through a
  * press. There is no animation, so reduced motion has nothing to change.
  *
- * The bar is the fold's own and not the post's words: a press on it goes no further up than the bar, since another card's effect binds the
- * post's body (Whoops! scrubs from a press anywhere in it) and would take the press, and swallow the click, once the post is open.
- * The listeners are native (React's run at the root, after the body's own have), and only pointer and touch starts are stopped; a click,
- * a key and focus reach everything as they would.
+ * The bar is the fold's own and not the post's words, and it is the way out, so it carries the engine's `data-kb-over-ink`, as the
+ * reactions row does (engine/ui/thread/thread.css): it is drawn over another card's ink and stays usable there, and Whoops! starts no
+ * scrub from a press on it (it would otherwise take the pointer and swallow the click once the post is open). Nothing is stopped: a
+ * press on the bar reaches every listener above it, Stick Around's hold among them.
  *
  * In a play's moment (`still`) the post is drawn folded, with the bar disabled and no handler bound, and the Lens is given the
  * folded view with no controls. The Lens says how the fold ends (`show`): the reader's press on Show post.
@@ -44,16 +44,6 @@ export function BelowTheFoldEffect({ show, met, still, children }: EffectProps) 
   }, [show, shown, still]);
   useEffect(() => () => show(null), [show]);
 
-  const barRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    const el = barRef.current;
-    if (!el) return;
-    const keep = (e: Event) => e.stopPropagation();
-    el.addEventListener('pointerdown', keep);
-    el.addEventListener('touchstart', keep);
-    return () => { el.removeEventListener('pointerdown', keep); el.removeEventListener('touchstart', keep); };
-  }, []);
-
   /* The reader has met the card when the bar is first drawn; a moment meets nothing. */
   const met1 = useRef(false);
   useEffect(() => {
@@ -64,7 +54,7 @@ export function BelowTheFoldEffect({ show, met, still, children }: EffectProps) 
 
   return (
     <div className="dw-fold" data-kb-fold>
-      <button type="button" ref={barRef} className="dw-fold-bar" aria-expanded={shown} aria-controls={region} disabled={still} onClick={still ? undefined : () => setOpen((o) => !o)}>
+      <button type="button" className="dw-fold-bar" data-kb-over-ink="" aria-expanded={shown} aria-controls={region} disabled={still} onClick={still ? undefined : () => setOpen((o) => !o)}>
         <span className="dw-fold-arrow" aria-hidden="true">{shown ? '▾' : '▸'}</span>
         {shown ? 'Hide post' : 'Show post'}
       </button>

@@ -131,16 +131,14 @@ describe('Below the Fold', () => {
     }
   });
 
-  test('a press on the bar is the bar\'s own: no pointer or touch start reaches the post body around it (Whoops! scrubs from the body)', () => {
+  test('the bar is one of the pieces a post keeps over its ink (`data-kb-over-ink`), so Whoops! starts no scrub from a press on it, and the press still reaches everything above', () => {
     const { container } = setup();
+    expect(bar().closest('[data-kb-over-ink]')).toBe(bar());
     const reached = vi.fn();
     for (const type of ['pointerdown', 'touchstart']) container.addEventListener(type, reached);
     fireEvent.pointerDown(bar());
     fireEvent.touchStart(bar());
-    expect(reached).not.toHaveBeenCalled();
-    /* The post's words inside the fold are not the bar: a press there still reaches the body, as it does on a post with no fold. */
-    fireEvent.pointerDown(screen.getByText('The words of the post.'));
-    expect(reached).toHaveBeenCalledTimes(1);
+    expect(reached).toHaveBeenCalledTimes(2);
   });
 
   test('clears its view when it goes', () => {
