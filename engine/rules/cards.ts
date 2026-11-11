@@ -8,7 +8,7 @@
  * accepts. The browser runs these to preview; the server runs them to decide; the SQL
  * function re-checks what it can.
  */
-import type { ActKind, Alignment, EconomyRead, Hundredths, Settings, Span } from './types.ts';
+import type { ActKind, Alignment, EconomyRead, Hundredths, Quadrant, Settings, Span } from './types.ts';
 import { parse, safeColor } from '../bbcode/parse.ts';
 import { visibleText } from '../bbcode/visible.ts';
 import { phraseIn } from '../bbcode/phrase.ts';
@@ -55,22 +55,39 @@ export function postTarget(act: string, kind: PostTarget['kind'], body: unknown,
 }
 
 /**
- * An effect already on a target: a card played there before. A ward carries the rarity it turns
- * away up to and when it ends; a card set face down names no card (`card: null`), only that it is
+ * An effect already on a target: a card played there before. A live use card carries its gimmick (what it does while it is up) and when it ends; a card set face down names no card (`card: null`), only that it is
  * face down and when it ends, since which card it is is its setter's alone (card_target,
  * supabase/migrations/0054_card_plays.sql). `ends` is an ISO time; an effect with none does not end.
  */
 export interface CardEffect {
   readonly card: string | null;
   readonly act: string;
-  readonly ward?: Rarity;
+  readonly gimmick?: GimmickEffect;
   readonly ends?: string;
   readonly faceDown?: true;
   /** Which reach the effect is on: the target's own, or one above it (effectsOnTarget). A post's unless it says. */
   readonly reach?: Reach;
 }
 
-/** How rare a card is, commonest first. It bounds what a trap catches and what a ward turns away. */
+/**
+ * What a use card does while it is up: one of a fixed list the engine holds, each card picking one and setting its numbers.
+ * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn raises what reactions earn the
+ * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it.
+ */
+export type GimmickEffect =
+  | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
+  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number }
+  | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths };
+export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price']);
+
+/** What a cast set card matches, besides a named card (`catches`): the printed flavors, and the rarity it takes up to. Pepperoni is its own flavor. */
+export interface Match {
+  readonly flavors?: readonly Alignment[];
+  readonly upTo?: Rarity;
+}
+
+/** How rare a card is, commonest first. It bounds what a set card names or matches and what a ward turns away. */
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'legendary';
 export const RARITIES: readonly Rarity[] = Object.freeze(['common', 'uncommon', 'rare', 'legendary']);
 /** Whether rarity `a` is at or below rarity `b`; never, where either is not one of the four. */
@@ -89,9 +106,9 @@ export const PLAYS: readonly Play[] = Object.freeze(['cast', 'use', 'set', 'keep
 export const playOf = (rules: Pick<CardRules, 'play'>): Play => rules.play ?? 'cast';
 
 /**
- * What springs a Gimmick (a card whose play is `set`; the face-down Moves design, section 4): a card cast on its post (Trap Card's, which
- * catches the one card it names), or a Mod Bot's visit starting (Hall Pass's). A Move set face down springs on a quote, which is the
- * engine's and never a card's, so no card names it.
+ * What springs a set card (a card whose play is `set`): a card cast on its post (which catches the one card it names, or the cards its
+ * match covers), or a Mod Bot's visit starting. A cast card set face down springs on a quote, which is the engine's and never a card's,
+ * so no card names it.
  */
 export type Trigger = { readonly on: 'cast' } | { readonly on: 'visit' };
 export const TRIGGERS: readonly Trigger['on'][] = Object.freeze(['cast', 'visit']);
@@ -107,8 +124,22 @@ export const isLive = (effect: Pick<CardEffect, 'ends'>, now: Date = new Date())
   return Number.isNaN(ends) || ends > now.getTime();
 };
 
-/** A ward's refusal, the same for every caster, since the ward is face up; play_card says it in the same words. */
-export const wardWords = (wardName: string, rarity: Rarity, reach: Reach = 'post'): string => `this ${reach}'s ${wardName} turns away cards up to ${rarity}`;
+/** Whether a ward turns a card away: its rarity is at or below `upTo`, its printed alignment is one of `flavors`, or its key is one of `cards`. */
+export const wardTurnsAway = (effect: WardEffect, rules: Pick<CardRules, 'key' | 'rarity' | 'alignment'>): boolean =>
+  (effect.upTo !== undefined && atOrBelow(rules.rarity, effect.upTo)) || (effect.flavors?.includes(rules.alignment) ?? false) || (effect.cards?.includes(rules.key) ?? false);
+
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * A ward's refusal, the same for every caster, since the ward is face up; play_card says it in the same words. It says whichever of the
+ * ward's three ways matched the card, in that order: rarity, flavor, name.
+ */
+export function wardWords(wardName: string, effect: WardEffect, rules: Pick<CardRules, 'key' | 'name' | 'rarity' | 'alignment'>, reach: Reach = 'post'): string {
+  const head = `this ${reach}'s ${wardName} turns away`;
+  if (effect.upTo !== undefined && atOrBelow(rules.rarity, effect.upTo)) return `${head} cards up to ${effect.upTo}`;
+  if (effect.flavors?.includes(rules.alignment)) return `${head} ${capital(rules.alignment)} cards`;
+  return `${head} ${rules.name}`;
+}
 
 /** How each play is said in a refusal of the wrong one. */
 const PLAYED: Record<Play, string> = {
@@ -129,17 +160,17 @@ export interface CardRules<Config = unknown> {
   /** How it is played; a Cast unless it says. */
   readonly play?: Play;
   /**
-   * A Gimmick's trap: what springs it. What a spring does is the engine's per trigger: a cast Gimmick catches the card its configuration
-   * names (`catches`) and takes it, a visit Gimmick ends the visit. A Gimmick with none is a bluff, and never springs. A Move has none:
-   * set face down, it springs on a quote, and the quote lands it.
+   * A set card's trap: what springs it. What a spring does is the engine's per trigger: a cast trap catches the card it names (`catches`) or
+   * the cards its `match` covers, and takes it; a visit trap ends the visit. Every set card has one. A cast card has none: set face down,
+   * it springs on a quote, and the quote lands it. A cast trap names its card (`catches`) or has a `match`, never both.
    */
-  readonly trap?: { readonly trigger: Trigger };
-  /** A cast Gimmick's catch (Trap Card's): the key of the card it waits for, from its checked configuration. Every cast Gimmick has it, and nothing else. */
+  readonly trap?: { readonly trigger: Trigger; readonly match?: Match };
+  /** A cast trap's catch: the key of the card it waits for, from its checked configuration. Only a set card that springs on a cast and has no `match` has it. */
   catches?(config: Config): string;
-  /** A Move's set phrase (Autocorrect's): the phrase its landing needs, found in the quoting post's own words, from its checked configuration. Only a Move has it. */
+  /** A cast card's set phrase: the phrase its landing needs, found in the quoting post's own words, from its checked configuration. Only a cast card has it. */
   setPhrase?(config: Config): string;
-  /** A Use card that turns away casts on its target at or below its rarity while it is up. */
-  readonly ward?: true;
+  /** A use card's effect while it is up. Every use card has one, and nothing else does. */
+  readonly gimmick?: GimmickEffect;
   /** Where it can land; a post unless it says (`['post']`). A reach beyond a post takes at least its `reachRarity`. */
   readonly reaches?: readonly Reach[];
   /**
@@ -199,7 +230,7 @@ export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
 export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
-function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date, surcharge = false): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   // The configuration is checked first so the landing can read it, and the landing's refusal is still said first.
   const checked = rules.validateConfig(config);
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
@@ -207,7 +238,9 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   if (!checked.ok) return checked;
   const said = casterMessage(message);
   if (!said.ok) return said;
-  const price = rules.playPrice(settings, target, checked.value);
+  // A cast pays every live price effect on its target, or above it, whose flavors hold its printed alignment; a use or a set pays none.
+  const added = surcharge ? effects.reduce((sum, e) => (e.gimmick?.kind === 'price' && isLive(e, now) && e.gimmick.flavors.includes(rules.alignment) ? sum + e.gimmick.add : sum), 0) : 0;
+  const price = Math.max(0, rules.playPrice(settings, target, checked.value) + added);
   if (!Number.isSafeInteger(price) || price < 0) throw new Error(`card ${rules.key} priced a play at ${price}`);
   return ok({ price, config: checked.value, message: said.value });
 }
@@ -221,7 +254,7 @@ export interface PlayContext {
 /**
  * A card cast on a target, decided by its own rules: whether it lands there given the effects
  * already on it, whether the caster's configuration is one it accepts, and what it costs from the
- * wallet. A live ward on the target that covers the card's rarity refuses it first, before the
+ * wallet, with any live price effect on the target or above it added. A live ward on the target that turns the card away refuses it first, before the
  * card's own rules. The SQL function that writes the play holds what it can again.
  *
  * The price is read from the post as it stands when the play is decided. A post edited longer
@@ -231,14 +264,14 @@ export interface PlayContext {
 export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   if (playOf(rules) !== 'cast') return wrongPlay(rules);
   const now = context.now ?? new Date();
-  const ward = effects.find((e) => e.ward !== undefined && (e.reach ?? 'post') === target.reach && isLive(e, now) && atOrBelow(rules.rarity, e.ward));
-  if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.ward!, target.reach));
-  return decided(rules, settings, target, effects, config, message, now);
+  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
+  if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
+  return decided(rules, settings, target, effects, config, message, now, true);
 }
 
 /**
  * A Use card played on a target. That the target is the player's own post is SQL's to hold, since
- * only SQL reads who wrote it; a ward does not refuse a Use.
+ * only SQL reads who wrote it; a ward does not refuse a Use, and a price effect adds nothing to one.
  */
 export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
@@ -246,11 +279,11 @@ export function decideUse(rules: CardRules, settings: Settings, target: CardTarg
 }
 
 /**
- * A card set face down on a post, a Move (cast) or a Gimmick (set); a Use is refused. Refused on a post that already holds a live
- * face-down card. The configuration is the card's own (`validateConfig`). A cast Gimmick names the card it catches
- * (`catches`), which must be one of `cards` that is cast on a post, since a caught card is one a caster played there. A Move's
+ * A card set face down on a post, a cast card or a set card; a use card is refused. Refused on a post that already holds a live
+ * face-down card. The configuration is the card's own (`validateConfig`). A set card that springs on a cast names the card it catches
+ * (`catches`), which must be one of `cards` that is cast on a post and no rarer than the set card, or has a `match` no rarer than it. A set card with no trap is refused. A cast card's
  * `setPhrase` is returned too, for the landing to find in the quoting post's words, and an empty one is refused, since it is in no
- * post and the back could never land. A set costs nothing beyond the card, and a sprung card lands free. A ward never blocks a set, and a set carries no message, since its Act says nothing about its card.
+ * post and the back could never land. A set costs nothing beyond the card, and a sprung card lands free. A ward never blocks a set and a price adds nothing to one, and a set carries no message, since its Act says nothing about its card.
  */
 /** The longest phrase a Move may be set to wait for, in characters; the server holds the same bound (supabase/migrations/0142_face_down_moves.sql, place_set), so every back's pattern there is one length. */
 export const SET_PHRASE_MOST = 100;
@@ -276,6 +309,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (target.reach !== 'post' || target.kind !== 'post') return refuse('a card is set face down on a post');
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   // A Move that lands beyond a post (Glitter Bomb on a character) is set on a post all the same and lands on what the quote reaches (design section 3); whether it can land there is the spring's to decide.
+  if (play === 'set' && rules.trap === undefined) return refuse(`${rules.name} has no trap to spring`);
   const lands = reachesOf(rules).includes('post') ? rules.canApply(target, effects, undefined, now) : ok(undefined);
   if (!lands.ok) return lands;
   const checked = rules.validateConfig(config);
@@ -285,13 +319,16 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
     catches = rules.catches(checked.value);
     const named = cards.find((c) => c.key === catches);
     if (!named || !castOnPost(named)) return refuse(`${rules.name} names a card that is cast on a post`);
+    if (!atOrBelow(named.rarity, rules.rarity)) return refuse(`${rules.name} names cards up to ${rules.rarity}`);
   }
+  const upTo = rules.trap?.match?.upTo;
+  if (upTo !== undefined && !atOrBelow(upTo, rules.rarity)) return refuse(`${rules.name} names cards up to ${rules.rarity}`);
   let phrase = rules.setPhrase?.(checked.value);
   if (phrase !== undefined && phrase.trim() === '') return refuse(`${rules.name} needs a phrase to wait for`);
   if (phrase !== undefined && [...phrase].length > SET_PHRASE_MOST) return refuse(`${rules.name} waits for a phrase of at most ${SET_PHRASE_MOST} characters`);
   const { says, passage, who } = conditions;
   if (says !== undefined || passage !== undefined || who !== undefined) {
-    // A Gimmick takes none: Trap Card already names its card, and Hall Pass waits for a visit.
+    // A set card takes none: it names or matches its cards, or waits for a visit.
     if (play === 'set') return refuse(`${rules.name} takes no conditions`);
     // A card with its own phrase has its Says fixed to it: one back holds one phrase.
     if (says !== undefined && phrase !== undefined) return refuse(`${rules.name} already waits for its own phrase`);
@@ -337,7 +374,7 @@ export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_0
 /** The reaches a card lists, a post unless it says. */
 export const reachesOf = (rules: Pick<CardRules, 'reaches'>): readonly Reach[] => rules.reaches ?? ['post'];
 
-/** Whether a card is cast on a post: the cards a cast Gimmick may name, since a caught card is one a caster played there. */
+/** Whether a card is cast on a post: the cards a cast trap may name, since a caught card is one a caster played there. */
 export const castOnPost = (rules: Pick<CardRules, 'play' | 'reaches'>): boolean => playOf(rules) === 'cast' && reachesOf(rules).includes('post');
 
 /** The live effects on each target above a post: its board's, its thread's and its author's (effects_above, 0055_card_reach.sql). */
@@ -422,7 +459,7 @@ export function color(value: unknown): string | null {
 }
 
 /**
- * Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. A Gimmick that
+ * Whether the pool may offer a card to a staff persona: code can build a configuration for it, or the persona chooses its options. A set card that
  * springs on a visit is never offered: a Mod Bot visits only players' posts, so a persona's Hall Pass could never spring.
  */
 export function staffOffers(card: CardRules): boolean {
