@@ -1212,10 +1212,16 @@ describe('what a list row shows', () => {
     expect(await fake.setPreferences({ motion: 'reduce' })).toEqual({ ok: false, error: NOT_SENT, notSent: true });
     const failed = await fake.acts(thread, 1, 99).catch((e: unknown) => e);
     expect(failureKind(failed)).toBe('offline');
+    expect(await fake.markRead(thread, 1, null)).toBe(false);
     fake.seed.offline(false);
     const prefs = await fake.preferences();
     expect(prefs.motion).toBe('system');
     expect(await fake.acts(thread, 1, 99)).toBeInstanceOf(Array);
+    /* Signing out needs no server, so it goes through offline. */
+    fake.seed.offline(true);
+    await fake.signOut();
+    fake.seed.offline(false);
+    expect((await fake.session()).signedIn).toBe(false);
   });
 
   test('a player\'s seeded Act takes the time it is given, as The System\'s does', async () => {
