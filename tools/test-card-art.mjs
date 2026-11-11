@@ -58,7 +58,7 @@ let n = 0;
 /**
  * A repository-shaped folder with one clean card folder, then `poison(files)` applied: `files` maps
  * a name in the card folder to its content (a string or a Buffer), or to null for no file.
- * @param {(files: Record<string, string | null>) => void} [poison]
+ * @param {(files: Record<string, string | Buffer | null>) => void} [poison]
  */
 function repo(poison = () => {}) {
   /** @type {Record<string, string | Buffer | null>} */
