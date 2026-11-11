@@ -17,15 +17,12 @@ import stickAroundArt from './cards/stick-around/art.json';
 import whoopsCanvas from './cards/whoops/art.svg?url';
 import whoopsMark from './cards/whoops/mark.svg?url';
 import whoopsArt from './cards/whoops/art.json';
-import trapCardCanvas from './cards/trap-card/art.svg?url';
-import trapCardMark from './cards/trap-card/mark.svg?url';
-import trapCardArt from './cards/trap-card/art.json';
+import cardCollectorCanvas from './cards/card-collector/art.svg?url';
+import cardCollectorMark from './cards/card-collector/mark.svg?url';
+import cardCollectorArt from './cards/card-collector/art.json';
 import forceFieldCanvas from './cards/force-field/art.svg?url';
 import forceFieldMark from './cards/force-field/mark.svg?url';
 import forceFieldArt from './cards/force-field/art.json';
-import bluffCanvas from './cards/bluff/art.svg?url';
-import bluffMark from './cards/bluff/mark.svg?url';
-import bluffArt from './cards/bluff/art.json';
 import glitterBombCanvas from './cards/glitter-bomb/art.svg?url';
 import glitterBombMark from './cards/glitter-bomb/mark.svg?url';
 import glitterBombArt from './cards/glitter-bomb/art.json';
@@ -46,7 +43,12 @@ import { glitterBomb } from '../cards/glitter-bomb.ts';
 import { mainEvent } from '../cards/main-event.ts';
 import { forceField } from '../cards/force-field.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
-import { ConfigForm as TrapCardConfigForm } from '../cards/trap-card/ConfigForm.tsx';
+import { ConfigForm as CardCollectorConfigForm } from '../cards/card-collector/ConfigForm.tsx';
+import { cardCollector } from '../cards/card-collector.ts';
+import { publicityTour } from '../cards/publicity-tour.ts';
+import { heatMagnet } from '../cards/heat-magnet.ts';
+import { classClown } from '../cards/class-clown.ts';
+import { goodVibes } from '../cards/good-vibes.ts';
 import { ConfigForm as WhoopsConfigForm } from '../cards/whoops/ConfigForm.tsx';
 import { rgbOf } from '../cards/whoops/splat.ts';
 
@@ -120,18 +122,18 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       : undefined),
   },
   /*
-   * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Bluff is Pepperoni's color, the
+   * The card mechanic's first plays (docs/plans/2026-11-01-card-mechanic-design.md, section 6). Pepperoni's color is the
    * board's --kb-pepperoni, with the dark ink the other faces set on theirs.
    */
   {
-    key: 'trap-card',
-    art: { color: '#ff3d7f', ink: '#14030a', canvas: trapCardCanvas, mark: trapCardMark, credit: trapCardArt.credit, tagline: 'Take a named card off your post.' },
-    summary: 'Set face down on your post, naming a card. Catches that card when it is cast there, and takes it into your hand.',
+    key: 'card-collector',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: cardCollectorCanvas, mark: cardCollectorMark, credit: cardCollectorArt.credit, tagline: 'Take a named card off your post.' },
+    summary: `Set face down on your post, naming a card up to ${cardCollector.rarity}. Catches that card when it is cast there, and takes it into your hand.`,
     /* Shown only for a play that names this card; a Set is a card back, whose words are the engine's ("Face down on this post"). */
     status: 'Set, face down to everyone else',
-    ConfigForm: TrapCardConfigForm,
+    ConfigForm: CardCollectorConfigForm,
     describe: (settings: Settings) =>
-      `A Salty card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the one card it catches, from the cards cast on a post, at any rarity. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs nothing more to set.`,
+      `A Salty card, ${cardCollector.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. You name the one card it catches, from the cards cast on a post, ${cardCollector.rarity} or commoner. When that card is cast on your post, it is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'}. It costs nothing more to set.`,
   },
   {
     key: 'force-field',
@@ -141,17 +143,48 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     describe: (settings: Settings) =>
       `A Sweet card, ${forceField.rarity}, used on one of your own posts. For ${spanWords(forceField.lasts!)}, every card cast there that is ${forceField.rarity} or commoner is turned away before it lands, and its caster is told so; a rarer card lands as usual. It never stops a card set face down. It costs nothing more to use.`,
   },
+  /*
+   * The Gimmicks of the card types design (docs/plans/2026-11-11-card-types-design.md, section 8). Their art comes with the plan's Task 7:
+   * until then each wears the art of a card of its own flavor, so a face has a canvas and a mark.
+   */
   {
-    key: 'bluff',
-    art: { color: '#d24a2c', ink: '#1a0602', canvas: bluffCanvas, mark: bluffMark, credit: bluffArt.credit, tagline: 'A card back that does nothing.' },
-    summary: 'Set face down on your post. Might be any card, and does nothing.',
-    /* As every set card's: the same words, so none can be told from another. */
-    status: 'Set, face down to everyone else',
+    key: 'publicity-tour',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: forceFieldCanvas, mark: forceFieldMark, credit: forceFieldArt.credit, tagline: 'Positive reactions count more.' },
+    summary: `Used on one of your characters. For ${spanWords(publicityTour.lasts!)}, positive reactions to its posts count 0.1 more.`,
+    status: 'Positive reactions count more',
     describe: (settings: Settings) =>
-      `A Pepperoni card, common, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down, so it might be any card. It does nothing, and ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} with nothing revealed. It costs nothing more to set.`,
+      `A Sweet card, ${publicityTour.rarity}, used on one of your own characters. For ${spanWords(publicityTour.lasts!)}, every positive reaction (excited or calm) that character's posts earn counts 0.1 more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => 'Positive reactions to that character count 0.1 more until it ends.',
+  },
+  {
+    key: 'heat-magnet',
+    art: { color: '#ff3d7f', ink: '#14030a', canvas: cardCollectorCanvas, mark: cardCollectorMark, credit: cardCollectorArt.credit, tagline: 'Negative reactions count more.' },
+    summary: `Used on one of your characters. For ${spanWords(heatMagnet.lasts!)}, negative reactions to its posts count 0.1 more.`,
+    status: 'Negative reactions count more',
+    describe: (settings: Settings) =>
+      `A Salty card, ${heatMagnet.rarity}, used on one of your own characters. For ${spanWords(heatMagnet.lasts!)}, every negative reaction (excited or bored) that character's posts earn counts 0.1 more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => 'Negative reactions to that character count 0.1 more until it ends.',
+  },
+  {
+    key: 'class-clown',
+    art: { color: '#d24a2c', ink: '#1a0602', canvas: glitterBombCanvas, mark: glitterBombMark, credit: glitterBombArt.credit, tagline: 'Laughs and eye rolls count more.' },
+    summary: `Used on one of your characters. For ${spanWords(classClown.lasts!)}, each 😂 and 🙄 on its posts counts 0.5 more.`,
+    status: 'Laughs and eye rolls count more',
+    describe: (settings: Settings) =>
+      `A Pepperoni card, ${classClown.rarity}, used on one of your own characters. For ${spanWords(classClown.lasts!)}, every 😂 and every 🙄 that character's posts earn counts 0.5 more, and then it stops by itself. It never makes a loss worse. It costs nothing more to use.`,
+    logPlay: () => 'Each 😂 and 🙄 on that character\'s posts counts 0.5 more until it ends.',
+  },
+  {
+    key: 'good-vibes',
+    art: { color: '#2ee6ff', ink: '#03141a', canvas: mainEventCanvas, mark: mainEventMark, credit: mainEventArt.credit, tagline: 'Salty cards cost more here.' },
+    summary: `Used on a thread you started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card there costs 0.25 more.`,
+    status: 'Salty cards cost 0.25 more here',
+    describe: (settings: Settings) =>
+      `A Sweet card, ${goodVibes.rarity}, used on a thread one of your own characters started. For ${spanWords(goodVibes.lasts!)}, casting a Salty card in that thread, or on a post in it, costs 0.25 more, for everyone, and then it stops by itself. It costs nothing more to use.`,
+    logPlay: () => 'Casting a Salty card in that thread costs 0.25 more until it ends.',
   },
   /*
-   * Autocorrect (docs/plans/2026-11-03-autocorrect-design.md): Pepperoni's color, as Bluff and Glitter Bomb are. Its face is a strip
+   * Autocorrect (docs/plans/2026-11-03-autocorrect-design.md): Pepperoni's color, as Glitter Bomb is. Its face is a strip
    * of label tape, typed on.
    */
   {
@@ -179,8 +212,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
     },
   },
   /*
-   * The first cards beyond a post (docs/plans/2026-11-01-card-mechanic-design.md, section 8). Glitter Bomb is Pepperoni's color, as
-   * Bluff is; Main Event is Sweet's, as Force Field is.
+   * The first cards beyond a post (docs/plans/2026-11-01-card-mechanic-design.md, section 8). Glitter Bomb is Pepperoni's color; Main Event is Sweet's, as Force Field is.
    */
   {
     key: 'glitter-bomb',
@@ -216,13 +248,13 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   },
   /*
    * Hall Pass (docs/plans/2026-11-07-face-down-moves-design.md, section 4): Sweet's cyan, as Force Field is. A Gimmick, set face down
-   * like a Trap Card; what it springs on is a Mod Bot's visit, so it names no card.
+   * like Card Collector; what it springs on is a Mod Bot's visit, so it names no card.
    */
   {
     key: 'hall-pass',
     art: { color: '#2ee6ff', ink: '#03141a', canvas: hallPassCanvas, mark: hallPassMark, credit: hallPassArt.credit, tagline: "Wave a Mod Bot's visit away." },
     summary: "Set face down on your post. Ends the next Mod Bot visit to it when the visit starts.",
-    /* As the Trap Card's and Bluff's: the same words, so none can be told from another. */
+    /* As Card Collector's: the same words, so none can be told from another. */
     status: 'Set, face down to everyone else',
     describe: (settings: Settings) =>
       `A Sweet card, uncommon, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The next time a Mod Bot's visit to that post starts, the visit ends there and then, before the Mod Bot does anything to the post; the visit's own posts stay. It springs once, or ends by itself after ${settings.setLasts.count} ${settings.setLasts.unit}${settings.setLasts.count === 1 ? '' : 's'} if no visit comes. It costs nothing more to set.`,

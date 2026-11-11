@@ -11,7 +11,7 @@ export const forceField: CardRules<Record<string, never>> = {
   alignment: 'sweet',
   rarity: 'uncommon',
   play: 'use',
-  ward: true,
+  gimmick: { kind: 'ward', upTo: 'uncommon' },
   lasts: { unit: 'day', count: 7 },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(forceField, target, effects, now),
