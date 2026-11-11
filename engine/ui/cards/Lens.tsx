@@ -333,7 +333,8 @@ function AsItLanded({ play }: { readonly play: Id }) {
   const press = () => {
     if (read.busy) return;
     if (pressed) { store.showMoment(null); return; }
-    if (store.kept(play) !== undefined) { store.showMoment(play); return; }
+    /* An earlier failure's note clears in `open`, which a kept answer's shortcut would skip; `open` on a kept answer reads nothing. */
+    if (store.kept(play) !== undefined && !read.failed) { store.showMoment(play); return; }
     void read.open().then((landed) => { if (landed) store.showMoment(play); });
   };
   return (
