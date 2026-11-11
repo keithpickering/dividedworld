@@ -6,7 +6,8 @@
  * tests.become does), and turns an error into the same DatabaseError with its SQLSTATE, message and hint.
  * One held connection, because a rehearsed week is about 10,080 ticks, and libfaketime reads its clock file
  * on every time call. No argument value is ever put into the SQL text: the whole body travels as one jsonb
- * parameter.
+ * parameter. The signature cache assumes functions are not redefined during a run (migrations run first). Calls
+ * are serialized on the held connection, so a player's handle and the service's cannot interleave a transaction.
  */
 import pg from 'pg';
 import { DatabaseError, type Db } from '../../supabase/functions/_shared/rpc.ts';
@@ -43,7 +44,7 @@ export function statusFor(code: string): number {
 
 const SIGNATURES = `
   select p.proargnames as names, p.proretset as retset, p.pronargdefaults as ndefaults,
-         format_type(p.prorettype, null) as rettype, p.proargmodes as modes,
+         format_type(p.prorettype, null) as rettype, p.proargmodes::text[] as modes,
          coalesce((select array_agg(format_type(t.oid, null) order by t.ord) from unnest(p.proargtypes::oid[]) with ordinality t(oid, ord)), '{}') as types
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'public' and p.proname = $1`;
@@ -59,6 +60,12 @@ const notFound = (fn: string, why: string) => new DatabaseError(`${fn}: ${why}`,
 
 function wrap(client: pg.Client): Connection {
   const cache = new Map<string, Signature[]>();
+  let tail: Promise<unknown> = Promise.resolve();
+  const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
+    const run = tail.then(work, work);
+    tail = run.catch(() => {});
+    return run;
+  };
 
   async function signatures(fn: string): Promise<Signature[]> {
     const known = cache.get(fn);
@@ -87,7 +94,7 @@ function wrap(client: pg.Client): Connection {
     const call = sig.args.filter((a) => given.includes(a.name)).map((a) => {
       const key = pg.escapeLiteral(a.name);
       let value: string;
-      if (a.type === 'jsonb' || a.type === 'json') value = `($1::jsonb -> ${key})::${a.type}`;
+      if (a.type === 'jsonb' || a.type === 'json') value = `(nullif($1::jsonb -> ${key}, 'null'::jsonb))::${a.type}`;
       else if (a.type.endsWith('[]')) value = `(case when jsonb_typeof($1::jsonb -> ${key}) = 'array' then array(select jsonb_array_elements_text($1::jsonb -> ${key}))::${a.type} end)`;
       else value = `($1::jsonb ->> ${key})::${a.type}`;
       return `${pg.escapeIdentifier(a.name)} => ${value}`;
@@ -105,21 +112,24 @@ function wrap(client: pg.Client): Connection {
       const claims = as === 'service' ? { role: 'service_role' } : { sub: as.player, role: 'authenticated' };
       const role = as === 'service' ? 'service_role' : 'authenticated';
       return {
-        async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-          const given = Object.keys(args);
-          const sig = choose(fn, await signatures(fn), given);
-          const text = sqlFor(fn, sig, given);
-          try {
-            await client.query('begin');
-            await client.query(`set local role ${role}`);
-            await client.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify(claims)]);
-            const { rows } = await client.query(text, given.length > 0 ? [JSON.stringify(args)] : []);
-            await client.query('commit');
-            return (sig.returnType === 'void' && !sig.returnsSet ? null : rows[0]?.result ?? null) as T;
-          } catch (e) {
-            await client.query('rollback').catch(() => {});
-            throw toDatabaseError(fn, e);
-          }
+        rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+          return exclusive(async () => {
+            const given = Object.keys(args);
+            let sig: Signature;
+            try { sig = choose(fn, await signatures(fn), given); } catch (e) { throw e instanceof DatabaseError ? e : toDatabaseError(fn, e); }
+            const text = sqlFor(fn, sig, given);
+            try {
+              await client.query('begin');
+              await client.query(`set local role ${role}`);
+              await client.query(`select set_config('request.jwt.claims', $1, true)`, [JSON.stringify(claims)]);
+              const { rows } = await client.query(text, given.length > 0 ? [JSON.stringify(args)] : []);
+              await client.query('commit');
+              return (sig.returnType === 'void' && !sig.returnsSet ? null : rows[0]?.result ?? null) as T;
+            } catch (e) {
+              await client.query('rollback').catch(() => {});
+              throw toDatabaseError(fn, e);
+            }
+          });
         },
       };
     },

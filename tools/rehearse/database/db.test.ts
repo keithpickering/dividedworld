@@ -46,6 +46,13 @@ before(async () => {
     create function public.noop() returns void language sql as $$ select $$;
     create function public.dup() returns void language plpgsql as $$ begin insert into u values (1), (1); end $$;
     create function public.take(s text) returns text language sql as $$ select s $$;
+    create function public.tbl(n integer) returns table (a integer, b text) language sql as $$ select i, 'r' || i from generate_series(1, n) i $$;
+    create function public.outp(n integer, out doubled integer, out label text) language sql as $$ select n * 2, 'n' || n $$;
+    create function public.isnull(d jsonb) returns boolean language sql as $$ select d is null $$;
+    create function public.slow2() returns jsonb language plpgsql as $$ begin perform pg_sleep(0.2); return jsonb_build_object('role', current_user, 'uid', auth.uid()); end $$;
+    create function public.partial() returns void language plpgsql as $$ begin insert into x values (99); insert into u values (2), (2); end $$;
+    create function public.flag(f boolean, at timestamptz, id uuid, ids uuid[], maybe text default null) returns jsonb language sql as $$ select jsonb_build_object('f', f, 'at', at, 'id', id, 'ids', to_jsonb(ids), 'maybe', maybe) $$;
+    create function public.nums(n integer) returns setof integer language sql as $$ select generate_series(1, n) $$;
     grant all on all tables in schema public to service_role, authenticated;
   `);
 });
@@ -125,4 +132,41 @@ test('an argument that looks like SQL is data', async () => {
   const text = `'); drop table x; --`;
   assert.equal(await svc().rpc('take', { s: text }), text);
   assert.deepEqual(await conn.sql('select count(*)::int as n from x'), [{ n: 0 }]);
+});
+
+test('RETURNS TABLE and OUT parameters are callable', async () => {
+  assert.deepEqual(await svc().rpc('tbl', { n: 2 }), [{ a: 1, b: 'r1' }, { a: 2, b: 'r2' }]);
+  assert.deepEqual(await svc().rpc('outp', { n: 4 }), { doubled: 8, label: 'n4' });
+});
+
+test('a JSON null for a jsonb argument is SQL NULL', async () => {
+  assert.equal(await svc().rpc('isnull', { d: null }), true);
+  assert.equal(await svc().rpc('isnull', { d: {} }), false);
+});
+
+test('calls on one connection do not interleave', async () => {
+  const [a, b] = await Promise.all([player().rpc('slow2', {}), svc().rpc('slow2', {})]);
+  assert.deepEqual(a, { role: 'authenticated', uid: PLAYER });
+  assert.deepEqual(b, { role: 'service_role', uid: null });
+});
+
+test('the role is reset after a call', async () => {
+  await player().rpc('who', {});
+  assert.deepEqual(await conn.sql('select current_user as u'), [{ u: 'postgres' }]);
+});
+
+test('an error rolls back the whole call', async () => {
+  await refused(svc().rpc('partial', {}));
+  assert.deepEqual(await conn.sql('select count(*)::int as n from x where id = 99'), [{ n: 0 }]);
+});
+
+test('boolean, timestamptz, null and uuid[] arguments, and a setof scalar', async () => {
+  const id = '22222222-2222-4222-8222-222222222222';
+  const out = await svc().rpc<Record<string, unknown>>('flag', { f: true, at: '2026-01-02T03:04:05Z', id, ids: [id, PLAYER], maybe: null });
+  assert.equal(out.f, true);
+  assert.equal(new Date(out.at as string).toISOString(), '2026-01-02T03:04:05.000Z');
+  assert.equal(out.id, id);
+  assert.deepEqual(out.ids, [id, PLAYER]);
+  assert.equal(out.maybe, null);
+  assert.deepEqual(await svc().rpc('nums', { n: 3 }), [1, 2, 3]);
 });
