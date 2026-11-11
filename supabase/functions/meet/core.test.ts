@@ -8,6 +8,7 @@ import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
 import { AnswerRejected, LedgerWriteFailed, SchemaRefused } from '../_shared/models/index.ts';
+import { TransportFailure } from '../_shared/models/transport.ts';
 import { MEETING_PARTS, partRule, partSchema, type MeetingPartKey } from '../../../engine/system/meeting.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
@@ -893,4 +894,44 @@ test('an infrastructure error in the second part throws, and the meeting is clos
   assert.equal(m.chats.length, 2, 'the third call is not made');
   assert.deepEqual(d.state.failed.map((f) => f.outcome), ['failed']);
   assert.equal(d.count('apply_meeting'), 0);
+  assert.deepEqual(d.state.failed[0]!.record.parts, [{ part: 'moves', outcome: 'ok' }, { part: 'staff', outcome: 'failed', error: 'the ledger is down' }], 'the parts already run are kept on the closed row');
+});
+
+test('a DatabaseError in a middle part closes the meeting with the parts so far, the failed one carrying its error', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'staff' ? new DatabaseError('ledger insert: the connection dropped', '08006', 500) : perPart(answer([rename(0)]))(r)));
+  await assert.rejects(run(d.db, m.models, quiet, SLOT, clock, noFeeds), /connection dropped/);
+  assert.equal(m.chats.length, 2);
+  assert.deepEqual(d.state.failed[0]!.record.parts, [{ part: 'moves', outcome: 'ok' }, { part: 'staff', outcome: 'failed', error: 'ledger insert: the connection dropped' }]);
+});
+
+test('a model transport failure in a part is a failed part and the later parts still run', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'moves' ? new TransportFailure('provider answered 503') : perPart(answer([rename(0)]))(r)));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.equal(m.chats.length, 3);
+  assert.deepEqual(d.state.applied[0]!.payload.record.parts.map((p: any) => [p.part, p.outcome]), [['moves', 'failed'], ['staff', 'ok'], ['self', 'ok']]);
+});
+
+test('mixed outcomes with no part kept close the meeting with the first part\'s outcome', async () => {
+  const d = fakeDb();
+  const m = fakeModels((r: ChatRequest) => {
+    const p = partOf(r);
+    return p === 'moves' ? new Error('upstream 500') : p === 'staff' ? new AnswerRejected('nope', 'required') : new Error('upstream 502');
+  });
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'failed');
+  assert.match(out.error, /upstream 500/);
+  assert.deepEqual(d.state.failed.map((f) => f.outcome), ['failed']);
+  assert.deepEqual(d.state.failed[0]!.record.parts.map((p: any) => p.outcome), ['failed', 'rejected', 'failed']);
+});
+
+test('the error shown to the next call is clipped to 200 characters, the record keeps it whole', async () => {
+  const d = fakeDb();
+  const long = 'x'.repeat(400);
+  const m = fakeModels((r: ChatRequest) => (partOf(r) === 'moves' ? new Error(long) : perPart(answer([rename(0)]))(r)));
+  await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(m.chats[1]!.messages[1]!.content, `(this part was not kept: ${'x'.repeat(200)})`);
+  assert.equal(d.state.applied[0]!.payload.record.parts[0].error, long);
 });

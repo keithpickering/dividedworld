@@ -120,6 +120,9 @@ const FEED_BYTES = 400_000;
 
 const DAY = 86_400_000;
 const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n));
+/** One part's result: a part that was not kept always says why. */
+type PartResult = { part: string; outcome: 'ok' } | { part: string; outcome: 'rejected' | 'failed'; error: string };
+
 const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
 
 /** The most tokens each part of the meeting may answer with, by the part's key (the moves are the long one). */
@@ -146,6 +149,8 @@ export async function runMeeting(
   if (began.status === 'already met') return { status: 'already met', slot: slotIso, meeting: began.meeting };
   const meeting = began.meeting;
 
+  // The parts run so far, outside the try so that a close after an infrastructure error still carries them.
+  const parts: PartResult[] = [];
   // Past this point the row is open: whatever throws is written onto it (best effort) and thrown again, so the error survives the next slot's generic close.
   try {
 
@@ -281,7 +286,6 @@ export async function runMeeting(
     // Three calls in order, each shown the earlier answers as prior turns; a part that fails is recorded and the next still runs, shown that it was not kept.
     const messages: { role: 'user' | 'assistant'; content: string }[] = [{ role: 'user', content: message }];
     const merged: Record<string, unknown> = {};
-    const parts: { part: string; outcome: 'ok' | 'rejected' | 'failed'; error?: string }[] = [];
     for (const [i, p] of MEETING_PARTS.entries()) {
       if (i > 0) messages.push({ role: 'user', content: p.ask });
       let shown: string;
@@ -305,19 +309,26 @@ export async function runMeeting(
         parts.push({ part: p.key, outcome: 'ok' });
         shown = JSON.stringify(own);
       } catch (e) {
-        if (isInfrastructure(e)) throw e;
+        if (isInfrastructure(e)) {
+          // The run stops here, but the closed row keeps the parts already run and this one as failed with its error.
+          parts.push({ part: p.key, outcome: 'failed', error: said(e) });
+          throw e;
+        }
+        // A model's TransportFailure (retries exhausted) lands here too: a failed part, and the later parts still run.
         // As the ledger writes it: a refused schema was never asked ('failed'); an answer that could not be used is 'rejected'.
         const outcome = e instanceof AnswerRejected && !(e instanceof SchemaRefused) ? 'rejected' : 'failed';
         const error = said(e);
         parts.push({ part: p.key, outcome, error });
-        shown = `(this part was not kept: ${error})`;
+        // The next call is shown only the start of it: an error can carry a provider's response body. The record keeps it whole.
+        shown = `(this part was not kept: ${clip(error, 200)})`;
       }
       messages.push({ role: 'assistant', content: shown });
     }
     if (!parts.some((p) => p.outcome === 'ok')) {
-      const { outcome, error } = parts[0]!;
-      await close(outcome as 'failed' | 'rejected', error!, { phase: phase.phase, feedsSkipped: skipped, parts });
-      return { status: outcome as 'failed' | 'rejected', meeting, error: error! };
+      const first = parts[0]!;
+      if (first.outcome === 'ok') throw new Error('meet: no part was kept, yet the first is ok');
+      await close(first.outcome, first.error, { phase: phase.phase, feedsSkipped: skipped, parts });
+      return { status: first.outcome, meeting, error: first.error };
     }
     const raw: unknown = merged;
 
@@ -413,7 +424,7 @@ export async function runMeeting(
     };
   } catch (e) {
     try {
-      await db.rpc('fail_meeting', { meeting, outcome: 'failed', error: said(e), record: {} });
+      await db.rpc('fail_meeting', { meeting, outcome: 'failed', error: said(e), record: parts.length ? { parts } : {} });
     } catch {
       // The close failed too: the original error is the one that matters.
     }
