@@ -107,7 +107,7 @@ declare
                            -- The pulls check on pack_kinds (0139), granted to PUBLIC like them, and the count of a hand, which the ledger's policy cuts to the caller's own cards (my_cards calls it).
                            'pack_pulls_problem(jsonb)', 'card_held(uuid,text)',
                            -- Conduct (0146). The player's doors: the code accepted, a report to admins and the caller's own bar and log. The admin's: deciding and reading a version's words,
-                           -- each refused to anyone who is not an admin. And the two functions acts_public and the policy on acts call as their reader: whether a version is hidden, a public fact
+                           -- each refused to anyone who is not an admin. And the two functions acts_public calls as its reader: whether a version is hidden, a public fact
                            -- of its id as acts_public's `hidden` is, and what a payload shows.
                            'accept_conduct(integer)', 'conduct_accepted()', 'report_post(uuid,text,text)', 'my_bar()', 'my_conduct_log(integer)',
                            'decide_report(bigint,jsonb)', 'decide(uuid,uuid,text,timestampwithtimezone,text)', 'admin_version(uuid)',

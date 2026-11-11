@@ -3,15 +3,19 @@
  * render each mail, send it, and write the attempt. supabase/functions/mail/index.ts is the thin Edge
  * Function around it; this file is what Node tests (core.test.ts) and Deno both run.
  *
- * Mail is sent when an `ok` attempt exists: the database lists a row as due until one does
- * (mail_due), so a refusal or a transport failure that outlasted the mailer's own retries is
- * recorded as an attempt with `ok` false and the row is tried again next run. A send whose answer
+ * An attempt is `sent`, `refused` or `failed`. A refusal is final: the provider (or the account's
+ * lack of an address) said no about this mail, so it is recorded as `refused` and the row is never due again. A
+ * transport failure that outlasted the mailer's own retries, or an Auth failure, is `failed`, and
+ * the database lists the row again after a backoff of 2^n minutes for n failures, at most a day
+ * (mail_due). A send whose answer
  * was lost is never two emails: every send carries the key `kayfabb-mail-<id>`, which the provider
  * dedupes. One row failing never stops the rest.
  *
  * A suspension or ban sets the login's ban through Supabase Auth's admin API, a lift clears it,
  * before the mail is sent, so the ban holds even where the mail fails. Task 2's SQL bar holds
- * whatever Auth does. An Auth failure is an attempt with `ok` false, and the mail waits for it.
+ * whatever Auth does. An Auth failure is a `failed` attempt, and the mail waits for it. The `bar` a
+ * row carries is the account's current bar (mail_due reads it, never the row's own decision), so an
+ * old failed suspension applied after a lift clears the login instead of banning it again.
  *
  * With no admin address set (`replyTo` null) nothing is sent or recorded: an appeal email with
  * nowhere to reply is worse than a late one, and the rows stay due.
@@ -21,8 +25,12 @@
  */
 import type { ConductTemplate } from '../../../engine/mail/conduct.ts';
 import type { Mailer } from '../../../engine/system/mail.ts';
+import { ProviderRefusal } from '../_shared/models/transport.ts';
 
 export type { ConductTemplate };
+
+/** How an attempt ended: the mail went, the provider refused it for good, or something failed that may pass. */
+export type AttemptKind = 'sent' | 'refused' | 'failed';
 
 /** One outbox row that is due (what the SQL `mail_due(most)` returns). */
 export interface MailRow {
@@ -35,11 +43,11 @@ export interface MailRow {
 }
 
 export interface MailDb {
-  /** At most `most` rows with no `ok` attempt, oldest first. */
+  /** At most `most` rows with no sent or refused attempt and no failed one still backing off, oldest first. */
   due(most: number): Promise<readonly MailRow[]>;
   /** The account's address from auth.users, or null. */
   address(account: string): Promise<string | null>;
-  attempt(a: { outbox: number; ok: boolean; providerId?: string | null; error?: string | null }): Promise<void>;
+  attempt(a: { outbox: number; kind: AttemptKind; providerId?: string | null; error?: string | null }): Promise<void>;
 }
 
 export interface AuthAdmin {
@@ -61,7 +69,7 @@ export interface MailDeps {
 
 export type MailOutcome =
   | { readonly status: 'waiting for the admin address'; readonly reason: string }
-  | { readonly status: 'done'; readonly due: number; readonly sent: number; readonly failed: number };
+  | { readonly status: 'done'; readonly due: number; readonly sent: number; readonly refused: number; readonly failed: number };
 
 const words = (e: unknown) => (e instanceof Error ? e.message : String(e)).slice(0, 300);
 
@@ -70,32 +78,37 @@ export async function runMail(deps: MailDeps): Promise<MailOutcome> {
   const now = deps.now ?? Date.now;
   const rows = await deps.db.due(deps.most);
   let sent = 0;
+  let refused = 0;
   let failed = 0;
   for (const row of rows) {
-    const fail = async (error: string) => { failed++; await deps.db.attempt({ outbox: row.id, ok: false, providerId: null, error }); };
+    const fail = async (kind: 'refused' | 'failed', error: string) => {
+      if (kind === 'refused') refused++; else failed++;
+      await deps.db.attempt({ outbox: row.id, kind, providerId: null, error });
+    };
     if (row.bar !== undefined) {
       try {
         if (row.bar.outcome === 'lift') await deps.auth.clearBan(row.account);
         else if (row.bar.outcome === 'ban' || row.bar.until === null) await deps.auth.setBan(row.account, null);
         else if (Date.parse(row.bar.until) > now()) await deps.auth.setBan(row.account, row.bar.until);
       } catch (e) {
-        await fail(`auth: ${words(e)}`);
+        await fail('failed', `auth: ${words(e)}`);
         continue;
       }
     }
     const to = await deps.db.address(row.account);
-    if (to === null) { await fail('no address'); continue; }
+    if (to === null) { await fail('refused', 'no address'); continue; }
     let id: string;
     try {
       const mail = deps.render(row);
       ({ id } = await deps.mailer.send({ to, replyTo: deps.replyTo, ...mail, idempotencyKey: `kayfabb-mail-${row.id}` }));
     } catch (e) {
-      await fail(words(e));
+      // A 401 or a 403 is the key, which the owner can fix: it fails and is retried, where any other refusal is about this mail and final.
+      await fail(e instanceof ProviderRefusal && e.status !== 401 && e.status !== 403 ? 'refused' : 'failed', words(e));
       continue;
     }
     // A database error here is thrown: the send is repeated next run under the same key, which the provider dedupes.
     sent++;
-    await deps.db.attempt({ outbox: row.id, ok: true, providerId: id, error: null });
+    await deps.db.attempt({ outbox: row.id, kind: 'sent', providerId: id, error: null });
   }
-  return { status: 'done', due: rows.length, sent, failed };
+  return { status: 'done', due: rows.length, sent, refused, failed };
 }

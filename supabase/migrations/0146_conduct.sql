@@ -234,8 +234,8 @@ declare
   i integer;
 begin
   if body is null or body !~* '\[quote=' then return body; end if;
-  pieces := regexp_split_to_array(body, '\[/?quote(?:[=\s][^\]]*)?\]', 'i');
-  tags := array(select m[1] from regexp_matches(body, '(\[/?quote(?:[=\s][^\]]*)?\])', 'gi') m);
+  pieces := regexp_split_to_array(body, '\[/?quote(?:[=\s][^\[\]]*)?\]', 'i');
+  tags := array(select m[1] from regexp_matches(body, '(\[/?quote(?:[=\s][^\[\]]*)?\])', 'gi') m);
   result := pieces[1];
   for i in 1 .. coalesce(array_length(tags, 1), 0) loop
     tag := tags[i];
@@ -270,6 +270,112 @@ language sql stable security definer set search_path = public, pg_temp as $$
     else p
   end
 $$;
+
+-- Two reads of a post's words that feed a model or a card's condition, now reading what a player would read (0105's rule_breaks and 0144's spring_facts, each
+-- otherwise as that migration left it): a hidden version has no words to judge, and the contents of a quote of a hidden post are emptied. rule_breaks finds
+-- nothing wrong with a post that is hidden, the words it counts being the public form's; spring_facts's `by_body` is null for a hidden version and has hidden quotes
+-- emptied, so neither a Mod Bot's rule or visit, nor a Says or Quotes condition, reads what an admin hid.
+create or replace function rule_breaks(post_act uuid, only_move uuid default null) returns setof rules_now
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  p record;
+  prev record;
+  r rules_now%rowtype;
+  body text;
+  broken boolean;
+begin
+  select a.character, a.thread, a.seq, a.created_at, coalesce(public_payload(a.payload, false) ->> 'body', '') as body, t.board, t.title into p
+  from acts a join threads t on t.id = a.thread where a.id = post_act and a.kind in ('post', 'spin') and not coalesce(version_hidden(a.id), false);
+  if not found then return; end if;
+  body := p.body;
+  -- The post before this one in the thread: the unique (thread, seq) index walked back. A thread's opener has none.
+  select x.character, x.created_at into prev from acts x
+  where x.thread = p.thread and x.seq < p.seq and x.kind in ('post', 'spin') order by x.seq desc limit 1;
+  for r in select * from rules_now x where (x.board is null or x.board = p.board) and (only_move is null or x.move_act = only_move) order by x.board nulls first, x.number loop
+    broken := case r.predicate
+      when 'minLength' then char_length(body) < (r.param #>> '{}')::integer
+      when 'maxLength' then char_length(body) > (r.param #>> '{}')::integer
+      when 'noAllCaps' then (
+        select w.letters > 0 and w.uppers * 2 > w.letters
+        from (select length(regexp_replace(q.s, '[^[:alpha:]]', '', 'g')) as letters, length(regexp_replace(q.s, '[^[:upper:]]', '', 'g')) as uppers
+              from (select regexp_replace(body, '\[/?[a-zA-Z*]+(=[^\]]*)?\]', '', 'g') as s) q) w)
+      when 'noDoublePost' then prev.character is not null and prev.character = p.character
+      when 'noNecropost' then prev.created_at is not null and p.created_at - prev.created_at > make_interval(days => (r.param #>> '{}')::integer)
+      when 'noDuplicateTitle' then p.seq = 1 and exists (
+        select 1 from threads o where o.board = p.board and o.id <> p.thread and lower(btrim(o.title)) = lower(btrim(p.title)))
+      when 'bannedWord' then body ~* ('(^|[^[:alnum:]_])' || regex_escape(r.param #>> '{}') || '([^[:alnum:]_]|$)')
+      when 'requiredWord' then body !~* ('(^|[^[:alnum:]_])' || regex_escape(r.param #>> '{}') || '([^[:alnum:]_]|$)')
+      when 'noTag' then body ~* ('\[' || regex_escape(r.param #>> '{}') || '([=\] ]|$)')
+      when 'repliesOnly' then p.seq = 1
+      else null end;
+    if broken is null then raise exception 'no check for predicate %', r.predicate using errcode = '0A000'; end if;
+    if broken then return next r; end if;
+  end loop;
+end $$;
+
+create or replace function spring_facts(fd face_down, trigger text, by_act uuid, incoming_card text) returns spring_facts
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  f spring_facts;
+  k card_kinds%rowtype;
+  named text;
+  in_character integer;
+  in_thread integer;
+  in_board integer;
+  ward_rank integer;
+  walked_plain text;
+  walked_excerpt text;
+begin
+  -- 1. The setter's character, and what decides whether it can act (retired, not debuted), who it belongs to and whether it is staff.
+  select a.character into f.setter_character from acts a where a.id = fd.play;
+  select c.retired_at, c.debuted_at, c.owner, c.staff is not null into f.setter_retired, f.setter_debuted, f.setter_owner, f.setter_staff from characters c where c.id = f.setter_character;
+  -- 2. The back's card kind.
+  select * into k from card_kinds x where x.key = fd.card;
+  f.kind_play := k.play; f.kind_trap := k.trap; f.kind_stack := k.stack; f.kind_seeded := k.seeded;
+  f.reach := coalesce(k.reaches[1], 'post');
+  -- 3. The Act that met the back: its kind, character, thread, board and words, and the thread's first post and the announcements thread a board card would be written in. For a cast
+  -- or a visit by_act is not a post, or not yet written, and these find what they find.
+  select a.kind, a.character, a.thread, public_payload(a.payload, coalesce(version_hidden(a.id), false)) ->> 'body', t.board into f.by_kind, f.by_character, f.by_thread, f.by_body, f.by_board
+  from acts a left join threads t on t.id = a.thread where a.id = by_act;
+  select a.id into f.first_post from acts a where a.thread = f.by_thread and a.seq = 1 and a.kind = 'post';
+  select t.id into f.announce_thread from settings s join threads t on t.id::text = s.value #>> '{}' where s.key = 'systemAnnouncements';
+  -- 4. The stack at the would-be target and reach, for every reach: the plays of the card still up on the Act (a post's), the layer to go on from, and the plays of it still up on
+  -- the Act's character, thread and board (a play beyond a post's), counted as place_cast counts them. Which reach the card takes is then a choice among values already read.
+  f.target := case f.reach when 'post' then by_act when 'character' then f.by_character when 'thread' then f.by_thread else f.by_board end;
+  -- Each play found is asked whether an admin ended it, whatever card it is (card_ended is a read of its own, and the subquery cannot be flattened away, so it is made for every play found and not only
+  -- for the ones of this back's card): which card is counted is chosen after the reads.
+  select count(*) filter (where l.card is not distinct from fd.card and (l.ends is null or l.ends > now()) and not l.ended),
+         greatest(coalesce(max(l.layer) filter (where l.card is not distinct from fd.card), 0), count(*) filter (where l.card is not distinct from fd.card)) + 1
+    into f.up, f.layer
+  from (select k2.payload ->> 'card' as card, (k2.payload ->> 'ends')::timestamptz as ends, (k2.payload ->> 'layer')::integer as layer, card_ended(k2.id) as ended
+        from acts k2 where k2.kind = 'card' and k2.target_act_id = by_act and not (k2.payload ? 'caught') and coalesce(k2.payload ->> 'reach', 'post') = 'post' offset 0) l;
+  select count(*) filter (where l.card = fd.card and not l.ended and l.character = f.by_character), count(*) filter (where l.card = fd.card and not l.ended and l.thread = f.by_thread),
+         count(*) filter (where l.card = fd.card and not l.ended and l.board = f.by_board)
+    into in_character, in_thread, in_board
+  from (select k2.payload ->> 'card' as card, r.character, r.thread, r.board, card_ended(r.play) as ended
+        from play_reach r join acts k2 on k2.id = r.play
+        where r.ends_at > now() and (r.character = f.by_character or r.thread = f.by_thread or r.board = f.by_board) offset 0) l;
+  f.reach_up := case f.reach when 'character' then in_character when 'thread' then in_thread else in_board end;
+  -- 4b. The live Ward on the Act, the highest one's rarity, whatever the card: place_cast turns a cast away at or below it, and a Move does not land through it either.
+  select max(rarity_rank(wk.rarity)) into ward_rank from acts w join card_kinds wk on wk.key = w.payload ->> 'card'
+  where w.kind = 'card' and w.target_act_id = by_act and wk.ward and not (w.payload ? 'caught') and coalesce(w.payload ->> 'reach', 'post') = 'post'
+    and (w.payload ->> 'ends' is null or (w.payload ->> 'ends')::timestamptz > now()) and not card_ended(w.id);
+  f.warded := ward_rank is not null and rarity_rank(k.rarity) <= ward_rank;
+  -- 5. A board's live card, whatever the card's reach.
+  select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
+  -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
+  select x.key into named from card_kinds x where x.key = coalesce(fd.catches, fd.card);
+  f.caught := fd.catches is not null and fd.catches = incoming_card and named is not null;
+  -- 7. ONE walk of the Act's words for every back: its own visible words, and the excerpt of the quotes of the back's post (null for a cast or a visit, whose by_act holds no words). A function in a FROM
+  -- clause runs once however many columns are taken from it, and both are taken here, so the walk costs the same whatever the back holds.
+  select w.plain, w.excerpt into walked_plain, walked_excerpt from bbcode_walk(f.by_body, fd.post) w;
+  -- 8. Both probes, for every back, whatever it holds: phrase_probe folds the text and compiles and runs a pattern of one shape (a back with no such condition has a pattern built around its own id, which
+  -- cannot match), the Says over the Act's own words and the Quotes, on a token of its own, over the excerpt. And the Who check, against an empty list for Anyone.
+  f.phrase_hit := coalesce(phrase_probe(walked_plain, fd.phrase, fd.play::text), false);
+  f.passage_hit := coalesce(phrase_probe(walked_excerpt, fd.passage, fd.play::text || 'p'), false);
+  f.who_hit := coalesce(f.by_character = any (coalesce(fd.who, '{}')), false);
+  return f;
+end $$;
 
 -- Every version hidden now: a version an admin hid, and an edit that carries a second hide-until-edited. For the service and the admin screen; a player
 -- reads which versions are hidden from acts_public's `hidden`.
@@ -1272,7 +1378,7 @@ begin
 end $$;
 revoke execute on function setting_conduct(jsonb) from public, anon, authenticated;
 
--- settings_held (0130), also holding `conduct`. Everything else as 0130 wrote it.
+-- settings_held (0130), also holding `conduct` and the two settings the seed writes beside it, `conductVersion` and `conductSections`. Everything else as 0130 wrote it.
 create or replace function public.settings_held()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -1349,6 +1455,10 @@ begin
     when 'pronouns' then case when not pronouns_hold(pronouns_lowered(v)) then 'an object of five words of 1 to 12 letters each (an apostrophe or a hyphen between two letters is allowed) and a plural, true or false' end
     when 'apology' then setting_apology(v)
     when 'conduct' then setting_conduct(v)
+    when 'conductVersion' then case when not setting_whole(v, 1) then 'a whole number, at least 1 (the version of the code of conduct)' end
+    when 'conductSections' then case when not coalesce(jsonb_typeof(v) = 'array'
+        and not exists (select 1 from jsonb_array_elements(v) e where jsonb_typeof(e) is distinct from 'string' or btrim(e #>> '{}', E' \t\n\r\f\v') = ''), false)
+      then 'an array of section keys, each a non-blank string' end
     when 'modelTiers' then case when not coalesce(jsonb_typeof(v) = 'object'
         and jsonb_typeof(v -> 'strong') = 'string' and btrim(v ->> 'strong', E' \t\n\r\f\v') <> ''
         and jsonb_typeof(v -> 'light') = 'string' and btrim(v ->> 'light', E' \t\n\r\f\v') <> '', false)
@@ -1379,7 +1489,7 @@ revoke execute on function settings_held() from public, anon, authenticated;
 
 revoke execute on function conduct_author(uuid), conduct_write(bigint, uuid, uuid, text, timestamptz, text),
   account_bar(uuid), refuse_if_barred(uuid) from public, anon, authenticated;
--- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too), and the policy on acts calls one;
+-- acts_public calls two functions with its readers' privileges (the digest's role and the service role read it too);
 -- every other helper is reached through those and runs as its owner.
 revoke execute on function version_hidden(uuid, uuid), version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text), public_payload(jsonb, boolean) from public, anon;
 revoke execute on function version_hidden(uuid), quote_hidden(uuid), conceal_quotes(text) from authenticated;
@@ -1388,5 +1498,7 @@ revoke execute on function accept_conduct(integer), conduct_accepted(), report_p
   admin_version(uuid), my_bar(), my_conduct_log(integer) from public, anon;
 grant execute on function accept_conduct(integer), conduct_accepted(), report_post(uuid, text, text), decide_report(bigint, jsonb), decide(uuid, uuid, text, timestamptz, text),
   admin_version(uuid), my_bar(), my_conduct_log(integer) to authenticated;
+-- hidden_versions is the service's and an admin screen's, no API role's. reviews_due is granted to signed-in players on purpose: the view itself returns no row
+-- unless is_admin(), so a player's read is empty and an admin's (Task 7's screen) is the list; anon has no grant (0005 lists it among the readable).
 revoke all on hidden_versions, reviews_due from public, anon, authenticated;
 grant select on reviews_due to authenticated;

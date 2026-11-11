@@ -4,8 +4,8 @@
  * the environment, the Resend mailer (RESEND_API_KEY and MAIL_FROM, read from `Deno.env` by the
  * adapter and never logged), Supabase Auth's admin API, and an answer that says what happened.
  *
- * The database side is the SQL functions `mail_due(most)` (outbox rows with no ok attempt, each with
- * the bar its decision set, if any) and `record_mail_attempt(outbox, ok, provider_id, error)`; an
+ * The database side is the SQL functions `mail_due(most)` (outbox rows with no sent or refused attempt and no failed one
+ * still backing off, each with the account's current bar, if it has a bar template) and `record_mail_attempt(outbox, kind, provider_id, error)`; an
  * account's address is read from Auth's admin API, never from a table this function can name.
  */
 import { runMail } from './core.ts';
@@ -29,7 +29,7 @@ Deno.serve(async (request) => {
     const mailDb: MailDb = {
       due: (most) => db.rpc<MailRow[]>('mail_due', { most }),
       address: (account) => admin.address(account),
-      attempt: async (a) => { await db.rpc('record_mail_attempt', { outbox: a.outbox, ok: a.ok, provider_id: a.providerId ?? null, error: a.error ?? null }); },
+      attempt: async (a) => { await db.rpc('record_mail_attempt', { outbox: a.outbox, kind: a.kind, provider_id: a.providerId ?? null, error: a.error ?? null }); },
     };
     const settings = (await withDatabaseSettings(chooseInstance(Deno.env.get('KAYFABB_PROFILE')), db)).settings;
     const replyTo = settings.conduct.adminAddress;

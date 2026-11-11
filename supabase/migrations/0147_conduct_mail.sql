@@ -2,7 +2,7 @@
 -- mail Edge Function calls (mail_due, record_mail_attempt), the job that calls it every minute, decide_report and decide enqueuing their mail, and
 -- open_account recording that the new account accepted the code it was shown.
 --
--- Mail is sent when an `ok` attempt exists. Both tables are append-only as 0043's staff_changes is, and no client reaches them. A facts object
+-- Mail is done when a `sent` or a `refused` attempt exists; a `failed` one is tried again after a backoff. Both tables are append-only as 0043's staff_changes is, and no client reaches them. A facts object
 -- holds exactly the slots its template names (engine/mail/conduct.ts is strict both ways), as text; `post`, `thread` and `conduct` are paths on
 -- the site, which the composition root (supabase/functions/_shared/mail/conduct.ts) turns into addresses, and `section` is the section's key, which
 -- it turns into the section's title from the instance's code of conduct.
@@ -18,12 +18,14 @@ create table mail_outbox (
 create table mail_attempts (
   outbox bigint not null references mail_outbox (id),
   at timestamptz not null default now(),
-  ok boolean not null,
+  -- sent: the provider took it. refused: the provider (or the missing address) said no about this mail, so it is never tried again. failed: a transport or Auth
+  -- failure that may pass, tried again after 2^n minutes for n failures, at most a day.
+  kind text not null check (kind in ('sent', 'refused', 'failed')),
   provider_id text,
   error text check (char_length(error) <= 1000)
 );
--- The one lookup mail_due makes of the attempts: has this row an ok one.
-create index mail_attempts_ok on mail_attempts (outbox) where ok;
+-- The one lookup mail_due makes of the attempts: a row's attempts by kind.
+create index mail_attempts_outbox on mail_attempts (outbox, kind, at);
 alter table mail_outbox enable row level security;
 alter table mail_attempts enable row level security;
 revoke all on mail_outbox, mail_attempts from public, anon, authenticated;
@@ -178,25 +180,36 @@ begin
 end $$;
 -- ------------------------------------------------------------------------------------ the mail job ----
 
--- The outbox rows still to send, oldest first, each with the bar its decision set (the Edge Function sets the login's ban from it).
+-- The outbox rows still to send, oldest first: those with no sent or refused attempt, and whose failed attempts (n of them) are not still backing off (due again
+-- 2^n minutes after the last, at most a day; n is capped at 11 so the power cannot overflow). Each bar-carrying row (suspended, banned, lifted) carries the account's
+-- bar now, never its own decision's: a lift, or a suspension that has ended, reads as {outcome: 'lift'}, so an old failed row applied late clears the login instead
+-- of barring it again, and the Auth ban follows the SQL bar. The cost is one decision probe per bar row of the at most `most` returned, and one lookup of attempts per
+-- open row; the outbox grows with admin decisions, not with posts.
 create function mail_due(most integer) returns table (id bigint, account uuid, template text, facts jsonb, bar jsonb)
 language sql stable security definer set search_path = public, pg_temp as $$
   select o.id, o.account, o.template, o.facts,
-         case when o.template in ('suspended', 'banned', 'lifted') then jsonb_build_object('outcome', d.outcome, 'until', d.until) end
-  from mail_outbox o left join conduct_decisions d on d.id = o.decision
-  where not exists (select 1 from mail_attempts a where a.outbox = o.id and a.ok)
+         case when o.template in ('suspended', 'banned', 'lifted') then
+           case when b.bar is null then jsonb_build_object('outcome', 'lift', 'until', null)
+                when b.bar ->> 'kind' = 'banned' then jsonb_build_object('outcome', 'ban', 'until', null)
+                else jsonb_build_object('outcome', 'suspend', 'until', b.bar -> 'until') end
+         end
+  from mail_outbox o
+  cross join lateral (select count(*) as n, max(a.at) as last from mail_attempts a where a.outbox = o.id and a.kind = 'failed') f
+  cross join lateral (select case when o.template in ('suspended', 'banned', 'lifted') then account_bar(o.account) end as bar) b
+  where not exists (select 1 from mail_attempts a where a.outbox = o.id and a.kind in ('sent', 'refused'))
+    and (f.n = 0 or f.last + least(interval '1 day', interval '1 minute' * power(2, least(f.n, 11))) <= now())
   order by o.id
   limit greatest(mail_due.most, 0)
 $$;
 
-create function record_mail_attempt(outbox bigint, ok boolean, provider_id text, error text) returns void
+create function record_mail_attempt(outbox bigint, kind text, provider_id text, error text) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  insert into mail_attempts (outbox, ok, provider_id, error) values (record_mail_attempt.outbox, record_mail_attempt.ok, record_mail_attempt.provider_id, left(record_mail_attempt.error, 1000));
+  insert into mail_attempts (outbox, kind, provider_id, error) values (record_mail_attempt.outbox, record_mail_attempt.kind, record_mail_attempt.provider_id, left(record_mail_attempt.error, 1000));
 end $$;
 
-revoke execute on function mail_for_decision(bigint), mail_due(integer), record_mail_attempt(bigint, boolean, text, text) from public, anon, authenticated;
-grant execute on function mail_due(integer), record_mail_attempt(bigint, boolean, text, text) to service_role;
+revoke execute on function mail_for_decision(bigint), mail_due(integer), record_mail_attempt(bigint, text, text, text) from public, anon, authenticated;
+grant execute on function mail_due(integer), record_mail_attempt(bigint, text, text, text) to service_role;
 
 -- As schedule_settlement (0071) does: the jobs key from the vault, and nothing sent until the secrets are made.
 create function schedule_mail() returns bigint

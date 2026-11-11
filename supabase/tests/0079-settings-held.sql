@@ -900,6 +900,26 @@ begin
   exception when check_violation then null;
   end;
 
+  -- The two settings the seed writes beside `conduct` (0146) are outside SETTINGS and held all the same: engine/rules/settings-held.test.ts reads only
+  -- the two lists above, so theirs are here.
+  for r in select * from (values ('conductVersion', '1'), ('conductVersion', '3'), ('conductSections', '[]'), ('conductSections', '["mask", "hate"]')) g(key, value) loop
+    insert into settings (key, value) values (r.key, r.value::jsonb) on conflict (key) do update set value = excluded.value;
+  end loop;
+  for r in select * from (values
+    ('conductVersion', '0'), ('conductVersion', '1.5'), ('conductVersion', '"1"'), ('conductVersion', 'null'), ('conductVersion', 'true'), ('conductVersion', '-1'),
+    ('conductVersion', '9007199254740992'),
+    ('conductSections', '"mask"'), ('conductSections', 'null'), ('conductSections', '{}'), ('conductSections', '[1]'), ('conductSections', '[""]'),
+    ('conductSections', '[" "]'), ('conductSections', '["a", null]'), ('conductSections', '[["a"]]')) p(key, value) loop
+    refused := false;
+    begin
+      update settings set value = r.value::jsonb where key = r.key;
+    exception when check_violation then
+      refused := true;
+      if sqlerrm not like r.key || '%' then raise exception '% = % was refused without naming its key: %', r.key, r.value, sqlerrm; end if;
+    end;
+    if not refused then raise exception '% = % was not refused with 23514', r.key, r.value; end if;
+  end loop;
+
   -- A key outside SETTINGS is no business of the hold, whatever it holds.
   insert into settings (key, value) values ('notASetting', 'null');
   update settings set value = '"anything"' where key = 'notASetting';

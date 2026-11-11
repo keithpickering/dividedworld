@@ -264,6 +264,8 @@ begin
   perform tests.unbecome();
   if words is distinct from 'Third, fixed.' or hid is distinct from false then raise exception 'the author''s edit did not bring a post hidden until edited back: % %', words, hid; end if;
   perform tests.become(rep);
+  -- The grant is there (a revoke without it would make this read a refusal, and Task 7's screen unreadable), and the view's own gate empties it for a player.
+  if not has_table_privilege('authenticated', 'reviews_due', 'select') or has_table_privilege('anon', 'reviews_due', 'select') then raise exception 'reviews_due is not granted to signed-in players alone'; end if;
   if (select count(*) from reviews_due) is distinct from 0 then raise exception 'a player reads the re-review list'; end if;
   perform tests.unbecome();
   perform tests.become(admin_a);
