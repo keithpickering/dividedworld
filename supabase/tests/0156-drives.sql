@@ -172,7 +172,7 @@ begin
   -- The fourth is refused, in the words, and costs nothing.
   why := pg_temp.refusal(format($s$select play_card(%L, 'dv-appeal', %L, %L, '{}', 0, 'four')$s$, ann, a, p));
   if why is distinct from '23505 this post''s drive already carries 3 appeals' then raise exception 'the fourth play was refused as %', why; end if;
-  if (select count(*) from acts where kind = 'card' and target_act_id = p) <> 3 then raise exception 'a refused play wrote an Act'; end if;
+  if (select count(*) from acts where kind = 'card' and target_act_id = p) is distinct from 3 then raise exception 'a refused play wrote an Act'; end if;
   if card_held(ann, 'dv-appeal') <> 9 then raise exception 'a refused play spent the card: %', card_held(ann, 'dv-appeal'); end if;
   -- The refusal carries the refusal hint.
   begin
@@ -217,9 +217,9 @@ begin
   if played #>> '{payload,drive}' is distinct from q1::text then raise exception 'the new drive takes the next play: %', played; end if;
   perform tests.unbecome();
   eff := card_target(q) -> 'effects';
-  if (select count(distinct e ->> 'drive') from jsonb_array_elements(eff) e) <> 2 then raise exception 'the post carries two drives: %', eff; end if;
-  if (select count(*) from jsonb_array_elements(eff) e where e ->> 'drive' = old::text and (e ->> 'closes')::timestamptz <= now()) <> 3 then raise exception 'the old drive closed: %', eff; end if;
-  if (select count(*) from jsonb_array_elements(eff) e where e ->> 'drive' = q1::text and (e ->> 'closes')::timestamptz > now()) <> 2 then raise exception 'the new drive is open: %', eff; end if;
+  if (select count(distinct e ->> 'drive') from jsonb_array_elements(eff) e) is distinct from 2 then raise exception 'the post carries two drives: %', eff; end if;
+  if (select count(*) from jsonb_array_elements(eff) e where e ->> 'drive' = old::text and (e ->> 'closes')::timestamptz <= now()) is distinct from 3 then raise exception 'the old drive closed: %', eff; end if;
+  if (select count(*) from jsonb_array_elements(eff) e where e ->> 'drive' = q1::text and (e ->> 'closes')::timestamptz > now()) is distinct from 2 then raise exception 'the new drive is open: %', eff; end if;
 end $$;
 
 -- ---- the close moves back with each play ----
@@ -248,7 +248,7 @@ begin
   perform tests.unbecome();
   if played #>> '{payload,drive}' is distinct from first_id::text then raise exception 'the play joined the open drive: %', played; end if;
   c2 := (select min((e ->> 'closes')::timestamptz) from jsonb_array_elements(card_target(p) -> 'effects') e);
-  if c2 is distinct from now() + interval '1 hour' or (select count(distinct e ->> 'closes') from jsonb_array_elements(card_target(p) -> 'effects') e) <> 1 then
+  if c2 is distinct from now() + interval '1 hour' or (select count(distinct e ->> 'closes') from jsonb_array_elements(card_target(p) -> 'effects') e) is distinct from 1 then
     raise exception 'the close moved back an hour from the new play: %', card_target(p);
   end if;
 end $$;
