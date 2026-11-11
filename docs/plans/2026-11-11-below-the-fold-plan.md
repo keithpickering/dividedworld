@@ -16,8 +16,7 @@ glass's, plain.
 
 **What the card is** (the design's words, settled here into numbers):
 
-- Key `below-the-fold`, name "Below the Fold", Salty, uncommon (the owner's notes; the design suggests common and
-  leaves it open), a Move on a post, stack 1, no configuration, no play price, no end.
+- Key `below-the-fold`, name "Below the Fold", Salty, common (the owner decided common, after the notes' uncommon), a Move on a post, stack 1, no configuration, no play price, no end.
 - A post that wears it is drawn as one bar and nothing else until a reader presses the bar. It is folded for every
   reader alike, its author and the caster included.
 - Pressing the bar opens the post for that reader, on that page, until the page is left. Pressing it again folds it.
@@ -36,7 +35,7 @@ export const belowTheFold: CardRules<Record<string, never>> = {
   key: 'below-the-fold',
   name: 'Below the Fold',
   alignment: 'salty',
-  rarity: 'uncommon',
+  rarity: 'common',
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(belowTheFold, target, effects, now),
   validateConfig: () => ok({}),
@@ -54,7 +53,7 @@ for anything; it is in `cards` and `castOnPost` holds for it (so Trap Card can n
 Model: sonnet
 
 **Files:** `instances/divided-world/machine.ts` (one slot, after Whoops!:
-`{ item: { card: 'below-the-fold' }, availability: 'onSale', price: 150 }`, the uncommons' price),
+`{ item: { card: 'below-the-fold' }, availability: 'onSale', price: 100 }`, the commons' price),
 `instances/divided-world/ui/cards/below-the-fold/art.svg`, `mark.svg`, `art.json` (new), and whichever tests list the
 machine's slots or the cards with art (`instances/divided-world/ui/index.test.tsx`, `instances/divided-world/packs`
 tests, `engine/ui/admin` and `engine/ui/vending` stories read the instance's list and need no edit unless a test

@@ -39,7 +39,7 @@ first plan is `docs/plans/2026-11-11-below-the-fold-plan.md`. The renders are
 | Mooch | Works in spirit, reworked | Move, Salty, uncommon | 6 |
 | 4D Chess | Holds as a Reversal | Reversal, Salty, uncommon | 6 |
 | Graffiti | Holds; a design of its own | Move, Pepperoni, rare | 7 |
-| Below the Fold | Holds as written | Move, Salty, uncommon (common suggested) | 1 |
+| Below the Fold | Holds as written | Move, Salty, common (the owner's decision) | 1 |
 | Whodunnit? | Holds, with an end | Move, Pepperoni, rare | 3 |
 | Hype-Up | Works in spirit, reworked | Move on a character, Sweet, uncommon | 4 |
 | Blind Study | Holds, with an end | Move, Pepperoni, uncommon | 3 |
@@ -66,8 +66,7 @@ The words stay in the Act; the fold is a layer.
 
 - **One per post.** A second fold on a folded post is refused in plain words.
 - **Its way out:** the reader's click, which lasts their visit to the page; an admin's end.
-- **Rarity.** The notes say uncommon. It does less than Whoops!, a common, so common is suggested; the plan keeps the
-  notes' uncommon until the owner says.
+- **Rarity.** The notes say uncommon. It does less than Whoops!, a common, so common was suggested; the owner decided common.
 - **Layers:** all instance. The engine's effect slot already wraps a post.
 
 ### Line Cutter (holds)
@@ -351,7 +350,7 @@ card, and the render waits on the same design the first exploration named.
 1. Each rework above: Feelin' Glam as one thread play; Hype-Up as an Earn; Mooch, Toll and 4D Chess paying on the
    room's reactions and taking nothing; Off Day as a named class for a window.
 2. Whether Ultra Happy Heart is the Unban.
-3. Below the Fold's rarity (common suggested).
+3. Below the Fold's rarity (decided: common).
 4. The three-day ends on Whodunnit? and Blind Study.
 5. Raising a thread play's longest time to a week for Feelin' Glam.
 6. Whether cutting Delayed Reaction stands.
