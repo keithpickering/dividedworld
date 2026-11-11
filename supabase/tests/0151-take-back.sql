@@ -50,7 +50,7 @@ begin
 
   -- Another account's take-back, one naming no back, one by the wrong character and one of an Act that is no set are refused in the same words, whichever it is.
   nothing := pg_temp.coded(format('select take_back(%L, %L, %L)', bob, b, gen_random_uuid()));
-  if nothing is distinct from '55000 there is no face-down card to take back there' and nothing is distinct from 'P0002 there is no face-down card to take back there' then raise exception 'no back: %', nothing; end if;
+  if nothing is distinct from 'P0002 there is no face-down card to take back there' then raise exception 'no back: %', nothing; end if;
   why := pg_temp.coded(format('select take_back(%L, %L, %L)', bob, b, back));
   if why is distinct from nothing then raise exception 'another''s back and no back are told apart: % / %', why, nothing; end if;
   why := pg_temp.coded(format('select take_back(%L, %L, %L)', ann, a2, back));

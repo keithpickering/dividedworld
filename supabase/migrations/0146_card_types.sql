@@ -659,7 +659,8 @@ end $$;
 -- Ways out. A back ends by a spring, a take-back, or its time, and each of those returns the card or spends it by what happened (a spring spends it, the other two return it); nothing here adds a state a player can be put
 -- in. A take-back past a back's time is refused because the back is already over and the card already in the hand.
 -- Cost at a busy instance's scale. card_held reads the account's own rows of the card in card_ledger (card_ledger_account) and in face_down (face_down_account_card), one probe each of acts_one_spring and acts_one_take_back
--- per ended back of that card: linear in that account's backs of that card, never the instance's. The carried Earn plays are found by the card Acts' creation time (a window of the longest Earn `lasts` before the window).
+-- per ended back of that card: linear in that account's backs of that card, never the instance's. The carried Earn plays are found by the card Acts' creation time (a window of the longest Earn `lasts` before the window) through acts_card_created, a partial index over card plays alone: without it the range
+-- scan of acts_created read every Act of every kind in the span (explain on 300,000 Acts, 20,000 of them card plays: 95,045 index rows read for 8,640 plays; 8,640 with it).
 -- ------------------------------------------------------------------------------------------------ 1. the Acts and the ledger ----
 
 alter table card_ledger drop constraint card_ledger_kind_check;
@@ -1613,3 +1614,6 @@ begin atomic
     'season', (select to_jsonb(s) from current_season s limit 1)
   );
 end;
+
+-- acts_card_created: settlement_input's and estimate_input's earn_up read card plays by creation time over the longest Earn `lasts`; this index holds card plays alone, so that read is its own rows and not every Act's in the span.
+create index acts_card_created on acts (created_at) where kind = 'card';
