@@ -71,6 +71,8 @@ import { useTour } from '../tips/tour.ts';
 import { useTip, useTipsStore } from '../tips/Tips.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
+import { RevealOverlay } from '../characters/RevealOverlay.tsx';
+import { useOpenThread } from '../thread/open.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -81,6 +83,16 @@ const PICKER_CHEVRON = 16;
 
 /** The count as the HUD says it: nothing at none, the number to 9, "9+" at the bound. */
 export const unreadText = (n: number | null): string | null => (n === null || n <= 0 ? null : n >= ALERTS_UNREAD_BOUND ? `${ALERTS_UNREAD_BOUND - 1}+` : String(n));
+
+/** The lock before the HUD's secret line: shut while the class is private, its shackle lifted off the right post once it is public. */
+function SecretLock({ open = false }: { readonly open?: boolean }) {
+  return (
+    <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12">
+      <rect x="1" y="5" width="9" height="6.5" rx="1" />
+      <path d={open ? 'M3 5 V3.4 a2.5 2.5 0 0 1 5 0' : 'M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5'} />
+    </svg>
+  );
+}
 
 export function Hud() {
   const { api, instance, settings, ui } = useKayfa();
@@ -121,6 +133,20 @@ export function Hud() {
   const hudCalm = useSurfaceStyle('hud');
   const handCalm = useSurfaceStyle('hand');
   const hud = player.hudCharacter;
+  /* The thread the player is reading (thread/open.tsx), read from the hook and never from the route: it goes to the Reveal, and with the way to My characters, so the Reveal there can start on it. */
+  const openThread = useOpenThread();
+  const toCharacters = useMemo(() => (openThread ? { state: { thread: openThread } } : {}), [openThread]);
+  const [revealing, setRevealing] = useState(false);
+  const [done, setDone] = useState('');
+  const secret = useRef<HTMLButtonElement>(null);
+  /* A reveal replaces the button with the Revealed line before the overlay closes, so focus returns to the line. */
+  const revealedLine = useRef<HTMLSpanElement>(null);
+  /* The Reveal's done line, in a status region of the HUD's own. It puts itself away, where My characters' flash stays until the player's next action: the HUD has no next action on its own surface to clear it. */
+  useEffect(() => {
+    if (!done) return undefined;
+    const timer = setTimeout(() => setDone(''), 8000);
+    return () => clearTimeout(timer);
+  }, [done]);
   /* Hidden from the online lists (My characters' switch): a tag in plain words, beside the class on the Main board and the mask on the phone. */
   const hiddenMark = hud?.presenceHidden ? (
     <span className="kb-hud-hidden kb-glass-skew-tag">
@@ -311,11 +337,11 @@ export function Hud() {
       }
       if (!pageEscape(e) || loadOut.current) return;
       e.preventDefault();
-      navigate(GLASS_NAV.characters, { source: menuSource });
+      navigate(GLASS_NAV.characters, { source: menuSource, ...toCharacters });
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [signedIn, handOpen, armed, play, setHandOpen, navigate, menuSource]);
+  }, [signedIn, handOpen, armed, play, setHandOpen, navigate, menuSource, toCharacters]);
 
   /* A card in the hand is armed, or put back if it was the armed one; a post then offers it (cards/PlayActions.tsx). */
   const pick = (face: { readonly key: string }) => {
@@ -380,6 +406,7 @@ export function Hud() {
                     <>
                       <Link
                         to={GLASS_NAV.characters}
+                        {...toCharacters}
                         source={avatarWait.source}
                         data-kb-pending={avatarWait.pending ? '' : undefined}
                         className="kb-hud-avatar"
@@ -394,13 +421,19 @@ export function Hud() {
                           <span className="kb-hud-class kb-glass-skew-tag" style={{ '--kb-hud-class-fill': `var(--kb-glass-class-${hud.class}-fill)`, '--kb-hud-class-ink': `var(--kb-glass-class-${hud.class}-ink)` } as CSSProperties}>
                             {className}
                           </span>
-                          <span className="kb-hud-secret">
-                            <svg aria-hidden="true" focusable="false" width="15" height="16" viewBox="0 0 11 12"><rect x="1" y="5" width="9" height="6.5" rx="1" /><path d="M3 5 V3.4 a2.5 2.5 0 0 1 5 0 V5" /></svg>
-                            Only you see this
-                          </span>
+                          {hud.classShownAt !== null ? (
+                            <span ref={revealedLine} tabIndex={-1} className="kb-hud-secret"><SecretLock open />Revealed</span>
+                          ) : hud.debutedAt !== null && hud.retiredAt === null ? (
+                            <button ref={secret} type="button" className="kb-hud-secret" aria-label={`Only you see this: reveal ${hud.name}'s class`} onClick={() => setRevealing(true)}><SecretLock />Only you see this</button>
+                          ) : (
+                            /* Defensive: the HUD's mask is always a live one (player.tsx canAct), so this is never drawn today. */
+                            <span className="kb-hud-secret"><SecretLock />Only you see this</span>
+                          )}
                           {wide && hiddenMark}
                         </span>
+                        <span role="status" className="kb-hud-flash">{done}</span>
                       </span>
+                      {revealing && <RevealOverlay kicker="Reveal" character={hud} at={openThread} onClose={() => setRevealing(false)} onDone={setDone} returnFocusTo={() => secret.current ?? revealedLine.current} />}
                       <CalmRegion as="span" calm={!wide} className="kb-hud-swap">
                         <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>
                         {/* The phone's HUD has no name line: the mark stands by the mask it names. */}
@@ -496,7 +529,7 @@ export function Hud() {
                       aria-keyshortcuts="Escape"
                       data-kb-pending={menuWait.pending ? '' : undefined}
                       aria-busy={menuWait.pending || undefined}
-                      onClick={() => navigate(GLASS_NAV.characters, { source: menuSource })}
+                      onClick={() => navigate(GLASS_NAV.characters, { source: menuSource, ...toCharacters })}
                     >
                       <kbd className="kb-hud-key kb-glass-upright" aria-hidden="true">ESC</kbd>
                       <span className={compact ? 'kb-visually-hidden' : 'kb-glass-upright'}>Menu</span>

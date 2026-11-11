@@ -1,14 +1,16 @@
 /**
- * Reveal a character's class, on the glass: My characters' confirmation, a glass overlay on the
- * Turn's smoke, as Debut and the Turn are (Overlay.tsx), so the three dialogs that change or
- * announce a class read as one family (the glass reveal design, §1 and §2). The player chooses a
- * thread (one searchable field, the newest when empty; a board filter is optional), and the preview shows the character's own post as the thread will draw it.
- * The rules of a reveal are reveal.ts's, shared with the board's dialog (RevealModal.tsx).
+ * Reveal a character's class, on the glass: the one reveal dialog, a glass overlay on the Turn's
+ * smoke, as Debut and the Turn are (Overlay.tsx), so the three dialogs that change or announce a
+ * class read as one family (the glass reveal design, §1 and §2). It has two openers, each wording
+ * its own kicker: the HUD's "Only you see this" and My characters. Opened on a thread (`at`), it
+ * starts on that thread and is ready at once; opened on nothing, the player chooses a thread (one
+ * searchable field, the newest when empty; a board filter is optional). The preview shows the
+ * character's own post as the thread will draw it. The rules of a reveal are reveal.ts's.
  */
 import { useEffect, useState } from 'react';
 import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
-import type { Board, MyCharacter } from '../data/api.ts';
+import type { Board, Id, MyCharacter } from '../data/api.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
 import { FormFoot } from '../glass/FormFoot.tsx';
@@ -26,12 +28,16 @@ export interface RevealOverlayProps {
   readonly onClose: () => void;
   readonly onDone: (message: string) => void;
   readonly returnFocusTo?: () => HTMLElement | null;
+  /** The thread the opener is on: the board filter and the Thread field start on it, so Reveal is ready at once. */
+  readonly at?: { readonly id: Id; readonly title: string; readonly board: Id } | null;
+  /** The overlay's kicker, which each opener words (the HUD, My characters). */
+  readonly kicker: string;
 }
 
 /** The chosen thread: its id goes to the reveal, its title to the preview. */
 interface Chosen { readonly id: string; readonly title: string }
 
-export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: RevealOverlayProps) {
+export function RevealOverlay({ character, onClose, onDone, returnFocusTo, at = null, kicker }: RevealOverlayProps) {
   const { api, ui } = useKayfa();
   const r = useReveal(character);
   const { setRefusal } = r;
@@ -41,8 +47,8 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   const [read, setRead] = useState<readonly Board[]>([]);
   const boards = (boot ? boot.boards : read).filter((x) => !x.isSystem);
   /* The optional filter: '' is All boards. The field is remounted when it changes, so a thread chosen under another filter is cleared. */
-  const [board, setBoard] = useState('');
-  const [chosen, setChosen] = useState<Chosen | null>(null);
+  const [board, setBoard] = useState(at?.board ?? '');
+  const [chosen, setChosen] = useState<Chosen | null>(at ? { id: at.id, title: at.title } : null);
 
   const hasBoot = boot !== null;
   useEffect(() => {
@@ -69,7 +75,7 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
   };
 
   return (
-    <Overlay title={`Reveal ${character.name}'s class`} kicker="My characters › Reveal" surface="turn" className="kb-reveal-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
+    <Overlay title={`Reveal ${character.name}'s class`} kicker={kicker} surface="turn" className="kb-reveal-dialog" onClose={onClose} returnFocusTo={returnFocusTo}>
       <form className="kb-reveal" onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); void submit(); }}>
         <p className="kb-reveal-line">{words.sentence}</p>
         {words.pendingTurn && <p className="kb-reveal-line kb-reveal-note">{words.pendingTurn}</p>}
@@ -81,12 +87,13 @@ export function RevealOverlay({ character, onClose, onDone, returnFocusTo }: Rev
               {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </label>
-          {/* Typing after a choice makes it no longer the chosen thread; a choice itself fills the box with the chosen title, which is not a change. */}
+          {/* The picker is this one block, so a later search can replace it. Typing after a choice makes it no longer the chosen thread; a choice itself fills the box with the chosen title, which is not a change. */}
           <GlassCombobox
             key={board}
             label="Thread"
             placeholder="Search thread titles"
             allowEmpty
+            initialQuery={chosen?.title ?? ''}
             minChars={2}
             source={source}
             onChoose={(o) => setChosen({ id: o.id, title: o.label })}

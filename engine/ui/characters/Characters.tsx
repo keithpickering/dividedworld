@@ -68,6 +68,12 @@ const carried = (state: unknown): Id | null => {
   return typeof id === 'string' ? id : null;
 };
 
+/** The thread a navigation carried in history.state (the HUD's, when the player was reading one), if it named one with all three fields as strings. */
+const carriedThread = (state: unknown): { readonly id: Id; readonly title: string; readonly board: Id } | null => {
+  const t = (state as { thread?: { id?: unknown; title?: unknown; board?: unknown } | null } | null)?.thread;
+  return t && typeof t.id === 'string' && typeof t.title === 'string' && typeof t.board === 'string' ? { id: t.id, title: t.title, board: t.board } : null;
+};
+
 /** The page draws its document: whole on the first frame. Signed out, the marker is the sign-in line. */
 export function Characters({ doc }: { readonly doc: ScreenDoc<MyCharactersPage> }) {
   if (isSignedOutDoc(doc)) return <div className="kb-characters"><SignInPrompt /></div>;
@@ -97,6 +103,8 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   const [savingHidden, setSavingHidden] = useState<{ readonly id: Id; readonly hidden: boolean } | null>(null);
   const [problem, setProblem] = useState<{ readonly id: Id; readonly text: string; readonly pip?: boolean } | null>(null);
   const [refocus, setRefocus] = useState<{ readonly id: Id; readonly was: MyCharactersPage } | null>(null);
+  /* Only what Reveal… pre-fills: it opens nothing by itself, so Back to a thread and forward again land here quietly. */
+  const thread = carriedThread(location.state);
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
 
   const mine = useMemo(() => [...page.characters].sort(joined), [page.characters]);
@@ -337,8 +345,9 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           {live && <GlassButton to="/characters/edit" state={{ character: c.id }} aria-label="Edit profile">Edit profile</GlassButton>}
           {/* Its own tab of My log, chosen by the navigation's state and never the address (engine/ui/log/Log.tsx), as the Roster board draws the link. */}
           <GlassButton to="/log" state={{ character: c.id }}>{c.name}'s log</GlassButton>
-          {live && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
+          {live && c.classShownAt === null && <GlassButton aria-label={`Reveal ${c.name}'s class`} onClick={() => show({ kind: 'reveal', id: c.id })}>Reveal…</GlassButton>}
         </div>
+        {live && c.classShownAt !== null && <p className="kb-roster-line" tabIndex={-1} data-kb-revealed="">Revealed</p>}
         <p className="kb-roster-line kb-roster-most">{per} characters at most. To free a slot, ask an admin to retire one; every Act it made stays on the board.</p>
       </Leaving>
     );
@@ -395,7 +404,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
 
       <Layers>
       {dialog && target && dialog.kind === 'turn' && <TurnDialog key="turn" character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" character={target} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={returnTo(target.id)} />}
+      {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key="reveal" kicker="My characters › Reveal" character={target} at={thread} onClose={() => setDialog(null)} onDone={(message) => { setFlash(message); reload(); }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
       {dialog && target && dialog.kind === 'drop' && <DebutDialog key="drop" character={target} timing="now" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'debut' && <DebutDialog key="debut" character={target} timing="tally" nextSettlement={next} onClose={() => setDialog(null)} onDone={done} returnFocusTo={returnTo(target.id)} />}
       </Layers>

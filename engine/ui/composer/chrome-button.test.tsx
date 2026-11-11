@@ -25,13 +25,13 @@ describe('the Chrome button on a thread page', () => {
     }
   });
 
-  test('Send is the reply form\'s one primary button; Preview and Reveal are small and not primary', async () => {
+  test('Send is the reply form\'s one primary button; Preview is small and not primary', async () => {
     openThread(threadWorld(2));
     const form = (await replyBox()).closest('form')!;
     const primary = form.querySelectorAll('[data-kb-primary]');
     expect(primary).toHaveLength(1);
     expect(primary[0]).toBe(within(form).getByRole('button', { name: 'Send' }));
-    for (const name of ['Preview', 'Reveal…']) expect(within(form).getByRole('button', { name })).toHaveAttribute('data-kb-size', 'small');
+    expect(within(form).getByRole('button', { name: 'Preview' })).toHaveAttribute('data-kb-size', 'small');
   });
 
   test('the formatting toolbar\'s buttons are small', async () => {
