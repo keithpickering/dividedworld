@@ -447,9 +447,9 @@ export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_0
 
 /**
  * The open drive of card `key` among `effects`: the drive whose `closes` is after `now`, with its plays, or none. A drive's plays are
- * the effects the caller passes, which are the plays still up on the post (the server's card_target lists no caught or ended play;
- * whether an ended play leaves its drive is the owner's question #447), and this is the one place that says which plays make a drive.
- * A post holds at most one open drive of a card, since a play while one is open joins it, so the first open play names it.
+ * the effects the caller passes, the post's plays still up as card_target gives them (supabase/migrations/0150_drives.sql, drive_plays;
+ * whether an ended play leaves its drive is the owner's question #447), and this is the one place here that says which plays make a drive.
+ * A post holds at most one open drive of a card, since place_cast (0150) joins a play to the open drive, so the first open play names it.
  */
 export function openDrive(effects: readonly CardEffect[], key: string, now: Date): { readonly id: string; readonly closes: string; readonly plays: readonly CardEffect[] } | undefined {
   const plays = effects.filter((e) => e.card === key && e.drive !== undefined && e.closes !== undefined && Date.parse(e.closes) > now.getTime());
