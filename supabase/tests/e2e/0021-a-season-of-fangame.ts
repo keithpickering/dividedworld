@@ -99,6 +99,11 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
     return id;
   };
   const tick = async () => { await db.rpc('system_tick', {}); };
+  /** What a player sees: the pages the web calls, as the signed-in player's role. */
+  const player = psqlDb(account);
+  const shownBoards = async () => ((await player.rpc<{ boards: { name: string }[] }>('index_page', {})).boards).map((b) => b.name);
+  const boardPage = (slug: string) => player.rpc<{ closed: boolean; mergedInto: { name: string } | null; stubs: { id: string; moved_to_name: string }[] }>('board_page', { in_slug: slug, in_page: 1, effect_cards: [] });
+  const slugOf = (id: string) => sql(`select slug from boards_now where id = '${id}'`);
 
   // ---- Day 3, the honeymoon: nothing is unlocked, and all three kinds are held back. ----
   dayOfSeason(3);
@@ -150,10 +155,12 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   // ---- Day 24: one thread is moved into World -1, leaving a stub on General. ----
   dayOfSeason(24);
   const general = boardId('General');
-  const moved = thread(general, 'Why is my hotdog a sandwich', 2, Date.parse(slotOf(2)) - DAY);
+  // Two posts a day old, so they count in the last 7 days where they truly are, and one inside the meeting's window, so the digest shows the thread.
+  const moved = thread(general, 'Why is my hotdog a sandwich', 2, Date.now() - DAY);
+  sql(`insert into acts (character, kind, thread, payload, created_at) values ('${mask}', 'post', '${moved}', '{"body": "still here"}', to_timestamp(${(Date.parse(slotOf(2)) - DAY) / 1000}))`);
   const second = await meet(2, {
     beats: [{ beat: 'picking-apart', why: 'Clutter.' }],
-    moves: [{ kind: 'moveThread', params: { thread: moved, board: minus }, demand: null, go_live_at: new Date(Date.now() + 3_600_000).toISOString(), expires_in_hours: 0, why: 'This is not a fangame, so it goes to World -1.' }],
+    moves: [{ kind: 'moveThread', params: { thread: moved, board: minus }, demand: null /* what a model sends for a lasting move: no demand, no expiry */, go_live_at: new Date(Date.now() + 3_600_000).toISOString(), expires_in_hours: 0 /* as above */, why: 'This is not a fangame, so it goes to World -1.' }],
   });
   assert.ok(seen[1]!.system.includes('picking-apart'), 'the beat is shown once unlocked');
   assert.deepEqual(second.beatsPlayed, ['picking-apart']);
@@ -164,15 +171,21 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   const stubs = JSON.parse(sql(`select board_stubs('${general}')`)) as { id: string; moved_to_name: string }[];
   // Other files may have left a stub of their own on General: this thread's is the one asked after.
   assert.deepEqual(stubs.filter((s) => s.id === moved).map((s) => s.moved_to_name), ['World -1'], 'General lists the moved thread as a stub, naming where it went');
+  const generalPage = await boardPage(slugOf(general));
+  assert.deepEqual(generalPage.stubs.filter((x) => x.id === moved).map((x) => x.moved_to_name), ['World -1'], 'General\'s page shows the stub, with where the thread went');
+  assert.equal(generalPage.closed, false);
   assert.equal(lastEvent('picking-apart'), 'played');
   noDrift('the thread move');
 
   // ---- Victory lap: the fangame board out-posts World -1 over a week. Before the posts it is not unlocked; after them it is. ----
   await tick();
   assert.equal(lastEvent('victory-lap'), 'none', 'an empty fangame board does not out-post World -1');
-  thread(fangames, 'My fangame demo is almost done', 5, Date.now());
+  thread(fangames, 'My fangame demo is almost done', 5, Date.now() - 2 * DAY);
+  const week = (board: string) => Number(sql(`select arc_board_posts('${board}', 7)`));
+  assert.deepEqual([week(fangames), week(minus)], [5, 3], 'the week\'s counts: five here, the moved thread\'s three there, each dated inside it');
+  assert.equal(sql(`select beat_condition_holds('${BOSS}', (select id from seasons where ends_at is null), '{"kind": "boardActivity", "days": 7, "board": {"role": "fangames", "beat": "split"}, "above": {"role": "minus", "beat": "split"}}'::jsonb)`), 't', 'the condition\'s own read agrees');
   await tick();
-  assert.equal(lastEvent('victory-lap'), 'unlocked', 'five posts against two');
+  assert.equal(lastEvent('victory-lap'), 'unlocked', 'five posts against three');
   assert.ok(arcRead().beats.some((b) => b.key === 'victory-lap' && b.mini), 'the mini-arc is offered at the next meeting');
   noDrift('the victory lap');
 
@@ -183,7 +196,7 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   assert.equal(lastEvent('everything'), 'none', 'the last week is not here yet');
   const third = await meet(3, {
     beats: [{ beat: 'consolidation', why: 'Whole boards.' }],
-    moves: [{ kind: 'mergeBoard', params: { board: general, into: minus }, demand: null, go_live_at: new Date(Date.now() + 25 * 3_600_000).toISOString(), expires_in_hours: 0, why: 'General is not about fangames either.' }],
+    moves: [{ kind: 'mergeBoard', params: { board: general, into: minus }, demand: null /* what a model sends for a lasting move: no demand, no expiry */, go_live_at: new Date(Date.now() + 25 * 3_600_000).toISOString(), expires_in_hours: 0, why: 'General is not about fangames either.' }],
   });
   assert.deepEqual(third.beatsPlayed, ['consolidation']);
   assert.equal(sql(`select structural from queued_moves where meeting = ${third.meeting} and kind = 'mergeBoard'`), 't');
@@ -191,6 +204,11 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   await tick();
   assert.equal(merged(general), `${minus}/true`, 'General is closed and merged into World -1');
   assert.equal(sql(`select board from threads where id = '${moved}'`), minus);
+  const afterConsolidation = await shownBoards();
+  assert.ok(afterConsolidation.includes('World -1') && afterConsolidation.includes('Mario Maker Mansion') && !afterConsolidation.includes('General'), `the index lists the surviving boards, not General: ${afterConsolidation}`);
+  const mergedPage = await boardPage(slugOf(general));
+  assert.equal(mergedPage.closed, true, 'General\'s page answers closed');
+  assert.equal(mergedPage.mergedInto?.name, 'World -1', 'and says where its threads went');
   noDrift('the consolidation');
 
   // ---- The last week: Everything is World -1 is due; the answer leaves it out, so it is played with its defaults; the fangame board merges into World -1. ----
@@ -210,6 +228,10 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   await tick();
   assert.equal(sql(`select count(*) from queued_moves where meeting = ${fourth.meeting} and landed_act is null`), '0', 'the merge and the nomination landed');
   assert.equal(merged(fangames), `${minus}/true`, 'the fangame board is World -1 now');
+  const afterEverything = await shownBoards();
+  assert.ok(afterEverything.includes('World -1') && !afterEverything.includes('Mario Maker Mansion') && !afterEverything.includes('General'), `one board is left: ${afterEverything}`);
+  const fangamePage = await boardPage(slugOf(fangames));
+  assert.deepEqual([fangamePage.closed, fangamePage.mergedInto?.name], [true, 'World -1']);
   noDrift('everything is World -1');
 
   // ---- The handover: the farewell is posted, and the next Boss's first meeting is shown the handoff. ----
@@ -218,6 +240,9 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   assert.equal(sql(`select boss from seasons where ends_at is null`), NEXT);
   assert.equal(sql(`select how from season_handovers where season = (select id from seasons where ends_at is null)`), 'nomination');
   assert.equal(sql(`select count(*) from acts a join characters c on c.id = a.character where c.staff = '${BOSS}' and a.kind = 'post' and a.created_at >= '${before}' and a.payload ->> 'body' like 'Per my programming, it has been an honor.%'`), '1', 'the farewell is posted, in his own words');
+  const farewell = JSON.parse(sql(`select json_build_object('thread', a.thread, 'seq', a.seq) from acts a join characters c on c.id = a.character where c.staff = '${BOSS}' and a.kind = 'post' and a.created_at >= '${before}' and a.payload ->> 'body' like 'Per my programming, it has been an honor.%'`));
+  const farewellPage = await player.rpc('thread_page', { in_thread: farewell.thread, in_page: null, in_seq: farewell.seq, per_page: 100, effect_cards: [] });
+  assert.ok(JSON.stringify(farewellPage).includes('Per my programming, it has been an honor. (I am fine.)'), 'the farewell shows on its thread page, with its text');
   assert.equal(sql(`select note from handoffs where staff = '${BOSS}' order by season desc limit 1`), lastNote);
   noDrift('the handover');
 

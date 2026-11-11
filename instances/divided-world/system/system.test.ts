@@ -258,10 +258,11 @@ test('FanGaME holds back createBoard, moveThread and mergeBoard until their beat
 });
 
 test('no habit names dividing the board; the arc carries it', () => {
-  const habits = personaPrompt(system, fangame, 'boss');
-  assert.doesNotMatch(fangame.selfPrompt, /dividing the board/);
-  assert.match(fangame.selfPrompt, /in your reign you enact them\./);
-  assert.ok(habits.length > 0);
+  const prompt = personaPrompt(system, fangame, 'boss');
+  const habit = prompt.split('\n').find((l) => l.includes('Improvement Initiatives'));
+  assert.ok(habit, 'the Improvement Initiatives habit is in the prompt');
+  assert.ok(habit.endsWith('in your reign you enact them.'), habit);
+  assert.doesNotMatch(prompt, /dividing the board|everything else sent somewhere else/);
 });
 
 test('the Boss premise says most moves end and a few stay, and no longer says every move ends', () => {
