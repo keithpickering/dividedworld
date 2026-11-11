@@ -58,3 +58,28 @@ function WearingAvatar() {
   return <div style={{ padding: '3em 3em 1em' }}><Avatar character={character} /></div>;
 }
 export const WearingGear: Story = { render: () => <WearingAvatar />, parameters: { world: () => {} } };
+
+/** Spritey in its trophy case (the cosmetics design, section 4): the instance's first trophy kinds given by the season and an admin, a belt (its own kind, else the first) passed from one holder to the next, and a portrait wearing the first pieces of gear its table offers. */
+const trophyWorld: World = (fake, instance) => {
+  full(fake, instance);
+  const kinds = instance.trophies.kinds;
+  const owner = fake.seed.account('story-owner');
+  const mask = fake.seed.character(owner, 'Dr. Bones', instance.classes[0]!.key, { at: T0 });
+  const rival = fake.seed.character(fake.seed.account('story-rival'), 'Sock Puppet', instance.classes[0]!.key, { at: T0 });
+  const belt = kinds.find((k) => k.belt) ?? kinds[0]!;
+  fake.seed.award(rival, belt.key, { at: T0 + 10 * 86_400_000, by: 'admin' });
+  fake.seed.award(mask, belt.key, { at: T0 + 20 * 86_400_000, by: 'boss' });
+  kinds.filter((k) => k.key !== belt.key).slice(0, 3).forEach((k, i) => fake.seed.award(mask, k.key, { at: T0 + (12 + i) * 86_400_000, by: i === 0 ? 'season' : 'admin', ...(i === 1 ? { line: 'Best walk cycle.' } : {}) }));
+  fake.seed.avatar(mask, { square: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100"/></svg>', portrait: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 140"><rect width="100" height="140"/></svg>' });
+  const gear = instance.gear.slice(0, 3);
+  fake.seed.gear(owner, Object.fromEntries(gear.map((g) => [g.key, 1])));
+  fake.signInAs(owner);
+  void fake.setOutfit(mask, gear.map((g, i) => ({ gear: g.key, x: 0.5, y: 0.1 + i * 0.25, w: 0.4, turn: 0, layer: i })));
+};
+function Bones() {
+  const { api } = useKayfa();
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => { void api.myCharacters().then((mine) => setId(mine.find((c) => c.name === 'Dr. Bones')?.id ?? 'nobody')); }, [api]);
+  return id === null ? null : <LoadedProfile id={id} />;
+}
+export const TrophyCaseAndWearing: Story = { render: () => <Bones />, parameters: { world: trophyWorld, path: '/' } };

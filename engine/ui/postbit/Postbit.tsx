@@ -22,6 +22,7 @@ import { Outfit, slotShape } from '../gear/Outfit.tsx';
 import { GroupBar } from './GroupBar.tsx';
 import { StaffBadge, showsStaffBadge } from './StaffBadge.tsx';
 import { WarnMeter } from './WarnMeter.tsx';
+import { TrophyBadge, heldBelts, postbitTrophies } from './Trophy.tsx';
 import './postbit.css';
 
 /** A character and what a postbit shows beside it, gathered once for a page of posts. */
@@ -94,12 +95,15 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const joined = monthYear(c.joined);
   /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
   const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > Date.now();
+  /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
+  const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
+  const belts = counts ? [] : heldBelts(c.trophies);
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={layout}>
       <Avatar character={c} layout={layout} />
       <div className="kb-postbit-text">
-        <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}</span>
+        <span className="kb-postbit-name">{link ? <Link to={`/c/${encodeURIComponent(c.id)}`}>{c.name}</Link> : c.name}{belts.length > 0 && <span className="kb-postbit-belts">{belts.map((t) => <TrophyBadge key={t.award} trophy={t} />)}</span>}</span>
         {/* The group's bar under the name; a staff character's has its office title beside it. */}
         {(group || showsStaffBadge(c)) && <span className="kb-postbit-group">{group && <GroupBar look={group} />}<StaffBadge character={c} /></span>}
         {marks && <span className="kb-postbit-marks">{marks}</span>}
@@ -116,6 +120,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
             {instance.ranks.length > 0 && <Pips ranks={instance.ranks.length} index={index} name={rank} style={pipImages} />}
           </span>
         )}
+        {shelf.length > 0 && <span className="kb-postbit-trophies">{shelf.map((t) => <TrophyBadge key={t.award} trophy={t} />)}</span>}
         {c.warnPoints !== undefined && c.warnPoints > 0 && !c.staff && <WarnMeter points={c.warnPoints} size={instance.settings.warnBar.size} />}
         {counts && (
           <span className="kb-postbit-counts kb-small kb-muted">

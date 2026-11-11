@@ -444,3 +444,65 @@
     row-gap: 4px;
   }
 }
+
+/*
+ * The trophy case and a belt's lineage (the cosmetics design, section 4; board 03, and the house theme's 08-profile): each its own table under a band,
+ * a small badge at the left of each award, its name in bold and its giver and date under it. The pictures carry the trophies' names.
+ */
+.kb-profile-trophies {
+  margin-top: 1em;
+}
+
+.kb-trophies,
+.kb-lineage {
+  width: 100%;
+  margin-bottom: 1em;
+}
+
+.kb-table.kb-trophies td.kb-trophy-badge {
+  width: 72px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.kb-trophies .kb-trophy {
+  height: 30px;
+  width: auto;
+  max-width: 54px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.kb-trophies .kb-trophy-belt {
+  height: 27px;
+  max-width: 54px;
+}
+
+.kb-trophy-name {
+  font-size: var(--kb-size-body);
+}
+
+.kb-lineage .kb-lineage-span {
+  width: 220px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* "More trophies" is a control that reads as a link: the case continues where it stands. */
+.kb-profile-trophies button.kb-link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+@media (max-width: 40em) {
+  .kb-table.kb-trophies td.kb-trophy-badge {
+    width: 48px;
+    padding: 8px 4px;
+  }
+
+  .kb-lineage .kb-lineage-span {
+    width: auto;
+  }
+}

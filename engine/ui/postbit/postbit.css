@@ -35,6 +35,32 @@
   flex-direction: column;
 }
 
+/* The shown trophies, small 2003-style badges in a row under the rank; a belt is wider than a trophy (the cosmetics board 01). */
+.kb-postbit-trophies,
+.kb-postbit-belts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25em;
+}
+
+.kb-postbit-belts {
+  margin-left: 0.4em;
+  vertical-align: middle;
+}
+
+.kb-postbit .kb-trophy {
+  height: 1.6em;
+  width: auto;
+  max-width: 3.2em;
+  object-fit: contain;
+}
+
+.kb-postbit .kb-trophy-belt {
+  height: 1.3em;
+  max-width: 2.8em;
+}
+
 /* The rank's name on its line, its pips under it. */
 .kb-postbit-rank {
   display: flex;

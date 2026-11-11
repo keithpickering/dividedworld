@@ -2,7 +2,9 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Fake } from '../data/fake.ts';
-import { buildWorld, holdReads, renderIn } from '../test-world.tsx';
+import { buildWorld, holdReads, renderIn, testInstance } from '../test-world.tsx';
+import { axeViolations, describeViolations } from '../a11y.ts';
+import type { Instance } from '../../rules/types.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { ProfileScreen } from './Profile.tsx';
 import { LoadedProfile } from '../loaded.tsx';
@@ -304,7 +306,8 @@ describe('past seasons, announced Turns and the size of the season', () => {
     const w = world(fake);
     const boot = await fake.boot();
     const doc = (await fake.profilePage(w.spritey))!;
-    const read = holdReads(fake, ['session']);
+    /* The trophy case is not in the document (it carries only the shown few): the case is read once the page stands, and nothing else is. */
+    const read = holdReads(fake, ['session', 'trophies', 'beltLineage']);
     renderIn(fake, <ProfileScreen id={w.spritey} doc={doc} />, { path: `/c/${w.spritey}`, boot });
     const facts = screen.getByRole('table', { name: 'About Spritey' });
     expect(facts).toHaveTextContent('Midcarder');
@@ -315,4 +318,107 @@ describe('past seasons, announced Turns and the size of the season', () => {
     expect(read).toEqual([]);
   });
 
+});
+
+describe('the Wearing row and the trophy case', () => {
+  const shop: Instance = {
+    ...testInstance,
+    gear: [
+      { key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'common' },
+      { key: 'tall', name: 'Tall Hat', line: 'Taller than it needs to be.', rarity: 'rare' },
+    ],
+    trophies: { kinds: [...testInstance.trophies.kinds, { key: 'belt', name: 'Test Belt', belt: true }], seasonPlaces: ['p1', 'p2', 'p3'], boss: ['belt'], demandMet: 'met' },
+  };
+  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.2, w: 0.5, turn: 0, layer });
+  async function dressed() {
+    const fake = buildWorld(undefined, shop);
+    const owner = fake.seed.account('owner');
+    const spritey = fake.seed.character(owner, 'Spritey', 'face', { at: T0 });
+    const rival = fake.seed.character(fake.seed.account('rival'), 'Sock Puppet', 'heel', { at: T0 });
+    fake.seed.avatar(spritey, { square: 'https://img.test/s.webp', portrait: 'https://img.test/s-tall.webp' });
+    fake.seed.gear(owner, { band: 1, tall: 1 });
+    fake.signInAs(owner);
+    /* Placed tall hat first and headband second, but layers say headband (0) then hat (1) after the sort. */
+    expect((await fake.setOutfit(spritey, [piece('tall', 1), piece('band', 0)])).ok).toBe(true);
+    return { fake, spritey, rival };
+  }
+
+  test('"Wearing" lists the outfit in layer order, by the gear\'s name in words', async () => {
+    const { fake, spritey } = await dressed();
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const facts = await screen.findByRole('table', { name: 'About Spritey' });
+    expect(fact(facts, 'Wearing')).toHaveTextContent('Headband, Tall Hat');
+  });
+
+  test('a character wearing nothing has no Wearing row', async () => {
+    const fake = buildWorld(undefined, shop);
+    const bare = fake.seed.character(fake.seed.account('a'), 'Bare', 'face', { at: T0 });
+    fake.signInAs(fake.seed.account('me'));
+    renderIn(fake, <LoadedProfile id={bare} />, { path: `/c/${bare}`, instance: shop });
+    const facts = await screen.findByRole('table', { name: 'About Bare' });
+    expect(within(facts).queryByRole('rowheader', { name: 'Wearing' })).toBeNull();
+  });
+
+  test('the case is newest first, each with its giver in plain words, "an admin" and never an account', async () => {
+    const { fake, spritey } = await dressed();
+    fake.seed.award(spritey, 'p1', { at: Date.UTC(2026, 9, 21, 12), by: 'admin', line: 'Best walk cycle.' });
+    fake.seed.award(spritey, 'met', { at: Date.UTC(2026, 9, 14, 12), by: 'demand' });
+    fake.seed.award(spritey, 'p2', { at: Date.UTC(2026, 9, 29, 12), by: 'season' });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const table = await screen.findByRole('table', { name: /trophies/iu });
+    const rows = within(table).getAllByRole('row').filter((r) => r.querySelector('td.kb-trophy-what'));
+    expect(rows.map((r) => r.querySelector('.kb-trophy-name')!.textContent)).toEqual(['P2', 'P1', 'Met']);
+    expect(rows[1]).toHaveTextContent('Best walk cycle.');
+    expect(rows[1]).toHaveTextContent('Given by an admin, Oct 21');
+    expect(rows[0]).toHaveTextContent('Given by the season');
+    expect(table).not.toHaveTextContent(/owner|account/iu);
+    expect(within(rows[1]!).getByAltText('P1')).toHaveAttribute('title', 'P1');
+  });
+
+  test('a reversed award is not in the case', async () => {
+    const { fake, spritey } = await dressed();
+    const id = fake.seed.award(spritey, 'p1', { by: 'admin' });
+    fake.seed.award(spritey, 'p2', { by: 'admin' });
+    const admin = fake.seed.account('boss', { admin: true });
+    fake.signInAs(admin);
+    expect((await fake.reverseAward(id)).ok).toBe(true);
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const table = await screen.findByRole('table', { name: /trophies/iu });
+    expect(table).toHaveTextContent('P2');
+    expect(table).not.toHaveTextContent('P1');
+  });
+
+  test('"More" pages the case with the cursor, and the page before stays', async () => {
+    const { fake, spritey } = await dressed();
+    for (let i = 0; i < 52; i++) fake.seed.award(spritey, 'p1', { at: T0 + i * 3_600_000, by: 'admin' });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const table = await screen.findByRole('table', { name: /trophies/iu });
+    expect(table.querySelectorAll('td.kb-trophy-what')).toHaveLength(50);
+    act(() => screen.getByRole('button', { name: 'More trophies' }).click());
+    await waitFor(() => expect(table.querySelectorAll('td.kb-trophy-what')).toHaveLength(52));
+    expect(screen.queryByRole('button', { name: 'More trophies' })).toBeNull();
+  });
+
+  test('a belt\'s lineage is under the case, newest holder first, each holder a link', async () => {
+    const { fake, spritey, rival } = await dressed();
+    fake.seed.award(rival, 'belt', { at: Date.UTC(2026, 9, 9, 12), by: 'admin' });
+    fake.seed.award(spritey, 'belt', { at: Date.UTC(2026, 10, 2, 12), by: 'boss' });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    const lineage = await screen.findByRole('table', { name: /Test Belt.*holders/iu });
+    const rows = within(lineage).getAllByRole('row').filter((r) => r.querySelector('td.kb-lineage-span'));
+    expect(rows.map((r) => r.querySelector('a')!.textContent)).toEqual(['Spritey', 'Sock Puppet']);
+    expect(rows[0]).toHaveTextContent('Nov 2 – now');
+    expect(rows[1]).toHaveTextContent(/Oct 9 – Nov 2/u);
+    expect(within(rows[0]!).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${spritey}`);
+  });
+
+  test('passes axe with the row, the case and a lineage drawn', async () => {
+    const { fake, spritey } = await dressed();
+    fake.seed.award(spritey, 'belt', { by: 'boss' });
+    fake.seed.award(spritey, 'p1', { by: 'admin' });
+    renderIn(fake, <LoadedProfile id={spritey} />, { path: `/c/${spritey}`, instance: shop });
+    await screen.findByRole('table', { name: /Test Belt.*holders/iu });
+    const bad = await axeViolations(document.body);
+    expect(bad, describeViolations(bad)).toEqual([]);
+  });
 });

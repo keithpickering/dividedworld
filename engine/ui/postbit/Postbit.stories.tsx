@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { Character } from '../data/api.ts';
+import type { Character, ShownTrophy } from '../data/api.ts';
 import { Postbit, type PostbitPerson } from './Postbit.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import type { Piece } from '../../rules/cosmetics.ts';
@@ -65,3 +65,10 @@ function Wearing({ layout }: { readonly layout: 'side' | 'stacked' }) {
 }
 export const WearingGear: Story = { render: () => <Wearing layout="side" /> };
 export const WearingGearStacked: Story = { render: () => <Wearing layout="stacked" /> };
+
+/* Trophies drawn here as plain badges, so a story needs no file: three chosen and a held belt (the fourth chosen is past `shownMost` and is not drawn). */
+const badge = (fill: string, w = 24) => `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} 24"><rect width="${w}" height="24" rx="4" fill="${fill}"/></svg>`;
+const trophy = (n: number, name: string, fill: string, belt = false): ShownTrophy => ({ award: `story-award-${n}`, trophy: `story-${n}`, name, art: badge(fill, belt ? 48 : 24), belt, held: belt });
+const shelf = [trophy(1, 'First Place', 'goldenrod'), trophy(2, 'Second Place', 'silver'), trophy(3, 'Third Place', 'peru'), trophy(4, 'Fourth Place', 'steelblue'), trophy(5, 'Story Belt', 'maroon', true)];
+export const WithTrophiesAndABelt: Story = { args: { person: person({}, { trophies: shelf }), layout: 'side' } };
+export const StackedHeldBeltOnly: Story = { args: { person: person({}, { trophies: shelf }), layout: 'stacked' } };

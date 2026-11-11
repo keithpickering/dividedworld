@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import type { Character } from '../data/api.ts';
+import type { Character, ShownTrophy } from '../data/api.ts';
 import { widthOf } from '../test-width.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { monthYear, shortDate } from './dates.ts';
@@ -497,5 +497,65 @@ describe('the group bar on the postbit', () => {
   test('a character whose group the settings do not list gets no bar rather than a wrong one', () => {
     show(person({}, { group: 'gone' }));
     expect(document.querySelector('.kb-group-bar')).toBeNull();
+  });
+});
+
+describe('trophies on the postbit', () => {
+  const t = (award: string, trophy: string, name: string, over: Partial<ShownTrophy> = {}): ShownTrophy => ({ award, trophy, name, art: null, belt: false, held: false, ...over });
+  const four = [t('a1', 'p1', 'First'), t('a2', 'p2', 'Second'), t('a3', 'p3', 'Third'), t('a4', 'met', 'Fourth')];
+  const belt = t('b1', 'belt', 'Test Belt', { belt: true, held: true });
+  const bit = () => screen.getByRole('group', { name: 'About Pipewrench' });
+
+  test('a fourth chosen trophy is not drawn, though the answer carries it (shownMost is 3)', () => {
+    widthOf(1440);
+    show(person({}, { trophies: four }));
+    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['First', 'Second', 'Third']);
+  });
+
+  test('each is an image whose alt and title are its name, under the rank', () => {
+    widthOf(1440);
+    show(person({}, { trophies: [four[0]!] }));
+    const img = within(bit()).getByAltText('First');
+    expect(img).toHaveAttribute('title', 'First');
+    expect(img).toHaveAttribute('src', 'p1.svg');
+    expect(before(document.querySelector('.kb-postbit-rank')!, img)).toBe(true);
+  });
+
+  test('a held belt is drawn beside the three chosen, and does not use a place', () => {
+    widthOf(1440);
+    show(person({}, { trophies: [...four.slice(0, 3), belt] }));
+    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['First', 'Second', 'Third', 'Test Belt']);
+  });
+
+  test('a held belt is drawn on the stacked band, beside the name, and the chosen trophies are not', () => {
+    show(person({}, { trophies: [...four, belt] }), 'stacked');
+    const imgs = Array.from(bit().querySelectorAll('img.kb-trophy'));
+    expect(imgs.map((i) => i.getAttribute('alt'))).toEqual(['Test Belt']);
+    expect(imgs[0]!.closest('.kb-postbit-name')).not.toBeNull();
+  });
+
+  test('a phone draws the held belt only, whatever the reader chose', () => {
+    widthOf(390);
+    show(person({}, { trophies: [...four, belt] }), 'side');
+    expect(Array.from(bit().querySelectorAll('img.kb-trophy')).map((i) => i.getAttribute('alt'))).toEqual(['Test Belt']);
+  });
+
+  test('a belt no longer held is only a trophy, and a postbit with none draws no row', () => {
+    widthOf(1440);
+    show(person({}, { trophies: [] }));
+    expect(document.querySelector('.kb-postbit-trophies')).toBeNull();
+  });
+
+  test('the trophy row is a direct child of the text layer, so the ground rule above gear reaches it', () => {
+    widthOf(1440);
+    show(person({}, { trophies: four }));
+    expect(document.querySelector('.kb-postbit-text > .kb-postbit-trophies')).not.toBeNull();
+  });
+
+  test('passes axe with trophies and a belt drawn', async () => {
+    widthOf(1440);
+    show(person({}, { trophies: [...four, belt] }));
+    const bad = await axeViolations(bit());
+    expect(bad, describeViolations(bad)).toEqual([]);
   });
 });
