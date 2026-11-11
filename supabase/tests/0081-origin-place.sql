@@ -3,6 +3,8 @@
 -- Acts with a place number read as `post`; an update as `update`; a card, a face-down set and a trap's spring as `play`, with the
 -- card's key (null for a set, so the column never names a trap) and where it landed: a post, an update, a character, a thread or a
 -- board. A legacy numbered card (0035's leftover) is a play, never `#N`. The two old columns, origin_title and origin_seq, are gone.
+-- A board is named as it is called now (supabase/migrations/0150_origin_place_board_now.sql; docs/plans/2026-11-11-origin-place-rename-plan.md):
+-- boards_now's name, so a rename in force shows and one that ends gives the earlier name back.
 
 -- The migration exists at all (so a missing one fails here, on an assertion, and not on a fixture below).
 do $$
@@ -155,6 +157,81 @@ begin
   if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'update', 'act', upd, 'title', 'Op Headline')) then
     raise exception 'a spin from a card on an update: %', got;
   end if;
+end $$;
+
+-- ---- A play on a board names the board as it is called now ----
+-- A renameBoard move as a staff Boss's Act, written as the tick writes one (supabase/tests/0051-moves.sql), at a time of the test's choosing.
+create function pg_temp.rename(on_board uuid, new_name text, at timestamptz) returns uuid language plpgsql as $$
+declare boss uuid; ann uuid; written uuid;
+begin
+  select id into boss from characters where staff = 'op-boss';
+  if boss is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Op Boss', 'op-boss', 'persona', now()) returning id into boss; end if;
+  select t.id into ann from threads t join boards b on b.id = t.board where b.is_system and t.title = 'Op Announcements';
+  if ann is null then insert into threads (board, title) select id, 'Op Announcements' from boards where is_system returning id into ann; end if;
+  insert into move_kinds (key, structural) values ('renameBoard', true) on conflict (key) do update set structural = excluded.structural;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  written := tests.act(boss, 'move', ann, jsonb_build_object('kind', 'renameBoard', 'body', 'The System has spoken.',
+    'params', jsonb_build_object('board', on_board, 'name', new_name, 'premise', 'The subject of ' || new_name, 'description', 'About ' || new_name),
+    'expires_at', at + interval '3 days'), null, at);
+  perform set_config('kayfabb.staff_writer', '', true);
+  return written;
+end $$;
+
+do $$
+declare
+  ann uuid := tests.account('opr-ann');
+  a uuid := tests.character(ann, 'Opr Ann');
+  t uuid := tests.thread('Opr Thread');
+  general uuid := (select id from boards where slug = 'general');
+  elsewhere uuid;
+  play uuid; spun uuid; first_move uuid; second_move uuid;
+  got jsonb;
+begin
+  perform tests.post(a, t, 'First.');
+  insert into boards (slug, name, description) values ('opr-elsewhere', 'Opr Elsewhere', 'Another board.') returning id into elsewhere;
+  play := tests.act(a, 'card', t, jsonb_build_object('card', 'sweetie', 'reach', 'board', 'board', general), null);
+  insert into play_reach (play, reach, board, ends_at) values (play, 'board', general, now() + interval '1 day');
+  spun := pg_temp.spun(ann, a, play, 'From a play on a board that is renamed');
+
+  -- What the place must read: the play's card, on the board by its slug and the name given. The name is also boards_now's, at every step.
+  create function pg_temp.named(th uuid, board uuid, name text, step text) returns void language plpgsql as $f$
+  declare got jsonb := pg_temp.place(th);
+  begin
+    if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', name)) then
+      raise exception '%: the place is %, wanted the board named %', step, got, name;
+    end if;
+    if (select n.name from boards_now n where n.id = board) is distinct from name then
+      raise exception '%: boards_now names the board %, the test expected %', step, (select n.name from boards_now n where n.id = board), name;
+    end if;
+  end $f$;
+
+  -- No move: the board's own name.
+  perform pg_temp.named(spun, general, 'General', 'before any move');
+
+  -- A rename of another board is not this board's name.
+  perform pg_temp.rename(elsewhere, 'Opr Nowhere', now() - interval '3 hours');
+  perform pg_temp.named(spun, general, 'General', 'another board renamed');
+
+  -- A rename lands: the place names the board as every other screen does, and the slug, the link, is as it was.
+  first_move := pg_temp.rename(general, 'Toast Palace', now() - interval '2 hours');
+  perform pg_temp.named(spun, general, 'Toast Palace', 'a rename in force');
+
+  -- A later rename: the latest one in force.
+  second_move := pg_temp.rename(general, 'Crumb Hall', now() - interval '1 hour');
+  perform pg_temp.named(spun, general, 'Crumb Hall', 'a second rename in force');
+
+  -- An admin reverses the later one: the earlier rename, still in force, names the board again.
+  perform end_move(second_move, 'reversed', 'admin');
+  perform pg_temp.named(spun, general, 'Toast Palace', 'the second rename reversed');
+
+  -- The first expires: the board's own name is back.
+  perform end_move(first_move, 'expired', 'tick');
+  perform pg_temp.named(spun, general, 'General', 'every rename ended');
+
+  -- A thread spun from the play after a rename reads the same as one spun before it: the name is the board's now, not the spin's day's.
+  first_move := pg_temp.rename(general, 'Butter Annex', now() - interval '30 minutes');
+  perform pg_temp.named(pg_temp.spun(ann, a, play, 'Spun after a rename'), general, 'Butter Annex', 'spun while renamed');
+  perform pg_temp.named(spun, general, 'Butter Annex', 'spun before the rename');
 end $$;
 
 -- ---- The columns, and who reads them ----
