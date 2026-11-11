@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runChatter } from './core.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderBosses } from '../../../instances/divided-world/system/fixtures/index.ts';
+import { placeholderMonitor } from '../../../instances/divided-world/system/personas/placeholder-monitor.ts';
 import { AnswerRejected, LedgerWriteFailed, models as realModels } from '../_shared/models/index.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
 import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
@@ -10,6 +12,9 @@ import type { Instance } from '../../../engine/rules/types.ts';
 import { autocorrect as autocorrectRules } from '../../../instances/divided-world/cards/autocorrect.ts';
 import { staffOffers } from '../../../engine/rules/cards.ts';
 import { whoops as whoopsRules } from '../../../instances/divided-world/cards/whoops.ts';
+
+// This world's roster is the three placeholder Bosses and the placeholder Mod Bot, so its keys are the ones below (the first Boss is the hype man, as before).
+const dividedWorld: Instance = { ...realInstance, system: { ...realInstance.system, roster: [...placeholderBosses, placeholderMonitor], firstBoss: 'placeholder-hype-man' } };
 
 // A Wednesday: the week's 20 posts over its five days left give an allowance of 4, so three posts and one card slot.
 const SLOT = '2026-11-04T17:37:00.000Z';

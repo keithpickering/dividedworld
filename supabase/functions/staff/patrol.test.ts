@@ -4,7 +4,13 @@ import { PATROLS_PER_RUN, runPatrols, runPatrolsAfterFilings } from './patrol.ts
 import { RUN_BUDGET_MS } from './core.ts';
 import { TransportError } from '../_shared/rpc.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
+import { instance as realInstance } from '../_shared/instance.ts';
+import { placeholderBosses } from '../../../instances/divided-world/system/fixtures/index.ts';
+import { placeholderMonitor } from '../../../instances/divided-world/system/personas/placeholder-monitor.ts';
+import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
+
+// This world's roster is the three placeholder Bosses and the placeholder Mod Bot, the hype man the first Boss, so its keys are the ones below.
+const dividedWorld: WorldInstance = { ...realInstance, system: { ...realInstance.system, roster: [...placeholderBosses, placeholderMonitor], firstBoss: 'placeholder-hype-man' } };
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
