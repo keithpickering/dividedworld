@@ -28,7 +28,7 @@ The stories are `instances/divided-world/ui/jimmy-wails/Effect.board.stories.tsx
 
 ## What the shots show that is not the drive's design
 
-- Nothing here is a known defect now: the donor wall names every donor by the name the gift carries (drive_gifts, 0152), whether or not the donor has posted in the thread. The drive, long-wall, closed and reduced-motion shots were retaken after that fix (an earlier set showed "A character" for every donor); the earlier-collapsed shots show no wall and are the first set.
+- Nothing here is a known defect now: the donor wall names every donor by the name the gift carries (drive_gifts, 0153), whether or not the donor has posted in the thread. The drive, long-wall, closed and reduced-motion shots were retaken after that fix (an earlier set showed "A character" for every donor); the earlier-collapsed shots show no wall and are the first set.
 - The clock in the post's header is the day the shots were taken; the closed shots' is a week and a day before it.
 
 ## Size

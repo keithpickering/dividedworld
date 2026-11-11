@@ -456,7 +456,38 @@ describe('for a keyboard and a screen reader', () => {
   });
 });
 
+/* ------------------------------------------------------------------- two plays on one post ---- */
+describe('two plays stacked on one post (#325)', () => {
+  const SECOND = 'I read it twice, since I was asked twice.';
+  const WORDS = /Please read it this time/u;
 
+  test.each(['reduce', 'full'] as const)('with motion %s, the second view holds the post\'s words, drawn once, and the last release puts them back in the thread', async (motion) => {
+    document.documentElement.setAttribute('data-kb-motion', motion);
+    const w = world();
+    const fourth = w.fake.seed.character(w.fake.seed.account('fourth'), 'Shyguy', 'face');
+    w.fake.seed.card(fourth, w.held, 'stick-around', { message: 'and again', config: { sentence: SECOND } });
+    await openView(w);
+    const first = view()!;
+    expect(within(first).getByRole('checkbox')).toHaveAccessibleName(new RegExp(SENTENCE.replace(/[.']/gu, '.'), 'u'));
+    expect(within(first).getByText(WORDS)).toBeInTheDocument();
+
+    fireEvent.click(within(first).getByRole('checkbox'));
+    await wait(50);
+    const second = view();
+    expect(second).not.toBeNull();
+    expect(within(second!).getByRole('checkbox')).toHaveAccessibleName(new RegExp(SECOND.replace(/[.']/gu, '.'), 'u'));
+    expect(within(second!).getByRole('checkbox')).not.toBeChecked();
+    /* The post's words are in the second view, and nowhere else: one drawing, moved. */
+    expect(within(second!).getByText(WORDS)).toBeInTheDocument();
+    expect(screen.getAllByText(WORDS)).toHaveLength(1);
+
+    fireEvent.click(within(second!).getByRole('checkbox'));
+    await wait(50);
+    expect(view()).toBeNull();
+    expect(within(document.getElementById('post-2')!).getByText(WORDS)).toBeInTheDocument();
+    expect(screen.getAllByText(WORDS)).toHaveLength(1);
+  });
+});
 
 /* --------------------------------------------------------------------------- touch ---- */
 describe('touch', () => {

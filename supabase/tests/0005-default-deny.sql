@@ -39,7 +39,7 @@ declare
                            'finished_seasons()', 'results_page(integer,integer)', 'result_place(integer,uuid)',
                            -- A thread's page in one read (0094), a security invoker function.
                            'thread_page(uuid,integer,integer,integer,text[])',
-                           -- A drive's gifts (0152): its total, count and donor wall, and the next 20, security invoker reads of the donation Acts, which every Act is public.
+                           -- A drive's gifts (0153): its total, count and donor wall, and the next 20, security invoker reads of the donation Acts, which every Act is public.
                            'drive_gifts(uuid[])', 'drive_gifts_page(uuid,timestampwithtimezone,uuid)',
                            -- The frame and the HUD in one read (0097): a signed-in player's own boot document, stable, writing nothing.
                            'boot()',

@@ -618,7 +618,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     : a.seq !== null ? { kind: 'post', thread: a.thread, title: threads.get(a.thread)!.title, seq: a.seq }
     : null;
 
-  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. */
+  /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
   function originPlace(origin: ActRec): OriginPlace | null {
     if (origin.kind === 'update') return placeOf(origin);
     if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
@@ -629,7 +629,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const named = beyond.reach === 'character' ? characters.get(beyond.target) : undefined;
         on = beyond.reach === 'character' ? { kind: 'character', id: beyond.target, name: named?.debutedAt != null ? named.name : null }
           : beyond.reach === 'thread' ? { kind: 'thread', id: beyond.target, title: threads.get(beyond.target)!.title }
-          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boards.find((b) => b.id === beyond.target)!.name };
+          : { kind: 'board', slug: boards.find((b) => b.id === beyond.target)!.slug, name: boardNow(boards.find((b) => b.id === beyond.target)!).name };
       } else {
         // A play with no play_reach row is on a post (0079 joins the target post only then; every beyond-post play has a reach row).
         on = origin.target !== null ? placeOf(acts.get(origin.target)) : null;
@@ -1451,7 +1451,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         : { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
-    /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0152). */
+    /* A caught play joins no drive; a play a ride back let land is a play like any other (drive_plays leaves a caught play out, 0153). */
     const drive = catches && !rides ? undefined : driveOf(rules, target, playId);
     const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches && !rides ? { caught: trap!.set } : { layer }), ...(rides ? { rode: trap!.set } : {}), ...(rules.skim && rules.lasts ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
@@ -1471,7 +1471,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
-   * The plays that make a post's drives (drive_plays, 0152): a drive card's plays on a post still up (not caught, not ended, at the post). A play's drive is the one its
+   * The plays that make a post's drives (drive_plays, 0153): a drive card's plays on a post still up (not caught, not ended, at the post). A play's drive is the one its
    * payload names, its opening play's id, or its own.
    */
   const drivePlays = (post: Id, card: string, at: number) => [...acts.values()].filter((a) => a.kind === 'card' && a.target === post && a.payload.card === card && a.payload.caught === undefined
@@ -1496,7 +1496,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
-   * The Edge Function's reading of a gift, then `donate` (0152_drives.sql), in its order of refusals: the character is the player's and not banned, the drive is a drive and open, the
+   * The Edge Function's reading of a gift, then `donate` (0153_drives.sql), in its order of refusals: the character is the player's and not banned, the drive is a drive and open, the
    * amount is one the card offers now, and the wallet holds it. The split is `giftSplit` of the card's overhead from the economy; a staff post, which has no wallet, is all overhead; the author's
    * overflow past the cap is lost, recorded in the author's own event alone. The answer is the gift and the giver's balance, nothing of the author's wallet.
    */
@@ -1822,7 +1822,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ withdrawn: true });
   }
 
-  /** The SQL's words (pronouns_hold, 0124): a set is held after it is lowercased, as set_profile and create_character store it. */
+  /** The SQL's words (pronouns_hold, 0124): a set is held and stored normalized (trimmed and lowercased), as the real client's setProfile sends it and the act function normalizes it. */
   const PRONOUNS_REFUSAL = 'pronouns are five words of 1 to 12 letters';
   const pronounsHold = (set: PronounSet) => pronounProblems(normalizePronouns(set)).length === 0;
 
@@ -2287,6 +2287,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
     },
     apologize(move, character, title, body, framing) {
+      const bad = request({ action: 'apologize', move, character, title, body, ...(framing ? { framing } : {}) });
+      if (bad) return bad;
       const c = acting(character);
       if (isRefusal(c)) return c;
       const banned = bannedUntilOf(character);
@@ -3847,7 +3849,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       /* The key the server drew for the play (`CardRules.draws`), as play_card stores it. */
       if (o?.drawn !== undefined) payload.drawn = o.drawn;
       if (o?.ends !== undefined) payload.ends = o.ends;
-      /* A play of a drive card joins the post's open drive, or opens one named by its own id (place_cast, 0152). */
+      /* A play of a drive card joins the post's open drive, or opens one named by its own id (place_cast, 0153). */
       const driveRules = instance.cards.find((c) => c.key === card);
       const seededId = uuid();
       const drive = o?.caught === undefined && driveRules ? driveOf(driveRules, target, seededId, o?.at) : undefined;

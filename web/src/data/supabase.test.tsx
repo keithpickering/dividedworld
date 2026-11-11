@@ -504,6 +504,17 @@ describe('reads and their rows', () => {
     ]);
   });
 
+  it('marks a set as unread only where a profile row came without one: a row with a set, and a character with no row, carry no marker', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/characters_public') ? rows([{ id: A, name: 'Al', joined: '2026-09-01' }, { id: B, name: 'Bea', joined: '2026-10-01' }, { id: C, name: 'Cy', joined: '2026-10-02' }]) : rows([{ character: A, title: 'T' }, { character: B, pronouns: PRONOUN_PRESETS.she }])));
+    const [al, bea, cy] = await h.api.characters([A, B, C]);
+    expect(al).toMatchObject({ pronouns: ENGINE_DEFAULT_PRONOUNS, pronounsUnread: true });
+    expect(bea?.pronouns).toEqual(PRONOUN_PRESETS.she);
+    expect(bea).not.toHaveProperty('pronounsUnread');
+    /* No profile row at all: nothing is stored to overwrite, so the engine's it/its may be shown and saved (set_profile makes the row). */
+    expect(cy?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
+    expect(cy).not.toHaveProperty('pronounsUnread');
+  });
+
   it('builds the board index from boards_now (the names as Acts say them now) and thread_list', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/boards_now')) return rows([{ id: C, slug: 'general', name: 'General', description: 'All', is_system: false, created_at: 'x' }]);
@@ -756,6 +767,13 @@ describe('failures', () => {
     expect(set).toMatchObject({ ok: true, value: { pronouns: PRONOUN_PRESETS.she } });
   });
 
+  it('sends set_profile a custom set trimmed and lowercased, as the picker judged it', async () => {
+    const xe = { subject: 'xe', object: 'xem', determiner: 'xyr', possessive: 'xyrs', reflexive: 'xemself', plural: false };
+    const h = harness(() => json({ character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: xe }));
+    await h.api.setProfile(B, 'T', 's', 'default', { subject: 'xe ', object: ' Xem', determiner: 'xyr\t', possessive: ' xyrs', reflexive: ' XEMSELF ', plural: false });
+    expect(h.to('rpc/set_profile').map((r) => r.body)).toEqual([{ through: B, title: 'T', signature: 's', pip_style: 'default', pronouns: xe }]);
+  });
+
   it('passes an rpc refusal through by its hint, and quotes nothing else', async () => {
     const refused = harness(() => json({ code: '22023', message: 'a title is at most 40 characters', details: null, hint: 'kayfabb.refusal' }, 400));
     expect(await refused.api.setProfile(B, 'x'.repeat(41), '', 'default')).toEqual({ ok: false, error: 'a title is at most 40 characters' });
@@ -859,6 +877,30 @@ describe('writes through the act function', () => {
       expect(r.headers.get('authorization')).toBeNull();
       expect(r.url.search).toBe('');
     }
+  });
+
+  it('sends an apology to the act function, never to the apologize rpc, and maps its answer as a spin\'s', async () => {
+    const thread = { id: T, board: C, title: 'Sorry', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' };
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ thread, act: ACT_ROW }) : undefined));
+    const plain = await h.api.apologize(A, B, 'Sorry', 'I am sorry');
+    await h.api.apologize(A, B, 'Sorry', 'I am sorry', [C]);
+    expect(act(h).map((r) => r.body)).toEqual([
+      { action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry' },
+      { action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry', framing: [C] },
+    ]);
+    expect(h.to('rpc/apologize')).toHaveLength(0);
+    expect(plain).toEqual(await h.api.spin(A, B, 'Sorry', 'I am sorry'));
+    expect(plain.ok && plain.value.act).toEqual(ACT);
+
+    const refused = harness(() => json({ error: 'body is empty', field: 'body' }, 400));
+    expect(await refused.api.apologize(A, B, 'Sorry', '')).toEqual({ ok: false, error: 'body is empty', field: 'body' });
+    expect(refused.to('rpc/apologize')).toHaveLength(0);
+
+    const lost = harness(() => json({ error: 'down' }, 503));
+    const r = await lost.api.apologize(A, B, 'Sorry', 'I am sorry');
+    expect(r.ok === false && r.uncertain).toBe(true);
+    expect(act(lost)).toHaveLength(1);
+    expect(lost.to('rpc/apologize')).toHaveLength(0);
   });
 
   it('maps the Turn, character and invite answers', async () => {

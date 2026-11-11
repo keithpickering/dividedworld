@@ -364,7 +364,7 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into acts (character, kind, thread, payload) values (null, 'reveal', old_thread, '{"season": 0, "body": "Every mask.", "characters": 0}') returning id into old_head;
         update seasons set reveal_act = old_head where number = (select max(number) - 1 from seasons);
       end;
-      -- A drive and its gifts (0152): a drive card with a draw and a blank-message refusal, Bob's play of it on a post of Ann's (which opens the drive and draws a key), a gift from Bob
+      -- A drive and its gifts (0153): a drive card with a draw and a blank-message refusal, Bob's play of it on a post of Ann's (which opens the drive and draws a key), a gift from Bob
       -- that overflows Ann's full wallet, and a gift from Ann to her own mask, so donation Acts and the gift_out and gift_in events, an overflow among them, are carried across.
       declare dp uuid; dplay uuid;
       begin
@@ -424,7 +424,7 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
   assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
   assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
-  // The drive and its gifts (0152): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
+  // The drive and its gifts (0153): the play opened a drive with a drawn key, both gifts are `donation` Acts, and each wallet event names its gift; Ann's full wallet cut off part of what arrived.
   const gifts = `select d.id from acts d join acts o on o.id = d.target_act_id and o.payload ->> 'card' = 'expdrive' where d.kind = 'donation'`;
   assert.match(sql(`select payload ->> 'drawn' from acts where kind = 'card' and payload ->> 'card' = 'expdrive'`), /^exp-[ab]$/, 'the drive\'s play drew a key');
   assert.equal(sql(`select count(*) from (${gifts}) g`), '2', 'two gifts are two donation Acts');

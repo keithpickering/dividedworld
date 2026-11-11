@@ -248,7 +248,7 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   // refuses, in plain words, a price that is no longer its own, so an admin's change between the look and the press is never charged unseen.
   buyCard: (r) => ({ rpc: 'buy_card', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
   buyPack: (r) => ({ rpc: 'buy_pack', args: { slot: id(r, 'slot'), price: shownPrice(r) }, asService: true }),
-  // A gift to a drive (supabase/migrations/0152_drives.sql, donate): the service's call for the account, as a purchase is. The drive's open time, the amounts it offers, the split and the wallet are the database's to say.
+  // A gift to a drive (supabase/migrations/0153_drives.sql, donate): the service's call for the account, as a purchase is. The drive's open time, the amounts it offers, the split and the wallet are the database's to say.
   donate: (r) => ({ rpc: 'donate', args: { through: id(r, 'character'), drive: id(r, 'drive'), amount: giftAmount(r) }, asService: true }),
   playCard: (r, instance) => ({
     rpc: 'play_card',

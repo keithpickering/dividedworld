@@ -415,7 +415,7 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
  * Whether a card can only be cast now and face up, never set face down (the owner's answer to issue #446): it writes, needs a message, draws or runs a
  * drive. Each of those is done at the cast, on the post the caster chose (the tail is bought, the message is said, the draw is made, the drive opens), and a
  * back that sprang later on a quote would land with none of it. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
- * server holds the same on face_down (supabase/migrations/0152_drives.sql, face_down_never_writes).
+ * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
 export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive'>): boolean =>
   rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined;
@@ -497,9 +497,9 @@ export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_0
 
 /**
  * The open drive of card `key` among `effects`: the drive whose `closes` is after `now`, with its plays, or none. A drive's plays are
- * the effects the caller passes, the post's plays still up as card_target gives them (supabase/migrations/0152_drives.sql, drive_plays;
+ * the effects the caller passes, the post's plays still up as card_target gives them (supabase/migrations/0153_drives.sql, drive_plays;
  * whether an ended play leaves its drive is the owner's question #447), and this is the one place here that says which plays make a drive.
- * A post holds at most one open drive of a card, since place_cast (0152) joins a play to the open drive, so the first open play names it.
+ * A post holds at most one open drive of a card, since place_cast (0153) joins a play to the open drive, so the first open play names it.
  */
 export function openDrive(effects: readonly CardEffect[], key: string, now: Date): { readonly id: string; readonly closes: string; readonly plays: readonly CardEffect[] } | undefined {
   const plays = effects.filter((e) => e.card === key && e.drive !== undefined && e.closes !== undefined && Date.parse(e.closes) > now.getTime());
