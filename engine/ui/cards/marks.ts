@@ -9,6 +9,7 @@ import type { Span } from '../../rules/types.ts';
 import type { CardPlay } from './types.ts';
 import { dayAndTime } from '../characters/format.ts';
 import { orbs } from './faces.ts';
+import { shareWords } from '../copy-words.ts';
 import { STATUS_MAX_WORDS } from './lens-words.ts';
 
 /** The most marks a strip draws on a desktop, before the "+N" mark. */
@@ -71,7 +72,7 @@ const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${nam
  * from another's. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
  * `note`, and when it ends is its `ends`, in the reader's zone. Once it has sprung, the card is public, and its name is said.
  * The end is the one the server stored when the card was set (`back.endsAt`), the same span for every Set, so it names no card either; a back
- * with none (a read from before 0152 carried no end) says only that its end is not shown, which is true where nothing else is known. `cardName` is asked only of a back that sprang.
+ * with none (a read from before 0154 carried no end) says only that its end is not shown, which is true where nothing else is known. `cardName` is asked only of a back that sprang.
  */
 export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
   if (back.revealed) {
@@ -96,6 +97,8 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
   const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') return finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
+  /* A ride pays the post's author, from the cards others cast on it: the heading is the short status, and the report says how much, from the effect's own share. */
+  if (effect.kind === 'ride') return finish('Pays its author for votes here', `Each vote on a card another player casts here pays its author ${shareWords(effect.share)}.`);
   /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */
   const away = [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])];
   const full = `Turns away ${away.length > 0 ? list(away) : 'some cards'}`;

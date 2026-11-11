@@ -6,7 +6,7 @@
 -- 3. my_bans (0111) gains `ruling` (the verdict of the latest ruling on the ban's appeals, null with none) and `own_until` (the ban's own end), and its `until` reads the latest ruling that
 --    carries one, newest first, as the other readers of a ruling do. Both read the same appeal and ruling rows `until` already reads, through the indexes on an appeal's target.
 -- 4. my_caught (0054) loses `bought_price`: the log quotes what the cast cost, never the machine's price of the card. A view's column cannot be dropped in place, and log_page's
---    body depends on the view, so log_page is dropped, the view made again with its grants, and log_page made again, as 0149 wrote it with the three changes: no `bought_price`
+--    body depends on the view, so log_page is dropped, the view made again with its grants, and log_page made again, as 0151 wrote it with the three changes: no `bought_price`
 --    in `caught`, and `ruling` and `own_until` in `bans`, `ruled_office` in `groupMoves`.
 -- Masks: every new column is read from rows the player's own log already reads (their characters' bans and group moves, and the rulings on them, public Acts); none says who owns
 -- another character or who reacted. Ways out: reads only.
@@ -121,7 +121,7 @@ create view my_caught as
 revoke all on my_caught from public, anon, authenticated;
 grant select on my_caught to authenticated;
 
--- log_page (0149) as described above. The function is made again, so its grants are stated again.
+-- log_page (0151) as described above. The function is made again, so its grants are stated again.
 create function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -196,6 +196,10 @@ begin atomic
   ), sh as materialized (
     select s.settlement, s.character, s.reason, s.act, s.quadrant, s.amount
     from my_ledger_shares s where s.settlement in (select x.settlement from lg x)
+  ), sa as materialized (
+    select s.settlement, s.character, s.named_class, s.play, s.card, s.starts_at, s.ends_at
+    from my_scored_as s where in_before is null or s.ends_at <= in_before
+    order by s.ends_at desc, s.settlement, s.character limit 200
   ), tn as materialized (
     select t.act, t.character, t.at, t.was from turns_announced t where t.character in (select m.id from mine m)
   ), named(id) as (
@@ -260,6 +264,7 @@ begin atomic
       'reports', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.report) from rp x), '[]'::jsonb),
       'appeals', coalesce((select jsonb_agg(to_jsonb(x) order by x.at desc, x.appeal) from ap x), '[]'::jsonb)),
     'shares', coalesce((select jsonb_agg(to_jsonb(x) order by x.settlement desc, x.character, x.reason, x.act, x.quadrant) from sh x), '[]'::jsonb),
+    'scoredAs', coalesce((select jsonb_agg(to_jsonb(x) order by x.ends_at desc, x.settlement, x.character) from sa x), '[]'::jsonb),
     'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
     'states', coalesce((select jsonb_agg(to_jsonb(e) order by e.play::text collate "C") from (
       select s.play, s.state, s.saved_at from effect_state s where s.play in (select v.play from sv v)) e), '[]'::jsonb),

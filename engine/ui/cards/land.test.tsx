@@ -4,7 +4,8 @@
  * posts to offer a card on and which cards to offer a post.
  */
 import { describe, expect, test } from 'vitest';
-import { landsOn, type CardRules } from '../../rules/cards.ts';
+import { landsOn, quadrantFree, type CardRules } from '../../rules/cards.ts';
+import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { effectsOf, landing, landingOn, lengthOf } from './land.ts';
 import type { CardPlay } from './types.ts';
@@ -48,8 +49,8 @@ describe('how long a post is', () => {
 /* The card mechanic (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a Set lands where no back is live, a cast where no live ward
    covers it, and a caught play holds no place. */
 describe('wards, backs and catches, as a screen offers a card', () => {
-  const setLasts = { unit: 'day' as const, count: 7 };
   const at = new Date().toISOString();
+  const setLasts = { unit: 'day' as const, count: 7 };
   const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, endsAt: '2999-01-01T00:00:00.000Z', ...over });
   const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', gimmick: { kind: 'ward', upTo: 'uncommon' }, lasts: setLasts, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
   const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', gimmick: undefined, lasts: undefined, trap: { trigger: { on: 'visit' } }, canApply: () => ({ ok: true, value: undefined }) };
@@ -117,6 +118,45 @@ describe('where a card beyond a post is offered', () => {
   test('a board card where no board card is live', () => {
     expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { cards })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
     expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { cards }).ok).toBe(true);
+  });
+});
+
+/* A card that names something when it is played (a skim card's quadrant, a scored-as card's class, a ride back's quadrant) is offered where it lands, before
+   its player has named anything: the settings are the form's, and the screen asks only where the card lands. */
+describe('a card that names a quadrant or a class, as a screen offers it', () => {
+  const base: CardRules = { key: 'base', name: 'Base', alignment: 'salty', rarity: 'uncommon', playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: () => ({ ok: true, value: undefined }) };
+  const named = (config: unknown) => (config as { quadrant?: unknown; class?: unknown } | null) ?? {};
+  const skim: CardRules = { ...base, key: 'skim', name: 'Skim', skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4, validateConfig: (c) => (typeof named(c).quadrant === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the reactions' }), canApply: (t, e, c, now) => landsOn({ key: 'skim', stack: 4 }, t, e, now) };
+  const scores: CardRules = { ...base, key: 'scores', name: 'Scores', reaches: ['character'], scoresAs: true, lasts: { unit: 'day', count: 2 }, validateConfig: (c) => (typeof named(c).class === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the class' }) };
+  const ride: CardRules = { ...base, key: 'ride', name: 'Ride', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, validateConfig: (c) => (typeof named(c).quadrant === 'string' ? { ok: true, value: c } : { ok: false, why: 'choose the reactions' }) };
+  const cards = [skim, scores, ride];
+
+  test('a skim card lands on a post, a scored-as card on a character, a ride back on a post, each with nothing named yet', () => {
+    expect(landing(skim, post('hi'), [], { cards }).ok).toBe(true);
+    expect(landingOn(scores, { reach: 'character', character: 'c1' }, [], { cards }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { cards }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { cards, faceDown: true }).ok).toBe(true);
+  });
+
+  test('a skim card is still offered on a post that carries one of its own, for the quadrants left', () => {
+    expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { cards }).ok).toBe(true);
+  });
+});
+
+/* The lenient wrapper asks a card's own landing with no settings at all: a card whose `canApply` reads its configuration (a skim card's, through quadrantFree) must see none. */
+describe('a card whose canApply reads its configuration, as a screen offers it', () => {
+  const reading: CardRules = {
+    key: 'reader', name: 'Reader', alignment: 'salty', rarity: 'uncommon', playPrice: () => 0, skim: { share: 0.1 }, lasts: { unit: 'week', count: 1 }, stack: 4,
+    validateConfig: (c) => ((c as { quadrant?: unknown } | null)?.quadrant === undefined ? { ok: false, why: 'choose the reactions' } : { ok: true, value: c }),
+    canApply: (t, e, config, now) => {
+      const lands = landsOn({ key: 'reader', stack: 4 }, t, e, now);
+      const quadrant = (config as { quadrant: Quadrant } | undefined)?.quadrant as Quadrant;
+      return lands.ok && config ? quadrantFree({ key: 'reader' }, t, [{ card: 'reader', act: 'x', quadrant: QUADRANTS[0], ends: '2999-01-01T00:00:00Z' }], quadrant, now) : lands;
+    },
+  };
+  test('arming it neither throws nor applies the placeholder quadrant\'s check', () => {
+    expect(() => landing(reading, post('hi'), [], { cards: [reading] })).not.toThrow();
+    expect(landing(reading, post('hi'), [], { cards: [reading] }).ok).toBe(true);
   });
 });
 

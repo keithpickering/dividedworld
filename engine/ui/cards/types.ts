@@ -45,11 +45,15 @@ export interface CardPlay {
    */
   readonly endsAt?: string | null;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
-  readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
+  readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string; /** The quadrant a ride back named, public once it has sprung (the spring's `quadrant`). */ readonly quadrant?: string };
   /** A card back its setter took back into their hand (a `take_back` Act): ended then, and it names no card. */
   readonly takenBack?: { readonly at: string };
   /** A play a back laid when it sprang (a Move landing on a quote), by the spring that laid it: the Lens says who set it and what set it off. */
   readonly spring?: Id;
+  /** A cast that rode a ride back, by the set whose spring it sprang: it landed as usual, took its layer and was caught by nothing. */
+  readonly rode?: Id;
+  /** When a play's effect starts where that is later than the play (a scored-as play's window opens at the next settlement); absent where it starts when it lands. */
+  readonly starts?: string;
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
@@ -296,9 +300,10 @@ export interface CardUi {
    * What a play of this card did, in a sentence, for the caster's played line and the author's "a card on your post" line, read
    * from the play's configuration ("It covers “Mario” with “Luigi”."). A card that gives none, or answers undefined, adds nothing.
    * Out of character and true. It is given what the play recorded with itself (`tokens`, for a card that writes: the length it bought, written
-   * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded.
+   * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded, and `starts` and `ends` (ISO times, as the server wrote them with the play) for a card whose play is said with the window it
+   * names (a scored-as card's two settlements).
    */
-  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number }) => string | undefined;
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number; readonly starts?: string; readonly ends?: string }) => string | undefined;
   /**
    * What a card that writes (`CardRules.writes`) did to a post of the author's, for the author's log, as the verb phrase after its subject; the
    * engine names the card and the post, and says nothing of who played it or what it cost. `continued` follows "<card> on your post #3" (the

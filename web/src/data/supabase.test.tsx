@@ -414,7 +414,7 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
   });
 
-  it('carries a set\'s `ends_at` (acts_public, 0152) onto the Act as `endsAt`, and nothing on an Act with none', async () => {
+  it('carries a set\'s `ends_at` (acts_public, 0154) onto the Act as `endsAt`, and nothing on an Act with none', async () => {
     const END = '2026-11-20T00:00:00+00:00';
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'set', target_act_id: B, ends_at: END }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, ends_at: null }])));
     const plays = await h.api.cardsOnMany([B], 10);
@@ -2378,6 +2378,14 @@ describe('a screen in one call', () => {
     const LEDGER_ROW = { settlement: 9, starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00', character: B, reason: 'heel.drewHeat', amount: 20, shares_kept: true, params: { n: 2 } };
     const doc = (sources: unknown, rest: Record<string, unknown> = {}) => ({
       sources, shares: [], acts: [], states: [], people: [], threads: [], boards: [], standings: [], turns: [], season: null, ...rest,
+    });
+
+    it('maps the top-level scoredAs rows (named_class to classKey), and an older payload without them reads as none', async () => {
+      const row = { settlement: 9, character: B, named_class: 'heel', play: C, card: 'offday', starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00' };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }), { scoredAs: [row] })).api.logPage(null);
+      expect(page.log.scoredAs).toEqual([{ settlement: 9, character: B, classKey: 'heel', play: C, card: 'offday', startsAt: row.starts_at, endsAt: row.ends_at }]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log).not.toHaveProperty('scoredAs');
     });
 
     it('sends the cursor by name and maps the sources through the log\'s own mappers, and what the lines name', async () => {

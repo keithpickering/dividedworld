@@ -187,19 +187,19 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const { instance, settings, ui } = useKayfa();
   const given = useCardView(store, post, kind);
   /*
-   * What this kind's words read of the post, as one string: its plays (who, when, caught by what, ending when, revealed as what) and
+   * What this kind's words read of the post, as one string: its plays (who, when, caught by what, ending when, starting when, revealed as what, configured how) and
    * the setter's own faces among them. A change elsewhere on the post leaves it equal, so a mark of another kind is not drawn again.
    */
   const subscribe = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
     return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.endsAt ?? null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null, p.config, p.starts ?? null, p.endsAt ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, string | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null, CardPlay['config'], string | null, string | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, endsAt]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack, config, starts, endsAt]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config, playedAt, post, ...(starts ? { starts } : {}), ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}), ...(endsAt ? { endsAt } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };

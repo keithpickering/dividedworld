@@ -71,6 +71,8 @@ export function playOf(act: Act): CardPlay | null {
     ...(beyond ? { reach: beyond, on: on as Id } : {}),
     ...(typeof act.payload.caught === 'string' ? { caught: act.payload.caught } : {}),
     ...(typeof act.payload.spring === 'string' ? { spring: act.payload.spring } : {}),
+    ...(typeof act.payload.rode === 'string' ? { rode: act.payload.rode } : {}),
+    ...(typeof act.payload.starts === 'string' ? { starts: act.payload.starts } : {}),
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
     ...(act.untaken === true ? { untaken: true as const } : {}),
   };
@@ -115,9 +117,9 @@ export function nextEnd(plays: readonly CardPlay[], now: number = Date.now()): n
 }
 
 /** What a spring Act reveals: the set it ends and the card that was face down. */
-function springOf(act: Act): { readonly set: Id; readonly card: string; readonly spring: Id; readonly at: string } | null {
+function springOf(act: Act): { readonly set: Id; readonly card: string; readonly spring: Id; readonly at: string; readonly quadrant?: string } | null {
   if (act.kind !== 'spring' || typeof act.payload.set !== 'string' || typeof act.payload.card !== 'string') return null;
-  return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt };
+  return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt, ...(typeof act.payload.quadrant === 'string' ? { quadrant: act.payload.quadrant } : {}) };
 }
 
 /** The back a `take_back` Act ends, and when, or null for any other Act. */
@@ -270,7 +272,7 @@ export function createPlays(): Plays {
           const own = post === undefined ? undefined : byPost.get(post);
           const back = own?.get(sprung.set);
           if (own && back && !back.revealed) {
-            own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at } });
+            own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}) } });
             touched.add(homeOf(back));
           }
           continue;
@@ -304,7 +306,7 @@ export function createPlays(): Plays {
         const found = playOf(act);
         if (!found) continue;
         const early = found.faceDown ? springs.get(found.id) : undefined;
-        const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at } } : found;
+        const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
         const play = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;

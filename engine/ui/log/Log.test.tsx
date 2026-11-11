@@ -766,6 +766,25 @@ describe('the breakdown', () => {
     expect([...reasons].map((r) => r.getAttribute('aria-label'))).toEqual(['Drew heat', 'Stole the thunder', 'Shrugged off']);
   });
 
+  test('two lines of one character and one reason that name different cards are both drawn, each under its own key', async () => {
+    const w = world();
+    const { seed } = w.fake;
+    seed.settle({
+      at: at(30, 8, 17), debut: false, turns: false,
+      ledger: [
+        { character: w.pipe, reason: 'card.skim', amount: 30, params: { card: 'mooch' } },
+        { character: w.pipe, reason: 'card.skim', amount: 20, params: { card: 'toll' } },
+      ],
+    });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await open(w.fake, w.me, w.pipe);
+    await screen.findByRole('table');
+    fireEvent.click(within(bodyRows()[0]!).getByRole('button', { name: 'Show posts' }));
+    const reasons = document.querySelectorAll<HTMLElement>('.kb-log-breakdown:not([hidden]) .kb-log-reason');
+    expect([...reasons].map((r) => r.querySelector('[data-kb-amount]')!.textContent)).toEqual(['+0.30', '+0.20']);
+    expect(errors.mock.calls.filter((c) => /same key/u.test(String(c[0])))).toEqual([]);
+  });
+
   test('it says what a share is, and that a reason with no post was scored over the whole window', async () => {
     const { fake, me, pipe } = split();
     await open(fake, me, pipe);

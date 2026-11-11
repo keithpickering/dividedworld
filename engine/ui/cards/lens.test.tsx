@@ -207,6 +207,17 @@ describe('what the Lens says and offers', () => {
     expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Does a thing.');
   });
 
+  test('a status that reads each play\'s configuration says it in the Lens, as the engine hands it over', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    w.fake.seed.card(w.spritey, w.second, 'k2', { config: { quadrant: 'calmPositive' }, message: 'named' });
+    const reads: CardUi[] = cards.map((c) => (c.key === 'k2' ? { ...c, status: (plays) => `Names ${String(plays[0]?.config.quadrant)}` } : c));
+    open(w, reads);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Names calmPositive');
+  });
+
   test('a ward with several conditions shows its full list in the report line', async () => {
     width(false);
     const warded = {

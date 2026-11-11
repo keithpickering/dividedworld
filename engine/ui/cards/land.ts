@@ -5,6 +5,7 @@
  * the screen and the server agree because they ask the same function. The server decides again at
  * the play (`decidePlay`), whatever this said.
  */
+import { QUADRANTS } from '../../rules/types.ts';
 import { decidePlay, decideSet, postTarget, decideUse, effectsOnTarget, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
@@ -60,8 +61,15 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 export function landingOn(rules: CardRules, target: CardTarget, plays: readonly CardPlay[], context: LandingContext): Verdict {
   const effects = effectsOnTarget(target, effectsOf(plays, context.cards), context.above ?? {});
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
-  /* Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. */
-  const lenient: CardRules = { ...rules, validateConfig: (c) => ({ ok: true, value: c }), playPrice: () => 0 };
+  /*
+   * Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. A card that names a
+   * quadrant or a class when it is played (a skim card, a ride back, a scored-as card) is checked by the rules to have its configuration name
+   * one, so the settings held here do name one, a placeholder no rule reads, and the card's own landing is asked with no settings at all.
+   */
+  const lenient: CardRules = {
+    ...rules, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any' } }), playPrice: () => 0,
+    canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now),
+  };
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')

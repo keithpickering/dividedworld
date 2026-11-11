@@ -169,7 +169,7 @@ declare
                          'economy',
                          -- The member groups' looks (0128): every group's key, name, color and stripe.
                          'groups',
-                         -- How long a card set face down lasts (0152), for the line a card about to be set shows.
+                         -- How long a card set face down lasts (0154), for the line a card about to be set shows.
                          'setLasts'];
   k text;
 begin

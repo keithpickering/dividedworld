@@ -205,7 +205,7 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
-  /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0152): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
+  /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0154): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
@@ -336,7 +336,7 @@ export interface Act {
    */
   readonly untaken?: true;
   /**
-   * Set only on a set (a card face down): when the server ends it if nothing springs it or takes it back first (`acts_public.ends_at`, 0152, the
+   * Set only on a set (a card face down): when the server ends it if nothing springs it or takes it back first (`acts_public.ends_at`, 0154, the
    * `face_down` row's, stored when the card was set). Public and the same span for every back, so it names no card. A screen reads a back's end from
    * here and never adds the setting to when it was set: an admin's change to the setting moves no back already set.
    */
@@ -1351,6 +1351,25 @@ export interface FaceDownEnd {
   readonly endedBy: 'sprung' | 'taken back' | 'time';
 }
 
+/**
+ * A class an Off Day-shaped play (a card with `scoresAs`) named for one of the player's characters, as the settlement that scored it
+ * recorded it (`my_scored_as`, sent by `log_page` as `scoredAs`): the settled window's own dates, the class the character was scored as
+ * there and the play that named it. Its character is one of the caller's own, so it is the only reader's.
+ */
+export interface ScoredAs {
+  readonly settlement: number;
+  readonly character: Id;
+  /** The class the character was scored as for that window (`class_key`). */
+  readonly classKey: string;
+  /** The play's Act. */
+  readonly play: Id;
+  /** The play's card key. */
+  readonly card: string;
+  /** The settled window's start and end (`settlements.starts_at`, `ends_at`). */
+  readonly startsAt: string;
+  readonly endsAt: string;
+}
+
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
 export interface CaughtPlay {
   readonly play: Id;
@@ -1414,7 +1433,7 @@ export interface LogBan {
   readonly infraction: Id;
   readonly rule: string | null;
   readonly thread: Id;
-  /** The verdict of the ruling on its appeal (`my_bans`, 0153); null with no ruling. */
+  /** The verdict of the ruling on its appeal (`my_bans`, 0155); null with no ruling. */
   readonly ruling: AppealVerdict | null;
   /** When the ban ends by its own Act, before any ruling. */
   readonly ownUntil: string;
@@ -1463,7 +1482,7 @@ export interface LogGroupMove {
   readonly ruledAt: string | null;
   /** The end an appeal's ruling set. */
   readonly ruledUntil: string | null;
-  /** The office that heard the latest ruling (its stamp, 0153); null for a ruling written before the stamp, and for a move with none. No default stands in for it. */
+  /** The office that heard the latest ruling (its stamp, 0155); null for a ruling written before the stamp, and for a move with none. No default stands in for it. */
   readonly ruledOffice: Office | null;
 }
 
@@ -1529,6 +1548,8 @@ export interface Log {
   readonly setEnds: readonly FaceDownEnd[];
   /** The player's plays a trap caught, by when each was played. */
   readonly caught: readonly CaughtPlay[];
+  /** The classes the player's characters were scored as for a settled window, newest settlement first. Absent from a payload older than the card that names them; read it as none. */
+  readonly scoredAs?: readonly ScoredAs[];
   /** The card plays an admin ended that the player cast or that landed on theirs, by when each was ended. */
   readonly ended: readonly CardEnded[];
   /** The next page's cursor: pass it to `log` for what is older. Null when nothing older is left. */
