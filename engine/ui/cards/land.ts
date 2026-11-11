@@ -21,13 +21,13 @@ export function targetOf(post: Act): PostTarget {
   return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body);
 }
 
-/** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0148), with a ward's rarity and a Use's end; a card back naming no card, ended where it sprang or its time passed. */
-export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'ward' | 'rarity'>[], setLasts: Span): CardEffect[] {
-  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
+/** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */
+export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity'>[], setLasts: Span): CardEffect[] {
+  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'hour' ? 3_600_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
   return plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p): CardEffect => {
-    if (p.faceDown) return { card: null, act: p.id, faceDown: true, ends: p.revealed?.at ?? new Date(Date.parse(p.playedAt) + span).toISOString() };
+    if (p.faceDown) return { card: null, act: p.id, faceDown: true, ends: p.revealed?.at ?? p.takenBack?.at ?? new Date(Date.parse(p.playedAt) + span).toISOString() };
     const ward = cards.find((c) => c.key === p.card);
-    return { card: p.card, act: p.id, ...(ward?.ward ? { ward: ward.rarity } : {}), ...(p.ends ? { ends: p.ends } : {}) };
+    return { card: p.card, act: p.id, ...(ward?.gimmick ? { gimmick: ward.gimmick } : {}), ...(p.ends ? { ends: p.ends } : {}) };
   });
 }
 
@@ -65,7 +65,7 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
   /* Only where the card lands is asked here: its settings are the form's, so the card's own refusal of none is set aside. */
   const lenient: CardRules = { ...rules, validateConfig: (c) => ({ ok: true, value: c }), playPrice: () => 0 };
   const play = context.faceDown ? 'set' : playOfRules(rules);
-  const decided = play === 'set' ? decideSet({ ...lenient, trap: undefined, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
+  const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
     : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf });
   return decided.ok ? { ok: true, value: undefined } : decided;
@@ -84,7 +84,7 @@ export const landsWords = (rules: Pick<CardRules, 'reaches'>): string => LANDS_O
 
 /**
  * What a card set face down does, in one plain sentence, from the card's rules and never its name: a Move springs on a quote and lands on
- * what its first reach says; a Gimmick waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
+ * what its first reach says; a set card waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
  * post to start (and ends it), or does nothing.
  */
 export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap'>): string {

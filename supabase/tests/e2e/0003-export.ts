@@ -89,7 +89,7 @@ test('an instance exported and imported into a fresh database is the same instan
       a uuid := tests.character(ann, 'Exported A'); b uuid := tests.character(bob, 'Exported B');
       t uuid := tests.thread('Exported thread');
       p uuid := tests.post(a, t, 'Carried across, with a backslash \\ and a tab' || chr(9) || 'and a line' || chr(10) || 'break.');
-      play uuid; move_post uuid; pass_post uuid; cond_post uuid; spr_post uuid;
+      play uuid; move_post uuid; pass_post uuid; cond_post uuid; spr_post uuid; take_post uuid; timed_post uuid; timed_set uuid;
       moved uuid; ended uuid; kept uuid; gen uuid := (select id from boards order by created_at, slug limit 1);
     begin
       perform tests.post(b, t, 'A reply, counted on the thread and on its author');
@@ -102,7 +102,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into effect_state (play, state, saved_by) values (play, '{"strokes": []}', b);
       -- A second play over the first (0072): its moment, and the first's save copied into it as a layer, written by the trigger.
       insert into acts (character, kind, thread, target_act_id, payload) values (a, 'card', t, p, '{"card": "sweetie", "config": {}}');
-      -- A card that writes (0148): a post carrying three plays, the first with its tail, the second still waiting, the third failed and refunded; the
+      -- A card that writes (0149): a post carrying three plays, the first with its tail, the second still waiting, the third failed and refunded; the
       -- queue, the texts and the refund are carried as they were, so an imported forum's tails are the same words and never made again.
       declare wp uuid := tests.post(a, t, 'A post that carries a tail.'); w1 uuid; w2 uuid; w3 uuid;
       begin
@@ -148,6 +148,20 @@ test('an instance exported and imported into a fresh database is the same instan
       perform tests.become((select owner from characters where id = b));
       perform post(t, b, '[quote=' || spr_post || ']Passage quoted[/quote] Bob, quoting.', spr_post);
       perform tests.unbecome();
+      -- The card types (0148): a use card whose Gimmick is a ward by flavor and whose time up is a day; a Reversal with a match on its trap.
+      insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, gimmick) values
+        ('expward', 'Exported Ward', 'salty', 'common', 'use', null, '{post}', interval '1 day', '{"kind": "ward", "flavors": ["salty"]}'),
+        ('expmatch', 'Exported Match Reversal', 'salty', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "match": {"flavors": ["salty"]}}', '{post}', null, null),
+        ('exptime', 'Exported Timed Reversal', 'sweet', 'common', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, null);
+      insert into card_ledger (account, card, kind, price) values (ann, 'expmatch', 'bought', 0), (ann, 'exptime', 'bought', 0);
+      -- A Reversal set face down on a post of its own and taken back by its setter (take_back), which writes the take-back Act and the returned row beside it.
+      take_post := tests.post(a, t, 'Taken back, under a Reversal.');
+      perform set_card(ann, 'expmatch', a, take_post, '{}', 0);
+      perform take_back(ann, a, (select f.play from face_down f where f.post = take_post));
+      -- A Reversal whose time passed unsprung: its back is a face_down row that ended before now, as place_set writes one with the set Act it names.
+      timed_post := tests.post(a, t, 'Left to its time.');
+      insert into acts (character, kind, thread, target_act_id, payload) values (a, 'set', t, timed_post, '{}') returning id into timed_set;
+      insert into face_down (play, account, card, config, post, thread, round, ends_at) values (timed_set, ann, 'exptime', '{}', timed_post, t, 1, now() - interval '1 hour');
       -- A pack bought from its slot (0139): the pack's kind, its slot, the packs row with the pulls as they stood, and a pulled row per card.
       insert into card_kinds (key, name, alignment, rarity) values ('exppull', 'Exported Pull', 'sweet', 'common');
       insert into pack_kinds (key, pulls, leaves) values ('exppack', '[{"weights": {"common": 1}}, {"weights": {"common": 1}}]', '{}');
@@ -350,6 +364,10 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.ok(condSet && quoteSet && quoteSpring, 'the Anyone-but Move is set, and a quote springs the Only-these Move');
   assert.equal(sql(`select passage || '|' || who_except::text || '|' || cardinality(who)::text || '|' || coalesce(catches, '-') from face_down where play = '${condSet}'`), 'conditioned words|true|1|-', 'an Anyone-but Move holds its passage and its list, and no catch');
   assert.equal(sql(`select (payload -> 'when')::text || '|' || (payload ->> 'for' = (select id from characters where name = 'Exported B')::text) from acts where id = '${quoteSpring}'`), '{"passage": "passage quoted"}|true', 'the spring names the passage it matched and the quoter');
+  // The take-back (0148): the Reversal is returned to its setter's ledger, and its take-back Act names the back; the timed back is a face_down row whose time passed.
+  assert.equal(sql(`select count(*) from card_ledger l join auth.users u on u.id = l.account and u.email = 'exp-ann@test.invalid' where l.kind = 'returned' and l.card = 'expmatch'`), '1', 'the taken-back Reversal is returned to the setter\'s ledger');
+  assert.equal(sql(`select count(*) from acts where kind = 'take_back' and payload ->> 'set' in (select f.play::text from face_down f where f.card = 'expmatch')`), '1', 'the take-back Act names the back it takes back');
+  assert.equal(sql(`select ends_at <= now() from face_down where card = 'exptime'`), 't', 'a back whose time passed is held as ended');
   // Every table of ours holds a row to carry across, read from the database rather than listed
   // here, so a table a later change adds is seeded or the round trip goes red ("Two lists that
   // must agree are one list"); the migrations' own data is held to a fresh database below.

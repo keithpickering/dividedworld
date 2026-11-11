@@ -51,9 +51,9 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   const setLasts = { unit: 'day' as const, count: 7 };
   const at = new Date().toISOString();
   const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('kb:card-back', 1), id: 'back', faceDown: true, playedAt: at, ...over });
-  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', ward: true, lasts: setLasts, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
-  const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', ward: undefined, lasts: undefined, trap: { trigger: { on: 'visit' } }, canApply: () => ({ ok: true, value: undefined }) };
-  const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, ward: undefined, lasts: undefined, canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
+  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', gimmick: { kind: 'ward', upTo: 'uncommon' }, lasts: setLasts, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now) };
+  const snare: CardRules = { ...shield, key: 'snare', name: 'Snare', play: 'set', gimmick: undefined, lasts: undefined, trap: { trigger: { on: 'visit' } }, canApply: () => ({ ok: true, value: undefined }) };
+  const blot: CardRules = { ...shield, key: 'blot', name: 'Blot', rarity: 'common', play: undefined, gimmick: undefined, lasts: undefined, canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
   const cards = [shield, snare, blot];
   const ward = (ends: string): CardPlay => ({ ...play('shield', 1), ends });
 
@@ -62,6 +62,12 @@ describe('wards, backs and catches, as a screen offers a card', () => {
     expect(landing(snare, post('hi'), [back()], { cards, setLasts })).toEqual({ ok: false, why: 'this post already holds a card face down' });
     expect(landing(snare, post('hi'), [back({ revealed: { card: 'snare', spring: 's', at } })], { cards, setLasts }).ok).toBe(true);
     expect(landing(snare, post('hi'), [back({ playedAt: '2020-01-01T00:00:00Z' })], { cards, setLasts }).ok).toBe(true);
+  });
+
+  test('a back its setter took back is no longer live, and its end is when it was taken', () => {
+    const taken = back({ takenBack: { at } });
+    expect(landing(snare, post('hi'), [taken], { cards, setLasts }).ok).toBe(true);
+    expect(effectsOf([taken], cards, setLasts)[0]!.ends).toBe(at);
   });
 
   test('a cast is not offered where a live ward turns it away, and is where the ward has ended', () => {

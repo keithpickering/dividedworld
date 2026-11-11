@@ -26,7 +26,7 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
-import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardTarget } from '../../rules/cards.ts';
+import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -37,6 +37,7 @@ import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf } from './land.ts';
+import type { CardPlay } from './types.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
@@ -67,7 +68,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const player = usePlayer();
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
-  /* A Move on one's own post is played now or set face down; a Gimmick is set, and the choice is not asked. */
+  /* A Move on one's own post is played now or set face down; a set card is set, and the choice is not asked. */
   const [down, setDown] = useState(faceDown);
   const [message, setMessage] = useState('');
   /**
@@ -127,9 +128,9 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const cardUi = ui.cards.find((c) => c.key === card);
   /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
-  /* The post is one of the player's own characters': a Move on it may be set face down; a Gimmick is set there alone. */
+  /* The post is one of the player's own characters': a cast card on it may be set face down, but for one that writes, which is only cast face up (decideSet); a set card is set there alone. */
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
-  const choosing = how === 'cast' && ownPost;
+  const choosing = how === 'cast' && ownPost && rules?.writes === undefined;
   const setting = how === 'set' || (choosing && down);
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
   const setter = (setting && post ? player.actingCharacters.find((c) => c.id === post.character) : undefined) ?? player.hudCharacter;
@@ -143,7 +144,28 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const context = { cards: instance.cards, setLasts: instance.settings.setLasts, ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
-  const price = useMemo(() => {
+  /* The live price effects above the target, from the plays the page holds on its thread, board and author (a post's) or the ones the reach was read with: each says which card adds what, where. */
+  const onThread = usePlays(target.plays, postThread ?? '');
+  const onBoard = usePlays(target.plays, target.board ?? '');
+  const onAuthor = usePlays(target.plays, post?.character ?? '');
+  const raises = useMemo(() => {
+    if (!rules || setting || how !== 'cast') return [];
+    const effect = (reach: 'thread' | 'board' | 'character') => (p: CardPlay): CardEffect => ({ card: p.card, act: p.id, reach, ...(p.ends ? { ends: p.ends } : {}) });
+    const above = beyond ? beyond.above ?? {} : {
+      ...(postThread ? { thread: livePlays(onThread.plays).filter((p) => p.reach === 'thread').map(effect('thread')) } : {}),
+      ...(target.board ? { board: livePlays(onBoard.plays).filter((p) => p.reach === 'board').map(effect('board')) } : {}),
+      ...(post?.character ? { character: livePlays(onAuthor.plays).filter((p) => p.reach === 'character').map(effect('character')) } : {}),
+    };
+    const now = Date.now();
+    const where = { thread: 'in this thread', board: 'on this board', character: 'on this character' } as const;
+    return (Object.entries(above) as [keyof typeof where, readonly CardEffect[]][]).flatMap(([reach, list]) => list.flatMap((e) => {
+      const named = instance.cards.find((c) => c.key === e.card);
+      const gimmick = e.gimmick ?? named?.gimmick;
+      if (gimmick?.kind !== 'price' || !gimmick.flavors.includes(rules.alignment) || (e.ends !== undefined && Date.parse(e.ends) <= now)) return [];
+      return [{ key: e.act, add: gimmick.add, words: `${named?.name ?? 'A card'} adds ${orbs(gimmick.add)} ${where[reach]}.` }];
+    }));
+  }, [rules, setting, how, beyond, postThread, post?.character, target.board, onThread.plays, onBoard.plays, onAuthor.plays, instance.cards]);
+  const ownPrice = useMemo(() => {
     /* A Set costs only the card. */
     if (!rules || setting) return 0;
     try {
@@ -153,8 +175,10 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
       return 0;
     }
   }, [rules, setting, priced, goal, config]);
+  /* What the card itself asks (`ownPrice`, the surcharge row), and with the price effects on it (`price`, what is paid). */
+  const price = ownPrice + raises.reduce((sum, r) => sum + r.add, 0);
 
-  /* A Move being set may carry conditions; a Gimmick never does (the rules refuse them), and a card played face up has none. */
+  /* A Move being set may carry conditions; a set card never does (the rules refuse them), and a card played face up has none. */
   const conditional = setting && how === 'cast';
   /* A card with its own phrase has its Says fixed to it. */
   const lockedSays = useMemo(() => {
@@ -181,7 +205,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
   const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
-  /* A Set waits for the card's own settings to be accepted, as a cast's price does (a Gimmick that names a card has no card until the player names one). */
+  /* A Set waits for the card's own settings to be accepted, as a cast's price does (a set card that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
   const flawed = Object.keys(problems).length > 0;
   const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;
@@ -319,7 +343,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
             <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
           )}
           {setting && <p className="kb-play-sets" data-kb-ends>{endsWords(instance.settings.setLasts)}</p>}
-          {/* A Set's Act says nothing, so it carries no message and costs no more than the card: a Bluff's and a trap's are alike. */}
+          {/* A Set's Act says nothing, so it carries no message and costs no more than the card: every card set face down is alike. */}
           {!setting && <div className="kb-play-message">
             <label htmlFor={`${id}-message`} className="kb-play-label">Your message</label>
             <textarea id={`${id}-message`} className="kb-play-input" rows={3} value={message} aria-describedby={hint} onChange={(e) => change(e.target.value)} />
@@ -335,7 +359,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
             : <div className="kb-play-sum">
               <dl className="kb-play-cost">
                 <div><dt>Card</dt><dd>Paid</dd></div>
-                <div><dt>{surcharge}</dt><dd className="kb-num">{orbs(price)}</dd></div>
+                <div><dt>{surcharge}</dt><dd className="kb-num">{orbs(ownPrice)}</dd></div>
+                {raises.map((r) => <div key={r.key}><dt>{r.words}</dt><dd className="kb-num">{orbs(r.add)}</dd></div>)}
                 <div className="kb-play-total"><dt>To pay now</dt><dd className="kb-num">{orbs(price)}</dd></div>
               </dl>
               {wallet && after !== null && (

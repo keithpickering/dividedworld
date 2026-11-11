@@ -1,4 +1,4 @@
--- The queue, the texts and the refund of a card that writes (supabase/migrations/0148_card_writes.sql;
+-- The queue, the texts and the refund of a card that writes (supabase/migrations/0149_card_writes.sql;
 -- the plan for the card that writes, Task 4; its design sections 3, 4, 6, 12, 14 and 15).
 --
 -- A card whose kind `writes` has a text made for it by the server after it lands, once per version of the post. These files hold the
@@ -983,4 +983,28 @@ begin
       raise exception '% cannot be called by the service role', f.name;
     end if;
   end loop;
+end $$;
+
+-- A card that writes is cast face up and never set face down: set_card is refused in the words decideSet says, and the set is refused whole
+-- (no back, no set Act, and the card is still in the hand), while the same player sets a card that does not write on the same post.
+do $$
+declare
+  ann uuid := tests.account('cw-setter');
+  a uuid := tests.character(ann, 'Cw Setter');
+  t uuid := tests.thread('Cw set thread');
+  p uuid := tests.post(a, t, 'Words a back would sit under.');
+  why text;
+begin
+  insert into card_ledger (account, card, kind, price) values (ann, 'cw-scribe', 'bought', 0), (ann, 'cw-plain', 'bought', 0);
+  perform tests.become_service();
+  why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'cw-scribe', a, p, '{}'));
+  perform tests.unbecome();
+  if why is distinct from 'Scribe writes, so it is cast face up and never set face down' then raise exception 'a card that writes was set face down, or refused in other words: %', why; end if;
+  if exists (select 1 from face_down f where f.post = p) or exists (select 1 from acts s where s.kind = 'set' and s.target_act_id = p) or card_held(ann, 'cw-scribe') is distinct from 1 then
+    raise exception 'a refused set of a card that writes left something behind';
+  end if;
+  perform tests.become_service();
+  perform set_card(ann, 'cw-plain', a, p, '{}', 0);
+  perform tests.unbecome();
+  if not exists (select 1 from face_down f where f.post = p and f.card = 'cw-plain') then raise exception 'a card that does not write was not set face down beside the refusal'; end if;
 end $$;

@@ -410,7 +410,7 @@ const SLOT_HIDDEN = '51000000-0000-4000-8000-000000000011';
 const SLOT_OUT = '51000000-0000-4000-8000-000000000022';
 const facts = (id: string, over: Partial<MachineSlotFacts> = {}): MachineSlotFacts => ({ id, position: 1, card: 'whoops', pack: null, availability: 'onSale', price: 100, pullable: true, move: null, ...over });
 const SHELF: MachineSlotFacts[] = [
-  facts(SLOT_A), facts(SLOT_B, { card: 'bluff' }), facts(SLOT_C, { card: 'trap' }),
+  facts(SLOT_A), facts(SLOT_B, { card: 'dud' }), facts(SLOT_C, { card: 'trap' }),
   facts(SLOT_PACK, { card: null, pack: 'booster', price: 300, pullable: false }),
   facts(SLOT_HIDDEN, { card: 'main-event', availability: 'hidden', pullable: false }),
   facts(SLOT_OUT, { card: 'glitter', availability: 'soldOut', pullable: false }),

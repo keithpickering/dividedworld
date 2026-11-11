@@ -35,9 +35,9 @@ const updates: World = (fake, instance) => {
   });
   const newest = seed.update({
     title: 'Traps now bite board cards', at: utc(11, 2),
-    body: 'Somebody played Main Event on a thread called “why is my thread pinned” and it stayed pinned for a full day while a perfectly good Trap Card sat underneath it doing nothing. The trap was right to be offended. As of this morning it can do something about it.\n\nAlso, the log was telling some of you that a Glitter Bomb landed on a post when it had landed on a person. The log is never supposed to lie, so it got a stern talking-to and a test.',
+    body: 'Somebody played Main Event on a thread called “why is my thread pinned” and it stayed pinned for a full day while a perfectly good Card Collector sat underneath it doing nothing. The trap was right to be offended. As of this morning it can do something about it.\n\nAlso, the log was telling some of you that a Glitter Bomb landed on a post when it had landed on a person. The log is never supposed to lie, so it got a stern talking-to and a test.',
     changes: [
-      { label: 'Trap Card', text: 'can now catch a card played on a thread or a board, not only on a post.' },
+      { label: 'Card Collector', text: 'can now catch a card played on a thread or a board, not only on a post.' },
       { label: 'Main Event', text: 'lasts 18 hours instead of 24.' },
       { label: 'Fixed:', text: 'the log now names the character, thread or board a card was played on, and the character\'s player gets a line of their own.' },
     ],

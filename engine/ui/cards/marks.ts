@@ -4,10 +4,12 @@
  * screen so the order and the names are tested under plain node.
  */
 import type { Tally } from '../data/api.ts';
-import type { Rarity } from '../../rules/cards.ts';
+import type { GimmickEffect } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay } from './types.ts';
 import { dayAndTime } from '../characters/format.ts';
+import { orbs } from './faces.ts';
+import { STATUS_MAX_WORDS } from './lens-words.ts';
 
 /** The most marks a strip draws on a desktop, before the "+N" mark. */
 export const MARKS_WIDE = 4;
@@ -61,12 +63,12 @@ export const utcDate = (iso: string): string => { const d = new Date(iso); retur
 /** "Nov 5": a day in the reader's zone, as a back's words say when it was set and when it sprang. */
 const localDate = (iso: string): string => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const DAY = 86_400_000;
-const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
+export const spanMs = (s: Span): number => s.count * (s.unit === 'minute' ? 60_000 : s.unit === 'hour' ? 3_600_000 : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${name}`;
 
 /**
- * A card back's words (the card mechanic's design, section 3): the same for every card face down, so a reader cannot tell a trap
- * from a Bluff. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
+ * A card back's words (the card mechanic's design, section 3): the same for every card face down, so a reader cannot tell one card's back
+ * from another's. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
  * `note`, and when it ends is its `ends`, in the reader's zone. Once it has sprung, the card is public, and its name is said.
  * `setLasts` is the instance's, the same for every Set, so the end it gives names no card either. `cardName` is asked only of a
  * back that sprang.
@@ -76,14 +78,28 @@ export function backWords(back: CardPlay, setter: string, setLasts: Span, cardNa
     const card = cardName(back.revealed.card);
     return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
   }
+  if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
   const ends = new Date(Date.parse(back.playedAt) + spanMs(setLasts)).toISOString();
   return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends: `${endsWords(ends)}, unless it springs first.` };
 }
 
-/** A ward's words: what it turns away, and when it ends (or ended), the end in the reader's zone. */
-export function wardWords(rarity: Rarity, ends: string | undefined, now: Date = new Date()): { readonly state: string; readonly ends?: string } {
-  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, turning nothing away', ends: `Ended ${dayAndTime(ends)}` };
-  return { state: `Turning away cards up to ${rarity}`, ...(ends !== undefined ? { ends: endsWords(ends) } : {}) };
+const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+const list = (words: readonly string[]): string => (words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
+
+/**
+ * A use card's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
+ * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
+ * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%).
+ */
+export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date = new Date(), nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
+  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
+  const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
+  if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
+  if (effect.kind === 'earn') return finish(`Earns ${Math.round(effect.by * 100)}% more from some reactions`);
+  /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */
+  const away = [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])];
+  const full = `Turns away ${away.length > 0 ? list(away) : 'some cards'}`;
+  return full.split(/\s+/u).length <= STATUS_MAX_WORDS ? finish(full) : finish('Turns away some cards', `${full}.`);
 }
 
 /** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */
@@ -91,7 +107,7 @@ export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
 
 /**
  * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says
- * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff Trap Card caught, were spent.
+ * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff catching set card caught, were spent.
  */
 /** Where the card went is said only once the spring is read (`readCaughtFate`): `{ taken }` went to a player's hand, `{}` is spent; unread, nothing is claimed. */
 export const caughtWords = (trap: string | null, fate?: { readonly taken?: string }): string =>

@@ -90,8 +90,8 @@ test('only the cards the instance draws an effect for have a state to read', () 
 });
 
 describe('the kinds of Act that hold a card\'s effect', () => {
-  test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a spring or an update', () => {
-    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false };
+  test('are the ones drawn as words: not a card, an unmask, an announcement, a tally, a reveal, a move, the end of one, a Boss keeping one, a card back, a take-back, a spring or an update', () => {
+    const kinds: Record<ActKind, boolean> = { post: true, spin: true, edit: true, card: false, unmask: false, announce: false, tally: false, reveal: false, move: false, move_end: false, move_keep: false, set: false, take_back: false, spring: false, update: false, card_end: false, visit: false, visit_join: false, visit_end: false, report: false, report_verdict: false, intercept: false, infraction: false, ban: false, appeal: false, appeal_ruling: false };
     for (const [kind, held] of Object.entries(kinds)) expect(holdsEffects(kind as ActKind), kind).toBe(held);
   });
 });
@@ -294,6 +294,18 @@ describe('card backs, springs and catches', () => {
     expect(got.billed[0]!.revealed?.spring).toBe('sp');
   });
 
+  test('a take-back ends the back in place, and one that arrives before its back keeps it', () => {
+    const plays = createPlays();
+    plays.add([base('s1', 'set', {})]);
+    plays.add([base('tb', 'take_back', { set: 's1' })]);
+    expect(plays.get('p1').plays[0]!.takenBack).toEqual({ at });
+    expect(plays.get('p1').plays).toHaveLength(1);
+    const early = createPlays();
+    early.add([base('tb', 'take_back', { set: 's2' })]);
+    early.add([base('s2', 'set', {})]);
+    expect(early.get('p1').plays[0]!.takenBack).toEqual({ at });
+  });
+
   test('a spring that arrives before its back keeps it, and a back that arrives after is revealed', () => {
     const plays = createPlays();
     plays.add([base('sp', 'spring', { card: 'snare', trigger: 'cast', outcome: { do: 'nullify' }, set: 's1' })]);
@@ -309,8 +321,8 @@ describe('card backs, springs and catches', () => {
   test('the setter\'s own card is kept for their screen alone, beside the back', () => {
     const plays = createPlays();
     plays.add([base('s1', 'set', {})]);
-    plays.setFaces({ s1: 'bluffy' });
-    expect(plays.get('p1').faces).toEqual({ s1: 'bluffy' });
+    plays.setFaces({ s1: 'dud' });
+    expect(plays.get('p1').faces).toEqual({ s1: 'dud' });
   });
 });
 
@@ -328,6 +340,11 @@ describe('a back that sprang, and a new back set on the same post', () => {
   });
   test('a back whose time has passed with nothing springing it is no longer shown', () => {
     const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: '2020-01-01T00:00:00.000Z' }, { ...playOf(base('s2', 'set', {}))!, playedAt: new Date().toISOString() }];
+    expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
+  });
+  test('a back its setter took back leaves the post: it is not shown', () => {
+    const now = new Date().toISOString();
+    const backs = [{ ...playOf(base('s1', 'set', {}))!, playedAt: now, takenBack: { at: now } }, { ...playOf(base('s2', 'set', {}))!, playedAt: now }];
     expect(shownPlays(backs, { unit: 'day', count: 7 }).map((p) => p.id)).toEqual(['s2']);
   });
 });
@@ -379,7 +396,7 @@ describe('a play an admin ended', () => {
   });
 });
 
-/* A play whose first generation failed is refunded and over (0148): the read says so (`untaken` on its Act), and the client reads the flag, never works it out. */
+/* A play whose first generation failed is refunded and over (0149): the read says so (`untaken` on its Act), and the client reads the flag, never works it out. */
 describe('a play that did not take', () => {
   const at = '2026-10-30T10:00:00.000Z';
   const act = (id: string, over: Partial<Act> = {}): Act =>

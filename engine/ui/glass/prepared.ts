@@ -126,7 +126,8 @@ export function usePrepared<T, A = void>(read: (signal: AbortSignal, arg: A) => 
 
 /**
  * The pointer-rest and focus handlers of a trigger, which call `early` after REST_MS as `Link` does. Spread onto the trigger.
- * A press on the pointer starts the read at once.
+ * A press (pointer down, or Enter or Space) drops both pending timers: the press starts the read itself, and a rest timer that fired
+ * after it would start a second read whose landing could race the press's own (a failure note that flashes and goes).
  */
 export function useRest(early: () => void) {
   /* The latest `early`, so a trigger may pass a closure over what it renders. */
@@ -136,10 +137,15 @@ export function useRest(early: () => void) {
   const pointer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const focus = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => { clearTimeout(pointer.current); clearTimeout(focus.current); }, []);
+  /* A mouse press focuses the trigger after its pointer down, so that focus belongs to the press: until the blur it arms no timer. */
+  const pressing = useRef(false);
+  const press = () => { clearTimeout(pointer.current); clearTimeout(focus.current); };
   return {
+    onPointerDown: () => { pressing.current = true; press(); },
+    onKeyDown: (e: { readonly key: string }) => { if (e.key === 'Enter' || e.key === ' ') press(); },
     onPointerEnter: () => { clearTimeout(pointer.current); pointer.current = setTimeout(go, REST_MS); },
     onPointerLeave: () => clearTimeout(pointer.current),
-    onFocus: () => { clearTimeout(focus.current); focus.current = setTimeout(go, REST_MS); },
-    onBlur: () => clearTimeout(focus.current),
+    onFocus: () => { clearTimeout(focus.current); if (pressing.current) return; focus.current = setTimeout(go, REST_MS); },
+    onBlur: () => { pressing.current = false; clearTimeout(focus.current); },
   } as const;
 }

@@ -274,7 +274,7 @@ export type OriginPlace =
   /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end' | 'announce'
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'take_back' | 'spring' | 'update' | 'card_end' | 'announce'
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling';
 
@@ -298,7 +298,7 @@ export interface Act {
   /** Set only by an edit made after the grace period: what "Last edited" says. */
   readonly shownEditedAt: string | null;
   /**
-   * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0148): public, the
+   * Set only on a card play whose first generation failed, which is then refunded and over (`acts_public.untaken`, 0149): public, the
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */
   readonly untaken?: true;
@@ -426,7 +426,7 @@ export interface EffectState {
 }
 
 /**
- * One row of a post's tails (`post_tails`, supabase/migrations/0148_card_writes.sql): what a writing card's play made for one version of its post.
+ * One row of a post's tails (`post_tails`, supabase/migrations/0149_card_writes.sql): what a writing card's play made for one version of its post.
  * Every row of every writing play on the post, in version order then play order, and the same for every reader: `text` is the generated words
  * (null where `failed`, and where `waiting`); `failed` is a flag and never the predicate; `waiting` is a job queued for a version that has no
  * row yet (`createdAt` null). The version is the post's own Act or an edit of it.
@@ -1020,7 +1020,7 @@ export interface LogLine {
   readonly reason: string;
   readonly amount: number;
   /** The numbers its reason's words state, as it was settled under them (`ledger.params`, 0073); absent on a row with none. */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: LedgerParams;
   /** Empty where the estimate valued no post for the reason, or the settlement was made before shares were kept. */
   readonly shares: readonly LogShare[];
 }
@@ -1038,7 +1038,7 @@ export interface LogSettlement {
 /** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0148): Aura given by the instance's operator, `ref` null. */
+  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. */
   readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
@@ -1057,8 +1057,11 @@ export interface WalletEvent {
  */
 export interface CardEvent {
   readonly card: string;
-  /** `caught`: a card a Trap Card of the player's took (0142); its `act` is the spring, and it cost nothing. */
-  /** `returned`: a play whose old voice did not answer, so its price went back and its card with it (0148); its `act` is the play. */
+  /** `caught`: a card a catching set card of the player's took (0142); its `act` is the spring, and it cost nothing. */
+  /**
+   * `returned`: a card back in the hand. A face-down card taken back (0148; its `act` is the take-back) or whose time passed unsprung (no
+   * `act`), or a play whose old voice did not answer, so its price went back and its card with it (0149; its `act` is the play).
+   */
   readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
@@ -1068,9 +1071,9 @@ export interface CardEvent {
   readonly repriced?: boolean;
   readonly price: number;
   readonly at: string;
-  /** For a card the player set face down, whether it carries a trap: false for a Bluff, which never springs. Absent on any other row. */
+  /** For a card the player set face down, whether it carries a trap: false for a card with no trap, which never springs. Absent on any other row. */
   readonly springs?: boolean;
-  /** For a card the player set face down, the card a Trap Card waits to catch (`my_face_down.catches`, the setter's own row), where it was read. */
+  /** For a card the player set face down, the card a catching set card waits to catch (`my_face_down.catches`, the setter's own row), where it was read. */
   readonly catches?: string;
   /** For a Move the player set face down, the phrase the quote must hold for it to land (`my_face_down.phrase`), where it was read. */
   readonly phrase?: string;
@@ -1269,7 +1272,7 @@ export const ALERTS_PAGE = 30;
 export const ALERTS_UNREAD_BOUND = 10;
 
 /**
- * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0148): the play, the post it is on, the
+ * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0149): the play, the post it is on, the
  * version of the post it was made for, whether the generation failed, whether it comes before any text of the play (`opening`: a text that is the
  * play's first continued the post; a later text was made again for an edit), whether it is the failure that ended the play (`over`: refunded, and
  * no row after it; a failure the play survived, or one after a text, is no line), and when. Public facts and the post's author alone.
@@ -1291,6 +1294,9 @@ export interface EffectSaved {
   readonly savedAt: string;
 }
 
+/** The numbers a settled line's reason states, and for a card's boost (`card.boost`) the key of the card, as a string. */
+export type LedgerParams = Readonly<Record<string, number | string>>;
+
 /**
  * The end of a card the player set face down (`my_face_down`): it sprang (`spring`, a public Act by then), or its time came with
  * nothing springing it. Which card it was is the player's own row; nobody else reads it.
@@ -1302,6 +1308,8 @@ export interface FaceDownEnd {
   readonly post: Id;
   readonly spring: Id | null;
   readonly endedAt: string;
+  /** How it ended: it sprang, its setter took it back (a `take_back` Act), or its time passed (`my_face_down.ended_by`). */
+  readonly endedBy: 'sprung' | 'taken back' | 'time';
 }
 
 /** A play of the player's a trap caught (`my_caught`): its card, its post, the trap's card and spring, what the play cost and what the card cost at the machine. */
@@ -2219,9 +2227,14 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a Gimmick.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card.
    */
   setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
+  /**
+   * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
+   * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.
+   */
+  takeBack(character: Id, set: Id): Promise<Answer<Act>>;
   /** Use a card the player holds on a post of the character's own (a ward), as a play is: its Act comes back, with its end. */
   useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
   /** Which card each of the player's own card backs among these sets is (`my_face_down`), by set; another's back is absent. */

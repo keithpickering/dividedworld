@@ -42,6 +42,8 @@ export interface PlayTarget {
   readonly reach?: { readonly reach: BeyondPost; readonly target: Id; readonly name: string; readonly pronouns?: PronounSet; readonly above?: EffectsAbove };
   /** Where focus goes when the form closes, for a target the form cannot find by its post's number (a thread's head, a board's banner). */
   readonly focusBack?: () => HTMLElement | null;
+  /** The board the post's thread is on, whose plays above the post the form prices a cast against. */
+  readonly board?: Id | null;
   /** The thread's title. */
   readonly title: string;
   /** The post's author's name, as the thread knows it. */

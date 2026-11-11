@@ -22,7 +22,7 @@
 import type { Instance, Settings, Span } from '../../rules/types.ts';
 import { decide } from '../../rules/actions.ts';
 import { rollPack } from '../../rules/packs.ts';
-import { OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
+import { atOrBelow, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, effectsOnTarget, type BeyondPost, type CardEffect, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -245,12 +245,12 @@ export interface Seed {
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
-   * What a writing play made for a version of its post (`finish_card_write`, 0148): its row (`text`, or `failed`), the waiting job it ends, and
+   * What a writing play made for a version of its post (`finish_card_write`, 0149): its row (`text`, or `failed`), the waiting job it ends, and
    * the `card_text` event on the post's thread, which carries the play and the version alone. A play of a card whose rules `write` is
    * queued at the post's version when it lands, and again at each edit, as the server does; this delivers what the model made, later.
    * `quiet` keeps the event back (a screen that was not listening), so a test can see the row without it. A failure of a play's first
    * generation, with no newer job waiting, refunds it as the server does: the play is over and its Act reads `untaken` from then (`acts_public`,
-   * 0148); a failure of a regeneration of a play that made a text before refunds nothing, and a play already over takes no text.
+   * 0149); a failure of a regeneration of a play that made a text before refunds nothing, and a play already over takes no text.
    */
   text(play: Id, version: Id, result: { readonly text: string } | { readonly failed: true }, options?: { readonly quiet?: boolean }): void;
   /**
@@ -274,7 +274,7 @@ export interface SeedLine {
   readonly reason: string;
   readonly amount: number;
   /** The numbers its reason's words state, as the settlement wrote them into its ledger row (`ledger.params`, 0073). */
-  readonly params?: Readonly<Record<string, number>>;
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly shares?: readonly { readonly act: Id; readonly quadrant?: LogShare['quadrant']; readonly amount: number }[];
 }
 
@@ -382,7 +382,7 @@ const refuse = (error: string, field?: string): Refusal => (field === undefined 
 const ok = <T,>(value: T): Answer<T> => ({ ok: true, value });
 const iso = (ms: number) => new Date(ms).toISOString();
 /** The kinds of Act that take no place in a thread (`acts_take_seq`, supabase/migrations/0109): an edit, a card's marks and the Mod Bots' meta acts. */
-const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
+const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 
 /** The methods that are not a promise of something: everything else is made one. */
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
@@ -419,7 +419,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let offset = 0;
   const base = options.now ?? (() => START);
   const now = () => base() + offset;
-  const span = (s: Span) => s.count * (s.unit === 'minute' ? MINUTE : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
+  const span = (s: Span) => s.count * (s.unit === 'minute' ? MINUTE : s.unit === 'hour' ? 60 * MINUTE : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 
   let counter = 0;
   const uuid = () => `00000000-0000-4000-8000-${(++counter).toString(16).padStart(12, '0')}`;
@@ -1118,9 +1118,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /* --------------------------------------------------------------- a card that writes ---- */
-  /** card_texts (0148): one row per play and version, the generation or its failure. */
+  /** card_texts (0149): one row per play and version, the generation or its failure. */
   const texts: { play: Id; version: Id; text: string | null; at: number; order: number }[] = [];
-  /** card_writes (0148): a play's waiting job, at the version it will continue; one per play, a newer version replacing it. */
+  /** card_writes (0149): a play's waiting job, at the version it will continue; one per play, a newer version replacing it. */
   const jobs = new Map<Id, { post: Id; version: Id }>();
   const writes = (card: unknown): boolean => instance.cards.some((c) => c.key === card && c.writes !== undefined);
   /** A card Act that is a live writing play on a post (live_writing_plays): a card of the post's own reach that writes, no caught play, no ended one. */
@@ -1133,7 +1133,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       for (const k of acts.values()) if (writingPlay(k) && k.target === rec.target && !over(k.id)) jobs.set(k.id, { post: rec.target, version: rec.id });
     }
   }
-  /** post_tails (0148): every row of every writing play on the posts, oldest version first, then each waiting job whose version has no row yet. */
+  /** post_tails (0149): every row of every writing play on the posts, oldest version first, then each waiting job whose version has no row yet. */
   function tails(posts: readonly Id[]): Tail[] {
     if (new Set(posts).size > 200) throw new Error('tails are read for at most 200 posts at a time');
     const out: { row: Tail; vat: number; pat: number; order: number }[] = [];
@@ -1204,11 +1204,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const releases = new Map<string, number>();
   /** The card plays an admin has ended (a `card_end` beside each, 0092): not in force, though the play and its layer stay. */
   const reversedPlays = new Set<Id>();
-  /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0148): over, as an ended play is, and public as `untaken`. */
+  /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0149): over, as an ended play is, and public as `untaken`. */
   const untakenPlays = new Set<Id>();
-  /** card_ended (0148): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
+  /** card_ended (0149): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play);
-  /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0148), and no card named. */
+  /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0149), and no card named. */
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
   const withEnds = (plays: readonly ActRec[]): Act[] => {
@@ -1220,7 +1220,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /* The player's log: the settlements' ledger with its shares, every wallet event and the card ledger, each by account (0003, 0006, 0034). */
   interface SettlementRec { readonly id: number; readonly startsAt: number; readonly endsAt: number; readonly sharesKept: boolean; readonly lines: readonly (LedgerLine & { readonly account: Id })[] }
-  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number>>; readonly shares: readonly LogShare[] }
+  interface LedgerLine { readonly character: Id; readonly reason: string; readonly amount: number; readonly params?: Readonly<Record<string, number | string>>; readonly shares: readonly LogShare[] }
   const settlements: SettlementRec[] = [];
   const walletEvents: { readonly account: Id; readonly order: number; readonly event: WalletEvent; readonly ms: number }[] = [];
   const packLedger: { readonly account: Id; readonly order: number; readonly event: PackEvent; readonly ms: number }[] = [];
@@ -1266,7 +1266,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function cardInOpenPack(card: string): boolean {
     const rules = instance.cards.find((c) => c.key === card);
     const rarity = rules?.rarity;
-    /* A card the instance withholds is never rolled (roll_pack, 0148; packOdds), so no pack can give it. */
+    /* A card the instance withholds is never rolled (roll_pack, 0149; packOdds), so no pack can give it. */
     if (!rules || !rarity || withheld(rules, instance.settings)) return false;
     return slotRecs.some((r) => {
       if (!('pack' in r.item) || r.availability !== 'onSale') return false;
@@ -1424,16 +1424,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c = acting(character);
     if (isRefusal(c)) return c;
     const account = me()!;
+    settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
     const short = covers(account, decided.value.price);
     if (short) return short;
     account.cards[card]! -= 1;
     /* The layer counts every play that landed, a reversed one too (acts_card_layers refuses a reused layer); only the stack count drops it. */
     const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
-    /* A live Trap Card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
+    /* A live catching set card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
-    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && faceDown.get(trap.set)!.catches === card && ownerOf(acts.get(trap.set)!.character!) !== undefined;
+    /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0148). */
+    const match = trapRules?.trap?.match;
+    const matched = match !== undefined && (match.flavors === undefined || match.flavors.includes(rules.alignment)) && (match.upTo === undefined || atOrBelow(rules.rarity, match.upTo)) && atOrBelow(rules.rarity, trapRules!.rarity);
+    const catches = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined;
     /* The play's id is chosen first, so the spring can name it and be written before it, as play_card writes them (each takes its moment then). */
     const playId = uuid();
     let spring: ActRec | null = null;
@@ -1460,16 +1464,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /**
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
-   * Mirrored: a Trap Card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
-   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a Ward does not stop a landing. Those are the server's to test
+   * Mirrored: a catching set card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
+   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a ward does not stop a landing. Those are the server's to test
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
-  /** The back of each card set face down: `catches` is the card a Trap Card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; catches?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean }>();
+  /** The back of each card set face down: `catches` is the card a catching set card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; takenBack?: Id; catches?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean; refunded?: true }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
-    for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.endsAt > now()) return { set, card: f.card };
+    for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.takenBack === undefined && f.endsAt > now()) return { set, card: f.card };
     return null;
   }
+  /** The account's backs whose time passed unsprung and not taken back: their cards are in the hand again (card_held, 0148), read and never written. */
+  const endedBacks = (account: Id) => [...faceDown.values()].filter((f) => f.account === account && f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.refunded !== true);
+  /** What the account holds of a card: bought, pulled, caught and returned, less played, and the backs whose time passed. */
+  const heldOf = (account: AccountRec, card: string): number => (account.cards[card] ?? 0) + endedBacks(account.id).filter((f) => f.card === card).length;
+  /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0148). */
+  const endedLedger = () => [...faceDown.values()].filter((f) => f.sprung === null && f.takenBack === undefined && f.endsAt <= now())
+    .map((f) => ({ account: f.account, order: 0, ms: f.endsAt, event: { card: f.card, kind: 'returned' as const, act: null, price: 0, at: iso(f.endsAt) } satisfies CardEvent }));
+  /** Before a card is spent: each back whose time passed becomes a card in the hand, once. */
+  const settleBacks = (account: AccountRec): void => { for (const f of endedBacks(account.id)) { account.cards[f.card] = (account.cards[f.card] ?? 0) + 1; f.refunded = true; } };
   /** What a card's rules see on a post (card_target): its plays not caught or reversed, each ward's rarity and end, and its card backs naming no card. */
   function effectsOn(target: Id): CardEffect[] {
     const out: CardEffect[] = [];
@@ -1477,10 +1490,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (a.target !== target) continue;
       if (a.kind === 'card' && a.payload.caught === undefined && !over(a.id) && onPost(a)) {
         const r = instance.cards.find((c) => c.key === a.payload.card);
-        out.push({ card: String(a.payload.card), act: a.id, ...(r?.ward ? { ward: r.rarity } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
+        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}) });
       } else if (a.kind === 'set') {
         const f = faceDown.get(a.id);
-        out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.endsAt ?? a.at) });
+        out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.takenBack ? acts.get(f.takenBack)!.at : f?.endsAt ?? a.at) });
       }
     }
     return out;
@@ -1494,7 +1507,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const reachEffects = (reach: BeyondPost, target: Id): CardEffect[] => [...reachPlays].filter(([play, r]) => r.reach === reach && r.target === target && r.endsAt > now() && !reversedPlays.has(play))
     .map(([play, r]) => {
       const rules = instance.cards.find((c) => c.key === acts.get(play)!.payload.card);
-      return { card: String(acts.get(play)!.payload.card), act: play, reach, ends: iso(r.endsAt), ...(rules?.ward ? { ward: rules.rarity } : {}) };
+      return { card: String(acts.get(play)!.payload.card), act: play, reach, ends: iso(r.endsAt), ...(rules?.gimmick ? { gimmick: rules.gimmick } : {}) };
     });
   const boardOf = (thread: Id): Id => threads.get(thread)!.board;
   /**
@@ -1507,6 +1520,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
+    /* A use card never goes on a board, before the board is looked for (place_cast, 0148). */
+    if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
       if (!characters.has(target)) return refuse('there is no such character', 'target');
       const from = fromPost ? acts.get(fromPost) : undefined;
@@ -1519,6 +1534,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       thread = target;
       on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
       if (!on) return refuse('that thread has no post yet');
+      /* A use card on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0148), before the card's own rules are asked. */
+      if (play === 'use' && acts.get(on)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
       above = { board: reachEffects('board', boardOf(target)) };
     } else {
       if (!boards.some((b) => b.id === target)) return refuse('there is no such board', 'target');
@@ -1529,12 +1546,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const at = stamp ?? now();
     const goal = { reach, [reach]: target } as unknown as CardTarget;
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
-    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at) });
+    const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
+    const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf });
     if (!decided.ok) return refuse(decided.why, message !== undefined && !casterMessage(message).ok ? 'message' : 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (play === 'use' && reach === 'character' && target !== character) return refuse(`${rules.name} is used on your own character`);
     const account = me()!;
+    settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
     const short = covers(account, decided.value.price);
     if (short) return short;
@@ -1550,7 +1569,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** set_card (0142): a Move or a Gimmick, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
+  /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
   function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
     const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
     if (bad) return bad;
@@ -1567,6 +1586,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     if (on.character !== character) return refuse('a card is set face down on a post of your own character\'s');
     const account = me()!;
+    settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
     const short = covers(account, decided.value.price);
     if (short) return short;
@@ -1574,8 +1594,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
     faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     spend(account, decided.value.price, 'play', written.id);
-    /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a Gimmick that carries a trap, or a Move (it springs on a quote). */
+    /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a set card that carries a trap, or a Move (it springs on a quote). */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast', ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
+    sendAct(written);
+    return ok(publicAct(written));
+  }
+
+  /** take_back (0148): the setter's own live back goes back to the hand, free; every other back, and one that has ended, is refused in the same words. */
+  function takeBack(character: Id, set: Id): Answer<Act> {
+    const bad = request({ action: 'takeBack', character, set });
+    if (bad) return bad;
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    const banned = bannedUntilOf(character);
+    if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
+    const account = me()!;
+    const nothing = 'there is no face-down card to take back there';
+    const f = faceDown.get(set);
+    const back = acts.get(set);
+    if (!f || !back || f.account !== account.id || back.character !== character) return refuse(nothing);
+    if (f.sprung !== null || f.takenBack !== undefined || f.endsAt <= now()) return refuse(nothing);
+    const written = write({ character, kind: 'take_back', thread: back.thread, target: f.post, payload: { set } });
+    f.takenBack = written.id;
+    account.cards[f.card] = (account.cards[f.card] ?? 0) + 1;
+    recordCard(account.id, written.at, { card: f.card, kind: 'returned', act: written.id, price: 0 });
     sendAct(written);
     return ok(publicAct(written));
   }
@@ -1595,6 +1637,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     if (on.character !== character) return refuse(`${rules.name} is used on your own post`);
     const account = me()!;
+    settleBacks(account);
     if ((account.cards[card] ?? 0) < 1) return refuse(`you hold no "${card}" card; the Vending Machine sells them`);
     const short = covers(account, decided.value.price);
     if (short) return short;
@@ -2577,10 +2620,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           ledger,
           shares,
           wallet: newest(walletEvents.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
-          cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
+          cards: newest([...cardLedger, ...endedLedger()].filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
-          /* my_posts_written_on (0148): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
+          /* my_posts_written_on (0149): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);
             const post = play?.kind === 'card' && play.target !== null ? acts.get(play.target) : undefined;
@@ -2593,8 +2636,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           })).map(({ w }) => w),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
-          /* The in-memory backend sets no card face down and springs no trap: the setter's and the caster's lines are the adapter's (my_face_down, my_caught). */
-          setEnds: [],
+          /* The in-memory backend springs no trap, so a back ends here by its setter taking it back or by its time (my_face_down.ended_by); the caster's caught lines are the adapter's (my_caught). */
+          setEnds: newest([...faceDown].filter(([, f]) => f.account === account && f.sprung === null && (f.takenBack !== undefined || f.endsAt <= now()))
+            .map(([play, f]) => ({ ms: f.takenBack !== undefined ? acts.get(f.takenBack)!.at : f.endsAt, order: acts.get(play)!.order, f, play }))
+            .filter((x) => fits(x.ms)))
+            .map(({ f, play, ms }) => ({ play, card: f.card, post: f.post, spring: null, endedAt: iso(ms), endedBy: f.takenBack !== undefined ? 'taken back' as const : 'time' as const })),
           caught: [],
           /* my_cards_ended (0092): an admin's end of a play the player cast (`cast`, its own post's too) or of one that landed on theirs
              (`onMine`); a reversal between two other players is in neither's view. */
@@ -2679,6 +2725,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     playCard: lossy(playCard),
     setCard: lossy(setCard),
+    takeBack: lossy(takeBack),
     useCard: lossy(useCard),
     myFaceDown: (sets) => {
       const account = me()?.id;
@@ -2791,7 +2838,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const account = me();
       return account ? reactions.filter((r) => r.account === account.id && ids.includes(r.act)).map((r): MyReaction => ({ act: r.act, kind: r.kind, character: r.character })) : [];
     },
-    myCards: () => Object.entries(me()?.cards ?? {}).filter(([, held]) => held > 0).map(([card, held]): HeldCard => ({ card, held })),
+    myCards: () => { const account = me(); return account ? [...new Set([...Object.keys(account.cards), ...endedBacks(account.id).map((f) => f.card)])].map((card): HeldCard => ({ card, held: heldOf(account, card) })).filter((c) => c.held > 0) : []; },
     reading(ids) {
       const account = me();
       const out: Record<Id, number> = {};
@@ -3731,7 +3778,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const back = acts.get(set);
       if (!f || !back) throw new Error(`no such card set face down ${set}`);
       const rules = instance.cards.find((c) => c.key === f.card);
-      /* A Move springs on a quote, and a Gimmick on its own trigger (a cast, or a visit). */
+      /* A Move springs on a quote, and a set card on its own trigger (a cast, or a visit). */
       const trigger = o?.trigger ?? (rules && kindOfPlay(rules) === 'cast' ? 'quote' : rules?.trap?.trigger.on ?? 'cast');
       const written = asAt(f.account, o?.at, () => write({
         character: back.character, kind: 'spring', thread: back.thread, target: f.post,
@@ -3807,12 +3854,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const k = acts.get(play);
       if (!k || !writingPlay(k)) throw new Error(`no such writing play ${play}`);
       if (!acts.has(version)) throw new Error(`no such version ${version}`);
-      /* A play that is over (an admin ended it, or its first generation failed and it was refunded) makes no text: a late finish writes nothing (finish_card_write, 0148). */
+      /* A play that is over (an admin ended it, or its first generation failed and it was refunded) makes no text: a late finish writes nothing (finish_card_write, 0149). */
       if (over(play)) return;
       const job = jobs.get(play);
       texts.push({ play, version, text: 'text' in result ? result.text : null, at: now(), order: ++order });
       if (job && job.version === version) jobs.delete(play);
-      /* finish_card_write (0148): a failure with no newer job waiting, for a play that never made a text, refunds it, and the play is over. */
+      /* finish_card_write (0149): a failure with no newer job waiting, for a play that never made a text, refunds it, and the play is over. */
       if (!('text' in result) && !jobs.has(play) && !texts.some((t) => t.play === play && t.text !== null) && !reversedPlays.has(play)) untakenPlays.add(play);
       if (o?.quiet) return;
       send(`thread:${k.thread}`, 'card_text', () => { for (const l of [...(threadListeners.get(k.thread) ?? [])]) l.onText?.(play, version); });

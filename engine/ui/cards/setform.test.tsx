@@ -1,7 +1,7 @@
 /**
- * The play form's two ways for a Move, and a Gimmick's one (docs/plans/2026-11-07-face-down-moves-plan.md, Task 8; the design's section 8):
+ * The play form's two ways for a Move, and a set card's one (docs/plans/2026-11-07-face-down-moves-plan.md, Task 8; the design's section 8):
  * on one's own post a Move offers "Play it now" and "Set face down" (a radio pair, Play chosen); Set swaps the price and message rows for what
- * the set does and keeps the card's own settings; a Gimmick opens as Set with no choice and says what it does, from its rules. The cards are
+ * the set does and keeps the card's own settings; a set card opens as Set with no choice and says what it does, from its rules. The cards are
  * the engine's test set; none is a Divided World card.
  */
 import { screen, waitFor, within } from '@testing-library/react';
@@ -22,9 +22,9 @@ const spark: CardRules = { ...base, key: 'spark', name: 'Spark', alignment: 'swe
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: (c) => (c as { card?: string }).card ?? '', canApply: () => ok(undefined),
   validateConfig: (c) => (typeof (c as { card?: unknown } | undefined)?.card === 'string' ? ok(c) : refuse('the card is the key of the card to catch')) };
 const pass: CardRules = { ...base, key: 'pass', name: 'Pass', alignment: 'sweet', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
-const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
+const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', play: 'set', trap: { trigger: { on: 'visit' } }, canApply: () => ok(undefined) };
 const shield: CardRules = { ...base, key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'common', play: 'use', canApply: () => ok(undefined) };
-const instance: Instance = { ...testInstance, cards: [blot, spark, snare, pass, bluffy, shield], settings: { ...testInstance.settings, economy: { 'x.price': 100 }, setLasts: { unit: 'day', count: 7 } } };
+const instance: Instance = { ...testInstance, cards: [blot, spark, snare, pass, dud, shield], settings: { ...testInstance.settings, economy: { 'x.price': 100 }, setLasts: { unit: 'day', count: 7 } } };
 
 /** The card's own setting, in the form: one radio, to see that a Set keeps it, and the castable cards it was handed, to see the picker's list. */
 function Ink({ config, onChange, id, castable }: ConfigFormProps) {
@@ -36,7 +36,7 @@ function Ink({ config, onChange, id, castable }: ConfigFormProps) {
     </fieldset>
   );
 }
-/** A picker as Trap Card's: one radio for each castable card, nothing chosen until the player chooses. */
+/** A picker as a catching set card's: one radio for each castable card, nothing chosen until the player chooses. */
 function Pick({ config, onChange, id, castable }: ConfigFormProps) {
   return (
     <fieldset>
@@ -51,7 +51,7 @@ const cards: CardUi[] = [
   { key: 'spark', art: art('cyan'), describe: () => 'Sparkles.' },
   { key: 'snare', art: art('red'), describe: () => 'Catches.', ConfigForm: Pick },
   { key: 'pass', art: art('blue'), describe: () => 'Passes.' },
-  { key: 'bluffy', art: art('orange'), describe: () => 'Nothing.' },
+  { key: 'dud', art: art('orange'), describe: () => 'Nothing.' },
   { key: 'shield', art: art('green'), describe: () => 'Shields.' },
 ];
 
@@ -70,7 +70,7 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /** Post 2 is another player's; post 3 is the HUD's own (Pipewrench); post 4 is another of the player's masks' (Mrs. Hooligan). */
-function world(held: Record<string, number> = { blot: 2, spark: 1, snare: 1, pass: 1, bluffy: 1, shield: 1 }, played: Instance = instance) {
+function world(held: Record<string, number> = { blot: 2, spark: 1, snare: 1, pass: 1, dud: 1, shield: 1 }, played: Instance = instance) {
   const fake = buildWorld({ postMaxLength: 1000 }, played);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
@@ -206,7 +206,7 @@ describe('a Move on one\'s own post', () => {
   });
 });
 
-describe('a Gimmick', () => {
+describe('a set card', () => {
   test('opens as Set with no choice, says what it does from its rules, and shows only its own posts\' marks', async () => {
     const user = userEvent.setup();
     const w = world();
@@ -215,7 +215,7 @@ describe('a Gimmick', () => {
     expect(within(dialog).queryByRole('group', { name: 'How to play it' })).toBeNull();
     expect(dialog.querySelector('[data-kb-sets]')).toHaveTextContent('Waits for the card it names to be cast on this post, and takes it.');
     expect(within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' })).toBeInTheDocument();
-    /* Only the cards cast on a post: no Use (Shield), no Gimmick (Snare, Pass, Bluffy), no card beyond a post (Spark). */
+    /* Only the cards cast on a post: no Use (Shield), no set card (Snare, Pass, Dud), no card beyond a post (Spark). */
     expect(within(dialog).getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual(['Blot']);
     expect(within(post(2)).queryByRole('button', { name: /face down on post/u })).toBeNull();
   });
@@ -239,16 +239,12 @@ describe('a Gimmick', () => {
     await waitFor(() => expect(setCard).toHaveBeenCalledWith('snare', w.pipe, expect.any(String), { card: 'blot' }));
   });
 
-  test('says its trigger: a visit ends, and one with none does nothing', async () => {
+  test('says its trigger: a visit ends', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
     const dialog = await armAndOpen(user, 'Pass', 'Set Pass face down on post 3', 3);
     expect(dialog.querySelector('[data-kb-sets]')).toHaveTextContent('Ends the next Mod Bot visit to this post when the visit starts.');
-    await user.keyboard('{Escape}');
-    await user.keyboard('{Escape}');
-    const again = await armAndOpen(user, 'Bluffy', 'Set Bluffy face down on post 3', 3);
-    expect(again.querySelector('[data-kb-sets]')).toHaveTextContent('Does nothing.');
   });
 
   test('a Use has no Set choice', async () => {
@@ -262,7 +258,7 @@ describe('a Gimmick', () => {
 });
 
 describe('landing, asked as a Set', () => {
-  test('a Move lands face down where its cast is not offered, and a cast Gimmick without a configuration still lands', () => {
+  test('a Move lands face down where its cast is not offered, and a cast set card without a configuration still lands', () => {
     const ctx = { cards: instance.cards, setLasts: instance.settings.setLasts };
     const target = { id: 'p', kind: 'post', currentPayload: { body: 'x' } } as never;
     expect(landing(spark, target, [], { ...ctx, faceDown: true }).ok).toBe(true);

@@ -384,7 +384,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         record['cardConfig'] = config;
         // Unlike supabase/functions/act/core.ts's play_card, staff_play_card is sent no `version`, so an edit landing between the read
         // above and this play is not refused (as before the options existed).
-        // A Trap Card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
+        // A catching set card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
         const catches = rules?.catches?.(config);
         // A card that writes buys its tokens at this decision, from the settings as the rows hold them now, as a player's play does (act/core.ts); the database writes them with the play.
         const tokens = rules?.writes?.tokens(config as never, tuned.settings);

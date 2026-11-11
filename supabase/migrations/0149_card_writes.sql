@@ -4,6 +4,10 @@
 -- A card kind whose `writes` is true has a text made for it after it lands, by the server, once for each version of the post it is on.
 -- The SQL knows nothing of which card that is, only `card_kinds.writes`, which seed_instance sets from the card's rules.
 --
+-- It follows 0148 (the card types: Moves, Reversals and Gimmicks), and each function both redefine (seed_instance, log_page) is 0148's with this
+-- migration's change alone. A card that writes is a cast card, a Move in Divided World's words, that is only ever cast face up: it is never set
+-- face down (face_down_never_writes, below), so it never springs later as a back.
+--
 --   card_texts          what was made, one row for each (play, version): a text, or the predicate that failed. Append-only, as play_moments is.
 --   card_writes         the queue, a job and not an Act: one row for each play, the newest version only (primary key `play`). A newer version
 --                       replaces the waiting one, so a run of edits makes one call for each play and not one for each edit (design, section 15).
@@ -754,18 +758,25 @@ end $$;
 
 -- ------------------------------------------------------------------------------------------------------------- the hand ----
 
-alter table card_ledger drop constraint card_ledger_kind_check;
-alter table card_ledger add constraint card_ledger_kind_check check (kind in ('bought', 'played', 'pulled', 'caught', 'returned'));
--- A returned card names its play, as a played and a caught card name theirs.
-alter table card_ledger drop constraint card_ledger_check;
-alter table card_ledger add constraint card_ledger_check check ((kind in ('played', 'caught', 'returned')) = (act is not null));
+-- A refund's card back in the hand is a `returned` card_ledger row naming the play. 0148 (the card types) already widened card_ledger_kind_check
+-- and card_ledger_check for its take-back's `returned` row, which names its Act just as this one does, and its card_held already counts
+-- `returned` beside bought, pulled and caught, so the refund reuses both as they stand and redefines neither.
 
--- card_held (0142), counting `returned` as it counts bought, pulled and caught.
-create or replace function card_held(who uuid, card text) returns integer
-language sql stable set search_path = public, pg_temp as $$
-  select (count(*) filter (where l.kind in ('bought', 'pulled', 'caught', 'returned')) - count(*) filter (where l.kind = 'played'))::integer
-  from card_ledger l where l.account = card_held.who and l.card = card_held.card
-$$;
+-- A card that writes is cast face up and never set face down (decideSet, engine/rules/cards.ts): its length is bought at the cast, and a back
+-- would spring later on a post its caster did not choose, with no length bought. place_set (0148) writes every back's face_down row, so this
+-- refusal is held on that row, in the words decideSet says, and the set is refused whole (its Act and its spend with it); place_set itself
+-- is not redefined. The act function's decideSet says the same first, so a player meets this only through a caller that skipped it.
+create function face_down_never_writes() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from card_kinds k where k.key = new.card and k.writes) then
+    raise exception '% writes, so it is cast face up and never set face down', (select k.name from card_kinds k where k.key = new.card)
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  return new;
+end $$;
+revoke execute on function face_down_never_writes() from public, anon, authenticated;
+create trigger face_down_never_writes before insert on face_down for each row execute function face_down_never_writes();
 
 -- ----------------------------------------------------------------------------------------------- the refusals, the roll ----
 
@@ -1006,7 +1017,7 @@ begin
   return new;
 end $$;
 
--- seed_instance (0139), also writing whether each card writes. Everything else as 0139 wrote it.
+-- seed_instance (0148), also writing whether each card writes. Everything else as 0148 wrote it.
 create or replace function seed_instance(payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1062,21 +1073,21 @@ begin
     on conflict (key) do update set name = excluded.name, badge = excluded.badge, color = excluded.color, stripe = excluded.stripe, source = excluded.source, rung = excluded.rung,
       condition = excluded.condition, at_least = excluded.at_least, tone = excluded.tone;
   end if;
-  -- A card's play, rarity, trap, ward and time up (0054), and its reaches (0055), checked as instanceProblems checks them, each
+  -- A card's play, rarity, trap, gimmick and time up (0054, 0148), and its reaches (0055), checked as instanceProblems checks them, each
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
-  -- are its rarity, its play, its trap, whether it is a ward, how long a Use of it is up, where it reaches and whether it pins.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, ward, lasts, reaches, pins, writes)
+  -- are its rarity, its play, its trap (with its match), its gimmick, how long a Use of it is up, where it reaches, whether it pins and whether it writes.
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, lasts, reaches, pins, writes)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
-    e ->> 'rarity', coalesce(e ->> 'play', 'cast'), e -> 'trap', coalesce((e ->> 'ward')::boolean, false), span_interval(e -> 'lasts'),
+    e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), span_interval(e -> 'lasts'),
     case when e ? 'reaches' then array(select jsonb_array_elements_text(e -> 'reaches')) else '{post}' end, coalesce((e ->> 'pins')::boolean, false), coalesce((e ->> 'writes')::boolean, false)
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
-    rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, ward = excluded.ward, lasts = excluded.lasts,
+    rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
@@ -1323,8 +1334,8 @@ create view my_posts_written_on as
 revoke all on my_posts_written_on from anon, public;
 grant select on my_posts_written_on to authenticated;
 
--- log_page (0139), also reading the writes as its sixteenth source, `writes` (my_posts_written_on, above, newest first by `at`, at most 200, the columns
--- the adapter's log() reads); the plays and posts they name are among the Acts the page names. Everything else as 0139 wrote it.
+-- log_page (0148), also reading the writes as its sixteenth source, `writes` (my_posts_written_on, above, newest first by `at`, at most 200, the columns
+-- the adapter's log() reads); the plays and posts they name are among the Acts the page names. Everything else as 0148 wrote it.
 create or replace function log_page(in_before timestamptz) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
@@ -1360,7 +1371,7 @@ begin atomic
     from my_posts_played_on p where p.saved_at is not null and (in_before is null or p.saved_at <= in_before)
     order by p.saved_at desc, p.play limit 200
   ), se as materialized (
-    select f.play, f.card, f.post, f.spring, f.ended_at
+    select f.play, f.card, f.post, f.spring, f.ended_at, f.ended_by
     from my_face_down f where f.ended_at is not null and (in_before is null or f.ended_at <= in_before)
     order by f.ended_at desc, f.play limit 200
   ), sp as materialized (

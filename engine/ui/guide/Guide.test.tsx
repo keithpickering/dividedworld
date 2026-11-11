@@ -267,7 +267,7 @@ describe('the cards marker', () => {
   });
 
   test('its play is said in the instance\'s kind words, as its face says it', () => {
-    renderInWorld(<Guide />, { path: '/guide', instance, guide: guide('## Cards\n\n<!-- kayfabb:cards -->'), cards: [whoops], copy: { cardKinds: { cast: 'Move', set: 'Gimmick', use: 'Ward' } } });
+    renderInWorld(<Guide />, { path: '/guide', instance, guide: guide('## Cards\n\n<!-- kayfabb:cards -->'), cards: [whoops], copy: { cardKinds: { cast: 'Move', set: 'Reversal', use: 'Gimmick' } } });
     const row = within(within(sectionOf('Cards')).getByRole('table', { name: 'The cards' })).getByRole('row', { name: /Whoops!/u });
     expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('Move');
   });

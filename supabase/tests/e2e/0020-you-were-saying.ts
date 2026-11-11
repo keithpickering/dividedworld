@@ -2,7 +2,7 @@
  * End to end: You Were Saying? (the plan for the card that writes, Task 12), across the act function's own path (supabase/functions/act/core.ts:
  * the play, the edit, the author's clear, and the kick after each), the card-text worker (supabase/functions/write/core.ts), the real model
  * adapters over a fake `fetch` standing in for the instance's completion endpoint (the one fake the model tests and the other end-to-end days
- * use), and the real migrations (supabase/migrations/0148_card_writes.sql) on the scratch database.
+ * use), and the real migrations (supabase/migrations/0149_card_writes.sql) on the scratch database.
  *
  * The run: a player casts the card on another's post; the kick writes the tail; the outbox holds a `card_text` event for the thread in words of
  * the play and the version alone; post_tails returns the text. The author edits: a regeneration is made for the new version, and History (the

@@ -1,6 +1,6 @@
 /**
  * Card backs, wards and catches on the screens (docs/plans/2026-11-01-card-plays-plan.md, Task 7): a card set face down is one back,
- * named alike for a trap and a Bluff to every reader but its setter, and drawn alike to every reader, its setter too, whose Lens
+ * named alike for a trap and a Move set beside it to every reader but its setter, and drawn alike to every reader, its setter too, whose Lens
  * names their card (the card template design's amendment of 2026-11-07, "The mark's back"); a Set's and a Use's ghost
  * marks are offered on the reader's own posts alone; and a caught play draws no effect. The cards are the engine's test set.
  */
@@ -20,8 +20,9 @@ import { LoadedThread } from '../loaded.tsx';
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const blot: CardRules = { ...base, key: 'blot', name: 'Blot', alignment: 'salty', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'blot' }, t, e, now) };
 const snare: CardRules = { ...base, key: 'snare', name: 'Snare', alignment: 'salty', rarity: 'uncommon', play: 'set', trap: { trigger: { on: 'cast' } }, catches: () => 'blot', canApply: () => ok(undefined) };
-const bluffy: CardRules = { ...base, key: 'bluffy', name: 'Bluffy', alignment: 'pepperoni', rarity: 'common', play: 'set', canApply: () => ok(undefined) };
-const instance: Instance = { ...testInstance, cards: [blot, snare, bluffy], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
+/** A common Move, set face down with a Who condition naming only a retired character, so its back looks like a trap's and never springs. */
+const dud: CardRules = { ...base, key: 'dud', name: 'Dud', alignment: 'pepperoni', rarity: 'common', canApply: (t, e, _config, now) => landsOn({ key: 'dud' }, t, e, now) };
+const instance: Instance = { ...testInstance, cards: [blot, snare, dud], settings: { ...testInstance.settings, economy: { 'x.price': 100 },
   /* Long, because the screens read a back's end against the real clock and the fake's starts on a fixed date. */
   setLasts: { unit: 'day', count: 3650 } } };
 
@@ -33,7 +34,7 @@ const art = (color: string) => ({ color, ink: '#000', canvas: '', mark: `/${colo
 const cards: CardUi[] = [
   { key: 'blot', art: art('pink'), describe: () => 'Splats.', Effect: Splash },
   { key: 'snare', art: art('red'), describe: () => 'Catches a cast.' },
-  { key: 'bluffy', art: art('orange'), describe: () => 'Does nothing.' },
+  { key: 'dud', art: art('orange'), describe: () => 'Does nothing.' },
 ];
 
 class Observer {
@@ -51,7 +52,7 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /**
- * Spritey (another player) sets a Snare on post 2 and a Bluffy on post 3; post 4 is the reader's own. The screens read the time from
+ * Spritey (another player) sets a Snare on post 2 and a Dud on post 3; post 4 is the reader's own. The screens read the time from
  * the browser and the fake dates its Acts on its own clock, so the browser's is set to the fake's: a back's week is counted from the
  * day it was set, never from the day the test runs.
  */
@@ -64,16 +65,17 @@ async function world() {
   const spritey = fake.seed.character(other, 'Spritey', 'face');
   const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
   const trapped = fake.seed.post(thread, spritey, 'post 2');
-  const bluffed = fake.seed.post(thread, spritey, 'post 3');
+  const ghost = fake.seed.character(other, 'Ghost', 'face', { retired: true });
+  const dudded = fake.seed.post(thread, spritey, 'post 3');
   const mine = fake.seed.post(thread, pipe, 'post 4');
-  fake.seed.cards(other, { snare: 1, bluffy: 1 });
+  fake.seed.cards(other, { snare: 1, dud: 1 });
   fake.seed.cards(me, { blot: 2, snare: 1 });
   fake.signInAs(other);
   const set = await fake.setCard('snare', spritey, trapped, {});
-  await fake.setCard('bluffy', spritey, bluffed, {});
+  await fake.setCard('dud', spritey, dudded, {}, { who: { except: false, characters: [ghost] } });
   fake.signInAs(me);
   localStorage.setItem(hudKey(me), pipe);
-  return { fake, me, other, pipe, spritey, thread, trapped, bluffed, mine, set };
+  return { fake, me, other, pipe, spritey, thread, trapped, dudded, mine, set };
 }
 async function open(w: Awaited<ReturnType<typeof world>>) {
   renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards, cardBack: { mark: '/coin.svg' }, settings: { postMaxLength: 1000 } });
@@ -83,14 +85,14 @@ const post = (seq: number) => document.getElementById(`post-${seq}`)!;
 const back = (seq: number) => within(post(seq)).queryByRole('button', { name: /^A card set face down by /u });
 
 describe('a card back', () => {
-  test('is named and drawn the same for a trap and a Bluff, and its Lens says the same, to any reader but the setter', async () => {
+  test('is named and drawn the same for a trap and a Move set beside it, and its Lens says the same, to any reader but the setter', async () => {
     const w = await world();
     await open(w);
     await waitFor(() => expect(back(2)).not.toBeNull());
-    const [trap, bluff] = [back(2)!, back(3)!];
-    expect(trap.getAttribute('aria-label')).toBe(bluff.getAttribute('aria-label'));
+    const [trap, dud] = [back(2)!, back(3)!];
+    expect(trap.getAttribute('aria-label')).toBe(dud.getAttribute('aria-label'));
     expect(trap.getAttribute('aria-label')).toBe('A card set face down by Spritey, 1 play. Opens the cards on this post.');
-    expect(trap.innerHTML).toBe(bluff.innerHTML);
+    expect(trap.innerHTML).toBe(dud.innerHTML);
     expect(post(2).querySelector('[data-kb-face]')).toBeNull();
     const user = userEvent.setup();
     await user.click(trap);
@@ -100,7 +102,7 @@ describe('a card back', () => {
     };
     const said = await lensOf();
     await user.keyboard('{Escape}');
-    await user.click(bluff);
+    await user.click(dud);
     expect(await lensOf()).toEqual(said);
     expect(said.heading).toBe('Face down on this post');
     expect(said.ends).toMatch(/^Ends \w+ \d+, [\d:]+\s[AP]M, unless it springs first\.$/u);
@@ -177,7 +179,7 @@ describe('a caught play', () => {
     /* The back sprang: it shows the card it was, in its place. */
     expect(post(2).querySelector('[data-kb-back="sprung"]')).not.toBeNull();
     /* A play that was not caught draws its effect. */
-    await w.fake.playCard('blot', w.pipe, w.bluffed, {}, '');
+    await w.fake.playCard('blot', w.pipe, w.dudded, {}, '');
   });
 });
 

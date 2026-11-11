@@ -46,9 +46,9 @@ import { spunCount, useSpunInto } from '../spin/spun.ts';
 import { when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useOnInk, useSheet, useUntil } from './Effects.tsx';
-import { withCardEconomy } from './faces.ts';
+import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { backWords, CAUGHT_STATE, caughtWords, endedWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords, wardWords } from './marks.ts';
+import { backWords, CAUGHT_STATE, caughtWords, endedWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, spanMs, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { defaultView, inPlayOrder, isBack, markedPlays, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -194,12 +194,12 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
   const signature = useSyncExternalStore(subscribe, () => {
     const h = store.get(post);
     return JSON.stringify(h.plays.filter((p) => p.card === kind).map((p) => [p.id, p.caster, p.playedAt, p.caught ?? null, p.ends ?? null, p.revealed ?? null, h.faces[p.id] ?? null,
-      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null]));
+      p.caught ? h.plays.find((b) => b.id === p.caught)?.revealed?.card ?? null : null, p.reversed ?? null, p.untaken ?? null, p.takenBack ?? null]));
   });
   const here = useMemo(() => {
-    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null][];
+    const rows = JSON.parse(signature) as [Id, Id | null, string, Id | null, string | null, CardPlay['revealed'] | null, string | null, string | null, true | null, true | null, CardPlay['takenBack'] | null][];
     return {
-      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}) })),
+      plays: rows.map(([id, caster, playedAt, caught, ends, revealed, , , reversed, untaken, takenBack]): CardPlay => ({ id, card: kind, layer: 1, caster, message: '', config: {}, playedAt, post, ...(isBack(kind) ? { faceDown: true as const } : {}), ...(caught ? { caught } : {}), ...(ends ? { ends } : {}), ...(revealed ? { revealed } : {}), ...(reversed ? { reversed: true as const } : {}), ...(untaken ? { untaken: true as const } : {}), ...(takenBack ? { takenBack } : {}) })),
       faces: Object.fromEntries(rows.filter((r) => r[6] !== null).map((r) => [r[0], r[6]!])) as Record<Id, string>,
       traps: Object.fromEntries(rows.filter((r) => r[7] !== null).map((r) => [r[0], r[7]!])) as Record<Id, string>,
     };
@@ -234,10 +234,10 @@ export function useResolvedView(store: Plays, post: Id, kind: string, nameOf?: (
     if (live.length === 0 && ofKind.length > 0) {
       return { ...base, state: CAUGHT_STATE, notes: caught };
     }
-    if (rules?.ward && live.length > 0) {
+    if (rules?.gimmick && live.length > 0) {
       const latest = [...live].sort((a, b) => Date.parse(b.ends ?? '') - Date.parse(a.ends ?? ''))[0]!;
-      const ward = wardWords(rules.rarity, latest.ends);
-      return { ...base, state: ward.state, ...(ward.ends ? { ends: ward.ends } : {}), notes: caught };
+      const gimmick = gimmickWords(rules.gimmick, latest.ends, new Date(), cardName);
+      return { ...base, state: gimmick.state, ...(gimmick.ends ? { ends: gimmick.ends } : {}), ...(gimmick.report ? { report: gimmick.report } : {}), notes: caught };
     }
     return Object.keys(caught).length > 0 ? { ...base, notes: caught } : base;
   }, [instance.cards, instance.settings.setLasts, ui.cards, kind, economy, here, nameOf]);
@@ -338,7 +338,8 @@ function AsItLanded({ play }: { readonly play: Id }) {
   const press = () => {
     if (read.busy) return;
     if (pressed) { store.showMoment(null); return; }
-    if (store.kept(play) !== undefined) { store.showMoment(play); return; }
+    /* An earlier failure's note clears in `open`, which a kept answer's shortcut would skip; `open` on a kept answer reads nothing. */
+    if (store.kept(play) !== undefined && !read.failed) { store.showMoment(play); return; }
     void read.open().then((landed) => { if (landed) store.showMoment(play); });
   };
   return (
@@ -422,6 +423,50 @@ function EndCard({ play, card, caster, store }: { readonly play: Id; readonly ca
   );
 }
 
+/**
+ * A setter's own live back's "Take back" (api.takeBack): the words say what it does, then it makes the call. A refusal's words are shown
+ * and the Lens stays open; once the card is back in the hand the Lens closes (its mark is for a back that no longer holds the post), and
+ * the back's take-back Act is added to the store at once, so the post reads it as ended without waiting for the broadcast.
+ */
+function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Plays }) {
+  const { api } = useKayfa();
+  const lens = useLensStore();
+  const [busy, setBusy] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const said = useId();
+  const once = useRef(false);
+  const press = async () => {
+    if (once.current || play.caster === null) return;
+    once.current = true;
+    setBusy(true);
+    setRefusal(null);
+    try {
+      const answer = await api.takeBack(play.caster, play.id);
+      if (!answer.ok) { setRefusal(plainRefusal(answer.error)); return; }
+      /* The back's mark goes with it, so focus goes to the post it was on (the mark is read before it goes): never to the page's body. */
+      const mark = document.querySelector<HTMLElement>('.kb-mark[aria-expanded="true"]');
+      const post = mark?.closest<HTMLElement>('article') ?? null;
+      store.add([answer.value]);
+      lens.close();
+      setTimeout(() => { (mark?.isConnected ? mark : post)?.focus(); }, 0);
+    } catch {
+      setRefusal('That could not be sent. Check your connection and look at the card before you try again.');
+    } finally {
+      once.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <button type="button" className="kb-kit-tile kb-lens-action" aria-describedby={said} aria-busy={busy ? 'true' : undefined} onClick={() => void press()}>
+        <span className="kb-kit-tile-label">Take back</span>{busy && <Spinner />}
+      </button>
+      <p id={said} className="kb-lens-note">Take this card back into your hand. The card back leaves the post.</p>
+      {refusal && <p role="alert" className="kb-lens-note">{refusal}</p>}
+    </>
+  );
+}
+
 /** Whether a play is face up and still in force, so an admin can end it: not a back (`faceDown` is set for exactly the card backs, sprung or not), not caught, not ended by an admin, not over because it did not take, not worn off. */
 const endable = (play: CardPlay, now: number): boolean =>
   !play.faceDown && play.caught === undefined && !play.reversed && !play.untaken && !(play.ends !== undefined && Date.parse(play.ends) <= now);
@@ -439,6 +484,8 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
   const sprung = useSprungWords(play.spring);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
+  /* The setter's own back, still face down: not sprung, not taken back, not past its time (the same end every Set has). */
+  const backTakeable = yours && play.faceDown === true && !play.revealed && !play.takenBack && !play.caught && !play.reversed && Date.parse(play.playedAt) + spanMs(instance.settings.setLasts) > now;
   /* In a Lens a takeover hosts, the page is inert behind it: the spin form opens there, where it cannot be used. */
   const hosted = useLensHost() !== document.body;
   /* A staged page's play is made up: no thread is spun from it, and none can be (staged.ts). */
@@ -479,6 +526,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {moments && !play.reach && <AsItLanded play={play.id} />}
+          {backTakeable && <TakeBack play={play} store={store} />}
           {admin && endable(play, now) && <EndCard play={play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
         </div>

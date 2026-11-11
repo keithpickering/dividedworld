@@ -14,7 +14,7 @@ const row = (o: Partial<Alert> & Pick<Alert, 'kind'>): Alert => ({ sub: null, ac
 
 function ctx(acts: readonly Act[] = [], o: Partial<WordsContext> = {}): WordsContext {
   return {
-    instance: { cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'trap', name: 'Trap Card' }, { key: 'pass', name: 'Hall Pass' }, { key: 'glitter', name: 'Glitter Bomb' }, { key: 'main', name: 'Main Event' }] } as unknown as WordsContext['instance'],
+    instance: { cards: [{ key: 'whoops', name: 'Whoops!' }, { key: 'trap', name: 'Card Collector' }, { key: 'pass', name: 'Hall Pass' }, { key: 'glitter', name: 'Glitter Bomb' }, { key: 'main', name: 'Main Event' }] } as unknown as WordsContext['instance'],
     ui: { copy: { siteName: 'T', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'S', reducedMotionCard: 'x' } },
     acts: new Map(acts.map((a) => [a.id, a])),
     reading: null,

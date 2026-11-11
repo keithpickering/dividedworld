@@ -5,7 +5,7 @@
  * so nothing it asks for or shows is computed from another player's private rows.
  */
 import { act, screen, waitFor, within } from '@testing-library/react';
-import { useLayoutEffect } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { usePlayer } from '../player.tsx';
 import type { Fake } from '../data/fake.ts';
@@ -217,8 +217,30 @@ describe('a finished season, beyond what the eye sees', () => {
       await waitFor(() => expect(screen.getByText(/Page 2 of 3/u)).toBeInTheDocument());
       expect(within(rowOf('Name 060')).getByText('(the character you followed)')).toBeInTheDocument();
       expect(within(rowOf('Name 061')).queryByText('(the character you followed)')).toBeNull();
+      /* The scroll is a passive effect, which can run after the table is in the DOM and the wait above has resolved. */
+      await waitFor(() => expect(scroll).toHaveBeenCalled());
       expect(scroll).toHaveBeenCalledTimes(1);
       expect(scroll.mock.contexts[0]).toBe(rowOf('Name 060'));
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  test('a re-render of the screen does not scroll the highlighted row again', async () => {
+    const w = finished();
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    function Again() {
+      const [n, setN] = useState(0);
+      return <><button type="button" onClick={() => setN(n + 1)}>again {n}</button><RankingsScreen embedded season={1} character={w.ids[60]} /></>;
+    }
+    try {
+      renderIn(w.fake, <Again />, { path: `/season?tab=rankings&season=1&character=${w.ids[60]}` });
+      await waitFor(() => expect(scroll).toHaveBeenCalledTimes(1));
+      await userEvent.click(screen.getByRole('button', { name: /^again/u }));
+      await screen.findByRole('button', { name: 'again 1' });
+      await act(async () => { await Promise.resolve(); });
+      expect(scroll).toHaveBeenCalledTimes(1);
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     }

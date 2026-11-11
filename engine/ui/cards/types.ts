@@ -41,6 +41,8 @@ export interface CardPlay {
   readonly faceDown?: true;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
+  /** A card back its setter took back into their hand (a `take_back` Act): ended then, and it names no card. */
+  readonly takenBack?: { readonly at: string };
   /** A play a back laid when it sprang (a Move landing on a quote), by the spring that laid it: the Lens says who set it and what set it off. */
   readonly spring?: Id;
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
@@ -203,7 +205,7 @@ export interface ConfigFormProps {
   readonly post: Act;
   /** Unique on the page, to hang the form's labels on. */
   readonly id: string;
-  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a Gimmick that waits for a card). */
+  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a set card that waits for a card). */
   readonly castable?: readonly CardFace[];
 }
 

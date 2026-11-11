@@ -9,8 +9,11 @@
  *
  * Departures by decision:
  *  - The page head leaves 36px under the title where the board's lead stands 8px under it (the glass polish, design section 2), as board 37 names.
- *  - Hall Pass (face-down moves plan) and You Were Saying? stock slots the board does not draw, so the build's list has two more rows than the board's: Glitter Bomb, marked up,
- *    stands two rows lower (its tag, 52px for Hall Pass's row and 55px for You Were Saying?'s), and what follows the list (the hidden Main Event, Save changes and its note) stands about 110px lower.
+ *  - Hall Pass (face-down moves plan) stocks the slot after Card Collector, and You Were Saying? (its own plan) the slot after Autocorrect, so the build's list has two more rows than
+ *    the board's: Glitter Bomb, marked up, stands two rows lower (its tag, 52px for Hall Pass's row and 55px for You Were Saying?'s), and what follows the list (the hidden Main Event,
+ *    Save changes and its note) stands about 110px lower.
+ *  - Card types then added Publicity Tour (in Bluff's slot, where the board draws Bluff), Heat Magnet, Class Clown and Good Vibes, so the build's list has three more rows than
+ *    that: Glitter Bomb's tag stands 165px lower still (272 in all) and what follows the list 165px lower (275 in all).
  *  - The build's controls are the glass's own measure, so a button is compared by its place and not its size, and a field's type is the glass's.
  *  - A control's accessible name in the build says whose it is ("Whoops!: move up"), where the board's arrows are named "Move up" alone.
  *  - The note beside Save changes says what a price is held to (between 0.01 and 1,000,000.00) where the board's note says a Boss move reads the new price; the
@@ -43,11 +46,11 @@ const manifest: BoardManifest = {
     at('code-a2', 'cell', 'A2', { origin: 'head-slot', originEdge: 'bottom' }),
     at('tag-pull', 'text', 'PULLED BY THE BOSS · TO NOV 9', { origin: 'head-slot', originEdge: 'bottom' }),
     at('code-e1', 'cell', 'E1', { origin: 'head-slot', originEdge: 'bottom' }),
-    at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 107 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('code-none', 'cell', '–', { buildShift: { y: 110 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 110 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 110 }, origin: 'head-slot', originEdge: 'bottom' }),
-    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 110 } }),
+    at('tag-markup', 'text', 'MARKED UP ×1.5 · 2.25 TO NOV 8', { buildName: 'Marked up ×1.5 · 2.25 · to Nov 8', buildShift: { y: 272 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('code-none', 'cell', '–', { buildShift: { y: 275 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('hidden-note', 'text', 'Only in packs. The Boss may flash-sale it.', { buildShift: { y: 275 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save', 'button', 'SAVE CHANGES', { buildName: 'Save changes', buildShift: { y: 275 }, origin: 'head-slot', originEdge: 'bottom' }),
+    at('save-note', 'text', 'Players see a saved price at once. A Boss move in force reads the new price.', { buildName: 'A price is between 0.01 and 1,000,000.00. Players see a saved price at once.', origin: 'head-slot', originEdge: 'bottom', buildShift: { x: -12, y: 275 } }),
   ],
 };
 export default manifest;

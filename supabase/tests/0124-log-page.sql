@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the sixteen reads (the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0148) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the sixteen reads (the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0149) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -138,7 +138,7 @@ begin
        select play, post, saved_at from my_posts_played_on where saved_at is not null order by saved_at desc, play limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'saves') is distinct from 1 then raise exception 'saves: %', doc -> 'sources' -> 'saves'; end if;
   if doc -> 'sources' -> 'setEnds' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
-       select play, card, post, spring, ended_at from my_face_down where ended_at is not null order by ended_at desc, play limit 200) r)) then raise exception 'setEnds: %', doc -> 'sources' -> 'setEnds'; end if;
+       select play, card, post, spring, ended_at, ended_by from my_face_down where ended_at is not null order by ended_at desc, play limit 200) r)) then raise exception 'setEnds: %', doc -> 'sources' -> 'setEnds'; end if;
   if doc -> 'sources' -> 'setPasses' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select play, card, post, ends_at, passed_at from my_face_down where passed_at is not null and spring is null order by passed_at desc, play limit 200) r)) then raise exception 'setPasses: %', doc -> 'sources' -> 'setPasses'; end if;
   if doc -> 'sources' -> 'caught' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (

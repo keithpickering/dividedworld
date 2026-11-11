@@ -33,6 +33,6 @@ export const tweener: ClassRules = {
       .filter((e) => !nothing(e.amount)),
     ...input.received
       .filter((r) => SHRUG.includes(r.quadrant))
-      .map((r): Earning => ({ reason: 'tweener.shrugged', amount: -0.5 * settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at })),
+      .map((r): Earning => ({ reason: 'tweener.shrugged', amount: -0.5 * settings.vote * r.votes, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind })),
   ],
 };

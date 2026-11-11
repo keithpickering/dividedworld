@@ -146,7 +146,7 @@ describe('where the group is', () => {
     expect(order[1]!.compareDocumentPosition(order[2]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test('is not on Play it now, a Gimmick or a Use', async () => {
+  test('is not on Play it now, a set card or a use card', async () => {
     const user = userEvent.setup();
     const w = world();
     await open(w);
