@@ -47,7 +47,7 @@ function Avatar({ character, layout }: { readonly character: Character; readonly
     return (
       <span className="kb-postbit-avatar" data-kb-slot={layout === 'side' && src ? 'tall' : 'square'} aria-hidden="true">
         {src ? <img src={src} alt="" loading="lazy" decoding="async" /> : <span className="kb-postbit-none">{character.name.slice(0, 1)}</span>}
-        {src === square && squareFor}
+        {src && src === square && squareFor}
       </span>
     );
   }

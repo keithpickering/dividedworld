@@ -3,6 +3,9 @@
  * a tall avatar slot, 1:2, as the Main board draws it, then the counts. Stacked: a band with a
  * square avatar beside the text, above the post. A phone (40em and under) is always stacked,
  * whatever the reader chose. Percentages and em throughout.
+ *
+ * Forced colors: reasoned, not tested. Gear is `<img>` art and keeps its colors; the text runs and the post's cells keep their grounds, which
+ * the system maps to Canvas, so no letters sit on art. A browser test with forced-colors emulation would be the proof.
  */
 .kb-postbit {
   /* Its own stacking context: the outfit and the text over it (below) are ordered here and never against the page. */
@@ -191,6 +194,11 @@
   }
 
   .kb-postbit-avatar[data-kb-square] > .kb-outfit[data-kb-on="portrait"] {
+    display: none;
+  }
+
+  /* With no square the picture is the portrait cropped to the 1:1 slot, which the portrait's percentages do not fit: it wears nothing here. */
+  .kb-postbit[data-kb-postbit="side"] .kb-postbit-avatar[data-kb-slot="portrait"]:not([data-kb-square]) > .kb-outfit[data-kb-on="portrait"] {
     display: none;
   }
 

@@ -5,7 +5,7 @@
  * browser fetches each item once. The layer is decoration: the character's name says who it is, and no screen reader is told of a hat.
  *
  * On the tall portrait the layer is cut at `gear.reach` of the portrait's width past each edge, so a cap may stand above the slot but not
- * across the page (outfit.css). On the square, which is cut from inside the portrait, each piece is mapped through the square's frame
+ * across the page (outfit.css). Its parent must set `container-type: inline-size`: `cqw` there resolves against it (the postbit's and the profile's slots do). On the square, which is cut from inside the portrait, each piece is mapped through the square's frame
  * (`inSquare`) and the layer is cut at the square's edge; a piece wholly outside it is not drawn at all.
  */
 import type { CSSProperties } from 'react';

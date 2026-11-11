@@ -71,4 +71,12 @@ describe('the outfit in the stylesheet', () => {
     expect(css).toMatch(/\.kb-outfit\[data-kb-on="portrait"\][^{]*\{[^}]*clip-path:\s*inset\(/u);
     expect(css).toMatch(/\.kb-outfit\[data-kb-on="square"\][^{]*\{[^}]*overflow:\s*hidden/u);
   });
+
+  test('a browser without container query units still cuts the reach, by a fallback declared before the cqw one', () => {
+    const d = /\.kb-outfit\[data-kb-on="portrait"\]\s*\{([^}]*)\}/u.exec(css)![1]!;
+    const clips = [...d.matchAll(/clip-path:\s*([^;]+);/gu)].map((m) => m[1]!);
+    expect(clips).toHaveLength(2);
+    expect(clips[0]).not.toMatch(/cqw/u);
+    expect(clips[1]).toMatch(/cqw/u);
+  });
 });

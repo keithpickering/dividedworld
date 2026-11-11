@@ -4,7 +4,7 @@
  *
  * The portrait's layer is cut at the reach, a fraction of the portrait's width, past each edge on every side: `cqw` is the portrait's
  * width because the slot is an inline-size container (postbit.css, profile.css), so the cap may stand above the slot and the same
- * distance of every other side counts. The square's layer is cut at its own edge.
+ * distance of every other side counts. The parent MUST set `container-type: inline-size` (cqw resolves against it); both slots do. The square's layer is cut at its own edge.
  */
 .kb-outfit {
   position: absolute;
@@ -13,6 +13,8 @@
 }
 
 .kb-outfit[data-kb-on="portrait"] {
+  /* Where `cqw` is unknown the declaration below is dropped and this stands: a cut wide enough for any reach (the gear's reach is a fraction of the portrait). */
+  clip-path: inset(-3em);
   clip-path: inset(calc(var(--kb-reach) * -100cqw));
 }
 

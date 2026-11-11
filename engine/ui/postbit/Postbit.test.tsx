@@ -388,6 +388,50 @@ describe('gear on the postbit', () => {
   });
 });
 
+describe('a portrait with no square', () => {
+  const worn = [{ gear: 'band', x: 0.5, y: 0.1, w: 0.5, turn: 0, layer: 0 }];
+  test('stacked, the square gear is not drawn over the initial letter', () => {
+    show(person({}, { avatarSquare: null, outfit: worn, portraitTallness: 2 }), 'stacked');
+    expect(slot().querySelector('.kb-outfit')).toBeNull();
+    expect(slot()).toHaveTextContent('P');
+  });
+
+  test('on a phone its portrait gear is hidden, since the 1:1 cover slot is not the portrait\'s shape', () => {
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const phone = css.slice(css.indexOf('@media (max-width: 40em)'));
+    expect(phone).toMatch(/data-kb-slot="portrait"\]:not\(\[data-kb-square\]\)\s*>\s*\.kb-outfit\[data-kb-on="portrait"\]\s*\{[^}]*display:\s*none/u);
+  });
+});
+
+describe('the post cells over the postbit\'s gear, in the stylesheet', () => {
+  const strip = (f: string) => readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+  const css = strip('engine/ui/thread/thread.css');
+  const decls = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === sel)).map((m) => m[2]!).join('');
+  const z = (d: string) => Number(/z-index:\s*(-?\d+)/u.exec(d)?.[1] ?? 'NaN');
+
+  /* Gear may reach right past the postbit's cell; the post's meta, words, actions and panels are cells on their own ground, one layer above it, so the text always wins. */
+  test('the meta, words, actions and panels cells are on a layer above the postbit\'s cell', () => {
+    const bit = decls('.kb-act > .kb-postbit');
+    expect(z(bit)).toBe(0);
+    for (const sel of ['.kb-act-meta', '.kb-act-main', '.kb-act-foot', '.kb-act-panels']) expect(z(decls(sel)), sel).toBeGreaterThan(z(bit));
+  });
+
+  test('every post cell keeps the post ground the lift relies on', () => {
+    expect(decls('.kb-act > *')).toMatch(/background:\s*var\(--kb-post-bg\)/u);
+  });
+});
+
+describe('the postbit\'s phone block', () => {
+  /* The slicing tests above take everything from the phone's media block to the end of the file: that is the phone's only if the block stays after the wide rules. */
+  test('the phone block comes after the wide block', () => {
+    const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const wide = css.indexOf('@media not all and (max-width: 40em)');
+    const phone = css.indexOf('@media (max-width: 40em)');
+    expect(wide).toBeGreaterThan(-1);
+    expect(phone).toBeGreaterThan(wide);
+  });
+});
+
 describe('the postbit\'s text over the outfit, in the stylesheet', () => {
   const css = readFileSync('engine/ui/postbit/postbit.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
   const decls = (selector: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === selector || x.trim().endsWith(` ${selector}`))).map((m) => m[2]!).join('');

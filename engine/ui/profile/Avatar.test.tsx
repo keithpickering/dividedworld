@@ -48,4 +48,20 @@ describe('the profile avatar slot, in the stylesheet', () => {
     /* The phone's about layout fixes a 76 by 152 box; a portrait's slot must override it. */
     expect(css).toMatch(/\.kb-about \.kb-profile-avatar\[data-kb-slot="portrait"\]/u);
   });
+
+  /* The design (cosmetics, section 2): gear may reach past the portrait, but the text around it always wins. */
+  test('the avatar cell is its own layer, and the label, value and signature cells are above it, each on its own ground', () => {
+    const decl = (sel: string) => [...css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)].filter((m) => m[1]!.split(',').some((x) => x.trim() === sel)).map((m) => m[2]!).join('');
+    const z = (d: string) => Number(/z-index:\s*(-?\d+)/u.exec(d)?.[1] ?? 'NaN');
+    const cell = decl('.kb-about .kb-about-avatar');
+    expect(cell).toMatch(/isolation:\s*isolate/u);
+    expect(cell).toMatch(/position:\s*relative/u);
+    expect(z(cell)).toBe(0);
+    for (const sel of ['.kb-table.kb-about th.kb-about-label', '.kb-about .kb-about-value', '.kb-about .kb-about-sig']) {
+      const d = decl(sel);
+      expect(d, sel).toMatch(/position:\s*relative/u);
+      expect(z(d), sel).toBeGreaterThan(z(cell));
+    }
+    expect(decl('.kb-table.kb-about th.kb-about-label')).toMatch(/background:\s*var\(--kb-row-3\)/u);
+  });
 });

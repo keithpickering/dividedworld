@@ -156,6 +156,23 @@
   padding: 0.5em 6%;
 }
 
+/*
+ * Gear may reach past the postbit's cell (the cosmetics design, section 2: "the z-index of surrounding text always wins"). Rather than clip
+ * the reach, which would cut a cap the owner meant to stand out, the post's other cells (the line above, the words, the actions, the panels)
+ * are one layer above the postbit's. Each is already a cell on the post's own ground (`.kb-act > *`), so a lifted cell hides the gear behind
+ * it and looks as it did without gear. A grid item takes z-index without being positioned.
+ */
+.kb-act > .kb-postbit {
+  z-index: 0;
+}
+
+.kb-act-meta,
+.kb-act-main,
+.kb-act-foot,
+.kb-act-panels {
+  z-index: 1;
+}
+
 .kb-act-main {
   grid-area: main;
   padding: 0.5em 1%;

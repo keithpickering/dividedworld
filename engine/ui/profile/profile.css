@@ -15,6 +15,10 @@
  * closing the card under a short rule.
  */
 .kb-about .kb-about-avatar {
+  /* Its own layer under the text cells (below): gear reaches past the portrait, and the text around it always wins. */
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   box-sizing: border-box;
   width: 152px;
   vertical-align: top;
@@ -31,11 +35,21 @@
   color: var(--kb-fg);
   background: var(--kb-row-3);
   text-shadow: none;
+  position: relative;
+  z-index: 1;
+}
+
+/* The text cells are a layer above the avatar's, each on its own ground (the table's rows: base.css), so gear never paints over a label or a value. */
+.kb-about .kb-about-value,
+.kb-about .kb-about-sig {
+  position: relative;
+  z-index: 1;
 }
 
 .kb-about .kb-about-value {
   vertical-align: middle;
 }
+
 
 .kb-about-rank {
   display: inline-flex;
