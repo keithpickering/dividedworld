@@ -4,14 +4,18 @@
  * controls, saved as they change), Make your first character and Read the Strategy Guide first. It marks the welcome seen when it opens, so
  * it shows once whatever the player does next. The redirect that sends a new account here is held in web/src/App.test.tsx.
  */
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { Welcome, WelcomeScreen } from './Welcome.tsx';
+import { fakeSound } from '../audio/test-sound.ts';
+import { resetSound } from '../audio/sound.ts';
+import type { SoundsUi } from '../audio/types.ts';
 
 beforeEach(() => { localStorage.clear(); });
+afterEach(() => { resetSound(); });
 
 const instance: Instance = { ...testInstance, developer: { name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe' } };
 const signedIn = (fake: ReturnType<typeof import('../test-world.tsx').buildWorld>) => { fake.signInAs(fake.seed.account('me')); };
@@ -27,7 +31,7 @@ describe('the welcome page', () => {
     const seen = vi.spyOn(fake, 'seeWelcome');
     renderIn(fake, <WelcomeScreen />, { path: '/welcome', boot });
     const before = await screen.findByRole('region', { name: 'Before you start' });
-    expect(await within(before).findAllByRole('radiogroup')).toHaveLength(4);
+    expect(await within(before).findAllByRole('radiogroup')).toHaveLength(6);
     expect(prefs).not.toHaveBeenCalled();
     await waitFor(() => expect(seen).toHaveBeenCalledTimes(1));
   });
@@ -70,14 +74,14 @@ describe('the welcome page', () => {
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await within(before).findAllByRole('radiogroup');
     expect(within(before).getByRole('heading', { level: 3, name: 'Before you start' })).toBeInTheDocument();
-    expect(within(before).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects']);
+    expect(within(before).getAllByRole('heading', { level: 4 }).map((h) => h.textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects', 'Game sounds', 'Interface sounds']);
   });
 
-  test('Before you start holds theme, motion, text size and Brighter effects, as Settings draws them, and no other row', async () => {
+  test('Before you start holds theme, motion, text size, Brighter effects and the two sound rows, as Settings draws them, and no other row', async () => {
     page();
     const before = await screen.findByRole('region', { name: 'Before you start' });
     await within(before).findAllByRole('radiogroup');
-    expect(within(before).getAllByRole('radiogroup').map((g) => within(g).getByRole('heading').textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects']);
+    expect(within(before).getAllByRole('radiogroup').map((g) => within(g).getByRole('heading').textContent)).toEqual(['Theme', 'Motion', 'Text size', 'Brighter effects', 'Game sounds', 'Interface sounds']);
     expect(within(before).getByRole('radiogroup', { name: 'Motion' })).toBeInTheDocument();
     expect(within(before).getByText(/Off stops every animation/u)).toBeInTheDocument();
   });
@@ -98,6 +102,47 @@ describe('the welcome page', () => {
     expect(within(before).getByText(/Let card effects on posts use their full colors, even below the usual contrast standard\. Some posts may be harder to read\./u)).toBeInTheDocument();
     await userEvent.click(within(group).getByRole('radio', { name: 'On' }));
     await waitFor(async () => expect((await fake.preferences()).effects).toBe('bright'));
+  });
+
+  test('the sound rows say what they are, offer Off and On, and a volume shows only while on', async () => {
+    fakeSound();
+    page();
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    const game = await within(before).findByRole('radiogroup', { name: 'Game sounds' });
+    expect(within(game).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual(['Off', 'On']);
+    expect(within(before).getByText('Sounds that cards and other game effects make on the board. Every one is also shown as a caption at the bottom of the screen.')).toBeInTheDocument();
+    expect(within(before).getByText('Sounds the board itself makes, apart from the game. This forum has none yet.')).toBeInTheDocument();
+    expect(within(before).queryByRole('slider')).toBeNull();
+    await userEvent.click(within(game).getByRole('radio', { name: 'On' }));
+    expect(await within(before).findByRole('slider', { name: 'Game volume' })).toHaveValue('80');
+    expect(within(before).queryByRole('slider', { name: 'Interface volume' })).toBeNull();
+  });
+
+  test('choosing a sound On saves it; a volume saves on release and not on input, then plays the preview where one is named', async () => {
+    const { fetched } = fakeSound();
+    const sounds: SoundsUi = { slots: [{ key: 'boo', src: '/boo.mp3', bus: 'game', caption: 'The audience boos' }, { key: 'click', src: '/click.mp3', bus: 'interface', caption: 'A click' }], preview: { game: 'boo' } };
+    const fake = buildWorld(undefined, instance);
+    signedIn(fake);
+    renderIn(fake, <WelcomeScreen />, { path: '/welcome', instance, avatars: { gabe: 'gabe.png' }, sounds });
+    const before = await screen.findByRole('region', { name: 'Before you start' });
+    expect(within(before).queryByText(/This forum has none yet/u)).toBeNull();
+    await userEvent.click(within(await within(before).findByRole('radiogroup', { name: 'Game sounds' })).getByRole('radio', { name: 'On' }));
+    await waitFor(async () => expect((await fake.preferences()).gameSound).toBe('on'));
+    const slider = await within(before).findByRole('slider', { name: 'Game volume' });
+    fireEvent.input(slider, { target: { value: '45' } });
+    expect(within(before).getByText('45%')).toBeInTheDocument();
+    expect((await fake.preferences()).gameVolume).toBe(80);
+    expect(fetched).not.toHaveBeenCalled();
+    fireEvent.change(slider, { target: { value: '45' } });
+    await waitFor(async () => expect((await fake.preferences()).gameVolume).toBe(45));
+    await waitFor(() => expect(fetched).toHaveBeenCalledWith('/boo.mp3'));
+    /* The interface bus names no preview here: releasing its volume plays nothing more. */
+    await userEvent.click(within(within(before).getByRole('radiogroup', { name: 'Interface sounds' })).getByRole('radio', { name: 'On' }));
+    fetched.mockClear();
+    fireEvent.change(await within(before).findByRole('slider', { name: 'Interface volume' }), { target: { value: '20' } });
+    await waitFor(async () => expect((await fake.preferences()).interfaceVolume).toBe(20));
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(fetched).not.toHaveBeenCalled();
   });
 
   test('choosing a text size and a theme changes the account\'s preferences too', async () => {
