@@ -272,7 +272,8 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const jw = instanceUi.cards.find((c) => c.key === 'jimmy-wails')!;
     expect(jw.Effect).toBeDefined();
     expect(jw.summary).toBe('Puts your sob story on a donation banner under a post, so anyone can send its author Aura.');
-    expect(jw.hint).toBe('Anyone can chip in. The System takes 25% for overhead.');
+    expect(jw.hint).toBe('Anyone can chip in. The System takes a cut for overhead.');
+    expect(jw.hint).not.toMatch(/\d/u);
     const said = jw.describe(instance.settings);
     expect(said).toContain('0.10, 0.25, 0.50 and 1.00');
     expect(said).toContain('keeps 25% of each gift');
