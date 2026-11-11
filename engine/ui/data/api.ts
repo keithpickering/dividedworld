@@ -61,7 +61,14 @@ export interface Refusal {
    * before it tries again (Acts are append-only, so a blind resend is a duplicate).
    */
   readonly uncertain?: true;
+  /** Set when nothing left the device, or the server never ran the write: sending again cannot duplicate. */
+  readonly notSent?: true;
 }
+
+/** The words of a write that never left the device. */
+export const NOT_SENT = "You're offline, so this was not sent.";
+/** The words of a write the server certainly did not run (mirrored in `supabase/functions/act/core.ts`). */
+export const NOT_RUN = 'it did not go through; try again';
 
 /** The words of a lost answer; the adapter and the in-memory backend both say them. */
 export const LOST_ANSWER = 'no answer came back, so this may have gone through: look before you try again';

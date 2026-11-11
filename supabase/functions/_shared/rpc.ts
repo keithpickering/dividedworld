@@ -18,7 +18,14 @@
  * its failure is thrown, and the player decides whether to try again.
  */
 
-export class TransportError extends Error {}
+export class TransportError extends Error {
+  /** `never` only when every attempt was answered 503, so the write certainly did not run; anything else may have followed a commit. */
+  readonly ran: 'never' | 'maybe';
+  constructor(message: string, ran: 'never' | 'maybe' = 'maybe') {
+    super(message);
+    this.ran = ran;
+  }
+}
 
 export class DatabaseError extends Error {
   readonly code: string;
@@ -84,6 +91,7 @@ export function postgrest(options: PostgrestOptions): Db {
   return {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
       const seen: string[] = [];
+      let maybe = false;
       for (let attempt = 1; attempt <= attempts; attempt++) {
         if (attempt > 1) await sleep(250 * 2 ** (attempt - 2));
         let response: Response;
@@ -96,11 +104,13 @@ export function postgrest(options: PostgrestOptions): Db {
           });
         } catch (e) {
           seen.push(`no answer (${e instanceof Error ? e.message : String(e)})`);
+          maybe = true;
           if (!safeToRepeat(fn)) break;
           continue;
         }
         if (NEVER_RAN.has(response.status) || MAY_HAVE_RUN.has(response.status)) {
           seen.push(`HTTP ${response.status}`);
+          if (!NEVER_RAN.has(response.status)) maybe = true;
           await response.body?.cancel();
           if (MAY_HAVE_RUN.has(response.status) && !safeToRepeat(fn)) break;
           continue;
@@ -118,7 +128,7 @@ export function postgrest(options: PostgrestOptions): Db {
         }
         return body as T;
       }
-      throw new TransportError(`${fn}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`);
+      throw new TransportError(`${fn}: no answer after ${seen.length} attempt(s): ${seen.join('; ')}`, maybe ? 'maybe' : 'never');
     },
   };
 }

@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ALLOWED_READS, ALLOWED_RPCS as GUARD_RPCS } from '../../../tools/check-web-reads.mjs';
-import { failureKind } from '../../../engine/ui/data/api.ts';
+import { failureKind, NOT_RUN, NOT_SENT } from '../../../engine/ui/data/api.ts';
 import type { Act, KayfaApi, ScreenSettings, ThreadSummary } from '../../../engine/ui/data/api.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
 import { createSupabaseApi } from './supabase.ts';
@@ -845,6 +845,25 @@ describe('failures', () => {
     const refused = harness(() => json({ error: 'you cannot do that' }, 409));
     expect(await refused.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: 'you cannot do that' });
     expect(rpcDown.to('rpc/set_preferences')).toHaveLength(1);
+  });
+
+  it('a write that was not sent says so: offline sends nothing, and a 503 body with sent: false is notSent, never uncertain', async () => {
+    const was = Object.getOwnPropertyDescriptor(Navigator.prototype, 'onLine');
+    Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false });
+    try {
+      const off = harness(() => json({}));
+      expect(await off.api.post(T, B, 'hi', null)).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+      expect(await off.api.setPreferences({ theme: 'dark' })).toEqual({ ok: false, error: NOT_SENT, notSent: true });
+      expect(off.log.filter((r) => r.url.pathname === '/functions/v1/act' || r.url.pathname.includes('/rpc/'))).toHaveLength(0);
+    } finally {
+      if (was) Object.defineProperty(Navigator.prototype, 'onLine', was);
+      else delete (Navigator.prototype as { onLine?: boolean }).onLine;
+    }
+    const never = harness(() => json({ error: NOT_RUN, sent: false }, 503));
+    const r = await never.api.post(T, B, 'hi', null);
+    expect(r).toEqual({ ok: false, error: NOT_RUN, notSent: true });
+    expect((r as { uncertain?: true }).uncertain).toBeUndefined();
+    expect(never.log.filter((x) => x.url.pathname === '/functions/v1/act')).toHaveLength(1);
   });
 });
 

@@ -29,7 +29,7 @@ import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts'
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { normalizePronouns, pronounProblems, type PronounSet } from '../../rules/pronouns.ts';
 import type { Career } from '../../system/career.ts';
-import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, ReadFailure, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
+import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, ReadFailure, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { PLAYS_PER_POST } from '../cards/plays.ts';
@@ -260,6 +260,8 @@ export interface Seed {
   loseNextAnswer(went: boolean): void;
   /** The next read of any kind rejects with a `ReadFailure` of this kind, once. */
   failNextRead(kind: FailureKind): void;
+  /** While on, every write answers the not-sent refusal and changes nothing, and every read rejects as offline. */
+  offline(on: boolean): void;
 }
 
 /** A charge a seeded visit carries. */
@@ -387,6 +389,15 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const UNPLACED: ReadonlySet<ActKind> = new Set<ActKind>(['edit', 'card', 'set', 'take_back', 'spring', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling']);
 
 /** The methods that are not a promise of something: everything else is made one. */
+/* The api's writes: the one split `failNextRead` and `offline` share. `markRead` answers a boolean and `signOut` nothing; the rest answer a refusal. */
+const WRITES = new Set([
+  'requestCode', 'verifyCode', 'openAccount', 'signOut', 'postUpdate', 'dismissHandoverTodo', 'setAdminContact', 'holdMove', 'reverseMove', 'reverseCard',
+  'replaceSuccessor', 'replaceQueuedDescription', 'describeBoard', 'setSlot', 'moveSlot', 'saveMachine', 'intercept', 'fileReport', 'fileAppeal',
+  'markRead', 'setPresenceHidden', 'setPreferences', 'meetCard', 'seeWelcome', 'seeTip', 'skipTips', 'resumeTips', 'restoreTips', 'replayTour',
+  'seeAlerts', 'seeSettlement', 'follow', 'createInvite', 'reissueInvite', 'startThread', 'post', 'edit', 'spin', 'apologize', 'buyCard', 'buyPack',
+  'playCard', 'setCard', 'takeBack', 'useCard', 'releaseEffect', 'saveEffect', 'react', 'turn', 'withdrawTurn', 'unmask', 'createCharacter',
+  'setDebut', 'setProfile', 'setAvatar',
+]);
 const NOT_PROMISED = new Set(['onSession', 'subscribeThread', 'subscribeBoard', 'subscribeAccount', 'subscribeReach']);
 type Sync<T> = { [K in keyof T]: T[K] extends (...a: infer A) => Promise<infer R> ? (...a: A) => R : T[K] };
 
@@ -1021,6 +1032,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /* The next read fails (see `Seed.failNextRead`). */
   let failing: FailureKind | null = null;
+  /* Offline (see `Seed.offline`). */
+  let off = false;
   const isRefusal = (x: unknown): x is Refusal => typeof x === 'object' && x !== null && (x as Refusal).ok === false;
 
   /** The Edge Function's reading of a request: signed in, then well formed. */
@@ -3321,8 +3334,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   const api = Object.fromEntries(
     Object.entries(core).map(([name, f]) => [name, NOT_PROMISED.has(name) ? f : async (...args: unknown[]) => {
-      const kind = failing;
-      if (kind) { failing = null; throw new ReadFailure(kind); }
+      if (WRITES.has(name)) {
+        if (off && name !== 'signOut') return name === 'markRead' ? false : { ok: false, error: NOT_SENT, notSent: true };
+      } else {
+        if (off) throw new ReadFailure('offline');
+        const kind = failing;
+        if (kind) { failing = null; throw new ReadFailure(kind); }
+      }
       return (f as (...a: unknown[]) => unknown)(...args);
     }]),
   ) as unknown as KayfaApi;
@@ -3797,6 +3815,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     loseNextAnswer(went) { losing = { went }; },
     failNextRead(kind) { failing = kind; },
+    offline(on) { off = on; },
     visit(mod, post, o) {
       const p = acts.get(post);
       if (!p || (p.kind !== 'post' && p.kind !== 'spin')) throw new Error(`no such post ${post}`);

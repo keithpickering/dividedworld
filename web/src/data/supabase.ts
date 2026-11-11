@@ -30,7 +30,7 @@
  * never in a URL, a header or a channel name.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, NOT_SENT, ReadFailure, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, SEASON_NEWS_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -716,9 +716,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const refusal = (error: string, field?: string): Refusal => (field ? { ok: false, error, field } : { ok: false, error });
   /** No answer came back from a write: it may have gone through, and the caller looks before it tries again. */
   const uncertain = (): Refusal => ({ ok: false, error: LOST, uncertain: true });
+  /** Nothing left the device, or the server never ran the write: sending again cannot duplicate. */
+  const notSent = (error: string = NOT_SENT): Refusal => ({ ok: false, error, notSent: true });
+  const offline = (): boolean => typeof navigator !== 'undefined' && navigator.onLine === false;
 
   /** One POST to an edge function. `resend` is true only for a read (the estimate), never for a write. */
   async function edge(fn: string, body: unknown, lost: string, resend = false): Promise<Answer<Row>> {
+    if (!resend && offline()) return notSent();
     const token = await bearer();
     const send = async (): Promise<{ status: number; text: string } | null> => {
       try {
@@ -746,6 +750,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     if (got.status >= 200 && got.status < 300 && parsed) return { ok: true, value: parsed };
     const words = parsed ? str(parsed['error']) : null;
     /* A 5xx from a write is an answer that may not say whether it was done: its words are shown, and the caller looks before it resends. */
+    if (got.status >= 500 && !resend && lost === LOST && parsed?.['sent'] === false) return notSent(words ?? NOT_SENT);
     if (got.status >= 500 && !resend && lost === LOST) return { ok: false, error: words ?? LOST, uncertain: true };
     if (words) return refusal(words, str(parsed?.['field']) ?? undefined);
     return refusal(got.status >= 500 ? lost : NOT_DONE);
@@ -753,6 +758,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   /** A direct rpc that writes: its refusals are the server's words, a lost answer is never resent. */
   async function rpcWrite(run: () => PromiseLike<unknown>): Promise<Answer<Row>> {
+    if (offline()) return notSent();
     let r: Res;
     try {
       r = (await run()) as Res;
