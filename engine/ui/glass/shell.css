@@ -640,3 +640,14 @@
   right: 0;
   pointer-events: none;
 }
+
+/* A screen's body that swaps in place (ScreenBody.tsx): the body leaving stands where it was, out of the flow, so the one arriving is where it will stay. */
+.kb-screen-body {
+  position: relative;
+}
+
+.kb-screen-body > [data-kb-exiting] {
+  position: absolute;
+  inset: 0 0 auto;
+  pointer-events: none;
+}

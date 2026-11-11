@@ -23,6 +23,7 @@ import { SEASON_NEWS_PAGE, type Id, type MyCharacter, type Season, type SeasonNe
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { ENTERING, useEnterAdded } from '../glass/enter.ts';
 import { PageHead } from '../glass/PageHead.tsx';
+import { ScreenBody } from '../glass/ScreenBody.tsx';
 import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { RankingsScreen } from '../rankings/Rankings.tsx';
@@ -304,7 +305,9 @@ export function SeasonScreen({ doc }: { readonly doc: ScreenDoc<SeasonPage> }) {
         )}
       />
       <div role="tabpanel" id={`${ids}-panel`} aria-labelledby={`${ids}-tab-${tab}`} className="kb-season-panel">
-        {doc.tab === 'news' ? <NewsPanel doc={doc} /> : <RankingsScreen doc={doc} embedded season={shownSeason} character={shownCharacter} href={rankingsAt} />}
+        <ScreenBody at={TABS.findIndex((t) => t.key === tab)} axis="x">
+          {doc.tab === 'news' ? <NewsPanel doc={doc} /> : <RankingsScreen doc={doc} embedded season={shownSeason} character={shownCharacter} href={rankingsAt} />}
+        </ScreenBody>
       </div>
     </div>
   );
