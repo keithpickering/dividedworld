@@ -518,7 +518,7 @@ describe('reads and their rows', () => {
     const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
-    expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
+    expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
     expect(mine[1]?.presenceHidden).toBe(true);
     // A character with no profile row has no set to say: the engine's it/its.
     expect(mine[1]?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
@@ -2507,7 +2507,7 @@ describe('reports, appeals and what a page says of a ban', () => {
     const h = harness((r) => {
       const name = r.url.pathname.replace(`${REST}/`, '');
       if (name === 'rpc/presence_box') return json({ names: [{ id: B, name: 'The Clerk', staff: true, visit_post: 41 }, { id: C, name: 'Spritey', staff: false }], others: 0 });
-      if (name === 'my_characters') return rows([{ id: B, name: 'Pipewrench', class: 'heel', class_since: past, banned_until: future }, { id: C, name: 'Second', class: 'face', class_since: past, banned_until: past }]);
+      if (name === 'my_characters') return rows([{ id: B, name: 'Pipewrench', class: 'heel', class_since: past, class_shown_at: past, banned_until: future }, { id: C, name: 'Second', class: 'face', class_since: past, banned_until: past }]);
       if (name === 'moves_log') return rows([
         { id: A, kind: 'visit', params: { post: 41, rule: 'Rule 2: No double posting', band: 'minor', cause: 'rule' }, demand: null, expires_at: past, thread: T, at: past, ended_why: 'filed', ended_by: null, ended_at: past, kept_by: null },
         { id: C, kind: 'renameBoard', params: {}, demand: null, expires_at: null, thread: T, at: past, ended_why: null, ended_by: null, ended_at: null, kept_by: null },
@@ -2518,6 +2518,8 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect(presence.names).toEqual([{ id: B, name: 'The Clerk', staff: true, visitPost: 41 }, { id: C, name: 'Spritey', staff: false }]);
     const mine = await h.api.myCharacters();
     expect(mine[0]?.bannedUntil).toBe(future);
+    expect(mine[0]?.classShownAt).toBe(past);
+    expect(mine[1]?.classShownAt).toBeNull();
     expect(mine[1]?.bannedUntil).toBeUndefined();
     /* A page's character carries its warn points and its ban while it holds (characters_public, 0104); a ban that has run out is none. */
     const page = (until: string) => harness((r) => (r.url.pathname === `${REST}/rpc/profile_page` ? json({ character: { id: B, name: 'Pipewrench', joined: '2026-10-01', warn_points: 6, banned_until: until }, profile: null }) : undefined));

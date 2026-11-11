@@ -492,6 +492,21 @@ describe('what the public reads never prove', () => {
       { act: announced, character: anaFace, at: (await fake.act(announced))!.createdAt, was: 'heel' },
     ]);
   });
+  test('classShownAt is null until a reveal, set by it, null after a Turn, and a repeat reveal is refused', async () => {
+    const { fake, anaFace, thread } = world();
+    const shown = async () => (await fake.myCharacters()).find((c) => c.id === anaFace)!.classShownAt;
+    expect(await shown()).toBeNull();
+    const first = must(await fake.unmask(anaFace, thread, 'It was me'));
+    expect(await shown()).toBe(first.createdAt);
+    expect(await fake.unmask(anaFace, thread, 'again')).toEqual(refused('that character\'s class is already public; after a Turn, the new class can be revealed'));
+    must(await fake.turn(anaFace, 'heel', 'silent', false, false));
+    fake.clock.advance(DAY);
+    fake.seed.settle({});
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.class).toBe('heel');
+    expect(await shown()).toBeNull();
+    must(await fake.unmask(anaFace, thread, 'now a heel'));
+    expect(await shown()).not.toBeNull();
+  });
   test('an unmask is refused on The System\'s board, and past 200 characters', async () => {
     const { fake, anaFace, thread } = world();
     const sys = fake.seed.thread('announcements', null, 'Tally', '').thread;
