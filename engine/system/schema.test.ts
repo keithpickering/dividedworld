@@ -22,6 +22,16 @@ test('an empty schema nested in a property is named at its path', () => {
   assert.deepEqual(schemaProblems(s), [{ path: 'properties.moves.items.properties.params', predicate: 'emptySchema' }]);
 });
 
+test('an array with no items holds any value, named at its items', () => {
+  const s = obj({ notes: { type: 'array' } });
+  assert.deepEqual(schemaProblems(s), [{ path: 'properties.notes.items', predicate: 'emptySchema' }]);
+});
+
+test('a problem inside an anyOf branch is named at that branch', () => {
+  const s = obj({ pick: { anyOf: [str, { type: 'string', maxLength: 4 }] } });
+  assert.deepEqual(schemaProblems(s), [{ path: 'properties.pick.anyOf.1', predicate: 'keyword(maxLength)' }]);
+});
+
 test('maxItems is a keyword the provider refuses', () => {
   const s = obj({ findings: { type: 'array', items: str, maxItems: 3 } });
   assert.deepEqual(schemaProblems(s), [{ path: 'properties.findings', predicate: 'keyword(maxItems)' }]);

@@ -109,7 +109,9 @@ export function schemaProblems(schema: unknown, rules: SchemaRules = ANTHROPIC_S
       properties += keys.length;
       for (const k of keys) walk(props[k], join(join(path, 'properties'), k));
     }
+    // An array that names no items holds any value, as `{}` would, and the provider refuses that the same way.
     if (node.items !== undefined) walk(node.items, join(path, 'items'));
+    else if (node.type === 'array') problems.push({ path: join(path, 'items'), predicate: 'emptySchema' });
     if (Array.isArray(node.anyOf)) {
       unions += 1;
       node.anyOf.forEach((branch, i) => walk(branch, join(join(path, 'anyOf'), String(i))));
