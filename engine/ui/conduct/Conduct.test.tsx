@@ -20,10 +20,25 @@ const conduct: ConductUi = {
 };
 
 describe('the code of conduct, at /conduct', () => {
-  test('says what the board\'s Report and Report to admins each do, plainly', () => {
+  test('opens by naming both the board\'s Report and Report to admins', () => {
     renderInWorld(<Conduct />, { path: '/conduct', conduct });
     expect(screen.getByRole('heading', { level: 1, name: 'Code of conduct' })).toBeInTheDocument();
-    expect(screen.getByText('This is the code everyone here plays by. The board\'s own Report button is part of the game: a Mod Bot hears it, and what happens next is play. Report to admins, on a post\'s glass layer, reaches a person, and is for a post that breaks this code.')).toBeInTheDocument();
+    const lead = document.querySelector('.kb-acct-lead') as HTMLElement;
+    expect(lead.textContent).toContain('Report button');
+    expect(lead.textContent).toContain('Report to admins');
+  });
+
+  test('a heading inside a section\'s text is drawn below the section\'s own h2', () => {
+    renderInWorld(<Conduct />, { path: '/conduct', conduct: { version: 1, sections: [{ key: 'a', title: 'A.', text: '## Inside\n\nWords.' }] } });
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['A.']);
+    expect(screen.getByRole('heading', { level: 3, name: 'Inside' })).toBeInTheDocument();
+  });
+
+  test('a script and a javascript: link in the text never reach the page as script or href', () => {
+    renderInWorld(<Conduct />, { path: '/conduct', conduct: { version: 1, sections: [{ key: 'a', title: 'A.', text: '<script>window.__pwned = 1</script>\n\n[click](javascript:alert(1))' }] } });
+    expect(document.querySelector('script')).toBeNull();
+    expect(document.querySelector('a[href^="javascript:" i]')).toBeNull();
+    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
   });
 
   test('lists the instance\'s sections in order, each an h2 with an anchor equal to its key, its Markdown drawn', () => {

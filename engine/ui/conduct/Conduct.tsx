@@ -33,7 +33,7 @@ export function Conduct() {
         {sections.map((s) => (
           <section key={s.key} id={s.key} className="kb-conduct-section" aria-labelledby={`${s.key}-title`}>
             <h2 id={`${s.key}-title`} className="kb-conduct-title">{s.title}</h2>
-            <div className="kb-conduct-text"><Blocks blocks={s.blocks} fill={fill} /></div>
+            <div className="kb-conduct-text"><Blocks blocks={s.blocks} fill={fill} demote={1} /></div>
           </section>
         ))}
       </CalmRegion>

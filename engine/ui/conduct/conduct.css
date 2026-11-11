@@ -1,10 +1,9 @@
 /*
  * The code of conduct (Conduct.tsx): the account screens' frame (account.css: the heading, the panel, the lead) with each section ruled off
- * under the lead, its bold sentence a heading and its words below. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx
- * reads this file).
+ * under the lead, its bold sentence a heading and its words below, set like the guide's prose (guide.css). Sizes are the glass's tokens and
+ * rem, and the rule is a hairline like the account rows' (engine/ui/glass/board.test.tsx reads this file for font sizes).
  */
 .kb-conduct-section {
-  max-width: 920px;
   padding-block: 1rem;
   border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
 }
@@ -17,4 +16,35 @@
 
 .kb-conduct-text p {
   margin: 0 0 0.75rem;
+}
+
+.kb-conduct-text h3,
+.kb-conduct-text h4,
+.kb-conduct-text h5,
+.kb-conduct-text h6 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-conduct-text ul,
+.kb-conduct-text ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.75rem;
+}
+
+.kb-conduct-text li {
+  margin: 0.375rem 0;
+}
+
+.kb-conduct-text blockquote {
+  margin: 0 0 0.75rem;
+  padding-left: 1.125rem;
+  color: var(--kb-glass-text-2);
+  box-shadow: inset 3px 0 0 var(--kb-glass-neon);
+}
+
+.kb-conduct-text blockquote p:first-child {
+  margin-top: 0;
 }

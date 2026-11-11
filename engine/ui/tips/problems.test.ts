@@ -41,6 +41,22 @@ describe('instanceUiProblems', () => {
     const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
     for (const text of ['', ' \n ']) assert.deepEqual(withConduct({ version: 1, sections: [{ key: 'a', title: 'A.', text }] }), ['the conduct section "a" has no text']);
   });
+  test('holds a conduct key to the shape of an id, reports a missing key and an entry that is not a section', () => {
+    const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
+    const one = (key: unknown) => withConduct({ version: 1, sections: [{ key, title: 'A.', text: 'x' }] });
+    assert.deepEqual(one('two words'), ['the conduct section key "two words" is not an id: a letter, then letters, digits, hyphens or underscores']);
+    assert.deepEqual(one('1st'), ['the conduct section key "1st" is not an id: a letter, then letters, digits, hyphens or underscores']);
+    assert.deepEqual(one('onBoard'), []);
+    assert.deepEqual(one(''), ['a conduct section has no key']);
+    assert.deepEqual(one(undefined), ['a conduct section has no key']);
+    assert.deepEqual(withConduct({ version: 1, sections: [null] }), ['a conduct section is not a section']);
+    assert.deepEqual(withConduct({ version: 1, sections: ['x'] }), ['a conduct section is not a section']);
+  });
+  test('reports a bad conduct and a missing onboarding together', () => {
+    const { onboarding: _o, ...rest } = ui(good);
+    const bad = { ...rest, conduct: { version: 0, sections: [{ key: 'a', title: 'A.', text: 'x' }] } } as never;
+    assert.deepEqual(instanceUiProblems(bad, rules), ['the conduct version is not a positive whole number', 'the instance UI has no onboarding']);
+  });
   test('holds the code of conduct to a positive whole version, unique keys, and a title and words in every section', () => {
     const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
     const sec = (key: string, title: string, text: string) => ({ key, title, text });

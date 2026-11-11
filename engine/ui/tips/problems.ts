@@ -65,7 +65,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   }
   out.push(...conductProblems(ui.conduct));
   const on = ui.onboarding;
-  if (typeof on !== 'object' || on === null) return ['the instance UI has no onboarding'];
+  if (typeof on !== 'object' || on === null) return [...out, 'the instance UI has no onboarding'];
   const tips: Record<string, { title?: unknown; line?: unknown; action?: unknown } | undefined> = on.tips ?? {};
   for (const key of TIP_KEYS) {
     const tip = tips[key];
@@ -96,13 +96,15 @@ function conductProblems(conduct: unknown): string[] {
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) out.push('the conduct version is not a positive whole number');
   if (!Array.isArray(sections) || sections.length === 0) return [...out, 'the conduct has no sections'];
   const seen = new Set<string>();
-  for (const sec of sections as readonly { key?: unknown; title?: unknown; text?: unknown }[]) {
-    const key = typeof sec?.key === 'string' ? sec.key : '';
+  for (const sec of sections as readonly ({ key?: unknown; title?: unknown; text?: unknown } | null)[]) {
+    if (typeof sec !== 'object' || sec === null) { out.push('a conduct section is not a section'); continue; }
+    const key = typeof sec.key === 'string' ? sec.key : '';
     if (key.trim() === '') out.push('a conduct section has no key');
+    else if (!/^[A-Za-z][\w-]*$/u.test(key)) out.push(`the conduct section key "${key}" is not an id: a letter, then letters, digits, hyphens or underscores`);
     else if (seen.has(key)) out.push(`the conduct has two sections with the key "${key}"`);
     seen.add(key);
-    if (typeof sec?.title !== 'string' || sec.title.trim() === '') out.push(`the conduct section "${key}" has no title`);
-    if (typeof sec?.text !== 'string' || sec.text.trim() === '') out.push(`the conduct section "${key}" has no text`);
+    if (typeof sec.title !== 'string' || sec.title.trim() === '') out.push(`the conduct section "${key}" has no title`);
+    if (typeof sec.text !== 'string' || sec.text.trim() === '') out.push(`the conduct section "${key}" has no text`);
   }
   return out;
 }
