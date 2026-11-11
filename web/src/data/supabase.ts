@@ -1889,11 +1889,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     post: (thread, character, body, quote, framing) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing) }, toAct),
     edit: (post, character, body) => act({ action: 'edit', post, character, body }, toAct),
     spin: (origin, character, title, body, framing) => act({ action: 'spin', origin, character, title, body, ...framed(framing) }, withThread),
-    async apologize(move, character, title, body, framing) {
-      if (!idOk(move) || !idOk(character)) return refusal('that move could not be found');
-      const a = await rpcWrite(() => client.rpc('apologize', { in_move: move, through: character, title, body, ...framed(framing) }));
-      return a.ok ? { ok: true, value: withThread(a.value) } : a;
-    },
+    apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: (r['tally'] ?? {}) as Tally })),
     turn: (character, to, loudness, showFrom, showTo) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),

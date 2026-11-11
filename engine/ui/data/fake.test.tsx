@@ -2694,6 +2694,39 @@ describe('framed alerts', () => {
     must(await w.fake.apologize(move, w.anaFace, 'Sorry', w.named(w.boFace), [w.boFace]));
     expect(await w.framedFor(w.bo)).toHaveLength(1);
   });
+  describe('an apology is read as the action rule reads it, before anything else', () => {
+    function apologyWorld() {
+      const w = framedWorld();
+      const at = Date.now() - 3_600_000;
+      const move = w.fake.seed.groupMove('boss', { character: w.anaFace, group: 'trialMembers', board: 'general', at, expiresAt: at + 86_400_000 });
+      const wrote = async () => ({ threads: (await w.fake.threads('general', { offset: 0, limit: 50 })).total, apologies: await w.fake.myApologies(w.anaFace) });
+      return { ...w, move, wrote };
+    }
+    test.each([['empty', ''], ['whitespace', '  \n ']])('a %s body is refused by body, and writes no thread, Act or apology', async (_name, body) => {
+      const w = apologyWorld();
+      const before = await w.wrote();
+      const acts = await w.fake.thread(w.thread);
+      const answer = await w.fake.apologize(w.move, w.anaFace, 'Sorry', body);
+      expect(answer).toMatchObject({ ok: false, field: 'body', error: 'is empty' });
+      expect(await w.wrote()).toEqual(before);
+      expect(await w.fake.thread(w.thread)).toEqual(acts);
+    });
+    test('a title over the limit is refused by title', async () => {
+      const w = apologyWorld();
+      const before = await w.wrote();
+      expect(await w.fake.apologize(w.move, w.anaFace, 'x'.repeat(21), 'I was wrong.')).toMatchObject({ ok: false, field: 'title', error: 'is longer than 20 characters' });
+      expect(await w.wrote()).toEqual(before);
+    });
+    test('signed out, it is refused with "sign in to act"', async () => {
+      const w = apologyWorld();
+      w.fake.signOut();
+      expect(await w.fake.apologize(w.move, w.anaFace, 'Sorry', 'I was wrong.')).toMatchObject({ ok: false, error: 'sign in to act' });
+    });
+    test('with a body it is sent', async () => {
+      const w = apologyWorld();
+      expect((await w.fake.apologize(w.move, w.anaFace, 'Sorry', 'I was wrong.')).ok).toBe(true);
+    });
+  });
   test('none for an undebuted, unknown, unnamed-in-the-body, staff or own-mask target, and the answer is the same ok', async () => {
     const w = framedWorld();
     const nowhere = '99999999-9999-4999-8999-999999999999';

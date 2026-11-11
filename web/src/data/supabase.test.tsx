@@ -861,6 +861,30 @@ describe('writes through the act function', () => {
     }
   });
 
+  it('sends an apology to the act function, never to the apologize rpc, and maps its answer as a spin\'s', async () => {
+    const thread = { id: T, board: C, title: 'Sorry', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' };
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ thread, act: ACT_ROW }) : undefined));
+    const plain = await h.api.apologize(A, B, 'Sorry', 'I am sorry');
+    await h.api.apologize(A, B, 'Sorry', 'I am sorry', [C]);
+    expect(act(h).map((r) => r.body)).toEqual([
+      { action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry' },
+      { action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry', framing: [C] },
+    ]);
+    expect(h.to('rpc/apologize')).toHaveLength(0);
+    expect(plain).toEqual(await h.api.spin(A, B, 'Sorry', 'I am sorry'));
+    expect(plain.ok && plain.value.act).toEqual(ACT);
+
+    const refused = harness(() => json({ error: 'body is empty', field: 'body' }, 400));
+    expect(await refused.api.apologize(A, B, 'Sorry', '')).toEqual({ ok: false, error: 'body is empty', field: 'body' });
+    expect(refused.to('rpc/apologize')).toHaveLength(0);
+
+    const lost = harness(() => json({ error: 'down' }, 503));
+    const r = await lost.api.apologize(A, B, 'Sorry', 'I am sorry');
+    expect(r.ok === false && r.uncertain).toBe(true);
+    expect(act(lost)).toHaveLength(1);
+    expect(lost.to('rpc/apologize')).toHaveLength(0);
+  });
+
   it('maps the Turn, character and invite answers', async () => {
     const h = harness((r) => {
       const a = (r.body as { action: string }).action;
