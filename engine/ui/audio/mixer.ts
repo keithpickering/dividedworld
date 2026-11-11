@@ -8,10 +8,13 @@
  * resolves null at once and fetches nothing. A file is fetched and decoded once a page; a failure resolves null for that
  * play and is tried again on the next, and the mixer never throws into its caller.
  *
+ * `fadeMs` on `play` is the cross-fade between sounds of one group, so it does nothing without a `group`: a sound in no group
+ * starts at full level and plays through, overlapping whatever else sounds.
+ *
  * Engine code: it names no card and no instance.
  */
 import type { SoundBus, SoundSlot } from './types.ts';
-export interface AudioParamLike { value: number; setValueAtTime(v: number, t: number): unknown; linearRampToValueAtTime(v: number, t: number): unknown; setTargetAtTime(v: number, t: number, c: number): unknown }
+export interface AudioParamLike { value: number; cancelScheduledValues(t: number): unknown; setValueAtTime(v: number, t: number): unknown; linearRampToValueAtTime(v: number, t: number): unknown; setTargetAtTime(v: number, t: number, c: number): unknown }
 export interface GainNodeLike { gain: AudioParamLike; connect(to: unknown): unknown; disconnect(): unknown }
 export interface SourceLike { buffer: unknown; loop: boolean; onended: (() => void) | null; connect(to: unknown): unknown; disconnect(): unknown; start(when?: number): unknown; stop(when?: number): unknown }
 export interface AudioContextLike {
@@ -29,13 +32,16 @@ export interface Mixer {
   loop(slot: SoundSlot, o?: { group?: string }): Promise<LoopHandle | null>;
 }
 export function createMixer(deps: MixerDeps): Mixer {
+  /** The context once made; `ctx` is the same context once it has resumed, and only then may anything sound. */
+  let made: AudioContextLike | null = null;
   let ctx: AudioContextLike | null = null;
   const buses: Record<SoundBus, { on: boolean; volume: number; node: GainNodeLike | null }> = {
     game: { on: false, volume: 100, node: null },
     interface: { on: false, volume: 100, node: null },
   };
   const loops: Record<SoundBus, Set<LoopHandle>> = { game: new Set(), interface: new Set() };
-  const groups = new Map<string, { voice: GainNodeLike; source: SourceLike }>();
+  /** A group's current voice, and the way to end it over `fadeMs` (a play fades out, a loop stops). */
+  const groups = new Map<string, { source: SourceLike; end(fadeMs: number): void }>();
   const buffers = new Map<string, Promise<{ readonly duration: number } | null>>();
 
   const level = (b: SoundBus): number => (buses[b].on ? Math.min(Math.max(buses[b].volume, 0), 100) / 100 : 0);
@@ -62,8 +68,10 @@ export function createMixer(deps: MixerDeps): Mixer {
   }
   /** Fade a voice out over `fadeMs` and stop its source then; the source's end disconnects both. */
   function fadeOut(c: AudioContextLike, voice: GainNodeLike, source: SourceLike, fadeMs: number): void {
-    const at = c.currentTime + Math.max(fadeMs, 0) / 1000;
-    voice.gain.setValueAtTime(voice.gain.value, c.currentTime);
+    const now = c.currentTime;
+    const at = now + Math.max(fadeMs, 0) / 1000;
+    voice.gain.cancelScheduledValues(now);
+    voice.gain.setValueAtTime(voice.gain.value, now);
     voice.gain.linearRampToValueAtTime(0, at);
     source.stop(at);
   }
@@ -74,8 +82,10 @@ export function createMixer(deps: MixerDeps): Mixer {
     const voice = c.createGain();
     source.buffer = buffer;
     source.loop = looped;
-    voice.gain.value = fadeInMs > 0 ? 0 : 1;
-    if (fadeInMs > 0) voice.gain.linearRampToValueAtTime(1, c.currentTime + fadeInMs / 1000);
+    if (fadeInMs > 0) {
+      voice.gain.setValueAtTime(0, c.currentTime);
+      voice.gain.linearRampToValueAtTime(1, c.currentTime + fadeInMs / 1000);
+    } else voice.gain.value = 1;
     source.connect(voice);
     voice.connect(bus);
     source.onended = () => { source.disconnect(); voice.disconnect(); };
@@ -101,12 +111,13 @@ export function createMixer(deps: MixerDeps): Mixer {
     },
     async unlock() {
       try {
-        ctx ??= deps.makeContext();
-        await ctx.resume();
+        made ??= deps.makeContext();
+        await made.resume();
+        ctx = made;
       } catch { /* a browser that refuses leaves the mixer locked; the next gesture tries again */ }
     },
-    async suspend() { try { await ctx?.suspend(); } catch { /* nothing to suspend */ } },
-    async resume() { try { await ctx?.resume(); } catch { /* nothing to resume */ } },
+    async suspend() { try { await made?.suspend(); } catch { /* nothing to suspend */ } },
+    async resume() { try { await made?.resume(); } catch { /* nothing to resume */ } },
     async play(slot, o = {}) {
       try {
         const r = await ready(slot);
@@ -114,11 +125,11 @@ export function createMixer(deps: MixerDeps): Mixer {
         const { c, buffer } = r;
         const fadeMs = o.fadeMs ?? 0;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
-        if (prior) fadeOut(c, prior.voice, prior.source, fadeMs);
+        if (prior) prior.end(fadeMs);
         const { source, voice } = start(c, slot, buffer, false, o.group === undefined ? 0 : fadeMs);
         if (o.group !== undefined) {
           const group = o.group;
-          groups.set(group, { voice, source });
+          groups.set(group, { source, end: (ms) => fadeOut(c, voice, source, ms) });
           const done = source.onended;
           source.onended = () => { done?.(); if (groups.get(group)?.source === source) groups.delete(group); };
         }
@@ -131,20 +142,27 @@ export function createMixer(deps: MixerDeps): Mixer {
         if (!r) return null;
         const { c, buffer } = r;
         const prior = o.group === undefined ? undefined : groups.get(o.group);
-        if (prior) fadeOut(c, prior.voice, prior.source, 0);
+        if (prior) prior.end(0);
         const { source, voice } = start(c, slot, buffer, true, 0);
         let stopped = false;
         const handle: LoopHandle = {
-          setGain(g) { if (!stopped) voice.gain.setTargetAtTime(Math.min(Math.max(g, 0), 1), c.currentTime, 0.05); },
+          setGain(g) {
+            if (stopped) return;
+            const now = c.currentTime;
+            voice.gain.cancelScheduledValues(now);
+            voice.gain.setValueAtTime(voice.gain.value, now);
+            voice.gain.setTargetAtTime(Math.min(Math.max(g, 0), 1), now, 0.05);
+          },
           stop(fadeMs) {
             if (stopped) return;
             stopped = true;
             loops[slot.bus].delete(handle);
+            if (o.group !== undefined && groups.get(o.group)?.source === source) groups.delete(o.group);
             fadeOut(c, voice, source, fadeMs);
           },
         };
         loops[slot.bus].add(handle);
-        if (o.group !== undefined) groups.set(o.group, { voice, source });
+        if (o.group !== undefined) groups.set(o.group, { source, end: handle.stop });
         return handle;
       } catch { return null; }
     },

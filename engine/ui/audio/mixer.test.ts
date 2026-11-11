@@ -5,11 +5,13 @@ import type { SoundSlot } from './types.ts';
 
 class FakeParam {
   value = 1;
+  log: string[] = [];
   targets: Array<[number, number, number]> = [];
   ramps: Array<[number, number]> = [];
-  setValueAtTime(v: number, _t: number) { this.value = v; }
-  linearRampToValueAtTime(v: number, t: number) { this.ramps.push([v, t]); }
-  setTargetAtTime(v: number, t: number, c: number) { this.targets.push([v, t, c]); }
+  setValueAtTime(v: number, t: number) { this.value = v; this.log.push(`set ${v} ${t}`); }
+  cancelScheduledValues(t: number) { this.log.push(`cancel ${t}`); }
+  linearRampToValueAtTime(v: number, t: number) { this.ramps.push([v, t]); this.log.push(`ramp ${v} ${t}`); }
+  setTargetAtTime(v: number, t: number, c: number) { this.targets.push([v, t, c]); this.log.push(`target ${v} ${t}`); }
 }
 class FakeGain {
   gain = new FakeParam();
@@ -165,5 +167,64 @@ describe('mixer', () => {
     ctx.resume.mock.resetCalls();
     await m.resume();
     assert.equal(ctx.resume.mock.callCount(), 1);
+  });
+
+  it('8. a replaced voice has its pending ramps cancelled before its fade-out, and the new voice ramps in from 0', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    await m.play(boo, { group: 'g', fadeMs: 2000 });
+    const oldVoice = ctx.gains[1]!;
+    assert.deepEqual(oldVoice.gain.log.slice(0, 2), ['set 0 10', 'ramp 1 12']);
+    ctx.currentTime = 10.5;
+    await m.play(cheer, { group: 'g', fadeMs: 2000 });
+    const log = oldVoice.gain.log;
+    const cancel = log.indexOf('cancel 10.5');
+    assert.ok(cancel > 1, 'cancelled after the fade-in was scheduled');
+    assert.ok(log.indexOf('ramp 0 12.5') > cancel, 'fade-out ramps after the cancel');
+    const newVoice = ctx.gains[2]!;
+    assert.deepEqual(newVoice.gain.log, ['set 0 10.5', 'ramp 1 12.5']);
+  });
+
+  it('9. setGain cancels what was scheduled before it targets', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    const h = (await m.loop(slot('build', { loop: true })))!;
+    h.setGain(0.5);
+    const log = ctx.gains[1]!.gain.log;
+    assert.deepEqual(log.slice(-3), ['cancel 10', 'set 1 10', 'target 0.5 10']);
+  });
+
+  it('10. a rejected resume leaves the mixer locked, and a later unlock can unlock it', async () => {
+    const m = make();
+    ctx.resume = mock.fn(async () => { throw new Error('blocked'); });
+    m.setBus('game', { on: true, volume: 100 });
+    await m.unlock();
+    assert.equal(await m.play(boo), null);
+    assert.equal(await m.loop(boo), null);
+    assert.equal(fetchBytes.mock.callCount(), 0);
+    ctx.resume = mock.fn(async () => {});
+    await m.unlock();
+    assert.equal(makeContext.mock.callCount(), 1);
+    assert.deepEqual(await m.play(boo), { lengthMs: 1500 });
+  });
+
+  it('11. a stopped loop leaves its group, and a loop faded out by its group stops answering setGain', async () => {
+    const m = make();
+    await m.unlock();
+    m.setBus('game', { on: true, volume: 100 });
+    const l1 = (await m.loop(slot('build', { loop: true }), { group: 'g' }))!;
+    const v1 = ctx.gains[1]!;
+    l1.stop(0);
+    await m.play(boo, { group: 'g', fadeMs: 100 });
+    assert.equal(ctx.sources[0]!.stoppedAt, 10, 'the stopped loop is not stopped again by the group');
+    assert.equal(v1.gain.log.filter((l) => l.startsWith('ramp')).length, 1);
+    const l2 = (await m.loop(slot('build2', { loop: true }), { group: 'g' }))!;
+    const v2 = ctx.gains[3]!;
+    await m.play(cheer, { group: 'g', fadeMs: 100 });
+    const before = v2.gain.log.length;
+    l2.setGain(0.9);
+    assert.equal(v2.gain.log.length, before);
   });
 });
