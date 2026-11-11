@@ -383,6 +383,10 @@ describe('refit and re-attach', () => {
   it('a window that narrows refits the page\'s tiles, and landPage\'s way out stops listening', () => {
     const add = vi.spyOn(window, 'addEventListener'), rem = vi.spyOn(window, 'removeEventListener');
     const out = keep(landPage());
+    /* The page's own listeners: what landPage() itself handed addEventListener for 'resize', before anything else runs. */
+    const resizes = (spy: typeof add) => spy.mock.calls.filter((c) => c[0] === 'resize').map((c) => c[1]);
+    const ours = resizes(add);
+    expect(ours.length).toBeGreaterThan(0);
     drop(300, 300);
     settle();
     const tile = pageTiles()[0]!;
@@ -392,12 +396,10 @@ describe('refit and re-attach', () => {
     window.dispatchEvent(new Event('resize'));
     expect(tile.style.width).toBe('330px');
     expect(tile.width).toBe(330);
+    expect(resizes(rem)).toEqual([]);
     out();
-    /* The page's own listener only (the loop's has its own way out). */
-    const ours = (c: unknown[]) => c[0] === 'resize' && (c[1] as { name?: string }).name === 'onResize';
-    const added = add.mock.calls.filter(ours), removed = rem.mock.calls.filter(ours);
-    expect(added.length).toBeGreaterThan(0);
-    expect(removed.map((c) => c[1])).toEqual(added.map((c) => c[1]));
+    /* Every listener the page added is the one it took away. */
+    for (const l of ours) expect(resizes(rem)).toContain(l);
   });
 
   it('a zero or NaN rect gives a tile of a pixel, never a NaN size, and never throws', () => {
@@ -407,11 +409,31 @@ describe('refit and re-attach', () => {
     settle();
     const tile = cellTiles(main)[0]!;
     FakeObserver.report(tile, true);
-    for (const [w, h] of [[0, 0], [NaN, NaN]] as const) {
+    /* Each bad rect follows a real size, so a stale 1px cannot pass for the answer and a refused 'NaNpx' leaves 400px behind. */
+    for (const [w, h] of [[NaN, NaN], [0, 0], [NaN, 0]] as const) {
+      resize(main, 400, 150);
+      FakeResize.fire(main);
+      expect([tile.style.width, tile.style.height]).toEqual(['400px', '150px']);
       resize(main, w, h);
       expect(() => FakeResize.fire(main)).not.toThrow();
       expect([tile.style.width, tile.style.height]).toEqual(['1px', '1px']);
     }
+  });
+
+  it('a cell that resizes re-attaches a tile detached from it, though the observer has not spoken', () => {
+    const { article, main } = post();
+    keep(landPost(article));
+    drop(300, 250);
+    settle();
+    const tile = cellTiles(main)[0]!;
+    /* Out of view, so refit's own draw (which attaches too) does not run: only refit's attach can bring it back. */
+    FakeObserver.report(tile, false);
+    main.textContent = 'replaced';
+    expect(tile.isConnected).toBe(false);
+    resize(main, 400, 150);
+    expect(() => FakeResize.fire(main)).not.toThrow();
+    expect(tile.parentElement).toBe(main);
+    expect(tile.style.width).toBe('400px');
   });
 
   it('a tile React detached comes back to its cell when the observer next speaks, in view or not, and never throws', () => {
