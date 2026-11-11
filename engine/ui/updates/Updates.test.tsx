@@ -45,7 +45,7 @@ function world(o: { updates?: number } = {}) {
   const newest = seed.update({
     title: 'Traps now bite board cards',
     body: 'Somebody played Main Event on a pinned thread.\n\nThe trap was right to be offended.',
-    changes: [{ label: 'Trap Card', text: 'can now catch a card played on a thread or a board.' }, { label: 'Fixed:', text: 'the log names what a card was played on.' }, { label: '', text: 'No label on this one.' }],
+    changes: [{ label: 'Card Collector', text: 'can now catch a card played on a thread or a board.' }, { label: 'Fixed:', text: 'the log names what a card was played on.' }, { label: '', text: 'No label on this one.' }],
     at: at(2),
   });
   for (let i = 0; i < (o.updates ?? 0); i++) seed.update({ title: `Older ${i}`, body: 'x', at: at(1) - (i + 1) * 3_600_000 });
@@ -312,7 +312,7 @@ describe('a thread spun from an update', () => {
     const origin = await screen.findByRole('group', { name: 'Origin' });
     await waitFor(() => expect(within(origin).getByText('Traps now bite board cards')).toBeInTheDocument());
     expect(within(origin).getByText('The trap was right to be offended.')).toBeInTheDocument();
-    expect(within(origin).getByRole('list', { name: 'What changed' })).toHaveTextContent('Trap Card can now catch a card played on a thread or a board.');
+    expect(within(origin).getByRole('list', { name: 'What changed' })).toHaveTextContent('Card Collector can now catch a card played on a thread or a board.');
     expect(await within(origin).findByText('Gabe')).toBeInTheDocument();
     const back = within(origin).getByRole('link', { name: 'the update “Traps now bite board cards”' });
     expect(back).toHaveAttribute('href', `/updates?update=${encodeURIComponent(w.newest)}`);

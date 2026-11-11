@@ -1034,7 +1034,7 @@ export interface WalletEvent {
  */
 export interface CardEvent {
   readonly card: string;
-  /** `caught`: a card a Trap Card of the player's took (0142); its `act` is the spring, and it cost nothing. */
+  /** `caught`: a card a catching set card of the player's took (0142); its `act` is the spring, and it cost nothing. */
   readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
@@ -1046,7 +1046,7 @@ export interface CardEvent {
   readonly at: string;
   /** For a card the player set face down, whether it carries a trap: false for a card with no trap, which never springs. Absent on any other row. */
   readonly springs?: boolean;
-  /** For a card the player set face down, the card a Trap Card waits to catch (`my_face_down.catches`, the setter's own row), where it was read. */
+  /** For a card the player set face down, the card a catching set card waits to catch (`my_face_down.catches`, the setter's own row), where it was read. */
   readonly catches?: string;
   /** For a Move the player set face down, the phrase the quote must hold for it to land (`my_face_down.phrase`), where it was read. */
   readonly phrase?: string;
@@ -2175,7 +2175,7 @@ export interface KayfaApi {
   /**
    * Set a card the player holds face down on a post of the character's own (the card mechanic's design, section 3): its Act, a card
    * back, comes back naming no card. A trap that strikes carries the struck card's settings (`config`), which that card's rules check.
-   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a Gimmick.
+   * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a set card.
    */
   setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
   /**

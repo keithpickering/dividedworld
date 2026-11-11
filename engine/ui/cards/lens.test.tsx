@@ -206,6 +206,28 @@ describe('what the Lens says and offers', () => {
     expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Does a thing.');
   });
 
+  test('a ward with several conditions shows its full list in the report line', async () => {
+    width(false);
+    const warded = {
+      ...instance,
+      cards: instance.cards.map((c) => (c.key === 'k2' ? { ...c, play: 'use' as const, gimmick: { kind: 'ward' as const, upTo: 'uncommon' as const, flavors: ['salty' as const, 'sweet' as const], cards: ['k3', 'k4'] }, lasts: { unit: 'day' as const, count: 7 } } : c)),
+    };
+    const fake = buildWorld(undefined, warded);
+    const me = fake.seed.account('me');
+    const spritey = fake.seed.character(fake.seed.account('other'), 'Spritey', 'face');
+    fake.seed.character(me, 'Pipewrench', 'heel');
+    const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+    const second = fake.seed.post(thread, spritey, 'post 2');
+    fake.signInAs(me);
+    fake.clock.advance(60_000);
+    fake.seed.card(spritey, second, 'k2', { ends: new Date(Date.now() + 3_600_000).toISOString() });
+    renderIn(fake, <LoadedThread thread={thread} />, { path: `/t/${thread}`, instance: warded, cards });
+    await userEvent.click(await markOf(2, 'Card 2'));
+    const report = lens().querySelector('.kb-lens-report');
+    expect(report).toHaveTextContent('Turns away cards up to uncommon, Salty and Sweet cards, Card 3 and Card 4.');
+    expect(within(lens()).getByRole('tabpanel')).toHaveTextContent('Turns away some cards');
+  });
+
   test('Act draws the view\'s controls from the kit, and a card with none has no Act row', async () => {
     width(false);
     const w = world();

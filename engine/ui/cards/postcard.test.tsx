@@ -285,7 +285,7 @@ describe('the frame says how a card is played', () => {
 
   test('forced colors keep the lines, in the system\'s text color', () => {
     const forced = css.slice(css.indexOf('@media (forced-colors: active)'));
-    expect(forced).toMatch(/data-kb-play='set'\]::before[^{]*\{[^}]*CanvasText/u);
+    expect(forced).toMatch(/data-kb-play='set'\]::before[^{]*\{[^}]*2px solid CanvasText/u);
     expect(forced).toMatch(/data-kb-play='use'\]::before[^{]*\{[^}]*CanvasText/u);
     expect(forced).toMatch(/\.kb-postcard-fold[^{]*\{[^}]*CanvasText/u);
   });

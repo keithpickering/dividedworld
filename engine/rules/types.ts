@@ -352,7 +352,7 @@ export interface InputAct {
   readonly reach?: BeyondPost;
   /** The Act that sprang a `spring`: the cast it caught or the visit that tripped it. A spring is scored against it, not its trapped post; absent on older rows, which keep the trapped post. */
   readonly by?: string;
-  /** When a use card's play ends (its `payload.ends`): an Earn Gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing. An admin-ended play is not in the input. */
+  /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing. An admin-ended play is not in the input. */
   readonly ends?: number;
   /** The character a character-reach play is on. */
   readonly on?: string;
@@ -432,7 +432,7 @@ export interface ReceivedReaction {
   readonly at: number;
   /** When the reacted Act was posted: public, as every post and card shows its time. */
   readonly actAt: number;
-  /** The reaction's kind (its key): public as the quadrant is, and what an Earn Gimmick that names a reaction reads. */
+  /** The reaction's kind (its key): public as the quadrant is, and what an earn gimmick that names a reaction reads. */
   readonly kind: string;
   /**
    * What this window pays of the reacting player's one vote on the Act, in this quadrant, times
@@ -581,7 +581,7 @@ export interface Earning {
   readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
-  /** The kind of the one reaction it pays for, where it pays for one: an Earn Gimmick that names reactions boosts by it. */
+  /** The kind of the one reaction it pays for, where it pays for one: an earn gimmick that names reactions boosts by it. */
   readonly kind?: string;
   /**
    * The reactions it pays for, where they are not on `act`: on this Act, after this time (a card's

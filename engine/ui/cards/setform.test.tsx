@@ -1,7 +1,7 @@
 /**
- * The play form's two ways for a Move, and a Gimmick's one (docs/plans/2026-11-07-face-down-moves-plan.md, Task 8; the design's section 8):
+ * The play form's two ways for a Move, and a set card's one (docs/plans/2026-11-07-face-down-moves-plan.md, Task 8; the design's section 8):
  * on one's own post a Move offers "Play it now" and "Set face down" (a radio pair, Play chosen); Set swaps the price and message rows for what
- * the set does and keeps the card's own settings; a Gimmick opens as Set with no choice and says what it does, from its rules. The cards are
+ * the set does and keeps the card's own settings; a set card opens as Set with no choice and says what it does, from its rules. The cards are
  * the engine's test set; none is a Divided World card.
  */
 import { screen, waitFor, within } from '@testing-library/react';
@@ -36,7 +36,7 @@ function Ink({ config, onChange, id, castable }: ConfigFormProps) {
     </fieldset>
   );
 }
-/** A picker as Trap Card's: one radio for each castable card, nothing chosen until the player chooses. */
+/** A picker as a catching set card's: one radio for each castable card, nothing chosen until the player chooses. */
 function Pick({ config, onChange, id, castable }: ConfigFormProps) {
   return (
     <fieldset>
@@ -188,7 +188,7 @@ describe('a Move on one\'s own post', () => {
   });
 });
 
-describe('a Gimmick', () => {
+describe('a set card', () => {
   test('opens as Set with no choice, says what it does from its rules, and shows only its own posts\' marks', async () => {
     const user = userEvent.setup();
     const w = world();
@@ -197,7 +197,7 @@ describe('a Gimmick', () => {
     expect(within(dialog).queryByRole('group', { name: 'How to play it' })).toBeNull();
     expect(dialog.querySelector('[data-kb-sets]')).toHaveTextContent('Waits for the card it names to be cast on this post, and takes it.');
     expect(within(dialog).getByRole('button', { name: 'Set face down as Pipewrench' })).toBeInTheDocument();
-    /* Only the cards cast on a post: no Use (Shield), no Gimmick (Snare, Pass, Dud), no card beyond a post (Spark). */
+    /* Only the cards cast on a post: no Use (Shield), no set card (Snare, Pass, Dud), no card beyond a post (Spark). */
     expect(within(dialog).getAllByRole('radio').map((r) => r.getAttribute('aria-label'))).toEqual(['Blot']);
     expect(within(post(2)).queryByRole('button', { name: /face down on post/u })).toBeNull();
   });
@@ -240,7 +240,7 @@ describe('a Gimmick', () => {
 });
 
 describe('landing, asked as a Set', () => {
-  test('a Move lands face down where its cast is not offered, and a cast Gimmick without a configuration still lands', () => {
+  test('a Move lands face down where its cast is not offered, and a cast set card without a configuration still lands', () => {
     const ctx = { cards: instance.cards, setLasts: instance.settings.setLasts };
     const target = { id: 'p', kind: 'post', currentPayload: { body: 'x' } } as never;
     expect(landing(spark, target, [], { ...ctx, faceDown: true }).ok).toBe(true);

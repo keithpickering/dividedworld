@@ -381,7 +381,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         record['cardConfig'] = config;
         // Unlike supabase/functions/act/core.ts's play_card, staff_play_card is sent no `version`, so an edit landing between the read
         // above and this play is not refused (as before the options existed).
-        // A Trap Card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
+        // A catching set card's named catch is what its own rules read from the configuration the card's rules accepted (SQL holds it to a card cast on a post).
         const catches = rules?.catches?.(config);
         const played = answer.card.on === 'reply'
           ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day })

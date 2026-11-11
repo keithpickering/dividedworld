@@ -32,10 +32,10 @@
  *   that sprang it (`by`): the cast it caught, or the staff Act or visit that tripped it, which is
  *   no character's. A spring with no `by` (older rows) is scored on its trapped post. A caught
  *   play settles as the play it is.
- * - An Earn Gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
+ * - An earn gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
  *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
  *   positive earning of that character's Act that carries a time and a quadrant, falls in the
- *   Gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. Each Gimmick boosts on its own.
+ *   gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. Each gimmick boosts on its own.
  * - A play an admin reversed before the window's end is not in the input, nor are the votes on it
  *   (settlement_input and estimate_input leave it out), so there is no filter for it here.
  * - A card on a staff post is judged against the post's own reactions (`unscoredTargets`), which
@@ -458,9 +458,9 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* ---- each class's rules, stretch by stretch ---- */
   type Contribution = Detail & { class: string; params?: Readonly<Record<string, number | string>>; kind?: string };
   const contributions: Contribution[] = [];
-  /* The Earn Gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
+  /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
-     times the Gimmicks on that character and the post of each earning, never the instance's Gimmicks. */
+     times the gimmicks on that character and the post of each earning, never the instance's gimmicks. */
   type Boost = { card: string; from: number; ends: number; by: number; quadrants: readonly Quadrant[]; reactions: readonly string[] };
   const boostsOn = new Map<string, Boost[]>();
   for (const a of acts.values()) {
@@ -500,7 +500,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}) });
       }
     }
-    /* Earn: each positive earning of the character's own Act, with a time and a quadrant, inside a Gimmick's window and in what it
+    /* Earn: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
        names, adds `by` times itself under the reason `card.boost`. Boosts are added after, so none is boosted in turn. */
     if (!boostsOn.size) continue;
     for (const e of contributions.slice(firstOfCharacter)) {

@@ -80,7 +80,7 @@ export interface LogData {
   readonly acts: ReadonlyMap<Id, Act>;
   /** Names of the characters whose posts the lines name. */
   readonly names: ReadonlyMap<Id, string>;
-  /** The staff characters among them (a public fact of a character): a staff setter's Trap Card takes nothing. Absent, none is known to be staff. */
+  /** The staff characters among them (a public fact of a character): a staff setter's catching set card takes nothing. Absent, none is known to be staff. */
   readonly staff?: ReadonlySet<Id>;
   /** Titles of the threads the lines name (The System's Turn announcements). */
   readonly titles: ReadonlyMap<Id, string>;
@@ -177,7 +177,7 @@ export function placeOf(play: Act, data: Pick<LogData, 'names' | 'mine'> & Parti
 
 /**
  * What a card set face down waits for, in the words after "It waits": "to spring on a quote", "for a Whoops!", "for a Mod Bot's visit". A Move waits for a
- * quote (and the phrase it needs, where it was set with one); a Gimmick waits for its trigger, and a Card Collector for the card it names. Null for a card with no trap,
+ * quote (and the phrase it needs, where it was set with one); a set card waits for its trigger, and a Card Collector for the card it names. Null for a card with no trap,
  * which waits for nothing, and for a back set under a trigger that is gone (a reply, a reaction), which keeps the words it had.
  */
 export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'phrase' | 'passage' | 'who' | 'whoExcept'>, words: Pick<Words, 'instance'>, nameOf: (id: Id) => string = () => 'someone'): string | null {
@@ -555,7 +555,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    /* A card a Trap Card of the player's took: the card went to the player's hand, and cost nothing (the spring's line says what sprang). */
+    /* A card a catching set card of the player's took: the card went to the player's hand, and cost nothing (the spring's line says what sprang). */
     if (e.kind === 'caught') {
       const spring = e.act ? data.acts.get(e.act) : undefined;
       const took = typeof spring?.payload.caught === 'string' ? data.acts.get(spring.payload.caught) : undefined;
@@ -623,7 +623,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    /* A Use with a time up says when it ended, once that time has passed, whichever Gimmick it was (the design's section 10: "a timed end"). */
+    /* A Use with a time up says when it ended, once that time has passed, whichever use card it was (the design's section 10: "a timed end"). */
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
     if (ends && Date.parse(ends) <= Date.now()) {
       rows.push({

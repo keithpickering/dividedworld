@@ -81,9 +81,9 @@ const manifest: BoardManifest = {
        its name and role still are, and they say which card stocks it. */
     { id: 'slot-a1', role: 'button', name: 'Buy Stick Around, 1.00 orb', buildName: 'Buy Stick Around, 1.00 orb, common Move', type: false, box: 'none' },
     { id: 'slot-a2', role: 'button', name: 'Buy Whoops!, 1.00 orb, selected', buildName: 'Buy Whoops!, 1.00 orb, common Move, selected', type: false, box: 'none' },
-    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Trap Card, 1.50 orbs, uncommon Gimmick', type: false, box: 'none' },
-    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Ward', type: false, box: 'none' },
-    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Ward', type: false, box: 'none' },
+    { id: 'slot-b1', role: 'img', name: 'Empty slot B1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Card Collector, 1.50 orbs, uncommon Reversal', type: false, box: 'none' },
+    { id: 'slot-b2', role: 'img', name: 'Empty slot B2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Force Field, 1.50 orbs, uncommon Gimmick', type: false, box: 'none' },
+    { id: 'slot-c1', role: 'img', name: 'Empty slot C1, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Publicity Tour, 1.50 orbs, uncommon Gimmick', type: false, box: 'none' },
     { id: 'slot-c2', role: 'img', name: 'Empty slot C2, waiting for a future postcard', buildRole: 'button', buildName: 'Buy Glitter Bomb, 1.50 orbs, uncommon Move', type: false, box: 'none' },
 
     /* The control panel: the price display, the buy button and the note under it. The display's lit words are the machine's

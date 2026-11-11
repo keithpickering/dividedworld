@@ -68,7 +68,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const player = usePlayer();
   const id = useId();
   const [config, setConfig] = useState<Readonly<Record<string, unknown>> | undefined>(undefined);
-  /* A Move on one's own post is played now or set face down; a Gimmick is set, and the choice is not asked. */
+  /* A Move on one's own post is played now or set face down; a set card is set, and the choice is not asked. */
   const [down, setDown] = useState(faceDown);
   const [message, setMessage] = useState('');
   /**
@@ -128,7 +128,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const cardUi = ui.cards.find((c) => c.key === card);
   /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
-  /* The post is one of the player's own characters': a Move on it may be set face down; a Gimmick is set there alone. */
+  /* The post is one of the player's own characters': a Move on it may be set face down; a set card is set there alone. */
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
   const choosing = how === 'cast' && ownPost;
   const setting = how === 'set' || (choosing && down);
@@ -178,7 +178,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   /* What the card itself asks (`ownPrice`, the surcharge row), and with the price effects on it (`price`, what is paid). */
   const price = ownPrice + raises.reduce((sum, r) => sum + r.add, 0);
 
-  /* A Move being set may carry conditions; a Gimmick never does (the rules refuse them), and a card played face up has none. */
+  /* A Move being set may carry conditions; a set card never does (the rules refuse them), and a card played face up has none. */
   const conditional = setting && how === 'cast';
   /* A card with its own phrase has its Says fixed to it. */
   const lockedSays = useMemo(() => {
@@ -205,7 +205,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const after = wallet ? wallet.balance - price : null;
   const short = wallet !== null && after !== null && after < 0;
   const shortWords = short && wallet ? plainRefusal(`that costs ${price}, and your wallet holds ${wallet.balance}`) : '';
-  /* A Set waits for the card's own settings to be accepted, as a cast's price does (a Gimmick that names a card has no card until the player names one). */
+  /* A Set waits for the card's own settings to be accepted, as a cast's price does (a set card that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
   const flawed = Object.keys(problems).length > 0;
   const blocked = busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed;

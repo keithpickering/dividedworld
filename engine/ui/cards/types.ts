@@ -186,7 +186,7 @@ export interface ConfigFormProps {
   readonly post: Act;
   /** Unique on the page, to hang the form's labels on. */
   readonly id: string;
-  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a Gimmick that waits for a card). */
+  /** Every card of the instance that is cast on a post, as its face draws it (not only the player's hand), for a setting that names one (a set card that waits for a card). */
   readonly castable?: readonly CardFace[];
 }
 

@@ -323,7 +323,7 @@ test('a player sets a Move face down: Whoops! and Glitter Bomb pass the decision
   }
 });
 
-test('a Trap Card naming Whoops! sends the named catch, from the card\'s own rules', async () => {
+test('a catching set card naming Whoops! sends the named catch, from the card\'s own rules', async () => {
   const { dbs, calls } = pair(onPost);
   // A request that also names a catch and a phrase of its own: the act function takes neither.
   const out = await runAction(dbs, instance, { action: 'setCard', card: 'card-collector', character: id, target, config: { card: 'whoops' }, catches: 'glitter-bomb', phrase: 'smuggled' });
@@ -388,7 +388,7 @@ test('a Use is refused by the act function when it is set', async () => {
   assert.equal(setCalls(calls).length, 0);
 });
 
-test('a Gimmick\'s configuration is checked by its own rules before SQL', async () => {
+test('a set card\'s configuration is checked by its own rules before SQL', async () => {
   const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] } });
   const out = await runAction(dbs, tested, { action: 'setCard', card: 'test-snare', character: id, target, config: { ink: 'blue' } });
   assert.deepEqual({ status: out.status, body: out.body }, { status: 400, body: { field: 'config', error: 'the ink is red' } });

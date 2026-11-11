@@ -69,7 +69,7 @@ test('decideUse uses a Use and nothing else, and a ward does not stop a Use', ()
   assert.equal(decideUse(shield, settings, post, [], {}, '').ok, true);
 });
 
-test('decideSet sets a Gimmick, one face-down card to a post', () => {
+test('decideSet sets a card, one face-down card to a post', () => {
   const back: CardEffect = { card: null, act: 's', faceDown: true, ends: soon };
   assert.deepEqual(decideSet(snare, settings, post, [back], { card: 'inky' }, [inky]), { ok: false, why: 'this post already holds a card face down' });
   assert.equal(decideSet(snare, settings, post, [{ ...back, ends: gone }], { card: 'inky' }, [inky]).ok, true);
@@ -99,7 +99,7 @@ test('decideSet sets a Move, and returns the phrase its landing needs', () => {
   assert.deepEqual(decideSet(glue, settings, post, [], { phrase: 'x'.repeat(SET_PHRASE_MOST + 1) }, [glue]), { ok: false, why: `Test Glue waits for a phrase of at most ${SET_PHRASE_MOST} characters` });
 });
 
-test('a cast Gimmick names the card it catches, which must be cast on a post', () => {
+test('a set card that catches a cast names the card it catches, which must be cast on a post', () => {
   const set = decideSet(snare, settings, post, [], { card: 'inky' }, [inky, snare]);
   assert.deepEqual(set, { ok: true, value: { price: 0, config: { card: 'inky' }, catches: 'inky' } });
   for (const named of ['shield', 'snare', 'nothing', 'ground']) {
@@ -271,8 +271,8 @@ test('staffOffers: a card with staffOptions and no default is offered, and a car
   assert.equal(staffOffers({ ...inky, staffOptions: options }), true, 'the persona chooses, so there is something to play');
   assert.equal(staffOffers({ ...inky, staffConfigs: [{ ink: 'red' }] }), true, 'the fallback list alone still offers it');
   assert.equal(staffOffers(plain), true, 'a default alone offers it');
-  assert.equal(staffOffers(hallway), false, 'a Gimmick that springs on a visit is never offered: a Mod Bot visits only players\' posts');
-  assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a Gimmick that springs on a cast is offered with its options');
+  assert.equal(staffOffers(hallway), false, 'a set card that springs on a visit is never offered: a Mod Bot visits only players\' posts');
+  assert.equal(staffOffers({ ...snare, staffOptions: options }), true, 'a set card that springs on a cast is offered with its options');
 });
 
 // Conditions on a Move's quote trigger (quote-conditions design, sections 1, 2 and 4).
@@ -290,7 +290,7 @@ test('decideSet returns the conditions a Move was set with, and none it was not'
   assert.equal(decideSet(inky, settings, moveable, [], { ink: 'red' }, [inky], { who: who([A]) }).ok, true, 'naming one character, the acting one included, is accepted without a word');
 });
 
-test('decideSet refuses conditions on a Gimmick, in plain words', () => {
+test('decideSet refuses conditions on a set card, in plain words', () => {
   for (const c of [{ says: 'x' }, { passage: 'punchline' }, { who: who([A]) }]) {
     assert.deepEqual(decideSet(snare, settings, moveable, [], { card: 'inky' }, [inky], c), { ok: false, why: 'Test Snare takes no conditions' });
     assert.deepEqual(decideSet(watcher, settings, moveable, [], {}, [], c), { ok: false, why: 'Test Watcher takes no conditions' });
@@ -400,7 +400,7 @@ test('a price is never below zero, and a use or a set takes no surcharge', () =>
   assert.deepEqual(set.ok && set.value.price, 0);
 });
 
-test('a Reversal names, or matches, only cards at or below its own rarity', () => {
+test('a set card names, or matches, only cards at or below its own rarity', () => {
   assert.deepEqual(decideSet(snare, settings, post, [], { card: 'grand' }, [grand, snare]), { ok: false, why: 'Test Snare names cards up to uncommon' });
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky, snare]).ok, true);
   const net = (upTo: CardRules['rarity']): CardRules => ({ ...snare, key: 'net', name: 'Test Net', catches: undefined, trap: { trigger: { on: 'cast' }, match: { upTo } } });

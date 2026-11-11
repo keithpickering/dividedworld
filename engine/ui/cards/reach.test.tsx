@@ -211,7 +211,7 @@ describe('what a post wears', () => {
   });
 });
 
-describe('a Gimmick armed on a thread or a board', () => {
+describe('a use card armed on a thread or a board', () => {
   async function armed(starter: 'me' | 'other') {
     const w = world();
     const mine = w.fake.seed.thread('general', starter === 'me' ? w.pipe : w.spritey, 'Whose thread', 'the opening').thread;

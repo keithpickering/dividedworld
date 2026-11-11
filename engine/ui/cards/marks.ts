@@ -87,7 +87,7 @@ const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 const list = (words: readonly string[]): string => (words.length <= 2 ? words.join(' and ') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`);
 
 /**
- * A Gimmick's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
+ * A use card's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
  * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%).
  */
@@ -107,7 +107,7 @@ export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
 
 /**
  * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says
- * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff Trap Card caught, were spent.
+ * a player took it (`fate.taken`, the setter's character): a play caught before the face-down Moves, and one a staff catching set card caught, were spent.
  */
 /** Where the card went is said only once the spring is read (`readCaughtFate`): `{ taken }` went to a player's hand, `{}` is spent; unread, nothing is claimed. */
 export const caughtWords = (trap: string | null, fate?: { readonly taken?: string }): string =>

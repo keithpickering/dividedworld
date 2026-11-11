@@ -156,7 +156,7 @@ function fakeModels(reply: (r: ChatRequest) => unknown, completion: string | Err
   };
   return { models, chats, completions };
 }
-/** A thread start is the one request that asks for a title; it may set a Reversal on its own post (a pool that plays uncommons). A reply may leave a note. */
+/** A thread start is the one request that asks for a title; it may set a set card on its own post (a pool that plays uncommons). A reply may leave a note. */
 const normal = (r: ChatRequest) => {
   const asksTitle = (r.schema as any).required.includes('title');
   return asksTitle
@@ -647,7 +647,7 @@ test('a wrongly typed option costs neither the post nor the card: the ink falls 
 });
 
 test('a Set with options reads its own new post as the target, after it is written, and sets with the decided config', async () => {
-  // The only Divided World Gimmick with options is Card Collector, whose option is the card it names; so the instance here carries a Gimmick on a cast
+  // The only Divided World set card with options is Card Collector, whose option is the card it names; so the instance here carries a set card on a cast
   // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
   const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };

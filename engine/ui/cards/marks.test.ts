@@ -45,7 +45,7 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.deepEqual(wordsProblems('state', words.state), []);
   });
 
-  test('every Gimmick says what it does and when it ends', () => {
+  test('every use card says what it does and when it ends', () => {
     const now = new Date('2026-11-01T00:00:00.000Z');
     const end = '2026-11-06T10:00:00.000Z';
     assert.deepEqual(gimmickWords({ kind: 'ward', upTo: 'uncommon' }, end, now), { state: 'Turns away cards up to uncommon', ends: `Ends ${dayAndTime(end)}` });
@@ -73,9 +73,9 @@ describe('a card back, a ward and a caught play, in words', () => {
   });
 
   test('a caught play says what caught it', () => {
-    assert.equal(caughtWords('Trap Card'), 'Caught by a Trap Card. It did nothing.');
-    assert.equal(caughtWords('Trap Card', {}), 'Caught by a Trap Card. It did nothing, and its card is spent.');
-    assert.equal(caughtWords('Trap Card', { taken: 'Pipewrench' }), 'Caught by a Trap Card. It did nothing, and its card went to Pipewrench.');
+    assert.equal(caughtWords('Card Collector'), 'Caught by a Card Collector. It did nothing.');
+    assert.equal(caughtWords('Card Collector', {}), 'Caught by a Card Collector. It did nothing, and its card is spent.');
+    assert.equal(caughtWords('Card Collector', { taken: 'Pipewrench' }), 'Caught by a Card Collector. It did nothing, and its card went to Pipewrench.');
     assert.equal(caughtWords(null), 'Caught by a trap. It did nothing.');
     assert.deepEqual(wordsProblems('state', CAUGHT_STATE), []);
     assert.equal(CAUGHT_STATE, 'Caught, did nothing');

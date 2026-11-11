@@ -556,7 +556,7 @@ describe('what the machine says to a screen reader', () => {
  * and is not sold on its own). The Booster's four first pulls roll commons; the hit pull rolls an uncommon (3 in 4) or the rare (1 in 4).
  */
 const ruleOf = (key: string, name: string, rarity: CardRules['rarity'], alignment: CardRules['alignment'] = 'sweet'): CardRules => ({ key, name, alignment, rarity, playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) });
-const trap = ruleOf('trap', 'Trap Card', 'uncommon', 'pepperoni');
+const trap = ruleOf('trap', 'Card Collector', 'uncommon', 'pepperoni');
 const main = ruleOf('main', 'Main Event', 'rare');
 const stocked: Instance = {
   ...testInstance, cards: [stick, whoops, trap, main],
@@ -588,7 +588,7 @@ describe('the machine\'s slots, from the machine', () => {
     openStocked(stockedWorld(562));
     await screen.findByRole('button', { name: BOOSTER });
     expect(slotNames()).toEqual([
-      BOOSTER, 'Buy Stick Around, 1.00 orb, common Cast', 'Buy Whoops!, 1.00 orb, common Cast', 'Buy Trap Card, 1.50 orbs, uncommon Cast',
+      BOOSTER, 'Buy Stick Around, 1.00 orb, common Cast', 'Buy Whoops!, 1.00 orb, common Cast', 'Buy Card Collector, 1.50 orbs, uncommon Cast',
       'Empty slot C1, waiting for a future postcard', 'Empty slot C2, waiting for a future postcard',
     ]);
     expect(screen.queryByRole('button', { name: /Main Event/u })).toBeNull();
@@ -641,7 +641,7 @@ describe('the machine\'s slots, from the machine', () => {
     const fake = stockedWorld(562);
     fake.seed.slot({ card: 'trap' }, { price: 225, move: { kind: 'repriceSlot', act: 'a1', ends: '2026-11-08T20:00:00Z', demand: null, progress: null, was: 150, percent: 150, hours: null } });
     openStocked(fake);
-    const slot = await screen.findByRole('button', { name: 'Buy Trap Card, 2.25 orbs, marked up from 1.50, uncommon Cast' });
+    const slot = await screen.findByRole('button', { name: 'Buy Card Collector, 2.25 orbs, marked up from 1.50, uncommon Cast' });
     const shelf = slot.closest('.kb-vending-cell')!.querySelector('.kb-vending-shelf')!;
     expect(shelf.querySelector('s')).toHaveTextContent('1.50');
     expect(shelf).toHaveTextContent('2.25');
@@ -673,7 +673,7 @@ describe('the machine\'s slots, from the machine', () => {
     openStocked(other);
     const moves = await screen.findByRole('region', { name: 'The Boss\'s moves' });
     expect(within(moves).getByText(/^Main Event is on flash sale/u).parentElement).toHaveTextContent(/Main Event is on flash sale at 3\.00 until Nov 8, \d\d?:00 [AP]M\./u);
-    expect(within(moves).getByText(/^Trap Card is marked up/u).parentElement).toHaveTextContent('Trap Card is marked up from 1.50 to 2.25 until Nov 8, or sooner if its demand is met: 20 new posts on its board.');
+    expect(within(moves).getByText(/^Card Collector is marked up/u).parentElement).toHaveTextContent('Card Collector is marked up from 1.50 to 2.25 until Nov 8, or sooner if its demand is met: 20 new posts on its board.');
   });
 });
 
@@ -685,7 +685,7 @@ describe('a pack in the machine', () => {
     const table = within(dialog).getByRole('table', { name: 'Booster odds' });
     expect(within(table).getAllByRole('rowheader').map((h) => h.textContent)).toEqual(['Cards 1 to 4, each', 'Card 5, the hit']);
     const rows = within(table).getAllByRole('row').filter((r) => within(r).queryAllByRole('cell').length === 2).map((r) => within(r).getAllByRole('cell').map((c) => c.textContent));
-    expect(rows).toEqual([['Common', '100%'], ['Trap Card', '75%'], ['Main Event', '25%']]);
+    expect(rows).toEqual([['Common', '100%'], ['Card Collector', '75%'], ['Main Event', '25%']]);
   });
 
   test('a rarity is drawn as a gem whose glyph says it by shape, in the table as on a card', async () => {
@@ -769,7 +769,7 @@ describe('buying a pack opens the reveal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
     return screen.findByRole('dialog', { name: 'Opening a Booster' });
   };
-  const names: Record<string, string> = { stick: 'Stick Around', whoops: 'Whoops!', trap: 'Trap Card', main: 'Main Event' };
+  const names: Record<string, string> = { stick: 'Stick Around', whoops: 'Whoops!', trap: 'Card Collector', main: 'Main Event' };
 
   test('the five cards are in the hand, in the answer\'s order, before any is turned', async () => {
     const { fake, answers } = buyBooster();
@@ -787,7 +787,7 @@ describe('buying a pack opens the reveal', () => {
     for (let i = 0; i < 5; i++) fireEvent.click(screen.getByRole('button', { name: /^Turn the next card$/u }));
     const shown = within(screen.getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem').map((li) => li.getAttribute('aria-label')!.split(':')[1]!.split(',')[0]!.trim());
     expect(shown).toEqual(contents.map((c) => names[c]));
-    expect(shown[4]).toMatch(/^(Trap Card|Main Event)$/u);
+    expect(shown[4]).toMatch(/^(Card Collector|Main Event)$/u);
   });
 
   test('Esc before every card is turned closes the reveal, and the hand still holds all five', async () => {
@@ -826,7 +826,7 @@ describe('buying a pack opens the reveal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Buy Booster · 3.00' }));
     await screen.findByRole('dialog', { name: 'Opening a Booster' });
     await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(before));
-    expect(await screen.findByRole('button', { name: 'Trap Card, sold out' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Card Collector, sold out' })).toBeInTheDocument();
   });
 
   test('after a single card is bought the machine is read again', async () => {

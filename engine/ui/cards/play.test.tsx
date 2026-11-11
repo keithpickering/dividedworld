@@ -340,7 +340,7 @@ describe('the play form', () => {
     expect(within(form).getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
 
-  test('a Gimmick that raises the cast says which card adds how much, where, and the total includes it', async () => {
+  test('a use card that raises the cast says which card adds how much, where, and the total includes it', async () => {
     const user = userEvent.setup();
     const vibes: CardRules = { key: 'good-vibes', name: 'Good Vibes', alignment: 'sweet', rarity: 'uncommon', play: 'use', reaches: ['thread'], gimmick: { kind: 'price', flavors: ['salty'], add: 25 }, lasts: { unit: 'day', count: 1 }, playPrice: () => 0, validateConfig: (c) => ok(c), canApply: (t, e, _c, now) => landsOn({ key: 'good-vibes', reaches: ['thread'] }, t, e, now) };
     const served: Instance = { ...instance, cards: [...instance.cards, vibes] };

@@ -1960,7 +1960,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     void ana;
   });
 
-  test('a Move is set face down like a Gimmick, and a Use is refused, in the card\'s words', async () => {
+  test('a Move is set face down like a set card, and a Use is refused, in the card\'s words', async () => {
     const { fake, ana, anaFace, opener } = setup();
     fake.seed.cards(ana, { blot: 1 });
     const set = must(await fake.setCard('blot', anaFace, opener, {}));
@@ -1970,7 +1970,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(refused).toMatchObject({ ok: false, error: 'Shield is used on your own post' });
   });
 
-  test('a Trap Card naming a card that is not cast on a post is refused in decideSet\'s words', async () => {
+  test('a catching set card naming a card that is not cast on a post is refused in decideSet\'s words', async () => {
     const trapper = { ...base, key: 'trapper', name: 'Trapper', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'shield', canApply: () => ok(undefined) };
     const fake = createFake({ instance: { ...world, cards: [...world.cards, trapper] } });
     const ana = fake.seed.account('ana');
@@ -1994,7 +1994,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
   });
 
-  test('a Trap Card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
+  test('a catching set card\'s catch is the setter\'s: a card in the hand, a ledger row and no payout', async () => {
     const { fake, ana, bo, anaFace, boFace, opener } = setup();
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
     fake.signInAs(bo);
@@ -2057,7 +2057,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(must(await second.fake.playCard('blot', second.boFace, second.opener, {}, '')).kind).toBe('card');
   });
 
-  test('a Gimmick is used on a thread the acting character started, and on no board', async () => {
+  test('a use card is used on a thread the acting character started, and on no board', async () => {
     const { fake, bo, anaFace, boFace, thread } = setup2();
     const used = must(await fake.useCard('vibes', anaFace, thread, {}, '', 'thread'));
     expect(used.payload.reach).toBe('thread');
@@ -2115,7 +2115,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await held()).toBe(1);
   });
 
-  test('a Reversal with a match springs on a card whose flavor it holds and lets another by', async () => {
+  test('a set card with a match springs on a card whose flavor it holds and lets another by', async () => {
     const { fake, bo, anaFace, boFace, opener } = setup2();
     const set = must(await fake.setCard('net', anaFace, opener, {}));
     fake.signInAs(bo);
@@ -2668,7 +2668,7 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const first = fake.seed.update({ title: 'Playtest begins', body: 'Hello.', at: T0 });
-    const second = fake.seed.update({ title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: T0 + 2 * H });
+    const second = fake.seed.update({ title: 'Traps bite', body: 'The trap was offended.', changes: [{ label: 'Card Collector', text: 'catches more.' }], at: T0 + 2 * H });
     return { fake, admin, ana, bo, cy, anaFace, boFace, first, second };
   }
 
@@ -2677,7 +2677,7 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     w.fake.signInAs(w.ana);
     const rows = await w.fake.updates();
     expect(rows.map((r) => [r.act, r.title, r.seq])).toEqual([[w.second, 'Traps bite', 2], [w.first, 'Playtest begins', 1]]);
-    expect(rows[0]).toMatchObject({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', body: 'The trap was offended.', changes: [{ label: 'Trap Card', text: 'catches more.' }], at: new Date(T0 + 2 * H).toISOString() });
+    expect(rows[0]).toMatchObject({ name: 'Gabe', tagline: 'Made this. Sorry.', avatar: 'gabe', body: 'The trap was offended.', changes: [{ label: 'Card Collector', text: 'catches more.' }], at: new Date(T0 + 2 * H).toISOString() });
     expect(rows[1]!.changes).toEqual([]);
     const plain = updatesWorld();
     plain.fake.signInAs(plain.ana);

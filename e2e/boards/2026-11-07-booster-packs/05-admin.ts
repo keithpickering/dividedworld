@@ -9,7 +9,7 @@
  *
  * Departures by decision:
  *  - The page head leaves 36px under the title where the board's lead stands 8px under it (the glass polish, design section 2), as board 37 names.
- *  - Hall Pass (face-down moves plan) stocks the slot after Trap Card, so the build's list has one more row than the board's: Glitter Bomb, marked up, stands one row
+ *  - Hall Pass (face-down moves plan) stocks the slot after Card Collector, so the build's list has one more row than the board's: Glitter Bomb, marked up, stands one row
  *    lower (its tag), and what follows the list (the hidden Main Event, Save changes and its note) stands about 55px lower.
  *  - The build's controls are the glass's own measure, so a button is compared by its place and not its size, and a field's type is the glass's.
  *  - A control's accessible name in the build says whose it is ("Whoops!: move up"), where the board's arrows are named "Move up" alone.

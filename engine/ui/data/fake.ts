@@ -1370,7 +1370,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account.cards[card]! -= 1;
     /* The layer counts every play that landed, a reversed one too (acts_card_layers refuses a reused layer); only the stack count drops it. */
     const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
-    /* A live Trap Card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
+    /* A live catching set card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
     const trapRules = trap ? instance.cards.find((c) => c.key === trap.card) : undefined;
     /* It catches the card it names, or one its match holds: the flavor in `flavors`, the rarity at or below `upTo` and at or below the back's own (spring_traps, 0146). */
@@ -1403,11 +1403,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /**
    * The cards set face down (face_down, 0054): which card a set is, its setter's account alone; when it ends; the spring that ended it.
-   * Mirrored: a Trap Card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
-   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a Ward does not stop a landing. Those are the server's to test
+   * Mirrored: a catching set card catches the one card it names on a cast (the setter takes the card, a `caught` ledger row, no payout). NOT mirrored: a Move set face down never springs on a quote
+   * (no card lands on the quoting post, character, thread or board, and its phrase is never matched), a Hall Pass never ends a visit, and a ward does not stop a landing. Those are the server's to test
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
-  /** The back of each card set face down: `catches` is the card a Trap Card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
+  /** The back of each card set face down: `catches` is the card a catching set card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
   const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; takenBack?: Id; catches?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean; refunded?: true }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.takenBack === undefined && f.endsAt > now()) return { set, card: f.card };
@@ -1459,7 +1459,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     let thread: Id;
     let on: Id | null;
     let above: EffectsAbove;
-    /* A Gimmick never goes on a board, before the board is looked for (place_cast, 0146). */
+    /* A use card never goes on a board, before the board is looked for (place_cast, 0146). */
     if (play === 'use' && reach === 'board') return refuse(`${rules.name} is never used on a board`);
     if (reach === 'character') {
       if (!characters.has(target)) return refuse('there is no such character', 'target');
@@ -1473,7 +1473,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       thread = target;
       on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
       if (!on) return refuse('that thread has no post yet');
-      /* A Gimmick on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0146), before the card's own rules are asked. */
+      /* A use card on a thread is a match stipulation, so only on a thread the acting character started (place_cast, 0146), before the card's own rules are asked. */
       if (play === 'use' && acts.get(on)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
       above = { board: reachEffects('board', boardOf(target)) };
     } else {
@@ -1508,7 +1508,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** set_card (0142): a Move or a Gimmick, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
+  /** set_card (0142): a Move or another set card, decided by the card's rules (decideSet, whose catch and phrase the back keeps), then the author, the hand and the post's one back are the database's. */
   function setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Answer<Act> {
     const bad = request({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) });
     if (bad) return bad;
@@ -1533,7 +1533,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const written = write({ character, kind: 'set', thread: on.thread, target, payload: {} });
     faceDown.set(written.id, { account: account.id, card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null, ...(decided.value.catches === undefined ? {} : { catches: decided.value.catches }), ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     spend(account, decided.value.price, 'play', written.id);
-    /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a Gimmick that carries a trap, or a Move (it springs on a quote). */
+    /* As my_card_ledger (0142) says it: whether the card can spring, from the card kinds: a set card that carries a trap, or a Move (it springs on a quote). */
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price, springs: rules.trap != null || kindOfPlay(rules) === 'cast', ...(decided.value.phrase === undefined ? {} : { phrase: decided.value.phrase }), ...(decided.value.passage === undefined ? {} : { passage: decided.value.passage }), ...(decided.value.who === undefined ? {} : { who: decided.value.who.characters, whoExcept: decided.value.who.except }) });
     sendAct(written);
     return ok(publicAct(written));
@@ -3686,7 +3686,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const back = acts.get(set);
       if (!f || !back) throw new Error(`no such card set face down ${set}`);
       const rules = instance.cards.find((c) => c.key === f.card);
-      /* A Move springs on a quote, and a Gimmick on its own trigger (a cast, or a visit). */
+      /* A Move springs on a quote, and a set card on its own trigger (a cast, or a visit). */
       const trigger = o?.trigger ?? (rules && kindOfPlay(rules) === 'cast' ? 'quote' : rules?.trap?.trigger.on ?? 'cast');
       const written = asAt(f.account, o?.at, () => write({
         character: back.character, kind: 'spring', thread: back.thread, target: f.post,

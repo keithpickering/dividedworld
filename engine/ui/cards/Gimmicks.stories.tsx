@@ -1,7 +1,7 @@
 /**
  * The card types' screens (docs/plans/2026-11-11-card-types-design.md, sections 5 and 6), on the boards fixture's player, whose HUD is on Pipewrench:
- * `Ghost` (a Gimmick armed, its ghost on the head of a thread Pipewrench started), `TakeBack` (the Lens of Pipewrench's own back, with its Take back
- * control) and `Surcharge` (a Move's play form on that thread, where a Gimmick adds to the price). Each is found by its rules, naming no card.
+ * `Ghost` (a use card armed, its ghost on the head of a thread Pipewrench started), `TakeBack` (the Lens of Pipewrench's own back, with its Take back
+ * control) and `Surcharge` (a Move's play form on that thread, where a use card adds to the price). Each is found by its rules, naming no card.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useRef, useState } from 'react';
@@ -91,9 +91,9 @@ const meta: Meta<typeof Story> = { title: 'Cards/Card types', component: Story, 
 export default meta;
 type S = StoryObj<typeof Story>;
 
-/** A Gimmick armed: its ghost on the head of a thread the reader's character started. */
+/** A use card armed: its ghost on the head of a thread the reader's character started. */
 export const Ghost: S = { args: { scene: 'ghost' } };
 /** The Lens of the reader's own card back, with Take back and what it does. */
 export const TakeBack: S = { args: { scene: 'takeback' } };
-/** A Move's play form, with the Gimmick that adds to its price said by name. */
+/** A Move's play form, with the use card that adds to its price said by name. */
 export const Surcharge: S = { args: { scene: 'surcharge' } };

@@ -173,7 +173,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
       if (decision.play === 'set') {
-        // The card's own rules decide the configuration, the card a Trap Card names and the phrase a Move waits for; none of them is read from the request but the configuration.
+        // The card's own rules decide the configuration, the card a catching set card names and the phrase a Move waits for; none of them is read from the request but the configuration.
         const { conditions, ...rest } = args as { conditions?: SetConditions };
         const set = decideSet(rules, tuned.settings, target, effects, decision.args.config, tuned.cards, conditions);
         if (!set.ok) return refused('config', set.why);

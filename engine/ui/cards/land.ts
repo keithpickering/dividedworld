@@ -84,7 +84,7 @@ export const landsWords = (rules: Pick<CardRules, 'reaches'>): string => LANDS_O
 
 /**
  * What a card set face down does, in one plain sentence, from the card's rules and never its name: a Move springs on a quote and lands on
- * what its first reach says; a Gimmick waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
+ * what its first reach says; a set card waits for the card it names to be cast on the post (and takes it), or for a Mod Bot's visit to the
  * post to start (and ends it), or does nothing.
  */
 export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap'>): string {

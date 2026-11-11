@@ -23,7 +23,7 @@ import type { Pull, SlotSeed } from './packs.ts';
 export const BRIBE_BOUNDS = { least: 25, most: 500 } as const;
 
 const SPAN_UNITS: readonly Span['unit'][] = ['day', 'week', 'month'];
-/** A card's time up may count hours: a Gimmick for a day and a half. No setting does. */
+/** A card's time up may count hours: a use card for a day and a half. No setting does. */
 const LASTS_UNITS: readonly Span['unit'][] = ['hour', ...SPAN_UNITS];
 /** A grace may be minutes long (editGrace), and so may presence's window; nothing else is. */
 const GRACE_UNITS: readonly Span['unit'][] = ['minute', ...SPAN_UNITS];

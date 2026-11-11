@@ -227,7 +227,7 @@ describe('cards set face down, traps and catches', () => {
     for (const log of [sets, strikeLog]) for (const r of logRows(data({ log, mine, acts, names }), w, 600, null)) expect(text(r)).not.toContain(FOR);
   });
 
-  test('a Trap Card names the card it waits for; a Hall Pass waits for a Mod Bot\'s visit', () => {
+  test('a catching set card names the card it waits for; a Hall Pass waits for a Mod Bot\'s visit', () => {
     expect(text(setRow('snare', { springs: true, catches: 'whoops' }))).toBe('Snare set face down on your post #3. It waits for a Whoops!, and ends by itself if none comes.');
     expect(text(setRow('pass', { springs: true }))).toBe('Hall Pass set face down on your post #3. It waits for a Mod Bot\'s visit, and ends by itself if none comes.');
   });
@@ -259,7 +259,7 @@ describe('cards set face down, traps and catches', () => {
     expect(text(row!)).toBe('Glitter Bomb on your post #3 sprang when Spritey quoted it, and landed on Spritey.');
   });
 
-  test('a Trap Card caught a cast: what it caught, and that the card is in the setter\'s hand', () => {
+  test('a catching set card caught a cast: what it caught, and that the card is in the setter\'s hand', () => {
     const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', caught: 'set1' } });
     const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'snare', trigger: 'cast', did: 'caught', set: 'set1', by: 'k1', caught: 'k1' } });
     const log = { ...empty, setEnds: [{ play: 'set1', card: 'snare', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
@@ -459,7 +459,7 @@ describe('cards set face down, traps and catches', () => {
   });
 });
 
-describe('a Gimmick\'s end, every kind of it, names the card and never the word Gimmick', () => {
+describe('a use card\'s end, every kind of it, names the card and never the kind word', () => {
   const effects = { ward: { kind: 'ward' as const, upTo: 'uncommon' as const }, earn: { kind: 'earn' as const, by: 0.1 }, price: { kind: 'price' as const, flavors: ['salty' as const], add: 25 } };
   for (const [kind, gimmick] of Object.entries(effects)) {
     test(`a ${kind} the player used says when it ended`, () => {
