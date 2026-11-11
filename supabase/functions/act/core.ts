@@ -92,6 +92,8 @@ const BROADCASTS: Record<string, (answer: Row) => Broadcast[]> = {
   },
   // A card back: the set Act names no card, so neither does what is sent.
   set_card: (a) => act(a),
+  // A take-back is an Act of the back's post's author, on that post, naming the set and no card.
+  take_back: (a) => act(a),
   start_thread: (a) => [...thread(a.thread), ...act(a.act)],
   spin: (a) => [...thread(a.thread), ...act(a.act)],
   // An apology is the spin of a move's Act (0130), and is heard as one.

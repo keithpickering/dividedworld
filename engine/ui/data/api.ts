@@ -274,7 +274,7 @@ export type OriginPlace =
   /* `card` is the card's key, null for a face-down set. `on` is null when the target cannot be placed. */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null };
 
-export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'spring' | 'update' | 'card_end' | 'announce'
+export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'take_back' | 'spring' | 'update' | 'card_end' | 'announce'
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
   | 'visit' | 'visit_join' | 'visit_end' | 'report' | 'report_verdict' | 'intercept' | 'infraction' | 'ban' | 'appeal' | 'appeal_ruling';
 
@@ -1035,7 +1035,7 @@ export interface WalletEvent {
 export interface CardEvent {
   readonly card: string;
   /** `caught`: a card a Trap Card of the player's took (0142); its `act` is the spring, and it cost nothing. */
-  readonly kind: 'bought' | 'played' | 'pulled' | 'caught';
+  readonly kind: 'bought' | 'played' | 'pulled' | 'caught' | 'returned';
   /** The play's Act, or the spring for a caught card; null for a purchase and a pulled card. */
   readonly act: Id | null;
   /** The pack a pulled card came from; absent on any other row. */
@@ -2173,6 +2173,11 @@ export interface KayfaApi {
    * A Move may be set with `when`, its conditions (quote-conditions design, section 1): sent only when one is set, and never for a Gimmick.
    */
   setCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, when?: SetConditions): Promise<Answer<Act>>;
+  /**
+   * Take a card the player set face down back into the hand, before it springs and before its time ends (`take_back`): the setter's own back on a post
+   * of the character's, free, and its Act (a take-back, naming the set) comes back. A back that is not the player's, or that has ended, is refused in the same words.
+   */
+  takeBack(character: Id, set: Id): Promise<Answer<Act>>;
   /** Use a card the player holds on a post of the character's own (a ward), as a play is: its Act comes back, with its end. */
   useCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id): Promise<Answer<Act>>;
   /** Which card each of the player's own card backs among these sets is (`my_face_down`), by set; another's back is absent. */

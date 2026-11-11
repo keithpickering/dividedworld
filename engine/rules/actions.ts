@@ -264,6 +264,8 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     needsTarget: true,
     play: 'set',
   }),
+  // A face-down card taken back to the hand (supabase/migrations/0146_card_types.sql): the service's call for the account, as set_card is; the database holds whose back it is.
+  takeBack: (r) => ({ rpc: 'take_back', args: { through: id(r, 'character'), set_act: id(r, 'set') }, asService: true }),
   createCharacter: (r, instance) => {
     const kind = r.class;
     if (typeof kind !== 'string' || !instance.classes.some((c) => c.key === kind)) throw new Refused('class', `there is no class ${JSON.stringify(kind)}`);

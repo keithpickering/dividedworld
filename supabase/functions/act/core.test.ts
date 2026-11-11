@@ -284,6 +284,30 @@ test('a Set is decided by its card\'s rules and written by set_card; its answer 
   }
 });
 
+test('a take-back is written by take_back for the account and the character, and its Act is heard on the thread', async () => {
+  const back = { id: 'tb', kind: 'take_back', thread: 'th', payload: { set: target } };
+  const { dbs, calls } = pair({ whoami, take_back: back });
+  const out = await runAction(dbs, instance, { action: 'takeBack', character: id, set: target });
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.deepEqual(calls, [`player:whoami:{}`, `service:take_back:${JSON.stringify({ through: id, set_act: target, who: whoami })}`]);
+  assert.deepEqual(out.broadcasts, [{ topic: 'thread:th', event: 'act', payload: back }]);
+});
+
+test('a Salty cast on a post under a live Good Vibes thread is priced 25 above its play price, and a Sweet one is not', async () => {
+  const under = (ends: string) => ({ reach: 'post', act: target, kind: 'post', length: 1200, body: 'x'.repeat(1200), effects: [],
+    above: { thread: [{ card: 'good-vibes', act: 'g', gimmick: { kind: 'price', flavors: ['salty'], add: 25 }, ends }] } });
+  const live = new Date(Date.now() + 86_400_000).toISOString();
+  const salty = pair({ whoami, card_target_reach: under(live), play_card: { id: 'k', kind: 'card' } });
+  assert.equal((await runAction(salty.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: '' })).status, 200);
+  assert.ok(salty.calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":75')), salty.calls.join('\n'));
+  const ended = pair({ whoami, card_target_reach: under(new Date(Date.now() - 1000).toISOString()), play_card: { id: 'k', kind: 'card' } });
+  await runAction(ended.dbs, instance, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' }, message: '' });
+  assert.ok(ended.calls.some((c) => c.startsWith('service:play_card:') && c.includes('"price":50')), 'an ended Good Vibes adds nothing');
+  const sweet = pair({ whoami, card_target_reach: under(live), play_card: { id: 'k', kind: 'card' } });
+  await runAction(sweet.dbs, instance, { action: 'playCard', card: 'stick-around', character: id, target, config: {}, message: '' });
+  assert.ok(sweet.calls.some((c) => c.startsWith('service:play_card:') && !c.includes('"price":75')), 'a Sweet cast pays no surcharge');
+});
+
 const onPost = { whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, set_card: setAct };
 const setCalls = (calls: string[]) => calls.filter((c) => c.startsWith('service:set_card:'));
 

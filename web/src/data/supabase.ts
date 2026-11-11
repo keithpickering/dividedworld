@@ -1318,6 +1318,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     buyPack: (slot) => act({ action: 'buyPack', slot: slot.id, price: slot.price }, (r): Opened => ({ pack: r['pack'], contents: Array.isArray(r['contents']) ? r['contents'].filter((c): c is string => typeof c === 'string') : [], balance: num(r['balance']) })),
     playCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     setCard: (card, character, target, config, when) => act({ action: 'setCard', card, character, target, config, ...(when ? { when } : {}) }, toAct),
+    takeBack: (character, set) => act({ action: 'takeBack', character, set }, toAct),
     useCard: (card, character, target, config, message, reach, fromPost) => act({ action: 'useCard', card, character, target, config, message, ...beyond(reach, fromPost) }, toAct),
     async myFaceDown(sets) {
       if (sets.length === 0) return {};

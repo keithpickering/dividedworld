@@ -1001,6 +1001,14 @@ describe('buying and playing a card', () => {
     const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'you hold no "whoops" card; the Vending Machine sells them' }, 400) : undefined));
     expect(await refused.api.playCard('whoops', B, A, {}, '')).toEqual({ ok: false, error: 'you hold no "whoops" card; the Vending Machine sells them' });
   });
+
+  it('takes a face-down card back through the act function, naming the character and the set, and reads the take-back\'s Act', async () => {
+    const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
+    expect(await h.api.takeBack(B, A)).toEqual({ ok: true, value: ACT });
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'takeBack', character: B, set: A }]);
+    const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'there is no face-down card to take back there' }, 404) : undefined));
+    expect(await refused.api.takeBack(B, A)).toEqual({ ok: false, error: 'there is no face-down card to take back there' });
+  });
 });
 
 describe('signing in goes through the account function', () => {
