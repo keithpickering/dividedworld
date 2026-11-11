@@ -1,3 +1,5 @@
+/* The ORIGIN box, the spin form, and "Spun into". */
+
 /*
  * The ORIGIN box (docs/plans/2026-11-11-origin-band-design.md): a strip of another thread's table set into this post. Its head is the
  * column head's band, in the theme's own --kb-head-* tokens, edge to edge inside the theme's frame. The Act under it stands on the

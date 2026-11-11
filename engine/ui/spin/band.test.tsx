@@ -58,5 +58,8 @@ describe('the ORIGIN box', () => {
       const selector = m[1]!;
       if (selector.includes('data-kb-bright-ink')) expect(selector, selector).not.toMatch(/kb-origin-head/u);
     }
+    const band = rules(spin, '.kb-origin-head').join(';');
+    expect(band).toMatch(/(?<![-\w])color:\s*var\(--kb-head-fg\)/u);
+    expect(band).toMatch(/text-shadow:\s*var\(--kb-head-shadow\)/u);
   });
 });
