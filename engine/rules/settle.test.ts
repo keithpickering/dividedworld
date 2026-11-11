@@ -1221,6 +1221,18 @@ test('a Gimmick on a post raises that post\'s earnings alone, and two Gimmicks e
   assert.deepEqual(both.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'calmBoost' }, 1], [{ card: 'fireBoost' }, 5]], 'one entry per card, each naming its own');
   assert.equal(both.details.filter((d) => d.reason === 'card.boost').reduce((s, d) => s + d.amount, 0), 6, 'the log\'s lines add up to the entries');
 });
+test('two Earn cards on different posts split each boost entry over its own card\'s posts alone', () => {
+  const onPost = (id: string, card: string, target: string): InputAct => ({ id, character: 'tom-1', kind: 'card', at: FROM + 2 * H, thread: 't1', target, card });
+  const input = earnBoard([onPost('g1', 'calmBoost', 'tp1'), onPost('g2', 'fireBoost', 'tp2')], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('tp2', 'cat', 'cat-1', 'fire', FROM + 5 * H)]);
+  const r = settle(input, cardsWorld);
+  const boosts = r.entries.filter((e) => e.reason === 'card.boost');
+  assert.equal(boosts.length, 2);
+  const shares = shareEntries(input, cardsWorld, boosts).filter((x) => x.reason === 'card.boost');
+  const postsOf = (card: string) => shares.filter((x) => x.amount === boosts.find((e) => e.params?.card === card)!.amount).map((x) => x.act);
+  assert.deepEqual(postsOf('calmBoost'), ['tp1']);
+  assert.deepEqual(postsOf('fireBoost'), ['tp2']);
+  assert.equal(shares.length, 2, 'each entry lands on one post');
+});
 test('an Earn Gimmick an admin ended is not in the input, so it boosts nothing', () => {
   const r = settle(earnBoard([], [react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)]), cardsWorld);
   assert.equal(amountOf(r, 'tom-1', 'card.boost'), 0);

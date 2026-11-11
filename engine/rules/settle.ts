@@ -69,11 +69,20 @@ export interface LedgerEntry {
   readonly params?: Readonly<Record<string, number | string>>;
 }
 
+/**
+ * What makes an entry one: a player's, character's and reason, and for a boost one card's too, so two Earn cards' boosts are two entries
+ * each naming its card. No other reason names a card, so no other class's entries change. A detail line and a share find their entry by it.
+ */
+export const entryKey = (c: { player: string; character: string; reason: string; params?: Readonly<Record<string, number | string>> }) =>
+  `${c.player}\u0000${c.character}\u0000${c.reason}${typeof c.params?.card === 'string' ? `\u0000${c.params.card}` : ''}`;
+
 /** What the owner's log shows of an entry: which Act, which quadrant, how much, in whole hundredths that add up to the entry. */
 export interface Detail {
   readonly player: string;
   readonly character: string;
   readonly reason: string;
+  /** The card a boost line is for (`{ card }`), where the reason names one; it says which entry the line belongs to (`entryKey`). */
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
   /** The reactions it pays for, where they are not on `act` (Earning.valuing). */
@@ -511,10 +520,6 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     }
     return [...out.entries()].sort((a, b) => cmp(a[0], b[0]));
   };
-  /* An entry is one player's, character's and reason, and for a boost one card's too, so two Earn cards' boosts are two entries each naming
-     its card. No other reason names a card, so no other class's entries change. */
-  const entryKey = (c: { player: string; character: string; reason: string; params?: Readonly<Record<string, number | string>> }) =>
-    `${c.player}\u0000${c.character}\u0000${c.reason}${typeof c.params?.card === 'string' ? `\u0000${c.params.card}` : ''}`;
   const entries: LedgerEntry[] = sum(entryKey)
     /* An entry's numbers are its first earning's: one window settles under one set of settings, so its earnings of one reason agree. */
     .map(([, { first, amount }]) => ({ window: window.id, player: first.player, character: first.character, reason: first.reason, amount: round(amount), ...(first.params ? { params: first.params } : {}) }))
@@ -538,7 +543,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     list.forEach((l, i) => {
       if (whole[i] === 0) return;
       details.push({
-        player: l.first.player, character: l.first.character, reason: l.first.reason,
+        player: l.first.player, character: l.first.character, reason: l.first.reason, ...(typeof l.first.params?.card === 'string' ? { params: { card: l.first.params.card } } : {}),
         ...(l.first.act ? { act: l.first.act } : {}), ...(l.first.quadrant ? { quadrant: l.first.quadrant } : {}), ...(l.first.valuing ? { valuing: l.first.valuing } : {}), ...(l.first.at !== undefined ? { at: l.first.at } : {}), amount: whole[i]!,
       });
     });
@@ -561,6 +566,7 @@ export interface Share {
   readonly player: string;
   readonly character: string;
   readonly reason: string;
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act: string;
   readonly quadrant?: Quadrant;
   readonly amount: number;
@@ -585,7 +591,7 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
   const weights = new Map<string, Map<string, { act: string; quadrant?: Quadrant; amount: number }>>();
   const unplaced = new Map<string, { up: boolean; down: boolean }>();
   for (const d of estimate.details) {
-    const k = `${d.player}\u0000${d.character}\u0000${d.reason}`;
+    const k = entryKey(d);
     if (!d.act) {
       const u = unplaced.get(k) ?? { up: false, down: false };
       if (d.amount > 0) u.up = true; else u.down = true;
@@ -602,7 +608,7 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
   const shares: Share[] = [];
   for (const e of [...entries].sort((a, b) => cmp(a.player, b.player) || cmp(a.character, b.character) || cmp(a.reason, b.reason))) {
     const sign = Math.sign(e.amount);
-    const k = `${e.player}\u0000${e.character}\u0000${e.reason}`;
+    const k = entryKey(e);
     // Weight of the entry's sign on no Act: the split would hand its part to the posts, so the entry is scored over the window.
     if (sign > 0 ? unplaced.get(k)?.up : unplaced.get(k)?.down) continue;
     const posts = [...(weights.get(k) ?? [])]
@@ -613,7 +619,7 @@ export function shareEntries(input: SettlementInput, instance: Instance, entries
     const whole = apportion(e.amount, posts.map(([key, w]) => ({ key, amount: tidy(e.amount * Math.abs(w.amount) / total) })));
     posts.forEach(([, w], i) => {
       if (whole[i] === 0) return;
-      shares.push({ player: e.player, character: e.character, reason: e.reason, act: w.act, ...(w.quadrant ? { quadrant: w.quadrant } : {}), amount: whole[i]! });
+      shares.push({ player: e.player, character: e.character, reason: e.reason, ...(typeof e.params?.card === 'string' ? { params: { card: e.params.card } } : {}), act: w.act, ...(w.quadrant ? { quadrant: w.quadrant } : {}), amount: whole[i]! });
     });
   }
   return shares;
@@ -633,6 +639,8 @@ export function applyCap(balance: number, entries: readonly { readonly amount: n
 export interface EstimateLine {
   readonly character: string;
   readonly reason: string;
+  /** The card a boost line is for, where the reason names one. */
+  readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
   readonly quadrant?: Quadrant;
   /** When the reaction it values landed, for a line that values one reaction. */
@@ -657,7 +665,7 @@ export interface EstimateLine {
  * The lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
-export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number }[]; lines: EstimateLine[] } {
+export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[] } {
   const s = settle(input, instance, { sharedVote: false, halving: false });
   const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
   const playerOf = new Map(input.characters.map((c) => [c.id, c.player]));
@@ -684,5 +692,5 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
       lines.push({ ...line, at, amount: each + step });
     }
   }
-  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount }) => ({ character, reason, amount })), lines: lines.filter((l) => l.amount !== 0) };
+  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
 }
