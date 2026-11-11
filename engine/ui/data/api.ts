@@ -1015,8 +1015,8 @@ export interface LogSettlement {
 /** A change to the player's wallet (`my_wallet_events`): a settlement's credit with what the cap and the floor cut off, a purchase, a play, a trap's payout, and The System's payout for a staff card a trap caught. */
 export interface WalletEvent {
   readonly settlement: number | null;
-  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). */
-  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe';
+  /* `report`, `refund`, `appeal` and `bribe` are the Mod Bots' (0107 to 0109): a report's or an appeal's price (its `ref` the Act), the price going back, and a bribe that talked a visit down (its `ref` the interception). `grant` is an admin's (0146): Aura given by the instance's operator, `ref` null. */
+  readonly kind: 'settlement' | 'purchase' | 'play' | 'trap' | 'trapSystem' | 'report' | 'refund' | 'appeal' | 'bribe' | 'grant';
   readonly change: number;
   /** What the cap held back of a settlement's credit. */
   readonly overflow: number;
