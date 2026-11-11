@@ -362,21 +362,21 @@ describe('cards set face down, traps and catches', () => {
     const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
     const log = { ...empty,
       cards: [{ card: 'whoops', kind: 'played' as const, act: 'k2', price: 75, at }],
-      caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, boughtPrice: 100, at }],
+      caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, at }],
       wallet: [{ settlement: null, kind: 'play' as const, change: -75, overflow: 0, floored: 0, balanceAfter: 225, ref: 'k2', at }] };
     const read = (payload: Record<string, unknown>, staff?: Set<string>) => {
       const spring = act('spX', 'spring', 's', { targetActId: 'post9', payload: { card: 'snare', trigger: 'cast', set: 'setX', by: 'k2', caught: 'k2', ...payload } });
       return text(logRows(data({ log, mine, acts: new Map([...others, spring].map((a) => [a.id, a])), names, ...(staff ? { staff } : {}) }), w, 600, null)[0]!);
     };
     test('a spring written before: the card was spent, and its old words stand', () => {
-      expect(read({ outcome: { do: 'payout' } })).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+      expect(read({ outcome: { do: 'payout' } })).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; the cast cost 0.75, and nothing came back.');
     });
     test('a spring that is not read keeps the old words too', () => {
       const rows = logRows(data({ log, mine, acts: new Map(others.map((a) => [a.id, a])), names }), w, 600, null);
-      expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; it cost 1.00 and 0.75, and nothing came back.');
+      expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare; the cast cost 0.75, and nothing came back.');
     });
     test('a staff setter takes nothing: the card is spent', () => {
-      expect(read({ did: 'caught' }, new Set(['s']))).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and the card is spent; it cost 1.00 and 0.75, and nothing came back to you.');
+      expect(read({ did: 'caught' }, new Set(['s']))).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and the card is spent; the cast cost 0.75, and nothing came back to you.');
     });
   });
 
@@ -384,13 +384,13 @@ describe('cards set face down, traps and catches', () => {
     const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
     const log = { ...empty,
       cards: [{ card: 'whoops', kind: 'played' as const, act: 'k2', price: 75, at }],
-      caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, boughtPrice: 100, at }],
+      caught: [{ play: 'k2', card: 'whoops', post: 'post9', trap: 'snare', spring: 'spX', price: 75, at }],
       wallet: [{ settlement: null, kind: 'play' as const, change: -75, overflow: 0, floored: 0, balanceAfter: 225, ref: 'k2', at }] };
     const spring = act('spX', 'spring', 's', { targetActId: 'post9', payload: { card: 'snare', trigger: 'cast', did: 'caught', set: 'setX', by: 'k2', caught: 'k2' } });
     const rows = logRows(data({ log, mine, acts: new Map([...others, spring].map((a) => [a.id, a])), names }), w, 600, null);
     expect(rows.map((r) => r.kind)).toEqual(['caught']);
     expect(rows[0]!.what).toBe('Your Whoops! was caught');
-    expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and went to Spritey; it cost 1.00 and 0.75, and nothing came back to you.');
+    expect(text(rows[0]!)).toBe('Your Whoops! on Spritey\'s post #9 was caught by a Snare, and went to Spritey; the cast cost 0.75, and nothing came back to you.');
     expect([rows[0]!.aura, rows[0]!.wallet]).toEqual([-75, 225]);
   });
 
@@ -627,7 +627,7 @@ describe('a card\'s own words for a play', () => {
   });
 
   test('a caught play says only that it was caught, never what it would have covered', () => {
-    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }], caught: [{ play: 'k1', card: key, post: 'post3', trap: key, spring: 'sp1', price: 25, boughtPrice: 100, at }] };
+    const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 25, at }], caught: [{ play: 'k1', card: key, post: 'post3', trap: key, spring: 'sp1', price: 25, at }] };
     const rows = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play].map((a) => [a.id, a])) }), w, 600, null);
     expect(rows.map((r) => r.kind)).toEqual(['caught']);
     expect(text(rows[0]!)).not.toContain('covers');
@@ -803,19 +803,19 @@ describe('the Mod Bots\' lines', () => {
     expect(said(rowsOf({ infractions: [inf({ relief: 1 })] })[0]!)).toContain('An appeal took 1 point off.');
   });
 
-  test('a ban says why, for how long, until when, that it ends by itself, and that other characters are not banned', () => {
-    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T }] });
+  test('a ban says why, for how long, until when, that it ends by itself, and that the ban is on this character only', () => {
+    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' }] });
     expect(row!.kind).toBe('ban');
-    expect(said(row!)).toBe('Spritey\'s warn bar filled with Rule 2: No double posting, so they were banned for 3 days and the bar was emptied. They can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. Your other characters are not banned.');
+    expect(said(row!)).toBe('Spritey\'s warn bar filled with Rule 2: No double posting, so they were banned for 3 days and the bar was emptied. They can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. The ban is on Spritey only; each character has its own warn bar.');
   });
 
   test('a ban reads in the banned character\'s own pronouns: she/her, verbs agreeing', () => {
-    const [row] = rowsOf({ bans: [{ ban: 'b2', character: 'q', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T }] });
-    expect(said(row!)).toBe('Pipewrench\'s warn bar filled, so she was banned for 3 days and the bar was emptied. She can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. Your other characters are not banned.');
+    const [row] = rowsOf({ bans: [{ ban: 'b2', character: 'q', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' }] });
+    expect(said(row!)).toBe('Pipewrench\'s warn bar filled, so she was banned for 3 days and the bar was emptied. She can read but not post, react or play cards. The ban ends by itself Nov 2 · 12:15 UTC. The ban is on Pipewrench only; each character has its own warn bar.');
   });
 
   test('a running ban that no appeal names carries the ban for "Appeal to the Boss"; an ended one or an appealed one does not', () => {
-    const ban = { ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T };
+    const ban = { ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' };
     expect(rowsOf({ bans: [ban] })[0]!.appealBan).toEqual({ ban: 'b1', character: 'p', until: ban.until, days: 3, rule: null });
     expect(rowsOf({ bans: [{ ...ban, until: '2000-01-02T00:00:00.000Z' }] })[0]!.appealBan).toBeUndefined();
     const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'b1', punishmentKind: 'ban', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
@@ -825,8 +825,33 @@ describe('the Mod Bots\' lines', () => {
     for (const refund of ['failed', 'stale', 'expired'] as const) expect(rowsOf({ bans: [ban], appeals: [{ ...appeal, refund }] }).find((r) => r.kind === 'ban')!.appealBan, refund).toBeDefined();
   });
 
+  test('a ban says what an appeal did to it, running and ended, in the words the ruling earns', () => {
+    const ban = (ruling: Log['bans'][number]['ruling'], until: string) => ({ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 4, until, infraction: 'i1', rule: null, thread: T, ruling, ownUntil: '2099-11-02T12:15:00.000Z' });
+    const tail = (b: Log['bans'][number]) => said(rowsOf({ bans: [b] })[0]!).replace(/^.*react or play cards\. /u, '');
+    const side = ' The ban is on Spritey only; each character has its own warn bar.';
+    const run = '2099-11-06T12:15:00.000Z';
+    const gone = '2000-01-06T12:15:00.000Z';
+    expect(tail(ban(null, run))).toBe(`The ban ends by itself Nov 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('upheld', run))).toBe(`The ban ends by itself Nov 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('upheld', gone))).toBe(`The ban ended by itself Jan 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('overturned', gone))).toBe(`An appeal overturned the ban on Jan 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('reduced', run))).toBe(`An appeal shortened the ban: it ends Nov 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('reduced', gone))).toBe(`An appeal shortened the ban: it ended Jan 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('increased', run))).toBe(`An appeal lengthened the ban: it ends by itself Nov 6 · 12:15 UTC.${side}`);
+    expect(tail(ban('increased', gone))).toBe(`An appeal lengthened the ban: it ended Jan 6 · 12:15 UTC.${side}`);
+  });
+
+  test('a ban on one character does not say the player\'s other character is free: the line speaks of the one it names', () => {
+    const both = [{ ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' },
+      { ban: 'b2', character: 'q', at: '2099-10-30T12:16:00.000Z', days: 3, until: '2099-11-02T12:16:00.000Z', infraction: 'i2', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:16:00.000Z' }] as const;
+    for (const row of rowsOf({ bans: [...both] }).filter((x) => x.kind === 'ban')) {
+      expect(said(row)).not.toMatch(/other characters/iu);
+      expect(said(row)).toMatch(/each character has its own warn bar\.$/u);
+    }
+  });
+
   test('a ban that has ended says it ended by itself', () => {
-    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 1, until: '2000-01-02T00:00:00.000Z', infraction: 'i1', rule: null, thread: T }] });
+    const [row] = rowsOf({ bans: [{ ban: 'b1', character: 'p', at: '2000-01-01T00:00:00.000Z', days: 1, until: '2000-01-02T00:00:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z' }] });
     expect(said(row!)).toContain('The ban ended by itself Jan 2 · 00:00 UTC.');
     expect(said(row!)).toContain('warn bar filled, so');
   });
@@ -938,7 +963,7 @@ describe('the group lines', () => {
   const mine = [char('p', 'Pipewrench', 'face'), char('q', 'Spritey', 'heel')];
   const move = (over: Partial<Log['groupMoves'][number]> = {}): Log['groupMoves'][number] => ({
     move: 'm1', character: 'p', at: '2099-11-06T12:00:00.000Z', thread: 'ann', seq: 7, group: 'trialMembers', board: 'b1', boardName: 'General', expiresAt: '2099-11-13T12:00:00.000Z', landedUntil: '2099-11-13T12:00:00.000Z', checkAt: null,
-    demand: 'apologyAccepted', office: 'boss', endedWhy: null, endedBy: null, endedAt: null, ruling: null, ruledAt: null, ruledUntil: null, ...over,
+    demand: 'apologyAccepted', office: 'boss', endedWhy: null, endedBy: null, endedAt: null, ruling: null, ruledAt: null, ruledUntil: null, ruledOffice: null, ...over,
   });
   const groupWords: Words = { ...words, instance: { ...testInstance, groups: { ...testInstance.groups, conferred: [
     { key: 'trialMembers', name: 'Trial Members', color: '#d2691e', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', color: '#c2408f', tone: 'favor' },
@@ -952,6 +977,11 @@ describe('the group lines', () => {
     expect(row).toMatchObject({ kind: 'grouped', characters: ['p'], aura: 0, wallet: null, at: '2099-11-06T12:00:00.000Z' });
     expect(said(row!)).toBe(`The Boss put Pipewrench in ${name} and barred it from posting on General until Nov 13.`);
     expect(row!.details[1]).toEqual({ text: `put Pipewrench in ${name}`, href: '/t/ann?page=1#post-7' });
+  });
+
+  test('the bar reads in the character\'s own pronouns', () => {
+    const she = logRows(data({ log: { ...empty, groupMoves: [move()] }, mine: [char('p', 'Pipewrench', 'face', undefined, PRONOUN_PRESETS.she)] }), groupWords, 600, null);
+    expect(said(she[0]!)).toBe(`The Boss put Pipewrench in ${name} and barred her from posting on General until Nov 13.`);
   });
 
   test('says no "barred" where no board is, and a Mod\'s role word where a Mod moved it', () => {
@@ -999,13 +1029,22 @@ describe('the group lines', () => {
 
   test('each appeal ruling says what the hearer did and where the end now is', () => {
     const ruled = (ruling: NonNullable<Log['groupMoves'][number]['ruling']>, over: Partial<Log['groupMoves'][number]> = {}) =>
-      rowsOf([move({ ruling, ruledAt: '2099-11-07T00:00:00.000Z', ...over })]).find((r) => r.key === 'grouped:m1:ruling')!;
+      rowsOf([move({ ruling, ruledAt: '2099-11-07T00:00:00.000Z', ruledOffice: 'boss', ...over })]).find((r) => r.key === 'grouped:m1:ruling')!;
     expect(said(ruled('reduced', { ruledUntil: '2099-11-10T00:00:00.000Z' }))).toBe(`The Boss reduced Pipewrench's ${name} on appeal: it now ends Nov 10.`);
     expect(said(ruled('increased', { ruledUntil: '2099-11-16T00:00:00.000Z' }))).toBe(`The Boss increased Pipewrench's ${name} on appeal: it now ends Nov 16.`);
     expect(said(ruled('upheld'))).toBe(`The Boss upheld Pipewrench's ${name} on appeal: nothing changed.`);
     expect(said(ruled('overturned'))).toBe(`The Boss overturned Pipewrench's ${name} on appeal: it ended.`);
     expect(said(ruled('reduced', { ruledUntil: '2099-11-06T00:00:00.000Z' }))).toBe(`The Boss reduced Pipewrench's ${name} on appeal: it ended at once.`);
-    expect(said(ruled('upheld', { office: 'mod' }))).toMatch(/^A Mod upheld /u);
+    expect(said(ruled('upheld', { ruledOffice: 'mod' }))).toMatch(/^A Mod upheld /u);
+    /* The hearer is the stamped office, never the move's: a Mod's move the Boss ruled on reads the Boss, and the move's own line still says the Mod. */
+    expect(said(ruled('upheld', { office: 'mod', ruledOffice: 'boss' }))).toMatch(/^The Boss upheld /u);
+    expect(said(rowsOf([move({ office: 'mod', ruling: 'upheld', ruledAt: '2099-11-07T00:00:00.000Z', ruledOffice: 'boss' })]).find((r) => r.key === 'grouped:m1')!)).toMatch(/^A Mod put /u);
+    /* A ruling written before the stamp names no hearer, and no default stands in: the move's office is not read for it. */
+    const unstamped = (ruling: NonNullable<Log['groupMoves'][number]['ruling']>, over: Partial<Log['groupMoves'][number]> = {}) => ruled(ruling, { ruledOffice: null, ...over });
+    expect(said(unstamped('upheld'))).toBe(`Pipewrench's ${name} was upheld on appeal: nothing changed.`);
+    expect(said(unstamped('overturned', { office: 'mod' }))).toBe(`Pipewrench's ${name} was overturned on appeal: it ended.`);
+    expect(said(unstamped('reduced', { ruledUntil: '2099-11-10T00:00:00.000Z' }))).toBe(`Pipewrench's ${name} was reduced on appeal: it now ends Nov 10.`);
+    expect(unstamped('upheld').details[0]).toEqual({ text: `Pipewrench's ${name}`, href: '/t/ann?page=1#post-7' });
     expect(ruled('upheld')).toMatchObject({ kind: 'grouped', at: '2099-11-07T00:00:00.000Z', aura: 0 });
   });
 

@@ -292,7 +292,7 @@ describe('buying', () => {
     open(fake);
     fireEvent.click(await screen.findByRole('button', { name: 'Buy Whoops!, 1.00 orb, common Cast' }));
     /* The wallet is spent elsewhere between the preview and the press, so the server refuses what the preview allowed. */
-    vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'that costs 100, and your wallet holds 62' });
+    vi.spyOn(fake, 'buyCard').mockResolvedValue({ ok: false, error: 'that costs 1.00, and your wallet holds 0.62' });
     fireEvent.click(screen.getByRole('button', { name: 'Buy Whoops! · 1.00' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('That costs 1.00, and your wallet holds 0.62.');
   });

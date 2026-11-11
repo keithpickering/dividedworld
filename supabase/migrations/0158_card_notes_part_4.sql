@@ -597,8 +597,8 @@ revoke execute on function acts_quote_guard() from public, anon, authenticated;
 create trigger acts_quote_guard before insert on acts for each row when (new.kind in ('post', 'spin', 'edit')) execute function acts_quote_guard();
 
 -- ===================================================================================== 5. write_staff_act ====
--- write_staff_act (0142), a pool post whose target holds a live No quote is written with no target and `quoting` false, so a pool reply to a post that cannot be quoted lands as a plain reply and the paid answer is kept ("A
--- validator tighter than the schema is a place a paid answer goes to die"). A staff body that itself holds a real quote of such a post is refused by the guard, like anyone's. Everything else as 0142 wrote it; its grants (0043) are stated again.
+-- write_staff_act (0157, which stamps an appeal's ruling with its office as 0142 stamped a move), a pool post whose target holds a live No quote is written with no target and `quoting` false, so a pool reply to a post that cannot be quoted lands as a plain reply and the paid answer is kept ("A
+-- validator tighter than the schema is a place a paid answer goes to die"). A staff body that itself holds a real quote of such a post is refused by the guard, like anyone's. Everything else as 0157 wrote it. Create or replace keeps its grants (0043).
 
 create or replace function write_staff_act(staff_key text, kind text, thread uuid, target uuid, payload jsonb) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -626,8 +626,8 @@ begin
   if held in ('waiting', 'benched') then
     raise exception 'a % persona writes nothing', held using errcode = '55000';
   end if;
-  -- A move says which office made it, as the office stood when it landed.
-  if kind = 'move' and held in ('boss', 'mod') and not (payload ? 'office') then
+  -- A move says which office made it, and an appeal's ruling which office heard it, as the office stood when it landed.
+  if kind in ('move', 'appeal_ruling') and held in ('boss', 'mod') and not (payload ? 'office') then
     stamped := payload || jsonb_build_object('office', held);
   end if;
   -- A pool reply to a post that holds a live No quote is written as a plain reply, with no target: the paid answer is kept, and nothing springs (the post holds no back, as the two never share one). The post's plays are public.
@@ -643,8 +643,6 @@ begin
   if quoting then sprung := spring_traps('quote', target, written, held => locked); end if;
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
 end $$;
-revoke execute on function write_staff_act(text, text, uuid, uuid, jsonb) from public, anon, authenticated;
-grant execute on function write_staff_act(text, text, uuid, uuid, jsonb) to service_role;
 
 -- ===================================================================================== 6. place_cast ====
 -- place_cast (0153_drives), with three additions. (a) A staff character's cast card that carries a gimmick is refused with a plain exception (no refusal hint): the settlement leaves a staff character's Acts out, so a cast earn it

@@ -38,6 +38,7 @@ export function endedModWords(r: Pick<MoveLogRow, 'kind' | 'outcome' | 'params'>
       case 'intercepted': return 'talked down';
       case 'trapped': return 'ended by a trap';
       case 'reversed': return 'ended by an admin';
+      case 'dropped': return 'dropped, never filed';
       default: return 'ended';
     }
   }

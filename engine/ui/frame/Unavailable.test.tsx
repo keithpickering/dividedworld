@@ -8,8 +8,8 @@ import { CannotDisplay, CannotFind } from './Unavailable.tsx';
 const ADDRESS = 'dw.gripe/t/3f2a9c1e';
 
 /* The page draws inside <main>, as a screen does; the test world's site name is "Test". */
-function displayed(onRetry: () => void = () => {}) {
-  return renderIn(buildWorld(), <main><CannotDisplay address={ADDRESS} onRetry={onRetry} /></main>, { path: '/' });
+function displayed(onRetry: () => void = () => {}, kind: 'offline' | 'silent' | 'server' | 'broken' = 'silent') {
+  return renderIn(buildWorld(), <main><CannotDisplay kind={kind} address={ADDRESS} onRetry={onRetry} /></main>, { path: '/' });
 }
 
 /* The list's items as their whole text, since an item holds a button or a link. */
@@ -36,6 +36,33 @@ describe('CannotDisplay', () => {
       "Click your browser's Back button to return to the page you were on.",
     ]);
     expect(screen.getByText(`Cannot load ${ADDRESS}`)).toBeTruthy();
+  });
+
+  const BACK = "Click your browser's Back button to return to the page you were on.";
+  const SERVER_ITEMS = ['Click Try again, or try again in a moment.', 'If it keeps happening, tell an admin.', 'Go back to the index.', BACK];
+
+  test('offline: its sentence and list', () => {
+    displayed(() => {}, 'offline');
+    expect(screen.getByText('The page you are looking for is currently unavailable. You are not connected, so Test was never asked for this page.')).toBeTruthy();
+    expect(items()).toEqual(['Check that your connection is working.', 'Click Try again.', BACK]);
+  });
+
+  test('server and broken: their sentences and list, with "tell an admin" a link to the contact page', () => {
+    for (const [kind, sentence] of [['server', 'Test answered, but with an error. Your connection is working.'], ['broken', 'Something went wrong while loading it.']] as const) {
+      const { unmount } = displayed(() => {}, kind);
+      expect(screen.getByText(`The page you are looking for is currently unavailable. ${sentence}`)).toBeTruthy();
+      expect(items()).toEqual(SERVER_ITEMS);
+      expect(screen.getByRole('link', { name: 'tell an admin' }).getAttribute('href')).toBe('/contact');
+      unmount();
+    }
+  });
+
+  test('"Check that your connection is working" appears only for offline and silent', () => {
+    for (const kind of ['offline', 'silent', 'server', 'broken'] as const) {
+      const { unmount } = displayed(() => {}, kind);
+      expect(screen.queryByText('Check that your connection is working.') !== null).toBe(kind === 'offline' || kind === 'silent');
+      unmount();
+    }
   });
 
   test('"back to the index" is a link to /', () => {

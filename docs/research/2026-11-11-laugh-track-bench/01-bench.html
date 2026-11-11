@@ -1,0 +1,298 @@
+<!doctype html>
+<!--
+  Record, written 2026-11-11. The Laugh Track bench: the design session's mockup for
+  docs/plans/2026-11-11-laugh-track-design.md, made so the owner could compare the caption bar's three looks in place
+  ("it might be worth prototyping to test the options out"), with the reading line, the build-up and the cue marks
+  working as section 6 of the design describes. It plays no sound: only the captions a reader with sound off would see.
+  A standalone page: open it in a browser. It is a reference for how the bar and the marks look and behave, not code
+  to copy.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laugh Track Bench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+/* The bench's own chrome is the board's black on white; the window below switches between the board's light and dark looks. */
+:root {
+  --paper: #ffffff; --ink: #000000; --muted: #555555; --rule: #000000;
+  --font: Verdana, Geneva, sans-serif; --mono: "Courier New", Courier, monospace;
+  --glass-font: "Barlow Condensed", "Arial Narrow", sans-serif;
+  /* The glass, from Divided World's glass.json. */
+  --glass-panel: rgba(10, 6, 20, 0.88); --glass-text: #e8ecf4; --glass-neon: #19e3ff; --glass-neon-text: #9ef4ff;
+  /* The board's flavor inks (instances/divided-world/ui/theme.css). */
+  --pepperoni: #d24a2c; --sweet: #e86fa8; --salty: #3f8fd2;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); padding: 20px max(16px, env(safe-area-inset-left)) 48px; }
+h1 { font-size: 22px; margin: 0 0 .3em; }
+p { margin: 0 0 .8em; }
+.head { max-width: 988px; margin: 0 auto 16px; }
+.head p { color: var(--muted); font-size: 13.75px; max-width: 72ch; }
+:focus-visible { outline: 2px solid var(--glass-neon); outline-offset: 2px; }
+
+.bench { max-width: 988px; margin: 0 auto 16px; border: 1px solid var(--rule); display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.bench fieldset { border: 0; border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin: 0 -1px -1px 0; padding: 10px 12px 12px; display: grid; gap: 6px; align-content: start; font-size: 12.5px; min-width: 0; }
+.bench legend { float: left; width: 100%; padding: 0; margin-bottom: 4px; font-weight: bold; letter-spacing: .06em; text-transform: uppercase; }
+.bench label { display: flex; gap: 6px; align-items: center; min-height: 24px; }
+
+/* The window: a phone or a desktop's viewport, with the board scrolling inside and the HUD docked at its foot. */
+.stage { display: flex; justify-content: center; }
+.window { position: relative; width: 988px; max-width: 100%; height: 620px; border: 1px solid var(--rule); overflow: hidden; }
+.window.phone { width: 390px; height: 700px; }
+.scroller { position: absolute; inset: 0; overflow-y: auto; padding-bottom: var(--hud-h); }
+
+/* The board, 2003 BBCode style. */
+.board { --b-bg: #ffffff; --b-fg: #000000; --b-head: #e6e6e6; --b-rule: #000000; --b-muted: #555555; background: var(--b-bg); color: var(--b-fg); min-height: 100%; font: 13px/1.5 var(--font); padding: 14px; }
+.window.dark .board { --b-bg: #0b0b0b; --b-fg: #f2f2f2; --b-head: #1d1d1d; --b-rule: #f2f2f2; --b-muted: #b4b4b4; }
+.crumbs { font-size: 11px; color: var(--b-muted); margin-bottom: 8px; }
+.post { border: 1px solid var(--b-rule); margin-bottom: 14px; display: grid; grid-template-columns: 150px 1fr; }
+.window.phone .post { grid-template-columns: 1fr; }
+.postbit { border-right: 1px solid var(--b-rule); padding: 8px; font-size: 11px; background: var(--b-head); }
+.window.phone .postbit { border-right: 0; border-bottom: 1px solid var(--b-rule); }
+.postbit b { font-size: 12px; display: block; }
+.body { padding: 10px 12px; }
+.body p { margin: 0 0 1em; }
+.tag { display: inline-block; font: bold 10px var(--mono); border: 1px solid var(--pepperoni); color: var(--pepperoni); padding: 0 4px; margin-top: 6px; }
+
+/* A cue: nothing marks it before it fires, so the joke is not telegraphed. After, a dotted underline in its sound's flavor ink; it moves no word. */
+.cue { text-decoration: none; }
+.cue.fired { text-decoration: underline dotted 2px; text-underline-offset: 3px; cursor: pointer; }
+.cue.fired[data-sound="laugh"] { text-decoration-color: var(--pepperoni); }
+.cue.fired[data-sound="cheer"] { text-decoration-color: var(--sweet); }
+.cue.fired[data-sound="boo"] { text-decoration-color: var(--salty); }
+.cue.fired:focus-visible { outline: 2px solid var(--glass-neon); outline-offset: 1px; }
+
+/* The reading line, drawn only when asked: 40% of the way down the space above the HUD. */
+.line { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--glass-neon); pointer-events: none; z-index: 5; display: none; }
+.line::after { content: "reading line"; position: absolute; right: 6px; top: -16px; font: 10px var(--mono); color: var(--glass-neon); background: rgba(0,0,0,.6); padding: 0 4px; }
+.window.show-line .line { display: block; }
+.ring { position: absolute; left: 0; right: 0; pointer-events: none; z-index: 4; display: none; background: color-mix(in srgb, var(--glass-neon) 7%, transparent); }
+.window.show-line .ring { display: block; }
+
+/* The HUD: a stand-in for the glass dock, with its measured height. */
+.window { --hud-h: 76px; }
+.window.phone { --hud-h: 64px; }
+.hud { position: absolute; left: 0; right: 0; bottom: 0; height: var(--hud-h); background: linear-gradient(180deg, #1a1030, #0a0614); border-top: 2px solid var(--glass-neon); display: flex; align-items: center; gap: 14px; padding: 0 16px; color: var(--glass-text); font: 700 15px var(--glass-font); letter-spacing: 1px; text-transform: uppercase; z-index: 20; }
+.hud .av { width: 40px; height: 40px; border: 2px solid var(--glass-neon); background: #2a1c4a; }
+.hud .grow { flex: 1; }
+.hud .orb { width: 22px; height: 22px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fff, var(--glass-neon) 45%, #054); box-shadow: 0 0 10px var(--glass-neon); }
+
+/* The caption bar: one for the page, above the HUD's seam, never over the HUD, never wider than the page. Three looks. */
+.cc { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(var(--hud-h) + 10px); z-index: 21; width: max-content; max-width: calc(100% - 32px); pointer-events: none; opacity: 0; transition: opacity .15s; }
+.cc.on { opacity: 1; }
+.cc-text { display: block; white-space: normal; text-align: center; }
+@media (prefers-reduced-motion: reduce) { .cc { transition: none; } }
+
+/* A: TV captions in a glass tray. */
+.cc.tray { padding: 6px; background: var(--glass-panel); border: 1px solid color-mix(in srgb, var(--glass-neon) 60%, transparent); box-shadow: 0 0 14px color-mix(in srgb, var(--glass-neon) 25%, transparent); clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px); }
+.cc.tray .cc-text, .cc.tv .cc-text { background: #000; color: #fff; font: bold 16px/1.3 var(--mono); text-transform: uppercase; padding: 3px 10px; letter-spacing: .5px; }
+.window.phone .cc.tray .cc-text, .window.phone .cc.tv .cc-text { font-size: 14px; }
+/* B: bare TV captions. */
+.cc.tv { padding: 0; }
+/* C: a glass panel, the toasts' kin, in the glass's type. */
+.cc.panel { padding: 8px 18px; background: var(--glass-panel); border: 1.5px solid var(--glass-neon); clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+.cc.panel .cc-text { color: var(--glass-neon-text); font: 700 20px/1.2 var(--glass-font); letter-spacing: 1.5px; text-transform: uppercase; }
+.window.phone .cc.panel .cc-text { font-size: 17px; }
+.cc .cc-tone { display: inline-block; width: 8px; height: 8px; margin-right: 8px; vertical-align: middle; border-radius: 50%; }
+.cc.panel .cc-tone, .cc.tray .cc-tone { box-shadow: 0 0 6px currentColor; }
+.cc.murmur .cc-text { font-style: italic; }
+.cc.murmur.panel .cc-text { color: color-mix(in srgb, var(--glass-neon-text) 75%, transparent); }
+
+.notes { max-width: 988px; margin: 18px auto 0; font-size: 13.75px; }
+.notes li { margin-bottom: .4em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="head">
+  <h1>Laugh Track bench</h1>
+  <p>Scroll the window. A cue fires when its phrase rests on the reading line for 0.4 seconds; as one nears, its build-up is captioned. Fired phrases take a dotted underline in their sound's flavor ink, and hovering, focusing or tapping one replays its caption. No sound plays here: this is what a reader with sound off sees, and a reader with sound on sees the same.</p>
+</div>
+
+<form class="bench" onsubmit="return false">
+  <fieldset>
+    <legend>Caption bar</legend>
+    <label><input type="radio" name="cc" value="panel" checked> C · Glass panel</label>
+    <label><input type="radio" name="cc" value="tray"> A · TV captions in a glass tray</label>
+    <label><input type="radio" name="cc" value="tv"> B · Bare TV captions</label>
+  </fieldset>
+  <fieldset>
+    <legend>Window</legend>
+    <label><input type="radio" name="win" value="desktop" checked> Desktop</label>
+    <label><input type="radio" name="win" value="phone"> Phone</label>
+  </fieldset>
+  <fieldset>
+    <legend>Board</legend>
+    <label><input type="radio" name="board" value="light" checked> Light</label>
+    <label><input type="radio" name="board" value="dark"> Dark</label>
+  </fieldset>
+  <fieldset>
+    <legend>Show</legend>
+    <label><input type="checkbox" id="showLine"> The reading line and the build-up's reach</label>
+    <button type="button" id="reset">Unfire every cue</button>
+  </fieldset>
+</form>
+
+<div class="stage">
+  <div class="window" id="win">
+    <div class="scroller" id="scroller">
+      <div class="board">
+        <div class="crumbs">Divided World » The Pipe » Mario Kart tier list (serious)</div>
+        <div class="post">
+          <div class="postbit"><b>Spritey</b>Posts: 412</div>
+          <div class="body">
+            <p>Okay, it's time somebody said it plainly. I've played every kart game since the SNES and I've put real thought into this list, so please read it all the way through before you reply.</p>
+            <p>Number one is Double Dash. Two characters per kart, item combos, the whole thing. Nothing has topped it and nothing will.</p>
+            <p>Number two is the Wii one, mostly for the bikes. Number three is 8 Deluxe, which is fine, it's just fine.</p>
+            <p>And before anyone starts: no, the blue shell is not "skill expression". It is a punishment for being good at the game.</p>
+          </div>
+        </div>
+        <div class="post">
+          <div class="postbit"><b>Gloomba</b>Posts: 1,906</div>
+          <div class="body">
+            <p>This is a good list and I agree with most of it, except for one thing that I need to address at length.</p>
+            <p>The best driver in the entire series is <span class="cue" data-sound="boo">Luigi</span>. I will not be taking questions. He has the death stare. He has the moustache. He has the quiet confidence of a man who knows he is better than his brother.</p>
+            <p>Some people will tell you <span class="cue" data-sound="boo">Luigi</span> is a meme. Those people have never lost a race to him on Rainbow Road at two in the morning.</p>
+            <p>Anyway, Double Dash is still <span class="cue" data-sound="cheer">the greatest game ever made</span>, and I would die on that hill.</p>
+            <p>Also my cat walked on the controller during the final lap once and <span class="cue" data-sound="laugh">we came in first</span>. True story.</p>
+            <p>That's all. Thank you for coming to my talk.</p>
+            <span class="tag">LAUGH TRACK · cast by Spritey</span>
+          </div>
+        </div>
+        <div class="post">
+          <div class="postbit"><b>Kooper Trooper</b>Posts: 77</div>
+          <div class="body">
+            <p>lol</p>
+            <p>(For the record, the cat is the best driver.)</p>
+          </div>
+        </div>
+        <div style="height: 320px"></div>
+      </div>
+    </div>
+    <div class="ring" id="ring"></div>
+    <div class="line" id="line"></div>
+    <div class="cc panel" id="cc" aria-hidden="true"><span class="cc-text" id="ccText"></span></div>
+    <div class="sr" role="status" aria-live="polite" id="live"></div>
+    <div class="hud"><span class="av"></span><span>Posting as Gloomba</span><span class="grow"></span><span class="orb"></span><span>Hand</span><span>Menu</span></div>
+  </div>
+</div>
+
+<ul class="notes">
+  <li><b>The reading line</b> sits 40% of the way down the space above the HUD. A phrase that crosses it in a fling fires nothing; one that rests on it for 0.4s fires.</li>
+  <li><b>The build-up</b> starts when an unfired phrase is within 12rem of the line (the shaded band) or under a fine pointer. The nearest unfired phrase decides which murmur: a titter, an "ooh" or a grumble.</li>
+  <li><b>Each phrase fires once a visit.</b> "Luigi" is one cue, at two places, as Laugh Track's phrases are.</li>
+  <li><b>The bar</b> holds one caption at a time and clears when the sound would end (here, a sound's stand-in length of 2.5 seconds). A screen reader hears it through a polite live region.</li>
+</ul>
+
+<script>
+(() => {
+  const win = document.getElementById('win');
+  const scroller = document.getElementById('scroller');
+  const cc = document.getElementById('cc');
+  const ccText = document.getElementById('ccText');
+  const live = document.getElementById('live');
+  const line = document.getElementById('line');
+  const ring = document.getElementById('ring');
+  const cues = [...document.querySelectorAll('.cue')];
+
+  const HIT = { laugh: 'The audience laughs', cheer: 'The audience cheers', boo: 'The audience boos' };
+  const BUILD = { laugh: 'The audience titters', cheer: 'The audience goes "ooh"', boo: 'A grumble rises' };
+  const INK = { laugh: 'var(--pepperoni)', cheer: 'var(--sweet)', boo: 'var(--salty)' };
+  const DWELL = 400, SOUND_MS = 2500;
+  const rem = () => parseFloat(getComputedStyle(document.documentElement).fontSize);
+
+  for (const name of ['cc', 'win', 'board']) {
+    for (const input of document.querySelectorAll(`input[name="${name}"]`)) input.addEventListener('change', apply);
+  }
+  document.getElementById('showLine').addEventListener('change', apply);
+  document.getElementById('reset').addEventListener('click', () => {
+    for (const c of cues) { c.classList.remove('fired'); c.removeAttribute('tabindex'); c.removeAttribute('role'); c.removeAttribute('aria-label'); delete c.dataset.since; }
+    scroller.scrollTop = 0; clear();
+  });
+  function apply() {
+    const val = (n) => document.querySelector(`input[name="${n}"]:checked`).value;
+    cc.className = `cc ${val('cc')}` + (cc.classList.contains('on') ? ' on' : '') + (cc.classList.contains('murmur') ? ' murmur' : '');
+    win.classList.toggle('phone', val('win') === 'phone');
+    win.classList.toggle('dark', val('board') === 'dark');
+    win.classList.toggle('show-line', document.getElementById('showLine').checked);
+    tick();
+  }
+
+  let clearTimer = 0, current = '';
+  function show(words, sound, murmur) {
+    const said = `[${words}]`;
+    if (said !== current) {
+      ccText.innerHTML = `<span class="cc-tone" style="color:${INK[sound]};background:${INK[sound]}"></span>`;
+      ccText.append(said);
+      current = said;
+      if (!murmur) live.textContent = said;
+    }
+    cc.classList.add('on'); cc.classList.toggle('murmur', !!murmur);
+    clearTimeout(clearTimer);
+    if (!murmur) clearTimer = setTimeout(clear, SOUND_MS);
+  }
+  function clear() { cc.classList.remove('on', 'murmur'); current = ''; }
+
+  function fire(c) {
+    c.classList.add('fired');
+    // Its first piece becomes a button that replays it; here each place is one piece.
+    c.setAttribute('tabindex', '0'); c.setAttribute('role', 'button');
+    c.setAttribute('aria-label', `Replay: ${HIT[c.dataset.sound].toLowerCase()}`);
+    show(HIT[c.dataset.sound], c.dataset.sound, false);
+  }
+  for (const c of cues) {
+    const replay = () => { if (c.classList.contains('fired')) show(HIT[c.dataset.sound], c.dataset.sound, false); };
+    c.addEventListener('pointerenter', replay); c.addEventListener('focus', replay); c.addEventListener('click', replay);
+    c.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); replay(); } });
+  }
+
+  let pointer = null;
+  scroller.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') { pointer = { x: e.clientX, y: e.clientY }; tick(); } });
+  scroller.addEventListener('pointerleave', () => { pointer = null; tick(); });
+
+  function tick() {
+    const box = win.getBoundingClientRect();
+    const hud = parseFloat(getComputedStyle(win).getPropertyValue('--hud-h'));
+    const lineY = (box.height - hud) * 0.4;
+    const reach = 12 * rem();
+    line.style.top = `${lineY}px`;
+    ring.style.top = `${lineY - reach}px`; ring.style.height = `${reach * 2}px`;
+    const now = performance.now();
+    let nearest = null, nearestD = Infinity;
+    for (const c of cues) {
+      if (c.classList.contains('fired')) continue;
+      for (const r of c.getClientRects()) {
+        const top = r.top - box.top, bottom = r.bottom - box.top;
+        const onLine = top <= lineY && bottom >= lineY;
+        if (onLine) {
+          if (!c.dataset.since) c.dataset.since = String(now);
+        } else if (!c.getClientRects().length || [...c.getClientRects()].every((q) => !(q.top - box.top <= lineY && q.bottom - box.top >= lineY))) {
+          delete c.dataset.since;
+        }
+        let d = onLine ? 0 : Math.min(Math.abs(top - lineY), Math.abs(bottom - lineY));
+        if (pointer) {
+          const dx = Math.max(r.left - pointer.x, 0, pointer.x - r.right), dy = Math.max(r.top - pointer.y, 0, pointer.y - r.bottom);
+          d = Math.min(d, Math.hypot(dx, dy) * 2);
+        }
+        if (d < nearestD) { nearestD = d; nearest = c; }
+      }
+      if (c.dataset.since && now - Number(c.dataset.since) >= DWELL) { fire(c); delete c.dataset.since; return; }
+    }
+    // The build-up shows while a hit is not already captioned.
+    const hitShowing = cc.classList.contains('on') && !cc.classList.contains('murmur');
+    if (nearest && nearestD <= reach && !hitShowing) show(BUILD[nearest.dataset.sound], nearest.dataset.sound, true);
+    else if (cc.classList.contains('murmur')) clear();
+  }
+  scroller.addEventListener('scroll', tick, { passive: true });
+  // While a phrase rests on the line its dwell is timed, so the page looks again a few times a second; a real build only does this while something is resting.
+  setInterval(tick, 100);
+  window.addEventListener('resize', tick);
+  apply();
+})();
+</script>
+</body>
+</html>
