@@ -207,7 +207,7 @@ export interface Seed {
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
    * moments were snapshotted (0072): its moment is not taken.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; unrecorded?: boolean; spring?: Id; tokens?: number }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -1440,7 +1440,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       spring = write({ character: acts.get(trap.set)!.character, kind: 'spring', thread: on.thread, target, payload: { card: trap.card, trigger: 'cast', did: 'caught', set: trap.set, by: playId, caught: playId } });
       faceDown.get(trap.set)!.sprung = spring.id;
     }
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(catches ? { caught: trap!.set } : { layer }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(catches ? { caught: trap!.set } : { layer }) } });
     /* After the Act, so the wallet's record names what the Aura went on (play_card). */
     spend(account, decided.value.price, 'play', written.id);
     recordCard(account.id, written.at, { card, kind: 'played', act: written.id, price: decided.value.price });
@@ -2570,8 +2570,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             const play = acts.get(t.play);
             const post = play?.kind === 'card' && play.target !== null ? acts.get(play.target) : undefined;
             if (!play || !post || (play.payload.reach ?? 'post') !== 'post' || characters.get(post.character ?? '')?.owner !== account || !fits(t.at)) return [];
-            const first = texts.filter((x) => x.play === t.play).sort((x, y) => x.order - y.order)[0];
-            return [{ ms: t.at, order: t.order, w: { play: t.play, post: post.id, version: t.version, failed: t.text === null, opening: first === t, at: iso(t.at) } }];
+            const mine = texts.filter((x) => x.play === t.play);
+            /* `opening`: no earlier text of the play; `over`: the failure that ended it (refunded, and no row after it). */
+            const opening = !mine.some((x) => x.text !== null && x.order < t.order);
+            const over = t.text === null && untakenPlays.has(t.play) && !mine.some((x) => x.order > t.order);
+            return [{ ms: t.at, order: t.order, w: { play: t.play, post: post.id, version: t.version, failed: t.text === null, opening, over, at: iso(t.at) } }];
           })).map(({ w }) => w),
           saves: newest(onMine.filter((a) => effects.has(a.id) && fits(effects.get(a.id)!.at)).map((a) => ({ ms: effects.get(a.id)!.at, order: a.order, a })))
             .map(({ a, ms }) => ({ play: a.id, post: a.target!, savedAt: iso(ms) })),
@@ -3653,6 +3656,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.message !== undefined) payload.message = o.message;
       if (o?.layer !== undefined) payload.layer = o.layer;
       if (o?.config !== undefined) payload.config = o.config;
+      /* The tokens a card that writes bought are the play's own fact (play_card writes them with the play): given, else what its rules say of the configuration against the settings of the seed. */
+      const bought = o?.tokens ?? instance.cards.find((c) => c.key === card)?.writes?.tokens((o?.config ?? {}) as never, settings);
+      if (bought !== undefined && Number.isSafeInteger(bought) && bought >= 1) payload.tokens = bought;
       /* A play a trap caught names its set, and takes no layer; a Use carries its end (0054). */
       if (o?.caught !== undefined) { payload.caught = o.caught; delete payload.layer; }
       if (o?.spring !== undefined) payload.spring = o.spring;

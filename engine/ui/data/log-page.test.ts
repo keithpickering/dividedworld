@@ -38,7 +38,7 @@ test('a full source ends the page at its oldest time; every source keeps only wh
 });
 
 test('the texts cards wrote on the player\'s posts are a source of their own: a full one ends the page at its oldest time', () => {
-  const w = (at: string, version: string) => ({ play: 'k', post: 'p', version, failed: false, opening: false, at });
+  const w = (at: string, version: string) => ({ play: 'k', post: 'p', version, failed: false, opening: false, over: false, at });
   const log = cutLog({ ...none, writes: [w('2026-10-30T10:00:00Z', 'v3'), w('2026-10-30T09:00:00Z', 'v2')], cards: [bought('2026-10-30T09:30:00Z'), bought('2026-10-30T08:00:00Z')] }, 2);
   assert.equal(log.before, '2026-10-30T09:00:00Z');
   assert.deepEqual(log.writes.map((x) => x.version), ['v3']);

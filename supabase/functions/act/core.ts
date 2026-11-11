@@ -186,6 +186,8 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
           : decidePlay(rules, tuned.settings, target, effects, decision.args.config, said.value, { nameOf });
         if (!play.ok) return refused('config', play.why);
         args = { ...args, config: play.value.config, message: play.value.message, price: play.value.price };
+        // A card that writes buys its tokens at this decision, from the settings as the rows hold them now; the database writes them with the play and the worker and the log read them there.
+        if (play.value.tokens !== undefined) args = { ...args, tokens: play.value.tokens };
         // The version the play was decided against goes back with it; play_card refuses it once the post has another (0070).
         if (target.reach === 'post' && target.version) args = { ...args, reach: 'post', from_post: null, version: target.version };
       }

@@ -260,24 +260,20 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(said).toContain('0.25 more for every 50 characters it covers');
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
     expect(ac.surcharge!(instance.settings)).toBe('Covers a lot, +0.25 per 50 characters covered');
-    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' }, instance.settings)).toBe('It covers “Mario” with “Luigi”.');
-    expect(ac.logPlay!({}, instance.settings)).toBeUndefined();
+    expect(ac.logPlay!({ phrase: 'Mario', replacement: 'Luigi' }, {})).toBe('It covers “Mario” with “Luigi”.');
+    expect(ac.logPlay!({}, {})).toBeUndefined();
     expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' });
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
   });
   /* The card that writes, in the log (the design's section 13): the caster's length, the author's clear, and what it did to the author's post. */
-  test('You Were Saying? says its length in tokens from the settings, the author\'s clear as theirs, and what it did in its own words', () => {
+  test('You Were Saying? says the length its play recorded, the author\'s clear as theirs, and what it did in its own words', () => {
     const ywsCard = instanceUi.cards.find((c) => c.key === 'you-were-saying')!;
-    const e = instance.settings.economy;
-    const base = e['youWereSaying.baseTokens']!;
-    const step = e['youWereSaying.stepTokens']!;
-    expect(ywsCard.logPlay!({ steps: 0 }, instance.settings)).toBe(`It was played for ${base} tokens.`);
-    expect(ywsCard.logPlay!({ steps: 3 }, instance.settings)).toBe(`It was played for ${base + 3 * step} tokens.`);
-    /* A step past the most is held at the most, as the play was, and the settings now are the ones said. */
-    expect(ywsCard.logPlay!({ steps: 99 }, instance.settings)).toBe(`It was played for ${e['youWereSaying.mostTokens']} tokens.`);
-    expect(ywsCard.logPlay!({ steps: 1 }, { ...instance.settings, economy: { ...e, 'youWereSaying.baseTokens': 50 } })).toBe(`It was played for ${50 + step} tokens.`);
-    expect(ywsCard.logPlay!({}, instance.settings)).toBeUndefined();
+    /* The line is the recorded number, whatever the configuration or the economy now say; a play with no record says nothing of a length. */
+    expect(ywsCard.logPlay!({ steps: 0 }, { tokens: 100 })).toBe('It was played for 100 tokens.');
+    expect(ywsCard.logPlay!({ steps: 3 }, { tokens: 1 })).toBe('It was played for 1 token.');
+    expect(ywsCard.logPlay!({ steps: 99 }, { tokens: 400 })).toBe('It was played for 400 tokens.');
+    expect(ywsCard.logPlay!({ steps: 1 }, {})).toBeUndefined();
     expect(ywsCard.logSave!({ cleared: 'v1' })).toEqual({ what: 'Tail erased', verb: 'erased' });
     expect(ywsCard.logSave!({})).toBeUndefined();
     expect(ywsCard.logWritten!.continued).toBe('continued it');
@@ -289,9 +285,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const act = (id: string, kind: Act['kind'], character: string, over: Partial<Act> = {}): Act =>
       ({ id, kind, character, thread: 'th', targetActId: null, seq: null, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...over });
     const post = act('post1', 'post', 'me', { seq: 1 });
-    const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'you-were-saying', config: { steps: 3 } } });
+    const play = act('k1', 'card', 'them', { targetActId: 'post1', payload: { card: 'you-were-saying', config: { steps: 3 }, tokens: 175 } });
     const log: Log = { infractions: [], bans: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [{ card: 'you-were-saying', kind: 'played', act: 'k1', price: 75, at }], packs: [], playsOnMine: [],
-      writes: [{ play: 'k1', post: 'post1', version: 'post1', failed: false, opening: true, at }, { play: 'k1', post: 'post1', version: 'e1', failed: false, opening: false, at }, { play: 'k1', post: 'post1', version: 'e2', failed: true, opening: true, at }],
+      writes: [{ play: 'k1', post: 'post1', version: 'post1', failed: false, opening: true, over: false, at }, { play: 'k1', post: 'post1', version: 'e1', failed: false, opening: false, over: false, at }, { play: 'k1', post: 'post1', version: 'e2', failed: true, opening: false, over: true, at }],
       saves: [{ play: 'k1', post: 'post1', savedAt: at }], setEnds: [], caught: [], ended: [], before: null };
     const mine = [{ id: 'me', name: 'Pipewrench', pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }, { ...{ id: 'them', name: 'Spritey' }, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: at, classDueAt: null, turnOpensAt: null, debutedAt: at, debutLoudness: 'announced' as const, retiredAt: null, pendingTurn: null, presenceHidden: false }];
     const rows = logRows({

@@ -727,3 +727,19 @@ test('a completion made for a card play is a request with the duty cardText and 
   assert.equal(request.duty, 'cardText');
   assert.equal(request.play, 'act-1');
 });
+
+test('a Mod Bot\'s play of a card that writes hands staff_play_card the tokens the card\'s rules decide, from the settings as the rows hold them', async () => {
+  const writing = { ...dividedWorld.cards.find((c) => c.key === 'you-were-saying')!, rarity: 'common' as const };
+  const withVoice: Instance = { ...dividedWorld, settings: { ...dividedWorld.settings, oldVoice: true }, cards: dividedWorld.cards.map((c) => (c.key === writing.key ? writing : c)) };
+  const d = fakeDb({ pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: writing.key, on: 'reply' } }));
+  const out = await run(d, m, withVoice);
+  assert.ok(out.status === 'ok');
+  const play = d.of('staff_play_card')[0];
+  assert.ok(play, 'the writing card was played');
+  assert.equal(play.tokens, writing.writes!.tokens(play.config as never, withVoice.settings));
+  assert.ok(Number.isSafeInteger(play.tokens) && (play.tokens as number) >= 1);
+  const plain = fakeDb({ pool: { threadsWeekly: 0 } });
+  await run(plain, fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'stick-around', on: 'reply' } })));
+  assert.equal('tokens' in plain.of('staff_play_card')[0]!, false, 'a play of any other card carries none');
+});

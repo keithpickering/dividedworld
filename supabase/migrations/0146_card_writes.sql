@@ -61,6 +61,23 @@ begin
   end if;
 end $$;
 
+-- The tokens a play of a card that writes bought, a fact of the play (design, section 2): decided by the server when the play was decided (the
+-- card's own rules, against the settings of that moment) and written into the play's own Act at insert, so a regeneration is made at the length
+-- the play bought, and the log says it, after any retune of the economy. SQL holds only what it can hold of a number it does not compute: a whole
+-- number from 1 to 2000 (a stored text is at most 4000 characters) for a card that writes, and none for any other card. The price is trusted
+-- the same way: play_card and staff_play_card are callable by the service role alone (the act and chatter functions), and bound the price they are given.
+create function require_write_tokens(card text, tokens integer) returns void
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from card_kinds k where k.key = require_write_tokens.card and k.writes) then
+    if require_write_tokens.tokens is null or require_write_tokens.tokens < 1 or require_write_tokens.tokens > 2000 then
+      raise exception 'a card that writes buys between 1 and 2,000 tokens' using hint = 'kayfabb.refusal', errcode = '22023';
+    end if;
+  elsif require_write_tokens.tokens is not null then
+    raise exception 'only a card that writes buys tokens' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+end $$;
+
 -- ------------------------------------------------------------------------------------------------------------- tables ----
 
 create table card_texts (
@@ -569,7 +586,8 @@ create trigger acts_card_writes after insert on acts for each row
 -- attempt. A job is taken only once its `not_before` has passed (an edit's settle wait), but a later play's job still waits behind an earlier play's
 -- job while that one settles. `only_post` takes that post's jobs alone (the kick after a play or an edit),
 -- under the same row locks, so a kick and a sweep never take one job. A job takes the post's version as it stands at the claim. The jobs of plays an
--- admin has ended, or whose write was refunded, are let go first. Each job carries the frame's inputs: the post's author's name and words, the thread's title, the public
+-- admin has ended, or whose write was refunded, are let go first. Each job carries the tokens its play bought (written in the play's own Act, so no later
+-- change of the economy moves it) and the frame's inputs: the post's author's name and words, the thread's title, the public
 -- posts before it (`pool.chatterThreadPosts` of them), and the earlier plays' texts for this version (the latest text of one that failed).
 create function claim_card_writes(most integer, only_post uuid default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -593,7 +611,7 @@ begin
   )
   select coalesce(jsonb_agg(jsonb_build_object(
       'play', t.play, 'version', t.version, 'post', t.post, 'thread', pa.thread, 'attempts', t.attempts,
-      'card', pl.payload ->> 'card', 'config', coalesce(pl.payload -> 'config', '{}'::jsonb),
+      'card', pl.payload ->> 'card', 'config', coalesce(pl.payload -> 'config', '{}'::jsonb), 'tokens', (pl.payload ->> 'tokens')::integer,
       'author', ch.name, 'body', coalesce(v.payload ->> 'body', ''), 'title', th.title,
       'before', (select coalesce(jsonb_agg(jsonb_build_object('name', x.name, 'body', x.body) order by x.seq), '[]'::jsonb)
                  from (select n.seq, cn.name, coalesce(n.current_payload ->> 'body', '') as body
@@ -744,8 +762,14 @@ $$;
 
 -- ----------------------------------------------------------------------------------------------- the refusals, the roll ----
 
--- play_card (0139), refusing a card that writes where the instance has no old voice. Everything else as 0139 wrote it.
-CREATE OR REPLACE FUNCTION public.play_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer, message text DEFAULT ''::text, reach text DEFAULT 'post'::text, from_post uuid DEFAULT NULL::uuid)
+-- play_card (0139) and its version-checking wrapper (0070), made one function: it refuses a card that writes where the instance has no old voice, and
+-- takes the tokens a card that writes bought (`tokens`: the server's decision, require_write_tokens above), which are written into the play's Act. The
+-- version check comes first, under the locks the wrapper took in the order the play takes them (the player's account, then the post, 0058), so the
+-- check and the play see one post and a character play from this post never takes them the other way round. Everything else as 0139 wrote it. The
+-- nine- and ten-argument functions are dropped for it, so a call with or without a version is still this one function.
+drop function play_card(uuid, text, uuid, uuid, jsonb, integer, text, text, uuid, uuid);
+drop function play_card(uuid, text, uuid, uuid, jsonb, integer, text, text, uuid);
+CREATE FUNCTION public.play_card(who uuid, card text, through uuid, target uuid, config jsonb, price integer, message text DEFAULT ''::text, reach text DEFAULT 'post'::text, from_post uuid DEFAULT NULL::uuid, version uuid DEFAULT NULL::uuid, tokens integer DEFAULT NULL::integer)
  RETURNS jsonb
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -757,6 +781,13 @@ declare
   played jsonb;
   written uuid;
 begin
+  if version is not null and reach = 'post' then
+    perform 1 from accounts where id = who for no key update;
+    perform 1 from acts a where a.id = target and a.kind = 'post' for no key update;
+    if found and post_version(target) is distinct from version then
+      raise exception 'the post was edited; look again' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+  end if;
   perform played_by(through, who);
   perform not_banned(through);
   if octet_length(coalesce(config, '{}')::text) > 4096 then raise exception 'a card''s configuration is at most 4 KB' using hint = 'kayfabb.refusal', errcode = '22001'; end if;
@@ -766,11 +797,13 @@ begin
     raise exception 'a card lands on a post, a character, a thread or a board' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   perform require_old_voice(card);
+  perform require_write_tokens(card, tokens);
   -- One player's plays at a time, so two at once cannot both spend the last card.
   perform 1 from accounts where id = who for no key update;
   held := card_held(who, play_card.card);
   if held < 1 then raise exception 'you hold no "%" card; the Vending Machine sells them', card using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
-  played := place_cast(through, card, target, config, said, reach, from_post, who, price);
+  played := place_cast(through, card, target, config, said, reach, from_post, who, price,
+    case when tokens is null then '{}'::jsonb else jsonb_build_object('tokens', tokens) end);
   written := (played ->> 'id')::uuid;
   -- After the Act, so the wallet's record names what the Aura went on.
   perform wallet_spend(who, price, 'play', written);
@@ -778,8 +811,10 @@ begin
   return played;
 end $function$;
 
--- staff_play_card (0086), refusing it too, so a persona's play of a card that writes is turned away as a player's is.
-create or replace function staff_play_card(staff_key text, card text, target uuid, config jsonb default '{}', message text default '', pool_day date default null) returns jsonb
+-- staff_play_card (0086), refusing it too, so a persona's play of a card that writes is turned away as a player's is, and taking the tokens such a play
+-- bought as play_card does (the chatter function's decision).
+drop function staff_play_card(text, text, uuid, jsonb, text, date);
+create function staff_play_card(staff_key text, card text, target uuid, config jsonb default '{}', message text default '', pool_day date default null, tokens integer default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   who uuid;
@@ -797,6 +832,7 @@ begin
   select * into kind_of from card_kinds k where k.key = staff_play_card.card;
   if kind_of.key is null then raise exception 'there is no such card' using errcode = 'P0002'; end if;
   perform require_old_voice(staff_play_card.card);
+  perform require_write_tokens(staff_play_card.card, staff_play_card.tokens);
   -- Refused when the setting cannot be read as a rarity either, so a broken setting plays no card.
   if not coalesce(rarity_rank(kind_of.rarity) <= rarity_rank(setting('pool') #>> '{cardRarityMost}'), false) then
     raise exception '% is above the rarity the pool plays', kind_of.name using errcode = '55000';
@@ -804,7 +840,8 @@ begin
   flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
   perform set_config('kayfabb.staff_writer', 'on', true);
   played := place_cast(who, card, target, coalesce(config, '{}'), coalesce(message, ''), 'post', null, null, 0,
-    case when pool_day is null then '{}'::jsonb else jsonb_build_object('pool', pool_day::text) end);
+    (case when pool_day is null then '{}'::jsonb else jsonb_build_object('pool', pool_day::text) end)
+      || (case when staff_play_card.tokens is null then '{}'::jsonb else jsonb_build_object('tokens', staff_play_card.tokens) end));
   perform set_config('kayfabb.staff_writer', flag, true);
   return played;
 end $$;
@@ -1216,7 +1253,9 @@ end $$;
 
 -- --------------------------------------------------------------------------------------------------------------- access ----
 
-revoke execute on function old_voice_on(), require_old_voice(text), card_writes_enqueue() from public, anon, authenticated;
+revoke execute on function old_voice_on(), require_old_voice(text), require_write_tokens(text, integer), card_writes_enqueue() from public, anon, authenticated;
+revoke execute on function play_card(uuid, text, uuid, uuid, jsonb, integer, text, text, uuid, uuid, integer), staff_play_card(text, text, uuid, jsonb, text, date, integer) from public, anon, authenticated;
+grant execute on function play_card(uuid, text, uuid, uuid, jsonb, integer, text, text, uuid, uuid, integer), staff_play_card(text, text, uuid, jsonb, text, date, integer) to service_role;
 revoke execute on function claim_card_writes(integer, uuid), finish_card_write(uuid, uuid, text, text, bigint), refund_card_write(uuid) from public, anon, authenticated;
 grant execute on function claim_card_writes(integer, uuid), finish_card_write(uuid, uuid, text, text, bigint), refund_card_write(uuid) to service_role;
 -- Read as card_ended is: any signed-in player, never a visitor.
@@ -1250,8 +1289,10 @@ select schedule_card_writes();
 -- ------------------------------------------------------------------------------------------------------------- the log ----
 
 -- What was written on the caller's own posts, for the author's log (the design, section 13): one row for each text or failure of a play on a post
--- one of the caller's characters wrote. `opening` is the play's first row (its first text: "continued it"; its first failure: "didn't take"); a later
--- text is a regeneration for a later version of the post ("made it again"); a failure after an earlier text keeps the tail and says nothing.
+-- one of the caller's characters wrote. `opening` is a row with no earlier text of its play (a text that is the play's first: "continued it"; a text
+-- after an earlier text is a regeneration for a later version: "made it again"). `over` is a failure that ended the play: it was refunded (or, for a play
+-- nobody paid for, ended) and no row came after, which is the one failure the log says "didn't take" of. A failure the play survived (a newer job was
+-- waiting, or a text was already there) is not over, and says nothing, as a failed regeneration after a text does not.
 --
 -- The masks: the rows are the caller's by the post's author, the one fact of ownership read, as my_posts_played_on's are; a text and whether it
 -- failed are what post_tails shows every reader, and nothing here names the caster, the play's price or any wallet. It includes plays by the
@@ -1262,7 +1303,9 @@ select schedule_card_writes();
 -- instance's texts. The log pages it as it pages every source: newest first at or before the cursor, at most 200 rows (log_page below).
 create view my_posts_written_on as
   select x.play, k.target_act_id as post, x.version, (x.failed is not null) as failed,
-         not exists (select 1 from card_texts y where y.play = x.play and y.id < x.id) as opening,
+         not exists (select 1 from card_texts y where y.play = x.play and y.id < x.id and y.text is not null) as opening,
+         (x.failed is not null and exists (select 1 from card_write_refunds r where r.play = x.play)
+            and not exists (select 1 from card_texts y where y.play = x.play and y.id > x.id)) as over,
          x.created_at as at
   from characters c
   join acts p on p.character = c.id and p.kind = 'post'
@@ -1302,7 +1345,7 @@ begin atomic
     from my_posts_played_on p where in_before is null or p.at <= in_before
     order by p.at desc, p.play limit 200
   ), wr as materialized (
-    select w.play, w.post, w.version, w.failed, w.opening, w.at
+    select w.play, w.post, w.version, w.failed, w.opening, w.over, w.at
     from my_posts_written_on w where in_before is null or w.at <= in_before
     order by w.at desc, w.play, w.version limit 200
   ), sv as materialized (

@@ -287,7 +287,12 @@ export function createPlays(): Plays {
         const play = ended.has(found.id) ? { ...withSpring, reversed: true as const } : withSpring;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
-        if (own.has(play.id)) continue;
+        /* A play already held is the same play, with one change it can learn: that it did not take (`untaken`, 0146), set in place so its place in the billing stays. */
+        const held = own.get(play.id);
+        if (held) {
+          if (play.untaken && !held.untaken) { own.set(play.id, { ...held, untaken: true as const }); touched.add(home); }
+          continue;
+        }
         own.set(play.id, play);
         byPost.set(home, own);
         order.set(home, [...(order.get(home) ?? []), play.id]);

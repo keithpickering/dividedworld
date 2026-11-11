@@ -234,7 +234,14 @@ export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Partial<Pick<Settings, 'oldVoice'>>): boolean => rules.writes !== undefined && settings.oldVoice === false;
 
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
-function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+/**
+ * What a decided play is: its price, its checked configuration and message, and, for a card that writes, the tokens the play bought (`writes.tokens`
+ * of the checked configuration, against the settings of this moment). The tokens are the play's own fact: the server writes them with the play
+ * (supabase/migrations/0146_card_writes.sql), and a regeneration and the log read them there, never the settings of a later day.
+ */
+export interface Decided { readonly price: Hundredths; readonly config: unknown; readonly message: string; readonly tokens?: number }
+
+function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date): Verdict<Decided> {
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // The old voice's refusal is said first, then the landing's, then the configuration's; the configuration is checked first only so the landing can read it.
   const checked = rules.validateConfig(config);
@@ -245,7 +252,10 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   if (!said.ok) return said;
   const price = rules.playPrice(settings, target, checked.value);
   if (!Number.isSafeInteger(price) || price < 0) throw new Error(`card ${rules.key} priced a play at ${price}`);
-  return ok({ price, config: checked.value, message: said.value });
+  if (!rules.writes) return ok({ price, config: checked.value, message: said.value });
+  const tokens = rules.writes.tokens(checked.value, settings);
+  if (!Number.isSafeInteger(tokens) || tokens < 1) throw new Error(`card ${rules.key} bought ${tokens} tokens`);
+  return ok({ price, config: checked.value, message: said.value, tokens });
 }
 
 /** What a decision reads beyond the play: the time, and each card's name by key, for a ward's refusal. */
@@ -264,7 +274,7 @@ export interface PlayContext {
  * or shorter in the moment before the play lands costs the caster what it would have a moment
  * earlier: the caster pays what they were shown, and nobody else is touched.
  */
-export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+export function decidePlay(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: PlayContext = {}): Verdict<Decided> {
   if (playOf(rules) !== 'cast') return wrongPlay(rules);
   const now = context.now ?? new Date();
   const ward = effects.find((e) => e.ward !== undefined && (e.reach ?? 'post') === target.reach && isLive(e, now) && atOrBelow(rules.rarity, e.ward));
@@ -276,7 +286,7 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
  * A Use card played on a target. That the target is the player's own post is SQL's to hold, since
  * only SQL reads who wrote it; a ward does not refuse a Use.
  */
-export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<Decided> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
   return decided(rules, settings, target, effects, config, message, context.now ?? new Date());
 }

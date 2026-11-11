@@ -1268,8 +1268,9 @@ export const ALERTS_UNREAD_BOUND = 10;
 
 /**
  * A text or a failure a card that writes made for a post the player's character wrote (`my_posts_written_on`, 0146): the play, the post it is on, the
- * version of the post it was made for, whether the generation failed, whether it is the play's first row (a first text continued the post, a first
- * failure did not take; a later text was made again for an edit, and a later failure kept the tail), and when. Public facts and the post's author alone.
+ * version of the post it was made for, whether the generation failed, whether it comes before any text of the play (`opening`: a text that is the
+ * play's first continued the post; a later text was made again for an edit), whether it is the failure that ended the play (`over`: refunded, and
+ * no row after it; a failure the play survived, or one after a text, is no line), and when. Public facts and the post's author alone.
  */
 export interface WrittenOnMine {
   readonly play: Id;
@@ -1277,6 +1278,7 @@ export interface WrittenOnMine {
   readonly version: Id;
   readonly failed: boolean;
   readonly opening: boolean;
+  readonly over: boolean;
   readonly at: string;
 }
 

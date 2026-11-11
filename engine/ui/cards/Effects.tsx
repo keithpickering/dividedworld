@@ -15,7 +15,7 @@
  * takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws them on the post
  * it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  */
-import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, EffectState, Id, PlayAbove, PlayMoment } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
@@ -26,7 +26,7 @@ import { useStaged } from '../staged.ts';
 import { MomentView, useShownMoment } from './Moment.tsx';
 import { useTails } from './tails.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, livePlays, nextEnd, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, livePlays, nextEnd, PLAYS_PER_POST, playOf, shownPlays, usePlays, type Plays } from './plays.ts';
 import { drawnInMoment, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, EffectPlace, EffectProps, Written } from './types.ts';
@@ -64,6 +64,20 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    */
   const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
   const tailRows = useTails(post, here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken).map((p) => p.id));
+  /*
+   * A play whose first generation failed for good is over, which the page holds only from the plays' read (`untaken`). A page showing it learns
+   * it from its tails: every row of a play the page counts failed, none waiting, none a text (a failure a newer job waits behind shows that job
+   * waiting, and a failed regeneration after a text has the text). Then that one post's plays are read again, once for each play, with the one
+   * batched read the page makes, so the mark's count, the Lens and the effect catch up without a reload.
+   */
+  const reread = useRef<Set<Id>>(new Set());
+  useEffect(() => {
+    const over = here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken && !reread.current.has(p.id)
+      && (() => { const own = tailRows.filter((r) => r.play === p.id); return own.length > 0 && own.every((r) => r.failed && r.text === null && !r.waiting); })());
+    if (over.length === 0) return;
+    for (const p of over) reread.current.add(p.id);
+    void api.cardsOnMany([post.id], PLAYS_PER_POST).then((acts) => { plays.add(acts); }, () => {});
+  }, [api, plays, post.id, here.plays, tailRows, writing]);
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
   const lens = useLensStore();

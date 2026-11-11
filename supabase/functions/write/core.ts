@@ -49,6 +49,8 @@ export interface WriteJob {
   readonly attempts: number;
   readonly card: string | null;
   readonly config: unknown;
+  /** What the play bought, recorded with it (the play's own Act); a regeneration is made at this length however the economy has changed since. */
+  readonly tokens: number | null;
   readonly author: string;
   readonly body: string;
   readonly title: string;
@@ -90,7 +92,9 @@ export async function runWrites(db: Db, models: Models, instance: Instance, sett
       const own = visible(job.body);
       // An edit emptied the post: nothing to continue, no call. On a first generation this refunds; on a regeneration the earlier tail stays.
       if (own.trim() === '') return finish(job, null, 'emptyPost');
-      const maxTokens = writes.tokens(job.config as never, settings);
+      // The length the play bought, as the play recorded it: never worked out again from the settings of today.
+      if (job.tokens === null || !Number.isSafeInteger(job.tokens) || job.tokens < 1) return finish(job, null, 'unreachable');
+      const maxTokens = job.tokens;
       const { prompt, stop: stopAt } = writes.frame({
         post: { name: job.author, text: own },
         before: job.before.map((b) => ({ name: b.name, text: visible(b.body) })),

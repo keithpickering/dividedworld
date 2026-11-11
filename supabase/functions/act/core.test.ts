@@ -849,6 +849,17 @@ test('the kick: a play of a card that writes kicks the writer for its post, afte
   assert.deepEqual(posts, [target]);
 });
 
+test('a play of a card that writes hands play_card the tokens its rules decided, and a play of any other card hands it none', async () => {
+  const writing = { ...kicking, cards: kicking.cards.map((c) => (c.key === 'whoops' ? { ...c, writes: { tokens: () => 37, frame: () => ({ prompt: 'p', stop: [] }) } } : c)) } as typeof instance;
+  const run = async (who: typeof instance) => {
+    const { dbs, calls } = pair({ whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [] }, play_card: { id: 'k', kind: 'card' } });
+    await runAction(dbs, who, { action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red', tokens: 5000 } });
+    return JSON.parse(calls.find((c) => c.startsWith('service:play_card:'))!.slice('service:play_card:'.length)) as Record<string, unknown>;
+  };
+  assert.equal((await run(writing)).tokens, 37, 'the decision\'s number, never one the request carried');
+  assert.equal('tokens' in (await run(instance)), false);
+});
+
 test('the kick: a play of another card makes no claim at all', async () => {
   // The same play of a card whose rules do not write.
   const plain = await kickedBy({ action: 'playCard', card: 'whoops', character: id, target, config: { color: 'red' } }, { play_card: { id: 'k', kind: 'card' } }, instance);

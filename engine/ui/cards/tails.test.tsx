@@ -138,6 +138,45 @@ describe('a card_text event reads that one post again', () => {
     expect(within(screen.getByTestId(`post-${w.p2}`)).getByText('...')).toHaveAttribute('data-play', b);
   });
 
+  test('a first generation that failed for good is learned from the event: the play is over on this page, with one more read of that post\'s plays', async () => {
+    const w = seeded();
+    const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
+    const b = w.fake.seed.card(w.mask, w.p2, 'wrote');
+    const { plays } = await page(w, [w.p1, w.p2]);
+    await waitFor(() => expect(screen.getAllByText('...')).toHaveLength(2));
+    const shown = () => plays.get(w.p1).plays.filter((p) => !p.untaken).length;
+    expect(shown()).toBe(1);
+    const tails = vi.spyOn(w.fake, 'tails');
+    const read = vi.spyOn(w.fake, 'cardsOnMany');
+    act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
+    await waitFor(() => expect(plays.get(w.p1).plays[0]?.untaken).toBe(true));
+    expect(shown()).toBe(0);
+    expect(tails).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read.mock.calls[0]![0]).toEqual([w.p1]);
+    /* The play is no layer now, so no tail is drawn for it; the other post is as it was. */
+    await waitFor(() => expect(within(screen.getByTestId(`post-${w.p1}`)).queryByText('...')).toBeNull());
+    expect(within(screen.getByTestId(`post-${w.p2}`)).getByText('...')).toHaveAttribute('data-play', b);
+    expect(plays.get(w.p2).plays[0]?.untaken).toBeUndefined();
+    await nextTick();
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failed regeneration after a text makes no extra read of the plays: the play took', async () => {
+    const w = seeded();
+    const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
+    w.fake.seed.text(a, w.p1, { text: 'kept tail' }, { quiet: true });
+    const { plays } = await page(w, [w.p1]);
+    await screen.findByText('kept tail');
+    const edited = await w.fake.edit(w.p1, w.mask, 'edited words');
+    expect(edited.ok).toBe(true);
+    const read = vi.spyOn(w.fake, 'cardsOnMany');
+    act(() => { w.fake.seed.text(a, (edited as { value: Act }).value.id, { failed: true }); });
+    await nextTick();
+    expect(read).not.toHaveBeenCalled();
+    expect(plays.get(w.p1).plays[0]?.untaken).toBeUndefined();
+  });
+
   test('an event for a play the page does not hold is ignored', async () => {
     const w = seeded();
     const held = w.fake.seed.card(w.mask, w.p1, 'wrote');

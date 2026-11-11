@@ -21,7 +21,7 @@
 import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
-import type { Instance, Settings } from '../../rules/types.ts';
+import type { Instance } from '../../rules/types.ts';
 import type { Act, CardEvent, MyBan, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
@@ -518,12 +518,12 @@ function modRows(data: LogData, words: Words): LogRow[] {
  */
 function cardRows(data: LogData, words: Words): LogRow[] {
   const { instance, ui } = words;
-  /* The settings the log holds: the instance's own, with the economy as the server holds it now. */
-  const settings: Settings = { ...instance.settings, economy: words.economy };
-  /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. */
+  /* What the card says a play of it did (`CardUi.logPlay`), as one more sentence of the line; nothing where it says nothing. It is given what the
+     play recorded with itself (the tokens a card that writes bought, in the play's own Act), never a number worked out from today's economy. */
   const said = (key: unknown, play: Act | undefined): string[] => {
     const config = play?.payload.config;
-    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, settings);
+    const tokens = play?.payload.tokens;
+    const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {});
     return sentence ? [` ${sentence}`] : [];
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
@@ -722,13 +722,14 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }
-  /* What a card that writes did to the author's post (`my_posts_written_on`): its first text continued the post, a text an edit made is the card
-     again, and a first generation that gave nothing did not take. A failure after a text kept the tail, and is no line. The words are the card's own. */
+  /* What a card that writes did to the author's post (`my_posts_written_on`): the play's first text continued the post (whatever version it came
+     on), a text after an earlier text is the card again, and the failure that ended the play did not take. A failure the play survived, and a
+     failed regeneration after a text, kept things as they were and are no line. The words are the card's own. */
   for (const x of data.log.writes) {
     const play = data.acts.get(x.play);
     const post = data.acts.get(x.post);
     const hooks = ui.cards.find((c) => c.key === play?.payload.card)?.logWritten;
-    if (!hooks || (x.failed && !x.opening)) continue;
+    if (!hooks || (x.failed && !x.over)) continue;
     const card = cardName(play?.payload.card);
     const key = `written:${x.play}:${x.version}`;
     const characters = post?.character && mine(post.character) ? [post.character] : [];

@@ -244,7 +244,7 @@ begin
   -- A paid play, played through the door the Edge Function uses.
   p4 := tests.post(b, t, 'A post that will be played on.', base);
   perform tests.become_service();
-  played := play_card(ann, 'cw-scribe', a, p4, '{}', 50, '');
+  played := play_card(ann, 'cw-scribe', a, p4, '{}', 50, '', tokens => 100);
   perform tests.unbecome();
   pl := (played ->> 'id')::uuid;
   if (select count(*) from card_writes where play = (played ->> 'id')::uuid) is distinct from 1 then raise exception 'play_card of a writing card queues one job'; end if;
@@ -274,7 +274,7 @@ begin
   -- A failure on a play that already has a text pays nothing: the tail it had stays, and so does the price.
   p5 := tests.post(b, t, 'A post whose tail comes, and then fails once mended.', base + interval '1 minute');
   perform tests.become_service();
-  pl := (play_card(ann, 'cw-scribe', a, p5, '{}', 30, '') ->> 'id')::uuid;
+  pl := (play_card(ann, 'cw-scribe', a, p5, '{}', 30, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   made := record_model_call(jsonb_build_object('duty', 'cardText', 'provider', 'local', 'model', 'old', 'cost_microdollars', 0, 'outcome', 'ok', 'play', pl, 'gpu_seconds', 1.5));
   if (select m.play from model_calls m where m.id = made) is distinct from pl then raise exception 'record_model_call writes the play a call was made for'; end if;
@@ -290,7 +290,7 @@ begin
   -- A failure of a version that a newer job replaced decides nothing: the newer one may yet make the tail, and a failure of it refunds.
   p6 := tests.post(b, t, 'A post mended before its first tail came.', base + interval '3 minutes');
   perform tests.become_service();
-  pl := (play_card(ann, 'cw-scribe', a, p6, '{}', 20, '') ->> 'id')::uuid;
+  pl := (play_card(ann, 'cw-scribe', a, p6, '{}', 20, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   e := tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended before the tail.'), p6, base + interval '4 minutes');
   perform pg_temp.finish(pl, p6, null, 'unreachable');
@@ -305,7 +305,7 @@ begin
   -- A Mod Bot's play pays nothing and holds no hand, so its failure moves no wallet and returns nothing.
   p7 := tests.post(b, t, 'A post a Mod Bot played on.', base + interval '5 minutes');
   perform tests.become_service();
-  pl := (staff_play_card('cw-mod', 'cw-scribe', p7, '{}', '') ->> 'id')::uuid;
+  pl := (staff_play_card('cw-mod', 'cw-scribe', p7, '{}', '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   if (select count(*) from card_writes where play = (select a2.id from acts a2 where a2.target_act_id = p7 and a2.kind = 'card')) is distinct from 1 then raise exception 'a Mod Bot''s play of a writing card queues one job'; end if;
   select coalesce(sum(w.balance), 0) into wallets_before from wallets w;
@@ -384,7 +384,7 @@ begin
   -- Fail, refund: an edit queues nothing for the play, and a claim returns nothing.
   p := tests.post(b, t, 'A post whose play failed.', base);
   perform tests.become_service();
-  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 50, '') ->> 'id')::uuid;
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 50, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   perform pg_temp.finish(pl, p, null, 'unreachable');
   if not exists (select 1 from card_write_refunds r where r.play = pl) or not card_ended(pl) then raise exception 'a refunded play is not over'; end if;
@@ -400,7 +400,7 @@ begin
   -- A job that exists for the play when the refund lands is deleted by the refund itself; a job inserted behind it is dropped by the claim.
   p2 := tests.post(b, t, 'A post refunded with a job racing in.', base + interval '2 minutes');
   perform tests.become_service();
-  pl2 := (play_card(ann, 'cw-scribe', a, p2, '{}', 20, '') ->> 'id')::uuid;
+  pl2 := (play_card(ann, 'cw-scribe', a, p2, '{}', 20, '', tokens => 100) ->> 'id')::uuid;
   perform refund_card_write(pl2);
   perform tests.unbecome();
   if exists (select 1 from card_writes w where w.play = pl2) then raise exception 'the refund left the play''s job'; end if;
@@ -411,7 +411,7 @@ begin
   -- A refunded play is no earlier play in the chain: a later play on the post is claimable, and its frame does not carry the refunded tail.
   p3 := tests.post(b, t, 'A post with two plays, the first refunded.', base + interval '3 minutes');
   perform tests.become_service();
-  pl3 := (play_card(ann, 'cw-scribe', a, p3, '{}', 0, '') ->> 'id')::uuid;
+  pl3 := (play_card(ann, 'cw-scribe', a, p3, '{}', 0, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   pl4 := tests.act(a, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 2), p3, clock_timestamp() + interval '1 second');
   if jsonb_array_length(pg_temp.claim(10, p3)) is distinct from 1 then raise exception 'before the refund the later play waits behind the earlier'; end if;
@@ -429,7 +429,7 @@ begin
   -- A Mod Bot's play: its first failure is over too, recorded without pretending a refund was paid (a row with no amount), and moves nothing.
   p4 := tests.post(b, t, 'A post a Mod Bot played on.', base + interval '5 minutes');
   perform tests.become_service();
-  pl := (staff_play_card('cw-mod', 'cw-scribe', p4, '{}', '') ->> 'id')::uuid;
+  pl := (staff_play_card('cw-mod', 'cw-scribe', p4, '{}', '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   select coalesce(sum(w.balance), 0) into before_sum from wallets w;
   perform pg_temp.finish(pl, p4, null, 'scrub:word');
@@ -443,15 +443,15 @@ begin
   -- The stack counts plays still up: two live plays and a refunded one leave room for a fourth, and a fifth is refused.
   p := tests.post(b, t, 'A post for the stack.', base + interval '7 minutes');
   perform tests.become_service();
-  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
-  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '');
-  pl2 := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
-  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a fourth cast was allowed with three live plays'; end if;
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100) ->> 'id')::uuid;
+  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100);
+  pl2 := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100) ->> 'id')::uuid;
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, tokens => 100)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a fourth cast was allowed with three live plays'; end if;
   perform tests.unbecome();
   perform pg_temp.finish(pl2, p, null, 'unreachable');
   perform tests.become_service();
-  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '');
-  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a fifth cast was allowed'; end if;
+  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100);
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, tokens => 100)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a fifth cast was allowed'; end if;
   perform tests.unbecome();
   select count(*) into n from acts k where k.kind = 'card' and k.target_act_id = p and not card_ended(k.id);
   if n is distinct from 3 then raise exception 'three plays are live on the post, not %', n; end if;
@@ -459,7 +459,7 @@ begin
   -- A refund the wallet's cap clamps is recorded as what moved, not as what was paid.
   p2 := tests.post(b, t, 'A post paid for with a wallet near its cap.', base + interval '8 minutes');
   perform tests.become_service();
-  pl := (play_card(ann, 'cw-scribe', a, p2, '{}', 50, '') ->> 'id')::uuid;
+  pl := (play_card(ann, 'cw-scribe', a, p2, '{}', 50, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   update wallets set balance = (setting('walletCap'))::integer - 10 where account = ann;
   perform pg_temp.finish(pl, p2, null, 'unreachable');
@@ -544,7 +544,7 @@ begin
   if scribes < 1 then raise exception 'a pack never pulled a writing card with oldVoice on'; end if;
   perform tests.become_service();
   if (buy_card(ann, slot, 100) ->> 'card') is distinct from 'cw-scribe' then raise exception 'buy_card with oldVoice on'; end if;
-  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '');
+  perform play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100);
   perform tests.unbecome();
 
   -- The worker is woken every minute, by the schedule the other jobs use.
@@ -616,7 +616,7 @@ begin
   perform tests.unbecome();
 
   -- Its columns are the post's public facts and nothing about whose it is: no owner, no caster, no wallet.
-  if (select array_agg(a.attname::text order by a.attnum) from pg_attribute a where a.attrelid = 'my_posts_written_on'::regclass and a.attnum > 0 and not a.attisdropped) is distinct from array['play', 'post', 'version', 'failed', 'opening', 'at'] then
+  if (select array_agg(a.attname::text order by a.attnum) from pg_attribute a where a.attrelid = 'my_posts_written_on'::regclass and a.attnum > 0 and not a.attisdropped) is distinct from array['play', 'post', 'version', 'failed', 'opening', 'over', 'at'] then
     raise exception 'my_posts_written_on has columns beyond the public ones';
   end if;
 
@@ -658,6 +658,60 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- What the author's log may say of a play is told by the row's own facts (the log's lines, engine/ui/log/lines.ts): `opening` is a text with no
+-- earlier text (a play's first), and `over` is the failure that ended the play (it was refunded and no row came after). A failure the play survived
+-- (a newer job was waiting, or a text was already there) is neither, so no line says it did not take.
+do $$
+declare
+  ann uuid := tests.account('cwx-ann'); cas uuid := tests.account('cwx-cas');
+  a uuid := tests.character(ann, 'Cwx Ann'); c uuid := tests.character(cas, 'Cwx Caster');
+  t uuid := tests.thread('Author line thread');
+  base timestamptz := '2030-08-01T00:00:00Z';
+  p1 uuid; p2 uuid; p3 uuid; p4 uuid; p5 uuid; e uuid; e1 uuid;
+  k1 uuid; k2 uuid; k3 uuid; k4 uuid; k5 uuid;
+  rows jsonb;
+begin
+  p1 := tests.post(a, t, 'One.', base); p2 := tests.post(a, t, 'Two.', base + interval '1 minute'); p3 := tests.post(a, t, 'Three.', base + interval '2 minutes');
+  p4 := tests.post(a, t, 'Four.', base + interval '3 minutes'); p5 := tests.post(a, t, 'Five.', base + interval '4 minutes');
+  k1 := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p1, base + interval '10 minutes');
+  k2 := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p2, base + interval '10 minutes');
+  k3 := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p3, base + interval '10 minutes');
+  k4 := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p4, base + interval '10 minutes');
+  k5 := tests.act(c, 'card', t, jsonb_build_object('card', 'cw-scribe', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p5, base + interval '10 minutes');
+
+  -- 1. A first failure while a newer job waits is not the end: the play lives and its next text is its first.
+  e := tests.act(a, 'edit', t, jsonb_build_object('body', 'One, mended'), p1, base + interval '11 minutes');
+  perform pg_temp.finish(k1, p1, null, 'unreachable');
+  perform pg_temp.finish(k1, e, 'a first text', null);
+  -- 2. A first failure with nothing waiting is the end.
+  perform pg_temp.finish(k2, p2, null, 'unreachable');
+  -- 3. A text, then a failure for a later version: the tail stays and the play is not over.
+  perform pg_temp.finish(k3, p3, 'kept', null);
+  e1 := tests.act(a, 'edit', t, jsonb_build_object('body', 'Three, mended'), p3, base + interval '12 minutes');
+  perform pg_temp.finish(k3, e1, null, 'scrub:word');
+  -- 4. A text, then another text.
+  perform pg_temp.finish(k4, p4, 'first', null);
+  e1 := tests.act(a, 'edit', t, jsonb_build_object('body', 'Four, mended'), p4, base + interval '12 minutes');
+  perform pg_temp.finish(k4, e1, 'second', null);
+  -- 5. A failure while a newer job waits, then another failure with nothing waiting, which ends it.
+  e := tests.act(a, 'edit', t, jsonb_build_object('body', 'Five, mended'), p5, base + interval '11 minutes');
+  perform pg_temp.finish(k5, p5, null, 'unreachable');
+  perform pg_temp.finish(k5, e, null, 'unreachable');
+
+  perform tests.become(ann);
+  select jsonb_agg(jsonb_build_object('play', w.play, 'failed', w.failed, 'opening', w.opening, 'over', w.over) order by w.at, w.version) into rows from my_posts_written_on w;
+  perform tests.unbecome();
+  if rows is distinct from (select jsonb_agg(x) from (values
+       (k1, true, true, false), (k1, false, true, false),
+       (k2, true, true, true),
+       (k3, false, true, false), (k3, true, false, false),
+       (k4, false, true, false), (k4, false, false, false),
+       (k5, true, true, false), (k5, true, true, true)) v(play, failed, opening, over),
+       lateral (select jsonb_build_object('play', v.play, 'failed', v.failed, 'opening', v.opening, 'over', v.over) as x) q) then
+    raise exception 'the rows do not tell what the author''s log may say: %', rows;
+  end if;
+end $$;
+
 -- ---------------------------------------------------------------------------------- a play that did not take, said plainly ----
 -- The client learns a play is over from a flag it reads, never from an inference: acts_public says `untaken` of a play whose first generation
 -- failed and was refunded, the same to every reader, and nothing of the refund table (its amount) rides with it.
@@ -676,10 +730,10 @@ begin
   p := tests.post(b, t, 'A post with plays that took and did not.', base);
   p2 := tests.post(b, t, 'A post a Mod Bot played on.', base + interval '1 minute');
   perform tests.become_service();
-  pl_bad := (play_card(ann, 'cw-scribe', a, p, '{}', 50, '') ->> 'id')::uuid;
-  pl_good := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
-  pl_ended := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
-  pl_bot := (staff_play_card('cw-mod', 'cw-scribe', p2, '{}', '') ->> 'id')::uuid;
+  pl_bad := (play_card(ann, 'cw-scribe', a, p, '{}', 50, '', tokens => 100) ->> 'id')::uuid;
+  pl_good := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100) ->> 'id')::uuid;
+  pl_ended := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100) ->> 'id')::uuid;
+  pl_bot := (staff_play_card('cw-mod', 'cw-scribe', p2, '{}', '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   perform pg_temp.finish(pl_good, p, 'A tail.', null);
   perform pg_temp.finish(pl_bad, p, null, 'unreachable');
@@ -722,8 +776,8 @@ begin
   insert into card_ledger (account, card, kind, price) select ann, 'cw-scribe', 'bought', 0 from generate_series(1, 3);
   p := tests.post(b, t, 'A post.', base);
   perform tests.become_service();
-  pl_bad := (play_card(ann, 'cw-scribe', a, p, '{}', 10, '') ->> 'id')::uuid;
-  pl_ended := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '') ->> 'id')::uuid;
+  pl_bad := (play_card(ann, 'cw-scribe', a, p, '{}', 10, '', tokens => 100) ->> 'id')::uuid;
+  pl_ended := (play_card(ann, 'cw-scribe', a, p, '{}', 0, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   perform pg_temp.finish(pl_bad, p, null, 'unreachable');
   perform tests.become(boss);
@@ -773,7 +827,7 @@ begin
   insert into card_ledger (account, card, kind, price) select ann, 'cw-scribe', 'bought', 0 from generate_series(1, 2);
   p := tests.post(b, t, 'A post.', base);
   perform tests.become_service();
-  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 40, '') ->> 'id')::uuid;
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 40, '', tokens => 100) ->> 'id')::uuid;
   perform tests.unbecome();
   if jsonb_array_length(pg_temp.claim(10, p)) is distinct from 1 then raise exception 'the play was not claimed'; end if;
   perform tests.become(boss);
@@ -845,4 +899,65 @@ begin
   perform tests.act(b, 'edit', t, jsonb_build_object('body', 'Mended 6'), p, base + interval '7 minutes');
   select w.settling_since, w.not_before into since, nb from card_writes w where w.play = pl;
   if since < clock_timestamp() - interval '5 seconds' or nb < clock_timestamp() + interval '25 seconds' then raise exception 'an edit after a claim does not begin a new settling: % %', since, nb - clock_timestamp(); end if;
+end $$;
+
+
+-- ------------------------------------------------------------------------------------------- the tokens a play bought ----
+-- The tokens are a fact of the play (design, section 2): decided by the server, written into the play's own Act at insert (payload `tokens`), bounded
+-- and required here for a card that writes and refused for any other, returned by the claim, and never moved by a later change of the economy.
+do $$
+declare
+  ann uuid := tests.account('cwt-ann'); bob uuid := tests.account('cwt-bob');
+  a uuid := tests.character(ann, 'Cwt Payer'); b uuid := tests.character(bob, 'Cwt Writer');
+  t uuid := tests.thread('Tokens thread');
+  base timestamptz := '2030-09-01T00:00:00Z';
+  p uuid; p2 uuid; p3 uuid; pl uuid; pl2 uuid; got jsonb; said text; acts_before bigint;
+begin
+  insert into wallets (account, balance) values (ann, 600);
+  insert into card_ledger (account, card, kind, price) select ann, c, 'bought', 0 from unnest(array['cw-scribe', 'cw-scribe', 'cw-scribe', 'cw-plain']) c;
+  p := tests.post(b, t, 'A post to be played on.', base);
+  p2 := tests.post(b, t, 'Another post.', base + interval '1 minute');
+  p3 := tests.post(b, t, 'A third post.', base + interval '2 minutes');
+  perform tests.become_service();
+  -- A writing play without its tokens, and with too few or too many, is refused, and nothing is written.
+  select count(*) into acts_before from acts;
+  said := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'cw-scribe', a, p, '{}', ''));
+  if said is distinct from 'a card that writes buys between 1 and 2,000 tokens' then raise exception 'a writing play without tokens: %', said; end if;
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, tokens => 0)', ann, 'cw-scribe', a, p, '{}', '')) is null
+     or pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, tokens => 2001)', ann, 'cw-scribe', a, p, '{}', '')) is null then
+    raise exception 'tokens outside 1 to 2,000 were accepted';
+  end if;
+  -- A play of any other card with tokens is refused.
+  said := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, tokens => 50)', ann, 'cw-plain', a, p, '{}', ''));
+  if said is distinct from 'only a card that writes buys tokens' then raise exception 'a non-writing play with tokens: %', said; end if;
+  if pg_temp.refusal(format('select staff_play_card(%L, %L, %L)', 'cw-mod', 'cw-scribe', p)) is null
+     or pg_temp.refusal(format('select staff_play_card(%L, %L, %L, tokens => 50)', 'cw-mod', 'cw-plain', p)) is null then
+    raise exception 'a Mod Bot''s play was not held to the tokens';
+  end if;
+  if (select count(*) from acts) is distinct from acts_before then raise exception 'a refused play wrote an Act'; end if;
+  perform tests.unbecome();
+
+  -- A play with its tokens stores them in its own Act, a player's through play_card and a Mod Bot's through staff_play_card, and a plain play stores none.
+  perform tests.become_service();
+  pl := (play_card(ann, 'cw-scribe', a, p, '{}', 20, '', tokens => 80) ->> 'id')::uuid;
+  pl2 := (staff_play_card('cw-mod', 'cw-scribe', p2, '{}', '', tokens => 120) ->> 'id')::uuid;
+  perform play_card(ann, 'cw-plain', a, p3, '{}', 0, '');
+  perform tests.unbecome();
+  if (select x.payload -> 'tokens' from acts x where x.id = pl) is distinct from '80'::jsonb or (select x.payload -> 'tokens' from acts x where x.id = pl2) is distinct from '120'::jsonb
+     or exists (select 1 from acts x where x.target_act_id = p3 and x.kind = 'card' and x.payload ? 'tokens') then
+    raise exception 'the tokens are not in the play''s own Act, or a plain play carries some';
+  end if;
+
+  -- The signed-in player cannot call play_card to choose their own tokens, whatever they pass.
+  perform tests.become(ann);
+  if pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, tokens => 5)', ann, 'cw-scribe', a, p, '{}', '')) is null then raise exception 'a player called play_card with their own tokens'; end if;
+  perform tests.unbecome();
+
+  -- The claim returns what each play bought, and a later change of the economy moves nothing.
+  insert into settings (key, value) values ('economy', '{"cw.baseTokens": 25}') on conflict (key) do update set value = settings.value || '{"cw.baseTokens": 25}';
+  update settings set value = settings.value || '{"cw.baseTokens": 999, "cw.stepPrice": 77}' where key = 'economy';
+  got := pg_temp.claim(10, p);
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'tokens' is distinct from '80' then raise exception 'the claim does not return the play''s tokens: %', got; end if;
+  got := pg_temp.claim(10, p2);
+  if jsonb_array_length(got) is distinct from 1 or got -> 0 ->> 'tokens' is distinct from '120' then raise exception 'the claim does not return a Mod Bot play''s tokens: %', got; end if;
 end $$;

@@ -285,15 +285,16 @@ export interface CardUi {
   /**
    * What a play of this card did, in a sentence, for the caster's played line and the author's "a card on your post" line, read
    * from the play's configuration ("It covers “Mario” with “Luigi”."). A card that gives none, or answers undefined, adds nothing.
-   * Out of character and true. It is given the settings the log holds (the economy as the server holds it now), for a card whose play
-   * is said with a number the settings decide (a length).
+   * Out of character and true. It is given what the play recorded with itself (`tokens`, for a card that writes: the length it bought, written
+   * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded.
    */
-  readonly logPlay?: (config: Readonly<Record<string, unknown>>, settings: Settings) => string | undefined;
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number }) => string | undefined;
   /**
    * What a card that writes (`CardRules.writes`) did to a post of the author's, for the author's log, as the verb phrase after its subject; the
    * engine names the card and the post, and says nothing of who played it or what it cost. `continued` follows "<card> on your post #3" (the
-   * play's first text); `again` follows "Your edit of post #3", given the card's name (an edit's new text); `failed` follows "<card> on post #3"
-   * (the play's first generation, which gave nothing). A failure after an earlier text keeps the tail and has no line. Out of character and true.
+   * play's first text, whatever version it came on); `again` follows "Your edit of post #3", given the card's name (a text after an earlier text);
+   * `failed` follows "<card> on post #3" (the failure that ended the play, which was refunded). A failure the play survived, and a failed
+   * regeneration after a text, keep things as they were and have no line. Out of character and true.
    */
   readonly logWritten?: {
     readonly continued: string;

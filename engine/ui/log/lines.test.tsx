@@ -666,7 +666,7 @@ describe('the log of a card that writes', () => {
   const writing = { key, art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '',
     logWritten: { continued: 'continued it', again: (card: string) => `made its ${card} again`, failed: 'didn\'t take' },
     logSave: (state: unknown) => ((state as { cleared?: unknown }).cleared ? { what: 'Tail erased', verb: 'erased' } : undefined),
-    logPlay: (config: Readonly<Record<string, unknown>>, settings: { readonly economy: Readonly<Record<string, number>> }) => `It was played for ${(settings.economy.base ?? 0) + Number(config.steps) * (settings.economy.step ?? 0)} tokens.` };
+    logPlay: (_config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number }) => (recorded.tokens === undefined ? undefined : `It was played for ${recorded.tokens} tokens.`) };
   const wording = { key: 'other', art: writing.art, describe: () => '', logWritten: { continued: 'went on', again: (card: string) => `redid its ${card}`, failed: 'fell flat' } };
   const w: Words = { ...words, instance: { ...testInstance, cards: [...testInstance.cards, other] }, ui: { ...words.ui, cards: [writing, wording] }, economy: { base: 25, step: 25 } };
   const at = '2026-11-09T10:00:00.000Z';
@@ -675,7 +675,7 @@ describe('the log of a card that writes', () => {
   const text = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
   const post = act('post3', 'post', 'a', { seq: 3 });
   const play = (id: string, card: string) => act(id, 'card', 'c', { targetActId: 'post3', payload: { card, config: { steps: 3 } } });
-  const row = (over: Partial<Log['writes'][number]> = {}): Log['writes'][number] => ({ play: 'k1', post: 'post3', version: 'post3', failed: false, opening: true, at, ...over });
+  const row = (over: Partial<Log['writes'][number]> = {}): Log['writes'][number] => ({ play: 'k1', post: 'post3', version: 'post3', failed: false, opening: true, over: false, at, ...over });
   const mine = [char('a', 'Pipewrench', 'jabroni')];
   const rowsOf = (writes: Log['writes'], card = key, extra: Partial<LogData> = {}) =>
     logRows(data({ log: { ...empty, writes }, mine, acts: new Map([post, play('k1', card)].map((a) => [a.id, a])), names: new Map([['c', 'Spritey']]), ...extra }), w, 600, null);
@@ -692,15 +692,20 @@ describe('the log of a card that writes', () => {
     expect(text(rows[0]!)).toBe(`Your edit of post #3 made its ${name} again.`);
     expect(rows[0]!.details[1]).toEqual({ text: 'post #3', href: '/t/th?page=1#post-3' });
   });
-  test('a first failure says it did not take', () => {
-    const [r] = rowsOf([row({ failed: true })]);
+  test('the failure that ended the play says it did not take', () => {
+    const [r] = rowsOf([row({ failed: true, over: true })]);
     expect(text(r!)).toBe(`${name} on post #3 didn't take.`);
   });
+  test('a failure the play survived gets no line, and the text that came after it is the play\'s first', () => {
+    /* v1 failed with a newer job waiting (the play lived), then v2 made the first text: the one line is that it continued the post. */
+    const rows = rowsOf([row({ failed: true, over: false }), row({ version: 'e1', opening: true, at: '2026-11-09T10:30:00.000Z' })]);
+    expect(rows.map(text)).toEqual([`${name} on your post #3 continued it.`]);
+  });
   test('a failure after an earlier text keeps the tail and gets no line', () => {
-    expect(rowsOf([row({ failed: true, opening: false, version: 'e1' })])).toEqual([]);
+    expect(rowsOf([row({ failed: true, opening: false, over: false, version: 'e1' })])).toEqual([]);
   });
   test('another writing card is said in its own words, and the engine names none', () => {
-    const rows = rowsOf([row(), row({ play: 'k2', failed: true })], 'other', { acts: new Map([post, play('k1', 'other'), play('k2', 'other')].map((a) => [a.id, a])) });
+    const rows = rowsOf([row(), row({ play: 'k2', failed: true, over: true })], 'other', { acts: new Map([post, play('k1', 'other'), play('k2', 'other')].map((a) => [a.id, a])) });
     expect(rows.map(text).sort()).toEqual(["Other Card on post #3 fell flat.", 'Other Card on your post #3 went on.']);
     expect(rowsOf([row({ version: 'e1', opening: false })], 'other').map(text)).toEqual(['Your edit of post #3 redid its Other Card.']);
   });
@@ -727,10 +732,17 @@ describe('the log of a card that writes', () => {
     expect(text(r!)).toBe(`Someone's ${name} on your post #3. The layer is washed clean.`);
   });
 
-  test('the caster\'s play line is given the settings, so a card can say its own length', () => {
+  test('the caster\'s play line is given what the play recorded, so it says the length bought even after a retune', () => {
     const log = { ...empty, cards: [{ card: key, kind: 'played' as const, act: 'k1', price: 75, at }] };
-    const [r] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play('k1', key)].map((a) => [a.id, a])) }), w, 600, null);
-    expect(text(r!)).toContain('It was played for 100 tokens.');
+    const bought = { ...play('k1', key), payload: { card: key, config: { steps: 3 }, tokens: 100 } };
+    /* The economy now says 25 + 3 * 25 = 100 for these steps; retuned, it would say 1,000. The line is the recorded number either way. */
+    for (const economy of [{ base: 25, step: 25 }, { base: 1000, step: 0 }]) {
+      const [r] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, bought].map((a) => [a.id, a])) }), { ...w, economy }, 600, null);
+      expect(text(r!)).toContain('It was played for 100 tokens.');
+    }
+    /* A play with no record says nothing of a length rather than working one out. */
+    const [none] = logRows(data({ log, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, play('k1', key)].map((a) => [a.id, a])) }), w, 600, null);
+    expect(text(none!)).not.toContain('tokens');
   });
 });
 

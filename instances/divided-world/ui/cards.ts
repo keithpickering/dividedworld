@@ -204,13 +204,8 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
       const e = settings.economy;
       return `A Pepperoni card, ${youWereSaying.rarity}, cast on a post with words of its own. A chatbot from 2021 reads the post and keeps going after the author stops, and its words type themselves in after the post's. You choose how much it writes, from about ${e['youWereSaying.baseTokens'] ?? 0} tokens, a sentence, up to ${e['youWereSaying.mostTokens'] ?? 0}, a rant. The base length costs nothing more to play; each step longer costs ${orbs(e['youWereSaying.stepPrice'] ?? 0)} more. The author can erase it, but all at once, and an edit to the post gets a fresh take. Its words are the chatbot's, never the author's, and the post's own words are always there.`;
     },
-    /* The caster's play line says the length asked for, from the settings the log holds, as the machine priced it (rules' `writes.tokens`). */
-    logPlay: (config, settings) => {
-      const steps = config.steps;
-      if (typeof steps !== 'number' || !Number.isSafeInteger(steps) || steps < 0) return undefined;
-      const tokens = youWereSaying.writes!.tokens({ steps }, settings);
-      return `It was played for ${tokens} ${tokens === 1 ? 'token' : 'tokens'}.`;
-    },
+    /* The caster's play line says the length the play bought, as the play recorded it (the server wrote it with the play), so it is true after any retune. */
+    logPlay: (_config, { tokens }) => (tokens === undefined ? undefined : `It was played for ${tokens} ${tokens === 1 ? 'token' : 'tokens'}.`),
     /* The author's erase is the state `{ cleared }` (the rules' validateState): said as the author's own act. */
     logSave: (state: unknown) => (typeof state === 'object' && state !== null && typeof (state as { cleared?: unknown }).cleared === 'string' ? { what: 'Tail erased', verb: 'erased' } : undefined),
     /* What it did to the author's post: its first text, a new text made for an edit, and a generation that did not come. */

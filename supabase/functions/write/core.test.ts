@@ -24,7 +24,7 @@ const card = {
 const instance: Instance = { ...base, cards: [...base.cards, card], system: { ...base.system, scrubWords: ['badword'] } };
 
 const job = (over: Record<string, unknown> = {}) => ({
-  play: P1, version: V, post: POST, thread: 't', attempts: 1, card: 'echo', config: { steps: 2 }, author: 'Mallory',
+  play: P1, version: V, post: POST, thread: 't', attempts: 1, card: 'echo', config: { steps: 2 }, tokens: 200, author: 'Mallory',
   body: 'Hello [b]there[/b] [code]hidden[/code] friend', title: 'A title', before: [{ name: 'Ann', body: '[i]first[/i]' }], earlier: [], ...over,
 });
 
@@ -66,6 +66,23 @@ test('a job is finished with its text, and the request carries the play, the dut
   assert.deepEqual(requests[0]!.stop, ['\n\n']);
   assert.ok((requests[0]!.maxChars ?? 0) <= 4000);
   assert.equal(out.written, 1);
+});
+
+test('the length is the one the play recorded, whatever the card\'s rules and the settings say now', async () => {
+  const { db } = fakeDb([[job({ tokens: 321 })]]);
+  const { models, requests } = fakeModels(() => 'x');
+  /* The card's rules would say 200 for these steps (and a retuned economy something else again); the job's own number is the length. */
+  await run(db, models);
+  assert.equal(requests[0]!.maxTokens, 321);
+  assert.equal(requests[0]!.maxChars, Math.min(4000, 321 * 6));
+});
+
+test('a job whose play recorded no length makes no call and is finished unreachable', async () => {
+  const { db, calls } = fakeDb([[job({ tokens: null })]]);
+  const { models, requests } = fakeModels(() => 'x');
+  await run(db, models);
+  assert.equal(requests.length, 0);
+  assert.deepEqual(finishes(calls), [{ play: P1, version: V, text: null, failed: 'unreachable' }]);
 });
 
 test('the frame is built from visible text, with the earlier tails in order', async () => {
