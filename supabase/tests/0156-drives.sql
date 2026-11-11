@@ -594,6 +594,38 @@ begin
   if (select count(*) from acts where kind = 'donation') is distinct from gifts_before then raise exception 'a malformed gift stayed'; end if;
 end $$;
 
+-- ---- a banned character cannot give: donate meets not_banned's words, right after played_by, and writes nothing ----
+do $$
+declare
+  gv uuid := tests.account('bn-giver'); gch uuid := tests.character(gv, 'Bn Giver');
+  au uuid := tests.account('bn-author'); ach uuid := tests.character(au, 'Bn Author');
+  cs uuid := tests.account('bn-caster'); cch uuid := tests.character(cs, 'Bn Caster');
+  t uuid := tests.thread('Bn banned');
+  p uuid := tests.post(ach, t, 'A post with a drive.');
+  gp uuid := tests.post(gch, t, 'A post that earns the giver a ban.');
+  d uuid;
+  why text;
+  gifts_before bigint;
+  events_before bigint;
+begin
+  perform pg_temp.eco();
+  insert into card_ledger (account, card, kind, price) select cs, 'dv-gift', 'bought', 0 from generate_series(1, 4);
+  perform pg_temp.wallet(gv, 100);
+  d := pg_temp.open_drive(cs, cch, p);
+  insert into settings (key, value) values ('warnBar', '{"size": 1, "bands": {"minor": 1, "moderate": 1, "severe": 1}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}')
+    on conflict (key) do update set value = excluded.value;
+  perform infract(gch, 'minor', gp, 'dv-mod');
+  if banned_until(gch) is null then raise exception 'the giver is banned for this test'; end if;
+  select count(*) into gifts_before from acts where kind = 'donation';
+  select count(*) into events_before from wallet_events;
+  perform tests.become_service();
+  why := pg_temp.refused(format('select donate(%L, %L, %L, 10)', gv, gch, d));
+  perform tests.unbecome();
+  if why is null or why not like '55000 | kayfabb.refusal | this character is banned until % UTC; the ban ends by itself then, and it holds only this character, not your other characters' then raise exception 'a banned character gave: %', why; end if;
+  if (select count(*) from acts where kind = 'donation') is distinct from gifts_before then raise exception 'a refused gift of a banned character wrote an Act'; end if;
+  if (select count(*) from wallet_events) is distinct from events_before or (select balance from wallets where account = gv) is distinct from 100 then raise exception 'a refused gift of a banned character moved Aura'; end if;
+end $$;
+
 -- ---- a donation takes no seq, and leaves its thread's last_at, replies and next_seq alone ----
 do $$
 declare
@@ -655,7 +687,7 @@ begin
   if not has_function_privilege('authenticated', 'drive_gifts(uuid[])', 'execute') or not has_function_privilege('authenticated', 'drive_gifts_page(uuid, timestamptz, uuid)', 'execute') then
     raise exception 'a signed-in player cannot read the gifts';
   end if;
-  if exists (select 1 from pg_indexes where indexname = 'acts_donations' and indexdef ~ '\(target_act_id, created_at\) WHERE \(kind = ''donation''::text\)') is not true then
+  if exists (select 1 from pg_indexes where indexname = 'acts_donations' and indexdef ~ '\(target_act_id, created_at DESC, id DESC\) WHERE \(kind = ''donation''::text\)') is not true then
     raise exception 'the donation index is missing or is not the partial index on the drive and the time';
   end if;
 end $$;

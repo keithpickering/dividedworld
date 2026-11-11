@@ -645,7 +645,7 @@ alter table wallet_events drop constraint wallet_events_kind_check;
 alter table wallet_events add constraint wallet_events_kind_check check (kind in ('settlement', 'purchase', 'play', 'trap', 'trapSystem', 'report', 'refund', 'bribe', 'appeal', 'grant', 'gift_out', 'gift_in'));
 
 -- A drive's gifts, by drive and time: the donor wall and its pages (drive_gifts, drive_gifts_page) and the total are one range of this index for each drive.
-create index acts_donations on acts (target_act_id, created_at) where kind = 'donation';
+create index acts_donations on acts (target_act_id, created_at desc, id desc) where kind = 'donation';
 
 -- acts_well_formed (0148), refusing a gift that is not on a drive's opening play, in that play's thread. Everything else as 0148 wrote it.
 create or replace function acts_well_formed() returns trigger
@@ -795,6 +795,7 @@ declare
   gift uuid := gen_random_uuid();
 begin
   perform played_by(through, who);
+  perform not_banned(through);
   -- The drive: a card play whose payload names itself as its drive, of a card that has one. An Act is never changed, so reading it before the lock is reading it.
   select * into opening from acts a where a.id = donate.drive and a.kind = 'card';
   select * into ck from card_kinds k where k.key = opening.payload ->> 'card';
@@ -844,7 +845,7 @@ grant execute on function donate(uuid, uuid, uuid, integer) to service_role;
 -- ---------------------------------------------------------------------------------------------------------- 9. the reads ----
 
 -- drive_gifts(drives): for each drive asked, in the order asked, its total and its count of gifts and its latest 20 (giver character, amount, time). One range of acts_donations for each drive, and a drive's gifts are
--- bounded by its givers' wallets. A drive nobody gave to, and an id that is no drive, are a row of zeros. Security invoker, reading acts (public, as every Act is) and nothing of any wallet: a gift's `arrives` and
+-- bounded by its givers' wallets. A drive nobody gave to, and an id that is no drive, are a row of zeros. A drive's total and count are summed per read, and a tally row is the follow-up if drives get very large. Security invoker, reading acts_public (as drive_gifts_page does) and nothing of any wallet: a gift's `arrives` and
 -- `overhead` are in the Act and are not shown here, only what was given.
 create function drive_gifts(drives uuid[]) returns jsonb
 language plpgsql stable security invoker set search_path = public, pg_temp as $$
@@ -856,8 +857,8 @@ begin
     cross join lateral (
       select coalesce(sum((a.payload ->> 'amount')::integer), 0)::integer as total, count(*)::integer as n,
         coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at) order by x.created_at desc, x.id desc)
-                  from (select l.id, l.character, l.payload, l.created_at from acts l where l.kind = 'donation' and l.target_act_id = d.id order by l.created_at desc, l.id desc limit 20) x), '[]'::jsonb) as latest
-      from acts a where a.kind = 'donation' and a.target_act_id = d.id
+                  from (select l.id, l.character, l.payload, l.created_at from acts_public l where l.kind = 'donation' and l.target_act_id = d.id order by l.created_at desc, l.id desc limit 20) x), '[]'::jsonb) as latest
+      from acts_public a where a.kind = 'donation' and a.target_act_id = d.id
     ) g), '[]'::jsonb);
 end $$;
 revoke execute on function drive_gifts(uuid[]) from public, anon;
