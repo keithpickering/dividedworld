@@ -162,3 +162,136 @@ create or replace view screen_settings as
   where s.key in ('postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime',
                   'turnCooldown', 'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
                   'presencePollSeconds', 'presenceWindow', 'toastDefaults', 'economy', 'searchLanguage', 'searchRankPool', 'pronouns', 'setLasts');
+
+-- profile_page and record_page (0128) and alerts_page (0134), as 0149 wrote them, written again whole and unchanged for the same reason: each holds Acts read through
+-- acts_public in a `begin atomic` body, so an Act in one takes the view's new `ends_at` only from a definition made after the view gained it, and a document holds the public
+-- projection of an Act, the same wherever it is read.
+create or replace function profile_page(in_character uuid) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with c as (
+    select id, name, joined, staff, office, warn_points, banned_until, "group" from characters_public where id = in_character
+  ), acts5 as (
+    -- PROFILE_ROWS (engine/ui/profile/record.ts): the newest few of its own Acts, with no count.
+    select a.* from acts_public a
+    where a.character = in_character and a.kind in ('post', 'spin', 'card')
+    order by a.created_at desc limit 5
+  ), rv as (
+    select r.act, r.character, r.class, r.at, r.via, r.thread from class_reveals r where r.character = in_character
+  ), tn as (
+    select t.act, t.character, t.at, t.was from turns_announced t where t.character = in_character
+  )
+  select case when not exists (select 1 from c) then null else jsonb_build_object(
+    'character', (select to_jsonb(c) from c),
+    'profile', (select to_jsonb(p) from (
+      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
+      from character_profiles where character = in_character) p),
+    'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character) n),
+    'standing', standing_place(in_character),
+    'settled_at', (select s.ends_at from settlements s order by s.ends_at desc limit 1),
+    'season', (select to_jsonb(s) from current_season s limit 1),
+    'reveals', coalesce((select jsonb_agg(to_jsonb(r) order by r.at, r.act::text collate "C") from rv r), '[]'::jsonb),
+    'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc) from acts5 a), '[]'::jsonb),
+    -- The card plays' target posts and the Turns' tallies, placed with one batched read (playLinks, turnLinks).
+    'targets', coalesce((select jsonb_agg(to_jsonb(x)) from acts_public x
+      where x.id in (select a.target_act_id from acts5 a where a.kind = 'card' and a.target_act_id is not null union select t.act from tn t)), '[]'::jsonb),
+    'seasons', coalesce((select jsonb_agg(to_jsonb(a) order by a.at desc, a.season desc) from (
+      select f.number as season, r.place, r.standing, f.results_at as at
+      from season_results r join seasons_finished f on f.id = r.season
+      where r.character = in_character
+      order by f.results_at desc, f.number desc limit 50) a), '[]'::jsonb),
+    'unread', my_alerts_unread()
+  ) end;
+end;
+
+create or replace function record_page(in_character uuid, in_kind text, in_page integer) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with c as (
+    select id, name, joined, staff, office, warn_points, banned_until, "group" from characters_public where id = in_character
+  ), k as (
+    select case when in_kind in ('all', 'post', 'spin', 'card', 'class', 'seasons') then in_kind else 'all' end as kind,
+           least(greatest(coalesce(in_page, 1), 1), 10000) as page
+  ), rv as (
+    select r.act, r.character, r.class, r.at, r.via, r.thread from class_reveals r, k
+    where r.character = in_character and k.kind in ('all', 'class')
+  ), tn as (
+    select t.act, t.character, t.at, t.was from turns_announced t, k
+    where t.character = in_character and k.kind in ('all', 'class')
+  ), seasons_read as (
+    select f.number as season, r.place, r.standing, f.results_at as at
+    from season_results r join seasons_finished f on f.id = r.season, k
+    where k.kind in ('all', 'seasons') and r.character = in_character
+    order by f.results_at desc, f.number desc limit 50
+  ), w as (
+    -- The window of the character's own Acts: for `all`, from `max(0, offset - extras)` for `offset + 20 - from` rows
+    -- (the extras are merged in by the client, `mergeWindow`); for one kind, the page itself; for class and seasons, none.
+    select case k.kind when 'all' then array['post', 'spin', 'card'] when 'post' then array['post'] when 'spin' then array['spin']
+                       when 'card' then array['card'] else array[]::text[] end as kinds,
+           case when k.kind = 'all' then greatest(0, (k.page - 1) * 20 - ((select count(*) from rv) + (select count(*) from tn) + (select count(*) from seasons_read)))
+                else (k.page - 1) * 20 end as from_row,
+           case when k.kind = 'all' then (k.page - 1) * 20 + 20 else 20 end as base
+    from k
+  ), acts_read as (
+    -- The kinds as an init plan, so the planner keeps the ordered scan of the character's Acts with the limit pushed down.
+    select a.* from acts_public a
+    where a.character = in_character and a.kind = any (((select kinds from w)::text[]))
+    order by a.created_at desc
+    offset (select from_row from w)
+    limit (select case when k.kind = 'all' then w.base - w.from_row else 20 end from w, k)
+  )
+  select case when not exists (select 1 from c) then null else jsonb_build_object(
+    'kind', (select kind from k),
+    'page', (select page from k),
+    'character', (select to_jsonb(c) from c),
+    'profile', (select to_jsonb(p) from (
+      select character, title, signature, avatar_square, avatar_portrait, square_frame, portrait_frame, pip_style, pronouns
+      from character_profiles where character = in_character) p),
+    -- RecordScreen reads the counters for all, post, spin and card only.
+    'counts', (select to_jsonb(n) from (select character, posts, spins, cards from character_post_counts where character = in_character and (select kind from k) in ('all', 'post', 'spin', 'card')) n),
+    'reveals', coalesce((select jsonb_agg(to_jsonb(r) order by r.at, r.act::text collate "C") from rv r), '[]'::jsonb),
+    'turns', coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.act::text collate "C") from tn t), '[]'::jsonb),
+    'seasons', coalesce((select jsonb_agg(to_jsonb(a) order by a.at desc, a.season desc) from seasons_read a), '[]'::jsonb),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc) from acts_read a), '[]'::jsonb),
+    'targets', coalesce((select jsonb_agg(to_jsonb(x)) from acts_public x
+      where x.id in (select a.target_act_id from acts_read a where a.kind = 'card' and a.target_act_id is not null union select t.act from tn t)), '[]'::jsonb),
+    'unread', my_alerts_unread()
+  ) end;
+end;
+
+create or replace function alerts_page(in_before timestamptz) returns jsonb
+language sql stable security invoker set search_path = public, pg_temp
+begin atomic
+  with recursive al as (
+    select to_jsonb(a) - 'ordinality' as j, a.ordinality as o
+    from my_alerts(in_before, 30) with ordinality as a
+  ), chain(id, depth, ended) as (
+    select (al.j ->> 'act')::uuid, 1, al.j ->> 'kind' = 'cardEnded' from al where al.j ->> 'act' is not null
+    union
+    select x.target_act_id, c.depth + 1, c.ended
+    from chain c join acts_public x on x.id = c.id
+    where (c.depth < 2 or (c.depth < 3 and c.ended)) and x.target_act_id is not null
+  ), ac as (
+    select a.* from acts_public a where a.id in (select c.id from chain c)
+  ), th as (
+    select distinct (al.j ->> 'thread')::uuid as id from al where al.j ->> 'kind' = 'followed' and al.j ->> 'thread' is not null
+  )
+  select jsonb_build_object(
+    'alerts', coalesce((select jsonb_agg(al.j order by al.o) from al), '[]'::jsonb),
+    'seenAt', (select p.alerts_seen_at from account_preferences p limit 1),
+    'openedAt', my_account_opened(),
+    'acts', coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at, a.id::text collate "C") from ac a), '[]'::jsonb),
+    'people', coalesce((
+      select jsonb_agg(f.face order by f.name) from (
+        select cp.name, to_jsonb(cp) || jsonb_build_object('profile', (
+          select to_jsonb(p) from (
+            select r.character, r.title, r.signature, r.avatar_square, r.avatar_portrait, r.square_frame, r.portrait_frame, r.pip_style, r.pronouns
+            from character_profiles r where r.character = cp.id) p)) as face
+        from (select c.id, c.name, c.joined, c.staff, c.office, c."group" from characters_public c
+              where c.id in (select a.character from ac a where a.id in (select h.id from chain h where h.depth = 3))) cp) f), '[]'::jsonb),
+    'openings', coalesce((select jsonb_agg(to_jsonb(a) order by a.thread::text collate "C") from acts_public a where a.thread in (select t.id from th t) and a.seq = 1), '[]'::jsonb),
+    'reading', coalesce((select jsonb_agg(to_jsonb(r) order by r.thread::text collate "C") from (
+      select g.thread, g.furthest_seq from reading g where g.thread in (select t.id from th t)) r), '[]'::jsonb)
+  );
+end;

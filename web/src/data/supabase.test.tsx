@@ -414,6 +414,13 @@ describe('reads and their rows', () => {
     expect(req?.url.searchParams.get('order')).toBe('created_at.asc');
   });
 
+  it('carries a set\'s `ends_at` (acts_public, 0152) onto the Act as `endsAt`, and nothing on an Act with none', async () => {
+    const END = '2026-11-20T00:00:00+00:00';
+    const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'set', target_act_id: B, ends_at: END }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, ends_at: null }])));
+    const plays = await h.api.cardsOnMany([B], 10);
+    expect(plays.map((p) => [p.id, p.endsAt])).toEqual([[A, END], [C, undefined]]);
+    expect(plays.slice(1)).toSatisfy((rest: readonly object[]) => rest.every((p) => !('endsAt' in p)));
+  });
   it('carries `untaken`, the public flag of a play that did not take (acts_public, 0149), onto the Act, and nothing of a play without it', async () => {
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'card', target_act_id: B, untaken: true }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, untaken: false }, { ...ACT_ROW, id: B, kind: 'card', target_act_id: B }])));
     const plays = await h.api.cardsOnMany([B], 10);

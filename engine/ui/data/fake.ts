@@ -219,7 +219,7 @@ export interface Seed {
    * A card set face down by a character on a post of its own (what `set_card` writes): a set Act naming no card, and the setter's own
    * record of which card it is. Returns the set Act.
    */
-  set(character: Id, target: Id, card: string, options?: { at?: number }): Id;
+  set(character: Id, target: Id, card: string, options?: { at?: number; endsAt?: number }): Id;
   /** The spring of a set (what `spring_traps` writes): a spring Act on its post naming the card, and `caught` where it caught a play. Returns the spring Act. */
   spring(set: Id, options?: { trigger?: string; caught?: Id; by?: Id; at?: number }): Id;
   /**
@@ -3805,7 +3805,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!on) throw new Error(`no such Act ${target}`);
       if (on.character !== character) throw new Error('a card is set face down on a post of its own author\'s');
       const written = asAt(ownerOf(character), o?.at, () => write({ character, kind: 'set', thread: on.thread, target, payload: {} }));
-      faceDown.set(written.id, { account: ownerOf(character), card, post: target, endsAt: written.at + span(settings.setLasts), sprung: null });
+      faceDown.set(written.id, { account: ownerOf(character), card, post: target, endsAt: o?.endsAt ?? written.at + span(settings.setLasts), sprung: null });
       return written.id;
     },
     spring(set, o) {

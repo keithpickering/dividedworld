@@ -1963,16 +1963,28 @@ describe('taking a back back', () => {
     expect(takeButton()).toBeNull();
   });
 
-  test('follows the end the server stored: a back set ten days ago under a thirty-day span is live, can be taken back and says when it ends', async () => {
+  test('follows the end the server stored: a back set ten days ago whose end is twenty days off is live, can be taken back and says when it ends', async () => {
     width(false);
-    const w = world({ setLasts: { unit: 'day', count: 30 } } as never);
+    const w = world();
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
-    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 10 * 86_400_000 });
+    /* The screen's setLasts is seven days: ten days on, a back worked out from it would be over. */
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 10 * 86_400_000, endsAt: Date.now() + 20 * 86_400_000 });
     const [set] = await w.fake.cardsOn(post, 10);
     open(w);
     await openBack(4);
     expect(takeButton()).not.toBeNull();
     expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`${endsWords(set!.endsAt!)}, unless it springs first.`);
+  });
+
+  test('a back whose stored end has passed is gone and cannot be taken back, though the setting would still give it days', async () => {
+    width(false);
+    const w = world();
+    const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 86_400_000, endsAt: Date.now() - 3_600_000 });
+    open(w);
+    await article(4);
+    expect(within(await article(4)).queryByRole('button', { name: /^A card set face down/u })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Take back' })).toBeNull();
   });
 
   test('calls takeBack with the setter\'s character and the back, and closes the Lens once it is back', async () => {
