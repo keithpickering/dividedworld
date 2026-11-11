@@ -121,7 +121,7 @@ export interface SpinOrigin { readonly id: Id; readonly label: string | null; re
  * on the client refuses a quote typed by hand; the server's guard is the authority.
  */
 export function quoteStopped(plays: readonly CardPlay[], instance: Pick<Instance, 'cards' | 'settings'>): boolean {
-  return quoteStop(effectsOf(plays, instance.cards, instance.settings.setLasts)) !== undefined;
+  return quoteStop(effectsOf(plays, instance.cards)) !== undefined;
 }
 
 function Actions({ act, editing, onEdit, editButton, spinOrigin, setSpinOrigin, onReport }: {
