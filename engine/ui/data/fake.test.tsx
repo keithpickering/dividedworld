@@ -750,6 +750,11 @@ describe('the account', () => {
     expect(must(await fake.setPreferences({ toasts: [] })).toasts).toEqual([]);
     expect(must(await fake.setPreferences({ toasts: null })).toasts).toBeNull();
   });
+  test('a card key may open with a digit, as the catalog and meet_card allow, but not with a hyphen', async () => {
+    const { fake } = world();
+    expect(must(await fake.meetCard('4d-chess')).cardsMet).toContain('4d-chess');
+    expect(await fake.meetCard('-chess')).toEqual(refused('a card is named in lowercase words joined by hyphens'));
+  });
   test('cards met are added once, refused past 64 or when malformed, and forgotten whole, setPreferences leaving them alone', async () => {
     const { fake } = world();
     expect(must(await fake.meetCard('whoops')).cardsMet).toEqual(['whoops']);
