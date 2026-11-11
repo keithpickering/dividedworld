@@ -758,6 +758,13 @@ export interface Session {
   readonly signedIn: boolean;
   /** The account, once one is open; null while signed in with none (an invite is needed). */
   readonly account: Id | null;
+  /**
+   * The account's own bar (my_bar): null when it has none; `until` is the end of a suspension, null for a ban. Read for a signed-in account
+   * only, so signed out it is null. A screen treats a suspension whose `until` has passed as no bar, since the server ends it by itself.
+   */
+  readonly bar: { readonly until: string | null } | null;
+  /** Whether the account has accepted the current code of conduct (conduct_accepted); true while signed out, where nothing is asked. */
+  readonly conductAccepted: boolean;
 }
 
 /** One of the player's own characters (my_characters): seen by its player alone. */
@@ -1788,6 +1795,8 @@ export interface KayfaApi {
   verifyCode(email: string, code: string): Promise<Answer<{ readonly account: boolean; readonly why?: string }>>;
   openAccount(invite: string | null): Promise<Answer<{ readonly opened: boolean }>>;
   signOut(): Promise<void>;
+  /** The signed-in account accepts the code of conduct at this version (accept_conduct). */
+  acceptConduct(version: number): Promise<Answer<Record<string, never>>>;
   /** The address the session signed in with, the player's own, for Settings › Account; null signed out. */
   signInAddress(): Promise<string | null>;
   isAdmin(): Promise<boolean>;

@@ -20,22 +20,31 @@ import './conduct.css';
 /** Where the page is. */
 export const CONDUCT_PATH = '/conduct';
 
-export function Conduct() {
+/** The code's sections as the page and the Accept screen both show them: each a second-level heading with an anchor, its words through the guide's renderer. */
+export function ConductSections() {
   const { ui, settings } = useKayfa();
   const sections = useMemo(() => ui.conduct.sections.map((s) => ({ ...s, blocks: parse(s.text) })), [ui.conduct.sections]);
   /* The code names no setting and no marker; the renderer's fill is the page's own path and an empty marker. */
   const fill: Fill = { settings, path: CONDUCT_PATH, marker: () => null };
   return (
+    <>
+      {sections.map((s) => (
+        <section key={s.key} id={s.key} className="kb-conduct-section" aria-labelledby={`${s.key}-title`}>
+          <h2 id={`${s.key}-title`} className="kb-conduct-title">{s.title}</h2>
+          <div className="kb-conduct-text"><Blocks blocks={s.blocks} fill={fill} demote={1} /></div>
+        </section>
+      ))}
+    </>
+  );
+}
+
+export function Conduct() {
+  return (
     <div className="kb-acct kb-conduct">
       <PageHead title="Code of conduct" />
       <CalmRegion className="kb-acct-panel">
         <p className="kb-acct-lead">This is the code everyone here plays by. The board&apos;s own Report button is part of the game: a Mod Bot hears it, and what happens next is play. Report to admins, on a post&apos;s glass layer, reaches a person, and is for a post that breaks this code.</p>
-        {sections.map((s) => (
-          <section key={s.key} id={s.key} className="kb-conduct-section" aria-labelledby={`${s.key}-title`}>
-            <h2 id={`${s.key}-title`} className="kb-conduct-title">{s.title}</h2>
-            <div className="kb-conduct-text"><Blocks blocks={s.blocks} fill={fill} demote={1} /></div>
-          </section>
-        ))}
+        <ConductSections />
       </CalmRegion>
     </div>
   );

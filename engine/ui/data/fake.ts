@@ -77,6 +77,10 @@ export interface Seed {
    */
   account(name: string, options?: { email?: string; admin?: boolean; joinedAt?: number; seasoned?: boolean }): Id;
   admin(account: Id, on?: boolean): void;
+  /** Bars an account (`until` in epoch ms, null for a ban) or, with no `until`, lifts the bar; the account's session then carries it. */
+  bar(account: Id, until?: number | null): void;
+  /** An account that has not accepted the current code of conduct. */
+  unaccepted(account: Id): void;
   /** A character of an account; debuted unless said otherwise. */
   character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number; pronouns?: PronounSet }): Id;
   retire(character: Id): void;
@@ -454,7 +458,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   let session: { email: string | null; account: Id | null } = { email: null, account: null };
   const sessionListeners = new Set<(s: Session) => void>();
-  const sessionNow = (): Session => ({ signedIn: session.email !== null, account: session.account });
+  /** Each account's bar (null `until` is a ban) and whether it has accepted the current code: a test sets them through the seed; an account has accepted by default. */
+  const bars = new Map<Id, { until: number | null }>();
+  const unaccepted = new Set<Id>();
+  const sessionNow = (): Session => ({
+    signedIn: session.email !== null,
+    account: session.account,
+    bar: session.account !== null && bars.has(session.account) ? { until: bars.get(session.account)!.until === null ? null : iso(bars.get(session.account)!.until!) } : null,
+    conductAccepted: session.account === null || !unaccepted.has(session.account),
+  });
   const setSession = (next: typeof session) => {
     session = next;
     const snapshot = sessionNow();
@@ -2015,6 +2027,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return refuse(opened.why);
     },
     signOut() { setSession({ email: null, account: null }); },
+    acceptConduct(version) {
+      if (session.account === null) return refuse('sign in with an account first');
+      if (!Number.isInteger(version) || version < 1) return refuse('that is not a version of the code');
+      unaccepted.delete(session.account);
+      setSession(session);
+      return ok({});
+    },
     signInAddress: () => session.email,
     isAdmin: () => me()?.admin ?? false,
     updates(before) {
@@ -3313,6 +3332,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return a.id;
     },
     admin(account, on = true) { accounts.get(account)!.admin = on; },
+    bar(account, until) { if (until === undefined) bars.delete(account); else bars.set(account, { until }); },
+    unaccepted(account) { unaccepted.add(account); },
     character(account, name, cls, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
       return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;

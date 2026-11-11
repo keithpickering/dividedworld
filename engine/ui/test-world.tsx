@@ -168,7 +168,7 @@ export function renderIn(fake: Fake, element: ReactElement, options: WorldOption
     ...render(
       <RouterProvider>
         <KayfaProvider value={kayfa}>
-          <PlayerProvider api={fake} {...(options.boot ? { initial: { session: { signedIn: true, account: options.boot.account }, boot: options.boot, estimate: null } } : {})}>
+          <PlayerProvider api={fake} {...(options.boot ? { initial: { session: { signedIn: true, account: options.boot.account, bar: null, conductAccepted: true }, boot: options.boot, estimate: null } } : {})}>
             <BootProvider boot={options.boot ?? null}>{element}</BootProvider>
           </PlayerProvider>
         </KayfaProvider>

@@ -11,7 +11,7 @@ const char = (id: string, over: Partial<MyCharacter> = {}): MyCharacter => ({
 });
 
 function stubApi(over: Partial<KayfaApi> = {}) {
-  const session: Session = { signedIn: true, account: 'acc-1' };
+  const session: Session = { signedIn: true, account: 'acc-1', bar: null, conductAccepted: true };
   const estimate = vi.fn(async (): Promise<Estimate> => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 30 }], lines: [], asOf: new Date(Date.now()).toISOString(), freshAfter: new Date(Date.now() + 30_000).toISOString() }));
   const api = {
     session: async () => session,
@@ -165,7 +165,7 @@ describe('the estimate is asked for on events, never on a timer', () => {
     await waitFor(() => expect(estimate).toHaveBeenCalledTimes(2));
   });
   test('signed out, nothing is asked', async () => {
-    const { api, estimate } = stubApi({ session: async () => ({ signedIn: false, account: null }) });
+    const { api, estimate } = stubApi({ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }) });
     render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
     await act(async () => {});
     expect(estimate).not.toHaveBeenCalled();
@@ -182,14 +182,14 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
       return Promise.resolve({ entries: [{ character: 'x', reason: 'face.cheered', amount: 7 }], lines: [], asOf: null, freshAfter: null });
     });
     const api = {
-      session: async () => ({ signedIn: true, account: 'acc-a' }),
+      session: async () => ({ signedIn: true, account: 'acc-a', bar: null, conductAccepted: true }),
       onSession: (l: (s: Session) => void) => { listener = l; return () => {}; },
       myCharacters: async () => [char('a')],
       wallet: async () => ({ balance: 100, cap: 600 }),
       myCards: async () => [],
       estimate,
     } as unknown as KayfaApi;
-    return { api, estimate, switchTo: (account: string | null) => act(() => listener({ signedIn: account !== null, account })), answerA: (amount: number) => resolveA({ entries: [{ character: 'a', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null }) };
+    return { api, estimate, switchTo: (account: string | null) => act(() => listener({ signedIn: account !== null, account, bar: null, conductAccepted: true })), answerA: (amount: number) => resolveA({ entries: [{ character: 'a', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null }) };
   }
   test('an estimate that answers after the account changed is dropped, and the new account asks at once', async () => {
     const w = switchable();
@@ -262,7 +262,7 @@ describe('from PR #49\'s fifth review: what the provider holds is the account\'s
       myCards: async () => [],
       estimate: vi.fn(() => (account === 'acc-a' ? estimates.a() : estimates.b())),
     } as unknown as KayfaApi;
-    const switchTo = (next: string) => act(() => { account = next; listener({ signedIn: true, account: next }); });
+    const switchTo = (next: string) => act(() => { account = next; listener({ signedIn: true, account: next, bar: null, conductAccepted: true }); });
     return { api, switchTo };
   }
   const answer = (amount: number): Estimate => ({ entries: [{ character: 'x', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null });
@@ -340,7 +340,7 @@ describe('from the Task 7 re-review: drafts leave the device only with their acc
     render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('hud').textContent).toBe('a'));
     localStorage.setItem('kb-draft:acc-1:t1', JSON.stringify({ text: 'unsent', as: 'a' }));
-    w.emit({ signedIn: true, account: null });
+    w.emit({ signedIn: true, account: null, bar: null, conductAccepted: true });
     expect(localStorage.getItem('kb-draft:acc-1:t1')).not.toBeNull();
   });
   test('signing out takes them', async () => {
@@ -348,13 +348,13 @@ describe('from the Task 7 re-review: drafts leave the device only with their acc
     render(<PlayerProvider api={w.api}><Probe /></PlayerProvider>);
     await waitFor(() => expect(screen.getByTestId('hud').textContent).toBe('a'));
     localStorage.setItem('kb-draft:acc-1:t1', JSON.stringify({ text: 'unsent', as: 'a' }));
-    w.emit({ signedIn: false, account: null });
+    w.emit({ signedIn: false, account: null, bar: null, conductAccepted: true });
     expect(localStorage.getItem('kb-draft:acc-1:t1')).toBeNull();
   });
 });
 
 describe('a provider that starts from the first load\'s session', () => {
-  const signedOutFirst = { session: { signedIn: false, account: null } as Session, boot: null, estimate: null };
+  const signedOutFirst = { session: { signedIn: false, account: null, bar: null, conductAccepted: true } as Session, boot: null, estimate: null };
 
   test('reads the session once more on mount, so a change between the first load and the subscription is not lost', async () => {
     const { api } = stubApi();
@@ -367,8 +367,8 @@ describe('a provider that starts from the first load\'s session', () => {
     let answer!: (s: Session) => void;
     const { api } = stubApi({ session: () => new Promise<Session>((r) => { answer = r; }), onSession: (l) => { listener = l; return () => {}; } });
     render(<PlayerProvider api={api} initial={signedOutFirst}><Probe /></PlayerProvider>);
-    act(() => { listener({ signedIn: false, account: null }); });
-    await act(async () => { answer({ signedIn: true, account: 'acc-1' }); });
+    act(() => { listener({ signedIn: false, account: null, bar: null, conductAccepted: true }); });
+    await act(async () => { answer({ signedIn: true, account: 'acc-1', bar: null, conductAccepted: true }); });
     expect(screen.getByTestId('acting')).toHaveTextContent('');
   });
 });

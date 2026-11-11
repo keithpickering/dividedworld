@@ -57,7 +57,7 @@ export interface Player {
 
 const PlayerContext = createContext<Player | null>(null);
 
-const SIGNED_OUT: Session = { signedIn: false, account: null };
+const SIGNED_OUT: Session = { signedIn: false, account: null, bar: null, conductAccepted: true };
 
 const store = {
   get(key: string): string | null {
@@ -168,7 +168,7 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
       (s) => {
         if (!live) return;
         if (!initial) { setSession(s); setSessionKnown(true); return; }
-        if (!heard && (s.signedIn !== initial.session.signedIn || s.account !== initial.session.account)) setSession(s);
+        if (!heard && (s.signedIn !== initial.session.signedIn || s.account !== initial.session.account || s.bar?.until !== initial.session.bar?.until || (s.bar === null) !== (initial.session.bar === null) || s.conductAccepted !== initial.session.conductAccepted)) setSession(s);
       },
       () => { if (live && !initial) { setSession(SIGNED_OUT); setSessionKnown(true); } },
     );

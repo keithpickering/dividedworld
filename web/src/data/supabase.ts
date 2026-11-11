@@ -62,6 +62,8 @@ export interface SupabaseApiOptions {
 type Row = Record<string, any>;
 
 const REFUSAL_HINT = 'kayfabb.refusal';
+/** The hint a refusal for a barred account carries (0146_conduct.sql, refuse_if_barred). */
+const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
@@ -629,11 +631,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   // supabase-js sends its key as the bearer where there is no session; a publishable key goes in apikey alone (Supabase's
   // migration guide, docs/plans/2026-11-02-api-keys-design.md), so a bearer that is the key itself is taken off. A session's
   // token is passed on as it is.
-  const clientFetch: typeof fetch = (input, init) => {
+  const clientFetch: typeof fetch = async (input, init) => {
     const headers = new Headers(init?.headers);
-    if (headers.get('authorization') !== `Bearer ${publishableKey}`) return doFetch(input, init);
-    headers.delete('authorization');
-    return doFetch(input, { ...init, headers });
+    const res = headers.get('authorization') !== `Bearer ${publishableKey}` ? await doFetch(input, init) : await doFetch(input, { ...init, headers: (headers.delete('authorization'), headers) });
+    /* The one place a refusal because the account is barred is noticed, whatever asked: the session is read again so the gate shows at once. */
+    if (res.status >= 400 && res.status < 500) void res.clone().text().then((t) => { if (t.includes(BARRED_HINT)) void reloadSession(); }, () => undefined);
+    return res;
   };
   const client: SupabaseClient =
     options.client ??
@@ -757,9 +760,30 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
 
   async function currentSession(): Promise<Session> {
     const { data } = await client.auth.getSession();
-    if (!data.session) return { signedIn: false, account: null };
-    const r = await read(() => client.rpc('whoami'));
-    return { signedIn: true, account: typeof r.data === 'string' ? r.data : null };
+    if (!data.session) return { signedIn: false, account: null, bar: null, conductAccepted: true };
+    /* The bar and the code are read beside whoami. A read that fails leaves the account as it was: no bar, the code accepted; the server refuses a barred account's writes either way. */
+    const [r, bar, accepted] = await Promise.all([
+      read(() => client.rpc('whoami')),
+      read(() => client.rpc('my_bar')).then((x) => x.data, () => null),
+      read(() => client.rpc('conduct_accepted')).then((x) => x.data, () => true),
+    ]);
+    const until = bar && typeof bar === 'object' ? (bar as Row)['until'] : undefined;
+    return {
+      signedIn: true,
+      account: typeof r.data === 'string' ? r.data : null,
+      bar: bar && typeof bar === 'object' ? { until: typeof until === 'string' ? until : null } : null,
+      conductAccepted: accepted !== false,
+    };
+  }
+
+  /** Everyone who asked to hear the session, so a refusal for a bar can tell them without waiting for Auth to change. */
+  const sessionListeners = new Set<(s: Session) => void>();
+  let reloading: Promise<void> | null = null;
+  function reloadSession(): Promise<void> {
+    reloading ??= currentSession()
+      .then((s) => { for (const l of [...sessionListeners]) l(s); }, () => undefined)
+      .finally(() => { reloading = null; });
+    return reloading;
   }
 
   /* ---------------------------------------------------------------- settings ---- */
@@ -983,6 +1007,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const api: KayfaApi = {
     session: currentSession,
     onSession(listener) {
+      sessionListeners.add(listener);
       let heardFor: string | null | undefined;
       const { data } = client.auth.onAuthStateChange((_event, s) => {
         const id = s?.user?.id ?? null;
@@ -992,12 +1017,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         heardFor = id;
         // Not awaited inside the callback: Auth holds its lock while it runs.
         setTimeout(() => {
-          void (s ? currentSession() : Promise.resolve<Session>({ signedIn: false, account: null }))
-            .catch((): Session => ({ signedIn: !!s, account: null }))
+          void (s ? currentSession() : Promise.resolve<Session>({ signedIn: false, account: null, bar: null, conductAccepted: true }))
+            .catch((): Session => ({ signedIn: !!s, account: null, bar: null, conductAccepted: true }))
             .then(listener);
         }, 0);
       });
-      return () => data.subscription.unsubscribe();
+      return () => { sessionListeners.delete(listener); data.subscription.unsubscribe(); };
+    },
+    async acceptConduct(version) {
+      const a = await rpcWrite(() => client.rpc('accept_conduct', { version }));
+      if (a.ok) await reloadSession();
+      return a.ok ? { ok: true, value: {} } : a;
     },
     async requestCode(email, invite) {
       const a = await edge('account', { action: 'requestCode', email, invite }, NOT_DONE);

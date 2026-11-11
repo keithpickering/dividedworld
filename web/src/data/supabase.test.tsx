@@ -1019,7 +1019,7 @@ describe('signing in goes through the account function', () => {
       { action: 'requestCode', email: ' a@b.c ', invite: 'inv' },
       { action: 'verifyCode', email: 'a@b.c', code: '123456' },
     ]);
-    expect(await h.api.session()).toEqual({ signedIn: true, account: A });
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: null, conductAccepted: true });
     expect(h.to('rpc/whoami')[0]?.headers.get('authorization')).toBe(`Bearer ${JWT}`);
     expect(h.log.some((r) => /\/auth\/v1\/(otp|verify|recover|signup|magiclink)/.test(r.url.pathname))).toBe(false);
   });
@@ -1033,7 +1033,7 @@ describe('signing in goes through the account function', () => {
 
   it('is signed out with no account call when there is no session', async () => {
     const h = harness(() => undefined);
-    expect(await h.api.session()).toEqual({ signedIn: false, account: null });
+    expect(await h.api.session()).toEqual({ signedIn: false, account: null, bar: null, conductAccepted: true });
     expect(h.log).toEqual([]);
   });
 
@@ -1166,14 +1166,14 @@ describe('the estimate across sessions', () => {
     w.become('A', 'TOKEN_REFRESHED');
     w.become('A', 'SIGNED_IN');
     await w.tick();
-    expect(w.whoami).toHaveBeenCalledTimes(1);
+    expect(w.whoami.mock.calls.filter((c) => (c as unknown[])[0] === 'whoami')).toHaveLength(1);
     expect(heard).toHaveBeenCalledTimes(1);
     w.become('B');
     await w.tick();
-    expect(w.whoami).toHaveBeenCalledTimes(2);
+    expect(w.whoami.mock.calls.filter((c) => (c as unknown[])[0] === 'whoami')).toHaveLength(2);
     w.become(null, 'SIGNED_OUT');
     await w.tick();
-    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null });
+    expect(heard).toHaveBeenLastCalledWith({ signedIn: false, account: null, bar: null, conductAccepted: true });
   });
 });
 
@@ -2526,5 +2526,52 @@ describe('reports, appeals and what a page says of a ban', () => {
     const log = await h.api.movesLog('clerk');
     expect(log.rows[0]).toMatchObject({ kind: 'visit', outcome: 'filed', params: { post: 41 } });
     expect(log.rows[1]?.outcome).toBeUndefined();
+  });
+});
+
+describe('the session carries the bar and the code (the conduct plan, Task 4)', () => {
+  const signedIn = (extra: (r: Rec) => Response | undefined) => harness((r) => {
+    if (r.url.pathname === '/functions/v1/account') return json({ session: SESSION, account: true });
+    if (r.url.pathname === '/auth/v1/user') return json(SESSION.user);
+    if (r.url.pathname === '/rest/v1/rpc/whoami') return json(A);
+    return extra(r);
+  });
+
+  it('reads my_bar and conduct_accepted for a signed-in account, beside whoami', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'suspended', until: '2026-12-01T00:00:00+00:00' }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(false) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.session()).toEqual({ signedIn: true, account: A, bar: { until: '2026-12-01T00:00:00+00:00' }, conductAccepted: false });
+    const ban = signedIn((r) => (r.url.pathname.endsWith('/rpc/my_bar') ? json({ kind: 'banned', until: null }) : r.url.pathname.endsWith('/rpc/conduct_accepted') ? json(true) : undefined));
+    await ban.api.verifyCode('a@b.c', '123456');
+    expect(await ban.api.session()).toEqual({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true });
+  });
+
+  it('keeps the signed-out path unchanged: no my_bar and no conduct_accepted without a session', async () => {
+    const h = harness(() => undefined);
+    await h.api.session();
+    expect(h.to('rpc/my_bar')).toEqual([]);
+    expect(h.to('rpc/conduct_accepted')).toEqual([]);
+  });
+
+  it('accepts the code through accept_conduct with the version', async () => {
+    const h = signedIn((r) => (r.url.pathname.endsWith('/rpc/accept_conduct') ? json(null) : undefined));
+    await h.api.verifyCode('a@b.c', '123456');
+    expect(await h.api.acceptConduct(2)).toEqual({ ok: true, value: {} });
+    expect(h.to('rpc/accept_conduct')[0]?.body).toEqual({ version: 2 });
+  });
+
+  it('a refusal with the hint kayfabb.barred from any action reloads the session and tells its listeners', async () => {
+    let barred = false;
+    const h = signedIn((r) => {
+      if (r.url.pathname.endsWith('/rpc/my_bar')) return json(barred ? { kind: 'banned', until: null } : null);
+      if (r.url.pathname.endsWith('/rpc/conduct_accepted')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/mark_read')) { barred = true; return json({ code: '28000', message: 'this account is banned', hint: 'kayfabb.barred' }, 401); }
+      return undefined;
+    });
+    await h.api.verifyCode('a@b.c', '123456');
+    const heard = vi.fn();
+    h.api.onSession(heard);
+    await h.api.markRead(T, 3, null);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledWith({ signedIn: true, account: A, bar: { until: null }, conductAccepted: true }));
   });
 });

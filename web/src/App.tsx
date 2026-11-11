@@ -306,7 +306,7 @@ interface Known {
   settings: ScreenSettings | null;
 }
 
-const sessionOnce = (api: KayfaApi, known: Known): Promise<Session> => (known.session ??= api.session().catch((): Session => ({ signedIn: false, account: null })));
+const sessionOnce = (api: KayfaApi, known: Known): Promise<Session> => (known.session ??= api.session().catch((): Session => ({ signedIn: false, account: null, bar: null, conductAccepted: true })));
 
 /**
  * The first page draws once (the forum-load plan, Tasks 12 and 13, and the design, section 3): boot and the estimate start together once

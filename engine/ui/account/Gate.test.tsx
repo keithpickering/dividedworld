@@ -155,3 +155,93 @@ describe('Where sign-in returns to', () => {
     expect(within(hud).getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in?next=%2Fstandings');
   });
 });
+
+/** A signed-in account with a bar or an unaccepted code, through the gate. */
+function barredWorld(bar: { until: number | null } | null, o: { unaccepted?: boolean } = {}) {
+  const fake = buildWorld();
+  const me = fake.seed.account('me');
+  fake.seed.character(me, 'Pipewrench', 'face');
+  if (bar) fake.seed.bar(me, bar.until);
+  if (o.unaccepted) fake.seed.unaccepted(me);
+  fake.signInAs(me);
+  return fake;
+}
+const DAY = 86_400_000;
+
+describe('A barred account (the conduct plan, Task 4)', () => {
+  test('sees only the Barred screen and Sign out: the page is not drawn, the words say the date and where to appeal', async () => {
+    const fake = barredWorld({ until: Date.now() + 5 * DAY });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/settings' });
+    expect(await screen.findByRole('heading', { name: 'This account is suspended' })).toBeInTheDocument();
+    expect(screen.getByText(/This account is suspended until .*\d{4}\. We emailed you the details; reply to that email to appeal\./u)).toBeInTheDocument();
+    expect(screen.queryByText('The page')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  test('a ban says the same without a date', async () => {
+    const fake = barredWorld({ until: null });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByText('This account is banned. We emailed you the details; reply to that email to appeal.')).toBeInTheDocument();
+    expect(screen.queryByText(/until/u)).toBeNull();
+    expect(screen.queryByText('The page')).toBeNull();
+  });
+
+  test('a suspension whose date has passed shows the board: a stale bar is not trusted', async () => {
+    const fake = barredWorld({ until: Date.now() - DAY });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByText('The page')).toBeInTheDocument();
+    expect(screen.queryByText(/suspended/u)).toBeNull();
+  });
+
+  test('Sign out ends the session from the Barred screen', async () => {
+    const fake = barredWorld({ until: null });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }));
+    await waitFor(async () => expect((await fake.session()).signedIn).toBe(false));
+    expect(await screen.findByText('The page')).toBeInTheDocument();
+  });
+
+  test('is barred before it is asked for the code: Barred comes first', async () => {
+    const fake = barredWorld({ until: null }, { unaccepted: true });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByText(/This account is banned\. We emailed/u)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'I agree' })).toBeNull();
+  });
+});
+
+describe('An account that has not accepted the code (the conduct plan, Task 4)', () => {
+  test('sees the code and I agree, in place of the page; agreeing sends the version and lets the player through', async () => {
+    const fake = barredWorld(null, { unaccepted: true });
+    const spy = vi.spyOn(fake, 'acceptConduct');
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    const agree = await screen.findByRole('button', { name: 'I agree' });
+    expect(screen.getByRole('heading', { name: 'Code of conduct' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'The mask is fair game.' })).toBeInTheDocument();
+    expect(screen.queryByText('The page')).toBeNull();
+    await userEvent.click(agree);
+    expect(spy).toHaveBeenCalledWith(1);
+    expect(await screen.findByText('The page')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'I agree' })).toBeNull();
+  });
+
+  test('an account that has accepted goes straight through, and Sign out is on the screen for one that has not', async () => {
+    const fake = barredWorld(null);
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByText('The page')).toBeInTheDocument();
+    cleanup();
+    const other = barredWorld(null, { unaccepted: true });
+    renderIn(other, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  test('a refusal says why in the server\'s words and keeps the button, so the player is never stuck', async () => {
+    const fake = barredWorld(null, { unaccepted: true });
+    vi.spyOn(fake, 'acceptConduct').mockResolvedValue({ ok: false, error: 'that is not the current code' });
+    renderIn(fake, <AccountGate><p>The page</p></AccountGate>, { path: '/' });
+    await userEvent.click(await screen.findByRole('button', { name: 'I agree' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('that is not the current code');
+    expect(screen.getByRole('button', { name: 'I agree' })).toBeInTheDocument();
+  });
+});
