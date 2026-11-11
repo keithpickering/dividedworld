@@ -16,6 +16,7 @@ import { BEYOND_POST, type BeyondPost, type CardRules } from '../../rules/cards.
 import type { Settings, Span } from '../../rules/types.ts';
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 import { endsWords } from './marks.ts';
+import { backoff, REPEAT_TRIES } from './tails.ts';
 
 /** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
 export const PLAYS_PER_POST = 8;
@@ -209,7 +210,11 @@ export interface Plays {
   /** Keep each surface play's cells covered and live ids, as the page's read or the channel says them (the live Acts read before are kept until read again); true when any changed. A surface for a play not here is kept for when it is. */
   setSurfaces(surfaces: Readonly<Record<Id, Pick<SurfaceNow, 'covered'> & { readonly live?: readonly Id[] }>>): boolean;
   /** Keep a surface play's live Acts, as `surfaceActs` read them, with the cells covered. */
-  setSurfaceActs(play: Id, covered: number, acts: readonly SurfaceAct[]): boolean;
+  setSurfaceActs(play: Id, covered: number | null, acts: readonly SurfaceAct[], ticket?: number): boolean;
+  /** The next ticket for a read of a surface's Acts: an answer carrying an older ticket than one already kept is dropped. */
+  surfaceTicket(play: Id): number;
+  /** A surface play as held, or undefined. */
+  surfaceOf(play: Id): Surface | undefined;
   /** Say the surface's live Acts are wanted (a wall is near the viewport): true the first time, so the caller reads once. */
   wantSurface(play: Id): boolean;
   /** Whether its live Acts are wanted, and so read again when it changes. */
@@ -239,6 +244,8 @@ export function createPlays(): Plays {
   const faces = new Map<Id, string>();
   const surfaces = new Map<Id, Surface>();
   const wanted = new Set<Id>();
+  const issued = new Map<Id, number>();
+  const taken = new Map<Id, number>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
   const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
   /* The backs their setters took back: a `take_back` that arrived before its back is kept here for when the back does. */
@@ -409,8 +416,15 @@ export function createPlays(): Plays {
       changed(touched);
       return touched.size > 0;
     },
-    setSurfaceActs(play, covered, acts) {
+    surfaceTicket(play) { const n = (issued.get(play) ?? 0) + 1; issued.set(play, n); return n; },
+    surfaceOf: (play) => surfaces.get(play),
+    setSurfaceActs(play, now, acts, ticket) {
+      if (ticket !== undefined) {
+        if (ticket < (taken.get(play) ?? 0)) return false;
+        taken.set(play, ticket);
+      }
       const was = surfaces.get(play);
+      const covered = now ?? was?.covered ?? 0;
       surfaces.set(play, { covered, live: acts.map((a) => a.id), acts });
       const post = postOf.get(play);
       if (post === undefined) return false;
@@ -501,15 +515,30 @@ export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Rec
 
 /**
  * Read a surface play's live draws and washes (`KayfaApi.surfaceActs`) into the store. Asked where a wall is near the viewport and again when the
- * channel says it changed, so a page of many walls reads the few that are near. A failed read leaves the surface as it was, and the play can be asked for again.
+ * channel says it changed, so a page of many walls reads the few that are near. Each read takes a ticket and an answer older than one already taken
+ * in is dropped, so reads that cross never move the wall back. A read that finds no surface leaves the cells covered as they were. A read that fails
+ * leaves the surface as it was and keeps the want (so the channel's next change reads again), and is tried again after `backoff`, at most `REPEAT_TRIES` times in all.
  */
-export async function readSurface(api: KayfaApi, plays: Plays, play: Id): Promise<void> {
+export async function readSurface(api: KayfaApi, plays: Plays, play: Id, attempt = 0): Promise<void> {
+  const ticket = plays.surfaceTicket(play);
   try {
     const read = await api.surfaceActs(play);
-    plays.setSurfaceActs(play, read?.covered ?? 0, read?.acts ?? []);
+    plays.setSurfaceActs(play, read === null ? null : read.covered, read?.acts ?? [], ticket);
   } catch {
-    plays.unwantSurface(play);
+    if (attempt + 1 < REPEAT_TRIES) setTimeout(() => { void readSurface(api, plays, play, attempt + 1); }, backoff(attempt));
   }
+}
+
+/**
+ * After a page is read again (a rejoined channel, a catch-up): the live Acts of each wanted wall whose live list is no longer the one drawn are read
+ * again, since the page carries the list's ids and never the Acts. A wall nobody asked to read, and one whose list is unchanged, is left.
+ */
+export async function rereadSurfaces(api: KayfaApi, plays: Plays, surfaces: Readonly<Record<Id, SurfaceNow>>): Promise<void> {
+  const stale = Object.entries(surfaces).filter(([play, now]) => {
+    const held = plays.surfaceOf(play);
+    return plays.wantsSurface(play) && held?.acts != null && (held.acts.length !== now.live.length || held.acts.some((a, i) => a.id !== now.live[i]));
+  });
+  await Promise.all(stale.map(([play]) => readSurface(api, plays, play)));
 }
 
 /**

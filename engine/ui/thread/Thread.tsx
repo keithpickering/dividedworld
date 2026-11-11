@@ -34,7 +34,7 @@ import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
-import { createPlays, effectCards, hydrate, readEffects, readSurface } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -195,6 +195,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     const played = [...page.plays, ...page.above.map((x) => x.act)];
     hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces);
+    /* A wall whose Acts are drawn and whose live list this page says has changed (a read again after a rejoin) reads them again. */
+    void rereadSurfaces(api, plays, page.surfaces);
     /* A play leaves a page's `above` when an admin ended it, when its thread moved, or when its time ran out (the server drops a play past its
        end; a reach play past its time is already hidden by the clock, so marking it changes nothing a reader sees), and sends no `card_end`
        with it: a page read again says so by what it no longer holds. Only a read asked after the remembered one says so. */

@@ -66,6 +66,27 @@ describe('the ink registry', () => {
     expect(b.topAt(5, 5)).toBe(false);
   });
 
+  test('an effect that unmounts and mounts again under its key claims afresh, and what it gave back stays gone', () => {
+    const claims = createClaims();
+    const inner = claims.at('inner', 0);
+    const first = claims.at('outer', 1);
+    inner.claim(box(0, 100));
+    const release = first.claim(box(20, 60));
+    expect(first.topAt(30, 5)).toBe(true);
+    release();
+    release();
+    expect(first.topAt(30, 5)).toBe(false);
+    expect(inner.topAt(30, 5)).toBe(true);
+    /* The same key again, as a remount draws it: the same face, a new claim over other ground. */
+    const again = claims.at('outer', 1);
+    expect(again).toBe(first);
+    again.claim(box(70, 90));
+    expect(again.topAt(80, 5)).toBe(true);
+    expect(again.topAt(30, 5)).toBe(false);
+    expect(inner.topAt(30, 5)).toBe(true);
+    expect(inner.topAt(80, 5)).toBe(false);
+  });
+
   test('two claims of one effect: the effect is on top where either has ink', () => {
     const claims = createClaims();
     const e = claims.at('e', 0);

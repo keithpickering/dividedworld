@@ -6,7 +6,8 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
-import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
+import { backoff, REPEAT_TRIES } from './tails.ts';
+import { CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, markedPlays, playOf, shownPlays } from './plays.ts';
 import type { CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -531,13 +532,74 @@ describe('a surface, in the store', () => {
     expect(plays.wantsSurface('other-wall')).toBe(false);
   });
 
-  test('a read that fails leaves the surface as it was and can be asked again', async () => {
+  test('a read that fails leaves the surface as it was, keeps the want, and is tried again after the backoff until it lands', async () => {
+    vi.useFakeTimers();
+    try {
+      const plays = createPlays();
+      plays.add([play()]);
+      expect(plays.wantSurface(wall)).toBe(true);
+      const surfaceActs = vi.fn()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValue({ covered: 3, acts: [drawn('d1')], older: 0 });
+      await readSurface({ surfaceActs } as never, plays, wall);
+      expect(plays.get(POST).surfaces[wall]?.acts ?? null).toBeNull();
+      expect(plays.wantsSurface(wall)).toBe(true);
+      await vi.advanceTimersByTimeAsync(backoff(0) - 1);
+      expect(surfaceActs).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(2);
+      expect(surfaceActs).toHaveBeenCalledTimes(2);
+      expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 3, acts: [expect.objectContaining({ id: 'd1' })] });
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('a read that keeps failing is tried a bounded number of times, and the want stays so a broadcast reads again', async () => {
+    vi.useFakeTimers();
+    try {
+      const plays = createPlays();
+      plays.add([play()]);
+      plays.wantSurface(wall);
+      const surfaceActs = vi.fn().mockRejectedValue(new Error('offline'));
+      await readSurface({ surfaceActs } as never, plays, wall);
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(surfaceActs.mock.calls.length).toBe(REPEAT_TRIES);
+      expect(plays.wantsSurface(wall)).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  test('an answer that lands after a newer one is dropped', async () => {
     const plays = createPlays();
     plays.add([play()]);
-    expect(plays.wantSurface(wall)).toBe(true);
-    await readSurface({ surfaceActs: async () => { throw new Error('offline'); } } as never, plays, wall);
-    expect(plays.get(POST).surfaces[wall]?.acts ?? null).toBeNull();
-    expect(plays.wantSurface(wall)).toBe(true);
+    const later: ((v: unknown) => void)[] = [];
+    const surfaceActs = vi.fn(() => new Promise((resolve) => { later.push(resolve); }));
+    const first = readSurface({ surfaceActs } as never, plays, wall);
+    const second = readSurface({ surfaceActs } as never, plays, wall);
+    later[1]!({ covered: 9, acts: [drawn('new')], older: 0 });
+    await second;
+    later[0]!({ covered: 1, acts: [drawn('old')], older: 0 });
+    await first;
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 9, acts: [expect.objectContaining({ id: 'new' })] });
+  });
+
+  test('a read that finds no surface leaves the cells covered as they were', async () => {
+    const plays = createPlays();
+    plays.add([play()]);
+    plays.setSurfaces({ [wall]: { covered: 40, live: ['d1'] } });
+    await readSurface({ surfaceActs: async () => null } as never, plays, wall);
+    expect(plays.get(POST).surfaces[wall]).toMatchObject({ covered: 40 });
+  });
+
+  test('a page read again reads the acts of a wanted wall whose live list changed, and no other', async () => {
+    const plays = createPlays();
+    const other = 'k-other';
+    plays.add([play(), card({ id: other, payload: { card: 'slab', layer: 1, message: '', config: {} } }), card({ id: 'k-third', payload: { card: 'slab', layer: 1, message: '', config: {} } })]);
+    plays.setSurfaceActs(wall, 1, [drawn('d1')]);
+    plays.setSurfaceActs(other, 1, [drawn('e1')]);
+    plays.wantSurface(wall); plays.wantSurface(other);
+    const surfaceActs = vi.fn(async () => ({ covered: 2, acts: [drawn('d1'), drawn('d2')], older: 0 }));
+    const surfaces = { [wall]: { covered: 2, live: ['d1', 'd2'] }, [other]: { covered: 1, live: ['e1'] }, 'k-third': { covered: 5, live: ['z'] } };
+    plays.setSurfaces(surfaces);
+    await rereadSurfaces({ surfaceActs } as never, plays, surfaces);
+    expect(surfaceActs.mock.calls).toEqual([[wall]]);
   });
 
   test('a draw or a wash is no card effect and no line of a thread', () => {

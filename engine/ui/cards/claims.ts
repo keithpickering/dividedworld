@@ -31,7 +31,8 @@ export function createClaims(): Claims {
             const own = hits.get(key) ?? new Set<Hit>();
             hits.set(key, own);
             own.add(hit);
-            return () => { own.delete(hit); };
+            /* A key with no claim left is dropped from the map, so a post that has held many effects over its life keeps none it is done with. Its rank and face stay: the effect may claim again. */
+            return () => { own.delete(hit); if (own.size === 0 && hits.get(key) === own) hits.delete(key); };
           },
           topAt(x, y) {
             if (!holds(key, x, y)) return false;
