@@ -16,15 +16,17 @@ interface Arc { readonly x: number; readonly y: number; readonly r: number; read
 interface Px { a: number; r: number; g: number; b: number }
 const rgb = (s: string): [number, number, number] => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16)) as [number, number, number];
 
+const seen = new Set<HTMLCanvasElement>();
 const buffers = new WeakMap<HTMLCanvasElement, () => Px[]>();
 /** One pixel-buffer context per canvas; `arcs` collects every arc a fill drew, in user space and with the alpha it was filled at. */
 const arcs: Arc[] = [];
 const strokes: { alpha: number; width: number; op: string }[] = [];
 function fakeCanvases() {
   /* Module-level, because spray.ts keeps canvases (sprites, the halo layer) between calls and their contexts log to these. */
-  arcs.length = 0; strokes.length = 0;
+  arcs.length = 0; strokes.length = 0; seen.clear();
   HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement) {
     const cv = this;
+    seen.add(cv);
     const px = (): Px[] => {
       const n = cv.width * cv.height;
       const p = ((cv as unknown as { _px?: Px[] })._px ??= []);
@@ -94,6 +96,7 @@ function fakeCanvases() {
         for (let i = 0; i < img.width * img.height; i++) Object.assign(p[i]!, { r: img.data[i * 4]!, g: img.data[i * 4 + 1]!, b: img.data[i * 4 + 2]!, a: img.data[i * 4 + 3]! / 255 });
       },
       drawImage(src: HTMLCanvasElement, dx: number, dy: number, dw: number, dh: number) {
+        if (src.width === 0 || src.height === 0) throw new DOMException('the source canvas has no size', 'InvalidStateError');
         const sp = buffers.get(src)!();
         const xs = [dx * T[0] + T[4], (dx + dw) * T[0] + T[4]], ys = [dy * T[3] + T[5], (dy + dh) * T[3] + T[5]];
         const x0 = Math.max(0, Math.floor(Math.min(...xs))), x1 = Math.min(cv.width - 1, Math.ceil(Math.max(...xs))), y0 = Math.max(0, Math.floor(Math.min(...ys))), y1 = Math.min(cv.height - 1, Math.ceil(Math.max(...ys)));
@@ -274,6 +277,28 @@ describe('paintWall, review findings', () => {
     for (let y = 70; y <= 130; y++) for (let x = 130; x <= 270; x++) expect(w.alpha(x, y), `(${x}, ${y})`).toBe(0);
     /* Past the wash's ends the stroke is still there. */
     expect(w.alpha(100, 100)).toBeGreaterThanOrEqual(0.92);
+  });
+
+  test('dense points, much closer than a stamp step, do not pile the overspray: stamps are an arc length apart', () => {
+    const dense: [number, number][] = [];
+    for (let i = 0; i <= 480; i++) dense.push([0.2 + (0.6 * i) / 480, 0.5]);
+    const w = paintOn([draw(stroke(dense, 'fat'))]);
+    expect(w.alpha(200, 100 + 12)).toBeGreaterThan(0);
+    expect(w.alpha(200, 100 + 12)).toBeLessThanOrEqual(0.4);
+    expect(w.alpha(200, 100 + 9)).toBeLessThanOrEqual(0.42);
+  });
+
+  test('a canvas with no pixels draws nothing and does not throw', () => {
+    const f = fakeCanvases();
+    const c = document.createElement('canvas');
+    c.width = 0; c.height = 0;
+    expect(() => paintWall(c.getContext('2d') as CanvasRenderingContext2D, BOX, 1, [draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))])).not.toThrow();
+    expect(f.arcs).toHaveLength(0);
+  });
+
+  test('the shared halo canvas is released after painting, so only the wall\'s own canvas holds pixels', () => {
+    paintOn([draw(stroke([[0.2, 0.5], [0.8, 0.5]], 'fat'))]);
+    expect([...seen].filter((c) => c.width === BOX.w && c.height === BOX.h)).toHaveLength(1);
   });
 
   test('a draw after a wash keeps its own halo', () => {

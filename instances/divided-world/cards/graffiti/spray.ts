@@ -2,16 +2,18 @@
  * Graffiti's spray painter: the one place a wall's Acts are drawn (the canvas API, so nothing here runs in Node) and the one place a
  * click is tested against its ink (design section 8, "The ink is spray paint"; plan Task 8).
  *
- * `paintWall` draws the surface's live Acts in order onto one layer: a draw with source-over, a wash with destination-out, so a wash cuts
- * every draw before it and a draw after it is not cut. A stroke's path is kept in shares of the box with the proportions it was made in;
- * as Whoops!'s painter does, it is drawn in the space where its brush is a circle: across px as they are, down px divided by
- * `k = aspect * box.h / box.w`, under a transform that squashes that space back. The brush is `width * box.w` across and
- * `width * aspect * box.h` down (radii half of each), which is the ellipse the engine's `cellsOf` counts (engine/rules/surface.ts).
+ * `paintWall` draws the surface's live Acts in order onto two layers, in the space where a stroke's brush is a circle, as Whoops!'s
+ * painter does: across px as they are, down px divided by `k = aspect * box.h / box.w`, under a transform that squashes it back. The
+ * brush is `width * box.w` across and `width * aspect * box.h` down (radii half of each), the ellipse the engine's `cellsOf` counts
+ * (engine/rules/surface.ts). Paths are kept in shares of the box with the proportions they were made in.
  *
- * A drawn stroke is four layers, bottom to top: the overspray (a sprite of a radial falloff to 1.9x the core's radius, built once per
- * cap and color and stamped every quarter of the core's radius along the path), the speckle (dots beyond the overspray, whose places
- * come from mulberry32 seeded by a hash of the stroke's own points, so every screen draws the same), the core (the capsule, alpha 0.92)
- * and the pooling (a second core stamp, alpha 0.2, wherever two points lie closer than a third of the radius).
+ * The halo layer (a scratch canvas, released after each paint) takes every drawn stroke's overspray (a sprite of a radial falloff to 1.9x
+ * the core's radius, built once per cap and color, stamped every quarter of the core's radius of arc length, at least a CSS px, at an
+ * alpha that makes the pile peak near 0.35) and its speckle (dots beyond the overspray, counted in shares of the box's width and placed
+ * by mulberry32 seeded by a hash of the stroke's own points, so every screen draws the same). The wall's own canvas takes the cores (the
+ * capsule, alpha 0.92) and the pooling (a second core stamp, alpha 0.2, where two points lie closer than a third of the radius). At the
+ * end the halo layer goes under all the cores. A wash is destination-out on each layer: on the cores at the sponge's width, on the
+ * halos at that plus the widest halo's reach; a draw after a wash is not cut.
  *
  * `hitAt` is the click's test: a point is inked when it lies in a live draw's core and in no later wash's core, by the same capsule.
  * Overspray and speckle are looks and never claim anything.
@@ -145,9 +147,13 @@ function drawHalo(g: CanvasRenderingContext2D, q: number, s: Brush, box: Box) {
     const reach = rw * OVERSPRAY.reach;
     const stamp = (x: number, y: number) => g.drawImage(spr, x - reach, y - reach, reach * 2, reach * 2);
     stamp(pts[0]![0], pts[0]![1]);
+    /* Every `step` of arc length, carried across segments: points closer than a step add no stamps, so the alpha above holds however dense they are. */
+    let next = step;
     for (let i = 1; i < pts.length; i++) {
-      const [ax, ay] = pts[i - 1]!, [bx, by] = pts[i]!, len = Math.hypot(bx - ax, by - ay), n = Math.ceil(len / step);
-      for (let j = 1; j <= n; j++) stamp(ax + ((bx - ax) * j) / n, ay + ((by - ay) * j) / n);
+      const [ax, ay] = pts[i - 1]!, [bx, by] = pts[i]!, len = Math.hypot(bx - ax, by - ay);
+      if (len === 0) continue;
+      for (; next <= len; next += step) stamp(ax + ((bx - ax) * next) / len, ay + ((by - ay) * next) / len);
+      next -= len;
     }
   }
   /* The speckle: dots in CSS px (round on screen), from the stroke's own seed, in the brush's space. Its count is of shares of the box's width. */
@@ -219,16 +225,17 @@ let haloCanvas: HTMLCanvasElement | null = null;
  * (set by the caller). Coordinates are CSS px of the box. A box with no area draws nothing, and what was drawn before is cleared.
  *
  * Two layers: the cores and pooling go on `ctx` itself, and every halo (overspray and speckle) on one scratch canvas shared by all
- * walls, laid under the cores at the end (destination-over), so a halo is never over any core. A wash cuts the core layer at exactly
- * the sponge's radius, which is what `hitAt` and the engine count, and the halo layer at that radius plus the widest halo's reach (a
- * Fat cap's speckle), so no ghost of paint is left where the wash passed. A later draw's halo is not cut.
+ * walls, laid under all the cores at the end (destination-over), so no halo is over any core, and then released (sized to 0 by 0). A
+ * wash cuts each layer in order: the core layer at exactly the sponge's radius, which is what `hitAt` and the engine count, and the
+ * halo layer at that radius plus the widest halo's reach (a Fat cap's speckle), so no ghost of paint is left where the wash passed. A
+ * later draw's halo is not cut. A canvas with no pixels draws nothing.
  */
 export function paintWall(ctx: CanvasRenderingContext2D, box: Box, density: number, acts: readonly WallAct[]): void {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  if (!validBox(box)) return;
+  if (!validBox(box) || !(ctx.canvas.width > 0 && ctx.canvas.height > 0)) return;
   const q = wallDensity(box, density);
   if (!(q > 0)) return;
   haloCanvas ??= document.createElement('canvas');
@@ -258,6 +265,8 @@ export function paintWall(ctx: CanvasRenderingContext2D, box: Box, density: numb
   }
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+  /* Released, so a big wall does not pin a second canvas's memory until the next paint. */
+  if (haloCanvas) haloCanvas.width = haloCanvas.height = 0;
 }
 
 /** An Act's brushes, kept for as long as the Act object and the box are the same, so a click does not rebuild a wall's strokes act by act. */
