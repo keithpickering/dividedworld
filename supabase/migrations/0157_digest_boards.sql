@@ -9,7 +9,6 @@
 --   acts_posts_by_time     a partial index of posts by time, carrying the thread: the count is a range of it. No index led with time for posts alone (acts_created covers every kind;
 --                          acts_recent_posts leads with the thread), so 21 days of posts would have been a scan of the Acts.
 --   threads (id, board)    the digest role may read them, for the count (see below).
---   board_merge_into       the digest role may call it (see below); without it boards_now, which the digest already read, refuses the role since 0152.
 --   settings_held (0149)   copied whole; digestBoards is a whole number from 1 to 30 (the ceiling the digest's prompt is bounded by) and digestBoardDays from 1 to 365.
 --
 -- Costs. Write: acts_posts_by_time adds one btree entry to each post insert (and none to any other kind of Act). acts_created would not serve: it holds every kind of Act, so a
@@ -19,10 +18,6 @@
 --
 -- Weighed at a busy instance: the count reads the posts of `digestBoardDays` days, as the digest's own window already reads its hours of them, once a meeting; the lines
 -- are bounded by `digestBoards`, whatever the number of boards.
-
--- boards_now (0152) calls board_merge_into (0151) for each board, and the digest role reads boards_now (0046) for a hot thread's board name as well as for these lines: the
--- function answers where a merge in force sends a board, which a board's page shows every player, and reads only public Acts.
-grant execute on function board_merge_into(uuid) to kayfabb_digest;
 
 -- The board a thread is on is a public fact (a thread's page and its board's list show it), and it is all the count needs of a thread. thread_list answers it too, but only through
 -- joins that read every Act, which a 21-day count must not pay for. The role reads the thread's id and its board, and nothing else of the row.
