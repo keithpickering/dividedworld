@@ -40,7 +40,7 @@ function findPgBin(): string {
         .sort((a, b) => Number(b) - Number(a))
     : [];
   if (versions.length === 0) throw new Error(`No Postgres server binaries in ${root}/*/bin. Install them: ${INSTALL}`);
-  return join(root, versions[0], "bin");
+  return join(root, versions[0]!, "bin");
 }
 
 // The socket lives in the unique directory, so every cluster can use the same port number.
