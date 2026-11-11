@@ -441,7 +441,9 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
   if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
-  if (c.gimmick !== undefined && play !== 'use') out.push(`${who} has a gimmick, and only a use card has one`);
+  const castEarn = play === 'cast' && c.gimmick?.kind === 'earn' && Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character';
+  if (c.gimmick !== undefined && play !== 'use' && !castEarn) out.push(`${who} has a gimmick, and only a use card has one, or a cast card on a character an earn`);
+  if (castEarn) out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
   if (play === 'use') {
     if (c.gimmick === undefined) out.push(`${who} is a use card with no gimmick`);
     else out.push(...gimmickProblems(c.gimmick, who, reactionKeys));
@@ -540,6 +542,7 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
   } else if (e.kind === 'earn') {
     if (typeof e.by !== 'number' || !(e.by > 0 && e.by <= 1)) out.push(e.by === undefined ? `${who} has an earn with no by; by is above 0 and at most 1` : `${who} has an earn of ${JSON.stringify(e.by)}; by is above 0 and at most 1`);
     if (e.quadrants === undefined && e.reactions === undefined) out.push(`${who} has an earn that names no quadrant and no reaction`);
+    if (e.group !== undefined && (typeof e.group !== 'string' || e.group === '')) out.push(`${who} has an earn with the group ${JSON.stringify(e.group)}; a group is a word`);
     if (e.quadrants !== undefined) {
       if (!list(e.quadrants)) out.push(`${who} has an earn naming no quadrant; a quadrant is ${QUADRANTS.join(', ')}`);
       else for (const q of e.quadrants) if (!QUADRANTS.includes(q as never)) out.push(`${who} has an earn naming the quadrant ${JSON.stringify(q)}; a quadrant is ${QUADRANTS.join(', ')}`);

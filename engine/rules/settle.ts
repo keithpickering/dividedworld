@@ -35,7 +35,9 @@
  * - An earn gimmick (a use card whose gimmick is `earn`), on a character or a post and not ended
  *   (an admin-ended play is not in the input), adds a `card.boost` earning of `by` times each
  *   positive earning of that character's Act that carries a time and a quadrant, falls in the
- *   gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. Each gimmick boosts on its own.
+ *   gimmick's window [at, ends) (a play with no `ends` boosts nothing) and is in a quadrant or of a reaction kind it names. An earn may be a
+ *   cast card's on a character. Each gimmick boosts on its own, except that earns sharing a `group` on one character or post do not add: for
+ *   each earning the largest `by` among the applicable ones applies (a tie: the earliest play, then the smaller play id), under its card.
  * - A skim play (a cast card with a `skim`, a target post, a `quadrant` and an `ends`) pays its caster's character the skim's share of a vote, as
  *   `card.skim`, for each vote on the target in that quadrant after the play and before `ends` whose voter first reacted to the post after the
  *   play, never the caster's own player's, on a post that is not the caster's own player's. A vote moving out of the quadrant inside the
@@ -488,7 +490,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
      times the gimmicks on that character and the post of each earning, never the instance's gimmicks. */
-  type Boost = { card: string; from: number; ends: number; by: number; quadrants: readonly Quadrant[]; reactions: readonly string[] };
+  type Boost = { card: string; play: string; group?: string; from: number; ends: number; by: number; quadrants: readonly Quadrant[]; reactions: readonly string[] };
   const boostsOn = new Map<string, Boost[]>();
   for (const a of acts.values()) {
     const earn = a.kind === 'card' && a.card ? earnOf.get(a.card) : undefined;
@@ -497,7 +499,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     const list = boostsOn.get(on) ?? [];
     // Every use card lasts, so a play always has `ends`; a row without one is malformed and boosts nothing.
     if (a.ends === undefined) continue;
-    list.push({ card: a.card!, from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
+    list.push({ card: a.card!, play: a.id, ...(earn.group !== undefined ? { group: earn.group } : {}), from: a.at, ends: a.ends, by: earn.by, quadrants: earn.quadrants ?? [], reactions: earn.reactions ?? [] });
     boostsOn.set(on, list);
   }
   for (const c of characters.values()) {
@@ -532,8 +534,15 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     if (!boostsOn.size) continue;
     for (const e of contributions.slice(firstOfCharacter)) {
       if (!(e.amount > 0) || e.at === undefined || !e.quadrant || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
-      for (const g of [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])]) {
-        if (e.at < g.from || e.at >= g.ends || !(g.quadrants.includes(e.quadrant) || (e.kind !== undefined && g.reactions.includes(e.kind)))) continue;
+      const applicable = [...(boostsOn.get(c.id) ?? []), ...(boostsOn.get(e.act) ?? [])].filter((g) => e.at! >= g.from && e.at! < g.ends && (g.quadrants.includes(e.quadrant!) || (e.kind !== undefined && g.reactions.includes(e.kind))));
+      // Earns of one group do not add: the largest `by` applies, then the earliest play, then the smaller play id.
+      const best = new Map<string, Boost>();
+      for (const g of applicable) {
+        if (g.group === undefined) continue;
+        const was = best.get(g.group);
+        if (!was || g.by > was.by || (g.by === was.by && (g.from < was.from || (g.from === was.from && g.play < was.play)))) best.set(g.group, g);
+      }
+      for (const g of applicable.filter((x) => x.group === undefined || best.get(x.group) === x)) {
         const boost = tidy(e.amount * g.by);
         if (!boost) continue;
         contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card }, act: e.act, quadrant: e.quadrant, at: e.at });

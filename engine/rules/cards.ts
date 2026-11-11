@@ -77,11 +77,12 @@ export interface CardEffect {
  * What a use card does while it is up: one of a fixed list the engine holds, each card picking one and setting its numbers.
  * A ward turns away casts on its own target (by rarity, printed flavor or card key); an earn raises what reactions earn the
  * character or post it is on (never deepens a loss); a price adds a flat amount to a cast of the named flavors on its target or anything under it;
+ * earn effects on one character or post that share a `group` do not add: for each earning the largest `by` among them applies (an earn with no group boosts on its own);
  * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
-  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number }
+  | { readonly kind: 'earn'; readonly quadrants?: readonly Quadrant[]; readonly reactions?: readonly string[]; readonly by: number; readonly group?: string }
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
   | { readonly kind: 'ride'; readonly share: number };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
@@ -216,7 +217,10 @@ export interface CardRules<Config = unknown> {
    * for one settlement window. Whether the window can be named is the server's, which reads the settlements.
    */
   readonly scoresAs?: true;
-  /** A use card's effect while it is up. Every use card has one, and nothing else does. */
+  /**
+   * A use card's effect while it is up; every use card has one. A cast card that reaches a character alone may carry an earn, which the character it
+   * lands on has while the play is up. Nothing else has one.
+   */
   readonly gimmick?: GimmickEffect;
   /** Where it can land; a post unless it says (`['post']`). A reach beyond a post takes at least its `reachRarity`. */
   readonly reaches?: readonly Reach[];
@@ -563,5 +567,7 @@ export function color(value: unknown): string | null {
  */
 export function staffOffers(card: CardRules): boolean {
   if (card.trap?.trigger.on === 'visit') return false;
+  // A staff character's Acts are not settled, so an earn a persona cast would never be paid.
+  if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
   return staffConfigOf(card, () => 0) !== null || card.staffOptions !== undefined;
 }

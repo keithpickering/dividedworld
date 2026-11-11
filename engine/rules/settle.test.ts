@@ -1131,6 +1131,10 @@ const cardsWorld: Instance = {
     { ...splat, key: 'calmBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } },
     { ...splat, key: 'fireBoost', gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5 } },
     { ...splat, key: 'dustBoost', gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 1e-8 } },
+    { ...splat, key: 'useGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
+    { ...splat, key: 'castGrouped', reaches: ['character'] as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1, group: 'warm' } },
+    { ...splat, key: 'bigGrouped', play: 'use' as const, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.2, group: 'warm' } },
+    { ...splat, key: 'fireGrouped', play: 'use' as const, gimmick: { kind: 'earn', reactions: ['fire'], by: 0.5, group: 'warm' } },
   ],
 };
 function springBoard(castBy: string, extra: InputAct[] = [], unscoredTargets: SettlementInput['unscoredTargets'] = []): SettlementInput {
@@ -1600,4 +1604,55 @@ test('card payouts are in no class\'s total, the log adds up to the entries, and
   for (const e of r.entries) assert.equal(r.details.filter((d) => d.character === e.character && d.reason === e.reason && d.params?.card === e.params?.card).reduce((s, d) => s + d.amount, 0), e.amount, `${e.character} ${e.reason}`);
   const shuffled: SettlementInput = { ...input, characters: [...input.characters].reverse(), acts: [...input.acts].reverse(), reactions: [...input.reactions].reverse() };
   assert.deepEqual(settle(shuffled, payWorld), r);
+});
+
+/* Earns that do not add, and an earn a cast card carries (docs/plans/2026-11-11-card-notes-part-4-plan.md, Task 1). */
+const castOn = (id: string, character: string, card: string, at: number, on: string, ends: number = FROM + 20 * H): InputAct => ({ id, character, kind: 'card', at, thread: 't1', card, reach: 'character', on, ends });
+test('a cast earn on another player\'s character boosts that character\'s earnings, by the target\'s player, and pays the caster nothing', () => {
+  const r = settle(earnBoard([castOn('g1', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1', FROM + 10 * H)], [
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+    react('tp1', 'dee', 'dee-1', 'tea', FROM + 12 * H),
+  ]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1, 'inside [at, ends) only');
+  const boost = r.entries.find((e) => e.reason === 'card.boost')!;
+  assert.equal(boost.player, 'tom');
+  assert.deepEqual(boost.params, { card: 'castGrouped' });
+  assert.equal(r.entries.filter((e) => e.player === 'bob' && e.reason === 'card.boost').length, 0, 'the caster is paid nothing for it');
+});
+test('two earns of one group on one character make one boost per earning, by the earlier play\'s card', () => {
+  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), castOn('g2', 'bob-1', 'castGrouped', FROM + 3 * H, 'tom-1')], [
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H),
+  ]), cardsWorld);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'useGrouped' }, 1]], 'one boost, not two');
+  assert.equal(r.details.filter((d) => d.reason === 'card.boost').length, 1);
+});
+test('of two earns in a group the larger alone applies, whichever was played first', () => {
+  for (const order of [['useGrouped', 'bigGrouped'], ['bigGrouped', 'useGrouped']]) {
+    const r = settle(earnBoard(order.map((card, i) => onTom(`g${i}`, card, FROM + (2 + i) * H)), [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
+    assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => [e.params, e.amount]), [[{ card: 'bigGrouped' }, 2]], order.join(' then '));
+  }
+});
+test('of two earns in a group whose windows overlap in part, an earning inside only one window is boosted by that one', () => {
+  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H, FROM + 10 * H), onTom('g2', 'bigGrouped', FROM + 6 * H, FROM + 20 * H)], [
+    react('tp1', 'bob', 'bob-1', 'tea', FROM + 4 * H),
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 8 * H),
+    react('tp1', 'dee', 'dee-1', 'tea', FROM + 15 * H),
+  ]), cardsWorld);
+  const lines = r.details.filter((d) => d.reason === 'card.boost').map((d) => [d.at, d.amount]).sort();
+  assert.deepEqual(lines, [[FROM + 4 * H, 1], [FROM + 8 * H, 2], [FROM + 15 * H, 2]], 'the smaller alone, then the larger alone where both are up, then the larger alone');
+});
+test('a grouped earn beside an ungrouped one naming the same quadrant: both boost', () => {
+  const r = settle(earnBoard([onTom('g1', 'useGrouped', FROM + 2 * H), onTom('g2', 'calmBoost', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 2);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params?.card).sort(), ['calmBoost', 'useGrouped']);
+});
+test('a tie in a group goes to the earliest play, then the smaller play id', () => {
+  const r = settle(earnBoard([castOn('b', 'bob-1', 'castGrouped', FROM + 2 * H, 'tom-1'), onTom('a', 'useGrouped', FROM + 2 * H)], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]), cardsWorld);
+  assert.deepEqual(r.entries.filter((e) => e.reason === 'card.boost').map((e) => e.params), [{ card: 'useGrouped' }], 'same time and size: the smaller id, a');
+});
+test('a cast earn on one\'s own other mask boosts like a use', () => {
+  const base = earnBoard([castOn('g1', 'tom-2', 'castGrouped', FROM + 2 * H, 'tom-1')], [react('tp1', 'cat', 'cat-1', 'tea', FROM + 5 * H)]);
+  const input: SettlementInput = { ...base, characters: [...base.characters, { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] }] };
+  const r = settle(input, cardsWorld);
+  assert.equal(amountOf(r, 'tom-1', 'card.boost'), 1);
 });

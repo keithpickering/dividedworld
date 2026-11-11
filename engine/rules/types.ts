@@ -363,7 +363,7 @@ export interface InputAct {
   readonly reach?: BeyondPost;
   /** The Act that sprang a `spring`: the cast it caught or the visit that tripped it. A spring is scored against it, not its trapped post; absent on older rows, which keep the trapped post. */
   readonly by?: string;
-  /** When a use card's play ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing; so for a ride gimmick and a skim play. An admin-ended play is not in the input. */
+  /** When a play of a card that carries a gimmick ends (its `payload.ends`): an earn gimmick boosts in [at, ends), and a play with no `ends` is malformed and boosts nothing; so for a ride gimmick and a skim play. An admin-ended play is not in the input. */
   readonly ends?: number;
   /** The character a character-reach play is on. */
   readonly on?: string;

@@ -266,6 +266,13 @@ test('staffConfigOf: the default as {}, else a valid staffConfigs pick at either
   assert.equal(staffConfigOf({ ...inky, staffConfigs: [{ ink: 'blue' }] }, () => 0), null, 'staffConfigs the card itself refuses leave nothing to play');
 });
 
+test('staffOffers: a cast card that carries a gimmick is never offered, and is again without it', () => {
+  const earner: CardRules = { ...plain, reaches: ['character'], lasts: { unit: 'hour', count: 36 }, gimmick: { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 } };
+  assert.equal(staffOffers(earner), false, 'a staff character\'s Acts are not settled, so an earn a persona cast would never be paid');
+  const { gimmick: _gone, ...bare } = earner;
+  assert.equal(staffOffers(bare as CardRules), true, 'the same card without the earn');
+});
+
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {
   const options = { prompt: 'Pick an ink.', schema: { type: 'object', properties: { ink: { type: 'string' } }, required: ['ink'], additionalProperties: false } };
   assert.equal(staffOffers(inky), false, 'no default, no staffConfigs, no staffOptions');
