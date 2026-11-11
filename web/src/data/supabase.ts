@@ -245,7 +245,7 @@ function toThread(r: Row): ThreadSummary {
   };
 }
 
-const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[]) : []).map((g): DriveGift => ({ id: String(g['id']), character: typeof g['character'] === 'string' ? g['character'] : null, amount: num(g['amount']), at: String(g['at']) }));
+const toDriveGifts = (v: unknown): DriveGift[] => (Array.isArray(v) ? (v as Row[]) : []).map((g): DriveGift => ({ id: String(g['id']), character: typeof g['character'] === 'string' ? g['character'] : null, name: typeof g['name'] === 'string' ? g['name'] : null, amount: num(g['amount']), at: String(g['at']) }));
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isText = (v: unknown): v is string => typeof v === 'string';
 

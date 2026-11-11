@@ -65,7 +65,7 @@ const newer = (a: DriveGift, b: DriveGift): number => Date.parse(b.at) - Date.pa
 export function giftOf(act: Act): { readonly drive: Id; readonly gift: DriveGift } | null {
   const amount = act.payload.amount;
   if (act.kind !== 'donation' || act.targetActId === null || typeof amount !== 'number') return null;
-  return { drive: act.targetActId, gift: { id: act.id, character: act.character, amount, at: act.createdAt } };
+  return { drive: act.targetActId, gift: { id: act.id, character: act.character, name: null, amount, at: act.createdAt } };
 }
 
 /** A card's drive rules, by the card's key. */
@@ -114,14 +114,53 @@ export function driveStore(api: KayfaApi): DriveStore {
 
   const notify = (drive: Id) => { for (const l of [...(listeners.get(drive) ?? [])]) l(); };
 
+  /*
+   * A gift heard on the channel (or answered to the reader) is an Act, which carries its giver's id and no name; a giver's name is public, so it is
+   * read from `characters` the way the thread names a live poster, once for each giver however many gifts, and set on every gift of theirs held. A read
+   * that fails leaves the name null, and the wall falls back to the thread's own naming.
+   */
+  const known = new Map<Id, string>();
+  const asked = new Set<Id>();
+  const naming = new Set<Id>();
+  let namingScheduled = false;
+  const named = (gift: DriveGift): DriveGift => (gift.name === null && gift.character !== null && known.has(gift.character) ? { ...gift, name: known.get(gift.character)! } : gift);
+  function learn(gift: DriveGift) {
+    if (gift.name !== null && gift.character !== null) known.set(gift.character, gift.name);
+  }
+  function nameUnknown() {
+    namingScheduled = false;
+    const ids = [...naming];
+    naming.clear();
+    let read: Promise<readonly { readonly id: Id; readonly name: string }[]>;
+    try { read = api.characters(ids); } catch (e) { read = Promise.reject(e); }
+    read.then((rows) => {
+      for (const r of rows) known.set(r.id, r.name);
+      for (const [drive, own] of held) {
+        const before = own.state.gifts;
+        const after = before.map(named);
+        own.heard = own.heard.map(named);
+        if (after.some((g, i) => g !== before[i])) { own.state = { ...own.state, gifts: after }; notify(drive); }
+      }
+    }, () => { /* the names stay null */ });
+  }
+  /** A gift with no name yet: its giver's name is asked for, once. */
+  function wantName(gift: DriveGift) {
+    if (gift.name !== null || gift.character === null || known.has(gift.character) || asked.has(gift.character)) return;
+    asked.add(gift.character);
+    naming.add(gift.character);
+    if (!namingScheduled) { namingScheduled = true; queueMicrotask(nameUnknown); }
+  }
+
   /** A counted gift: the numbers move and the gift takes its place in the wall. */
   function count(own: Held, gift: DriveGift) {
     own.state = { loaded: true, total: own.state.total + gift.amount, count: own.state.count + 1, gifts: [...own.state.gifts, gift].sort(newer) };
   }
-  function addGift(drive: Id, gift: DriveGift) {
+  function addGift(drive: Id, heard: DriveGift) {
     const own = held.get(drive);
-    if (!own || own.seen.has(gift.id)) return;
-    own.seen.add(gift.id);
+    if (!own || own.seen.has(heard.id)) return;
+    own.seen.add(heard.id);
+    const gift = named(heard);
+    wantName(gift);
     if (!own.state.loaded) { own.heard.push(gift); return; }
     count(own, gift);
     notify(drive);
@@ -148,11 +187,12 @@ export function driveStore(api: KayfaApi): DriveStore {
             continue;
           }
           own.tries = 0;
+          for (const g of row.gifts) learn(g);
           const newest = row.gifts[0];
           own.state = { loaded: true, total: row.total, count: row.count, gifts: row.gifts };
           for (const g of row.gifts) own.seen.add(g.id);
           /* A gift heard before this read is in it unless it is newer than everything the read returned. */
-          for (const g of own.heard.sort(newer).reverse()) if (!newest || newer(g, newest) < 0) count(own, g);
+          for (const g of own.heard.sort(newer).reverse()) if (!newest || newer(g, newest) < 0) count(own, named(g));
           own.heard = [];
           notify(id);
         }
@@ -231,6 +271,7 @@ export function driveStore(api: KayfaApi): DriveStore {
         const page = await api.driveGiftsPage(drive, { at: last.at, id: last.id });
         const now = held.get(drive);
         if (now !== own) return;
+        for (const g of page.gifts) learn(g);
         const fresh = page.gifts.filter((g) => !own.seen.has(g.id));
         for (const g of fresh) own.seen.add(g.id);
         /* These are older gifts the total already holds: they join the wall and move no number. */
@@ -264,7 +305,7 @@ export function useDriveGifts(thread: Id, drives: readonly Id[]): ReadonlyMap<Id
   useEffect(() => () => { for (const off of offs.current.values()) off(); offs.current.clear(); }, [store, thread]);
   const subscribe = useMemo(() => (l: () => void) => { const offs = ids.map((d) => store.subscribe(d, l)); return () => { for (const off of offs) off(); }; }, [store, ids]);
   /* A snapshot must be stable between changes: one string of the numbers drives it, and the map is built from the store's own rows. */
-  const snapshot = useSyncExternalStore(subscribe, () => ids.map((d) => store.get(d)).map((g) => `${g.loaded}:${g.total}:${g.count}:${g.gifts.length}:${g.gifts[0]?.id ?? ''}`).join('|'));
+  const snapshot = useSyncExternalStore(subscribe, () => ids.map((d) => store.get(d)).map((g) => `${g.loaded}:${g.total}:${g.count}:${g.gifts.length}:${g.gifts[0]?.id ?? ''}:${g.gifts.filter((x) => x.name !== null).length}`).join('|'));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `snapshot` says when a row changed
   return useMemo(() => new Map(ids.map((d) => [d, store.get(d)] as const)), [store, ids, snapshot]);
 }

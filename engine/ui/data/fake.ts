@@ -1524,7 +1524,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     sendAct(written);
     return ok({ act: publicAct(written), balance: account.wallet });
   }
-  const giftOf = (a: ActRec): DriveGift => ({ id: a.id, character: a.character, amount: Number(a.payload.amount), at: iso(a.at) });
+  const giftOf = (a: ActRec): DriveGift => {
+    const giver = a.character === null ? undefined : characters.get(a.character);
+    return { id: a.id, character: a.character, name: giver?.debutedAt != null ? giver.name : null, amount: Number(a.payload.amount), at: iso(a.at) };
+  };
   /** A drive's gifts, newest first by (time, id): the order drive_gifts takes its latest 20 in and drive_gifts_page pages by. */
   const giftsOf = (drive: Id): ActRec[] => [...acts.values()].filter((a) => a.kind === 'donation' && a.target === drive).sort((x, y) => y.at - x.at || (x.id < y.id ? 1 : x.id > y.id ? -1 : 0));
   const GIFTS_SHOWN = 20;

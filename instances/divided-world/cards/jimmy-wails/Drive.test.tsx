@@ -10,7 +10,7 @@ import { axeViolations, describeViolations } from '../../../../engine/ui/a11y.ts
 import type { Drive as DriveOf, EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { Drive, type DriveProps } from './Drive.tsx';
 
-const gift = (n: number, amount: number) => ({ id: `g${n}`, character: `c${n}`, amount, at: `2026-11-0${n}T10:00:00.000Z` });
+const gift = (n: number, amount: number, name: string | null = null) => ({ id: `g${n}`, character: `c${n}`, name, amount, at: `2026-11-0${n}T10:00:00.000Z` });
 const drive = (over: Partial<DriveOf> = {}): DriveOf => ({ id: 'd1', plays: [], closes: '2026-11-20T10:00:00.000Z', open: true, total: 420, count: 11, gifts: [gift(3, 25), gift(2, 100)], more: false, ...over });
 const names: Record<string, string> = { c1: 'Mario', c2: 'Luigi', c3: 'Peach' };
 const nameOf: EffectProps['nameOf'] = (id) => (id === null ? 'Somebody' : names[id] ?? id);
@@ -81,7 +81,7 @@ describe('the total and the wall', () => {
     function Host() {
       const [d, setD] = useState(drive());
       const give: EffectProps['give'] = async (_id, amount) => {
-        setD((was) => ({ ...was, total: was.total + amount, count: was.count + 1, gifts: [{ id: 'new', character: 'c1', amount, at: '2026-11-09T10:00:00.000Z' }, ...was.gifts] }));
+        setD((was) => ({ ...was, total: was.total + amount, count: was.count + 1, gifts: [{ id: 'new', character: 'c1', name: null, amount, at: '2026-11-09T10:00:00.000Z' }, ...was.gifts] }));
         return ok(475)() as ReturnType<EffectProps['give']>;
       };
       return <Drive drive={d} author="Pipewrench" amounts={[10, 25, 50, 100]} overhead={25} buttons wallet={{ balance: 500, cap: 1000 }} give={give} moreGifts={async () => {}} nameOf={nameOf} />;
@@ -108,6 +108,15 @@ describe('the total and the wall', () => {
     await act(async () => {});
     expect(props.give).toHaveBeenCalledTimes(1);
     expect(props.give).toHaveBeenCalledWith('d1', 100);
+  });
+});
+
+describe('the donor wall', () => {
+  test('names a giver the thread has never heard from by the name the gift carries, and falls back to the thread\'s name for a gift with none', () => {
+    mount({ drive: drive({ gifts: [gift(5, 50, 'Spritey'), gift(1, 25)] }) });
+    const items = screen.getAllByRole('listitem').map((li) => li.textContent);
+    expect(items).toEqual(['Spritey 0.50 Aura', 'Mario 0.25 Aura']);
+    expect(screen.queryByText('A character')).toBeNull();
   });
 });
 

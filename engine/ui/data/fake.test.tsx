@@ -3288,12 +3288,13 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     const [wall, none] = await fake.driveGifts([drive, '99999999-9999-4999-8999-999999999999']);
     expect(wall).toMatchObject({ id: drive, total: 230, count: 23 });
     expect(wall!.gifts.map((g) => g.id)).toEqual(ids.slice(3).reverse());
-    expect(wall!.gifts[0]).toEqual({ id: ids[22], character: anaFace, amount: 10, at: expect.any(String) });
+    expect(wall!.gifts[0]).toEqual({ id: ids[22], character: anaFace, name: 'Ana Face', amount: 10, at: expect.any(String) });
     expect(none).toEqual({ id: '99999999-9999-4999-8999-999999999999', total: 0, count: 0, gifts: [] });
     const last = wall!.gifts.at(-1)!;
     const page = await fake.driveGiftsPage(drive, { at: last.at, id: last.id });
     expect(page.gifts.map((g) => g.id)).toEqual(ids.slice(0, 3).reverse());
     expect(page.more).toBe(false);
+    expect(page.gifts.every((g) => g.name === 'Ana Face')).toBe(true);
     expect(JSON.stringify(wall)).not.toMatch(/overhead|arrives/);
   });
 

@@ -28,5 +28,9 @@ The stories are `instances/divided-world/ui/jimmy-wails/Effect.board.stories.tsx
 
 ## What the shots show that is not the drive's design
 
-- The donor wall names every donor "A character": the thread page knows only the characters of the posts it has read, and a donor who has not posted in it is not one of them.
+- Nothing here is a known defect now: the donor wall names every donor by the name the gift carries (drive_gifts, 0150), whether or not the donor has posted in the thread. The drive, long-wall, closed and reduced-motion shots were retaken after that fix (an earlier set showed "A character" for every donor); the earlier-collapsed shots show no wall and are the first set.
 - The clock in the post's header is the day the shots were taken; the closed shots' is a week and a day before it.
+
+## Size
+
+The PNGs were reduced from 29 MB to about 9.5 MB by 256-color quantization (median cut, Floyd-Steinberg dithering), at the same pixel size and deviceScaleFactor 2. Photographs show slight banding; text and borders are unchanged. Lossless recompression alone saved under 3%.

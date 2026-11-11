@@ -15,7 +15,7 @@ import { ADVANCE_MS, JimmyWailsEffect } from './Effect.tsx';
 const post = { id: 'post-1', character: 'author', kind: 'post', thread: 't', payload: { body: 'Hello' }, currentPayload: { body: 'Hello' }, targetActId: null, seq: 3, createdAt: '2026-11-03T09:00:00.000Z', editedAt: null, shownEditedAt: null } as unknown as Act;
 const names: Record<string, string> = { author: 'Pipewrench', c1: 'Spritey', c2: 'Gloomba', c3: 'Toad' };
 const play = (n: number, drawn = PLATES[n % PLATES.length]!.key): CardPlay => ({ id: `p${n}`, card: 'jimmy-wails', layer: n, caster: `c${(n % 3) + 1}`, message: `Appeal number ${n}`, config: {}, playedAt: `2026-11-03T10:0${n}:00.000Z`, post: 'post-1', drive: 'd1', drawn });
-const gift = (n: number, amount: number) => ({ id: `g${n}`, character: 'c1', amount, at: `2026-11-0${n}T10:00:00.000Z` });
+const gift = (n: number, amount: number) => ({ id: `g${n}`, character: 'c1', name: null, amount, at: `2026-11-0${n}T10:00:00.000Z` });
 const drive = (over: Partial<Drive> = {}): Drive => ({ id: 'd1', plays: [play(1), play(2), play(3)], closes: '2026-11-20T10:00:00.000Z', open: true, total: 420, count: 11, gifts: [gift(3, 25)], more: false, ...over });
 
 interface Options { readonly drives?: Drive[]; readonly place?: 'thread' | 'origin'; readonly wallet?: EffectProps['wallet']; readonly author?: boolean; readonly still?: boolean; readonly give?: EffectProps['give']; readonly economy?: Record<string, number> }
@@ -26,7 +26,7 @@ function mount(o: Options = {}) {
     const [drives, setDrives] = useState(o.drives ?? [drive()]);
     const gives: EffectProps['give'] = async (id, amount) => {
       const answer = await give(id, amount);
-      if (answer.ok) setDrives((all) => all.map((d) => (d.id === id ? { ...d, total: d.total + amount, count: d.count + 1, gifts: [{ id: 'new', character: 'c2', amount, at: '2026-11-09T10:00:00.000Z' }, ...d.gifts] } : d)));
+      if (answer.ok) setDrives((all) => all.map((d) => (d.id === id ? { ...d, total: d.total + amount, count: d.count + 1, gifts: [{ id: 'new', character: 'c2', name: null, amount, at: '2026-11-09T10:00:00.000Z' }, ...d.gifts] } : d)));
       return answer;
     };
     return (

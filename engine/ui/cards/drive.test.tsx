@@ -109,6 +109,21 @@ describe('a drive is read for the page in one call and kept live', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
+  test('a gift broadcast from a giver the thread has not read is named on the wall: the read carries the name, and a live gift is named from the character\'s public name', async () => {
+    const w = seeded(1);
+    const drive = w.fake.seed.card(w.boFace, w.ids[0]!, 'appeal');
+    w.fake.clock.advance(1000);
+    await w.fake.donate(w.anaFace, drive, 10);
+    await page(w);
+    await waitFor(() => expect(screen.getByText('total 10 count 1 gifts 1 open')).toBeInTheDocument());
+    const wall = () => given.get(`appeal:${w.ids[0]}`)!.drives![0]!.gifts.map((g) => g.name);
+    expect(wall()).toEqual(['Ana Face']);
+    const dan = w.fake.seed.character(w.ana, 'Dan Face', 'face');
+    w.fake.clock.advance(1000);
+    await act(async () => { await w.fake.donate(dan, drive, 25); });
+    await waitFor(() => expect(wall()).toEqual(['Dan Face', 'Ana Face']));
+  });
+
   test('a reader\'s own gift is counted once, however its answer and its broadcast arrive', async () => {
     const w = seeded(1);
     const drive = w.fake.seed.card(w.boFace, w.ids[0]!, 'appeal');

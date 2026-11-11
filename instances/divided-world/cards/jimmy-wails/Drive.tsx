@@ -97,7 +97,7 @@ export function Drive({ drive, author, amounts, overhead, buttons, wallet, give,
       {drive.gifts.length > 0 ? (
         <ul className="dw-jw-wall" aria-label="Donors, latest first">
           {drive.gifts.map((g) => (
-            <li key={g.id}><span className="dw-jw-donor">{nameOf(g.character)}</span> <span className="dw-jw-sum">{figure(g.amount)} Aura</span></li>
+            <li key={g.id}><span className="dw-jw-donor">{g.name ?? nameOf(g.character)}</span> <span className="dw-jw-sum">{figure(g.amount)} Aura</span></li>
           ))}
         </ul>
       ) : null}

@@ -280,10 +280,15 @@ export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | '
   /* A gift to a drive (0150): an Act of the drive's thread on its opening play, no place in the thread (`seq` null). */
   | 'donation';
 
-/** One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown. */
+/**
+ * One gift on a drive's wall: who gave (a character, never a player), how much (hundredths) and when. What the drive kept and what arrived are not shown.
+ * `name` is the giver's public name (characters_public), carried with the gift so the wall names a giver who never posted in the thread; null only
+ * for a gift just heard on the channel, whose name the drive store reads next, or for a giver with no public name.
+ */
 export interface DriveGift {
   readonly id: Id;
   readonly character: Id | null;
+  readonly name: string | null;
   readonly amount: number;
   readonly at: string;
 }

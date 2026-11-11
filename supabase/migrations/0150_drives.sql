@@ -862,7 +862,7 @@ grant execute on function donate(uuid, uuid, uuid, integer) to service_role;
 
 -- ---------------------------------------------------------------------------------------------------------- 9. the reads ----
 
--- drive_gifts(drives): for each drive asked, in the order asked, its total and its count of gifts and its latest 20 (giver character, amount, time). One range of acts_donations for each drive, and a drive's gifts are
+-- drive_gifts(drives): for each drive asked, in the order asked, its total and its count of gifts and its latest 20 (giver character, the giver's public name from characters_public, amount, time). A gift is a public Act and its giver is public, so the wall names every giver, whether or not the giver ever posted in the thread. One range of acts_donations for each drive, and a drive's gifts are
 -- bounded by its givers' wallets. A drive nobody gave to, and an id that is no drive, are a row of zeros. A drive's total and count are summed per read, and a tally row is the follow-up if drives get very large. Security invoker, reading acts_public (as drive_gifts_page does) and nothing of any wallet: a gift's `arrives` and
 -- `overhead` are in the Act and are not shown here, only what was given.
 create function drive_gifts(drives uuid[]) returns jsonb
@@ -874,8 +874,9 @@ begin
     from unnest(drives) with ordinality d(id, ord)
     cross join lateral (
       select coalesce(sum((a.payload ->> 'amount')::integer), 0)::integer as total, count(*)::integer as n,
-        coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at) order by x.created_at desc, x.id desc)
-                  from (select l.id, l.character, l.payload, l.created_at from acts_public l where l.kind = 'donation' and l.target_act_id = d.id order by l.created_at desc, l.id desc limit 20) x), '[]'::jsonb) as latest
+        coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'name', x.name, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at) order by x.created_at desc, x.id desc)
+                  from (select l.id, l.character, c.name, l.payload, l.created_at from acts_public l left join characters_public c on c.id = l.character
+                        where l.kind = 'donation' and l.target_act_id = d.id order by l.created_at desc, l.id desc limit 20) x), '[]'::jsonb) as latest
       from acts_public a where a.kind = 'donation' and a.target_act_id = d.id
     ) g), '[]'::jsonb);
 end $$;
@@ -888,11 +889,11 @@ grant execute on function drive_gifts(uuid[]) to authenticated;
 create function drive_gifts_page(drive uuid, before_at timestamptz, before_id uuid) returns jsonb
 language sql stable security invoker set search_path = public, pg_temp
 begin atomic
-  select jsonb_build_object('gifts', coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at)
+  select jsonb_build_object('gifts', coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'character', x.character, 'name', x.name, 'amount', (x.payload ->> 'amount')::integer, 'at', x.created_at)
                                                          order by x.created_at desc, x.id desc) filter (where x.n <= 20), '[]'::jsonb),
                             'more', coalesce(bool_or(x.n > 20), false))
-  from (select l.id, l.character, l.payload, l.created_at, row_number() over (order by l.created_at desc, l.id desc) as n
-        from acts_public l where l.kind = 'donation' and l.target_act_id = drive_gifts_page.drive
+  from (select l.id, l.character, c.name, l.payload, l.created_at, row_number() over (order by l.created_at desc, l.id desc) as n
+        from acts_public l left join characters_public c on c.id = l.character where l.kind = 'donation' and l.target_act_id = drive_gifts_page.drive
           and (l.created_at, l.id) < (drive_gifts_page.before_at, drive_gifts_page.before_id)
         order by l.created_at desc, l.id desc limit 21) x;
 end;
