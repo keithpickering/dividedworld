@@ -32,7 +32,8 @@
  */
 import { PREDICATES, predicate } from '../rules/predicates.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
-import type { Persona } from '../rules/types.ts';
+import type { Persona, SystemContent } from '../rules/types.ts';
+import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
 import { cutAtSentence, memoryLines } from './chatter.ts';
 import { groupMoveBar, WHY_MOST, type ConferredGroup } from './meeting.ts';
@@ -270,8 +271,11 @@ export function ruleWords(r: RuleLine): string {
 }
 
 export interface ModPromptInput {
-  /** The persona the instance wrote for a Mod's duty, built on its premise. */
-  readonly persona: Pick<Persona, 'persona'>;
+  /** The persona the instance wrote; its prompt is set in its office's frame (`personaPrompt`). */
+  readonly persona: Pick<Persona, 'selfPrompt' | 'officeLines'>;
+  /** The office it holds as it does this duty: a Mod's, or the Boss's when the Boss hears an appeal. */
+  readonly office: 'mod' | 'boss';
+  readonly offices: SystemContent['offices'];
   /** The Mod's own pronouns: its file's, else `Settings.pronouns`, else the engine's it-set. Told to it after its persona. */
   readonly pronouns: PronounSet;
   /** The Boss's one line to this Mod, until the next meeting; null: none yet. Shown, never acted on. */
@@ -314,7 +318,7 @@ const offersMove = (i: Pick<ModPromptInput, 'allowance' | 'beat'>): boolean => i
 
 /**
  * The persona's prompt for a Mod's duty: who it is, what it has done and remembers, the Boss's standing order, the rules in force, the catalog of predicates,
- * and what its one move may be. The engine composes it; the instance's premise for the office is the persona's own text.
+ * and what its one move may be. The engine composes it, and sets the persona in the mod office's frame (`personaPrompt`).
  */
 export function modPrompt(i: ModPromptInput): string {
   const names = i.names ?? (() => 'a character');
@@ -337,7 +341,7 @@ export function modPrompt(i: ModPromptInput): string {
     ].join('\n')
     : 'You have no allowance left from the Boss, so you make no move this time: do not answer with a move.';
   return [
-    i.persona.persona,
+    personaPrompt({ offices: i.offices }, i.persona, i.office),
     selfPronounLine(i.pronouns),
     career.length ? ['Your career, as plain facts (newest first):', ...career.map((c) => `- ${c}`)].join('\n') : 'You have held no office before.',
     ...(memory.length ? [['What you remember:', ...memory.map((m) => `- ${m}`)].join('\n')] : []),

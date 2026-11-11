@@ -492,6 +492,46 @@ describe('what the public reads never prove', () => {
       { act: announced, character: anaFace, at: (await fake.act(announced))!.createdAt, was: 'heel' },
     ]);
   });
+  test('classShownAt is null until a reveal, set by it, null after a Turn, and a repeat reveal is refused', async () => {
+    const { fake, anaFace, thread } = world();
+    const shown = async () => (await fake.myCharacters()).find((c) => c.id === anaFace)!.classShownAt;
+    expect(await shown()).toBeNull();
+    const first = must(await fake.unmask(anaFace, thread, 'It was me'));
+    expect(await shown()).toBe(first.createdAt);
+    expect(await fake.unmask(anaFace, thread, 'again')).toEqual(refused('that character\'s class is already public; after a Turn, the new class can be revealed'));
+    must(await fake.turn(anaFace, 'heel', 'silent', false, false));
+    fake.clock.advance(DAY);
+    fake.seed.settle({});
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.class).toBe('heel');
+    expect(await shown()).toBeNull();
+    must(await fake.unmask(anaFace, thread, 'now a heel'));
+    expect(await shown()).not.toBeNull();
+  });
+  test('classShownAt is set by a debut with its class and by a Turn announced with its class', async () => {
+    const { fake, anaFace, anaHeel } = world();
+    const shown = async (id: string) => (await fake.myCharacters()).find((c) => c.id === id)!.classShownAt;
+    expect(await shown(anaFace)).toBeNull();
+    const debut = fake.seed.announce(anaFace, 'debut', { class: 'face' });
+    expect(await shown(anaFace)).toBe((await fake.act(debut))!.createdAt);
+    expect(await shown(anaHeel)).toBeNull();
+    const turned = fake.seed.announce(anaHeel, 'turn', { class: 'heel', was: 'face' });
+    expect(await shown(anaHeel)).toBe((await fake.act(turned))!.createdAt);
+    expect(await fake.unmask(anaHeel, (await fake.act(turned))!.thread, 'again')).toEqual(refused('that character\'s class is already public; after a Turn, the new class can be revealed'));
+  });
+  test('classShownAt is null after a Turn back to a class that was revealed before', async () => {
+    const { fake, anaFace, thread } = world();
+    const shown = async () => (await fake.myCharacters()).find((c) => c.id === anaFace)!.classShownAt;
+    must(await fake.unmask(anaFace, thread, 'face'));
+    expect(await shown()).not.toBeNull();
+    for (const to of ['heel', 'face']) {
+      fake.clock.advance(31 * DAY);
+      must(await fake.turn(anaFace, to, 'silent', false, false));
+      fake.clock.advance(DAY);
+      fake.seed.settle({});
+    }
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.class).toBe('face');
+    expect(await shown()).toBeNull();
+  });
   test('an unmask is refused on The System\'s board, and past 200 characters', async () => {
     const { fake, anaFace, thread } = world();
     const sys = fake.seed.thread('announcements', null, 'Tally', '').thread;
@@ -2941,7 +2981,7 @@ describe('a screen in one call is what the separate calls answer', () => {
 });
 
 
-describe('a card that writes: its tails, as post_tails and the worker leave them (0147)', () => {
+describe('a card that writes: its tails, as post_tails and the worker leave them (0148)', () => {
   const typewriter = {
     key: 'typewriter', name: 'Typewriter', alignment: 'salty' as const, rarity: 'common' as const, stack: 3, playPrice: () => 0,
     canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),

@@ -626,7 +626,7 @@ describe('from the Task 3 quality review', () => {
     });
   });
 
-  describe('a play that did not take (0147)', () => {
+  describe('a play that did not take (0148)', () => {
     /* A card that writes: its play whose first generation failed was refunded and is over, so it is no layer on the post. */
     const writing = { ...whoopsRules, writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
     const server: Instance = { ...instance, cards: [writing, stickRules] };

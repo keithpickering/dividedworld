@@ -1,6 +1,6 @@
 /**
  * The writer of a card's text, as a pure module (docs/plans/2026-11-07-you-were-saying-design.md, sections 3, 4, 6, 12 and 15): it takes a
- * `Db`, the `Models`, the instance and its settings, and works the queue claim_card_writes hands out (supabase/migrations/0147_card_writes.sql).
+ * `Db`, the `Models`, the instance and its settings, and works the queue claim_card_writes hands out (supabase/migrations/0148_card_writes.sql).
  * supabase/functions/write/index.ts is the edge for the cron's sweep; the act function's kick (afterTheAnswer) calls it for one post.
  *
  * A job is the frame's inputs. The card's own `writes.frame` makes the prompt from the post's visible words, never its markup, and the tails

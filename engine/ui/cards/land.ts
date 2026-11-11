@@ -21,7 +21,7 @@ export function targetOf(post: Act): PostTarget {
   return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body);
 }
 
-/** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0147), with a ward's rarity and a Use's end; a card back naming no card, ended where it sprang or its time passed. */
+/** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0148), with a ward's rarity and a Use's end; a card back naming no card, ended where it sprang or its time passed. */
 export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'ward' | 'rarity'>[], setLasts: Span): CardEffect[] {
   const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
   return plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p): CardEffect => {

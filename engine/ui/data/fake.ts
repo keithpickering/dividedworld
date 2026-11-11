@@ -59,6 +59,7 @@ const SEASONED_WELCOME = '2026-10-01T00:00:00.000Z';
 export const TEST_CODE = '123456';
 
 const CODE_MESSAGE = 'If this address can sign in here, a code and a link to sign in are on their way to it. A new login needs an invite where this instance asks for one. If nothing comes in a few minutes, ask again.';
+const ALREADY_PUBLIC = 'that character\'s class is already public; after a Turn, the new class can be revealed';
 const SYSTEM_BOARD = 'only the staff post here; spin a thread from what they said';
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -244,12 +245,12 @@ export interface Seed {
   /** A saved card effect on a thread's play, heard by its subscribers. */
   effect(thread: Id, play: Id): void;
   /**
-   * What a writing play made for a version of its post (`finish_card_write`, 0147): its row (`text`, or `failed`), the waiting job it ends, and
+   * What a writing play made for a version of its post (`finish_card_write`, 0148): its row (`text`, or `failed`), the waiting job it ends, and
    * the `card_text` event on the post's thread, which carries the play and the version alone. A play of a card whose rules `write` is
    * queued at the post's version when it lands, and again at each edit, as the server does; this delivers what the model made, later.
    * `quiet` keeps the event back (a screen that was not listening), so a test can see the row without it. A failure of a play's first
    * generation, with no newer job waiting, refunds it as the server does: the play is over and its Act reads `untaken` from then (`acts_public`,
-   * 0147); a failure of a regeneration of a play that made a text before refunds nothing, and a play already over takes no text.
+   * 0148); a failure of a regeneration of a play that made a text before refunds nothing, and a play already over takes no text.
    */
   text(play: Id, version: Id, result: { readonly text: string } | { readonly failed: true }, options?: { readonly quiet?: boolean }): void;
   /**
@@ -1117,9 +1118,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /* --------------------------------------------------------------- a card that writes ---- */
-  /** card_texts (0147): one row per play and version, the generation or its failure. */
+  /** card_texts (0148): one row per play and version, the generation or its failure. */
   const texts: { play: Id; version: Id; text: string | null; at: number; order: number }[] = [];
-  /** card_writes (0147): a play's waiting job, at the version it will continue; one per play, a newer version replacing it. */
+  /** card_writes (0148): a play's waiting job, at the version it will continue; one per play, a newer version replacing it. */
   const jobs = new Map<Id, { post: Id; version: Id }>();
   const writes = (card: unknown): boolean => instance.cards.some((c) => c.key === card && c.writes !== undefined);
   /** A card Act that is a live writing play on a post (live_writing_plays): a card of the post's own reach that writes, no caught play, no ended one. */
@@ -1132,7 +1133,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       for (const k of acts.values()) if (writingPlay(k) && k.target === rec.target && !over(k.id)) jobs.set(k.id, { post: rec.target, version: rec.id });
     }
   }
-  /** post_tails (0147): every row of every writing play on the posts, oldest version first, then each waiting job whose version has no row yet. */
+  /** post_tails (0148): every row of every writing play on the posts, oldest version first, then each waiting job whose version has no row yet. */
   function tails(posts: readonly Id[]): Tail[] {
     if (new Set(posts).size > 200) throw new Error('tails are read for at most 200 posts at a time');
     const out: { row: Tail; vat: number; pat: number; order: number }[] = [];
@@ -1203,11 +1204,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const releases = new Map<string, number>();
   /** The card plays an admin has ended (a `card_end` beside each, 0092): not in force, though the play and its layer stay. */
   const reversedPlays = new Set<Id>();
-  /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0147): over, as an ended play is, and public as `untaken`. */
+  /** The card plays whose first generation failed and were refunded (a row in card_write_refunds, 0148): over, as an ended play is, and public as `untaken`. */
   const untakenPlays = new Set<Id>();
-  /** card_ended (0147): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
+  /** card_ended (0148): ended by an admin, or over because it did not take. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play);
-  /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0147), and no card named. */
+  /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0148), and no card named. */
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
   const withEnds = (plays: readonly ActRec[]): Act[] => {
@@ -1265,7 +1266,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function cardInOpenPack(card: string): boolean {
     const rules = instance.cards.find((c) => c.key === card);
     const rarity = rules?.rarity;
-    /* A card the instance withholds is never rolled (roll_pack, 0147; packOdds), so no pack can give it. */
+    /* A card the instance withholds is never rolled (roll_pack, 0148; packOdds), so no pack can give it. */
     if (!rules || !rarity || withheld(rules, instance.settings)) return false;
     return slotRecs.some((r) => {
       if (!('pack' in r.item) || r.availability !== 'onSale') return false;
@@ -1619,11 +1620,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(original));
   }
 
+  /** When the character's current class was made public: the latest of its unmask Acts and class-carrying announces of that class, at or after the class began (the filter `classReveals` uses). */
+  function classShownAt(c: CharRec): number | null {
+    const now = classNow(c);
+    let latest: number | null = null;
+    for (const a of acts.values()) {
+      if (a.character !== c.id || a.at < now.at) continue;
+      if (a.kind !== 'unmask' && !(a.kind === 'announce' && typeof a.payload.class === 'string')) continue;
+      if (a.payload.class !== now.cls) continue;
+      if (latest === null || a.at > latest) latest = a.at;
+    }
+    return latest;
+  }
+
   function unmask(character: Id, thread: Id, message: string): Answer<Act> {
     const bad = request({ action: 'unmask', character, thread, message });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
+    if (classShownAt(c) !== null) return refuse(ALREADY_PUBLIC);
     const found = threadAndBoard(thread);
     if (isRefusal(found)) return found;
     if (found.board.isSystem) return refuse(SYSTEM_BOARD);
@@ -2565,7 +2580,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           cards: newest(cardLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           packs: newest(packLedger.filter((e) => e.account === account && fits(e.ms))).map((e) => e.event),
           playsOnMine: newest(onMine.filter((a) => fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a }))).map(({ a }) => ({ play: a.id, post: a.target!, at: iso(a.at), reach: reachOf(a) as 'post' | 'character' | 'thread', targetName: targetName(a), targetCharacter: targetCharacter(a) })),
-          /* my_posts_written_on (0147): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
+          /* my_posts_written_on (0148): each text or failure of a card that writes on a post one of the player's characters wrote, whoever played it. */
           writes: newest(texts.flatMap((t) => {
             const play = acts.get(t.play);
             const post = play?.kind === 'card' && play.target !== null ? acts.get(play.target) : undefined;
@@ -2759,8 +2774,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account) return [];
       return [...characters.values()].filter((c) => c.owner === account.id).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)).map((c): MyCharacter => {
         const opens = turnOpens(c);
+        const shown = classShownAt(c);
         return {
-          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
+          id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classShownAt: shown === null ? null : iso(shown), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
           debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
           pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
@@ -3791,12 +3807,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const k = acts.get(play);
       if (!k || !writingPlay(k)) throw new Error(`no such writing play ${play}`);
       if (!acts.has(version)) throw new Error(`no such version ${version}`);
-      /* A play that is over (an admin ended it, or its first generation failed and it was refunded) makes no text: a late finish writes nothing (finish_card_write, 0147). */
+      /* A play that is over (an admin ended it, or its first generation failed and it was refunded) makes no text: a late finish writes nothing (finish_card_write, 0148). */
       if (over(play)) return;
       const job = jobs.get(play);
       texts.push({ play, version, text: 'text' in result ? result.text : null, at: now(), order: ++order });
       if (job && job.version === version) jobs.delete(play);
-      /* finish_card_write (0147): a failure with no newer job waiting, for a play that never made a text, refunds it, and the play is over. */
+      /* finish_card_write (0148): a failure with no newer job waiting, for a play that never made a text, refunds it, and the play is over. */
       if (!('text' in result) && !jobs.has(play) && !texts.some((t) => t.play === play && t.text !== null) && !reversedPlays.has(play)) untakenPlays.add(play);
       if (o?.quiet) return;
       send(`thread:${k.thread}`, 'card_text', () => { for (const l of [...(threadListeners.get(k.thread) ?? [])]) l.onText?.(play, version); });

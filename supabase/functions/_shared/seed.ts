@@ -46,7 +46,7 @@ export function instanceSeed(instance: Instance) {
       rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, ward: c.ward === true, lasts: c.lasts,
       // Where it reaches and whether a thread play of it pins (0055), which seed_instance checks against reachRarity and reachLasts.
       reaches: c.reaches ?? ['post'], pins: c.pins === true,
-      // Whether its text is generated after it lands (0147): the SQL knows only this flag, never which card.
+      // Whether its text is generated after it lands (0148): the SQL knows only this flag, never which card.
       writes: c.writes !== undefined,
     })),
     // The packs the instance sells, replaced each seed (0139), and the machine's slots in grid order: seed_instance adds a slot whose item the

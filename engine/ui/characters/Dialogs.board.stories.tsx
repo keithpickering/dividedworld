@@ -1,6 +1,6 @@
 /**
  * My characters and its dialogs, drawn as stories against the backfill boards `docs/research/2026-11-05-backfill/`: `24-debut.html` (the Debut
- * dialog, choosing how), `40-debut-now.html` (dropping now), `25-reveal.html` (the Reveal modal) and, on the Phone board's layout
+ * dialog, choosing how), `40-debut-now.html` (dropping now), `25-reveal.html` (the Reveal overlay) and, on the Phone board's layout
  * (`27-characters-phone.html`, 390 by 844), the Debut dialog as a sheet and My characters' head. The screen is My characters in the glass's page
  * shell, as the route /characters puts it (web/src/App.tsx); each manifest presses on the button that opens the dialog, as a player does
  * (e2e/boards/2026-11-05-backfill/). The world is one character alone, so the page opens on it.
@@ -21,7 +21,7 @@ const waiting: World = (fake, instance) => {
   fake.signInAs(me);
 };
 
-/** One Heel that has debuted: the Reveal modal's world. Its class is the second the instance lists, as the board's Heel is. */
+/** One Heel that has debuted: the Reveal overlay's world. Its class is the second the instance lists, as the board's Heel is. */
 const pipewrench: World = (fake, instance) => {
   const me = fake.seed.account('story-player');
   fake.seed.character(me, 'Pipewrench', (instance.classes[1] ?? instance.classes[0]!).key);

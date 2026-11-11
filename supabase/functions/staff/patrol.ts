@@ -165,7 +165,7 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
     const groups = await readModGroups(db, standing);
     const frame = patrolPrompt({
       ...(groups ? { conferred: groups.conferred } : {}),
-      persona, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
+      persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
       ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
       boards, sample, limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
     });

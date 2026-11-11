@@ -1,4 +1,4 @@
--- The queue, the texts and the refund of a card that writes (supabase/migrations/0147_card_writes.sql;
+-- The queue, the texts and the refund of a card that writes (supabase/migrations/0148_card_writes.sql;
 -- the plan for the card that writes, Task 4; its design sections 3, 4, 6, 12, 14 and 15).
 --
 -- A card whose kind `writes` has a text made for it by the server after it lands, once per version of the post. These files hold the

@@ -1,4 +1,4 @@
--- The concurrent cases of a card that writes (supabase/migrations/0147_card_writes.sql): a refund is paid once for a play however many
+-- The concurrent cases of a card that writes (supabase/migrations/0148_card_writes.sql): a refund is paid once for a play however many
 -- finishes and refunds land at once, and a job is claimed once however many claims land at once. The rows are committed (tests.commit),
 -- since a racer is a session of its own; every name is this file's, so no other file reads them. In a file that sorts after
 -- 0146-card-writes.sql, whose claims would otherwise take these jobs too.

@@ -20,7 +20,8 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import type { Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { said, stopsTheRun } from './core.ts';
+import { said, stopsTheRun, type Standing } from './core.ts';
+import type { PostingOffice } from '../../../engine/system/pool.ts';
 
 interface Pending {
   readonly apology: number;
@@ -64,7 +65,10 @@ export async function runApologies(db: Db, models: Models, instance: Instance): 
       records.push({ apology: p.apology, staff: p.staff, status: 'returned', why: 'the judge is not on the roster', trims: [] });
       continue;
     }
-    const frame = apologyPrompt(persona, p.line, p.body, maxWords);
+    // The judge is heard in the frame of the office it holds now: a Boss or a Mod, or, benched since it made the move, a member (which says it holds no office).
+    const held = (await db.rpc<Standing>('mod_standing', { staff: p.staff })).office;
+    const office: PostingOffice = held === 'boss' || held === 'mod' ? held : 'member';
+    const frame = apologyPrompt(tuned.system, persona, office, p.line, p.body, maxWords);
     let failed: string | undefined;
     let repaired: ReturnType<typeof repairApology> | undefined;
     // The call. A transport failure was retried inside models.chat; what comes back is an answer, a rejection, or a failure.
