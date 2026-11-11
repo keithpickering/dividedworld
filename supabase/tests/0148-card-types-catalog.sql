@@ -47,7 +47,7 @@ begin
   if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn or price' then raise exception 'a gimmick of no kind: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": "ward"}]');
-  if why is distinct from 'card "poison" has a gimmick of kind null; a gimmick is ward, earn or price' then raise exception 'a gimmick that is not an object: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick that is not an object' then raise exception 'a gimmick that is not an object: %', why; end if;
 
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "cast", "trap": {"trigger": {"on": "cast"}}}]');
   if why is distinct from 'card "poison" has a trap, and only a set card has one' then raise exception 'a trap on a cast card: %', why; end if;
@@ -55,9 +55,13 @@ begin
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "reply"}}}]');
   if why is distinct from 'card "poison" springs on "reply"; a set card springs on cast or visit' then raise exception 'a trap on a reply: %', why; end if;
 
-  -- A JSON null is as absent as no key: a card seeded with trap: null is a set card with no trap, and a cast card with gimmick: null has none.
-  why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "set", "trap": null}, {"key": "fine", "rarity": "common", "play": "cast", "gimmick": null}]');
-  if why is distinct from 'card "poison" is a set card with no trap' then raise exception 'a null trap, a null gimmick: %', why; end if;
+  -- A JSON null trap is as absent as no key, so a set card seeded with trap: null has no trap. A JSON null gimmick is as the engine reads it: present, so not an object on a use card, and a gimmick on a card that is not one.
+  why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "set", "trap": null}]');
+  if why is distinct from 'card "poison" is a set card with no trap' then raise exception 'a null trap: %', why; end if;
+  why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": null}]');
+  if why is distinct from 'card "poison" has a gimmick that is not an object' then raise exception 'a null gimmick on a use card: %', why; end if;
+  why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "cast", "gimmick": null}]');
+  if why is distinct from 'card "poison" has a gimmick, and only a use card has one' then raise exception 'a null gimmick on a cast card: %', why; end if;
 end $$;
 
 -- ---- seed_instance writes the gimmick and the trap's match, and refuses the poisons by name ----

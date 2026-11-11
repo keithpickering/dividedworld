@@ -5,6 +5,7 @@
 --   Task 3, the schema:
 --     1. the catalog        card_kinds drops `ward boolean` and gains `gimmick jsonb` (a use card's effect: ward, earn or price); `trap` holds `match` when a Reversal has one.
 --                           A ward row already held becomes the ward Gimmick it was: `{"kind": "ward", "upTo": <its rarity>}`, turning away casts at or below its own rarity as it did.
+--                           A use card held with no ward (so no gimmick) is left as it is too, and is refused at the next seed_instance by name, as is a set card with no trap.
 --                           A set card held with no trap (a Bluff) is left as it is; the next seed_instance refuses it by name and the instance's own cards no longer hold one.
 --     2. card_kinds_problem the checks of the engine's instanceProblems that SQL can make, in the engine's words (use card: gimmick, time up, reaches; set card: trap).
 --     3. the readers        card_target and reach_effects carry `gimmick` where they carried `ward`. effects_above carries no card kind (its 0092 definition names none), so it is not replaced.
@@ -33,13 +34,13 @@ alter table card_kinds
 -- ------------------------------------------------------------------------------------------------- 2. card_kinds_problem ----
 
 -- card_kinds_problem (0142), holding instanceProblems's rules for a card's play, trap and gimmick again, in the engine's words: only a set card has a trap and every set card has one,
--- only a use card has a gimmick and every use card has one, of a kind the engine knows, a time up and reaches of a post, a character or a thread. A JSON null is as absent as no key.
+-- only a use card has a gimmick and every use card has one, of a kind the engine knows, a time up and reaches of a post, a character or a thread. A JSON null trap is as absent as no key; a JSON null gimmick is read as the engine reads it, a gimmick that is not an object.
 -- The match of a trap and the numbers of a gimmick are checked by instanceProblems alone (the seed is built from an instance that passed it). Everything else as 0142 wrote it.
 create or replace function card_kinds_problem(cards jsonb) returns text
 language sql stable set search_path = public, pg_temp as $$
   with c as (
     select e ->> 'key' as key, e ->> 'rarity' as rarity, coalesce(e ->> 'play', 'cast') as play, nullif(e -> 'trap', 'null') as trap,
-      e #>> '{trap,trigger,on}' as trigger_on, nullif(e -> 'gimmick', 'null') as gimmick, e
+      e #>> '{trap,trigger,on}' as trigger_on, e -> 'gimmick' as gimmick, e
     from jsonb_array_elements(coalesce(cards, '[]')) e
   )
   select string_agg(why, '; ' order by key, n) from (
@@ -52,8 +53,9 @@ language sql stable set search_path = public, pg_temp as $$
       case when c.play = 'set' and c.trap is null then format('card "%s" is a set card with no trap', c.key) end,
       case when c.gimmick is not null and c.play <> 'use' then format('card "%s" has a gimmick, and only a use card has one', c.key) end,
       case when c.play = 'use' and c.gimmick is null then format('card "%s" is a use card with no gimmick', c.key) end,
-      case when c.gimmick is not null and c.play = 'use' and coalesce(c.gimmick #>> '{kind}' not in ('ward', 'earn', 'price'), true)
-           then format('card "%s" has a gimmick of kind %s; a gimmick is ward, earn or price', c.key, coalesce(to_jsonb(c.gimmick #>> '{kind}')::text, 'null')) end,
+      case when c.play = 'use' and c.gimmick is not null and jsonb_typeof(c.gimmick) <> 'object' then format('card "%s" has a gimmick that is not an object', c.key) end,
+      case when c.play = 'use' and jsonb_typeof(c.gimmick) = 'object' and coalesce(c.gimmick ->> 'kind' not in ('ward', 'earn', 'price'), true)
+           then format('card "%s" has a gimmick of kind %s; a gimmick is ward, earn or price', c.key, coalesce(to_jsonb(c.gimmick ->> 'kind')::text, 'null')) end,
       case when c.play = 'use' and not c.e ? 'lasts' then format('card "%s" is a use card with no time up (lasts); a use card ends at its time', c.key) end,
       case when c.play = 'use' and jsonb_typeof(c.e -> 'reaches') = 'array' and exists (
              select 1 from jsonb_array_elements_text(c.e -> 'reaches') r where r not in ('post', 'character', 'thread'))
@@ -132,7 +134,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
       union all
       select k.id, k.created_at, k.payload ->> 'card' from play_reach r join acts k on k.id = r.play
       where of_reach <> 'post' and r.ends_at > now()
-        and case of_reach when 'character' then r.character = of_target when 'thread' then r.thread = of_target when 'board' then r.board = of_target else false end
+        and ((of_reach = 'character' and r.character = of_target) or (of_reach = 'thread' and r.thread = of_target) or (of_reach = 'board' and r.board = of_target))
     ) p join card_kinds wk on wk.key = p.card
     where wk.gimmick ->> 'kind' = 'ward' and not card_ended(p.id)
   ) w
@@ -240,14 +242,11 @@ begin
       if not found then raise exception 'there is no such thread' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
       select t.title into target_name from threads t where t.id = target;
       in_thread := target;
-      select a.id into on_post from acts a where a.thread = target and a.seq = 1;
+      select a.id, a.character into on_post, author from acts a where a.thread = target and a.seq = 1;
       if on_post is null then raise exception 'that thread has no post yet' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
       -- A Gimmick on a thread is a match stipulation, so only on a thread the caster's own character started. Who started a thread is public, and the refusal says nothing of anyone else's.
-      if kind_of.play = 'use' then
-        select a.character into author from acts a where a.id = on_post;
-        if author is distinct from caster then
-          raise exception '% is used on a thread your own character started', kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
-        end if;
+      if kind_of.play = 'use' and author is distinct from caster then
+        raise exception '% is used on a thread your own character started', kind_of.name using hint = 'kayfabb.refusal', errcode = '42501';
       end if;
     else
       perform 1 from boards b where b.id = target for no key update;

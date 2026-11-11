@@ -35,7 +35,12 @@ begin
     ('gwchar', 'Gw Char Cast', 'salty', 'uncommon', 'cast', interval '1 day', '{character}', null),
     ('gwcharsweet', 'Gw Char Sweet', 'sweet', 'uncommon', 'cast', interval '1 day', '{character}', null),
     ('gwthread', 'Gw Thread Cast', 'salty', 'rare', 'cast', interval '1 day', '{thread}', null),
-    ('gwmove', 'Gw Move', 'salty', 'uncommon', 'cast', null, '{post}', null)
+    ('gwmove', 'Gw Move', 'salty', 'uncommon', 'cast', null, '{post}', null),
+    ('gwcrare', 'Rarity Ward', 'sweet', 'uncommon', 'use', interval '7 days', '{post,character,thread}', '{"kind": "ward", "upTo": "uncommon"}'),
+    ('gwcname', 'Card Ward', 'sweet', 'uncommon', 'use', interval '7 days', '{post,character,thread}', '{"kind": "ward", "cards": ["gwchar", "gwthread"]}'),
+    ('gwcharrare', 'Gw Char Rare', 'sweet', 'rare', 'cast', interval '1 day', '{character}', null),
+    ('gwthreadlow', 'Gw Thread Low', 'sweet', 'common', 'cast', interval '1 day', '{thread}', null),
+    ('gwthreadtop', 'Gw Thread Top', 'sweet', 'legendary', 'cast', interval '1 day', '{thread}', null)
   on conflict (key) do nothing;
 end $$;
 
@@ -97,6 +102,86 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- Rarity and name wards beyond a post, a rarer card passing, and a ward on another target refusing nothing ----
+do $$
+declare
+  ann uuid := tests.account('gw-rn-ann'); bob uuid := tests.account('gw-rn-bob');
+  a uuid := tests.character(ann, 'Gw Rn Ann'); a3 uuid := tests.character(ann, 'Gw Rn Ann Three'); b uuid := tests.character(bob, 'Gw Rn Bob');
+  t1 uuid := tests.thread('Gw rarity thread'); t2 uuid := tests.thread('Gw name thread');
+  a_post uuid := tests.post(a, t1, 'Rarity-warded thread and character.'); a3_post uuid := tests.post(a3, t2, 'Name-warded thread and character.');
+  bobs uuid := tests.post(b, t1, 'Bob''s post.');
+  why text;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'gwcrare', 'gwcrare', 'gwcname', 'gwcname');
+  perform pg_temp.hand(bob, 'gwcharsweet', 'gwcharrare', 'gwchar', 'gwthreadlow', 'gwthreadtop', 'gwthread');
+  perform tests.become_service();
+  perform play_card(ann, 'gwcrare', a, a, '{}', 0, '', 'character', a_post);
+  perform play_card(ann, 'gwcrare', a, t1, '{}', 0, '', 'thread');
+  perform play_card(ann, 'gwcname', a3, a3, '{}', 0, '', 'character', a3_post);
+  perform play_card(ann, 'gwcname', a3, t2, '{}', 0, '', 'thread');
+  -- Rarity, on a character: an uncommon cast is turned away, a rare one lands.
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', bob, 'gwcharsweet', b, a, '{}', '', 'character', a_post));
+  if why is distinct from '42501 this character''s Rarity Ward turns away cards up to uncommon' then raise exception 'an uncommon cast on a rarity-warded character: %', why; end if;
+  perform play_card(bob, 'gwcharrare', b, a, '{}', 0, '', 'character', a_post);
+  -- Rarity, on a thread: a common cast is turned away, a legendary one lands.
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', bob, 'gwthreadlow', b, t1, '{}', '', 'thread'));
+  if why is distinct from '42501 this thread''s Rarity Ward turns away cards up to uncommon' then raise exception 'a common cast on a rarity-warded thread: %', why; end if;
+  perform play_card(bob, 'gwthreadtop', b, t1, '{}', 0, '', 'thread');
+  -- Name, on a character and on a thread: the named card is turned away in its own words; ward on another target refuses nothing (a3 holds no rarity ward, t2 none).
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', bob, 'gwchar', b, a3, '{}', '', 'character', a3_post));
+  if why is distinct from '42501 this character''s Card Ward turns away Gw Char Cast' then raise exception 'a named cast on a card-warded character: %', why; end if;
+  perform play_card(bob, 'gwcharsweet', b, a3, '{}', 0, '', 'character', a3_post);
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', bob, 'gwthread', b, t2, '{}', '', 'thread'));
+  if why is distinct from '42501 this thread''s Card Ward turns away Gw Thread Cast' then raise exception 'a named cast on a card-warded thread: %', why; end if;
+  perform play_card(bob, 'gwthreadlow', b, t2, '{}', 0, '', 'thread');
+  perform tests.unbecome();
+end $$;
+
+-- ---- A dead ward lets the cast through; one ward matching several ways says rarity first; of two live wards the oldest is named ----
+do $$
+declare
+  ann uuid := tests.account('gw-dead-ann'); bob uuid := tests.account('gw-dead-bob');
+  a uuid := tests.character(ann, 'Gw Dead Ann'); b uuid := tests.character(bob, 'Gw Dead Bob');
+  t uuid := tests.thread('Gw dead wards');
+  by_time uuid := tests.post(a, t, 'Ward ended by its time.'); by_end uuid := tests.post(a, t, 'Ward ended by an admin.'); by_catch uuid := tests.post(a, t, 'Ward marked caught.');
+  both_ways uuid := tests.post(a, t, 'Ward matching by rarity, flavor and name.'); two uuid := tests.post(a, t, 'Two live wards.'); dead_char uuid := tests.post(a, t, 'Ended ward on a character.');
+  w uuid;
+  why text;
+begin
+  perform pg_temp.cards();
+  insert into card_kinds (key, name, alignment, rarity, play, lasts, reaches, gimmick) values
+    ('gwall', 'All Ways', 'sweet', 'common', 'use', interval '7 days', '{post}', '{"kind": "ward", "upTo": "common", "flavors": ["salty"], "cards": ["blot"]}'),
+    ('gwflname', 'Flavor And Name', 'sweet', 'common', 'use', interval '7 days', '{post}', '{"kind": "ward", "flavors": ["salty"], "cards": ["blot"]}')
+  on conflict (key) do nothing;
+  perform pg_temp.hand(bob, 'blot', 'blot', 'blot', 'blot', 'blot', 'blot');
+  -- A ward past its time (as a stored play, written as play_card would have written it then).
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'gwsalt', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() - interval '1 second'), by_time, now() - interval '7 days');
+  -- A ward an admin ended (a card_end Act, as reverse_card writes it).
+  w := tests.act(a, 'card', t, jsonb_build_object('card', 'gwsalt', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), by_end);
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  perform tests.act(null, 'card_end', t, '{"why": "reversed", "by": "admin"}', w);
+  perform set_config('kayfabb.card_end_writer', '', true);
+  -- A play marked caught holds no place.
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'gwsalt', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'caught', gen_random_uuid()::text, 'ends', now() + interval '7 days'), by_catch);
+  perform tests.become_service();
+  perform play_card(bob, 'blot', b, by_time, '{}', 0, '');
+  perform play_card(bob, 'blot', b, by_end, '{}', 0, '');
+  perform play_card(bob, 'blot', b, by_catch, '{}', 0, '');
+  perform tests.unbecome();
+  -- One ward matching all three ways says rarity; matching flavor and name says flavor.
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'gwall', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), both_ways);
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'gwflname', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '2 days');
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'gwall', 'layer', 1, 'message', '', 'config', '{}'::jsonb, 'ends', now() + interval '7 days'), two, now() - interval '1 day');
+  perform tests.become_service();
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'blot', b, both_ways, '{}', ''));
+  if why is distinct from '42501 this post''s All Ways turns away cards up to common' then raise exception 'a ward matching three ways says rarity first: %', why; end if;
+  -- Two live wards both match a Salty common cast: the older one, by flavor, is named, not the newer one's rarity.
+  why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L)', bob, 'blot', b, two, '{}', ''));
+  if why is distinct from '42501 this post''s Flavor And Name turns away Salty cards' then raise exception 'two live wards name the oldest: %', why; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- A Gimmick on a thread: the thread's first post is by the caster's own character, else refused; never on a board ----
 do $$
 declare
@@ -116,13 +201,13 @@ begin
   why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'gwvibes', a, bobs, '{}', '', 'thread'));
   if why is distinct from '42501 Good Vibes is used on a thread your own character started' then raise exception 'Good Vibes on another character''s thread: %', why; end if;
   if exists (select 1 from acts where kind = 'card' and thread = bobs) or (select count(*) from card_ledger where account = ann and kind = 'played') is distinct from 0 then raise exception 'a refused Gimmick wrote something'; end if;
-  -- Accepted on one's own, by the character that started it and by another of the player's characters? Only the character that started it: "your own character" is the caster's.
+  -- Only the character that started the thread may use a Gimmick on it, not another of the same player's characters: "your own character" is the caster's.
   why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'gwvibes', a2, anns, '{}', '', 'thread'));
   if why is distinct from '42501 Good Vibes is used on a thread your own character started' then raise exception 'Good Vibes by another mask on this thread: %', why; end if;
   played := play_card(ann, 'gwvibes', a, anns, '{}', 0, '', 'thread');
   if played -> 'payload' ->> 'reach' is distinct from 'thread' or played -> 'payload' ->> 'thread' is distinct from anns::text then raise exception 'a Gimmick on one''s own thread lands there: %', played; end if;
   if not exists (select 1 from play_reach r where r.play = (played ->> 'id')::uuid and r.reach = 'thread' and r.thread = anns) then raise exception 'a Gimmick on a thread has its reach row'; end if;
-  -- A use card at board reach is refused, whoever asks.
+  -- A use card at board reach is refused, whoever asks. No card in the catalog lists a board for a use card (card_kinds_problem refuses one), so this one is inserted by hand.
   why := pg_temp.coded(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'gwboard', a, general, '{}', '', 'board'));
   if why is distinct from '22023 Board Vibes is never used on a board' then raise exception 'a use card on a board: %', why; end if;
   perform tests.unbecome();
