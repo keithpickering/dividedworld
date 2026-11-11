@@ -223,6 +223,17 @@ describe('the outcome form', () => {
   });
 });
 
+describe('focus after a decision', () => {
+  test('after a decision on an open report, focus goes to the open reports\' heading', async () => {
+    open({ build: (f, w) => { f.seed.conductReport({ version: w.post, section: 'person' }); } });
+    const user = userEvent.setup();
+    const f = within(await region(/^Open reports/u)).getByRole('form', { name: /^Decide report/u });
+    await user.click(within(f).getByRole('checkbox', { name: 'No action' }));
+    await user.click(within(f).getByRole('button', { name: 'Decide' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: /^Open reports/u })).toHaveFocus());
+  });
+});
+
 describe('a page that was cut', () => {
   test('says plainly that more reports wait than are listed, and counts "or more"', async () => {
     open({ build: (f, w) => { for (let i = 0; i < 51; i++) f.seed.conductReport({ version: w.post, section: 'person', at: 1000 + i }); } });

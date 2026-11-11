@@ -267,6 +267,15 @@ begin
   if (select d.author_account from conduct_decisions d where d.note = 'past 1') is distinct from author then raise exception 'a decision on a version is about the version''s author'; end if;
   if (select d.author_account from conduct_decisions d where d.outcome = 'nudge' and d.account = author limit 1) is distinct from author then raise exception 'a decision on an account is about that account'; end if;
 
+  -- ---- Failed mail: two attempts with the same time are one mail, listed once ----
+  insert into mail_outbox (account, template, facts) values (author, 'nudge', '{}') returning id into ob;
+  insert into mail_attempts (outbox, at, kind, error) values (ob, now() - interval '3 hours', 'failed', 'same instant'), (ob, now() - interval '3 hours', 'failed', 'same instant');
+  perform tests.become(admin_a);
+  got := admin_failed_mail();
+  perform tests.unbecome();
+  select count(*) into n from jsonb_array_elements(got -> 'failed') f where (f ->> 'id')::bigint = ob;
+  if n <> 1 then raise exception 'a mail with two attempts at the same instant is listed % times', n; end if;
+
   -- ---- Failed mail: 200 and a flag for more ----
   select coalesce(max(id), 0) into last_id from mail_outbox;
   insert into mail_outbox (account, template, facts) select author, 'nudge', '{}' from generate_series(1, 205);

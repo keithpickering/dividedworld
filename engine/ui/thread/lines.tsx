@@ -91,7 +91,7 @@ function Versions({ post, about }: { readonly post: Id; readonly about: PostAbou
               ? <HiddenNote />
               : (
                 <>
-                  <ReportLink post={post} version={v.id} kicker={`${named}, ${last ? 'current version' : which.toLowerCase()}`} className="kb-report-row-link kb-small" ariaLabel={`Report to admins: ${which.toLowerCase()}`} />
+                  <ReportLink post={post} version={v.id} kicker={`${named}, ${last ? 'current version' : which.toLowerCase()}`} className="kb-report-row-link kb-small" ariaLabel={`Report to admins: ${about?.seq == null ? '' : `post #${about.seq}, `}${which.toLowerCase()}`} />
                   <BbCode text={text(v.payload.body)} quoteHead={quoteHead} />
                 </>
               )}

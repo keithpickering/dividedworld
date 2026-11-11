@@ -121,8 +121,8 @@ describe('a hidden version in History', () => {
     expect(within(rows[1]!).getByRole('note')).toHaveTextContent(NOTE);
     expect(within(rows[1]!).queryByRole('button')).toBeNull();
     expect(rows[1]).not.toHaveTextContent('first fix');
-    expect(within(rows[0]!).getByRole('button', { name: 'Report to admins: original' })).toBeInTheDocument();
-    expect(within(rows[2]!).getByRole('button', { name: 'Report to admins: edit 2' })).toBeInTheDocument();
+    expect(within(rows[0]!).getByRole('button', { name: 'Report to admins: post #2, original' })).toBeInTheDocument();
+    expect(within(rows[2]!).getByRole('button', { name: 'Report to admins: post #2, edit 2' })).toBeInTheDocument();
     expect(rows[2]).toHaveTextContent('second fix');
   });
 
@@ -252,3 +252,54 @@ describe('the author of a version hidden until they edit it', () => {
     expect(describeViolations(await axeViolations(art))).toBe('');
   });
 });
+
+describe('Edit on a hidden post of the reader\'s own', () => {
+  const footer = (art: HTMLElement) => art.querySelector('.kb-act-links') as HTMLElement;
+
+  test('the footer offers no Edit while the author\'s words are not read, nor for a post an admin hid outright', async () => {
+    const w = world();
+    w.fake.seed.hide(w.mine, 'hide');
+    open(w);
+    const art = await article(3);
+    await waitFor(() => expect(art).toHaveTextContent(NOTE));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(within(footer(art)).queryByRole('button', { name: 'Edit' })).toBeNull();
+  });
+
+  test('no Edit shows until the words arrive, and then the footer\'s Edit opens the editor already filled, never blank', async () => {
+    const w = world();
+    w.fake.seed.hide(w.mine, 'hideUntilEdited');
+    let release!: () => void;
+    const real = w.fake.myHiddenVersion.bind(w.fake);
+    vi.spyOn(w.fake, 'myHiddenVersion').mockImplementation((...a) => new Promise((resolve) => { release = () => resolve(real(...a)); }));
+    open(w);
+    const art = await article(3);
+    await waitFor(() => expect(art).toHaveTextContent(NOTE));
+    expect(within(footer(art)).queryByRole('button', { name: 'Edit' })).toBeNull();
+    release();
+    await userEvent.click(await within(footer(art)).findByRole('button', { name: 'Edit' }));
+    expect(await within(art).findByRole('textbox')).toHaveValue(`${WORDS}, from me`);
+  });
+
+  test('an edit whose answer was lost, and which an admin\'s second hide then holds, is still found in History and not offered again', async () => {
+    const w = world();
+    w.fake.seed.hide(w.mine, 'hideUntilEdited');
+    const real = w.fake.edit.bind(w.fake);
+    vi.spyOn(w.fake, 'edit').mockImplementation(async (...a) => {
+      await real(...a);
+      const latest = (await w.fake.history(w.mine)).at(-1)!;
+      w.fake.seed.hide(latest.id, 'waiting');
+      return { ok: false, error: 'No answer came back.', uncertain: true };
+    });
+    open(w);
+    const art = await article(3);
+    await userEvent.click(await within(footer(art)).findByRole('button', { name: 'Edit' }));
+    const box = await within(art).findByRole('textbox');
+    await userEvent.clear(box);
+    await userEvent.type(box, 'softer words');
+    await userEvent.click(within(art).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(within(art).queryByRole('textbox')).toBeNull());
+    expect(within(art).queryByRole('button', { name: 'Save again anyway' })).toBeNull();
+  });
+});
+

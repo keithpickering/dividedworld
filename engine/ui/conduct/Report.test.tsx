@@ -85,7 +85,7 @@ describe('Report to admins on each version in History', () => {
     await userEvent.click(within(art).getByRole('button', { name: 'History' }));
     const list = await within(art).findByRole('list', { name: 'Versions of this post, oldest first' });
     const links = within(list).getAllByRole('button', { name: /^Report to admins/u });
-    expect(links.map((l) => l.getAttribute('aria-label'))).toEqual(['Report to admins: original', 'Report to admins: edit 1']);
+    expect(links.map((l) => l.getAttribute('aria-label'))).toEqual(['Report to admins: post #2, original', 'Report to admins: post #2, edit 1']);
     expect(links.map((l) => l.textContent)).toEqual(['Report to admins', 'Report to admins']);
     await userEvent.click(links[0]!);
     const dialog = await screen.findByRole('dialog', { name: 'Report to admins' });
@@ -113,7 +113,7 @@ describe('Report to admins on each version in History', () => {
     open(w);
     const art = await article(2);
     await userEvent.click(within(art).getByRole('button', { name: 'History' }));
-    await userEvent.click(await within(art).findByRole('button', { name: 'Report to admins: original' }));
+    await userEvent.click(await within(art).findByRole('button', { name: 'Report to admins: post #2, original' }));
     const dialog = await screen.findByRole('dialog', { name: 'Report to admins' });
     await userEvent.click(within(dialog).getByRole('radio', { name: /No hate/u }));
     await userEvent.click(within(foot(dialog)).getByRole('button', { name: 'Send to admins' }));
@@ -224,6 +224,17 @@ describe('the report dialog', () => {
     await userEvent.click(within(dialog).getByRole('radio', { name: /No hate/u }));
     await userEvent.click(within(foot(dialog)).getByRole('button', { name: 'Send to admins' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('That did not send: a note is at most 1000 characters. What you typed is still here.');
+  });
+
+  test('Esc closes only the dialog: the Lens stays open, and focus returns to the Lens\'s link', async () => {
+    const w = world();
+    const dialog = await dialogFrom(w);
+    expect(dialog).toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Report to admins' })).toBeNull());
+    const panel = screen.getByRole('dialog', { name: 'Report this post' });
+    expect(panel).toBeInTheDocument();
+    expect(entry(panel)).toHaveFocus();
   });
 
   test('Cancel closes it and gives focus back to the link that opened it', async () => {

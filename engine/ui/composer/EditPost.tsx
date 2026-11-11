@@ -43,7 +43,10 @@ export function EditPost({ act, seq, onDone, onSaved, start }: {
     try {
       const versions = await api.history(act.id);
       const last = versions.at(-1);
-      found = last !== undefined && last.kind === 'edit' && last.character === character && textOf(last.payload.body) === text;
+      if (last !== undefined && last.kind === 'edit' && last.character === character) {
+        /* A version hidden from everyone has no words in the History, so the author's own read of them says whether it is theirs (my_hidden_version, theirs alone). */
+        found = typeof last.payload.body === 'string' ? last.payload.body === text : (await Promise.resolve(api.myHiddenVersion(act.id)).catch(() => null))?.words === text;
+      }
     } catch { looked = false; }
     if (found) { await landed(); return; }
     setAgain(true);

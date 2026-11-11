@@ -73,7 +73,7 @@ begin
 end $$;
 
 -- Mail whose latest attempt failed or was refused: a walk down mail_attempts_failed (the failed and refused attempts, newest first), keeping an attempt only when no later
--- attempt of its mail exists (one lookup of mail_attempts_outbox), so the work is the failures and not the whole outbox, and it stops at 201 rows (200 and a flag for more).
+-- attempt of its mail exists (one lookup of mail_attempts_outbox; two attempts at one instant are told apart by their row's place, so a mail is listed once), so the work is the failures and not the whole outbox, and it stops at 201 rows (200 and a flag for more).
 create index mail_attempts_failed on mail_attempts (at desc) where kind in ('failed', 'refused');
 
 create function admin_failed_mail() returns jsonb
@@ -93,7 +93,7 @@ begin
     from mail_attempts l
     join mail_outbox o on o.id = l.outbox
     where l.kind in ('failed', 'refused')
-      and not exists (select 1 from mail_attempts n where n.outbox = l.outbox and n.at > l.at)
+      and not exists (select 1 from mail_attempts n where n.outbox = l.outbox and (n.at, n.ctid) > (l.at, l.ctid))
     order by l.at desc, o.id desc
     limit 201
   ) f;
@@ -109,7 +109,7 @@ end $$;
 -- The author's own words of a version that is hidden until its author edits it (the hidden note's "Only you see this" panel), and where the post stands for them.
 -- It is admin_version's author-only sibling: it answers only a caller who plays the post's character (a character is its account's alone), and only about the post's
 -- current version while that is hidden; everyone else, a post that is not hidden, and a version an admin hid outright, get null, so the answer proves nothing about
--- who owns a mask to anyone who is not that mask's player. Called for a post (or for one of its versions) it says:
+-- who owns a mask to anyone who is not that mask's player, and does the same lookups for every caller so the time it takes says nothing either. Called for a post (or for one of its versions) it says:
 --   {"status": "hiddenUntilEdited", "version": <act>, "words": <the version's words>}   the author's edit is what ends it (the first time it shows again at once; the second time an
 --                                                                                       admin looks at the edit first)
 --   {"status": "waiting", "version": <act>, "words": <the edit's words>}               the author's edit follows a second hide until edited and is hidden until an admin
@@ -121,26 +121,32 @@ declare
   p acts;
   cur acts;
   d conduct_decisions;
+  hidden boolean;
+  answer jsonb := null;
+  mine boolean;
 begin
   select * into p from acts a where a.id = my_hidden_version.act;
   if found and p.kind = 'edit' then
     select * into p from acts a where a.id = p.target_act_id;
   end if;
-  if not found or p.kind <> 'post' or auth.uid() is null
-     or not exists (select 1 from characters c where c.id = p.character and c.owner = auth.uid()) then
-    return null;
-  end if;
+  if not found or p.kind <> 'post' then return null; end if;
+  -- "A response never proves a private fact": whose post this is must not change how long the answer takes. So the post's latest version, whether it is hidden and the
+  -- decision on it are looked up for every caller alike, whoever they are, and the ownership check is the last thing, deciding only whether the answer is given.
   select * into cur from acts e where e.kind = 'edit' and e.target_act_id = p.id order by e.created_at desc, e.id desc limit 1;
   if not found then cur := p; end if;
-  if not version_hidden(cur.id, p.id) then return null; end if;
+  hidden := version_hidden(cur.id, p.id);
   select * into d from conduct_decisions x
   where x.post = p.id and x.version_act = cur.id and x.outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve')
   order by x.id desc limit 1;
-  if found then
-    if d.outcome <> 'hideUntilEdited' then return null; end if;
-    return jsonb_build_object('status', 'hiddenUntilEdited', 'version', cur.id, 'words', cur.payload ->> 'body');
+  if hidden then
+    if found then
+      if d.outcome = 'hideUntilEdited' then answer := jsonb_build_object('status', 'hiddenUntilEdited', 'version', cur.id, 'words', cur.payload ->> 'body'); end if;
+    else
+      answer := jsonb_build_object('status', 'waiting', 'version', cur.id, 'words', cur.payload ->> 'body');
+    end if;
   end if;
-  return jsonb_build_object('status', 'waiting', 'version', cur.id, 'words', cur.payload ->> 'body');
+  select auth.uid() is not null and exists (select 1 from characters c where c.id = p.character and c.owner = auth.uid()) into mine;
+  return case when mine then answer end;
 end $$;
 
 -- {open, most}: how many reports to admins the caller's account holds open now, and the most it may (`report_post` refuses at `most`), so the report form can say the limit before it is asked to send. Only the caller's own account is counted, so it is the limit state's
