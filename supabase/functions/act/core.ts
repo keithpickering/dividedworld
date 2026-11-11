@@ -188,6 +188,11 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
       const target = reach === 'post' ? postTarget(post.act, post.kind, post.body, post.version) : { ...said, reach } as CardTarget;
       const effects = effectsOnTarget(target, own ?? [], above);
       const rules = instance.cards.find((c) => c.key === decision.args.card)!;
+      // A surface card's first draw is the card's own to read; what it refuses is said on the drawing (`first`), not on the configuration.
+      if (rules.surface !== undefined && decision.args.first !== undefined) {
+        const tag = decideDraw(rules, tuned.settings, decision.args.first);
+        if (!tag.ok) return refused('first', tag.why);
+      }
       if (decision.play === 'set') {
         // The card's own rules decide the configuration, the card a catching set card names and the phrase a Move waits for; none of them is read from the request but the configuration.
         const { conditions, first, ...rest } = args as { conditions?: SetConditions; first?: unknown };
