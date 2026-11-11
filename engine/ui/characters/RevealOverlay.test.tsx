@@ -142,6 +142,16 @@ describe('RevealOverlay: the words and the refusals', () => {
     expect(unmask).toHaveBeenLastCalledWith(character.id, at.id, 'It was me.');
   });
 
+  test('Esc closes it without revealing anything', async () => {
+    const w = world();
+    const unmask = vi.spyOn(w.fake, 'unmask');
+    const onClose = vi.fn();
+    await overlay({ w, onClose, at: await onTea(w) });
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(unmask).not.toHaveBeenCalled();
+  });
+
   test('over 200 characters, a notice says so and Reveal is disabled; at 200 it is enabled again', async () => {
     const w = world();
     const { dialog } = await overlay({ w, at: await onTea(w) });

@@ -48,7 +48,7 @@ test('the Debut dialog writes the character\'s own pronouns, verbs agreeing', ()
   assert.equal(debutFooter({ name: 'Waiting Wanda', pronouns: they, timing: 'tally', until: null }), 'They debut at the next settlement. Until then you can drop them now instead.');
 });
 
-test('the Reveal modal says one thing', () => {
+test('the Reveal overlay says one thing', () => {
   assert.equal(revealFooter('the game'), 'The reveal is checked by the game and posted at once.');
 });
 
