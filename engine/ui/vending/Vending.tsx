@@ -607,14 +607,14 @@ export function Vending() {
       <Layers>
       {aboutItem && (
         <Overlay
-          title={aboutItem.name} surface="vending" className={`kb-vending-about-dialog${aboutItem.face ? ' kb-vending-about-dialog--card' : ''}`}
+          title={aboutItem.name} surface="vending" className={aboutItem.face ? 'kb-vending-about-dialog kb-vending-about-dialog--card' : 'kb-vending-about-dialog'}
           kicker={aboutItem.face ? `Slot ${aboutItem.code} · ${aboutItem.face.kind}` : undefined}
           onClose={() => setAbout(null)} returnFocusTo={() => aboutButton.current}
         >
           {aboutItem.face ? (
             /* The card's info: its face at the sheet's size beside its rules (the face above them on the phone), the price in words. */
             <div className="kb-vending-about-body kb-vending-about-card" data-kb-alignment={aboutItem.face.alignment}>
-              <Postcard as="article" face={aboutItem.face} size="sheet" aria-label={cardLabel(aboutItem.face, 'sheet')} className="kb-vending-about-face" />
+              <Postcard as="article" face={aboutItem.face} size="sheet" aria-label={cardLabel(aboutItem.face, 'sheet')} />
               <div className="kb-vending-about-text">
                 <p className="kb-vending-about-price kb-num">
                   {aboutItem.sold ? soldSaid(aboutItem.slot.move) : <>{orbs(aboutItem.price)} to buy</>}
