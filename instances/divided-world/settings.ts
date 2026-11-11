@@ -45,6 +45,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   searchRankPool: 5000,
   /** Switched off: The System holds no meeting and lands no move until Task 13 of its plan turns it on, after the screens that show a move's way out exist. */
   systemEnabled: false,
+  /** The instance runs a completion endpoint, so a card that writes in the old voice is sold and played. */
+  oldVoice: true,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
   /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */

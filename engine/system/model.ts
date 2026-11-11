@@ -25,6 +25,8 @@ export interface ChatMessage {
 export interface CallContext {
   readonly staff?: string;
   readonly meeting?: number;
+  /** The card play a call was made for (a card that writes, `CardRules.writes`), for its ledger row; not a staff member or a meeting. */
+  readonly play?: string;
 }
 
 export interface ChatRequest extends CallContext {
@@ -40,7 +42,8 @@ export interface ChatRequest extends CallContext {
 }
 
 export interface CompletionRequest extends CallContext {
-  readonly duty: Duty;
+  /** A staff duty, or `cardText`: the text a card that writes generates, which is no staff member's work (`DUTIES` stays staff work only). */
+  readonly duty: Duty | 'cardText';
   readonly prompt: string;
   readonly temperature: number;
   readonly topP: number;

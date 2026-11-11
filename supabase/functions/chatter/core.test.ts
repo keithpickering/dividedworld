@@ -689,3 +689,22 @@ test('a persona\'s Trap Card is offered with its options and stores the card it 
   await run(d2, hallModels);
   assert.equal(d2.count('staff_set_card'), 0, 'a Hall Pass the model names is not set');
 });
+
+test('a card that writes is not offered to the pool where the instance runs no old voice, and is where it does', async () => {
+  const typewriter = { key: 'typewriter', name: 'Test Typewriter', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}], writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) } };
+  const withVoice = (oldVoice: boolean): Instance => ({ ...dividedWorld, cards: [...dividedWorld.cards, typewriter], settings: { ...dividedWorld.settings, oldVoice } });
+  const offered = async (oldVoice: boolean) => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 } });
+    const m = fakeModels(normal);
+    await run(d, m, withVoice(oldVoice));
+    return m.chats.some((c) => c.system.includes('Test Typewriter') || c.messages.some((x) => x.content.includes('Test Typewriter')));
+  };
+  assert.equal(await offered(true), true, 'the card is on offer where the endpoint runs');
+  assert.equal(await offered(false), false, 'and withheld where there is none');
+});
+
+test('a completion made for a card play is a request with the duty cardText and the play it was made for', () => {
+  const request: CompletionRequest = { duty: 'cardText', play: 'act-1', prompt: 'p', temperature: 1, topP: 1, stop: [], maxTokens: 40, lines: 'many' };
+  assert.equal(request.duty, 'cardText');
+  assert.equal(request.play, 'act-1');
+});

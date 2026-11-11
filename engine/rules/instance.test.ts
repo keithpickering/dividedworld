@@ -36,6 +36,7 @@ const settings: Settings = {
   presenceNames: 15,
   presencePollSeconds: 30,
   systemEnabled: false,
+  oldVoice: true,
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {
@@ -536,6 +537,7 @@ test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5,
 test('the new settings are checked like the others', () => {
   const bad = (k: string, v: unknown) => settingsProblems({ ...settings, [k]: v } as unknown as Settings).join('\n');
   assert.match(bad('systemEnabled', 'yes'), /systemEnabled/);
+  assert.match(bad('oldVoice', 'yes'), /oldVoice/);
   assert.match(bad('meetingCron', 'daily'), /meetingCron/);
   assert.match(bad('phases', { ...settings.phases, reign: { weeklyMoves: 0, bankCap: 10, moveExpiryMostDays: 28 } }), /phases/);
   assert.match(bad('phases', { ...settings.phases, honeymoon: { weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 } }), /phases/);
@@ -705,6 +707,16 @@ test('every Set lasts the same span, setLasts', () => {
   for (const bad of [{ unit: 'minute', count: 5 }, { unit: 'day', count: 0 }, 7]) {
     assert.match(settingsProblems({ ...settings, setLasts: bad as never }).join('\n'), /setting "setLasts"/, JSON.stringify(bad));
   }
+});
+
+test('a card that writes reaches a post alone', () => {
+  const writes = { tokens: () => 40, frame: () => ({ prompt: '', stop: [] as string[] }) };
+  const lasts = { unit: 'day', count: 1 };
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', writes })), []);
+  assert.deepEqual(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post'] })), []);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['character'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes, reaches: ['post', 'thread'], lasts })).join('\n'), /card "splat" writes, and a card that writes reaches a post alone/);
+  assert.match(instanceProblems(withCards({ rarity: 'rare', writes: 'yes' })).join('\n'), /card "splat" has writes that are not a tokens function and a frame function/);
 });
 
 // Reach (docs/plans/2026-11-01-card-reach-plan.md, Task 1): each refused, naming the card.

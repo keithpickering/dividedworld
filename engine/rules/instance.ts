@@ -231,6 +231,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),
+  oldVoice: (v) => (typeof v === 'boolean' ? null : 'true or false'),
   pronouns: (v) => { const p = pronounProblems(v); return p.length ? p.join('; ') : null; },
   meetingCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),
   phases: phasesRule,
@@ -446,6 +447,8 @@ function playProblems(c: CardRules): string[] {
   if (c.trap !== undefined && c.catches === undefined && on === 'cast') out.push(`${who} springs on a cast and names no card to catch (catches)`);
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a Gimmick that springs on a cast does`);
+  if (c.writes !== undefined && (typeof c.writes !== 'object' || c.writes === null || typeof c.writes.tokens !== 'function' || typeof c.writes.frame !== 'function')) out.push(`${who} has writes that are not a tokens function and a frame function`);
+  else if (c.writes !== undefined && Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post')) out.push(`${who} writes, and a card that writes reaches a post alone`);
   if (c.setPhrase !== undefined && typeof c.setPhrase !== 'function') out.push(`${who} has a set phrase that is not a function`);
   else if (c.setPhrase !== undefined && play !== 'cast') out.push(`${who} has a set phrase, and only a Move does`);
   return out;

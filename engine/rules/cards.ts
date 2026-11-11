@@ -121,6 +121,32 @@ const wrongPlay = (rules: CardRules): Verdict<never> => refuse(`${rules.name} is
 
 export type Verdict<T = undefined> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly why: string };
 
+/**
+ * What a card that writes hands the old voice (the You were saying design, sections 3 and 11): the post the play is on, a few posts before it
+ * and the thread's title, as the frame's words need them. `text` is a post's visible text (`visibleText`), never its markup; `tails` are the
+ * tails already chained on this post, in play order, which this one continues from the end of; `settings` are the instance's.
+ */
+export interface WriteFrameInput {
+  readonly post: { readonly name: string; readonly text: string };
+  readonly before: readonly { readonly name: string; readonly text: string }[];
+  readonly title: string;
+  readonly tails: readonly string[];
+  readonly settings: Settings;
+}
+
+/**
+ * A card whose effect holds generated text: `tokens` is how many the play bought (from its checked configuration and the settings), and
+ * `frame` is a pure function from the thread to a completion's prompt and the stops that end it. The engine owns the queue, the call, the
+ * scrubber and the refund; the card owns only these two, and names nothing the engine knows. A card that writes reaches a post alone, and an
+ * instance with no completion endpoint (`Settings.oldVoice` false) does not sell, offer or play it.
+ */
+export interface Writes<Config = unknown> {
+  tokens(config: Config, settings: Settings): number;
+  frame(input: WriteFrameInput): { readonly prompt: string; readonly stop: readonly string[] };
+}
+
+export const OLD_VOICE_OFF = "The old voice isn't running on this forum, so this card can't be played.";
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
@@ -149,6 +175,8 @@ export interface CardRules<Config = unknown> {
   readonly lasts?: Span;
   /** A thread play of it pins the thread to the top of its board's list until it ends (Main Event's kind); only a card that reaches a thread pins. */
   readonly pins?: true;
+  /** Generated text its effect holds (a card that writes); it reaches a post alone, and is withheld where `Settings.oldVoice` is false. */
+  readonly writes?: Writes<Config>;
   /** The economy numbers its rules read. */
   readonly reads?: readonly EconomyRead[];
   /** The numbers in `Settings.cardSettings` its screens read, so an instance missing one, or holding one out of its bounds, is refused. */
@@ -198,8 +226,12 @@ export function economyOf(settings: Settings, key: string): number {
 export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
 export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
 
+/** Whether a card is withheld from this instance: it writes, and the instance runs no completion endpoint (`Settings.oldVoice`). */
+export const withheld = (rules: Pick<CardRules, 'writes'>, settings: Pick<Settings, 'oldVoice'>): boolean => rules.writes !== undefined && !settings.oldVoice;
+
 /** What every play of a card decides: whether it lands, its configuration, the caster's message, its price. */
 function decided(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, now: Date): Verdict<{ price: Hundredths; config: unknown; message: string }> {
+  if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // The configuration is checked first so the landing can read it, and the landing's refusal is still said first.
   const checked = rules.validateConfig(config);
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);

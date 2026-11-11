@@ -46,7 +46,7 @@
  * fail, the trim names the predicate and plain code's seeded configuration is played instead; where code can build none, the card is dropped
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
-import { atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { withheld, atOrBelow, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffOffers, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
@@ -232,7 +232,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const offerable = settings.pool.cardRarityMost;
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c);
+    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c) && !withheld(c, settings);
   });
 
   for (const p of picked.picks) {

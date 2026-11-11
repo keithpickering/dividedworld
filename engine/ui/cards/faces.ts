@@ -11,7 +11,7 @@
  * much more a long post can cost. A card whose rules refuse the probe is shown at its price alone.
  */
 import type { Slot } from '../data/api.ts';
-import { playOf, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
+import { playOf, withheld, type CardRules, type Play, type Rarity } from '../../rules/cards.ts';
 import type { Alignment, Settings } from '../../rules/types.ts';
 import type { CardArt, CardUi } from './types.ts';
 
@@ -140,5 +140,5 @@ export function withCardEconomy(settings: Settings, cardEconomy: Readonly<Record
 
 /** Every card the instance sells, in the order its rules list them. */
 export function facesOf(cards: readonly CardRules[], uis: readonly CardUi[], settings: Settings, kinds?: CardKinds): readonly CardFace[] {
-  return cards.map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings, kinds));
+  return cards.filter((rules) => !withheld(rules, settings)).map((rules) => faceOf(rules, uis.find((u) => u.key === rules.key), settings, kinds));
 }

@@ -232,6 +232,11 @@ export interface Settings {
    * do is seen by a player. An instance turns it on only once the screens that show a move's way out exist.
    */
   readonly systemEnabled: boolean;
+  /**
+   * Whether the instance runs a completion endpoint (the old voice). A card that writes (`CardRules.writes`) is withheld where there is none:
+   * not sold, not offered to the pool, and a play of one already held is refused in plain words. Switching The System off may keep it.
+   */
+  readonly oldVoice: boolean;
   /** The pronouns a staff character has when its persona file names none, and the ones a new character starts with. */
   readonly pronouns: PronounSet;
   /** When the Boss's meeting runs, as a five-field cron expression in UTC: daily by default, an hour after the settlement so the digest holds the newest standings. */

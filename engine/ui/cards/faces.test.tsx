@@ -13,6 +13,7 @@ const ok = { ok: true as const, value: undefined };
 const settings = { economy: { 'a.price': 100, 'b.price': 250 } } as unknown as Settings;
 const plain: CardRules = { key: 'a', name: 'A card', alignment: 'sweet', rarity: 'common', playPrice: () => 0, canApply: () => ok, validateConfig: (c) => ({ ok: true, value: c }) };
 const longer: CardRules = { ...plain, key: 'b', name: 'B card', alignment: 'salty', rarity: 'common', stack: 3, playPrice: (_s, t) => Math.min(200, t.reach === 'post' ? t.length : 0) };
+const writer: CardRules = { ...plain, key: 'w', name: 'W card', rarity: 'rare', writes: { tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
 const ui: CardUi = { key: 'b', art: { color: '#f00', ink: '#000', canvas: '', mark: '', tagline: 'Short.', credit: 'Test' }, summary: 'One sentence.', describe: () => 'In full.' };
 
 describe('what every screen knows of a card', () => {
@@ -23,6 +24,13 @@ describe('what every screen knows of a card', () => {
     expect(priceOf(100, faceOf(plain, undefined, settings).extra)).toBe('1.00');
     expect(priceOf(250, faceOf(longer, ui, settings).extra)).toBe('2.50+');
     expect(orbs(5)).toBe('0.05');
+  });
+
+  test('a card that writes is left out where the instance runs no old voice, and every other card stays', () => {
+    const on = { ...settings, oldVoice: true } as Settings;
+    const off = { ...settings, oldVoice: false } as Settings;
+    expect(facesOf([plain, writer, longer], [], on).map((f) => f.key)).toEqual(['a', 'w', 'b']);
+    expect(facesOf([plain, writer, longer], [], off).map((f) => f.key)).toEqual(['a', 'b']);
   });
 
   test('the instance\'s words and art come with it, and a card it drew nothing for still has a face and an empty line', () => {
