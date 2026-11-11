@@ -15,7 +15,7 @@ select pg_temp.mk('One', 'general'), pg_temp.mk('Two', 'general'), pg_temp.mk('T
 -- ---- origin_board: every thread's equals its board, and a thread made later takes its board without being told ----
 do $$
 begin
-  if (select count(*) from threads t where t.origin_board is distinct from t.board) <> 0 then
+  if (select count(*) from threads t where t.origin_board is distinct from t.board) is distinct from 0::bigint then
     raise exception 'a thread''s origin_board is not its board: %', (select array_agg(t.title) from threads t where t.origin_board is distinct from t.board);
   end if;
   if (select count(*) from threads) < 3 then raise exception 'the fixture holds no threads'; end if;
@@ -90,7 +90,7 @@ begin
   if not found or row.thread is distinct from t or row.stored is distinct from pg_temp.board('elsewhere') or row.rebuilt is distinct from pg_temp.board('general') then
     raise exception 'drift did not list the hand-edited thread: %', row;
   end if;
-  if (select count(*) from thread_places_drift()) <> 1 then raise exception 'drift lists more than the one poisoned thread'; end if;
+  if (select count(*) from thread_places_drift()) is distinct from 1::bigint then raise exception 'drift lists more than the one poisoned thread'; end if;
   -- A rebuild of another thread leaves it; a rebuild of it (or of all) heals it, once.
   if rebuild_thread_places(array[(select id from threads where title = 'One')]) <> 0 or not exists (select 1 from thread_places_drift()) then raise exception 'a rebuild of one thread touched another'; end if;
   if rebuild_thread_places() <> 1 then raise exception 'rebuild did not write the one differing row'; end if;

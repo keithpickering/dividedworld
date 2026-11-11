@@ -98,7 +98,7 @@ test('a nomination is not a move the Boss may propose, and the prompt does not o
   const r = repairAnswer({ ...answer({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), moves: [{ ...move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } }), kind: 'nameSuccessor', params: { boss: 'someone' } }] }, ctx());
   assert.ok(r.ok);
   assert.equal(r.moves.length, 0);
-  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup, pullSlot, repriceSlot, flashSale)'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'moves[0].kind' && t.predicate === 'oneOf(renameBoard, setRule, conferGroup, pullSlot, repriceSlot, flashSale, createBoard, moveThread, mergeBoard)'), JSON.stringify(r.trims));
 });
 
 test('a demand only the code sets is dropped when the Boss chooses it, and recorded', () => {
@@ -738,4 +738,37 @@ test('a lasting kind given no expiry (0 hours) records no drop', async () => {
   } finally {
     (MOVE_KINDS as unknown as unknown[]).pop();
   }
+});
+
+// The queue refuses a lasting board move that names nothing real, and a refusal there would fail the whole meeting, so the meeting drops it first.
+const lastingMove = (kind: string, params: Record<string, unknown>) => ({ ...move(null), kind, params, expires_in_hours: 0, demand: null });
+const repairedLasting = (m: unknown, over: Partial<RepairContext> = {}) => {
+  const r = repairAnswer({ ...answer(null), moves: [m] }, { ...ctx(), bank: 50, boards: new Set([BOARD, OTHER_BOARD]), ...over });
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('a createBoard name is held to the name style and the name length, a fallback to a board that exists', () => {
+  const create = { name: 'Toast Corner', premise: 'Toast.', description: 'A board.' };
+  assert.equal(repairedLasting(lastingMove('createBoard', create)).moves.length, 1);
+  const long = repairedLasting(lastingMove('createBoard', { ...create, name: 'x'.repeat(61) }));
+  assert.ok(long.moves.length === 0 && long.trims.some((t) => t.path === 'moves[0].params.name' && t.predicate === 'atMost(60)'), JSON.stringify(long.trims));
+  const styled = repairedLasting(lastingMove('createBoard', create), { system: { ...testSystem, nameStyle: () => ['not in the style'] } });
+  assert.ok(styled.moves.length === 0 && styled.trims.some((t) => t.path === 'moves[0].params.name' && t.predicate === 'nameStyle'), JSON.stringify(styled.trims));
+  const lost = repairedLasting(lastingMove('createBoard', { ...create, fallback: '99999999-9999-4999-8999-999999999999' }));
+  assert.ok(lost.moves.length === 0 && lost.trims.some((t) => t.path === 'moves[0].params.fallback' && t.predicate === 'isBoard'), JSON.stringify(lost.trims));
+  assert.equal(repairedLasting(lastingMove('createBoard', { ...create, fallback: OTHER_BOARD })).moves.length, 1);
+});
+
+test('a moveThread names a thread and a board the meeting was given; a mergeBoard names two boards it was given', () => {
+  assert.equal(repairedLasting(lastingMove('moveThread', { thread: THREAD, board: OTHER_BOARD })).moves.length, 1);
+  const noThread = repairedLasting(lastingMove('moveThread', { thread: OTHER_THREAD, board: OTHER_BOARD }));
+  assert.ok(noThread.moves.length === 0 && noThread.trims.some((t) => t.path === 'moves[0].params.thread' && t.predicate === 'isThread'), JSON.stringify(noThread.trims));
+  const noBoard = repairedLasting(lastingMove('moveThread', { thread: THREAD, board: '99999999-9999-4999-8999-999999999999' }));
+  assert.ok(noBoard.moves.length === 0 && noBoard.trims.some((t) => t.path === 'moves[0].params.board' && t.predicate === 'isBoard'), JSON.stringify(noBoard.trims));
+  assert.equal(repairedLasting(lastingMove('mergeBoard', { board: BOARD, into: OTHER_BOARD })).moves.length, 1);
+  const noInto = repairedLasting(lastingMove('mergeBoard', { board: BOARD, into: '99999999-9999-4999-8999-999999999999' }));
+  assert.ok(noInto.moves.length === 0 && noInto.trims.some((t) => t.path === 'moves[0].params.into' && t.predicate === 'isBoard'), JSON.stringify(noInto.trims));
+  const same = repairedLasting(lastingMove('mergeBoard', { board: BOARD, into: BOARD }));
+  assert.ok(same.moves.length === 0 && same.trims.some((t) => t.path === 'moves[0].params.into' && t.predicate === 'differsFromBoard'), JSON.stringify(same.trims));
 });

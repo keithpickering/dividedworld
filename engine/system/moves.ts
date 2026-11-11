@@ -11,6 +11,8 @@
  * (the `boards_now` view, supabase/migrations/0046_moves.sql), so ending a move brings the old name back with nothing
  * rewritten.
  *
+ * `createBoard`, `moveThread` and `mergeBoard` are lasting (below, `CREATE_BOARD`): they build the board and stay until reversed or superseded.
+ *
  * The machine's three moves (booster packs design, section 6) are small moves over the Vending Machine's slots: `pullSlot` sells a card's slot out, `repriceSlot` sets a
  * price to a percent of the admin's, `flashSale` opens a hidden slot for a window. Their numbers are the economy's `machine.*` (`machineLimits`), checked here
  * for the params, in the meeting for what the machine holds (the slot, the pulls in force, one move per slot) and again in SQL at the queue and at landing
@@ -322,7 +324,74 @@ export const FLASH_SALE: MoveKind = {
   parts: (p, was, tense) => [tense === 'plan' ? 'Open a flash sale on ' : 'Opened a flash sale on ', was ?? 'a slot', ` for ${num(p['hours'])} hours`],
 };
 
-export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE];
+/**
+ * The three moves that build the board and stay (the fangame split, section 4): each is lasting, with no expiry and no demand, and ends only when a later move
+ * supersedes it or an admin reverses it. A board made, a thread moved and a board merged away are Acts; where a thread is now, and whether a board is open, are
+ * computed from them (`thread_place`, `boards_now`), so a reversal brings the old place back with nothing rewritten.
+ * `createBoard` and `mergeBoard` reshape a board, so each waits in the admin queue about a day; `moveThread` is small. The name a `createBoard` gives is held to
+ * the instance's name style and `boardNameMaxLength` by the meeting, as `renameBoard`'s is; its `fallback` is where threads started in the board go if the move is
+ * reversed (null: the instance's first open board).
+ */
+export const CREATE_BOARD: MoveKind = {
+  key: 'createBoard',
+  offices: ['boss'],
+  structural: true,
+  shapesBoard: true,
+  lasting: true,
+  askable: true,
+  label: 'Created a board',
+  params: {
+    type: 'object',
+    fields: {
+      name: { type: 'string', minLength: 1, maxLength: 200 },
+      premise: { type: 'string', minLength: 1, maxLength: 500 },
+      description: { type: 'string', minLength: 1, maxLength: 2000 },
+      fallback: { type: 'string', minLength: 36, maxLength: 36, optional: true },
+    },
+  },
+  uuids: ['fallback'],
+  demand: () => 'none',
+  plain: 'the making of a board named "{name}"',
+  template: (p, role) => `${role} made a board named "${text(p['name'])}". Its subject is: ${text(p['premise'])}`,
+  parts: (p, _was, tense) => [`${tense === 'plan' ? 'Create' : 'Created'} a board named "${text(p['name'])}"`],
+};
+
+/** The Boss moves one thread to another board. A second move of the same thread supersedes the first; reversing one returns the thread to where the one before it put it. */
+export const MOVE_THREAD: MoveKind = {
+  key: 'moveThread',
+  offices: ['boss'],
+  structural: false,
+  shapesBoard: false,
+  lasting: true,
+  askable: true,
+  label: 'Moved a thread',
+  params: { type: 'object', fields: { thread: { type: 'string', minLength: 36, maxLength: 36 }, board: { type: 'string', minLength: 36, maxLength: 36 } } },
+  uuids: ['thread', 'board'],
+  demand: () => 'none',
+  plain: 'the moving of a thread to another board',
+  template: (_p, role) => `${role} moved a thread to another board. It was not changed; the board it left lists where it went for a few days.`,
+  parts: (p, _was, tense, names) => [tense === 'plan' ? 'Move a thread to ' : 'Moved a thread to ', { board: text(p['board']), name: names?.board ?? 'a board' }],
+};
+
+/** The Boss merges one board into another: its threads join the other and it closes, kept as a record. `board` and `into` differ; the database also refuses a cycle. */
+export const MERGE_BOARD: MoveKind = {
+  key: 'mergeBoard',
+  offices: ['boss'],
+  structural: true,
+  shapesBoard: true,
+  lasting: true,
+  askable: true,
+  label: 'Merged a board',
+  params: { type: 'object', fields: { board: { type: 'string', minLength: 36, maxLength: 36 }, into: { type: 'string', minLength: 36, maxLength: 36 } } },
+  uuids: ['board', 'into'],
+  check: (g) => (text(g['board']) === text(g['into']) ? { path: 'into', predicate: 'differsFromBoard' } : null),
+  demand: () => 'none',
+  plain: 'the merging of a board into another',
+  template: (_p, role) => `${role} merged a board into another. Its threads moved with it, and the board is closed.`,
+  parts: (p, was, tense, names) => [tense === 'plan' ? 'Merge ' : 'Merged ', { board: text(p['board']), name: was ?? 'a board' }, ' into ', { board: text(p['into']), name: names?.board ?? 'a board' }],
+};
+
+export const MOVE_KINDS: readonly MoveKind[] = [RENAME_BOARD, NAME_SUCCESSOR, SET_RULE, CONFER_GROUP, PULL_SLOT, REPRICE_SLOT, FLASH_SALE, CREATE_BOARD, MOVE_THREAD, MERGE_BOARD];
 
 /** The moves the Boss may propose among its `moves`: the catalog less the ones another answer queues. */
 export const ASKABLE_MOVE_KINDS: readonly MoveKind[] = MOVE_KINDS.filter((k) => k.askable);

@@ -702,13 +702,18 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (bad) return drop(`${path}.demand.params.${name}`, bad);
     }
     if (!params.ok) return drop(`${path}.params.${params.path}`, params.predicate);
-    if (kind.key === 'renameBoard') {
+    if (kind.key === 'renameBoard' || kind.key === 'createBoard') {
       const name = String(given['name']);
       const style = c.system.nameStyle(name);
       if (style.length) return drop(`${path}.params.name`, 'nameStyle');
       if (name.length > s.boardNameMaxLength) return drop(`${path}.params.name`, `atMost(${s.boardNameMaxLength})`);
-      if (!c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
+      if (kind.key === 'renameBoard' && !c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
+      // A created board's fallback, where threads started in it go if it is reversed, is a board that exists.
+      if (kind.key === 'createBoard' && given['fallback'] !== null && !c.boards.has(String(given['fallback']))) return drop(`${path}.params.fallback`, 'isBoard');
     }
+    // A moved thread and a merged board are ones the meeting was given; the queue refuses the rest, and a refusal there would fail the whole meeting.
+    if (kind.key === 'moveThread' && !c.threads.has(String(given['thread']))) return drop(`${path}.params.thread`, 'isThread');
+    for (const name of kind.key === 'moveThread' ? ['board'] : kind.key === 'mergeBoard' ? ['board', 'into'] : []) if (!c.boards.has(String(given[name]))) return drop(`${path}.params.${name}`, 'isBoard');
     // A rule names a board the meeting was given, or none: every board, the Boss's alone.
     if (kind.key === 'setRule' && given['board'] !== null && !c.boards.has(String(given['board']))) return drop(`${path}.params.board`, 'isBoard');
     // A rule that would leave no compliant post against the rules in force is dropped and recorded, spending nothing; the queue would refuse it, and

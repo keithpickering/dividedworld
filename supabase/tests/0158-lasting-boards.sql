@@ -1,0 +1,385 @@
+-- createBoard, moveThread and mergeBoard land and end (supabase/migrations/0152_lasting_boards.sql; docs/plans/2026-11-06-fangame-split-plan.md, Task 2; design section 4).
+--
+-- Each kind is queued as the meeting queues it, lands through system_tick as a move does, and ends when it is reversed or superseded. What they build stays: no expiry, no demand.
+-- A made board is a row that points at its Act; a moved thread is stored on its new board; a merged board closes and its threads join the other. Every case ends with
+-- thread_places_drift() empty, and board_thread_counts agrees with the threads on each board.
+
+create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
+begin
+  if ok is not true then raise exception '%', what; end if;
+end $$;
+create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlstate || ': ' || sqlerrm;
+end $$;
+
+-- ---- 0. The world: a Boss whose seed lists the three kinds as the engine's catalog does; three more boards, oldest first ----
+do $$
+declare
+  seed jsonb;
+begin
+  seed := jsonb_build_object(
+    'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24,
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'moveSuperseded', jsonb_build_array('Superseded: {move}.'), 'moveReversed', jsonb_build_array('Reversed: {move}.')),
+      'systemMoveWords', jsonb_build_object('createBoard', 'the making of a board named "{name}"', 'moveThread', 'the moving of a thread to another board', 'mergeBoard', 'the merging of a board into another')),
+    'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'lb-boss',
+      'staff', jsonb_build_array(jsonb_build_object('key', 'lb-boss', 'name', 'Lasting Boss', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb)),
+      'firstStaff', '[]'::jsonb,
+      'moves', jsonb_build_array(
+        jsonb_build_object('key', 'createBoard', 'structural', true, 'shapesBoard', true, 'lasting', true, 'offices', jsonb_build_array('boss')),
+        jsonb_build_object('key', 'moveThread', 'structural', false, 'shapesBoard', false, 'lasting', true, 'offices', jsonb_build_array('boss')),
+        jsonb_build_object('key', 'mergeBoard', 'structural', true, 'shapesBoard', true, 'lasting', true, 'offices', jsonb_build_array('boss'))),
+      'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard'))));
+  perform seed_instance(seed);
+  insert into boards (slug, name, created_at) values ('elsewhere', 'Elsewhere', now() - interval '9 days'), ('third', 'Third', now() - interval '8 days'), ('fourth', 'Fourth', now() - interval '7 days');
+  update boards set created_at = now() - interval '10 days' where slug = 'general';
+end $$;
+
+create function pg_temp.board(slug text) returns uuid language sql as $$ select id from boards where slug = board.slug $$;
+create function pg_temp.mk(title text, on_slug text) returns uuid language sql as $$
+  insert into threads (board, title) values (pg_temp.board(on_slug), title) returning id
+$$;
+create function pg_temp.at(t uuid) returns uuid language sql as $$ select board from threads where id = t $$;
+-- A move waiting to land, as apply_meeting queues it (a lasting move is queued with an expiry of 0 hours, which is its go-live, a time the table's own check refuses and the
+-- guard drops first): live a minute ago.
+create function pg_temp.queue(kind text, params jsonb, wait interval default null) returns bigint language plpgsql as $$
+declare
+  m bigint;
+  q bigint;
+begin
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values (m, 'lb-boss', kind, params, null, 'because', now() - interval '1 minute' + coalesce(wait, interval '0'), now() - interval '1 minute' + coalesce(wait, interval '0'), kind in ('createBoard', 'mergeBoard')) returning id into q;
+  return q;
+end $$;
+create function pg_temp.land(q bigint) returns uuid language plpgsql as $$
+declare
+  r queued_moves;
+begin
+  perform system_tick();
+  select * into r from queued_moves where id = q;
+  if r.landed_act is null then raise exception 'the move did not land: refused % failure %', r.refused_at, r.failure; end if;
+  return r.landed_act;
+end $$;
+create function pg_temp.reverse(move uuid) returns void language plpgsql as $$
+begin
+  if not (end_move(move, 'reversed', 'admin') ->> 'ended')::boolean then raise exception 'the move was already ended'; end if;
+end $$;
+-- The invariant after every case: no drift, and the counts the board pages read agree with the threads on each board (the system board counts 0).
+create function pg_temp.settled(what text) returns void language plpgsql as $$
+declare
+  bad record;
+begin
+  if exists (select 1 from thread_places_drift()) then raise exception '% left drift: %', what, (select count(*) from thread_places_drift()); end if;
+  select b.slug, coalesce(c.threads, 0) as counted, (select count(*) from threads t where t.board = b.id) as there into bad
+  from boards b left join board_counts c on c.board = b.id
+  where not b.is_system and coalesce(c.threads, 0) <> (select count(*) from threads t where t.board = b.id) limit 1;
+  if found then raise exception '% left board_thread_counts off on %: counted %, there %', what, bad.slug, bad.counted, bad.there; end if;
+end $$;
+
+-- ---- 1. The seed writes lasting for the three kinds: the first lasting kinds there are ----
+do $$
+begin
+  perform pg_temp.expect((select count(*) from move_kinds where key in ('createBoard', 'moveThread', 'mergeBoard') and lasting) = 3, 'seed_instance did not write move_kinds.lasting = true for the three kinds');
+  perform pg_temp.expect((select structural and shapes_board from move_kinds where key = 'createBoard') and (select structural and shapes_board from move_kinds where key = 'mergeBoard')
+                         and (select not structural and not shapes_board from move_kinds where key = 'moveThread'), 'the kinds'' structural and shapes_board flags were not seeded');
+end $$;
+
+-- ---- 2. createBoard: a board with a slug from its name, pointing at its Act; boards_now lists it with its premise; the hold; no expiry, no demand ----
+do $$
+declare
+  q bigint;
+  q2 bigint;
+  q3 bigint;
+  held bigint;
+  act uuid;
+  act2 uuid;
+  b boards;
+  now_row boards_now;
+  msg text;
+begin
+  -- A structural move waits out its hold: one not yet live is not landed by a tick.
+  held := pg_temp.queue('createBoard', jsonb_build_object('name', 'Later Place', 'premise', 'Later.', 'description', 'Not yet.'), interval '1 day');
+  perform system_tick();
+  perform pg_temp.expect((select landed_act is null and refused_at is null from queued_moves where id = held), 'a createBoard not yet live landed');
+
+  q := pg_temp.queue('createBoard', jsonb_build_object('name', 'Toast Corner', 'premise', 'Toast, and only toast.', 'description', 'A new board.'));
+  perform pg_temp.expect((select expires_at is null from queued_moves where id = q), 'the guard kept an expiry on a lasting move');
+  act := pg_temp.land(q);
+  select * into b from boards where slug = 'toast-corner';
+  perform pg_temp.expect(b.id is not null, 'the landing made no board with the slug toast-corner');
+  perform pg_temp.expect(b.name = 'Toast Corner' and b.description = 'A new board.' and b.created_by_act = act and not b.is_system, 'the made board is not as the move named it: ' || to_jsonb(b)::text);
+  perform pg_temp.expect(not (select a.payload ? 'expires_at' from acts a where a.id = act), 'the Act of a lasting move carries an expiry');
+  select * into now_row from boards_now n where n.id = b.id;
+  perform pg_temp.expect(now_row.name = 'Toast Corner' and now_row.premise = 'Toast, and only toast.' and now_row.description = 'A new board.' and not now_row.closed and now_row.merged_into is null,
+    'boards_now does not list the made board with its name and premise: ' || to_jsonb(now_row)::text);
+  perform pg_temp.expect((select count(*) from board_thread_counts where board = b.id) = 4, 'the made board has no thread counts');
+  -- It stays: another tick does not end it, and it is in force.
+  perform system_tick();
+  perform pg_temp.expect(exists (select 1 from open_moves where move_act = act) and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = act), 'a lasting move ended by itself');
+  -- A second board of the same name gets a suffix; a name with no letters or digits still gets a slug.
+  q2 := pg_temp.queue('createBoard', jsonb_build_object('name', 'Toast Corner', 'premise', 'More toast.', 'description', 'Again.'));
+  act2 := pg_temp.land(q2);
+  perform pg_temp.expect(exists (select 1 from boards where slug = 'toast-corner-2' and created_by_act = act2), 'a second board of the same name has no suffixed slug');
+  q3 := pg_temp.queue('createBoard', jsonb_build_object('name', '!!!', 'premise', 'p', 'description', 'd'));
+  perform pg_temp.land(q3);
+  perform pg_temp.expect(exists (select 1 from boards where slug = 'board'), 'a name with no letters or digits made no slug');
+  -- created_by_act is set only at insert, in any role of the session; and only a createBoard Act can make a board.
+  msg := pg_temp.refusal(format('update boards set created_by_act = null where id = %L', b.id));
+  perform pg_temp.expect(msg like 'P0001%never changes%', 'created_by_act was changed: ' || coalesce(msg, 'allowed'));
+  set local session_replication_role = replica;
+  msg := pg_temp.refusal(format('update boards set created_by_act = %L where id = %L', act2, b.id));
+  set local session_replication_role = origin;
+  perform pg_temp.expect(msg like 'P0001%never changes%', 'created_by_act was changed in replica mode: ' || coalesce(msg, 'allowed'));
+  perform pg_temp.settled('createBoard');
+end $$;
+
+-- ---- 3. The queue's guard for a lasting move: no demand, each kind's refusals in words ----
+do $$
+declare
+  msg text;
+  general uuid := pg_temp.board('general');
+  t uuid := pg_temp.mk('Guarded', 'general');
+  m bigint;
+  sys uuid := (select id from boards where is_system);
+begin
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
+  msg := pg_temp.refusal(format($q$insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, structural)
+    values (%s, 'lb-boss', 'moveThread', %L, %L, 'because', now(), false)$q$, m, jsonb_build_object('thread', t, 'board', pg_temp.board('third')),
+    jsonb_build_object('kind', 'postsOnBoard', 'params', jsonb_build_object('board', general, 'count', 5))));
+  perform pg_temp.expect(msg like '23514%no demand%', 'a lasting move with a demand was queued: ' || coalesce(msg, 'allowed'));
+  -- A thread that does not exist.
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'moveThread', jsonb_build_object('thread', gen_random_uuid(), 'board', pg_temp.board('third'))));
+  perform pg_temp.expect(msg like '23514%there is no such thread%', 'a move of a thread that is not there: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'moveThread', jsonb_build_object('thread', 'nonsense', 'board', pg_temp.board('third'))));
+  perform pg_temp.expect(msg like '23514%there is no such thread%', 'a move of a thread named nonsense: ' || coalesce(msg, 'allowed'));
+  -- A board that does not exist, and The System's own board, as a target.
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'moveThread', jsonb_build_object('thread', t, 'board', gen_random_uuid())));
+  perform pg_temp.expect(msg like '23514%no such board%', 'a move onto a board that is not there: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'moveThread', jsonb_build_object('thread', t, 'board', sys)));
+  perform pg_temp.expect(msg like '23514%System%own board%', 'a move onto The System''s board: ' || coalesce(msg, 'allowed'));
+  -- A thread on The System's own board is never moved.
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'moveThread', jsonb_build_object('thread', (select t2.id from threads t2 where t2.board = sys limit 1), 'board', general)));
+  perform pg_temp.expect(msg like '23514%System%own board%never moved%', 'a move of the announcements thread: ' || coalesce(msg, 'allowed'));
+  -- A merge of a board into itself, a board that is not there, and The System's board.
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'mergeBoard', jsonb_build_object('board', general, 'into', general)));
+  perform pg_temp.expect(msg like '23514%never merged into itself%', 'a board merged into itself: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'mergeBoard', jsonb_build_object('board', general, 'into', gen_random_uuid())));
+  perform pg_temp.expect(msg like '23514%no such board to merge it into%', 'a merge into a board that is not there: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'mergeBoard', jsonb_build_object('board', sys, 'into', general)));
+  perform pg_temp.expect(msg like '23514%System%own board%', 'The System''s board merged: ' || coalesce(msg, 'allowed'));
+  -- A new board needs a name, a premise and a description, and its fallback is an open board of the players.
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'createBoard', jsonb_build_object('name', '  ', 'premise', 'p', 'description', 'd')));
+  perform pg_temp.expect(msg like '23514%needs a name%', 'a board with a blank name: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'createBoard', jsonb_build_object('name', 'N', 'premise', 'p', 'description', 'd', 'fallback', sys)));
+  perform pg_temp.expect(msg like '23514%fallback%open board%', 'a fallback that is The System''s board: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'createBoard', jsonb_build_object('name', 'N', 'premise', 'p', 'description', 'd', 'fallback', 'nonsense')));
+  perform pg_temp.expect(msg like '23514%fallback%open board%', 'a fallback that is no uuid: ' || coalesce(msg, 'allowed'));
+  -- Uppercase ids are kept in one form: lowercase (queued for far ahead, so it lands in none of the cases below).
+  perform pg_temp.queue('moveThread', jsonb_build_object('thread', upper(t::text), 'board', upper(pg_temp.board('third')::text)), interval '30 days');
+  perform pg_temp.expect((select q.params ->> 'thread' = t::text and q.params ->> 'board' = pg_temp.board('third')::text from queued_moves q order by q.id desc limit 1), 'the guard did not lowercase the ids');
+end $$;
+
+-- ---- 4. moveThread: its landing stores the thread's board; the counts follow; a second move ends the first as superseded; reversing returns the thread ----
+do $$
+declare
+  t uuid := pg_temp.mk('Wanderer', 'general');
+  g0 integer := (select threads from board_counts where board = pg_temp.board('general'));
+  e0 integer := (select threads from board_counts where board = pg_temp.board('elsewhere'));
+  q1 bigint;
+  q2 bigint;
+  m1 uuid;
+  m2 uuid;
+  msg text;
+begin
+  q1 := pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('elsewhere')));
+  m1 := pg_temp.land(q1);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('elsewhere'), 'a moveThread did not set the thread''s board');
+  perform pg_temp.expect((select origin_board from threads where id = t) = pg_temp.board('general'), 'a moveThread changed the thread''s origin');
+  perform pg_temp.expect((select threads from board_counts where board = pg_temp.board('general')) = g0 - 1 and (select threads from board_counts where board = pg_temp.board('elsewhere')) = e0 + 1,
+    'the board counts did not follow the moved thread');
+  perform pg_temp.settled('moveThread');
+  -- A second move of the same thread ends the first, superseded, at landing.
+  q2 := pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('third')));
+  m2 := pg_temp.land(q2);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('third'), 'the second moveThread did not place the thread');
+  perform pg_temp.expect((select e.payload ->> 'why' = 'superseded' from acts e where e.kind = 'move_end' and e.target_act_id = m1), 'the first moveThread was not ended as superseded');
+  perform pg_temp.expect(not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = m2) and exists (select 1 from open_moves where move_act = m2), 'the second moveThread is not in force');
+  perform pg_temp.settled('a superseding moveThread');
+  -- Reversing the second leaves no move of the thread in force (the first was superseded, which is an end), so it returns to where it started; the counts follow back.
+  perform pg_temp.reverse(m2);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'reversing the last moveThread did not return the thread to its origin');
+  perform pg_temp.expect((select threads from board_counts where board = pg_temp.board('general')) = g0 and (select threads from board_counts where board = pg_temp.board('elsewhere')) = e0 and (select threads from board_counts where board = pg_temp.board('third')) = (select count(*) from threads where board = pg_temp.board('third')),
+    'the board counts did not follow the thread back');
+  perform pg_temp.settled('a reversed moveThread');
+  -- Reversing a move that is the only one in force returns the thread too, and the search copy of the board follows the thread.
+  q1 := pg_temp.queue('moveThread', jsonb_build_object('thread', t, 'board', pg_temp.board('fourth')));
+  m1 := pg_temp.land(q1);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('fourth'), 'a third move did not place the thread');
+  perform pg_temp.reverse(m1);
+  perform pg_temp.expect(pg_temp.at(t) = pg_temp.board('general'), 'reversing the only moveThread did not return the thread');
+  perform pg_temp.settled('a reversed lone moveThread');
+  -- Only a createBoard Act can make a board: a board naming a moveThread Act is refused, and none is made.
+  msg := pg_temp.refusal(format('insert into boards (slug, name, created_by_act) values (%L, %L, %L)', 'sneaky', 'Sneaky', m1));
+  perform pg_temp.expect(msg like '23514%made by a createBoard%', 'a board made by something other than a createBoard: ' || coalesce(msg, 'allowed'));
+  perform pg_temp.expect((select count(*) from boards where slug = 'sneaky') = 0, 'a board named for a non-createBoard Act was made');
+end $$;
+
+-- ---- 5. mergeBoard: threads join the other board, the board closes; reversing reopens it and returns the threads; chains; refusals; cycles ----
+do $$
+declare
+  a1 uuid := pg_temp.mk('Third A', 'third');
+  a2 uuid := pg_temp.mk('Third B', 'third');
+  m1 uuid := pg_temp.mk('Moved in', 'general');
+  q bigint;
+  qm bigint;
+  merge uuid;
+  mv uuid;
+  msg text;
+  n integer;
+begin
+  mv := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', m1, 'board', pg_temp.board('third'))));
+  perform pg_temp.expect(pg_temp.at(m1) = pg_temp.board('third'), 'setup: the thread was not moved onto Third');
+  n := (select count(*) from threads where board = pg_temp.board('third'));
+  q := pg_temp.queue('mergeBoard', jsonb_build_object('board', pg_temp.board('third'), 'into', pg_temp.board('fourth')));
+  merge := pg_temp.land(q);
+  perform pg_temp.expect(pg_temp.at(a1) = pg_temp.board('fourth') and pg_temp.at(a2) = pg_temp.board('fourth') and pg_temp.at(m1) = pg_temp.board('fourth'), 'a mergeBoard did not move every thread on the board');
+  perform pg_temp.expect((select closed and merged_into = pg_temp.board('fourth') from boards_now where id = pg_temp.board('third')), 'boards_now does not say the merged board is closed and where it went');
+  perform pg_temp.expect((select not closed and merged_into is null from boards_now where id = pg_temp.board('fourth')), 'boards_now closed the board that was merged into');
+  perform pg_temp.expect((select threads from board_counts where board = pg_temp.board('fourth')) >= n and coalesce((select threads from board_counts where board = pg_temp.board('third')), 0) = 0, 'the counts did not follow the merge');
+  perform pg_temp.settled('mergeBoard');
+  -- A merged board is closed: no move onto it, no merge of it again, and none into a board merged into it (a cycle), whose words say so.
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'moveThread', jsonb_build_object('thread', a1, 'board', pg_temp.board('third'))));
+  perform pg_temp.expect(msg like '23514%closed%', 'a move onto a closed board: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'mergeBoard', jsonb_build_object('board', pg_temp.board('third'), 'into', pg_temp.board('general'))));
+  perform pg_temp.expect(msg like '23514%already closed%', 'a merge of a closed board: ' || coalesce(msg, 'allowed'));
+  msg := pg_temp.refusal(format('select pg_temp.queue(%L, %L)', 'mergeBoard', jsonb_build_object('board', pg_temp.board('fourth'), 'into', pg_temp.board('third'))));
+  perform pg_temp.expect(msg like '23514%already merged into it%', 'a cycle was queued: ' || coalesce(msg, 'allowed'));
+  -- Reversing reopens the board and returns its threads, the moved-in one included (its move is still in force).
+  perform pg_temp.reverse(merge);
+  perform pg_temp.expect(pg_temp.at(a1) = pg_temp.board('third') and pg_temp.at(a2) = pg_temp.board('third') and pg_temp.at(m1) = pg_temp.board('third'), 'reversing a mergeBoard did not return the threads');
+  perform pg_temp.expect((select not closed and merged_into is null from boards_now where id = pg_temp.board('third')), 'reversing a mergeBoard did not reopen the board');
+  perform pg_temp.settled('a reversed mergeBoard');
+end $$;
+
+do $$
+declare
+  x uuid;
+  y uuid;
+  z uuid;
+  tx uuid;
+  ty uuid;
+  mxy uuid;
+  myz uuid;
+  qa bigint;
+  qb bigint;
+  r queued_moves;
+begin
+  -- Chains: X into Y, Y into Z: X's threads end on Z; reversing Y into Z leaves X's on Y (the threads of a board routed through the reversed one are rebuilt too).
+  insert into boards (slug, name, created_at) values ('ex', 'Ex', now() - interval '5 days'), ('why', 'Why', now() - interval '4 days'), ('zed', 'Zed', now() - interval '3 days');
+  x := pg_temp.board('ex'); y := pg_temp.board('why'); z := pg_temp.board('zed');
+  tx := pg_temp.mk('Started on Ex', 'ex'); ty := pg_temp.mk('Started on Why', 'why');
+  mxy := pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', x, 'into', y)));
+  myz := pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', y, 'into', z)));
+  perform pg_temp.expect(pg_temp.at(tx) = z and pg_temp.at(ty) = z, 'a chain of merges did not send the threads to the end of it');
+  perform pg_temp.settled('a chain of merges');
+  perform pg_temp.reverse(myz);
+  perform pg_temp.expect(pg_temp.at(tx) = y and pg_temp.at(ty) = y, 'reversing the end of a chain did not return the threads routed through it');
+  perform pg_temp.settled('a reversed end of a chain');
+  perform pg_temp.reverse(mxy);
+  perform pg_temp.expect(pg_temp.at(tx) = x and pg_temp.at(ty) = y, 'reversing the start of a chain did not return its threads');
+  perform pg_temp.settled('a reversed start of a chain');
+  -- A cycle is refused at landing too: two merges that were each fine to queue are due together, and the second finds the first.
+  qa := pg_temp.queue('mergeBoard', jsonb_build_object('board', x, 'into', y));
+  qb := pg_temp.queue('mergeBoard', jsonb_build_object('board', y, 'into', x));
+  perform system_tick();
+  select * into r from queued_moves where id = qa;
+  perform pg_temp.expect(r.landed_act is not null, 'the first of two merges did not land');
+  select * into r from queued_moves where id = qb;
+  perform pg_temp.expect(r.landed_act is null and r.refused_at is not null and r.failure like '%already merged into it%', 'the merge that would make a cycle was not refused at landing: ' || to_jsonb(r)::text);
+  perform pg_temp.expect(not exists (select 1 from acts a where a.kind = 'move' and a.payload ->> 'kind' = 'mergeBoard' and a.payload #>> '{params,board}' = y::text and a.payload #>> '{params,into}' = x::text), 'a refused merge left an Act');
+  perform pg_temp.expect(pg_temp.at(tx) = y and pg_temp.at(ty) = y, 'a refused cycle moved threads');
+  perform pg_temp.settled('a cycle refused at landing');
+  -- A move queued onto a board that closes before it lands is refused at landing, for good.
+  qa := pg_temp.queue('mergeBoard', jsonb_build_object('board', z, 'into', y));
+  qb := pg_temp.queue('moveThread', jsonb_build_object('thread', ty, 'board', z));
+  perform system_tick();
+  select * into r from queued_moves where id = qb;
+  perform pg_temp.expect(r.landed_act is null and r.refused_at is not null and r.failure like '%closed%', 'a move onto a board closed since it was queued was not refused at landing: ' || to_jsonb(r)::text);
+  perform pg_temp.settled('a move refused at landing');
+end $$;
+
+-- ---- 6. Reversing createBoard: threads moved in go back; threads started in it go to its fallback, or the first open board; the board closes ----
+do $$
+declare
+  fb uuid := pg_temp.board('fourth');
+  cmove uuid;
+  nmove uuid;
+  nb uuid;
+  nnb uuid;
+  moved uuid := pg_temp.mk('Moved into the made board', 'general');
+  started uuid;
+  started2 uuid;
+  mt uuid;
+  fmerge uuid;
+begin
+  cmove := pg_temp.land(pg_temp.queue('createBoard', jsonb_build_object('name', 'With Fallback', 'premise', 'p', 'description', 'd', 'fallback', fb)));
+  nb := (select id from boards where created_by_act = cmove);
+  started := pg_temp.mk('Started in the made board', 'with-fallback');
+  mt := pg_temp.land(pg_temp.queue('moveThread', jsonb_build_object('thread', moved, 'board', nb)));
+  perform pg_temp.expect(pg_temp.at(moved) = nb and pg_temp.at(started) = nb, 'setup: threads are not on the made board');
+  perform pg_temp.settled('a made board with threads');
+  perform pg_temp.reverse(cmove);
+  perform pg_temp.expect((select closed and merged_into is null from boards_now where id = nb), 'a reversed createBoard did not close its board');
+  perform pg_temp.expect(pg_temp.at(started) = fb, 'a thread started in a reversed createBoard did not go to its fallback');
+  perform pg_temp.expect(pg_temp.at(moved) = fb, 'a thread moved into a reversed createBoard did not leave it (its move still names a closed board, so it follows the board''s fallback)');
+  perform pg_temp.settled('a reversed createBoard with a fallback');
+  -- With the move that put it there reversed too, the moved thread is back where it started.
+  perform pg_temp.reverse(mt);
+  perform pg_temp.expect(pg_temp.at(moved) = pg_temp.board('general'), 'reversing the move into a closed board did not return the thread to its origin');
+  perform pg_temp.settled('a reversed moveThread onto a closed board');
+  -- No fallback: the first open board that is not The System's.
+  nmove := pg_temp.land(pg_temp.queue('createBoard', jsonb_build_object('name', 'No Fallback', 'premise', 'p', 'description', 'd')));
+  nnb := (select id from boards where created_by_act = nmove);
+  started2 := pg_temp.mk('Started in the other made board', 'no-fallback');
+  perform pg_temp.reverse(nmove);
+  perform pg_temp.expect(pg_temp.at(started2) = pg_temp.board('general'), 'a thread started in a reversed createBoard with no fallback did not go to the first open board');
+  perform pg_temp.expect((select closed from boards_now where id = nnb), 'the board of a reversed createBoard with no fallback is not closed');
+  perform pg_temp.settled('a reversed createBoard with no fallback');
+  -- The first open board changes when it is merged away: a thread that went to it is rebuilt too, though no merge route reaches it.
+  fmerge := pg_temp.land(pg_temp.queue('mergeBoard', jsonb_build_object('board', pg_temp.board('general'), 'into', pg_temp.board('elsewhere'))));
+  perform pg_temp.expect(pg_temp.at(started2) = pg_temp.board('elsewhere'), 'a thread routed to the first open board did not follow it when that board was merged away');
+  perform pg_temp.settled('the first open board merged away');
+  -- And when it reopens: the thread started in the closed made board is on neither General nor anything routed through it, so only the change of the first open board finds it.
+  perform pg_temp.reverse(fmerge);
+  perform pg_temp.expect(pg_temp.at(started2) = pg_temp.board('general'), 'a thread routed to the first open board did not follow it back when that board reopened');
+  perform pg_temp.settled('the first open board reopened');
+end $$;
+
+-- ---- 7. Not handed on: a new Boss's review leaves a lasting move in force, and the handover's pass still ends an ordinary one ----
+do $$
+declare
+  kept uuid;
+  ordinary uuid;
+begin
+  select a.id into kept from acts a join open_moves o on o.move_act = a.id where a.payload ->> 'kind' = 'mergeBoard' limit 1;
+  perform pg_temp.expect(kept is not null, 'setup: no mergeBoard is in force');
+  insert into move_kinds (key, structural, shapes_board) values ('renameBoard', true, true) on conflict (key) do nothing;
+  ordinary := (write_staff_act('lb-boss', 'move', (select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements'), null,
+    jsonb_build_object('kind', 'renameBoard', 'body', 'Landed.', 'expires_at', now() + interval '30 days',
+      'params', jsonb_build_object('board', pg_temp.board('general'), 'name', 'Renamed', 'premise', 'p', 'description', 'd'))) ->> 'id')::uuid;
+  perform pg_temp.expect(not exists (select 1 from inheritance_due('lb-other') d where d.act = kept), 'a lasting move is due for the new Boss''s review');
+  perform pg_temp.expect(exists (select 1 from inheritance_due('lb-other') d where d.act = ordinary), 'the ordinary board-shaping move is not due for review (the comparison is void)');
+  -- A new Boss has been in the seat past the grace and has addressed neither: the handover's pass of the tick ends the ordinary move, and never the lasting one.
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Other Boss', 'lb-other', 'persona', now());
+  update seasons set boss = 'lb-other', starts_at = now() - interval '30 days' where ends_at is null;
+  update open_moves set landed_at = now() - interval '10 days' where move_act in (ordinary, kept);
+  perform system_tick();
+  perform pg_temp.expect(exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = ordinary and e.payload ->> 'why' = 'superseded'), 'the handover''s pass did not end the ordinary board-shaping move (the comparison is void)');
+  perform pg_temp.expect(exists (select 1 from open_moves where move_act = kept) and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = kept), 'the handover''s pass ended a lasting move');
+  perform pg_temp.settled('the end');
+end $$;

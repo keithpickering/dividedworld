@@ -7,9 +7,9 @@ const board = '11111111-1111-4111-8111-111111111111';
 const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
 
 test('the catalog holds renameBoard, structural, with a long plain label', () => {
-  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
-  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
-  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false]);
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false], ['createBoard', true], ['moveThread', false], ['mergeBoard', true]]);
+  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale', 'createBoard', 'moveThread', 'mergeBoard'], 'a successor is named in its own answer, never among the moves');
+  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false, true, false, true]);
   assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
@@ -189,7 +189,7 @@ test('a pull and a markup carry a demand; a markdown and a flash sale carry none
   assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 150 }), 'required');
   assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 50 }), 'none');
   assert.equal(moveKind('flashSale')!.demand({ slot, hours: 24 }), 'none');
-  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.key.match(/Slot$|flashSale/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
+  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.lasting && !x.key.match(/Slot$|flashSale/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
 });
 
 test('the machine\'s moves read in plain words, with nothing unfilled and the slot named when the screen knows it', () => {
@@ -247,11 +247,57 @@ test('conferGroup reads in plain words from the names it is given, and never nam
   assert.deepEqual(k.parts({ character: who, group: 'regular' }, null, 'done', { character: 'Pipewrench', group: 'Regulars' }), ['Put Pipewrench in Regulars']);
 });
 
-test('every move kind declares whether it is lasting, and none is today', () => {
+test('every move kind declares whether it is lasting; the three that build the board are', () => {
   for (const k of MOVE_KINDS) assert.equal(typeof (k as { lasting?: unknown }).lasting, 'boolean', `${k.key} declares lasting`);
-  assert.deepEqual(MOVE_KINDS.filter((k) => k.lasting).map((k) => k.key), []);
+  assert.deepEqual(MOVE_KINDS.filter((k) => k.lasting).map((k) => k.key), ['createBoard', 'moveThread', 'mergeBoard']);
 });
 
 test('a lasting kind carries no demand, whatever its params (a catalog invariant)', () => {
   for (const k of MOVE_KINDS.filter((x) => x.lasting)) assert.equal(k.demand({}), 'none', `${k.key} declares no demand`);
+});
+
+const thread = '22222222-2222-4222-8222-222222222222';
+const other = '33333333-3333-4333-8333-333333333333';
+const create = { name: 'Toast Corner', premise: 'Toast, and only toast.', description: 'A new board.' };
+
+test('the three lasting board moves are the Boss\'s, askable, with no demand; two are structural and shape a board', () => {
+  for (const [key, structural] of [['createBoard', true], ['moveThread', false], ['mergeBoard', true]] as const) {
+    const k = moveKind(key)!;
+    assert.deepEqual([k.lasting, k.structural, k.shapesBoard, k.askable, k.offices, k.demand({})], [true, structural, structural, true, ['boss'], 'none'], key);
+  }
+  assert.deepEqual([moveKind('createBoard')!.label, moveKind('moveThread')!.label, moveKind('mergeBoard')!.label], ['Created a board', 'Moved a thread', 'Merged a board']);
+});
+
+test('createBoard keeps good params, names an optional fallback by uuid, trims a long name and refuses a missing premise', () => {
+  assert.ok(moveParamsProblems('createBoard', create).ok);
+  const withFallback = moveParamsProblems('createBoard', { ...create, fallback: board.toUpperCase() });
+  assert.ok(withFallback.ok && (withFallback.value as { fallback: string }).fallback === board, JSON.stringify(withFallback));
+  const without = moveParamsProblems('createBoard', create);
+  assert.ok(without.ok && (without.value as { fallback: unknown }).fallback === null, JSON.stringify(without));
+  const bad = moveParamsProblems('createBoard', { ...create, fallback: 'x'.repeat(36) });
+  assert.ok(!bad.ok && bad.path === 'fallback' && bad.predicate === 'isUuid', JSON.stringify(bad));
+  const long = moveParamsProblems('createBoard', { ...create, name: 'x'.repeat(260) });
+  assert.ok(long.ok && long.trims.length === 1 && long.trims[0]?.path === 'name', JSON.stringify(long));
+  const missing = moveParamsProblems('createBoard', { name: 'Toast Corner', description: 'x' });
+  assert.ok(!missing.ok && missing.path === 'premise', JSON.stringify(missing));
+});
+
+test('moveThread and mergeBoard name uuids; a merge of a board into itself is refused', () => {
+  assert.ok(moveParamsProblems('moveThread', { thread, board }).ok);
+  const noThread = moveParamsProblems('moveThread', { thread: 'x'.repeat(36), board });
+  assert.ok(!noThread.ok && noThread.path === 'thread' && noThread.predicate === 'isUuid', JSON.stringify(noThread));
+  assert.ok(moveParamsProblems('mergeBoard', { board, into: other }).ok);
+  const same = moveParamsProblems('mergeBoard', { board, into: board.toUpperCase() });
+  assert.ok(!same.ok && same.path === 'into' && same.predicate === 'differsFromBoard', JSON.stringify(same));
+  const noInto = moveParamsProblems('mergeBoard', { board });
+  assert.ok(!noInto.ok && noInto.path === 'into', JSON.stringify(noInto));
+});
+
+test('the three lasting board moves read in plain words, and name the boards they touch', () => {
+  assert.equal(moveKind('createBoard')!.template(create, 'The Boss'), 'The Boss made a board named "Toast Corner". Its subject is: Toast, and only toast.');
+  assert.deepEqual(moveKind('createBoard')!.parts(create, null, 'plan'), ['Create a board named "Toast Corner"']);
+  assert.deepEqual(moveKind('createBoard')!.parts(create, null, 'done'), ['Created a board named "Toast Corner"']);
+  assert.deepEqual(moveKind('moveThread')!.parts({ thread, board }, null, 'done', { board: 'General' }), ['Moved a thread to ', { board, name: 'General' }]);
+  assert.deepEqual(moveKind('mergeBoard')!.parts({ board, into: other }, 'Toast', 'plan', { board: 'General' }), ['Merge ', { board, name: 'Toast' }, ' into ', { board: other, name: 'General' }]);
+  for (const k of ['createBoard', 'moveThread', 'mergeBoard']) assert.doesNotMatch(moveKind(k)!.template({ ...create, thread, board, into: other }, 'The Boss'), /[{}]|undefined|null/, k);
 });
