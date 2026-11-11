@@ -70,17 +70,17 @@ const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${nam
  * A card back's words (the card mechanic's design, section 3): the same for every card face down, so a reader cannot tell one card's back
  * from another's. Its `state` is the engine's alone ("Face down on this post", the Lens's status); who set it and when is its play's
  * `note`, and when it ends is its `ends`, in the reader's zone. Once it has sprung, the card is public, and its name is said.
- * `setLasts` is the instance's, the same for every Set, so the end it gives names no card either. `cardName` is asked only of a
- * back that sprang.
+ * The end is the one the server stored when the card was set (`back.endsAt`), the same span for every Set, so it names no card either; a back
+ * with none says only that it ends when it springs or is taken back. `cardName` is asked only of a back that sprang.
  */
-export function backWords(back: CardPlay, setter: string, setLasts: Span, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
+export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
   if (back.revealed) {
     const card = cardName(back.revealed.card);
     return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
   }
   if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
-  const ends = new Date(Date.parse(back.playedAt) + spanMs(setLasts)).toISOString();
-  return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends: `${endsWords(ends)}, unless it springs first.` };
+  const ends = back.endsAt ? `${endsWords(back.endsAt)}, unless it springs first.` : 'It ends when it springs or is taken back.';
+  return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends };
 }
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

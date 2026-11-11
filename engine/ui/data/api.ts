@@ -205,6 +205,8 @@ export interface ScreenSettings {
   readonly titleMaxLength: number;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0152): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
+  readonly setLasts: Span;
   /** How often a page polls who is browsing it, in seconds; each poll is also the viewer's heartbeat. */
   readonly presencePollSeconds: number;
   /** How long after its last poll a mask stays listed: what "Who is online" says it counts. */
@@ -333,6 +335,12 @@ export interface Act {
    * same for every reader, and nothing of the refund rides with it. A play carrying it is not in force, as one with a `card_end` is not.
    */
   readonly untaken?: true;
+  /**
+   * Set only on a set (a card face down): when the server ends it if nothing springs it or takes it back first (`acts_public.ends_at`, 0152, the
+   * `face_down` row's, stored when the card was set). Public and the same span for every back, so it names no card. A screen reads a back's end from
+   * here and never adds the setting to when it was set: an admin's change to the setting moves no back already set.
+   */
+  readonly endsAt?: string;
 }
 
 /* ------------------------------------------------------------------------------ a visit (the Mod Bots design, sections 6 and 7) ---- */

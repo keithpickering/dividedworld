@@ -39,6 +39,11 @@ export interface CardPlay {
   readonly post: Id;
   /** A card set face down (a set Act): its `card` is the engine's own back (`CARD_BACK`), the same for every card, and names none. */
   readonly faceDown?: true;
+  /**
+   * A card back's end, as the server stored it when the card was set (the set Act's `endsAt`): it is over then, unless it sprang or was taken back first.
+   * Null for a back read from a place that did not answer one; absent for a play that is no back. No screen works it out from the setting.
+   */
+  readonly endsAt?: string | null;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
   readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string };
   /** A card back its setter took back into their hand (a `take_back` Act): ended then, and it names no card. */

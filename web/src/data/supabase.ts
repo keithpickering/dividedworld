@@ -144,6 +144,7 @@ function toAct(r: Row): Act {
     editedAt: r['edited_at'] ?? null,
     shownEditedAt: r['shown_edited_at'] ?? null,
     ...(r['untaken'] === true ? { untaken: true as const } : {}),
+    ...(typeof r['ends_at'] === 'string' ? { endsAt: r['ends_at'] } : {}),
   };
 }
 

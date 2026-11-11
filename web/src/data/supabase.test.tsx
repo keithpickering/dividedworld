@@ -33,6 +33,7 @@ const FALLBACK: ScreenSettings = {
   titleMaxLength: 120,
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
+  setLasts: { unit: 'day', count: 7 },
   cardSettings: { 'whoops.clean': 95 },
   presencePollSeconds: 30,
   presenceWindow: { unit: 'minute', count: 5 },

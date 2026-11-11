@@ -32,13 +32,15 @@ export const CARD_BACK = 'kb:card-back';
 export const isBack = (kind: string): boolean => kind === CARD_BACK || kind.startsWith(`${CARD_BACK}:`);
 const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
 
+/** Whether a back's time has passed, at the end the server stored: a back with none is over only when it springs or is taken back. */
+export const backOver = (back: CardPlay, now: number = Date.now()): boolean => back.endsAt != null && Date.parse(back.endsAt) <= now;
+
 /**
  * The plays a post shows: all but a card back whose time has passed with nothing springing it, or that its setter took back, which is gone, as the server drops it
- * (card_target). Its end is setLasts after it was set, the same for every card.
+ * (card_target). Its end is the one the server stored when it was set (`endsAt`).
  */
-export function shownPlays(plays: readonly CardPlay[], setLasts: Span, now: number = Date.now()): readonly CardPlay[] {
-  const span = setLasts.count * (setLasts.unit === 'minute' ? 60_000 : setLasts.unit === 'hour' ? 3_600_000 : setLasts.unit === 'day' ? 86_400_000 : setLasts.unit === 'week' ? 7 * 86_400_000 : 30 * 86_400_000);
-  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && (p.takenBack !== undefined || Date.parse(p.playedAt) + span <= now)));
+export function shownPlays(plays: readonly CardPlay[], now: number = Date.now()): readonly CardPlay[] {
+  const shown = plays.filter((p) => !(p.faceDown && !p.revealed && (p.takenBack !== undefined || backOver(p, now))));
   return shown.length === plays.length ? plays : shown;
 }
 
@@ -52,7 +54,7 @@ export function playOf(act: Act): CardPlay | null {
   if (beyond && (typeof on !== 'string' || typeof act.payload.ends !== 'string')) return null;
   if (act.targetActId === null && !beyond) return null;
   if (act.kind === 'set') {
-    return { id: act.id, card: CARD_BACK, layer: 1, caster: act.character, message: '', config: {}, playedAt: act.createdAt, post: act.targetActId ?? '', faceDown: true };
+    return { id: act.id, card: CARD_BACK, layer: 1, caster: act.character, message: '', config: {}, playedAt: act.createdAt, post: act.targetActId ?? '', faceDown: true, endsAt: act.endsAt ?? null };
   }
   if (act.kind !== 'card' || typeof act.payload.card !== 'string') return null;
   const layer = act.payload.layer;

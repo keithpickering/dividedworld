@@ -422,7 +422,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, cardSettings: settings.cardSettings,
+    registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
@@ -576,6 +576,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       editedAt: latest ? iso(latest.at) : null,
       shownEditedAt: latest && latest.at > a.at + span(settings.editGrace) ? iso(latest.at) : null,
       ...(untakenPlays.has(a.id) ? { untaken: true as const } : {}),
+      /* A set's end is the face_down row's, stored when it was set (acts_public.ends_at, 0152). */
+      ...(a.kind === 'set' && faceDown.get(a.id) ? { endsAt: iso(faceDown.get(a.id)!.endsAt) } : {}),
     };
   }
 

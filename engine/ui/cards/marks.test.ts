@@ -28,19 +28,23 @@ test('a strip draws four marks on a desktop and three on a phone', () => {
 
 /* The card mechanic's marks (docs/plans/2026-11-01-card-plays-plan.md, Task 7). */
 describe('a card back, a ward and a caught play, in words', () => {
-  const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('s1', 'kb:card-back'), caster: 'c', faceDown: true, playedAt: '2026-10-29T12:00:00.000Z', ...over });
-  const setLasts = { unit: 'day' as const, count: 7 };
+  const back = (over: Partial<CardPlay> = {}): CardPlay => ({ ...play('s1', 'kb:card-back'), caster: 'c', faceDown: true, playedAt: '2026-10-29T12:00:00.000Z', endsAt: '2026-11-05T12:00:00.000Z', ...over });
   const day = (iso: string) => utcDate(iso);
 
   test('a back says "Face down on this post", the engine\'s own words; who set it and when is its note, and when it ends its way out, the same for any card to any reader but the setter', () => {
-    const words = backWords(back(), 'PIPEWRENCH', setLasts, () => 'Card Collector');
+    const words = backWords(back(), 'PIPEWRENCH', () => 'Card Collector');
     assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: 'Face down on this post', note: `Set face down by PIPEWRENCH on ${localDate('2026-10-29T12:00:00.000Z')}.`, ends: `${endsWords('2026-11-05T12:00:00.000Z')}, unless it springs first.` });
     assert.deepEqual(wordsProblems('state', words.state), []);
-    assert.deepEqual(backWords(back(), 'PIPEWRENCH', setLasts, () => 'Hall Pass'), words, 'the card behind it changes nothing');
+    assert.deepEqual(backWords(back(), 'PIPEWRENCH', () => 'Hall Pass'), words, 'the card behind it changes nothing');
+  });
+
+  test('when a back ends is the end the server stored, not the setting added to when it was set', () => {
+    const words = backWords(back({ endsAt: '2026-11-20T12:00:00.000Z' }), 'PIPEWRENCH', () => 'Card Collector');
+    assert.equal(words.ends, `${endsWords('2026-11-20T12:00:00.000Z')}, unless it springs first.`);
   });
 
   test('a back that sprang names its card, which is public from then', () => {
-    const words = backWords(back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', setLasts, () => 'Card Collector');
+    const words = backWords(back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'Card Collector');
     assert.deepEqual(words, { name: 'Card Collector, set face down by PIPEWRENCH', state: `Sprang on ${localDate('2026-10-30T02:00:00.000Z')}`, note: 'A Card Collector set face down by PIPEWRENCH.', ends: 'It has sprung, and ended.' });
     assert.deepEqual(wordsProblems('state', words.state), []);
   });
@@ -67,7 +71,7 @@ describe('a card back, a ward and a caught play, in words', () => {
   });
 
   test('a back taken back says so, and names no card', () => {
-    const words = backWords(back({ takenBack: { at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', setLasts, () => 'never asked');
+    const words = backWords(back({ takenBack: { at: '2026-10-30T02:00:00.000Z' } }), 'PIPEWRENCH', () => 'never asked');
     assert.deepEqual(words, { name: 'A card set face down by PIPEWRENCH', state: `Taken back on ${localDate('2026-10-30T02:00:00.000Z')}`, note: `Set face down by PIPEWRENCH on ${localDate(back({}).playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' });
     assert.deepEqual(wordsProblems('state', words.state), []);
   });

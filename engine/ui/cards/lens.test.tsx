@@ -15,6 +15,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { createPlays } from './plays.ts';
+import { endsWords } from './marks.ts';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine } from '../reactions/mine.ts';
 import { fadeOf, Lens, LensProvider, moreBelow, useLensFor, useLensStore } from './Lens.tsx';
@@ -61,8 +62,8 @@ function Said({ plays, show, children }: EffectProps) {
 }
 const cards: CardUi[] = KEYS.map((k) => cardUi(k, k === 'k1' ? { Effect: Said } : {}));
 
-function world() {
-  const fake = buildWorld(undefined, instance);
+function world(settings?: Parameters<typeof buildWorld>[0]) {
+  const fake = buildWorld(settings, instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const third = fake.seed.account('third');
@@ -1960,6 +1961,18 @@ describe('taking a back back', () => {
     await userEvent.keyboard('{Escape}');
     await openBack(2);
     expect(takeButton()).toBeNull();
+  });
+
+  test('follows the end the server stored: a back set ten days ago under a thirty-day span is live, can be taken back and says when it ends', async () => {
+    width(false);
+    const w = world({ setLasts: { unit: 'day', count: 30 } } as never);
+    const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    w.fake.seed.set(w.pipe, post, 'k2', { at: Date.now() - 10 * 86_400_000 });
+    const [set] = await w.fake.cardsOn(post, 10);
+    open(w);
+    await openBack(4);
+    expect(takeButton()).not.toBeNull();
+    expect(lens().querySelector('.kb-lens-ends')!.textContent).toBe(`${endsWords(set!.endsAt!)}, unless it springs first.`);
   });
 
   test('calls takeBack with the setter\'s character and the back, and closes the Lens once it is back', async () => {
