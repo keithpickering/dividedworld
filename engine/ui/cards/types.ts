@@ -198,7 +198,10 @@ export interface CardArt {
   readonly color: string;
   /** The ink set on `color`, readable on it. */
   readonly ink: string;
-  /** The card's art: an SVG on the 540 by 840 canvas (TEMPLATE.canvas), a URL the bundler resolved. It is decoration: the card's name and rules say the rest. */
+  /**
+   * The card's art, a URL the bundler resolved: an SVG on the 540 by 840 canvas (TEMPLATE.canvas), or a WebP image of 1080 by 1680
+   * (specs/card-art.md). It is decoration: the card's name and rules say the rest.
+   */
   readonly canvas: string;
   /** The mark: a square SVG drawn to read at 18px, a URL the bundler resolved. */
   readonly mark: string;

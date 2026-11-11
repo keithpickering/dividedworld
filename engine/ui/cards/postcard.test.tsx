@@ -153,6 +153,10 @@ describe('the canvas', () => {
     expect(img.closest('.kb-postcard-canvas')).not.toBeNull();
     expect(img.getAttribute('aria-hidden')).toBe('true');
   });
+
+  test('the canvas is decoded off the frame it is first drawn in: a raster canvas is 1080 by 1680 (specs/card-art.md)', () => {
+    expect(shown('sheet').querySelector('img')!.getAttribute('decoding')).toBe('async');
+  });
 });
 
 describe('the back', () => {
