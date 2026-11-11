@@ -31,20 +31,20 @@ def lathe(name, profile, mat, loc, seg=64, thick=None):
 chrome = rig.plastic('chrome', (0.85, 0.93, 1.0), rough=0.05, metallic=1.0)
 lathe('foot', [(1.0, 0), (1.0, 0.08), (0.55, 1.15), (0.78, 1.9), (0.8, 1.95)], chrome, L)
 m, n, l, b = rig.material('water')                                # see-through, lit from inside, with a hard shine on it
-b.inputs['Base Color'].default_value = (*rig.hexrgb('#18c8e8'), 1); b.inputs['Roughness'].default_value = 0.03
-b.inputs['Emission Color'].default_value = (*rig.hexrgb('#18c8e8'), 1); b.inputs['Emission Strength'].default_value = 0.9
-tr = n.new('ShaderNodeBsdfTransparent'); mx = n.new('ShaderNodeMixShader'); mx.inputs[0].default_value = 0.42
+b.inputs['Base Color'].default_value = (*rig.hexrgb('#042a38'), 1); b.inputs['Roughness'].default_value = 0.03   # dark, so room light cannot wash it out
+b.inputs['Emission Color'].default_value = (*rig.hexrgb('#18c8e8'), 1); b.inputs['Emission Strength'].default_value = 1.4
+tr = n.new('ShaderNodeBsdfTransparent'); mx = n.new('ShaderNodeMixShader'); mx.inputs[0].default_value = 0.5
 l.new(tr.outputs[0], mx.inputs[1]); l.new(b.outputs[0], mx.inputs[2]); l.new(mx.outputs[0], n['Material Output'].inputs['Surface'])
 GLASS = [(0.76, 1.95), (0.8, 2.3), (0.74, 3.2), (0.6, 4.3), (0.42, 5.3), (0.33, 5.75)]
 lathe('glass', GLASS, m, L)
 lathe('cap', [(0.36, 5.72), (0.36, 5.8), (0.26, 6.3), (0.22, 6.35)], chrome, L)
-wax = rig.plastic('wax', rig.hexrgb('#ff3d9a'), rough=0.2, emit=0.45)
+wax = rig.glow('wax', rig.hexrgb('#ff1a7a'), 1.9)                # its own light only, or the lamp's washes the pink out of it
 mb = bpy.data.metaballs.new('wax'); mb.resolution = 0.05; mb.render_resolution = 0.03
 mo = bpy.data.objects.new('wax', mb); sc.collection.objects.link(mo); mo.location = L; mb.materials.append(wax)
 for x, y, z, r in ((0, 0, 2.2, 0.75), (0.2, 0.1, 2.45, 0.6), (-0.15, 0, 2.9, 0.42), (0.1, 0, 3.35, 0.3), (-0.1, 0.05, 4.0, 0.42), (0.08, 0, 4.4, 0.3),
                    (0.0, 0, 5.05, 0.3), (0.3, 0, 3.6, 0.16), (-0.25, 0.1, 4.85, 0.14)):
     e = mb.elements.new(); e.co = (x, y, z); e.radius = r
-glow = bpy.data.lights.new('lamp', 'POINT'); glow.energy = 1200; glow.color = (0.3, 0.9, 1.0); glow.shadow_soft_size = 0.6
+glow = bpy.data.lights.new('lamp', 'POINT'); glow.energy = 300; glow.color = (0.3, 0.9, 1.0); glow.shadow_soft_size = 0.6
 go = bpy.data.objects.new('lamp', glow); sc.collection.objects.link(go); go.location = L + Vector((0, -1.3, 3.4))
 
 # ---- the vibes: rings going out across the floor from the lamp's foot ----------------------------
