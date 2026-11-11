@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, openDrive, giftSplit, wardTurnsAway, SET_PHRASE_MOST, atOrBelow, drawnInMoment, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, ok, staffConfigOf, staffOffers, refuse, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import type { Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -567,4 +567,51 @@ test('a ride trap names its quadrant in its configuration: a card that drops it 
   assert.match((decideSet(ride, settings, post, [], { ...named, card: 'nothing' }, [inky]) as { why: string }).why, /names a card that is cast on a post/);
   // A catching trap has no outcome and needs no quadrant.
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
+});
+
+// A surface card: its draws and washes are the card's to keep; the engine counts their cells and reads the limit from the settings.
+const strokeOf = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes) ? ok({ strokes: (input as { strokes: never[] }).strokes, payload: { kept: true } }) : refuse('draw some strokes'));
+const wall: CardRules = { ...cast('wall', 'rare'), screenReads: [{ key: 'wall.limit', whole: true, min: 1, max: 100 }], surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: strokeOf, validateWash: (i) => (i === 'nothing' ? refuse('wash something') : strokeOf(i)) } };
+const dab = { strokes: [{ width: 0.012, aspect: 1, points: [[0.505, 0.505]] }] };
+const walled = { cardSettings: { 'wall.limit': 40 } } as unknown as Settings;
+
+test('a draw is refused with the card\'s own words, and kept with its cells and the limit from the settings', () => {
+  assert.deepEqual(decideDraw(wall, walled, 'scribble'), { ok: false, why: 'draw some strokes' });
+  const drawn = decideDraw(wall, walled, dab);
+  assert.equal(drawn.ok, true);
+  if (!drawn.ok) return;
+  assert.deepEqual(drawn.value.payload, { kept: true });
+  assert.equal(drawn.value.cells.length, 10000);
+  assert.equal(drawn.value.cells.indexOf('1'), 50 * 100 + 50);
+  assert.equal(drawn.value.cells.split('1').length - 1, 1);
+  assert.equal(drawn.value.most, 4000);
+  const other = decideDraw(wall, { cardSettings: { 'wall.limit': 7 } } as unknown as Settings, dab);
+  assert.equal(other.ok && other.value.most, 700);
+});
+
+test('a wash is refused with the card\'s own words, and kept with its cells', () => {
+  assert.deepEqual(decideWash(wall, walled, 'nothing'), { ok: false, why: 'wash something' });
+  const washed = decideWash(wall, walled, dab);
+  assert.equal(washed.ok && washed.value.cells.indexOf('1'), 5050);
+  assert.equal(washed.ok && washed.value.payload.kept, true);
+});
+
+test('a card with no surface takes no draw and no wash, and a limit the settings do not hold is a fault', () => {
+  assert.equal(decideDraw(plain, walled, dab).ok, false);
+  assert.equal(decideWash(plain, walled, dab).ok, false);
+  assert.throws(() => decideDraw(wall, { cardSettings: {} } as unknown as Settings, dab), /wall\.limit/);
+});
+
+test('a surface card is played with its first draw, and refused without it; other cards are untouched', () => {
+  const none = decidePlay(wall, walled, post, [], {}, '');
+  assert.deepEqual(none, { ok: false, why: 'draw your tag first' });
+  const played = decidePlay(wall, walled, post, [], {}, '', { first: dab });
+  assert.equal(played.ok && played.value.draw?.most, 4000);
+  assert.equal(played.ok && played.value.draw?.cells.indexOf('1'), 5050);
+  assert.deepEqual(decidePlay(wall, walled, post, [], {}, '', { first: 'scribble' }), { ok: false, why: 'draw some strokes' });
+  const plainPlay = decidePlay(plain, settings, post, [], {}, '');
+  assert.equal(plainPlay.ok && plainPlay.value.draw, undefined);
+  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: 'draw your tag first' });
+  const set = decideSet(wall, walled, post, [], {}, [plain], { first: dab });
+  assert.equal(set.ok && set.value.draw?.cells.indexOf('1'), 5050);
 });
