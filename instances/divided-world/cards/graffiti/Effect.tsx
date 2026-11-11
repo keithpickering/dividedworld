@@ -16,7 +16,7 @@
  *
  * The author's strokes are also collected and sent with `surface.wash` once 1.5 seconds pass without a stroke, or as the post is left (a wash
  * Act is one batch, within the card's bounds). A refusal is shown and not retried; an answer that never came is sent again, as Whoops!'s
- * saves are. "Hold to scrub" is the reader's keyboard path at Whoops!'s pace and stays on this screen for everyone; the author's "Wash" is the
+ * saves are, even after the post is left (the retries outlive the effect, for at most about two minutes). "Hold to scrub" is the reader's keyboard path at Whoops!'s pace and stays on this screen for everyone; the author's "Wash" is the
  * same sweep, saved for everyone.
  *
  * Screen readers. A line of text under paint is hidden from them as from the eye (the body is `inert` while any line is covered) and the lines
@@ -142,8 +142,7 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   const [can, setCan] = useState<Can>(() => lastCan(account));
   useEffect(() => { if (!drawing) setCan(lastCan(account)); }, [drawing, account]);
 
-  /* Draw mode ends with the reader's right to draw (signed out, a moment): and where it ends for any reason the tile is focused again, so a keyboard is not dropped. */
-  
+  /* Where draw mode ends for any reason the tile is focused again, so a keyboard is not dropped. */
   const wasDrawing = useRef(false);
   useEffect(() => {
     if (wasDrawing.current && !drawing) tileRef.current?.focus({ preventScroll: true });
@@ -268,6 +267,8 @@ export function Effect({ plays, reader, surface, ink: registry, place, show, met
   useEffect(() => () => { if (paintQueued.current) cancelAnimationFrame(paintQueued.current); }, []);
   const refreshSoon = useRef<() => void>(() => {});
   /** A tagged drawing stays painted from Tag it until the wall's Acts hold the new draw (by id) or change some other way, so the wall does not flicker through the round trip. */
+  /* A landed tag's draft, painted until the wall's own read carries the new draw (or the read changes otherwise); a missed broadcast leaves it painted,
+     which is still the tag as it landed, until the next read. */
   const holding = useRef<{ readonly id: string | undefined; readonly acts: readonly SurfaceAct[] | null } | null>(null);
   const onDraft = useCallback((act: WallAct | null) => {
     if (act === null && holding.current) return;
