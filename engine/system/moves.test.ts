@@ -1,15 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ASKABLE_MOVE_KINDS, MOVE_KINDS, machineLimits, moveKind, moveParamsProblems } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, MOVE_KINDS, machineLimits, moveKind, moveParamsProblems, type TrophyFacts } from './moves.ts';
 import { MACHINE_DEFAULTS } from '../rules/packs.ts';
 
 const board = '11111111-1111-4111-8111-111111111111';
 const rename = { board, name: 'Pointless Toast Palace', premise: 'Toast, and only toast.', description: 'A 2003 board index.' };
 
 test('the catalog holds renameBoard, structural, with a long plain label', () => {
-  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false]]);
-  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale'], 'a successor is named in its own answer, never among the moves');
-  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false]);
+  assert.deepEqual(MOVE_KINDS.map((k) => [k.key, k.structural]), [['renameBoard', true], ['nameSuccessor', true], ['setRule', false], ['conferGroup', false], ['pullSlot', false], ['repriceSlot', false], ['flashSale', false], ['awardTrophy', false]]);
+  assert.deepEqual(ASKABLE_MOVE_KINDS.map((k) => k.key), ['renameBoard', 'setRule', 'conferGroup', 'pullSlot', 'repriceSlot', 'flashSale', 'awardTrophy'], 'a successor is named in its own answer, never among the moves');
+  assert.deepEqual(MOVE_KINDS.map((k) => k.shapesBoard), [true, false, false, false, false, false, false, false]);
   assert.equal(moveKind('renameBoard')?.label, '{role} renamed this board');
   assert.equal(moveKind('shout'), undefined);
 });
@@ -189,7 +189,7 @@ test('a pull and a markup carry a demand; a markdown and a flash sale carry none
   assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 150 }), 'required');
   assert.equal(moveKind('repriceSlot')!.demand({ slot, percent: 50 }), 'none');
   assert.equal(moveKind('flashSale')!.demand({ slot, hours: 24 }), 'none');
-  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.key.match(/Slot$|flashSale/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
+  for (const k of MOVE_KINDS.filter((x) => x.askable && !x.key.match(/Slot$|flashSale|awardTrophy/))) assert.equal(k.demand({}), 'required', `${k.key} still carries a demand`);
 });
 
 test('the machine\'s moves read in plain words, with nothing unfilled and the slot named when the screen knows it', () => {
@@ -245,4 +245,47 @@ test('conferGroup reads in plain words from the names it is given, and never nam
   assert.deepEqual(k.parts(p, null, 'done', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }]);
   assert.deepEqual(k.parts(p, null, 'plan', names), ['Put Pipewrench in Trial Members, barred from ', { board, name: 'General' }, ' (planned)']);
   assert.deepEqual(k.parts({ character: who, group: 'regular' }, null, 'done', { character: 'Pipewrench', group: 'Regulars' }), ['Put Pipewrench in Regulars']);
+});
+
+/* ------------------------------------------------------------------------- the Boss's trophy ---- */
+
+const ann = '22222222-2222-4222-8222-222222222222';
+const bob = '33333333-3333-4333-8333-333333333333';
+const facts: TrophyFacts = {
+  boss: [
+    { key: 'pet', name: 'Pet', belt: false, holder: null, holderName: null },
+    { key: 'belt', name: 'Belt', belt: true, holder: ann, holderName: 'Ann' },
+  ],
+  barred: new Set([bob]),
+  given: new Set([`pet:${ann}`]),
+};
+
+test('awardTrophy is the Boss\'s alone, a favor with no demand, and reads in plain words', () => {
+  const k = moveKind('awardTrophy')!;
+  assert.deepEqual([k.offices, k.structural, k.shapesBoard, k.askable], [['boss'], false, false, true]);
+  assert.deepEqual(Object.keys((k.params as { fields: object }).fields), ['trophy', 'character']);
+  assert.equal(k.demand({ trophy: 'pet', character: ann }), 'none');
+  const words = k.template({ trophy: 'pet', character: ann }, 'The Boss', { character: 'Ann', trophy: 'Pet' });
+  assert.equal(words, 'The Boss gave Ann the trophy Pet.');
+  assert.doesNotMatch(k.parts({ trophy: 'pet', character: ann }, null, 'plan').join(''), /[{}]|undefined|null/);
+  assert.equal(k.parts({ trophy: 'pet', character: ann }, null, 'done', { character: 'Ann', trophy: 'Pet' }).join(''), 'Gave Ann the trophy Pet');
+  assert.equal(k.parts({ trophy: 'pet', character: ann }, null, 'plan', { character: 'Ann', trophy: 'Pet' }).join(''), 'Give Ann the trophy Pet');
+});
+
+test('each limit on an award is refused by moveParamsProblems, naming the path and the predicate', () => {
+  const no = (params: unknown, trophies: TrophyFacts | null = facts) => {
+    const r = moveParamsProblems('awardTrophy', params, { ...machineLimits({}), ...(trophies ? { trophies } : {}) });
+    assert.ok(!r.ok, `${JSON.stringify(params)} should be refused`);
+    return `${r.path}:${r.predicate}`;
+  };
+  const carol = '44444444-4444-4444-8444-444444444444';
+  assert.equal(no({ trophy: 'pet', character: 'x'.repeat(36) }), 'character:isUuid');
+  assert.equal(no({ trophy: 'pet' }), 'character:required');
+  assert.equal(no({ trophy: 'hat', character: carol }), 'trophy:onBossList');
+  assert.equal(no({ trophy: 'pet', character: carol }, null), 'trophy:onBossList', 'with no list the award fails closed');
+  assert.equal(no({ trophy: 'pet', character: bob }), 'character:notStaffOrRetired');
+  assert.equal(no({ trophy: 'pet', character: ann }), 'trophy:notGivenThisSeason');
+  assert.equal(no({ trophy: 'belt', character: ann }), 'trophy:notItsHolder');
+  assert.ok(moveParamsProblems('awardTrophy', { trophy: 'pet', character: carol }, { ...machineLimits({}), trophies: facts }).ok);
+  assert.ok(moveParamsProblems('awardTrophy', { trophy: 'belt', character: carol }, { ...machineLimits({}), trophies: facts }).ok, 'a belt passes to someone else');
 });
