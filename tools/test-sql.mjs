@@ -61,6 +61,16 @@ const testsDir = path.join(repoRoot, 'supabase/tests');
 const shim = path.join(testsDir, 'setup/auth-shim.sql');
 const fixtures = path.join(testsDir, 'setup/fixtures.sql');
 
+/**
+ * The SQL a database is built from, in order: the shim, then every migration by name. One list: this harness and the rehearsal
+ * (tools/rehearse/setup.ts) both read it, so neither can apply them in an order the other does not. Absolute paths; the shim is first.
+ * fixtures.sql is the suite's own and is not in it.
+ */
+export function migrationFiles() {
+  const names = fs.existsSync(migrationsDir) ? fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort() : [];
+  return [shim, ...names.map((m) => path.join(migrationsDir, m))];
+}
+
 export const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 const SAFE_PARAMETERS = new Set(['sslmode', 'connect_timeout', 'application_name']);
 
@@ -182,10 +192,11 @@ function main() {
   /* Before any connection to it, so the shim, every migration, every file and every dblink session start bounded. */
   if (!step('bounds', psql(url, boundsSql(scratch)))) process.exit(1);
   try {
-    if (!step('setup/auth-shim.sql', psql(target, fs.readFileSync(shim, 'utf8')))) return 1;
+    const [shimFile, ...migrationPaths] = migrationFiles();
+    if (!step('setup/auth-shim.sql', psql(target, fs.readFileSync(shimFile, 'utf8')))) return 1;
 
     console.log('\nsql: migrations, from zero');
-    const migrations = fs.existsSync(migrationsDir) ? fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort() : [];
+    const migrations = migrationPaths.map((f) => path.basename(f));
     for (const m of migrations) {
       if (!step(m, psql(target, fs.readFileSync(path.join(migrationsDir, m), 'utf8')))) {
         console.error('\n  a migration failed; the schema is not replayable from zero');

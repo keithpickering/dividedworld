@@ -222,9 +222,10 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.Effect).toBeDefined();
     expect(ac.ConfigForm).toBeDefined();
     expect(ac.art.mark).toBeTruthy();
-    expect(ac.hint).toBe('Drag a strip off to read what is under it.');
+    expect(ac.hint).toBe('Lift a strip by one end to read what is under it.');
     const said = ac.describe(instance.settings);
     expect(said).toContain('A Pepperoni card');
+    expect(said).toContain("Any reader can lift a strip by one end to read under it, and it lays back down. Only the post's author can peel strips off, slowly, for everyone, and the author's words are always under the tape and in the post's History.");
     expect(said).toContain('0.25 more for every 50 characters it covers');
     expect(ac.describe({ ...instance.settings, economy: { ...instance.settings.economy, 'autocorrect.volumeStep': 40 } })).toContain('every 40 characters');
     expect(ac.surcharge!(instance.settings)).toBe('Covers a lot, +0.25 per 50 characters covered');
@@ -233,6 +234,13 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(ac.logSave!({ peeled: [0, 2] })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
     expect(ac.logSave!({ peeled: [0], clean: true })).toEqual({ what: 'Peeled clean', said: 'You peeled every strip it had then. An edit that brings the phrase back brings a strip with it.' });
     expect(ac.logSave!({ peeled: [] })).toBeUndefined();
+    const one = [[0, 0.5, 0]];
+    expect(ac.logSave!({ peeled: [0, 2], stuck: { '1': one, '3': one } })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips, and started on 2 more.' });
+    expect(ac.logSave!({ peeled: [0], stuck: { '1': one } })).toEqual({ what: 'Strips peeled', said: 'You peeled 1 of its strips, and started on 1 more.' });
+    expect(ac.logSave!({ peeled: [], stuck: { '1': one } })).toEqual({ what: 'Strips peeled', said: 'You started peeling 1 of its strips.' });
+    expect(ac.logSave!({ peeled: [], stuck: { '1': one, '2': one } })).toEqual({ what: 'Strips peeled', said: 'You started peeling 2 of its strips.' });
+    expect(ac.logSave!({ peeled: [0, 2], stuck: {} })).toEqual({ what: 'Strips peeled', said: 'You peeled 2 of its strips.' });
+    expect(ac.logSave!({ peeled: [], stuck: {} })).toBeUndefined();
   });
   test('Autocorrect peeled clean, then an edit: the saved line never says the post is uncovered (#171 F1)', () => {
     /* Strips follow the phrase, so an edit that brings it back brings a strip: "covers nothing now" would go untrue here. */

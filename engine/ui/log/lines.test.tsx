@@ -738,6 +738,36 @@ describe('the Mod Bots\' lines', () => {
 });
 
 /**
+ * An admin's grant (docs/plans/2026-11-08-aura-grant-design.md, section 2): a wallet event of kind `grant`, in plain and true words, in every tab since it belongs to no character.
+ */
+describe('the grant line', () => {
+  const grant = (change: number, overflow: number, at: string): Log['wallet'][number] =>
+    ({ settlement: null, kind: 'grant', change, overflow, floored: 0, balanceAfter: 900, ref: null, at });
+  const mine = [char('p', 'Pat', 'face'), char('q', 'Quinn', 'heel')];
+  const grants = (wallet: Log['wallet'], tab: string | null) => logRows(data({ log: { ...empty, wallet }, mine }), words, 600, tab).filter((r) => r.kind === 'grant');
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a grant is one row in All and in a character\'s tab, in plain words', () => {
+    for (const tab of [null, 'p', 'q']) {
+      const [row, ...rest] = grants([grant(500, 0, '2099-11-08T12:00:00.000Z')], tab);
+      expect(rest).toEqual([]);
+      expect(row).toMatchObject({ key: 'grant:2099-11-08T12:00:00.000Z', kind: 'grant', at: '2099-11-08T12:00:00.000Z', what: 'An admin gave you Aura', aura: 500, wallet: 900, characters: [] });
+      expect(said(row!)).toBe('An admin gave you 5.00 Aura.');
+    }
+  });
+
+  test('the overflow sentence appears only when the cap held something back', () => {
+    const [row] = grants([grant(300, 200, '2099-11-08T12:00:00.000Z')], null);
+    expect(row!.details).toEqual(['An admin gave you 3.00 Aura. 2.00 more didn\'t fit under your wallet\'s cap.']);
+  });
+
+  test('two grants at different times are two rows', () => {
+    const rows = grants([grant(100, 0, '2099-11-08T12:00:00.000Z'), grant(100, 0, '2099-11-09T12:00:00.000Z')], null);
+    expect(rows.map((r) => r.key)).toEqual(['grant:2099-11-09T12:00:00.000Z', 'grant:2099-11-08T12:00:00.000Z']);
+  });
+});
+
+/**
  * The group lines (member groups, Task 11): a staff move into a group, how it ended and an appeal's ruling on it, in plain and true words, the role word from the move's office, each
  * linked to the move, no alert and no other member named.
  */
